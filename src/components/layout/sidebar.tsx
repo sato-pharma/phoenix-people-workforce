@@ -10,6 +10,7 @@ import {
   UsersRound,
 } from "lucide-react";
 
+import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -24,30 +25,10 @@ const navigation = [
   { name: "Settings", icon: Settings },
 ];
 
-export function PhoenixMark({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
-        <span className="text-lg font-black leading-none">P</span>
-      </div>
-      {!compact ? (
-        <div>
-          <div className="text-sm font-semibold tracking-[0.28em] text-text">
-            PHOENIX
-          </div>
-          <div className="text-[10px] font-semibold tracking-[0.34em] text-primary">
-            WORKFORCE
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function Sidebar() {
   return (
     <aside className="hidden w-64 shrink-0 border-r border-border bg-card px-5 py-6 lg:flex lg:flex-col">
-      <PhoenixMark />
+      <PhoenixLogo />
 
       <nav className="mt-9 space-y-1">
         {navigation.map((item) => (

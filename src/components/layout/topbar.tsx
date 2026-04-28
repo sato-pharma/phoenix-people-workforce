@@ -1,14 +1,14 @@
 import { Bell, ChevronDown, Mail, Menu, Search } from "lucide-react";
 
+import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Input } from "@/components/ui/input";
-import { PhoenixMark } from "@/components/layout/sidebar";
 
 export function Topbar() {
   return (
     <header className="sticky top-0 z-20 flex h-20 items-center gap-4 border-b border-border bg-card/90 px-4 backdrop-blur sm:px-6">
       <div className="lg:hidden">
-        <PhoenixMark compact />
+        <PhoenixLogo compact />
       </div>
       <button
         aria-label="Open menu"
