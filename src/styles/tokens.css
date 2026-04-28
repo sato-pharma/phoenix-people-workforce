@@ -1,0 +1,33 @@
+:root {
+  /* PRIMARY */
+  --phoenix-primary: #f97316;
+  --phoenix-primary-hover: #ea580c;
+
+  /* LIGHT MODE */
+  --bg: #ffffff;
+  --bg-soft: #f8fafc;
+  --bg-muted: #f1f5f9;
+
+  --text: #0f172a;
+  --text-secondary: #475569;
+
+  --border: #e2e8f0;
+  --card: #ffffff;
+
+  /* SEMANTIC */
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
+
+.dark {
+  --bg: #020617;
+  --bg-soft: #0b1220;
+  --bg-muted: #111827;
+
+  --text: #e5e7eb;
+  --text-secondary: #9ca3af;
+
+  --border: #1f2937;
+  --card: #0b1220;
+}
