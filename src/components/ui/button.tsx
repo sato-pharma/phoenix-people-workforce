@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+﻿import { cn } from "@/lib/utils";
 import type { ButtonHTMLAttributes } from "react";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
@@ -9,6 +9,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 export function Button({
   className,
+  type = "button",
   variant = "primary",
   ...props
 }: ButtonProps) {
@@ -28,6 +29,7 @@ export function Button({
         variants[variant],
         className,
       )}
+      type={type}
       {...props}
     />
   );

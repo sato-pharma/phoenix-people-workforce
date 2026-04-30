@@ -1,5 +1,5 @@
-import { AppShell } from "@/src/components/layout/app-shell";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <AppShell />;
+  redirect("/payroll?tab=generate");
 }
