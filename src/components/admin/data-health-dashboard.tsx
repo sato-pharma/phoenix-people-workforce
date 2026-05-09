@@ -94,7 +94,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
 
   const [salaryFlagsData, setSalaryFlagsData] = useState<SalaryFlagsResult | null>(initialSalaryFlags);
   const [showResolved, setShowResolved] = useState(false);
-  const [resolvingId, setResolvingId] = useState<number | null>(null);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   // Paginated slices
   const employeeIssues = stats.employeeIssues.filter((e) => e.health_status !== "ok");
@@ -107,7 +107,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
   const orphanPageCount = Math.max(1, Math.ceil(stats.orphanAudit.length / PAGE_SIZE));
   const orphanVisible = stats.orphanAudit.slice((orphanPage - 1) * PAGE_SIZE, orphanPage * PAGE_SIZE);
 
-  async function handleResolveFlag(id: number) {
+  async function handleResolveFlag(id: string) {
     setResolvingId(id);
     try {
       const res = await fetch("/api/admin/salary-flags", {
@@ -192,7 +192,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
           <table className="w-full border-collapse text-left">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/50">
-                {["HR_ID", "Flag Type", "Flag Value", "Created At", "Resolved By", "Action"].map((h) => (
+                {["HR_ID", "Flag Type", "Severity", "Message", "Created At", "Action"].map((h) => (
                   <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-400" key={h}>
                     {h}
                   </th>
@@ -203,7 +203,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
               {flags.length === 0 ? (
                 <tr>
                   <td className="p-8 text-center font-medium text-slate-400" colSpan={6}>
-                    {unresolvedCount === 0 ? "All salary flags have been resolved. 🎉" : "No flags to display."}
+                    {unresolvedCount === 0 ? "All salary flags have been resolved." : "No flags to display."}
                   </td>
                 </tr>
               ) : (
@@ -215,19 +215,15 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
                         {flag.flagType?.replace(/_/g, " ") ?? "unknown"}
                       </span>
                     </td>
-                    <td className="max-w-xs p-4 font-mono text-[11px] text-slate-400">
-                      <span className="line-clamp-1">{JSON.stringify(flag.flagValue)}</span>
+                    <td className="p-4 text-xs text-slate-400">
+                      <span className={`font-semibold ${flag.severity === "high" ? "text-rose-600" : flag.severity === "medium" ? "text-amber-600" : "text-slate-500"}`}>
+                        {flag.severity ?? "—"}
+                      </span>
+                    </td>
+                    <td className="max-w-xs p-4 text-[11px] text-slate-400">
+                      <span className="line-clamp-1">{flag.message ?? "—"}</span>
                     </td>
                     <td className="p-4 text-xs text-slate-400">{formatDate(flag.createdAt)}</td>
-                    <td className="p-4 text-xs text-slate-400">
-                      {flag.resolvedAt ? (
-                        <span className="text-emerald-600">
-                          {flag.resolvedBy ?? "—"} · {formatDate(flag.resolvedAt)}
-                        </span>
-                      ) : (
-                        <span className="text-slate-300">—</span>
-                      )}
-                    </td>
                     <td className="p-4">
                       {flag.resolvedAt ? (
                         <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-500">

@@ -663,7 +663,7 @@ async function validateCapturedLocation(
     fraudFlags.push("repeated_same_coordinates");
   }
 
-  let route = await getCachedRoute({
+  const route = await getCachedRoute({
     capturedLatitude: params.capturedLatitude,
     capturedLongitude: params.capturedLongitude,
     employeeHrId: identity.employeeHrId,
