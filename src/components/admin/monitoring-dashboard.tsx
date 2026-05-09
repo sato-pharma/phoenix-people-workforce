@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, BellRing, Lock, Radar, ShieldAlert, UserRoundCog } from "lucide-react";
+import { Activity, AlertTriangle, BellRing, Lock, Radar, ShieldAlert, UserRoundCog } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import type { AdminMonitoringStats } from "@/lib/admin/service";
@@ -48,6 +48,24 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
           Operational monitoring for auth stability, notification throughput, and security-sensitive activity using live Supabase data.
         </p>
       </div>
+
+      {stats.auth.brokenAccounts.length > 0 && (
+        <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-500" />
+          <div>
+            <p className="font-semibold text-rose-800">
+              {stats.auth.brokenAccounts.length} account{stats.auth.brokenAccounts.length > 1 ? "s" : ""} cannot log in — missing access profile
+            </p>
+            <p className="mt-1 text-sm text-rose-600">
+              Login ID{stats.auth.brokenAccounts.length > 1 ? "s" : ""} affected:{" "}
+              <span className="font-mono font-bold">{stats.auth.brokenAccounts.join(", ")}</span>
+            </p>
+            <p className="mt-1 text-xs text-rose-500">
+              Fix: open Users &amp; Access → edit each user → re-save with a new password.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <StatCard icon={Radar} label="Auth Bridge Coverage" tone="emerald" value={coveragePercent} />
