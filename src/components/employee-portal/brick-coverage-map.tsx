@@ -18,11 +18,6 @@ type MarkerRecord = {
   point: BrickMapPoint;
 };
 
-declare global {
-  interface Window {
-    google?: any;
-  }
-}
 
 function buildQuery(point: BrickMapPoint, lineLabel: string) {
   return [point.brick, point.area, lineLabel, "Egypt"].filter(Boolean).join(", ");

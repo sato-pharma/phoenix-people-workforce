@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function DataHealthPage() {
   const access = await resolveAccessContextFromPage();
 
-  if (!canAccess(access, "admin", "read") && !canAccess(access, "overview", "read")) {
+  if (!await canAccess(access, "admin", "read") && !await canAccess(access, "overview", "read")) {
     redirect("/employee-portals");
   }
 

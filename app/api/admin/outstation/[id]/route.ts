@@ -9,13 +9,13 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   request: Request,
-  props: RouteContext<"/api/admin/outstation/[id]">,
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "outstation", "read");
-    const params = await props.params;
-    const id = Number(params.id);
+    const { id: rawId } = await params;
+    const id = Number(rawId);
     if (!Number.isFinite(id)) {
       return NextResponse.json(
         { error: "invalid_outstation_id", message: "Request id is invalid." },

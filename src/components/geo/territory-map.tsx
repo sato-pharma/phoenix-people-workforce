@@ -121,9 +121,9 @@ export function TerritoryMap({ data }: { data: GeoDashboardData }) {
       const mapsLibrary = googleMaps.importLibrary
         ? ((await googleMaps.importLibrary("maps")) as GoogleMapLibrary)
         : ({
-            InfoWindow: googleMaps.InfoWindow,
-            LatLngBounds: googleMaps.LatLngBounds,
-            Map: googleMaps.Map,
+            InfoWindow: googleMaps.InfoWindow!,
+            LatLngBounds: googleMaps.LatLngBounds!,
+            Map: googleMaps.Map!,
           } satisfies GoogleMapLibrary);
       const markerLibrary = googleMaps.importLibrary
         ? ((await googleMaps.importLibrary("marker")) as GoogleMarkerLibrary)

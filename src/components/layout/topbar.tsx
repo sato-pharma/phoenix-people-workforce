@@ -12,19 +12,11 @@ import type { ViewerIdentity } from "@/lib/auth/server";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Input } from "@/components/ui/input";
 
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
-}
-
 export function Topbar({
-  currentUser,
   navigationMode = "admin",
   permissionLookup = {},
   viewer,
 }: {
-  currentUser?: { name: string; loginId: string; role: string };
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
   viewer: ViewerIdentity;

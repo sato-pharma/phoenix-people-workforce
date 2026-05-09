@@ -215,10 +215,11 @@ export type DataHealthStats = {
 };
 
 export type SalaryFlag = {
-  id: number;
+  id: string;
   hrId: string | null;
   flagType: string | null;
-  flagValue: unknown;
+  severity: string | null;
+  message: string | null;
   resolvedAt: string | null;
   resolvedBy: string | null;
   createdAt: string;
@@ -235,7 +236,7 @@ export async function getSalaryFlags(showResolved = false): Promise<SalaryFlagsR
 
   let query = supabase
     .from("salary_flags")
-    .select("id, hr_id, flag_type, flag_value, resolved_at, resolved_by, created_at", { count: "exact" })
+    .select("id, hr_id, flag_type, severity, message, resolved_at, resolved_by, created_at", { count: "exact" })
     .order("created_at", { ascending: false });
 
   if (!showResolved) {
@@ -250,10 +251,11 @@ export async function getSalaryFlags(showResolved = false): Promise<SalaryFlagsR
     : null;
 
   const flags: SalaryFlag[] = (data ?? []).map((row: Record<string, unknown>) => ({
-    id: row.id as number,
+    id: row.id as string,
     hrId: (row.hr_id as string | null) ?? null,
     flagType: (row.flag_type as string | null) ?? null,
-    flagValue: row.flag_value,
+    severity: (row.severity as string | null) ?? null,
+    message: (row.message as string | null) ?? null,
     resolvedAt: (row.resolved_at as string | null) ?? null,
     resolvedBy: (row.resolved_by as string | null) ?? null,
     createdAt: row.created_at as string,
@@ -266,7 +268,7 @@ export async function getSalaryFlags(showResolved = false): Promise<SalaryFlagsR
   };
 }
 
-export async function resolveSalaryFlag(id: number, resolvedBy: string): Promise<void> {
+export async function resolveSalaryFlag(id: string, resolvedBy: string): Promise<void> {
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from("salary_flags")

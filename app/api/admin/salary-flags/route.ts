@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    if (!canAccess(access, "admin", "read")) {
+    if (!await canAccess(access, "admin", "read")) {
       return NextResponse.json({ message: "Forbidden: insufficient permissions." }, { status: 403 });
     }
     const url = new URL(request.url);
@@ -32,11 +32,11 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    if (!canAccess(access, "admin", "update")) {
+    if (!await canAccess(access, "admin", "update")) {
       return NextResponse.json({ message: "Forbidden: insufficient permissions." }, { status: 403 });
     }
 
-    const body = await request.json() as { id?: number };
+    const body = await request.json() as { id?: string };
     if (!body.id) {
       return NextResponse.json({ message: "Missing flag id." }, { status: 400 });
     }

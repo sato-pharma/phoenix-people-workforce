@@ -14,6 +14,8 @@ import {
   LayoutDashboard,
   MapPinned,
   Network,
+  Database,
+  Radar,
   ScrollText,
   ShieldCheck,
   X,
@@ -60,6 +62,9 @@ function getAdminSections(permissionLookup: PermissionLookup): SidebarSection[] 
   const sections: SidebarSection[] = [
     {
       items: [
+        { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }] },
+        { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }] },
+        { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }] },
         { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
         { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }] },
         { href: "/imports/employees", icon: FileUp, label: "Bulk Import", permissions: [{ resource: "imports" }] },

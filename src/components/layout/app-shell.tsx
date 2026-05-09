@@ -8,7 +8,7 @@ import {
   resolveNavigationMode,
   type NavigationMode,
 } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage, resolveCurrentUserDisplay, resolveViewerIdentityFromPage } from "@/lib/auth/server";
+import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -26,9 +26,8 @@ export async function AppShell({
   const access = await resolveAccessContextFromPage();
   const viewer = await resolveViewerIdentityFromPage();
   const resolvedNavigationMode = navigationMode ?? resolveNavigationMode(access);
-  const [matrix, userDisplay] = await Promise.all([
+  const [matrix] = await Promise.all([
     getPermissionMatrix(),
-    resolveCurrentUserDisplay(access.loginId),
   ]);
 
   const permissionLookup: PermissionLookup = {};
@@ -41,7 +40,6 @@ export async function AppShell({
   }
 
   const isAdminMode = resolvedNavigationMode === "admin";
-  const currentUser = { name: userDisplay.name, loginId: userDisplay.loginId, role: access.role };
 
   return (
     <div className={`min-h-screen text-[#0F172A] ${isAdminMode ? adminShellBackgroundClassName : "bg-[#F8FAFC]"}`}>
@@ -51,7 +49,6 @@ export async function AppShell({
         <div className="flex min-w-0 flex-1 flex-col">
           {showTopbar && (
             <Topbar
-              currentUser={currentUser}
               navigationMode={resolvedNavigationMode}
               permissionLookup={permissionLookup}
               viewer={viewer}
