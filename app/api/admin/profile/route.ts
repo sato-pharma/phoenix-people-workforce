@@ -76,8 +76,6 @@ export async function PATCH(request: Request) {
 
     await writeAuditLog({
       actorLoginId: access.loginId,
-      actorHrId: access.hrId,
-      actorRole: access.role,
       entityId: access.loginId,
       entityType: "user",
       summary: `Profile updated by ${access.loginId}: ${Object.keys(updates).join(", ")}`,
