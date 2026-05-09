@@ -1,45 +1,17 @@
-﻿import ExcelJS from "exceljs";
+import ExcelJS from "exceljs";
 import { createHash } from "crypto";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { periodLabel } from "@/lib/sales/format";
-import { parseSalesRow, parseTargetRow } from "@/lib/sales/validation";
-import type { SalesImportPayload, TargetUploadPayload } from "@/lib/sales/types";
+import { parseSalesRow } from "@/lib/sales/validation";
+import type { SalesImportPayload } from "@/lib/sales/types";
 
-export type UploadSchemaType = "raw_sales" | "pivot_summary" | "unsupported";
+export type UploadSchemaType = "closing_sheet" | "unsupported";
 
 export type ParsedUploadRows = {
   headers: string[];
   rows: Record<string, unknown>[];
   schemaType: UploadSchemaType;
 };
-
-function detectDelimiter(line: string) {
-  const delimiters = [",", "\t", ";"];
-  return (
-    delimiters
-      .map((delimiter) => ({ delimiter, count: line.split(delimiter).length }))
-      .sort((left, right) => right.count - left.count)[0]?.delimiter || ","
-  );
-}
-
-function rowsFromDelimited(text: string) {
-  const lines = text
-    .replace(/^ï»¿/, "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.length === 0) return { headers: [], rows: [] };
-
-  const delimiter = detectDelimiter(lines[0]);
-  const headers = lines[0].split(delimiter).map((header) => header.trim());
-  const rows = lines.slice(1).map((line) => {
-    const values = line.split(delimiter);
-    return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
-  });
-
-  return { headers, rows };
-}
 
 function sheetHeaders(sheet: ExcelJS.Worksheet) {
   const row = sheet.getRow(1);
@@ -57,16 +29,202 @@ function readableCellValue(cell: ExcelJS.Cell) {
 }
 
 function detectSchemaType(headers: string[]): UploadSchemaType {
-  if (headers.includes("D.M.") && headers.includes("Sales Value")) return "raw_sales";
-  if (headers.includes("Row Labels")) return "pivot_summary";
+  if (headers.includes("CRM Code") && headers.includes("Med. Rep. Name")) return "closing_sheet";
   return "unsupported";
 }
 
-async function rowsFromWorkbook(file: File) {
-  if (file.name.toLowerCase().endsWith(".csv") || file.name.toLowerCase().endsWith(".tsv")) {
-    return rowsFromDelimited(await file.text());
+function normalizeHeader(text: unknown) {
+  return String(text ?? "").trim().toLowerCase();
+}
+
+function columnLabelToNumber(label: string) {
+  let value = 0;
+  for (const char of label.toUpperCase()) {
+    value = value * 26 + (char.charCodeAt(0) - 64);
+  }
+  return value;
+}
+
+function parseCellRef(ref: string) {
+  const match = /^([A-Z]+)(\d+)$/i.exec(ref.trim());
+  if (!match) return null;
+  return { col: columnLabelToNumber(match[1]), row: Number(match[2]) };
+}
+
+function resolveMergedCellText(sheet: ExcelJS.Worksheet, rowNumber: number, columnNumber: number) {
+  const direct = String(readableCellValue(sheet.getRow(rowNumber).getCell(columnNumber)) ?? "").trim();
+  if (direct) return direct;
+
+  const merges = sheet.model?.merges ?? [];
+  for (const merge of merges) {
+    const [startRef, endRef] = String(merge).split(":");
+    const start = parseCellRef(startRef);
+    const end = parseCellRef(endRef ?? startRef);
+    if (!start || !end) continue;
+    if (
+      rowNumber >= start.row &&
+      rowNumber <= end.row &&
+      columnNumber >= start.col &&
+      columnNumber <= end.col
+    ) {
+      return String(readableCellValue(sheet.getRow(start.row).getCell(start.col)) ?? "").trim();
+    }
   }
 
+  return "";
+}
+
+function buildClosingFamilyLabel(product: string) {
+  const normalized = product.trim().toLowerCase();
+  if (normalized.startsWith("lacto")) return "Lacto Family";
+  return product.trim();
+}
+
+function hasNonEmptyValue(value: unknown) {
+  return String(value ?? "").trim() !== "";
+}
+
+function shouldImportClosingSheetPersonRow(values: {
+  employeeHrId: unknown;
+  managerHrId: unknown;
+  employeeName: unknown;
+  territory: unknown;
+}) {
+  const hasMrHrId = hasNonEmptyValue(values.employeeHrId);
+  const hasManagerHrId = hasNonEmptyValue(values.managerHrId);
+
+  const employeeName = String(values.employeeName ?? "").trim().toLowerCase();
+  const territory = String(values.territory ?? "").trim().toLowerCase();
+
+  if (!hasMrHrId && !hasManagerHrId) return false;
+  if (!employeeName && !territory) return false;
+  if (employeeName === "grand total" || territory === "grand total") return false;
+
+  return true;
+}
+
+function deriveFactoryPrice(values: {
+  salesUnits: unknown;
+  salesValue: unknown;
+  targetUnits: unknown;
+  targetValue: unknown;
+}) {
+  const candidates = [
+    { units: Number(values.salesUnits), value: Number(values.salesValue) },
+    { units: Number(values.targetUnits), value: Number(values.targetValue) },
+  ];
+
+  for (const candidate of candidates) {
+    if (Number.isFinite(candidate.units) && candidate.units > 0 && Number.isFinite(candidate.value)) {
+      return candidate.value / candidate.units;
+    }
+  }
+
+  return 0;
+}
+
+type ClosingBlock = {
+  achievementColumn: number;
+  product: string;
+  salesUnitsColumn: number;
+  salesValueColumn: number;
+  targetUnitsColumn: number;
+  targetValueColumn: number;
+};
+
+export function extractClosingSheetRows(sheet: ExcelJS.Worksheet) {
+  const maxColumn = Math.max(sheet.getRow(1).cellCount, sheet.getRow(2).cellCount);
+  const blocks: ClosingBlock[] = [];
+
+  for (let column = 8; column <= maxColumn; column += 1) {
+    const product = resolveMergedCellText(sheet, 1, column);
+    const metric = normalizeHeader(resolveMergedCellText(sheet, 2, column));
+
+    if (!product || metric !== "sales units") continue;
+
+    const block: ClosingBlock = {
+      product,
+      salesUnitsColumn: column,
+      salesValueColumn: column + 1,
+      targetUnitsColumn: column + 2,
+      targetValueColumn: column + 3,
+      achievementColumn: column + 4,
+    };
+
+    const labels = [
+      normalizeHeader(resolveMergedCellText(sheet, 2, block.salesUnitsColumn)),
+      normalizeHeader(resolveMergedCellText(sheet, 2, block.salesValueColumn)),
+      normalizeHeader(resolveMergedCellText(sheet, 2, block.targetUnitsColumn)),
+      normalizeHeader(resolveMergedCellText(sheet, 2, block.targetValueColumn)),
+      normalizeHeader(resolveMergedCellText(sheet, 2, block.achievementColumn)),
+    ];
+
+    if (
+      labels[0] === "sales units" &&
+      labels[1] === "sales value" &&
+      labels[2] === "target units" &&
+      labels[3] === "target value" &&
+      labels[4] === "ach %"
+    ) {
+      blocks.push(block);
+      column += 4;
+    }
+  }
+
+  const rows: Record<string, unknown>[] = [];
+  for (let rowNumber = 3; rowNumber <= sheet.rowCount; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+    const employeeCrmId = readableCellValue(row.getCell(1));
+    const employeeHrId = readableCellValue(row.getCell(2));
+    const managerHrId = readableCellValue(row.getCell(3));
+    const month = readableCellValue(row.getCell(4));
+    const year = readableCellValue(row.getCell(5));
+    const employeeName = readableCellValue(row.getCell(6));
+    const territory = readableCellValue(row.getCell(7));
+
+    if (!shouldImportClosingSheetPersonRow({ employeeHrId, managerHrId, employeeName, territory })) continue;
+
+    for (const block of blocks) {
+      const salesUnits = readableCellValue(row.getCell(block.salesUnitsColumn));
+      const salesValue = readableCellValue(row.getCell(block.salesValueColumn));
+      const targetUnits = readableCellValue(row.getCell(block.targetUnitsColumn));
+      const targetValue = readableCellValue(row.getCell(block.targetValueColumn));
+      const achievement = readableCellValue(row.getCell(block.achievementColumn));
+
+      const hasMeasures = [salesUnits, salesValue, targetUnits, targetValue, achievement].some(
+        (value) => String(value ?? "").trim() !== ""
+      );
+      if (!hasMeasures) continue;
+
+      rows.push({
+        "CRM_ID": employeeCrmId,
+        "HR_ID": employeeHrId,
+        "Manager HR ID": managerHrId,
+        "Employee Name": employeeName,
+        "Territory": territory,
+        "Month": month,
+        "Year": year,
+        "Line": null,
+        "Type of Sales": "Closing Sheet",
+        "Family": buildClosingFamilyLabel(block.product),
+        "Product": block.product,
+        "Factory Price": deriveFactoryPrice({ salesUnits, salesValue, targetUnits, targetValue }),
+        "Sales Units": salesUnits,
+        "Sales Value": salesValue,
+        "Target Units": targetUnits,
+        "Target Value": targetValue,
+        "__sourceRowNumber": rowNumber,
+      });
+    }
+  }
+
+  return {
+    headers: ["CRM Code", "Med. Rep. Name"],
+    rows,
+  };
+}
+
+async function rowsFromWorkbook(file: File) {
   const workbook = new ExcelJS.Workbook();
   try {
     const buffer = await file.arrayBuffer();
@@ -74,33 +232,30 @@ async function rowsFromWorkbook(file: File) {
   } catch {
     throw new SalesWorkflowError(
       "invalid_workbook",
-      "The uploaded workbook could not be read. Please use a valid .xlsx, .csv, or .tsv file.",
+      "The uploaded workbook could not be read. Please use a valid .xlsx file.",
       400
     );
   }
 
   const sheet =
-    workbook.worksheets.find((worksheet) => {
-      const headers = sheetHeaders(worksheet);
-      return detectSchemaType(headers) !== "unsupported";
-    }) ?? workbook.worksheets[0];
+    workbook.worksheets.find((worksheet) => detectSchemaType(sheetHeaders(worksheet)) !== "unsupported") ??
+    workbook.worksheets[0];
 
   if (!sheet) {
     throw new SalesWorkflowError("invalid_workbook", "The uploaded workbook has no readable worksheets.", 400);
   }
 
   const headers = sheetHeaders(sheet);
-  const rows: Record<string, unknown>[] = [];
-  for (let rowIndex = 2; rowIndex <= sheet.rowCount; rowIndex += 1) {
-    const row = sheet.getRow(rowIndex);
-    const record = Object.fromEntries(
-      headers.map((header, index) => [header, readableCellValue(row.getCell(index + 1))])
+  if (detectSchemaType(headers) !== "closing_sheet") {
+    throw new SalesWorkflowError(
+      "unsupported_schema",
+      "The workbook schema is not supported. Upload the monthly closing sheet layout only.",
+      400,
+      { headers }
     );
-    const hasValue = Object.values(record).some((value) => String(value ?? "").trim() !== "");
-    if (hasValue) rows.push(record);
   }
 
-  return { headers, rows };
+  return extractClosingSheetRows(sheet);
 }
 
 export async function readUploadRows(file: File): Promise<ParsedUploadRows> {
@@ -128,31 +283,24 @@ function duplicateHash(line: string, month: number, year: number, rows: Record<s
 
 export async function parseSalesUpload(file: File, line: string, uploadedBy: string): Promise<SalesImportPayload> {
   const parsed = await readUploadRows(file);
-  if (parsed.schemaType === "unsupported") {
-    throw new SalesWorkflowError(
-      "unsupported_schema",
-      "The workbook schema is not supported. Use a sales export with columns like D.M. and Sales Value.",
-      400,
-      { headers: parsed.headers }
-    );
-  }
 
-  const parsedRecords = parsed.rows.map((row, index) => parseSalesRow(row, line, index + 2));
+  const parsedRecords = parsed.rows.map((row, index) =>
+    parseSalesRow(row, line, Number(row.__sourceRowNumber) || index + 2)
+  );
   const firstValid = parsedRecords.find((record) => record.month && record.year);
   const month = firstValid?.month || new Date().getMonth() + 1;
   const year = firstValid?.year || new Date().getFullYear();
-  const normalizedRecords = parsedRecords;
   const periods = [
     ...new Set(
-      normalizedRecords
+      parsedRecords
         .filter((record) => record.month && record.year)
         .map((record) => periodLabel(record.year, record.month))
     ),
   ].sort();
   const batchPeriod = periods.length > 1 ? `${periods[0]} to ${periods[periods.length - 1]}` : periodLabel(year, month);
-  const validRecords = normalizedRecords.filter((record) => record.validationState === "valid").length;
-  const warningRecords = normalizedRecords.filter((record) => record.validationState === "warning").length;
-  const failedRecords = normalizedRecords.filter((record) => record.validationState === "failed").length;
+  const validRecords = parsedRecords.filter((record) => record.validationState === "valid").length;
+  const warningRecords = parsedRecords.filter((record) => record.validationState === "warning").length;
+  const failedRecords = parsedRecords.filter((record) => record.validationState === "failed").length;
 
   return {
     batch: {
@@ -164,7 +312,7 @@ export async function parseSalesUpload(file: File, line: string, uploadedBy: str
       period: batchPeriod,
       status: failedRecords > 0 ? "needs_review" : "validated",
       schemaType: parsed.schemaType,
-      totalRecords: normalizedRecords.length,
+      totalRecords: parsedRecords.length,
       validRecords,
       warningRecords,
       failedRecords,
@@ -185,32 +333,6 @@ export async function parseSalesUpload(file: File, line: string, uploadedBy: str
       previewUrl: null,
       approvalBlockedReason: failedRecords > 0 ? "This batch contains failed rows." : null,
     },
-    records: normalizedRecords,
-  };
-}
-
-export async function parseTargetUpload(file: File): Promise<TargetUploadPayload> {
-  const parsed = await readUploadRows(file);
-  const parsedRecords = parsed.rows.map((row) => parseTargetRow(row));
-  const firstValid = parsedRecords.find((record) => record.month && record.year);
-  const month = firstValid?.month || new Date().getMonth() + 1;
-  const year = firstValid?.year || new Date().getFullYear();
-  const validRecords = parsedRecords.filter((record) => record.status === "valid").length;
-  const failedRecords = parsedRecords.filter((record) => record.status === "failed").length;
-  const batchId = crypto.randomUUID();
-
-  return {
-    batch: {
-      id: batchId,
-      fileName: file.name,
-      month,
-      year,
-      status: failedRecords > 0 ? "uploaded" : "validated",
-      totalRecords: parsedRecords.length,
-      validRecords,
-      failedRecords,
-      createdAt: new Date().toISOString(),
-    },
-    records: parsedRecords.map((record) => ({ ...record, batchId })),
+    records: parsedRecords,
   };
 }

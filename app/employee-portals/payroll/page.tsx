@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 
 import { MedicalRepPayrollPage } from "@/components/employee-portal/employee-portal-dashboard";
+import {
+  EmployeePortalEmptyState,
+  EmployeePortalPageShell,
+} from "@/components/employee-portal/enterprise-shell";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
@@ -10,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function EmployeePortalPayrollPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) !== "employee-portal") {
-    redirect("/payroll/dashboard");
+    redirect("/payroll");
   }
   await assertPermission(access, "payroll", "read");
 
@@ -23,12 +27,20 @@ export default async function EmployeePortalPayrollPage() {
 
   if (!data) {
     return (
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <p className="text-lg font-semibold text-slate-900">Portal Unavailable</p>
-        <p className="mt-2 text-sm text-slate-600">Your command center is temporarily unavailable. Please try again in a moment.</p>
-      </div>
+      <EmployeePortalEmptyState
+        message="Your command center is temporarily unavailable. Please try again in a moment."
+        title="Portal Unavailable"
+      />
     );
   }
 
-  return <MedicalRepPayrollPage data={data} />;
+  return (
+    <EmployeePortalPageShell
+      badge="Employee Portal"
+      description="Review payslips, salary status, and payroll timeline from one center."
+      title="Payroll Center"
+    >
+      <MedicalRepPayrollPage data={data} />
+    </EmployeePortalPageShell>
+  );
 }

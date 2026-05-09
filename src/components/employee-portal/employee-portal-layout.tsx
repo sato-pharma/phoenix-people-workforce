@@ -1,34 +1,96 @@
 "use client";
 
 import { startTransition, useEffect, useEffectEvent, useState } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, FileText, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness } from "lucide-react";
+import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, FileText, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, MapPinned } from "lucide-react";
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
+import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 
 function navItemClass(active: boolean) {
   return active
-    ? "bg-orange-50 border-orange-200 text-orange-700 shadow-sm"
-    : "border-transparent text-slate-600 hover:bg-slate-50 hover:border-slate-200 hover:text-slate-900";
+    ? "border-l-2 border-orange-500 bg-orange-50/70 text-slate-900"
+    : "border-l-2 border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900";
 }
 
 type EmployeePortalNavProps = {
   data: MedicalRepPortalData;
-  showManagementTab?: boolean;
-  showTeamPerformanceTab?: boolean;
-  showMedRepsPerformanceTab?: boolean;
-  showDsmsPerformanceTab?: boolean;
-  showVacanciesTab?: boolean;
+  visibility: EmployeePortalNavVisibility;
 };
 
-export function EmployeePortalTopNav({
-  data,
+type EmployeePortalNavItem = {
+  href: string;
+  label: string;
+  icon: typeof Activity;
+};
+
+type EmployeePortalNavSection = {
+  items: EmployeePortalNavItem[];
+  title: string;
+};
+
+function buildEmployeePortalSections({
+  showExpenseActionTab = false,
   showManagementTab = false,
   showTeamPerformanceTab = false,
   showMedRepsPerformanceTab = false,
   showDsmsPerformanceTab = false,
+  showTeamExpensesTab = false,
+  showBrickCoverageTab = false,
   showVacanciesTab = false,
-}: EmployeePortalNavProps & { showMedRepsPerformanceTab?: boolean; showDsmsPerformanceTab?: boolean; showVacanciesTab?: boolean }) {
+  showProbationTab = false,
+  showOrganogramTab = false,
+}: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
+  return [
+    {
+      title: "My Workspace",
+      items: [
+        { href: "/employee-portals", label: "Dashboard", icon: Activity },
+        { href: "/employee-portals/sales", label: "My Performance", icon: LineChartIcon },
+        { href: "/employee-portals/incentive", label: "Incentive", icon: Calculator },
+        { href: "/payslips", label: "Payslips", icon: CircleDollarSign },
+        ...(showManagementTab ? [{ href: "/employee-portals/expense-dashboard", label: "Workload & Expense", icon: ReceiptText }] : []),
+      ],
+    },
+    {
+      title: "Line Performance",
+      items: [
+        ...(showTeamPerformanceTab ? [{ href: "/employee-portals/team-performance", label: "Team Performance", icon: Trophy }] : []),
+        ...(showMedRepsPerformanceTab ? [{ href: "/employee-portals/med-reps-performance", label: "MRs Performance", icon: Users }] : []),
+        ...(showDsmsPerformanceTab ? [{ href: "/employee-portals/dsms-performance", label: "DSMs Performance", icon: BriefcaseBusiness }] : []),
+        ...(showTeamExpensesTab ? [{ href: "/employee-portals/team-expenses", label: "Team Expenses", icon: ReceiptText }] : []),
+        ...(showBrickCoverageTab ? [{ href: "/employee-portals/brick-coverage", label: "Brick Coverage", icon: MapPinned }] : []),
+      ],
+    },
+    {
+      title: "Line Operations",
+      items: [
+        ...(showVacanciesTab ? [{ href: "/employee-portals/vacancies", label: "Vacancies", icon: BriefcaseBusiness }] : []),
+        ...(showProbationTab ? [{ href: "/employee-portals/probation", label: "Probation Tracker", icon: ClipboardCheck }] : []),
+        ...(showOrganogramTab ? [{ href: "/employee-portals/organogram", label: "Organogram", icon: Building2 }] : []),
+      ],
+    },
+    {
+      title: "Actions",
+      items: [
+        ...(showExpenseActionTab ? [{ href: "/employee/outstation/new", label: "Expense", icon: ReceiptText }] : []),
+      ],
+    },
+    {
+      title: "Support",
+      items: [
+        { href: "/employee-portals/earnings", label: "Earnings", icon: FileText },
+        { href: "/employee-portals/contact-hr-support", label: "Request Support", icon: HelpCircle },
+      ],
+    },
+  ].filter((section) => section.items.length > 0);
+}
+
+export function EmployeePortalTopNav({
+  data,
+  visibility,
+}: EmployeePortalNavProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pathname = usePathname();
   const handlePathnameChange = useEffectEvent(() => {
@@ -50,19 +112,7 @@ export function EmployeePortalTopNav({
     .join("")
     .toUpperCase();
 
-  const menuItems = [
-    { href: "/employee-portals", label: "Dashboard", icon: Activity },
-    { href: "/employee-portals/sales", label: "My Performance", icon: LineChartIcon },
-    { href: "/employee-portals/incentive", label: "Incentive", icon: Calculator },
-    ...(showTeamPerformanceTab ? [{ href: "/employee-portals/team-performance", label: "Team Performance", icon: Trophy }] : []),
-    ...(showMedRepsPerformanceTab ? [{ href: "/employee-portals/med-reps-performance", label: "MRs Performance", icon: Users }] : []),
-    ...(showDsmsPerformanceTab ? [{ href: "/employee-portals/dsms-performance", label: "DSMs Performance", icon: BriefcaseBusiness }] : []),
-    ...(showVacanciesTab ? [{ href: "/employee-portals/vacancies", label: "Vacancies", icon: BriefcaseBusiness }] : []),
-    { href: "/employee-portals/earnings", label: "Earnings", icon: FileText },
-    { href: "/payslips", label: "Payslips", icon: CircleDollarSign },
-    ...(showManagementTab ? [{ href: "/employee-portals/expense-dashboard", label: "Workload & Expense", icon: ReceiptText }] : []),
-    { href: "/employee-portals/contact-hr-support", label: "Request Support", icon: HelpCircle },
-  ];
+  const menuSections = buildEmployeePortalSections(visibility);
 
   const handleLogout = async () => {
     try {
@@ -74,8 +124,8 @@ export function EmployeePortalTopNav({
 
   return (
     <>
-      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/95 shadow-[0_8px_26px_rgba(15,23,42,0.04)] backdrop-blur">
-        <div className="mx-auto flex w-full max-w-[1600px] items-center gap-3 px-4 py-3 lg:px-6">
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-[1560px] items-center gap-3 px-4 py-3 lg:px-6">
           <button
             aria-label="Menu"
             className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700 lg:hidden"
@@ -90,7 +140,7 @@ export function EmployeePortalTopNav({
             <Search className="pointer-events-none absolute left-3 h-4 w-4 text-slate-400" />
             <input
               aria-label="Search"
-              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:bg-white focus:shadow-[0_0_0_4px_rgba(249,115,22,0.08)]"
+              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 pl-9 pr-3 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:bg-white focus:shadow-[0_0_0_4px_rgba(249,115,22,0.08)]"
               placeholder="Search anything..."
               type="text"
             />
@@ -143,20 +193,29 @@ export function EmployeePortalTopNav({
           </button>
         </div>
 
-        <nav className="space-y-2">
-          {menuItems.map((item) => {
-            const active = pathname === item.href;
-            return (
-              <a
-                key={item.label}
-                className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition duration-200 border ${navItemClass(active)}`}
-                href={item.href}
-              >
-                <item.icon className="h-5 w-5" />
-                <span>{item.label}</span>
-              </a>
-            );
-          })}
+        <nav className="space-y-5">
+          {menuSections.map((section) => (
+            <div key={section.title}>
+              <p className="mb-2 px-2 text-[11px] font-bold uppercase tracking-[0.18em] text-orange-600">
+                {section.title}
+              </p>
+              <div className="space-y-2">
+                {section.items.map((item) => {
+                  const active = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.label}
+                      className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition duration-200 border ${navItemClass(active)}`}
+                      href={item.href}
+                    >
+                      <item.icon className="h-5 w-5" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
           
           <div className="pt-4 mt-4 border-t border-slate-100">
             <button
@@ -189,33 +248,13 @@ export function EmployeePortalTopNav({
 }
 
 export function EmployeePortalSidebar({
-  showManagementTab = false,
-  showTeamPerformanceTab = false,
-  showMedRepsPerformanceTab = false,
-  showDsmsPerformanceTab = false,
-  showVacanciesTab = false,
+  visibility,
 }: {
-  showManagementTab?: boolean;
-  showTeamPerformanceTab?: boolean;
-  showMedRepsPerformanceTab?: boolean;
-  showDsmsPerformanceTab?: boolean;
-  showVacanciesTab?: boolean;
+  visibility: EmployeePortalNavVisibility;
 }) {
   const pathname = usePathname();
 
-  const items = [
-    { href: "/employee-portals", label: "Dashboard", icon: Activity },
-    { href: "/employee-portals/sales", label: "My Performance", icon: LineChartIcon },
-    { href: "/employee-portals/incentive", label: "Incentive", icon: Calculator },
-    ...(showTeamPerformanceTab ? [{ href: "/employee-portals/team-performance", label: "Team Performance", icon: Trophy }] : []),
-    ...(showMedRepsPerformanceTab ? [{ href: "/employee-portals/med-reps-performance", label: "MRs Performance", icon: Users }] : []),
-    ...(showDsmsPerformanceTab ? [{ href: "/employee-portals/dsms-performance", label: "DSMs Performance", icon: BriefcaseBusiness }] : []),
-    ...(showVacanciesTab ? [{ href: "/employee-portals/vacancies", label: "Vacancies", icon: BriefcaseBusiness }] : []),
-    { href: "/employee-portals/earnings", label: "Earnings", icon: FileText },
-    { href: "/payslips", label: "Payslips", icon: CircleDollarSign },
-    ...(showManagementTab ? [{ href: "/employee-portals/expense-dashboard", label: "Workload & Expense", icon: ReceiptText }] : []),
-    { href: "/employee-portals/contact-hr-support", label: "Request Support", icon: HelpCircle },
-  ];
+  const sections = buildEmployeePortalSections(visibility);
 
   const handleLogout = async () => {
     try {
@@ -226,22 +265,29 @@ export function EmployeePortalSidebar({
   };
 
   return (
-    <aside className="hidden w-[220px] shrink-0 lg:block">
-      <div className="sticky top-[96px] space-y-2 rounded-3xl border border-slate-100 bg-white p-3 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-        {items.map((item) => {
-          const hrefPath = item.href.split("#")[0];
-          const active = pathname === hrefPath;
-          return (
-            <a
-              key={item.label}
-              className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 border ${navItemClass(active)}`}
-              href={item.href}
-            >
-              <item.icon className="h-4 w-4" />
-              <span>{item.label}</span>
-            </a>
-          );
-        })}
+      <aside className="hidden w-[228px] shrink-0 lg:block">
+      <div className="sticky top-[96px] space-y-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        {sections.map((section) => (
+          <div key={section.title} className="space-y-1.5">
+            <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-[0.18em] text-orange-600">
+              {section.title}
+            </p>
+            {section.items.map((item) => {
+              const hrefPath = item.href.split("#")[0];
+              const active = pathname === hrefPath;
+              return (
+                <Link
+                  key={item.label}
+                  className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 border ${navItemClass(active)}`}
+                  href={item.href}
+                >
+                  <item.icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        ))}
         <button
           className="mt-2 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
           onClick={handleLogout}

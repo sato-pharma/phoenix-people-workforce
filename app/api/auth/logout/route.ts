@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-import { getRequestIp, getRequestUserAgent, writeAuthAudit } from "@/lib/auth/audit";
+import { getRequestIp, writeAuthAudit } from "@/lib/auth/audit";
 import { phoenixSessionCookieName, verifySessionToken } from "@/lib/auth/session";
 import {
   phoenixSupabaseAccessTokenCookieName,
@@ -15,8 +15,7 @@ export async function POST(request: Request) {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(phoenixSessionCookieName)?.value ?? null;
   const session = verifySessionToken(sessionToken);
-  const ip = getRequestIp(request);
-  const userAgent = getRequestUserAgent(request);
+  
   
   cookieStore.delete(phoenixSupabaseAccessTokenCookieName);
   cookieStore.delete(phoenixSupabaseRefreshTokenCookieName);
@@ -24,19 +23,14 @@ export async function POST(request: Request) {
 
   if (session) {
     await writeAuthAudit({
-      actorHrId: session.hrId,
       actorLoginId: session.loginId,
-      actorRole: session.role,
       entityId: session.loginId,
       newValues: {
-        ip,
+        ip: getRequestIp(request),
         sessionId: session.sid,
         sessionVersion: session.ver,
-        userAgent,
       },
-      requestIp: ip,
       summary: "Logout succeeded",
-      userAgent,
     }).catch(() => undefined);
   }
   

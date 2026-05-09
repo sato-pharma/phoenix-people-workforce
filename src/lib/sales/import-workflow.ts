@@ -1,4 +1,4 @@
-﻿import { createSalesImport, createTargetBatch } from "@/lib/sales/service";
+import { createSalesImport } from "@/lib/sales/service";
 import {
   makeBatchSummary,
   salesSuccess,
@@ -7,8 +7,8 @@ import {
   type SalesActionResponse,
   type UploadIssueRow,
 } from "@/lib/sales/contracts";
-import { parseSalesUpload, parseTargetUpload } from "@/lib/sales/parser";
-import { linkSalesRecords, summarizeSalesLinkage } from "@/lib/sales/employees";
+import { parseSalesUpload } from "@/lib/sales/parser";
+import { filterClosingSheetRollupRecords, linkSalesRecords, summarizeSalesLinkage } from "@/lib/sales/employees";
 import type { SalesBatchReconciliation, SalesRecordInput } from "@/lib/sales/types";
 
 type UploadSummaryDetails = {
@@ -174,6 +174,14 @@ export async function runSalesImportWorkflow(input: {
   }
 
   const parsed = await parseSalesUpload(input.file, input.line, input.uploadedBy);
+  if (parsed.batch.schemaType === "closing_sheet") {
+    parsed.records = await filterClosingSheetRollupRecords(parsed.records);
+    parsed.batch.totalRecords = parsed.records.length;
+    parsed.batch.validRecords = parsed.records.filter((record) => record.validationState === "valid").length;
+    parsed.batch.warningRecords = parsed.records.filter((record) => record.validationState === "warning").length;
+    parsed.batch.failedRecords = parsed.records.filter((record) => record.validationState === "failed").length;
+  }
+
   const validationSummary = summarizeValidation(parsed.records);
   const parsedLinkage = await summarizeSalesLinkage(await linkSalesRecords(parsed.records));
   const validationTotals = { ...summarizeUploadTotals(parsed.records), ...parsedLinkage };
@@ -225,36 +233,5 @@ export async function runSalesImportWorkflow(input: {
     redirectTo: result.previewUrl ?? undefined,
     previewUrl: result.previewUrl ?? undefined,
     batchSummary,
-  });
-}
-
-export async function runTargetUploadWorkflow(input: {
-  file: File;
-}): Promise<SalesActionResponse<UploadSummaryDetails>> {
-  if (!(input.file instanceof File)) {
-    throw new SalesWorkflowError("invalid_input", "Target template file is required.", 400);
-  }
-
-  const parsed = await parseTargetUpload(input.file);
-  const result = await createTargetBatch(parsed);
-
-  return salesSuccess({
-    message: `Uploaded ${result.fileName}. ${result.validRecords} valid target rows and ${result.failedRecords} failed rows.`,
-    batchSummary: {
-      id: result.id,
-      fileName: result.fileName,
-      line: "Targets",
-      period: `${result.year}-${String(result.month).padStart(2, "0")}`,
-      status: result.status,
-      totalRecords: result.totalRecords,
-      validRecords: result.validRecords,
-      warningRecords: 0,
-      failedRecords: result.failedRecords,
-    },
-    details: {
-      blockingReasons: result.blockingReasons,
-      topFailureReasons: result.topFailureReasons,
-      topWarningReasons: result.topWarningReasons,
-    },
   });
 }

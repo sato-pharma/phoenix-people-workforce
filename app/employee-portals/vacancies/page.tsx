@@ -2,6 +2,11 @@ import { redirect } from "next/navigation";
 import { BriefcaseBusiness, Building2, MapPinned, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import {
+  EmployeePortalActionBar,
+  EmployeePortalPageShell,
+  EmployeePortalEmptyState,
+} from "@/components/employee-portal/enterprise-shell";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePortalVacancies } from "@/lib/employee-portal/service";
@@ -74,13 +79,10 @@ export default async function EmployeePortalVacanciesPage({
 
   if (!data) {
     return (
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <BriefcaseBusiness className="mx-auto mb-3 h-10 w-10 text-slate-300" />
-        <p className="text-lg font-semibold text-slate-900">Vacancies Unavailable</p>
-        <p className="mt-2 text-sm text-slate-500">
-          This page is available for DSM and NSM roles when vacancy scope can be resolved.
-        </p>
-      </div>
+      <EmployeePortalEmptyState
+        message="This page is available for DSM and NSM roles when vacancy scope can be resolved."
+        title="Vacancies Unavailable"
+      />
     );
   }
 
@@ -114,19 +116,22 @@ export default async function EmployeePortalVacanciesPage({
     : `Open vacancies assigned under ${data.scopeLabel}.`;
 
   return (
-    <div className="space-y-6">
-      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
+    <EmployeePortalPageShell description={pageSubtitle} title={pageTitle}>
+      <Card className="rounded-2xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.14em] text-slate-500">
               {isNsm ? "National Sales View" : "District Sales View"}
             </p>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-900">{pageTitle}</h1>
-            <p className="mt-1 text-sm text-slate-500">{pageSubtitle}</p>
+            <p className="mt-1 text-sm text-slate-500">{pageTitle}</p>
           </div>
-          <Badge className="px-3 py-1.5 text-xs font-semibold" variant="warning">
-            {filteredVacancies.length} Open
-          </Badge>
+          <EmployeePortalActionBar
+            actions={
+              <Badge className="px-3 py-1.5 text-xs font-semibold" variant="warning">
+                {filteredVacancies.length} Open
+              </Badge>
+            }
+          />
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -292,6 +297,6 @@ export default async function EmployeePortalVacanciesPage({
           </div>
         </Card>
       )}
-    </div>
+    </EmployeePortalPageShell>
   );
 }

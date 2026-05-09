@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalIncentivePage } from "@/components/employee-portal/employee-portal-dashboard";
+import {
+  EmployeePortalEmptyState,
+  EmployeePortalPageShell,
+} from "@/components/employee-portal/enterprise-shell";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
@@ -24,13 +28,19 @@ export default async function EmployeePortalIncentivePageRoute() {
 
   if (!data) {
     return (
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <p className="text-lg font-semibold text-slate-900">Portal Unavailable</p>
-        <p className="mt-2 text-sm text-slate-600">Unable to load incentive data. Please try again later.</p>
-      </div>
+      <EmployeePortalEmptyState
+        message="Unable to load incentive data. Please try again later."
+        title="Portal Unavailable"
+      />
     );
   }
 
-  return <EmployeePortalIncentivePage data={data} />;
+  return (
+    <EmployeePortalPageShell
+      description="Review your incentive progress and earnings incentives in the same place."
+      title="Incentive Center"
+    >
+      <EmployeePortalIncentivePage data={data} />
+    </EmployeePortalPageShell>
+  );
 }
-

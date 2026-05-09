@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   AlertCircle,
@@ -13,6 +13,15 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
+import {
+  AdminCallout,
+  AdminInsightChip,
+  AdminPageHero,
+  AdminSectionHeader,
+  AdminStatCard,
+  AdminTableShell,
+  adminPanelClassName,
+} from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,32 +34,6 @@ type VacanciesReportProps = {
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
 };
-
-function SummaryCard({
-  label,
-  tone = "warning",
-  value,
-}: {
-  label: string;
-  tone?: "neutral" | "success" | "warning" | "danger";
-  value: number;
-}) {
-  const toneClass = {
-    danger: "bg-rose-50 text-rose-800",
-    neutral: "bg-slate-50 text-slate-900",
-    success: "bg-emerald-50 text-emerald-800",
-    warning: "bg-orange-50 text-orange-800",
-  }[tone];
-
-  return (
-    <div className={cn("rounded-xl border border-slate-200 p-4", toneClass)}>
-      <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{label}</p>
-      <p className="mt-2 font-mono text-2xl font-bold">
-        {value}
-      </p>
-    </div>
-  );
-}
 
 function emptyText(value: string | number | null | undefined) {
   return value === null || value === undefined || value === "" ? "-" : String(value);
@@ -101,7 +84,7 @@ function groupCounts(
     .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
 }
 
-function MiniBreakdown({
+function BreakdownPanel({
   icon,
   items,
   title,
@@ -114,22 +97,22 @@ function MiniBreakdown({
   const total = items.reduce((sum, item) => sum + item.count, 0);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <Card className={`${adminPanelClassName} p-5`}>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-text">{title}</h2>
-          <p className="mt-1 text-sm text-text-secondary">
-            Top groups by visible vacancies.
+          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+            {title}
           </p>
+          <p className="mt-1 text-sm text-[#64748B]">Top groups by visible vacancies.</p>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-primary">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFF7ED] text-[#F97316]">
           {icon}
         </div>
       </div>
 
       <div className="mt-5 space-y-3">
         {topItems.length === 0 ? (
-          <p className="text-sm text-text-secondary">No data available.</p>
+          <p className="text-sm text-[#64748B]">No data available.</p>
         ) : (
           topItems.map((item) => {
             const width = total > 0 ? `${Math.max((item.count / total) * 100, 6)}%` : "0%";
@@ -137,14 +120,12 @@ function MiniBreakdown({
             return (
               <div key={item.name}>
                 <div className="flex items-center justify-between gap-3 text-sm">
-                  <span className="truncate font-medium text-text">
-                    {item.name}
-                  </span>
-                  <span className="text-text-secondary">{item.count}</span>
+                  <span className="truncate font-medium text-[#0F172A]">{item.name}</span>
+                  <span className="text-[#64748B]">{item.count}</span>
                 </div>
-                <div className="mt-2 h-2 rounded-full bg-slate-100">
+                <div className="mt-2 h-2 rounded-full bg-[#E2E8F0]">
                   <div
-                    className="h-2 rounded-full bg-primary shadow-[0_0_12px_rgba(249,115,22,0.24)]"
+                    className="h-2 rounded-full bg-[#F97316]"
                     style={{ width }}
                   />
                 </div>
@@ -153,7 +134,7 @@ function MiniBreakdown({
           })
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -172,13 +153,15 @@ function SelectFilter({
 }) {
   return (
     <label className={cn("block", className)}>
-      <span className="sr-only">{label}</span>
+      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+        {label}
+      </span>
       <select
-        className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className="h-10 w-full rounded-xl border border-[#D7E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
-        <option value="">{label}</option>
+        <option value="">All {label}s</option>
         {options.map((option) => (
           <option key={option} value={option}>
             {option}
@@ -193,9 +176,7 @@ export function VacanciesReport({
   initialError = null,
   initialReport = null,
 }: VacanciesReportProps) {
-  const [report, setReport] = React.useState<VacancyReportData | null>(
-    initialReport,
-  );
+  const [report, setReport] = React.useState<VacancyReportData | null>(initialReport);
   const [error, setError] = React.useState<string | null>(initialError);
   const [isLoading, setIsLoading] = React.useState(false);
   const [areaFilter, setAreaFilter] = React.useState("");
@@ -238,6 +219,7 @@ export function VacanciesReport({
       setIsLoading(false);
     }
   }, []);
+
   const filterOptions = React.useMemo(() => {
     const rows = report?.rows ?? [];
 
@@ -246,13 +228,12 @@ export function VacanciesReport({
       departments: uniqueOptions(rows.map((row) => row.departmentName)),
       lines: uniqueOptions(rows.map((row) => row.lineName)),
       managers: uniqueOptions(rows.map((row) => row.managerName)),
-      positions: uniqueOptions(
-        rows.map((row) => row.positionTitle ?? row.jobTitle),
-      ),
+      positions: uniqueOptions(rows.map((row) => row.positionTitle ?? row.jobTitle)),
       regions: uniqueOptions(rows.map((row) => row.regionName)),
       statuses: uniqueOptions(rows.map((row) => row.status)),
     };
   }, [report]);
+
   const filteredRows = React.useMemo(() => {
     const rows = report?.rows ?? [];
     const normalizedQuery = query.trim().toLowerCase();
@@ -298,6 +279,7 @@ export function VacanciesReport({
     report,
     statusFilter,
   ]);
+
   const filteredSummary = React.useMemo(() => {
     const openRows = filteredRows.filter((row) => row.status === "open");
 
@@ -305,19 +287,21 @@ export function VacanciesReport({
       areasAffected: uniqueOptions(openRows.map((row) => row.areaName)).length,
       linesAffected: uniqueOptions(openRows.map((row) => row.lineName)).length,
       openVacancies: openRows.length,
-      positionsAffected: uniqueOptions(
-        openRows.map((row) => row.positionTitle ?? row.jobTitle),
-      ).length,
+      positionsAffected: uniqueOptions(openRows.map((row) => row.positionTitle ?? row.jobTitle)).length,
+      totalVacancies: filteredRows.length,
     };
   }, [filteredRows]);
+
   const breakdowns = React.useMemo(
     () => ({
       lines: groupCounts(filteredRows, (row) => row.lineName),
       managers: groupCounts(filteredRows, (row) => row.managerName),
       regions: groupCounts(filteredRows, (row) => row.regionName),
+      departments: groupCounts(filteredRows, (row) => row.departmentName),
     }),
     [filteredRows],
   );
+
   const hasActiveFilters = Boolean(
     areaFilter ||
       departmentFilter ||
@@ -328,6 +312,7 @@ export function VacanciesReport({
       regionFilter ||
       statusFilter,
   );
+
   const activeFilterCount = [
     areaFilter,
     departmentFilter,
@@ -392,24 +377,12 @@ export function VacanciesReport({
   }
 
   return (
-    <Card className="overflow-hidden border-slate-200 bg-white p-0 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
-      <div className="border-b border-slate-200 bg-slate-950 px-5 py-5 text-white">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
-              Workforce Reports
-            </p>
-            <h1 className="mt-2 text-2xl font-bold">Vacancies Report</h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-300">
-              Open positions recorded from employee master data rows without HR_ID, grouped by the Phoenix organization structure.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="neutral">
-              {report ? `${filteredRows.length} visible` : "No data"}
-            </Badge>
+    <div className="space-y-6">
+      <AdminPageHero
+        actions={
+          <div className="flex flex-wrap gap-2">
             <Button
-              className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
+              className="rounded-xl bg-[#0F172A] px-3 py-2 text-xs text-white hover:bg-[#111827]"
               disabled={!report || filteredRows.length === 0}
               onClick={exportCsv}
               variant="secondary"
@@ -418,7 +391,7 @@ export function VacanciesReport({
               Export CSV
             </Button>
             <Button
-              className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
+              className="rounded-xl px-3 py-2 text-xs"
               disabled={isLoading}
               onClick={() => void loadReport()}
               variant="secondary"
@@ -427,178 +400,193 @@ export function VacanciesReport({
               Refresh
             </Button>
           </div>
-        </div>
-      </div>
+        }
+        description="Open positions sourced from employee master records without HR_ID. Inspect vacancies by area, line, manager, and status, then export filtered extracts."
+        eyebrow="Workforce Reports"
+        icon={<Building2 className="h-3.5 w-3.5" />}
+        title="Vacancies Report"
+        badges={
+          <div className="flex flex-wrap gap-2 text-xs">
+            <AdminInsightChip>Total: {filteredSummary.totalVacancies}</AdminInsightChip>
+            <AdminInsightChip tone="orange">Open: {filteredSummary.openVacancies}</AdminInsightChip>
+            <AdminInsightChip tone="slate">Lines: {filteredSummary.linesAffected}</AdminInsightChip>
+            <AdminInsightChip>Areas: {filteredSummary.areasAffected}</AdminInsightChip>
+          </div>
+        }
+      />
 
-      <div className="space-y-4 p-5">
-
-      {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <div className="flex gap-3">
-            <AlertCircle className="mt-0.5 h-5 w-5 text-danger" />
-            <div>
-              <h2 className="text-base font-semibold text-text">
-                Vacancy report unavailable
-              </h2>
-              <p className="mt-1 text-sm text-text-secondary">{error}</p>
-            </div>
+      <AdminTableShell
+        description="Narrow to the exact vacancy set you need before reviewing manager, location, and position risk."
+        title="Filters"
+      >
+        <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-[1.4fr_repeat(4,minmax(0,1fr))]">
+          <label className="relative block">
+            <span className="sr-only">Search vacancies</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#64748B]" />
+            <Input
+              className="h-10 bg-white pl-9"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search vacancy, area, line, position..."
+              value={query}
+            />
+          </label>
+          <SelectFilter
+            label="Department"
+            onChange={setDepartmentFilter}
+            options={filterOptions.departments}
+            value={departmentFilter}
+          />
+          <SelectFilter
+            label="Line"
+            onChange={setLineFilter}
+            options={filterOptions.lines}
+            value={lineFilter}
+          />
+          <SelectFilter
+            label="Area"
+            onChange={setAreaFilter}
+            options={filterOptions.areas}
+            value={areaFilter}
+          />
+          <SelectFilter
+            label="Region"
+            onChange={setRegionFilter}
+            options={filterOptions.regions}
+            value={regionFilter}
+          />
+          <SelectFilter
+            label="Manager"
+            onChange={setManagerFilter}
+            options={filterOptions.managers}
+            value={managerFilter}
+          />
+          <SelectFilter
+            label="Position"
+            onChange={setPositionFilter}
+            options={filterOptions.positions}
+            value={positionFilter}
+          />
+          <SelectFilter
+            label="Status"
+            onChange={setStatusFilter}
+            options={filterOptions.statuses}
+            value={statusFilter}
+          />
+          <div className="flex items-end">
+            <Button
+              className="h-10 gap-2 whitespace-nowrap"
+              disabled={!hasActiveFilters}
+              onClick={clearFilters}
+              variant="secondary"
+            >
+              <X className="h-4 w-4" />
+              Clear {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
+            </Button>
           </div>
         </div>
+      </AdminTableShell>
+
+      {error ? (
+        <AdminCallout tone="danger">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <h2 className="text-sm font-bold text-[#991B1B]">Vacancy report unavailable</h2>
+            <p className="mt-1 text-sm text-[#991B1B]">{error}</p>
+          </div>
+        </AdminCallout>
       ) : null}
 
       {isLoading && !report ? (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div className="flex items-center gap-3 text-sm text-text-secondary">
+        <Card className={`${adminPanelClassName} p-4`}>
+          <div className="flex items-center gap-3 text-sm text-[#64748B]">
             <LoadingSpinner />
             Loading vacancies...
           </div>
-        </div>
+        </Card>
       ) : null}
 
       {report ? (
         <>
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <AdminStatCard
+              description="Vacancies currently marked as open and available"
+              icon={<BriefcaseBusiness className="h-5 w-5" />}
               label="Open Vacancies"
-              tone="warning"
               value={filteredSummary.openVacancies}
             />
-            <SummaryCard
+            <AdminStatCard
+              description="Lines that currently have open vacancies"
+              icon={<Layers3 className="h-5 w-5" />}
               label="Lines Affected"
-              tone="neutral"
               value={filteredSummary.linesAffected}
             />
-            <SummaryCard
+            <AdminStatCard
+              description="Areas reporting open positions"
+              icon={<Building2 className="h-5 w-5" />}
               label="Areas Affected"
-              tone="neutral"
               value={filteredSummary.areasAffected}
             />
-            <SummaryCard
+            <AdminStatCard
+              description="Distinct positions in the active filter set"
+              icon={<UsersRound className="h-5 w-5" />}
               label="Positions Affected"
-              tone="neutral"
               value={filteredSummary.positionsAffected}
             />
           </section>
 
-          <section className="grid gap-3 xl:grid-cols-3">
-            <MiniBreakdown
-              icon={<Layers3 className="h-5 w-5" />}
-              items={breakdowns.regions}
-              title="Region Breakdown"
+          <section className="grid gap-3 xl:grid-cols-4">
+            <BreakdownPanel
+              icon={<Building2 className="h-5 w-5" />}
+              items={breakdowns.departments}
+              title="Department Breakdown"
             />
-            <MiniBreakdown
-              icon={<BriefcaseBusiness className="h-5 w-5" />}
-              items={breakdowns.lines}
-              title="Line Breakdown"
-            />
-            <MiniBreakdown
+            <BreakdownPanel
               icon={<UsersRound className="h-5 w-5" />}
               items={breakdowns.managers}
               title="Manager Breakdown"
             />
+            <BreakdownPanel
+              icon={<Layers3 className="h-5 w-5" />}
+              items={breakdowns.lines}
+              title="Line Breakdown"
+            />
+            <BreakdownPanel
+              icon={<Building2 className="h-5 w-5" />}
+              items={breakdowns.regions}
+              title="Region Breakdown"
+            />
           </section>
 
-          <div className="rounded-xl border border-slate-200 bg-white">
-            <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50 px-4 py-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <h2 className="text-base font-semibold text-text">
-                  Vacancy Records
-                </h2>
-                <p className="mt-1 text-sm text-text-secondary">
-                  Showing {filteredRows.length} of{" "}
-                  {report.summary.totalVacancies} vacancy records.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 text-primary">
-                <Building2 className="h-5 w-5" />
-                <Badge variant="warning">{filteredRows.length} visible</Badge>
-              </div>
-            </div>
-
-            <div className="grid gap-3 border-b border-slate-200 bg-white p-4 xl:grid-cols-[1.6fr_repeat(7,minmax(0,1fr))_auto]">
-              <label className="relative block">
-                <span className="sr-only">Search vacancies</span>
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
-                <Input
-                  className="bg-white pl-9"
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search vacancy, area, line, position..."
-                  value={query}
-                />
-              </label>
-              <SelectFilter
-                label="Department"
-                onChange={setDepartmentFilter}
-                options={filterOptions.departments}
-                value={departmentFilter}
-              />
-              <SelectFilter
-                label="Line"
-                onChange={setLineFilter}
-                options={filterOptions.lines}
-                value={lineFilter}
-              />
-              <SelectFilter
-                label="Area"
-                onChange={setAreaFilter}
-                options={filterOptions.areas}
-                value={areaFilter}
-              />
-              <SelectFilter
-                label="Region"
-                onChange={setRegionFilter}
-                options={filterOptions.regions}
-                value={regionFilter}
-              />
-              <SelectFilter
-                label="Manager"
-                onChange={setManagerFilter}
-                options={filterOptions.managers}
-                value={managerFilter}
-              />
-              <SelectFilter
-                label="Position"
-                onChange={setPositionFilter}
-                options={filterOptions.positions}
-                value={positionFilter}
-              />
-              <SelectFilter
-                label="Status"
-                onChange={setStatusFilter}
-                options={filterOptions.statuses}
-                value={statusFilter}
-              />
-              <Button
-                className="gap-2 whitespace-nowrap"
-                disabled={!hasActiveFilters}
-                onClick={clearFilters}
-                variant="secondary"
-              >
-                <X className="h-4 w-4" />
-                Clear {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
-              </Button>
-            </div>
-
+          <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+            <AdminSectionHeader
+              action={
+                <Badge variant="neutral" className="px-3 py-1 text-xs">
+                  {filteredRows.length} visible
+                </Badge>
+              }
+              description={`Showing ${filteredRows.length} of ${report.summary.totalVacancies} vacancy records.`}
+              title="Vacancy Records"
+            />
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1150px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-100 text-xs uppercase tracking-[0.12em] text-text-secondary">
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Vacancy</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Position</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Department</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Line</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Region</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Area</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Manager</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Source</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Status</th>
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+                  <tr>
+                    <th className="px-4 py-3">Vacancy</th>
+                    <th className="px-4 py-3">Position</th>
+                    <th className="px-4 py-3">Department</th>
+                    <th className="px-4 py-3">Line</th>
+                    <th className="px-4 py-3">Region</th>
+                    <th className="px-4 py-3">Area</th>
+                    <th className="px-4 py-3">Manager</th>
+                    <th className="px-4 py-3">Source</th>
+                    <th className="px-4 py-3">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-[#E2E8F0]">
                   {filteredRows.length === 0 ? (
                     <tr>
                       <td
-                        className="px-4 py-10 text-center text-sm text-text-secondary"
+                        className="px-4 py-10 text-center text-sm text-[#64748B]"
                         colSpan={9}
                       >
                         No vacancies match the current filters.
@@ -606,50 +594,41 @@ export function VacanciesReport({
                     </tr>
                   ) : (
                     filteredRows.map((row) => (
-                      <tr
-                        className="transition-colors hover:bg-slate-50"
-                        key={row.id}
-                      >
+                      <tr className="transition-colors hover:bg-[#FCFDFE]" key={row.id}>
                         <td className="px-4 py-4">
-                          <p className="font-mono text-xs font-bold text-text">
+                          <p className="font-mono text-xs font-bold text-[#0F172A]">
                             {vacancyLabel(row.vacancyCode)}
                           </p>
-                          <p className="mt-1 text-xs text-text-secondary">
+                          <p className="mt-1 text-xs text-[#64748B]">
                             Source row {emptyText(row.sourceRowNumber)}
                           </p>
                         </td>
-                        <td className="px-4 py-4 text-text">
+                        <td className="px-4 py-4 text-[#0F172A]">
                           {emptyText(row.positionTitle ?? row.jobTitle)}
                         </td>
-                        <td className="px-4 py-4 text-text-secondary">
+                        <td className="px-4 py-4 text-[#64748B]">
                           {emptyText(row.departmentName)}
                         </td>
-                        <td className="px-4 py-4 text-text-secondary">
+                        <td className="px-4 py-4 text-[#64748B]">
                           {emptyText(row.lineName)}
                         </td>
-                        <td className="px-4 py-4 text-text-secondary">
+                        <td className="px-4 py-4 text-[#64748B]">
                           {emptyText(row.regionName)}
                         </td>
-                        <td className="px-4 py-4 text-text-secondary">
+                        <td className="px-4 py-4 text-[#64748B]">
                           {emptyText(row.areaName)}
                         </td>
                         <td className="px-4 py-4">
-                          <p className="text-text-secondary">
-                            {emptyText(row.managerName)}
-                          </p>
+                          <p className="text-[#64748B]">{emptyText(row.managerName)}</p>
                           {row.managerHrId ? (
-                            <p className="mt-1 text-xs text-text-secondary">
-                              {row.managerHrId}
-                            </p>
+                            <p className="mt-1 text-xs text-[#64748B]">{row.managerHrId}</p>
                           ) : null}
                         </td>
-                        <td className="px-4 py-4 text-text-secondary">
+                        <td className="px-4 py-4 text-[#64748B]">
                           <p>Master data import</p>
-                          <p className="mt-1 text-xs text-text-secondary">
-                            {formatDate(row.createdAt)}
-                          </p>
+                          <p className="mt-1 text-xs text-[#64748B]">{formatDate(row.createdAt)}</p>
                         </td>
-                        <td className="py-4 pl-4">
+                        <td className="px-4 py-4">
                           <Badge
                             variant={row.status === "open" ? "warning" : "neutral"}
                           >
@@ -662,10 +641,17 @@ export function VacanciesReport({
                 </tbody>
               </table>
             </div>
-          </div>
+          </Card>
         </>
-      ) : null}
-      </div>
-    </Card>
+      ) : (
+        !isLoading &&
+        !error &&
+        <Card className={`${adminPanelClassName} p-4`}>
+          <div className="rounded-xl border border-[#E2E8F0] bg-[#FCFDFE] p-4 text-sm text-[#64748B]">
+            No vacancy report data loaded yet. Use Refresh to request the latest snapshot.
+          </div>
+        </Card>
+      )}
+    </div>
   );
 }

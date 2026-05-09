@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Users, TrendingUp, Target, Award, BarChart3, BriefcaseBusiness } from "lucide-react";
+import { TrendingUp, Target, Award, BarChart3 } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { getNsmDsmPerformance } from "@/lib/employee-portal/service";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
@@ -48,13 +49,10 @@ export default async function DsmsPerformancePage({
 
   if (!data) {
     return (
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <BriefcaseBusiness className="mx-auto h-10 w-10 text-slate-300 mb-3" />
-        <p className="text-lg font-semibold text-slate-900">DSMs Performance Data Unavailable</p>
-        <p className="mt-2 text-sm text-slate-500">
-          Unable to load district managers performance data for your line.
-        </p>
-      </div>
+      <EmployeePortalEmptyState
+        message="Unable to load district managers performance data for your line."
+        title="DSMs Performance Data Unavailable"
+      />
     );
   }
 

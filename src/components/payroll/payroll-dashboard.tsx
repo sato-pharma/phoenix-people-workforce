@@ -25,6 +25,11 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
+  AdminCallout,
+  AdminPageHero,
+  adminPanelClassName,
+} from "@/components/admin/admin-design-system";
+import {
   formatCompactNumber,
   formatCurrencyValue,
   formatDateTimeValue,
@@ -193,6 +198,33 @@ const otherDeductionFields: Array<{ key: keyof SalaryRecord; label: string }> = 
 ];
 
 const interactiveCardClass = "phoenix-card-motion";
+const panelClassName = adminPanelClassName;
+
+function StatusBanner({
+  message,
+  title,
+  tone,
+}: {
+  message: string;
+  title: string;
+  tone: "danger" | "success";
+}) {
+  const isSuccess = tone === "success";
+
+  return (
+    <AdminCallout tone={isSuccess ? "success" : "danger"}>
+      {isSuccess ? (
+        <CheckCircle className="mt-0.5 h-5 w-5 shrink-0" />
+      ) : (
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+      )}
+      <div>
+        <p className="font-semibold">{title}</p>
+        <p className="mt-1 leading-6">{message}</p>
+      </div>
+    </AdminCallout>
+  );
+}
 
 function PayrollMotionStyles() {
   return (
@@ -3205,13 +3237,13 @@ function ValidationSummary({ result }: { result: SalaryValidationResult }) {
   ].slice(0, 12);
 
   return (
-    <Card>
+    <Card className={`${panelClassName} p-5`}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-text">
+          <h2 className="text-base font-bold text-[#0F172A]">
             Salary Upload Validation
           </h2>
-          <p className="mt-1 text-sm text-text-secondary">
+          <p className="mt-1 text-sm text-[#64748B]">
             {payrollPeriodLabel(
               result.payrollPeriod.month,
               result.payrollPeriod.year,
@@ -3231,21 +3263,21 @@ function ValidationSummary({ result }: { result: SalaryValidationResult }) {
           ["Warnings", result.warningRows],
           ["Failed", result.failedRows],
         ].map(([label, value]) => (
-          <div className="rounded-xl border border-border bg-bg-muted p-3" key={label}>
-            <p className="text-xs text-text-secondary">{label}</p>
-            <p className="mt-1 text-xl font-semibold text-text">{value}</p>
+          <div className="rounded-[22px] border border-[#E2E8F0] bg-[#FCFDFE] p-4" key={label}>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
+            <p className="mt-2 text-2xl font-black tracking-[-0.03em] text-[#0F172A]">{value}</p>
           </div>
         ))}
       </div>
 
       {result.missingRequiredColumns.length > 0 && (
-        <div className="mt-4 rounded-lg border border-danger/20 bg-red-50 p-3 text-sm text-danger dark:bg-red-950/20">
+        <div className="mt-4 rounded-[20px] border border-[#FCA5A5] bg-[#FEF2F2] p-4 text-sm text-[#B91C1C]">
           Missing headers: {result.missingRequiredColumns.join(", ")}
         </div>
       )}
 
       {result.duplicateHrIds.length > 0 && (
-        <div className="mt-4 rounded-lg border border-danger/20 bg-red-50 p-3 text-sm text-danger dark:bg-red-950/20">
+        <div className="mt-4 rounded-[20px] border border-[#FCA5A5] bg-[#FEF2F2] p-4 text-sm text-[#B91C1C]">
           Duplicate HR_IDs: {result.duplicateHrIds.join(", ")}
         </div>
       )}
@@ -3264,13 +3296,14 @@ function ValidationSummary({ result }: { result: SalaryValidationResult }) {
       </div>
 
       {issuePreview.length > 0 && (
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 overflow-hidden rounded-[24px] border border-[#E2E8F0]">
+          <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
                 {["Row", "HR ID", "Column", "Type", "Message"].map((column) => (
                   <th
-                    className="pb-2 pr-4 font-medium text-text-secondary"
+                    className="px-3 py-3 font-medium text-[#64748B]"
                     key={column}
                   >
                     {column}
@@ -3281,16 +3314,16 @@ function ValidationSummary({ result }: { result: SalaryValidationResult }) {
             <tbody className="divide-y divide-border">
               {issuePreview.map((issue, index) => (
                 <tr key={`${issue.row}-${issue.code}-${index}`}>
-                  <td className="py-2 pr-4 font-mono text-xs text-text-secondary">
+                  <td className="px-3 py-3 font-mono text-xs text-[#64748B]">
                     {issue.row}
                   </td>
-                  <td className="py-2 pr-4 font-mono text-xs text-text-secondary">
+                  <td className="px-3 py-3 font-mono text-xs text-[#64748B]">
                     {issue.hrId ?? "-"}
                   </td>
-                  <td className="py-2 pr-4 text-text-secondary">
+                  <td className="px-3 py-3 text-[#64748B]">
                     {issue.column ?? "-"}
                   </td>
-                  <td className="py-2 pr-4">
+                  <td className="px-3 py-3">
                     <Badge
                       variant={
                         issue.severity === "error" ? "danger" : "warning"
@@ -3299,11 +3332,12 @@ function ValidationSummary({ result }: { result: SalaryValidationResult }) {
                       {issue.code}
                     </Badge>
                   </td>
-                  <td className="py-2 pr-4 text-text">{issue.message}</td>
+                  <td className="px-3 py-3 text-[#0F172A]">{issue.message}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </Card>
@@ -3444,26 +3478,26 @@ function PayrollHistory({
   if (batches.length === 0) return null;
 
   return (
-    <Card>
+    <Card className={`${panelClassName} p-5`}>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-text">
+          <h2 className="text-base font-bold text-[#0F172A]">
             Uploaded Files History
           </h2>
-          <p className="mt-1 text-sm text-text-secondary">
+          <p className="mt-1 text-sm text-[#64748B]">
             Review uploaded payroll sheets, download stored data, replace incorrect files, or delete batches.
           </p>
         </div>
         <Badge variant="neutral">{batches.length} files</Badge>
       </div>
-      <div className="mb-4 grid gap-3 md:grid-cols-[1fr_220px]">
+      <div className="mb-4 grid gap-3 rounded-[24px] border border-[#E2E8F0] bg-[#FCFDFE] p-3 md:grid-cols-[1fr_220px]">
         <Input
           onChange={(event) => setFileSearch(event.target.value)}
           placeholder="Filter uploaded files by period, file, status..."
           value={fileSearch}
         />
         <select
-          className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text focus:outline-none"
+          className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-[#0F172A] focus:outline-none"
           onChange={(event) => setFileSort(event.target.value)}
           value={fileSort}
         >
@@ -3475,12 +3509,13 @@ function PayrollHistory({
           <option value="file">File A-Z</option>
         </select>
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-hidden rounded-[24px] border border-[#E2E8F0]">
+        <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead>
-            <tr className="border-b border-border">
+            <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
               {[...fileColumns, { key: "actions", label: "Actions" }].map((column) => (
-                <th className="pb-3 pr-4 font-medium text-text-secondary" key={column.key}>
+                <th className="px-3 py-3 font-medium text-[#64748B]" key={column.key}>
                   {column.key === "actions" ? (
                     column.label
                   ) : (
@@ -3504,7 +3539,7 @@ function PayrollHistory({
           <tbody className="divide-y divide-border">
             {visibleBatches.length === 0 ? (
               <tr>
-                <td className="py-8 text-center text-sm text-text-secondary" colSpan={5}>
+                <td className="px-3 py-8 text-center text-sm text-[#64748B]" colSpan={5}>
                   No uploaded files match the current filter.
                 </td>
               </tr>
@@ -3574,6 +3609,7 @@ function PayrollHistory({
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </Card>
   );
@@ -3854,15 +3890,15 @@ function ExpenseReport({
   }
 
   return (
-    <Card className="overflow-hidden border-[#E2E8F0] bg-white p-0 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-      <div className="border-b border-[#E2E8F0] bg-[#0F172A] px-5 py-5 text-white">
+    <Card className={`${panelClassName} overflow-hidden p-0`}>
+      <div className="border-b border-[#E2E8F0] bg-[linear-gradient(180deg,#ffffff_0%,#fcfdfe_100%)] px-5 py-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#F97316]">
               Expense Operations
             </p>
-            <h2 className="mt-2 text-xl font-bold">Expenses Report</h2>
-            <p className="mt-1 max-w-2xl text-sm text-white/70">
+            <h2 className="mt-2 text-xl font-bold text-[#0F172A]">Expenses Report</h2>
+            <p className="mt-1 max-w-2xl text-sm text-[#64748B]">
               {analysis
                 ? `${analysis.fileName} - ${formatNumber(analysis.summary.trips)} trips saved for review`
                 : "Upload an expenses sheet, approve rows from HR, then import approved expenses into payroll."}
@@ -3877,7 +3913,7 @@ function ExpenseReport({
             type="file"
           />
           <Button
-            className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
+            className="rounded-2xl border border-[#E2E8F0] bg-white px-3 py-2 text-xs text-[#0F172A] hover:bg-[#FFF7ED]"
             disabled={analyzing}
             onClick={() => inputRef.current?.click()}
             variant="secondary"
@@ -3890,7 +3926,7 @@ function ExpenseReport({
             Upload Expenses
           </Button>
           <Button
-            className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
+            className="rounded-2xl border border-[#E2E8F0] bg-white px-3 py-2 text-xs text-[#0F172A] hover:bg-[#FFF7ED]"
             disabled={!analysis || records.length === 0}
             onClick={downloadFilteredExpenses}
             variant="secondary"
@@ -3899,7 +3935,7 @@ function ExpenseReport({
             Download Expenses
           </Button>
           <Button
-            className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
+            className="rounded-2xl border border-[#E2E8F0] bg-white px-3 py-2 text-xs text-[#0F172A] hover:bg-[#FFF7ED]"
             disabled={!analysis || savingApprovals}
             onClick={saveApprovals}
             variant="secondary"
@@ -3916,14 +3952,10 @@ function ExpenseReport({
       </div>
 
       <div className="space-y-4 p-5">
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-danger">
-          {error}
-        </div>
-      )}
+      {error && <StatusBanner message={error} title="Expenses analysis error" tone="danger" />}
 
       {reports.length > 0 && (
-        <div className="rounded-2xl border border-[#E2E8F0] bg-white">
+        <div className="rounded-[24px] border border-[#E2E8F0] bg-white">
           <input
             accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="hidden"
@@ -3936,8 +3968,8 @@ function ExpenseReport({
           />
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
             <div>
-              <h3 className="text-sm font-semibold text-text">Saved Expense Reports</h3>
-              <p className="mt-0.5 text-xs text-text-secondary">
+              <h3 className="text-sm font-semibold text-[#0F172A]">Saved Expense Reports</h3>
+              <p className="mt-0.5 text-xs text-[#64748B]">
                 Preview, replace, or delete uploaded expense reports from the system database.
               </p>
             </div>
@@ -4021,13 +4053,13 @@ function ExpenseReport({
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+          <div className="flex flex-wrap items-center gap-2 rounded-[24px] border border-[#E2E8F0] bg-[#FCFDFE] p-4">
             <div className="mr-2">
-              <p className="text-sm font-semibold text-text">Import to Payroll</p>
-              <p className="text-xs text-text-secondary">Approved rows with HR ID only.</p>
+              <p className="text-sm font-semibold text-[#0F172A]">Import to Payroll</p>
+              <p className="text-xs text-[#64748B]">Approved rows with HR ID only.</p>
             </div>
             <select
-              className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+              className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-[#0F172A] focus:outline-none"
               onChange={(event) => setImportMonth(event.target.value)}
               value={importMonth}
             >
@@ -4038,7 +4070,7 @@ function ExpenseReport({
               ))}
             </select>
             <select
-              className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+              className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-[#0F172A] focus:outline-none"
               onChange={(event) => setImportYear(event.target.value)}
               value={importYear}
             >
@@ -4061,7 +4093,7 @@ function ExpenseReport({
             </p>
           </div>
 
-          <div className="grid gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 md:grid-cols-[1fr_180px_180px_auto]">
+          <div className="grid gap-3 rounded-[24px] border border-[#E2E8F0] bg-[#FCFDFE] p-3 md:grid-cols-[1fr_180px_180px_auto]">
             <Input
               className="bg-white"
               onChange={(event) => setSearch(event.target.value)}
@@ -4095,7 +4127,7 @@ function ExpenseReport({
 
           <div>
             <div className="min-w-0">
-              <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
+              <div className="overflow-x-auto rounded-[24px] border border-[#E2E8F0]">
                 <table className="w-full min-w-[1420px] text-left text-sm">
                   <thead>
                     <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs uppercase tracking-[0.12em] text-[#64748B]">
@@ -4195,12 +4227,12 @@ function ExpenseReport({
           </div>
 
           {analysis.warnings.length > 0 ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="rounded-[20px] border border-[#FDE68A] bg-[#FFFBEB] px-4 py-3 text-sm text-[#92400E]">
               {analysis.warnings.slice(0, 3).join(" ")}
             </div>
           ) : null}
           {(unmappedRecords.length > 0 || missingTripDateRecords.length > 0) && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="rounded-[20px] border border-[#FDE68A] bg-[#FFFBEB] px-4 py-3 text-sm text-[#92400E]">
               {unmappedRecords.length > 0
                 ? `${formatNumber(unmappedRecords.length)} expenses are not mapped to HR ID. `
                 : ""}
@@ -4211,7 +4243,7 @@ function ExpenseReport({
           )}
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed border-border bg-bg-muted px-4 py-8 text-center text-sm text-text-secondary">
+        <div className="rounded-[24px] border border-dashed border-[#CBD5E1] bg-[#FCFDFE] px-4 py-8 text-center text-sm text-[#64748B]">
           No expenses sheet analyzed yet.
         </div>
       )}
@@ -4933,64 +4965,59 @@ export function PayrollDashboard({
   if (initialError) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-text">Payroll Operations</h1>
-          <p className="mt-1 text-text-secondary">
-            Payroll generation, upload validation, and governance workflow management.
-          </p>
-        </div>
-        <Card className="border-danger/20 bg-red-50 dark:bg-red-950/20">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-danger" />
-            <p className="text-sm text-danger">{initialError}</p>
+        <AdminPageHero
+          description="Payroll generation, upload validation, and governance workflow management."
+          eyebrow="Payroll"
+          icon={<AlertTriangle className="h-3.5 w-3.5" />}
+          title="Payroll dashboard unavailable"
+        />
+        <AdminCallout tone="danger">
+          <AlertTriangle className="mt-0.5 h-4 w-4" />
+          <div>
+            <p className="font-semibold">Unable to load payroll data</p>
+            <p className="text-sm">{initialError}</p>
           </div>
-        </Card>
+        </AdminCallout>
       </div>
     );
   }
 
-  if (!activeBatch) {
+      if (!activeBatch) {
     return (
       <div className="space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-text">Payroll Operations</h1>
-            <p className="mt-1 text-text-secondary">
-              Download the monthly salary template, fill it, then upload it for validation.
-            </p>
-          </div>
-          {salaryTemplateActions}
-        </div>
+        <AdminPageHero
+          actions={salaryTemplateActions}
+          badges={(
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B]">
+                Current state: waiting for payroll batch
+              </span>
+              <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B]">
+                Step 1: upload salary sheet
+              </span>
+            </div>
+          )}
+          description={payrollSheetTab === "salary"
+            ? "Set the payroll period, download the working file, validate the upload, and move into batch review when the month is ready."
+            : "Upload expense files, review records, confirm approvals, and import approved rows into a payroll period."
+          }
+          eyebrow={payrollSheetTab === "salary" ? "Payroll operations" : "Payroll expenses"}
+          icon={payrollSheetTab === "salary" ? <Upload className="h-3.5 w-3.5" /> : <FileCheck2 className="h-3.5 w-3.5" />}
+          title={payrollSheetTab === "salary" ? "Payroll upload and review" : "Expenses review and import"}
+        />
 
         {salaryUploadError && (
-          <Card className="border-danger/20 bg-red-50 dark:bg-red-950/20">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-danger" />
-              <p className="text-sm text-danger">{salaryUploadError}</p>
-            </div>
-          </Card>
+          <StatusBanner message={salaryUploadError} title="Payroll upload error" tone="danger" />
         )}
 
         {salaryValidation && <ValidationSummary result={salaryValidation} />}
 
         {workflowMessage && (
-          <Card
-            className={cn(
-              "border",
-              workflowMessage.type === "success"
-                ? "border-green-200 bg-green-50 dark:bg-green-950/20"
-                : "border-red-200 bg-red-50 dark:bg-red-950/20",
-            )}
-          >
-            <div className="flex items-center gap-3">
-              {workflowMessage.type === "success" ? (
-                <CheckCircle className="h-4 w-4 text-success" />
-              ) : (
-                <AlertTriangle className="h-4 w-4 text-danger" />
-              )}
-              <p className="text-sm">{workflowMessage.text}</p>
-            </div>
-          </Card>
+          <StatusBanner
+            message={workflowMessage.text}
+            title={workflowMessage.type === "success" ? "Workflow updated" : "Workflow action failed"}
+            tone={workflowMessage.type === "success" ? "success" : "danger"}
+          />
         )}
 
         <PayrollHistory
@@ -5001,16 +5028,16 @@ export function PayrollDashboard({
           replacingBatchId={replacingBatchId}
         />
 
-        <Card>
-          <div className="flex flex-col items-center gap-3 py-12 text-center">
-            <FileCheck2 className="h-10 w-10 text-text-secondary" />
-            <p className="font-medium text-text">No payroll batch selected</p>
-            <p className="max-w-xl text-sm text-text-secondary">
+        <AdminCallout tone="neutral">
+          <FileCheck2 className="mt-0.5 h-4 w-4" />
+          <div>
+            <p className="font-semibold">No payroll batch selected</p>
+            <p className="mt-1 text-sm">
               The upload step validates headers A to AD, duplicate HR_IDs, salary
               numbers, additions, deductions, net salary, gross salary, and salary split.
             </p>
           </div>
-        </Card>
+        </AdminCallout>
       </div>
     );
   }
@@ -5042,243 +5069,219 @@ export function PayrollDashboard({
     : [];
 
   return (
-    <div className="min-h-screen bg-bg-soft text-text">
-      <div className="mx-auto w-full max-w-[1500px] space-y-5 px-5 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-text">Payroll Upload</h1>
-            <p className="mt-1 text-sm text-text-secondary">
-              Upload payroll files, validate the data, and review the imported rows.
-            </p>
+    <div className="space-y-5 text-text">
+      <AdminPageHero
+        actions={salaryTemplateActions}
+        badges={(
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B]">
+              {payrollSheetTab === "salary" ? "Scope: payroll operations" : "Scope: expenses workflow"}
+            </span>
+            {!isAllTimeScope && payrollSheetTab === "salary" ? (
+              statusBadge(batch.status)
+            ) : (
+              <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B]">
+                {payrollSheetTab === "salary" ? "Active batch selected" : "Payroll reference remains available"}
+              </span>
+            )}
           </div>
-          {!isAllTimeScope ? statusBadge(batch.status) : <Badge variant="neutral">All Time</Badge>}
-        </div>
+        )}
+        description={payrollSheetTab === "salary"
+          ? "Validate salary files, review payroll rows, track workflow status, and switch between salary and expenses from one compact workspace."
+          : "Review approved expense rows, confirm HR approvals, and import selected rows into the selected payroll period."
+        }
+        eyebrow={payrollSheetTab === "salary" ? "Payroll operations" : "Payroll expenses"}
+        icon={payrollSheetTab === "salary" ? <Gauge className="h-3.5 w-3.5" /> : <FileCheck2 className="h-3.5 w-3.5" />}
+        title={payrollSheetTab === "salary" ? "Payroll report and monthly review" : "Payroll expenses operations"}
+      />
 
       {workflowMessage && (
-        <Card
-          className={cn(
-            "border",
-            workflowMessage.type === "success"
-              ? "border-green-200 bg-green-50 dark:bg-green-950/20"
-              : "border-red-200 bg-red-50 dark:bg-red-950/20",
-          )}
-        >
-          <div className="flex items-center gap-3">
-            {workflowMessage.type === "success" ? (
-              <CheckCircle className="h-4 w-4 text-success" />
-            ) : (
-              <AlertTriangle className="h-4 w-4 text-danger" />
-            )}
-            <p className="text-sm">{workflowMessage.text}</p>
+        <StatusBanner
+          message={workflowMessage.text}
+          title={workflowMessage.type === "success" ? "Workflow updated" : "Workflow action failed"}
+          tone={workflowMessage.type === "success" ? "success" : "danger"}
+        />
+      )}
+
+      {salaryUploadError && (
+        <StatusBanner message={salaryUploadError} title="Payroll upload error" tone="danger" />
+      )}
+
+      {salaryValidation && <ValidationSummary result={salaryValidation} />}
+
+      {flags.length > 0 && (
+        <Card className={`${panelClassName} p-5`}>
+          <div className="mb-3 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-warning" />
+            <h2 className="text-base font-bold text-[#0F172A]">
+              Payroll Alerts ({flags.length})
+            </h2>
+          </div>
+          <div className="space-y-2">
+            {flags.slice(0, 14).map((flag) => (
+              <div
+                className="flex items-start justify-between gap-4 rounded-lg border border-border bg-bg-muted px-4 py-3"
+                key={flag.id}
+              >
+                <div>
+                  {flag.hrId && (
+                    <p className="font-mono text-xs text-text-secondary">
+                      {flag.hrId}
+                    </p>
+                  )}
+                  <p className="text-sm text-text">{flag.message}</p>
+                </div>
+                <Badge
+                  variant={
+                    flag.severity === "critical"
+                      ? "danger"
+                      : flag.severity === "warning"
+                        ? "warning"
+                        : "neutral"
+                  }
+                >
+                  {flag.severity}
+                </Badge>
+              </div>
+            ))}
           </div>
         </Card>
       )}
 
-        <div className="space-y-5">
-          <Card>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h2 className="text-base font-semibold text-text">
-                  Payroll Report & Upload
-                </h2>
-                <p className="mt-1 max-w-2xl text-sm text-text-secondary">
-                  Choose the payroll period, download a system-readable template, generate the ready payroll sheet, then upload and validate salary files in one workflow.
-                </p>
-              </div>
-              {salaryTemplateActions}
+      <div className={`${panelClassName} flex flex-wrap gap-2 p-2`}>
+        {[
+          { label: "Payroll Sheet", value: "salary" },
+          { label: "Expenses", value: "expenses" },
+        ].map((tab) => (
+          <Button
+            className={cn(
+              "rounded-xl px-4 py-2 text-sm",
+              payrollSheetTab === tab.value && "border border-[#FED7AA] bg-[#FFF7ED] text-[#EA580C] hover:bg-[#FFF1DD]",
+            )}
+            key={tab.value}
+            onClick={() => setPayrollSheetTab(tab.value as PayrollSheetTab)}
+            variant="secondary"
+          >
+            {tab.label}
+          </Button>
+        ))}
+      </div>
+
+      {payrollSheetTab === "salary" ? (
+        <>
+          <AdminPageHero
+            actions={(
+              salaryReportBatch ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link href={`/api/payroll/${salaryReportBatch.id}/download`}>
+                    <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
+                      <Download className="mr-2 h-3.5 w-3.5" />
+                      Download
+                    </Button>
+                  </Link>
+                  <Link href={`/api/payroll/${salaryReportBatch.id}/payslips`} target="_blank">
+                    <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
+                      <FileCheck2 className="mr-2 h-3.5 w-3.5" />
+                      Payslips
+                    </Button>
+                  </Link>
+                </div>
+              ) : null
+            )}
+            description={
+              salaryReportBatch
+                ? `${payrollMonths.find((m) => m.value === String(salaryReportBatch.month))?.label ?? ""} ${salaryReportBatch.year} - ${formatNumber(salaryReportTotals.employees)} employees`
+                : "No payroll data available."
+            }
+            eyebrow="Payroll statement"
+            icon={<FileSpreadsheet className="h-3.5 w-3.5" />}
+            title="Salary report"
+          />
+
+          <div className="space-y-4 rounded-[18px] border border-[#E2E8F0] bg-white px-4 py-4 sm:px-5 sm:py-5">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              {[
+                { label: "Employees", tone: "bg-[#F8FAFC] text-[#0F172A]", value: formatNumber(salaryReportTotals.employees) },
+                { label: "Additions", tone: "bg-emerald-50 text-emerald-800", value: formatEGP(salaryReportTotals.additions) },
+                { label: "Other Deductions", tone: "bg-rose-50 text-rose-800", value: formatEGP(salaryReportTotals.otherDeductions) },
+                { label: "Net", tone: "bg-[#0F172A] text-white", value: formatEGP(salaryReportTotals.net) },
+                { label: "First Part", tone: "bg-orange-50 text-orange-800", value: formatEGP(salaryReportTotals.firstPart) },
+                { label: "Second Part", tone: "bg-amber-50 text-amber-800", value: formatEGP(salaryReportTotals.secondPart) },
+              ].map((metric) => (
+                <div className={cn("rounded-2xl border border-[#E2E8F0] p-4", metric.tone)} key={metric.label}>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{metric.label}</p>
+                  <p className="mt-2 truncate font-mono text-lg font-bold">{metric.value}</p>
+                </div>
+              ))}
             </div>
-          </Card>
 
-          {salaryUploadError && (
-            <Card className="border-danger/20 bg-red-50 dark:bg-red-950/20">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="h-5 w-5 text-danger" />
-                <p className="text-sm text-danger">{salaryUploadError}</p>
-              </div>
-            </Card>
-          )}
-
-          {salaryValidation && <ValidationSummary result={salaryValidation} />}
-
-          {flags.length > 0 && (
-            <Card>
-              <div className="mb-3 flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                <h2 className="text-base font-semibold text-text">
-                  Payroll Alerts ({flags.length})
-                </h2>
-              </div>
-              <div className="space-y-2">
-                {flags.slice(0, 14).map((flag) => (
-                  <div
-                    className="flex items-start justify-between gap-4 rounded-lg border border-border bg-bg-muted px-4 py-3"
-                    key={flag.id}
-                  >
-                    <div>
-                      {flag.hrId && (
-                        <p className="font-mono text-xs text-text-secondary">
-                          {flag.hrId}
-                        </p>
-                      )}
-                      <p className="text-sm text-text">{flag.message}</p>
-                    </div>
-                    <Badge
-                      variant={
-                        flag.severity === "critical"
-                          ? "danger"
-                          : flag.severity === "warning"
-                            ? "warning"
-                            : "neutral"
-                      }
-                    >
-                      {flag.severity}
-                    </Badge>
-                  </div>
+            <div className="grid gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 xl:grid-cols-[1fr_auto_auto_auto]">
+              <Input
+                className="bg-white"
+                onChange={(event) => setSalaryReportSearch(event.target.value)}
+                placeholder="Search HR ID, employee, line, area, job title..."
+                value={salaryReportSearch}
+              />
+              <select
+                className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+                onChange={(event) => {
+                  setSalaryReportYear(Number(event.target.value));
+                  setSalaryReportMonth(null);
+                }}
+                value={salaryReportYear ?? salaryReportBatch?.year ?? ""}
+              >
+                {salaryReportAvailableYears.map((year) => (
+                  <option key={year} value={year}>{year}</option>
                 ))}
-              </div>
-            </Card>
-          )}
-
-          <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-card p-2">
-            {[
-              { label: "Payroll Sheet", value: "salary" },
-              { label: "Expenses", value: "expenses" },
-            ].map((tab) => (
+              </select>
+              <select
+                className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+                onChange={(event) => setSalaryReportMonth(Number(event.target.value))}
+                value={salaryReportMonth ?? salaryReportBatch?.month ?? ""}
+              >
+                {salaryReportAvailableMonths.map((month) => (
+                  <option key={month} value={month}>
+                    {payrollMonths.find((m) => m.value === String(month))?.label ?? month}
+                  </option>
+                ))}
+              </select>
               <Button
-                className={cn(
-                  "rounded-lg px-4 py-2 text-sm",
-                  payrollSheetTab === tab.value && "border border-green-200 bg-green-50 text-success hover:bg-green-100",
-                )}
-                key={tab.value}
-                onClick={() => setPayrollSheetTab(tab.value as PayrollSheetTab)}
+                onClick={() => {
+                  setSalaryReportSearch("");
+                  setSalaryColumnFilters({});
+                  setSalaryReportSort("employee-asc");
+                }}
                 variant="secondary"
               >
-                {tab.label}
+                Reset {salaryReportFilterCount > 0 ? `(${salaryReportFilterCount})` : ""}
               </Button>
-            ))}
-          </div>
+            </div>
 
-          {payrollSheetTab === "salary" ? (
-            <>
-              <Card className="overflow-hidden border-[#E2E8F0] bg-white p-0 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-                <div className="border-b border-[#E2E8F0] bg-[#0F172A] px-5 py-5 text-white">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
-                        Payroll Statement
-                      </p>
-                      <h2 className="mt-2 text-xl font-bold">Salary Report</h2>
-                      <p className="mt-1 text-sm text-white/70">
-                        {salaryReportBatch
-                          ? `${payrollMonths.find((m) => m.value === String(salaryReportBatch.month))?.label ?? ""} ${salaryReportBatch.year} - ${formatNumber(salaryReportTotals.employees)} employees`
-                          : "No payroll data available."}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {salaryReportBatch ? (
-                        <>
-                          <Link href={`/api/payroll/${salaryReportBatch.id}/download`}>
-                            <Button className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15" variant="secondary">
-                              <Download className="mr-2 h-3.5 w-3.5" />
-                              Download
-                            </Button>
-                          </Link>
-                          <Link href={`/api/payroll/${salaryReportBatch.id}/payslips`} target="_blank">
-                            <Button className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15" variant="secondary">
-                              <FileCheck2 className="mr-2 h-3.5 w-3.5" />
-                              Payslips
-                            </Button>
-                          </Link>
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4 p-5">
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                    {[
-                      { label: "Employees", tone: "bg-[#F8FAFC] text-[#0F172A]", value: formatNumber(salaryReportTotals.employees) },
-                      { label: "Additions", tone: "bg-emerald-50 text-emerald-800", value: formatEGP(salaryReportTotals.additions) },
-                      { label: "Other Deductions", tone: "bg-rose-50 text-rose-800", value: formatEGP(salaryReportTotals.otherDeductions) },
-                      { label: "Net", tone: "bg-[#0F172A] text-white", value: formatEGP(salaryReportTotals.net) },
-                      { label: "First Part", tone: "bg-orange-50 text-orange-800", value: formatEGP(salaryReportTotals.firstPart) },
-                      { label: "Second Part", tone: "bg-amber-50 text-amber-800", value: formatEGP(salaryReportTotals.secondPart) },
-                    ].map((metric) => (
-                      <div className={cn("rounded-2xl border border-[#E2E8F0] p-4", metric.tone)} key={metric.label}>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{metric.label}</p>
-                        <p className="mt-2 truncate font-mono text-lg font-bold">{metric.value}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 xl:grid-cols-[1fr_auto_auto_auto]">
-                    <Input
-                      className="bg-white"
-                      onChange={(event) => setSalaryReportSearch(event.target.value)}
-                      placeholder="Search HR ID, employee, line, area, job title..."
-                      value={salaryReportSearch}
-                    />
-                    <select
-                      className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
-                      onChange={(event) => {
-                        setSalaryReportYear(Number(event.target.value));
-                        setSalaryReportMonth(null);
-                      }}
-                      value={salaryReportYear ?? salaryReportBatch?.year ?? ""}
-                    >
-                      {salaryReportAvailableYears.map((year) => (
-                        <option key={year} value={year}>{year}</option>
-                      ))}
-                    </select>
-                    <select
-                      className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
-                      onChange={(event) => setSalaryReportMonth(Number(event.target.value))}
-                      value={salaryReportMonth ?? salaryReportBatch?.month ?? ""}
-                    >
-                      {salaryReportAvailableMonths.map((month) => (
-                        <option key={month} value={month}>
-                          {payrollMonths.find((m) => m.value === String(month))?.label ?? month}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      onClick={() => {
-                        setSalaryReportSearch("");
-                        setSalaryColumnFilters({});
-                        setSalaryReportSort("employee-asc");
-                      }}
-                      variant="secondary"
-                    >
-                      Reset {salaryReportFilterCount > 0 ? `(${salaryReportFilterCount})` : ""}
-                    </Button>
-                  </div>
-
-                  <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
-                <table className="w-full min-w-[1180px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs uppercase tracking-[0.12em] text-[#64748B]">
-                      {salaryReportColumns.map((column) => (
-                        <th className="sticky top-0 z-10 px-4 py-3 font-semibold" key={column.key}>
-                          <TableHeaderMenu
-                            filterValue={salaryColumnFilters[column.key] ?? ""}
-                            label={column.label}
-                            onFilterChange={(value) =>
-                              setSalaryColumnFilters((filters) => ({
-                                ...filters,
-                                [column.key]: value,
-                              }))
-                            }
-                            onSortAsc={() => setSalaryReportSort(column.asc)}
-                            onSortDesc={() => setSalaryReportSort(column.desc)}
-                          />
-                        </th>
-                      ))}
-                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold">
-                        <span className="text-xs uppercase tracking-[0.12em] text-text-secondary">Salary Status</span>
+            <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
+              <table className="w-full min-w-[1180px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs uppercase tracking-[0.12em] text-[#64748B]">
+                    {salaryReportColumns.map((column) => (
+                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold" key={column.key}>
+                        <TableHeaderMenu
+                          filterValue={salaryColumnFilters[column.key] ?? ""}
+                          label={column.label}
+                          onFilterChange={(value) =>
+                            setSalaryColumnFilters((filters) => ({
+                              ...filters,
+                              [column.key]: value,
+                            }))
+                          }
+                          onSortAsc={() => setSalaryReportSort(column.asc)}
+                          onSortDesc={() => setSalaryReportSort(column.desc)}
+                        />
                       </th>
-                    </tr>
-                  </thead>
+                    ))}
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">
+                      <span className="text-xs uppercase tracking-[0.12em] text-text-secondary">Salary Status</span>
+                    </th>
+                  </tr>
+                </thead>
                 <tbody className="divide-y divide-slate-100">
                   {salaryReportRows.length === 0 ? (
                     <tr>
@@ -5344,8 +5347,7 @@ export function PayrollDashboard({
                 Showing first 250 rows. Use filters to narrow the report.
               </p>
             ) : null}
-                </div>
-              </Card>
+          </div>
 
               <PayrollHistory
                 activeBatchId={isAllTimeScope ? undefined : batch.id}
@@ -5359,12 +5361,10 @@ export function PayrollDashboard({
           ) : (
             <>
               {expenseApprovalMessage && (
-                <Card className="border-green-200 bg-green-50">
-                  <div className="flex items-center gap-3">
-                    <CheckCircle className="h-4 w-4 text-success" />
-                    <p className="text-sm text-green-800">{expenseApprovalMessage}</p>
-                  </div>
-                </Card>
+                <AdminCallout tone="success">
+                  <CheckCircle className="mt-0.5 h-4 w-4 text-success" />
+                  <p className="text-sm text-[#166534]">{expenseApprovalMessage}</p>
+                </AdminCallout>
               )}
               <ExpenseReport
                 analysis={expenseAnalysis}
@@ -5389,11 +5389,9 @@ export function PayrollDashboard({
                 reports={expenseReports}
                 selectedReportId={selectedExpenseReportId}
                 savingApprovals={expenseApprovalsSaving}
-              />
-            </>
-          )}
-        </div>
-      </div>
+            />
+          </>
+      )}
     </div>
   );
 }

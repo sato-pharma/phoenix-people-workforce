@@ -12,6 +12,15 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
+import {
+  AdminCallout,
+  AdminInsightChip,
+  AdminPageHero,
+  AdminSectionHeader,
+  AdminStatCard,
+  AdminTableShell,
+  adminPanelClassName,
+} from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -26,6 +35,7 @@ type MemberNode = {
 };
 
 type OrganogramReportProps = {
+  fixedLine?: string | null;
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
 };
@@ -47,6 +57,9 @@ function groupBy<T>(items: T[], keyFor: (item: T) => string) {
   );
 }
 
+const selectClassName =
+  "h-10 w-full rounded-xl border border-[#D7E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12";
+
 function SelectFilter({
   className,
   label,
@@ -66,7 +79,7 @@ function SelectFilter({
         {label}
       </span>
       <select
-        className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className={selectClassName}
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -187,28 +200,6 @@ function formatDate(value: string | null | undefined) {
   }).format(date);
 }
 
-function StatTile({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="rounded-2xl border border-[#E2E8F0] bg-white px-4 py-3 shadow-sm">
-      <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-[#F97316]/10 text-sm font-semibold text-[#F97316]">
-        {label[0]}
-      </div>
-      <p className="font-mono text-2xl font-bold tracking-tight text-text">
-        {value}
-      </p>
-      <p className="mt-1 text-xs font-medium uppercase tracking-[0.16em] text-text-secondary">
-        {label}
-      </p>
-    </div>
-  );
-}
-
 function HierarchyNode({
   className,
   icon,
@@ -272,19 +263,17 @@ function TeamMemberCard({ row }: { row: OrganogramRow }) {
       />
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-xs font-semibold text-text">
+          <p className="whitespace-normal break-words text-xs font-semibold text-text leading-tight">
             {row.fullName}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-text-secondary">
             <span className="font-mono font-medium">{row.hrId}</span>
             {title && !showRepFields ? (
-            <span className="max-w-[135px] truncate">{title}</span>
+            <span className="break-words leading-snug text-text">{title}</span>
             ) : null}
           </div>
         </div>
-        <Badge variant={isVacancy ? "warning" : "success"}>
-          {isVacancy ? "Vacant" : "Active"}
-        </Badge>
+        {isVacancy ? <Badge variant="warning">Vacant</Badge> : null}
       </div>
 
       {showRepFields ? (
@@ -484,22 +473,9 @@ function OrganogramView({
   const filledLaneCount = groups.filter((group) => group.members.length > 0).length;
 
   return (
-    <Card className="overflow-hidden border-[#E2E8F0] bg-white p-0 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-      <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-5 py-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-[#F97316]">
-              <Building2 className="h-4 w-4" />
-              Enterprise Hierarchy Map
-            </div>
-            <h2 className="mt-2 text-lg font-semibold text-text">
-              {selectedLine ? `${selectedLine} structure` : "Select a line"}
-            </h2>
-            <p className="mt-1 text-sm text-text-secondary">
-              Executive leadership, manager lanes, active employees, and open
-              vacancies in one operational view.
-            </p>
-          </div>
+    <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
+      <AdminSectionHeader
+        action={
           <div className="flex flex-wrap gap-2">
             <Badge variant="neutral">{employees.length} employees</Badge>
             <Badge variant={vacancies.length > 0 ? "warning" : "neutral"}>
@@ -507,8 +483,10 @@ function OrganogramView({
             </Badge>
             <Badge variant="neutral">{filledLaneCount} lanes</Badge>
           </div>
-        </div>
-      </div>
+        }
+        description="Executive leadership, manager lanes, active employees, and open vacancies in one operational view."
+        title={selectedLine ? `${selectedLine} structure` : "Select a line"}
+      />
       <div
         className="overflow-x-hidden bg-[#F8FAFC] px-5 py-8"
         style={{
@@ -537,9 +515,24 @@ function OrganogramView({
         ) : (
           <div className="w-full">
             <div className="mb-7 grid w-full gap-3 md:grid-cols-3 xl:max-w-3xl">
-              <StatTile label="Employees" value={employees.length} />
-              <StatTile label="Vacancies" value={vacancies.length} />
-              <StatTile label="Rows" value={rows.length} />
+              <AdminStatCard
+                description="Active employees included in this scope."
+                icon={<UsersRound className="h-4 w-4" />}
+                label="Employees"
+                value={employees.length}
+              />
+              <AdminStatCard
+                description="Vacant positions tracked with active line visibility."
+                icon={<BriefcaseBusiness className="h-4 w-4" />}
+                label="Vacancies"
+                value={vacancies.length}
+              />
+              <AdminStatCard
+                description="Combined records represented in the chart."
+                icon={<Network className="h-4 w-4" />}
+                label="Rows"
+                value={rows.length}
+              />
             </div>
 
             <div className="relative flex flex-col items-center">
@@ -574,9 +567,9 @@ function OrganogramView({
                 No manager lanes found for this line.
               </div>
             ) : (
-              <div className="relative mt-8">
+    <div className="relative mt-8">
                 <div className="absolute left-0 right-0 top-0 h-px bg-[#CBD5E1]" />
-                <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,220px),1fr))] gap-3 pt-6">
+                <div className="grid gap-2 pt-6 [grid-template-columns:repeat(auto-fit,minmax(250px,1fr))]">
                   {groups.map((group) => {
                     const groupVacancies = group.members.filter(
                       (member) => member.type === "vacancy",
@@ -584,43 +577,45 @@ function OrganogramView({
 
                     return (
                       <div
-                        className="relative rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                        className={cn(
+                          "relative min-w-0 rounded-xl border border-[#E2E8F0] bg-white p-2.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
+                        )}
                         key={group.dsm?.hrId ?? group.name}
                       >
                         <div className="absolute -top-6 left-1/2 h-6 w-px -translate-x-1/2 bg-[#CBD5E1]" />
                         <div className="absolute left-3 right-3 top-0 h-1 rounded-b-full bg-[#F97316]" />
-                        <div className="rounded-lg bg-[#0F172A] px-3 py-2.5 text-white">
+                        <div className="rounded-lg bg-[#0F172A] px-2.5 py-2 text-white">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 text-left">
-                              <div className="mb-1.5 flex h-7 w-7 items-center justify-center rounded-md bg-white/10">
+                              <div className="mb-1 flex h-6 w-6 items-center justify-center rounded-md bg-white/10">
                                 <BriefcaseBusiness className="h-3.5 w-3.5" />
                               </div>
-                              <p className="truncate text-xs font-semibold">
+                              <p className="text-[11px] font-semibold leading-4 break-words">
                                 {group.name}
                               </p>
-                              <p className="mt-1 text-[11px] font-medium opacity-70">
+                              <p className="mt-1 text-[10px] font-medium leading-4 opacity-70 break-words">
                                 {group.title}
                               </p>
                             </div>
-                            <div className="shrink-0 rounded-md bg-white/10 px-2 py-1 text-center text-[10px] font-semibold">
-                              <p className="text-xs leading-none">{group.members.length}</p>
+                            <div className="shrink-0 rounded-md bg-white/10 px-1.5 py-1 text-center text-[10px] font-semibold">
+                              <p className="text-[11px] leading-none">{group.members.length}</p>
                               <p className="mt-0.5 opacity-70">rows</p>
                             </div>
                           </div>
                         </div>
 
-                        <div className="mt-2.5 flex items-center justify-between rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1.5 text-[11px] text-[#64748B]">
-                          <span>{group.members.length} team rows</span>
+                        <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-1.5 text-[10px] text-[#64748B]">
+                          <span className="truncate">{group.members.length} team rows</span>
                           {groupVacancies > 0 ? (
-                            <span className="font-medium text-primary">
+                            <span className="shrink-0 font-medium text-primary">
                               {groupVacancies} vacant
                             </span>
                           ) : (
-                            <span>No vacancies</span>
+                            <span className="shrink-0">No vacancies</span>
                           )}
                         </div>
 
-                        <div className="mt-3 space-y-2">
+                        <div className="mt-2.5 space-y-2">
                           {group.members.length === 0 ? (
                             <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-text-secondary">
                               No team rows under this manager.
@@ -645,6 +640,7 @@ function OrganogramView({
 }
 
 export function OrganogramReport({
+  fixedLine = null,
   initialError = null,
   initialReport = null,
 }: OrganogramReportProps) {
@@ -654,6 +650,7 @@ export function OrganogramReport({
   const [error, setError] = React.useState<string | null>(initialError);
   const [isLoading, setIsLoading] = React.useState(false);
   const [lineFilter, setLineFilter] = React.useState("");
+  const effectiveLineFilter = fixedLine ?? lineFilter;
 
   const loadReport = React.useCallback(async () => {
     setIsLoading(true);
@@ -712,16 +709,16 @@ export function OrganogramReport({
   const filteredRows = React.useMemo(() => {
     const managerHrIdsToKeep = new Set<string>();
     const officeDescendantHrIdsToKeep = new Set<string>();
-    const isOfficeSelected = lineFilter.trim().toLowerCase() === "office";
-    const selectedLineRows = lineFilter
+    const isOfficeSelected = effectiveLineFilter.trim().toLowerCase() === "office";
+    const selectedLineRows = effectiveLineFilter
       ? rows.filter((row) =>
           isOfficeSelected
-            ? row.lineName === lineFilter
-            : row.lineName === lineFilter && isSalesDepartment(row),
+            ? row.lineName === effectiveLineFilter
+            : row.lineName === effectiveLineFilter && isSalesDepartment(row),
         )
       : rows;
 
-    if (lineFilter) {
+    if (effectiveLineFilter) {
       let frontier = selectedLineRows
         .map((row) => row.managerHrId)
         .filter((value): value is string => Boolean(value));
@@ -749,12 +746,12 @@ export function OrganogramReport({
       if (isOfficeSelected) {
         const officeManagerHrIds = new Set(
           rows
-            .filter((row) => row.lineName === lineFilter && !isChiefExecutive(row))
+            .filter((row) => row.lineName === effectiveLineFilter && !isChiefExecutive(row))
             .map((row) => row.hrId),
         );
 
         for (const row of rows) {
-          if (row.lineName === lineFilter || isChiefExecutive(row)) {
+          if (row.lineName === effectiveLineFilter || isChiefExecutive(row)) {
             continue;
           }
 
@@ -780,15 +777,15 @@ export function OrganogramReport({
 
     return rows.filter((row) => {
       const keepLeadershipChain =
-        Boolean(lineFilter) &&
+        Boolean(effectiveLineFilter) &&
         (isChiefExecutive(row) ||
           managerHrIdsToKeep.has(row.hrId) ||
           officeDescendantHrIdsToKeep.has(row.hrId));
       const matchesSelectedLine =
-        !lineFilter ||
+        !effectiveLineFilter ||
         (isOfficeSelected
-          ? row.lineName === lineFilter || officeDescendantHrIdsToKeep.has(row.hrId)
-          : row.lineName === lineFilter && isSalesDepartment(row));
+          ? row.lineName === effectiveLineFilter || officeDescendantHrIdsToKeep.has(row.hrId)
+          : row.lineName === effectiveLineFilter && isSalesDepartment(row));
 
       if (keepLeadershipChain) {
         return true;
@@ -796,117 +793,107 @@ export function OrganogramReport({
 
       return matchesSelectedLine;
     });
-  }, [lineFilter, rows]);
-  const hasActiveFilters = Boolean(lineFilter);
-  const canShowChart = Boolean(lineFilter);
+  }, [effectiveLineFilter, rows]);
+  const hasActiveFilters = Boolean(effectiveLineFilter) && !fixedLine;
+  const canShowChart = Boolean(effectiveLineFilter);
 
   function clearFilters() {
     setLineFilter("");
   }
 
   return (
-    <Card className="overflow-hidden border-slate-200 bg-white p-0 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
-      <div className="border-b border-slate-200 bg-slate-950 px-5 py-5 text-white">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
-              Employee Management
-            </p>
-            <h1 className="mt-2 text-2xl font-bold">Organogram</h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-300">
-              Sales lines show Sales and Marketing leadership. Office shows the full office structure.
-            </p>
+    <div className="space-y-6">
+      <AdminPageHero
+        actions={
+          <Button
+            className="h-10 rounded-xl px-3 text-xs"
+            disabled={isLoading}
+            onClick={() => void loadReport()}
+            variant="secondary"
+          >
+            {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Refresh
+          </Button>
+        }
+        badges={
+          <div className="flex flex-wrap gap-2 text-xs text-[#475569]">
+            <AdminInsightChip>
+              {effectiveLineFilter ? `${effectiveLineFilter} selected` : "Select line"}
+            </AdminInsightChip>
+            <AdminInsightChip tone="orange">
+              {rows.length} total rows cached
+            </AdminInsightChip>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="neutral">
-              {lineFilter ? `${lineFilter} selected` : "Select line"}
-            </Badge>
-            <Button
-              className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
-              disabled={isLoading}
-              onClick={() => void loadReport()}
-              variant="secondary"
-            >
-              {isLoading ? <LoadingSpinner /> : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
-              Refresh
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-4 p-5">
+        }
+        description="Sales lines show Sales and Marketing leadership. Office shows the full office structure."
+        eyebrow="People"
+        icon={<Building2 className="h-3.5 w-3.5" />}
+        title="Organogram"
+      />
 
       {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <div className="flex gap-3">
-            <AlertCircle className="mt-0.5 h-5 w-5 text-danger" />
-            <div>
-              <h2 className="text-base font-semibold text-text">
-                Organogram unavailable
-              </h2>
-              <p className="mt-1 text-sm text-text-secondary">{error}</p>
-            </div>
+        <AdminCallout tone="danger">
+          <AlertCircle className="mt-0.5 h-5 w-5 text-danger" />
+          <div>
+            <h2 className="text-base font-semibold text-text">Organogram unavailable</h2>
+            <p className="mt-1 text-sm text-text-secondary">{error}</p>
           </div>
-        </div>
+        </AdminCallout>
+      ) : null}
+
+      {isLoading && !report ? (
+        <Card className={`${adminPanelClassName} p-4`}>
+          <div className="flex items-center gap-3 text-sm text-[#64748B]">
+            <LoadingSpinner />
+            Loading organogram...
+          </div>
+        </Card>
       ) : null}
 
       {report ? (
         <>
-          <div className="rounded-xl border border-slate-200 bg-white">
-            <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50 px-4 py-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">
-                  Filters
-                </p>
-                <h2 className="mt-2 text-base font-semibold text-text">
-                  Hierarchy Scope
-                </h2>
-                <p className="mt-1 text-sm text-text-secondary">
-                  Select a line to reveal the matching hierarchy.
-                </p>
-              </div>
-              <Button
-                className="gap-2 whitespace-nowrap"
-                disabled={!hasActiveFilters}
-                onClick={clearFilters}
-                variant="secondary"
-              >
-                <X className="h-4 w-4" />
-                Reset
-              </Button>
-            </div>
-
+          <AdminTableShell
+            action={
+              !fixedLine ? (
+                <Button
+                  className="h-10 gap-2"
+                  disabled={!hasActiveFilters}
+                  onClick={clearFilters}
+                  variant="secondary"
+                >
+                  <X className="h-4 w-4" />
+                  Reset
+                </Button>
+              ) : null
+            }
+            description="Select a line to reveal the matching hierarchy."
+            title="Hierarchy Scope"
+          >
             <div className="grid gap-3 p-4 md:grid-cols-[minmax(240px,360px)_1fr]">
-              <SelectFilter
-                label="Line"
-                onChange={setLineFilter}
-                options={filterOptions.lines}
-                value={lineFilter}
-              />
+              {!fixedLine ? (
+                <SelectFilter
+                  label="Line"
+                  onChange={setLineFilter}
+                  options={filterOptions.lines}
+                  value={lineFilter}
+                />
+              ) : null}
               <div className="flex items-end">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-text-secondary">
-                  {lineFilter
-                    ? `Showing ${filteredRows.length} rows inside ${lineFilter}.`
+                <div className="rounded-xl border border-[#E2E8F0] bg-[#FCFDFE] px-4 py-3 text-sm text-text-secondary">
+                  {effectiveLineFilter
+                    ? `Showing ${filteredRows.length} rows inside ${effectiveLineFilter}.`
                     : "Pick a line to render the hierarchy in one focused view."}
                 </div>
               </div>
             </div>
-          </div>
+          </AdminTableShell>
 
           <OrganogramView
             rows={canShowChart ? filteredRows : []}
-            selectedLine={lineFilter || null}
+            selectedLine={effectiveLineFilter || null}
           />
         </>
-      ) : isLoading ? (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div className="flex items-center gap-3 text-sm text-text-secondary">
-            <LoadingSpinner />
-            Loading organogram...
-          </div>
-        </div>
       ) : null}
-      </div>
-    </Card>
+    </div>
   );
 }

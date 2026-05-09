@@ -25,7 +25,7 @@ function offerApiError(error: unknown) {
 
 export async function POST(
   request: Request,
-  context: RouteContext<"/api/offers/[offerRef]/approve">,
+  context: { params: Promise<{ offerRef: string }> },
 ) {
   try {
     const access = await resolveAccessContext(request);

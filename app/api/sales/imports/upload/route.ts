@@ -26,7 +26,7 @@ export async function POST(request: Request) {
       tooLargeError: "sales_file_too_large",
       tooLargeMessage: "Sales workbook exceeds the 10MB upload limit.",
       unsupportedError: "unsupported_sales_file_type",
-      unsupportedMessage: "Upload a sales workbook in .xls, .xlsx, .csv, or .tsv format.",
+      unsupportedMessage: "Upload a monthly closing sheet in .xls or .xlsx format.",
     });
     if (!fileValidation.ok) {
       return NextResponse.json(

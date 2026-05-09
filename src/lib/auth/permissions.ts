@@ -45,14 +45,14 @@ export type PermissionResource =
   | "organogram"
   | "offers"
   | "probation"
+  | "resignations"
   | "contracts"
   | "hr_calendar"
+  | "geo_intelligence"
+  | "outstation"
   | "admin"
   | "user_admin"
-  | "permission_admin"
-  | "role_admin"
-  | "password_admin"
-  | "audit_admin";
+  | "permission_admin";
 
 export const permissionResources: PermissionResource[] = [
   "admin",
@@ -66,18 +66,18 @@ export const permissionResources: PermissionResource[] = [
   "team",
   "offers",
   "probation",
+  "resignations",
   "contracts",
   "user_admin",
   "permission_admin",
-  "role_admin",
-  "password_admin",
-  "audit_admin",
   "employee_documents",
   "employee_profile",
   "vacancies",
   "organogram",
   "hr_calendar",
   "payslips",
+  "geo_intelligence",
+  "outstation",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -138,20 +138,20 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: allActions,
     employees: allActions,
     expenses: allActions,
+    geo_intelligence: allActions,
     hr_calendar: allActions,
+    outstation: allActions,
     organogram: allActions,
     offers: allActions,
     payroll: allActions,
     payslips: allActions,
     probation: allActions,
+    resignations: allActions,
     permission_admin: allActions,
-    password_admin: allActions,
-    role_admin: allActions,
     sales: allActions,
     team: allActions,
     user_admin: allActions,
     vacancies: allActions,
-    audit_admin: allActions,
   },
   CEO: {
     admin: allActions,
@@ -162,11 +162,13 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "export"],
     employees: ["read", "export"],
     expenses: ["read", "approve", "export"],
+    geo_intelligence: ["read", "export"],
+    outstation: ["read", "approve", "export", "update"],
     organogram: ["read", "export"],
     payroll: ["read", "export"],
     permission_admin: ["read"],
-    audit_admin: ["read"],
     payslips: ["read", "export"],
+    resignations: ["read", "approve", "export"],
     sales: ["read", "export"],
     team: ["read", "export"],
     user_admin: ["read"],
@@ -182,24 +184,26 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: allActions,
     employees: allActions,
     expenses: allActions,
+    geo_intelligence: allActions,
     hr_calendar: allActions,
+    outstation: allActions,
     organogram: ["read", "export"],
     offers: allActions,
     payroll: allActions,
     permission_admin: ["read"],
-    password_admin: ["read", "update"],
     payslips: allActions,
     probation: allActions,
-    role_admin: ["read", "update"],
+    resignations: allActions,
     team: ["read", "export"],
-    user_admin: ["read", "create", "update"],
+    user_admin: ["read", "update"],
     vacancies: allActions,
-    audit_admin: ["read"],
   },
   "Finance Manager": {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: allActions,
+    geo_intelligence: ["read", "export"],
+    outstation: ["read", "approve", "export", "update"],
     payroll: allActions,
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -209,6 +213,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
+    outstation: ["read", "create"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -218,6 +223,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
+    outstation: ["read", "create"],
     payroll: ["read", "export"],
     sales: ["read", "export"],
     payslips: ["read", "export"],
@@ -227,9 +233,11 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
+    outstation: ["read", "create", "approve", "export"],
     organogram: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
+    probation: ["read", "export"],
     sales: ["read", "export"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
@@ -239,6 +247,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
+    outstation: ["read", "create", "approve", "export"],
     organogram: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -250,6 +259,8 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
+    outstation: ["read", "create", "approve", "export"],
+    probation: ["read", "export"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -262,6 +273,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
+    outstation: ["read", "create"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -271,6 +283,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
+    outstation: ["read", "create"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -280,6 +293,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
+    outstation: ["read", "create"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: allActions,
@@ -290,6 +304,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     employees: ["read", "export"],
     expenses: ["read", "export"],
+    outstation: ["read", "create"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     probation: ["read", "export"],
@@ -301,6 +316,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     employees: ["read"],
     expenses: ["read", "export"],
+    outstation: ["read", "create"],
     offers: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -311,6 +327,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     employees: ["read", "export"],
     expenses: ["read", "export"],
+    outstation: ["read", "create"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -470,16 +487,13 @@ export function createAccessContext(input: {
   role?: string | null;
   source?: AccessContext["source"];
 }): AccessContext {
-  const parsedRole = input.role == null ? "Employee" : tryParseRole(input.role);
-  if (!parsedRole) {
-    throw new Error(`Invalid role "${String(input.role ?? "").trim()}".`);
-  }
+  const role = normalizeRole(input.role);
 
   return {
     hrId: normalizeHrId(input.hrId),
     loginId: input.loginId ?? null,
-    role: parsedRole,
-    scope: scopeForRole(parsedRole),
+    role,
+    scope: scopeForRole(role),
     source: input.source ?? "session",
   };
 }
@@ -535,10 +549,10 @@ function toPermissionMatrix(overrides: PermissionDbOverrideRow[]): PermissionMat
   const merged = clonePermissionMatrix(defaultPermissionMatrix);
 
   overrides.forEach((override) => {
-    const role = tryParseRole(override.role_name);
+    const role = normalizeRole(override.role_name);
     const resource = normalizePermissionResource(override.resource);
     const action = normalizePermissionAction(override.action);
-    if (!role || !resource || !action || typeof override.is_allowed !== "boolean") return;
+    if (!resource || !action || typeof override.is_allowed !== "boolean") return;
 
     const current = merged[role][resource] ?? [];
     const withoutAction = current.filter((item) => item !== action);

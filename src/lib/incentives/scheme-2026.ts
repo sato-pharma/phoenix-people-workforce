@@ -18,6 +18,7 @@
  *    - 101% to 120%: +1.5% payout for each 1% achievement
  *    - Above 120%: +3% payout for each 1% achievement
  *    - Achievement ceiling capped at 150%
+ *    - Maximum payout at 150% achievement = 220%
  */
 
 export type IncentiveCalculation = {
@@ -28,6 +29,10 @@ export type IncentiveCalculation = {
   payoutAmount: number;
   achievement: number; // 0 to 150 (capped)
 };
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
 
 export function calculateIncentive2026(params: {
   netSalary?: number;
@@ -43,12 +48,12 @@ export function calculateIncentive2026(params: {
   const grossSalary = params.grossSalary ?? 0;
   const socialInsurance = params.socialInsurance ?? 0;
   const taxes = params.taxes ?? 0;
-  const netSalary = Math.max(
+  const netSalary = roundMoney(Math.max(
     0,
     hasGrossBasis ? grossSalary - socialInsurance - taxes : params.netSalary ?? 0,
-  );
-  const basicSalary = netSalary * 0.7;
-  const semesterTargetIncentive = basicSalary * 2;
+  ));
+  const basicSalary = roundMoney(netSalary * 0.7);
+  const semesterTargetIncentive = roundMoney(basicSalary * 2);
   
   // Cap achievement at 150%
   const achievement = Math.min(150, Math.max(0, params.achievementPercent));
@@ -67,14 +72,14 @@ export function calculateIncentive2026(params: {
     payoutPercentage = 100 + (achievement - 100) * 1.5;
   } else {
     // Above 120%
-    // 121% -> 133%, ..., 150% -> capped at 150%
+    // 121% -> 133%, ..., 150% -> 220%
     payoutPercentage = 130 + (achievement - 120) * 3;
   }
 
-  // Enforce final payout cap at 150%.
-  payoutPercentage = Math.min(150, payoutPercentage);
+  // Achievement is capped at 150%, which produces a maximum payout of 220%.
+  payoutPercentage = Math.min(220, payoutPercentage);
   
-  const payoutAmount = (semesterTargetIncentive * payoutPercentage) / 100;
+  const payoutAmount = roundMoney((semesterTargetIncentive * payoutPercentage) / 100);
   
   return {
     netSalary,

@@ -219,9 +219,9 @@ export function SalesUpload() {
     <div className="space-y-5">
       <div>
         <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">Sales</p>
-        <h1 className="mt-1 text-2xl font-bold text-text">Upload Monthly Sales</h1>
+        <h1 className="mt-1 text-2xl font-bold text-text">Upload Monthly Closing Sheet</h1>
         <p className="mt-1 text-sm text-text-secondary">
-          Upload the monthly sales workbook, validate the sheet, then review the saved batch.
+          Upload the monthly closing sheet, validate the sheet, then review the saved batch.
         </p>
       </div>
 
@@ -254,13 +254,13 @@ export function SalesUpload() {
                   <span className="flex min-w-0 items-center gap-2">
                     <FileSpreadsheet className="h-4 w-4 shrink-0 text-primary" />
                     <span className="truncate font-medium text-text">
-                      {selectedFile?.name ?? "Choose .xlsx sales workbook"}
+                      {selectedFile?.name ?? "Choose .xlsx closing sheet"}
                     </span>
                   </span>
                   <UploadCloud className="h-4 w-4 shrink-0 text-text-secondary" />
                 </button>
                 <input
-                  accept=".xlsx,.xls,.csv,.tsv"
+                  accept=".xlsx,.xls"
                   className="hidden"
                   onChange={(event) => {
                     setSelectedFile(event.target.files?.[0] ?? null);

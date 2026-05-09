@@ -43,22 +43,6 @@ export type SalesRecordInput = Record<string, any> & {
   year: number;
 };
 
-export type TargetRecord = Record<string, any> & {
-  batchId: string;
-  employeeCrmId?: string | null;
-  employeeHrId?: string | null;
-  employeeLookupKey?: string | null;
-  employeeName?: string | null;
-  id: string;
-  line: string;
-  month: number;
-  status: SalesValidationState;
-  targetUnits: number;
-  targetValue: number;
-  validationNotes: string[];
-  year: number;
-};
-
 export type SalesBatch = Record<string, any> & {
   approvalBlockedReason: string | null;
   approvedAt: string | null;
@@ -87,18 +71,6 @@ export type SalesBatch = Record<string, any> & {
   validRecords: number;
   version?: number;
   warningRecords: number;
-  year: number;
-};
-
-export type TargetBatch = Record<string, any> & {
-  createdAt?: string;
-  failedRecords: number;
-  fileName: string;
-  id: string;
-  month: number;
-  status: string;
-  totalRecords: number;
-  validRecords: number;
   year: number;
 };
 export type SalesBatchDetail = Record<string, any>;
@@ -157,9 +129,4 @@ export type SalesHistoryRow = Record<string, any>;
 export type SalesImportPayload = {
   batch: SalesBatch;
   records: SalesRecordInput[];
-};
-
-export type TargetUploadPayload = {
-  batch: TargetBatch;
-  records: TargetRecord[];
 };

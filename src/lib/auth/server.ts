@@ -6,11 +6,9 @@ import {
 import {
   getCookieValue,
   phoenixSessionCookieName,
-  type SessionPayload,
   verifySessionToken,
 } from "@/lib/auth/session";
 import { writeAuthAudit } from "@/lib/auth/audit";
-import { normalizeHrId } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cookies, headers } from "next/headers";
 
@@ -19,7 +17,7 @@ function isDevHeaderEnabled() {
 }
 
 function isLocalDevelopment() {
-  return process.env.NODE_ENV === "development" && !process.env.VERCEL_ENV;
+  return process.env.NODE_ENV === "development";
 }
 
 function isLocalHostname(value: string | null | undefined) {
@@ -54,55 +52,30 @@ const anonymousAccessContext = createAccessContext({
 });
 
 type SessionUserRow = {
-  auth_user_id?: string | null;
-  force_password_reset?: boolean | null;
   hr_id: string | null;
   is_active: boolean;
   login_id: string;
+  name?: string | null;
   role: string;
   session_version?: number | null;
 };
 
-type SessionProfileRow = {
-  auth_user_id?: string | null;
-  hr_id?: string | null;
-  is_active?: boolean | null;
-  login_id?: string | null;
-  phoenix_role?: string | null;
+export type ViewerIdentity = {
+  displayName: string;
+  initials: string;
+  roleLabel: string;
 };
 
-type ResolvedSessionAccess = {
-  access: AccessContext;
-  payload: SessionPayload;
-};
-
-function normalizedIdentity(value: string | null | undefined) {
-  return normalizeHrId(value);
-}
-
-function sameRoleValue(left: string | null | undefined, right: string | null | undefined) {
-  return String(left ?? "").trim().toLowerCase() === String(right ?? "").trim().toLowerCase();
-}
-
-async function resolveSessionAccessContext(token: string | null | undefined): Promise<ResolvedSessionAccess | null> {
+async function resolveSessionAccessContext(token: string | null | undefined) {
   const payload = verifySessionToken(token);
   if (!payload) return null;
 
   const supabase = getSupabaseAdmin();
-  const [{ data, error }, profileResult] = await Promise.all([
-    supabase
-      .from("app_auth_users")
-      .select("login_id, hr_id, role, is_active, session_version, auth_user_id, force_password_reset")
-      .eq("login_id", payload.loginId)
-      .maybeSingle(),
-    payload.authUserId
-      ? supabase
-          .from("user_access_profiles")
-          .select("auth_user_id, login_id, hr_id, is_active, phoenix_role")
-          .eq("auth_user_id", payload.authUserId)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-  ]);
+  const { data, error } = await supabase
+    .from("app_auth_users")
+    .select("login_id, hr_id, role, is_active, session_version")
+    .eq("login_id", payload.loginId)
+    .maybeSingle();
 
   if (error) {
     throw error;
@@ -125,9 +98,6 @@ async function resolveSessionAccessContext(token: string | null | undefined): Pr
 
   const role = parseRoleStrict(row.role);
   const sessionVersion = Number.isFinite(row.session_version) ? Number(row.session_version) : 1;
-  const currentHrId = normalizedIdentity(row.hr_id ?? row.login_id);
-  const payloadHrId = normalizedIdentity(payload.hrId ?? payload.loginId);
-
   if (!row.is_active) {
     await writeAuthAudit({
       actorLoginId: row.login_id,
@@ -140,24 +110,6 @@ async function resolveSessionAccessContext(token: string | null | undefined): Pr
         role,
       },
       summary: "Session rejected: account inactive",
-    }).catch(() => undefined);
-    return null;
-  }
-
-  if (row.force_password_reset) {
-    await writeAuthAudit({
-      actorLoginId: row.login_id,
-      actorHrId: row.hr_id,
-      actorRole: role,
-      entityId: row.login_id,
-      newValues: {
-        reason: "force_password_reset",
-        sessionId: payload.sid,
-      },
-      oldValues: {
-        role,
-      },
-      summary: "Session rejected: password reset required",
     }).catch(() => undefined);
     return null;
   }
@@ -177,40 +129,6 @@ async function resolveSessionAccessContext(token: string | null | undefined): Pr
     return null;
   }
 
-  if (!row.auth_user_id || row.auth_user_id !== payload.authUserId) {
-    await writeAuthAudit({
-      actorLoginId: row.login_id,
-      actorHrId: row.hr_id,
-      actorRole: role,
-      entityId: row.login_id,
-      newValues: {
-        currentAuthUserId: row.auth_user_id ?? null,
-        previousAuthUserId: payload.authUserId,
-        reason: "auth_user_link_mismatch",
-        sessionId: payload.sid,
-      },
-      summary: "Session rejected: auth user linkage changed",
-    }).catch(() => undefined);
-    return null;
-  }
-
-  if (!currentHrId || !payloadHrId || currentHrId !== payloadHrId) {
-    await writeAuthAudit({
-      actorLoginId: row.login_id,
-      actorHrId: row.hr_id,
-      actorRole: role,
-      entityId: row.login_id,
-      newValues: {
-        currentHrId,
-        previousHrId: payloadHrId,
-        reason: "hr_id_link_mismatch",
-        sessionId: payload.sid,
-      },
-      summary: "Session rejected: employee linkage changed",
-    }).catch(() => undefined);
-    return null;
-  }
-
   if (sessionVersion !== payload.ver) {
     await writeAuthAudit({
       actorLoginId: row.login_id,
@@ -226,40 +144,12 @@ async function resolveSessionAccessContext(token: string | null | undefined): Pr
     return null;
   }
 
-  const profileRow = (profileResult.data as SessionProfileRow | null) ?? null;
-  if (
-    profileResult.error ||
-    !profileRow ||
-    normalizedIdentity(profileRow.hr_id ?? profileRow.login_id) !== currentHrId ||
-    !profileRow.is_active ||
-    !sameRoleValue(profileRow.phoenix_role, row.role)
-  ) {
-    await writeAuthAudit({
-      actorLoginId: row.login_id,
-      actorHrId: row.hr_id,
-      actorRole: role,
-      entityId: row.login_id,
-      newValues: {
-        profileLoginId: profileRow?.login_id ?? null,
-        profileRole: profileRow?.phoenix_role ?? null,
-        profileHrId: profileRow?.hr_id ?? null,
-        reason: "access_profile_mismatch",
-        sessionId: payload.sid,
-      },
-      summary: "Session rejected: access profile mismatch",
-    }).catch(() => undefined);
-    return null;
-  }
-
-  return {
-    access: createAccessContext({
-      hrId: row.hr_id,
-      loginId: row.login_id,
-      role,
-      source: "session",
-    }),
-    payload,
-  };
+  return createAccessContext({
+    hrId: row.hr_id,
+    loginId: row.login_id,
+    role,
+    source: "session",
+  });
 }
 
 export async function resolveAccessContext(request: Request): Promise<AccessContext> {
@@ -268,7 +158,7 @@ export async function resolveAccessContext(request: Request): Promise<AccessCont
   );
 
   if (sessionContext) {
-    return sessionContext.access;
+    return sessionContext;
   }
 
   if (!isLocalDevHeaderRequest(request.headers)) {
@@ -281,8 +171,6 @@ export async function resolveAccessContext(request: Request): Promise<AccessCont
   if (!role && !hrId) {
     return anonymousAccessContext;
   }
-
-  console.warn("[phoenix-auth] Development auth headers accepted for local request.");
 
   return createAccessContext({
     hrId,
@@ -298,7 +186,7 @@ export async function resolveAccessContextFromPage(): Promise<AccessContext> {
   const sessionContext = await resolveSessionAccessContext(cookieValue);
 
   if (sessionContext) {
-    return sessionContext.access;
+    return sessionContext;
   }
 
   if (!isLocalDevHeaderRequest(headerStore)) {
@@ -312,8 +200,6 @@ export async function resolveAccessContextFromPage(): Promise<AccessContext> {
     return anonymousAccessContext;
   }
 
-  console.warn("[phoenix-auth] Development auth headers accepted for local page request.");
-
   return createAccessContext({
     hrId,
     role,
@@ -321,32 +207,61 @@ export async function resolveAccessContextFromPage(): Promise<AccessContext> {
   });
 }
 
+function buildInitials(input: string) {
+  const parts = input
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  if (parts.length === 0) return "US";
+  return parts.map((part) => part.charAt(0).toUpperCase()).join("");
+}
+
+export async function resolveViewerIdentityFromPage(): Promise<ViewerIdentity> {
+  const access = await resolveAccessContextFromPage();
+  const fallbackName = access.loginId || access.hrId || "User";
+  const fallbackRole = access.role;
+
+  if (!access.loginId && !access.hrId) {
+    return {
+      displayName: fallbackName,
+      initials: buildInitials(fallbackName),
+      roleLabel: fallbackRole,
+    };
+  }
+
+  const supabase = getSupabaseAdmin();
+  let row: SessionUserRow | null = null;
+
+  if (access.loginId) {
+    const { data } = await supabase
+      .from("app_auth_users")
+      .select("login_id, hr_id, role, is_active, session_version, name")
+      .eq("login_id", access.loginId)
+      .maybeSingle();
+    row = (data as SessionUserRow | null) ?? null;
+  }
+
+  if (!row && access.hrId) {
+    const { data } = await supabase
+      .from("app_auth_users")
+      .select("login_id, hr_id, role, is_active, session_version, name")
+      .ilike("hr_id", access.hrId)
+      .maybeSingle();
+    row = (data as SessionUserRow | null) ?? null;
+  }
+
+  const displayName = row?.name?.trim() || fallbackName;
+  const roleLabel = row?.role?.trim() || fallbackRole;
+
+  return {
+    displayName,
+    initials: buildInitials(displayName),
+    roleLabel,
+  };
+}
+
 export function isForbiddenError(error: unknown) {
   return error instanceof Error && error.message.toLowerCase().startsWith("forbidden:");
-}
-
-export function getSessionPayloadFromRequest(request: Request) {
-  return verifySessionToken(
-    getCookieValue(request.headers.get("cookie"), phoenixSessionCookieName),
-  );
-}
-
-export async function assertRecentAuthentication(
-  request: Request,
-  maxAgeSeconds = 15 * 60,
-) {
-  const resolved = await resolveSessionAccessContext(
-    getCookieValue(request.headers.get("cookie"), phoenixSessionCookieName),
-  );
-
-  if (!resolved) {
-    throw new Error("Forbidden: recent sign-in required.");
-  }
-
-  const ageSeconds = Math.floor(Date.now() / 1000) - resolved.payload.iat;
-  if (ageSeconds > maxAgeSeconds) {
-    throw new Error("Forbidden: recent sign-in required.");
-  }
-
-  return resolved;
 }

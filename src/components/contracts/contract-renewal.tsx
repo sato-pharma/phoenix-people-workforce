@@ -3,6 +3,15 @@
 import { AlertTriangle, Calendar, RefreshCw, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import {
+  AdminCallout,
+  AdminInsightChip,
+  AdminPageHero,
+  AdminStatCard,
+  AdminTableShell,
+  AdminSectionHeader,
+  adminPanelClassName,
+} from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -65,6 +74,8 @@ export function ContractRenewal({ initialData, initialError }: Props) {
   const [search, setSearch] = useState("");
   const [lineFilter, setLineFilter] = useState(ALL);
   const [areaFilter, setAreaFilter] = useState(ALL);
+  const selectClassName =
+    "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12";
 
   const rows = useMemo(() => initialData ?? [], [initialData]);
 
@@ -135,101 +146,90 @@ export function ContractRenewal({ initialData, initialError }: Props) {
 
   if (initialError) {
     return (
-      <Card className="overflow-hidden border-slate-200 bg-white p-0 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
-        <div className="border-b border-slate-200 bg-slate-950 px-5 py-5 text-white">
-          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
-            People Operations
-          </p>
-          <h1 className="mt-2 text-2xl font-bold">Contract Renewal</h1>
-          <p className="mt-1 text-sm text-slate-300">Track upcoming contract renewals across all employees.</p>
-        </div>
+      <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+        <AdminPageHero
+          badges={
+            <div className="flex flex-wrap gap-2">
+              <AdminInsightChip>Contract renewals</AdminInsightChip>
+            </div>
+          }
+          description="Track upcoming contract renewals across all employees."
+          eyebrow="People Operations"
+          icon={<Calendar className="h-3.5 w-3.5" />}
+          title="Contract Renewal"
+        />
         <div className="p-5">
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-danger" />
-            <p className="text-sm text-danger">{initialError}</p>
-          </div>
-        </div>
+          <AdminCallout tone="danger">
+            <AlertTriangle className="mt-0.5 h-4 w-4 text-danger" />
+            <div>
+              <h2 className="text-sm font-semibold text-[#991B1B]">Contract renewal data unavailable</h2>
+              <p className="mt-1 text-sm text-[#991B1B]">{initialError}</p>
+            </div>
+          </AdminCallout>
         </div>
       </Card>
     );
   }
 
   return (
-    <Card className="overflow-hidden border-slate-200 bg-white p-0 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
-      <div className="border-b border-slate-200 bg-slate-950 px-5 py-5 text-white">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
-              People Operations
-            </p>
-            <h1 className="mt-2 text-2xl font-bold">Contract Renewal</h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-300">
-              Track annual contract renewals calculated one year after each employee hire date.
-            </p>
+    <div className="space-y-6">
+      <AdminPageHero
+        actions={
+          <Button
+            className="h-10 gap-2 rounded-xl"
+            disabled={!hasActiveFilters}
+            onClick={resetFilters}
+            variant="secondary"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Reset {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
+          </Button>
+        }
+        badges={
+          <div className="flex flex-wrap gap-2">
+            <AdminInsightChip>{summary.total} renewals</AdminInsightChip>
+            <AdminInsightChip tone="orange">{summary.upcoming30} due in 30d</AdminInsightChip>
+            <AdminInsightChip tone="slate">{summary.upcoming7} due in 7d</AdminInsightChip>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={summary.upcoming7 > 0 ? "danger" : "neutral"}>
-              {summary.upcoming7} urgent
-            </Badge>
-            <Button
-              className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
-              disabled={!hasActiveFilters}
-              onClick={resetFilters}
-              variant="secondary"
-            >
-              <RefreshCw className="mr-2 h-3.5 w-3.5" />
-              Reset
-            </Button>
-          </div>
-        </div>
+        }
+        description="Track annual contract renewals calculated from each employee hire date."
+        eyebrow="People Operations"
+        icon={<Calendar className="h-3.5 w-3.5" />}
+        title="Contract Renewal"
+      />
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AdminStatCard
+          description="Renewals in selected month"
+          icon={<Calendar className="h-5 w-5" />}
+          label="Total Renewals"
+          value={summary.total}
+        />
+        <AdminStatCard
+          description="Renewal due in 30 days"
+          icon={<AlertTriangle className="h-5 w-5" />}
+          label="Due in 30 Days"
+          value={summary.upcoming30}
+        />
+        <AdminStatCard
+          description="Renewal due in 7 days"
+          icon={<AlertTriangle className="h-5 w-5" />}
+          label="Due in 7 Days"
+          value={summary.upcoming7}
+        />
       </div>
 
-      <div className="space-y-4 p-5">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-900">
-          <div className="flex items-start gap-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/70 text-primary">
-              <Calendar className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">Total Renewals</p>
-              <p className="mt-2 font-mono text-2xl font-bold">{summary.total}</p>
-              <p className="mt-1 text-xs opacity-70">This month</p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-orange-50 p-4 text-orange-800">
-          <div className="flex items-start gap-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/70 text-warning">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">Due in 30 Days</p>
-              <p className="mt-2 font-mono text-2xl font-bold">{summary.upcoming30}</p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-rose-50 p-4 text-rose-800">
-          <div className="flex items-start gap-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/70 text-danger">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">Due in 7 Days</p>
-              <p className="mt-2 font-mono text-2xl font-bold">{summary.upcoming7}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <Card className={`${adminPanelClassName} p-5`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-text">Renewal Calendar - Day Heatmap</h2>
-            <p className="mt-1 text-sm text-text-secondary">Daily renewal density for the selected month.</p>
+            <h2 className="text-base font-black tracking-[-0.03em] text-[#0F172A]">Renewal Calendar</h2>
+            <p className="mt-1 text-sm text-[#64748B]">
+              Daily renewal density for {MONTHS.find((m) => m.value === selectedMonth)?.label} {selectedYear}
+            </p>
           </div>
-          <Badge variant="neutral">{MONTHS.find((m) => m.value === selectedMonth)?.label} {selectedYear}</Badge>
+          <Badge variant="neutral">
+            {MONTHS.find((m) => m.value === selectedMonth)?.label} {selectedYear}
+          </Badge>
         </div>
         <div className="grid grid-cols-7 gap-2 sm:grid-cols-10 lg:grid-cols-16">
           {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
@@ -239,136 +239,173 @@ export function ContractRenewal({ initialData, initialError }: Props) {
               <div
                 key={day}
                 title={`Day ${day}: ${count} renewal${count !== 1 ? "s" : ""}`}
-                className="flex flex-col items-center justify-center rounded-lg border border-slate-200 py-2"
-                style={{ backgroundColor: count > 0 ? `rgba(249, 115, 22, ${intensity * 0.4})` : undefined }}
+                className="flex flex-col items-center justify-center rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] py-2"
+                style={{ backgroundColor: count > 0 ? `rgba(249, 115, 22, ${intensity * 0.35})` : undefined }}
               >
-                <span className="text-xs font-mono text-text-secondary">{day}</span>
-                {count > 0 && <span className="text-xs font-bold text-warning">{count}</span>}
+                <span className="text-xs font-mono text-[#64748B]">{day}</span>
+                {count > 0 && <span className="text-xs font-bold text-[#EA580C]">{count}</span>}
               </div>
             );
           })}
         </div>
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <div className="flex flex-wrap gap-3">
-          <div className="flex gap-2">
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="rounded-lg border border-border bg-white px-3 py-2 text-sm text-text focus:outline-none"
-            >
-              {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-            </select>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="rounded-lg border border-border bg-white px-3 py-2 text-sm text-text focus:outline-none"
-            >
-              {[-2, -1, 0, 1, 2].map((offset) => (
-                <option key={offset} value={currentYear + offset}>{currentYear + offset}</option>
-              ))}
-            </select>
-          </div>
-          <label className="relative block">
-            <span className="sr-only">Search renewals</span>
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
-            <Input placeholder="Search name or HR ID" value={search} onChange={(e) => setSearch(e.target.value)} className="w-56 bg-white pl-9" />
-          </label>
-          <select
-            value={lineFilter}
-            onChange={(e) => setLineFilter(e.target.value)}
-            className="rounded-lg border border-border bg-white px-3 py-2 text-sm text-text focus:outline-none"
+      <AdminTableShell
+        action={
+          <Button
+            className="h-10 gap-2 rounded-xl"
+            disabled={!hasActiveFilters}
+            onClick={resetFilters}
+            variant="secondary"
           >
-            <option value={ALL}>All lines</option>
-            {filterOptions.lines.map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
-          <select
-            value={areaFilter}
-            onChange={(e) => setAreaFilter(e.target.value)}
-            className="rounded-lg border border-border bg-white px-3 py-2 text-sm text-text focus:outline-none"
-          >
-            <option value={ALL}>All areas</option>
-            {filterOptions.areas.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
-          <Button variant="secondary" disabled={!hasActiveFilters} onClick={resetFilters}>
-            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+            <RefreshCw className="h-4 w-4" />
             Reset {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
           </Button>
+        }
+        description="Refine by month, year, line, area, and keyword."
+        title="Filters"
+      >
+        <div className="grid gap-3 p-4 xl:grid-cols-6">
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Month</span>
+            <select
+              className={selectClassName}
+              value={selectedMonth}
+              onChange={(event) => setSelectedMonth(Number(event.target.value))}
+            >
+              {MONTHS.map((month) => (
+                <option key={month.value} value={month.value}>
+                  {month.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Year</span>
+            <select
+              className={selectClassName}
+              value={selectedYear}
+              onChange={(event) => setSelectedYear(Number(event.target.value))}
+            >
+              {[-2, -1, 0, 1, 2].map((offset) => (
+                <option key={offset} value={currentYear + offset}>
+                  {currentYear + offset}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="relative block">
+            <span className="sr-only">Search renewals</span>
+            <Search className="pointer-events-none absolute left-3 top-9 h-4 w-4 text-[#64748B]" />
+            <Input
+              className="h-10 bg-white pl-9"
+              placeholder="Search name or HR ID"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Line</span>
+            <select
+              className={selectClassName}
+              value={lineFilter}
+              onChange={(event) => setLineFilter(event.target.value)}
+            >
+              <option value={ALL}>All lines</option>
+              {filterOptions.lines.map((line) => (
+                <option key={line} value={line}>
+                  {line}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Area</span>
+            <select
+              className={selectClassName}
+              value={areaFilter}
+              onChange={(event) => setAreaFilter(event.target.value)}
+            >
+              <option value={ALL}>All areas</option>
+              {filterOptions.areas.map((area) => (
+                <option key={area} value={area}>
+                  {area}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
-      </div>
+      </AdminTableShell>
 
-      <div className="rounded-xl border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-text">Renewals ({filtered.length})</h2>
-              <p className="mt-1 text-sm text-text-secondary">
-                Renewal date is calculated from hire date + one year, then repeated annually.
-              </p>
+      <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+        <AdminSectionHeader
+          description="Renewal date is calculated from hire date + one year for the selected period."
+          title={`Renewals (${filtered.length})`}
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={summary.upcoming7 > 0 ? "danger" : "neutral"}>{summary.upcoming7} urgent</Badge>
+              <Badge variant="neutral">{filtered.length} visible</Badge>
             </div>
-            <Badge variant="neutral">{filtered.length} visible</Badge>
-          </div>
-        </div>
+          }
+        />
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-100 text-xs uppercase tracking-[0.12em] text-text-secondary">
+              <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
                 {["HR ID", "CRM ID", "Full Name", "Job Title", "Line", "Area", "Hire Date", "Renewal Date", "Status"].map((col) => (
-                  <th key={col} className="px-4 py-3 font-semibold">{col}</th>
+                  <th className="px-3 py-3" key={col}>{col}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.length === 0 && (
+            <tbody className="divide-y divide-[#E2E8F0]">
+              {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-10 text-center">
                     <div className="mx-auto max-w-md">
-                      <p className="text-sm font-semibold text-text">
+                      <p className="text-sm font-semibold text-[#0F172A]">
                         {rows.length === 0
                           ? "No hire dates are available to calculate renewals."
                           : "No contract renewals found for this month."}
                       </p>
-                      <p className="mt-2 text-sm leading-6 text-text-secondary">
-                        Add employee hire dates to calculate each annual contract
-                        renewal automatically.
+                      <p className="mt-2 text-sm leading-6 text-[#64748B]">
+                        Add employee hire dates to calculate each annual contract renewal automatically.
                       </p>
                     </div>
                   </td>
                 </tr>
+              ) : (
+                filtered.map((row, index) => {
+                  const days = daysUntilDate(row.contract_renewal_date);
+                  const isUrgent = days >= 0 && days <= 7;
+                  const isWarning = days >= 0 && days <= 30;
+                  return (
+                    <tr className="transition-colors hover:bg-[#FCFDFE]" key={`${row.hr_id}-${index}`}>
+                      <td className="px-3 py-3 font-mono text-xs text-[#64748B]">{row.hr_id || "-"}</td>
+                      <td className="px-3 py-3 font-mono text-xs text-[#64748B]">{row.crm_id || "-"}</td>
+                      <td className="px-3 py-3 font-semibold text-[#0F172A]">{row.full_name}</td>
+                      <td className="px-3 py-3 text-[#64748B]">{row.job_title}</td>
+                      <td className="px-3 py-3 text-[#64748B]">{row.line}</td>
+                      <td className="px-3 py-3 text-[#64748B]">{row.area}</td>
+                      <td className="px-3 py-3 text-[#64748B]">{formatStoredDate(row.contract_signed_date)}</td>
+                      <td className="px-3 py-3 font-medium text-[#0F172A]">{formatStoredDate(row.contract_renewal_date)}</td>
+                      <td className="px-3 py-3">
+                        {days < 0
+                          ? <Badge variant="neutral">Past</Badge>
+                          : isUrgent
+                            ? <Badge variant="danger">{days}d left</Badge>
+                            : isWarning
+                              ? <Badge variant="warning">{days}d left</Badge>
+                              : <Badge variant="neutral">{days}d left</Badge>
+                        }
+                      </td>
+                    </tr>
+                  );
+                })
               )}
-              {filtered.map((row, i) => {
-                const days = daysUntilDate(row.contract_renewal_date);
-                const isUrgent = days >= 0 && days <= 7;
-                const isWarning = days >= 0 && days <= 30;
-                return (
-                  <tr key={`${row.hr_id}-${i}`} className="transition-colors hover:bg-slate-50">
-                    <td className="px-4 py-3 font-mono text-xs text-text-secondary">{row.hr_id || "-"}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-text-secondary">{row.crm_id || "-"}</td>
-                    <td className="px-4 py-3 font-semibold text-text">{row.full_name}</td>
-                    <td className="px-4 py-3 text-text-secondary">{row.job_title}</td>
-                    <td className="px-4 py-3 text-text-secondary">{row.line}</td>
-                    <td className="px-4 py-3 text-text-secondary">{row.area}</td>
-                    <td className="px-4 py-3 text-text-secondary">{formatStoredDate(row.contract_signed_date)}</td>
-                    <td className="px-4 py-3 font-medium text-text">{formatStoredDate(row.contract_renewal_date)}</td>
-                    <td className="px-4 py-3">
-                      {days < 0
-                        ? <Badge variant="neutral">Past</Badge>
-                        : isUrgent
-                          ? <Badge variant="danger">{days}d left</Badge>
-                          : isWarning
-                            ? <Badge variant="warning">{days}d left</Badge>
-                            : <Badge variant="neutral">{days}d left</Badge>
-                      }
-                    </td>
-                  </tr>
-                );
-              })}
             </tbody>
           </table>
         </div>
-      </div>
-      </div>
-    </Card>
+      </Card>
+    </div>
   );
 }

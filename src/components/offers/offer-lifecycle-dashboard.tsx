@@ -16,9 +16,16 @@ import * as React from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import {
+  AdminCallout,
+  AdminInsightChip,
+  AdminPageHero,
+  AdminStatCard,
+  AdminTableShell,
+  adminPanelClassName,
+} from "@/components/admin/admin-design-system";
 import type {
   OfferDashboardData,
   OfferLifecycleRow,
@@ -26,8 +33,6 @@ import type {
   OfferStatus,
 } from "@/lib/offers/service";
 import { offerTemplates } from "@/lib/offers/templates";
-import { cn } from "@/lib/utils";
-
 type Props = {
   initialData?: OfferDashboardData | null;
   initialError?: string | null;
@@ -95,35 +100,6 @@ function statusVariant(status: OfferStatus) {
 
 function statusLabel(status: OfferStatus) {
   return status.replace(/_/g, " ");
-}
-
-function SummaryCard({
-  icon,
-  label,
-  tone,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  tone: "blue" | "emerald" | "orange" | "rose";
-  value: string;
-}) {
-  const tones = {
-    blue: "bg-sky-50 text-sky-800 border-sky-100",
-    emerald: "bg-emerald-50 text-emerald-800 border-emerald-100",
-    orange: "bg-orange-50 text-orange-800 border-orange-100",
-    rose: "bg-rose-50 text-rose-800 border-rose-100",
-  };
-
-  return (
-    <div className={cn("rounded-xl border p-4", tones[tone])}>
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] opacity-70">{label}</p>
-        <span className="shrink-0">{icon}</span>
-      </div>
-      <p className="mt-2 font-mono text-2xl font-black">{value}</p>
-    </div>
-  );
 }
 
 function Field({
@@ -256,7 +232,10 @@ export function OfferLifecycleDashboard({
   const selectedTemplate = offerTemplates.find((template) => template.value === form.templateKey) ?? null;
 
   // Derived values for Medical Rep vacancies
-  const medicalRepVacancies = lookups?.medicalRepVacancies ?? [];
+  const medicalRepVacancies = React.useMemo(
+    () => lookups?.medicalRepVacancies ?? [],
+    [lookups?.medicalRepVacancies],
+  );
   const isMedicalRep =
     form.templateKey === "medical_sales_representative" ||
     (selectedTemplate?.label ?? "").includes("Medical Representative");
@@ -278,21 +257,6 @@ export function OfferLifecycleDashboard({
       (vacancy) => String(vacancy.lineId) === String(form.lineId),
     );
   }, [medicalRepVacancies, form.lineId]);
-
-  // Debugging in development
-   React.useEffect(() => {
-     if (process.env.NODE_ENV === "development") {
-       console.log("medicalRepVacancies", medicalRepVacancies);
-       console.log("selectedLineId", form.lineId);
-       console.log("filteredVacantAreas", filteredVacantAreas);
-       console.log("OFFER_UI_LOOKUPS", {
-         medicalRepVacancies: lookups?.medicalRepVacancies?.length,
-         formLineId: form.lineId,
-         vacantLines,
-         filteredVacantAreas,
-       });
-     }
-   }, [medicalRepVacancies, form.lineId, filteredVacantAreas, vacantLines, lookups]);
 
   async function loadOffers() {
     setIsLoading(true);
@@ -372,91 +336,114 @@ export function OfferLifecycleDashboard({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#F97316]">
-            Digital Offer Lifecycle
-          </p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-text">Closed-loop Offer Management</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-text-secondary">
-            Create secure offer links, capture candidate decisions, trigger notifications, and move accepted candidates into onboarding.
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button className="gap-2" onClick={() => setIsModalOpen(true)}>
-            <Send className="h-4 w-4" />
-            Create offer
-          </Button>
-          <Button className="gap-2" disabled={isLoading} onClick={loadOffers} variant="secondary">
-            {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-4 w-4" />}
-            Refresh
-          </Button>
-        </div>
-      </div>
+      <AdminPageHero
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button className="gap-2 rounded-xl bg-[#0F172A] px-3 py-2 text-xs text-white hover:bg-[#111827]" onClick={() => setIsModalOpen(true)}>
+              <Send className="h-4 w-4" />
+              Create offer
+            </Button>
+            <Button className="gap-2 rounded-xl px-3 py-2 text-xs" disabled={isLoading} onClick={loadOffers} variant="secondary">
+              {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-4 w-4" />}
+              Refresh
+            </Button>
+          </div>
+        }
+        badges={
+          <div className="flex flex-wrap gap-2 text-xs">
+            <AdminInsightChip>{`Total offers: ${String(data?.summary.totalOffers ?? 0)}`}</AdminInsightChip>
+            <AdminInsightChip tone="orange">{`Pending: ${String(data?.summary.pendingOffers ?? 0)}`}</AdminInsightChip>
+            <AdminInsightChip tone="slate">{`Acceptance rate: ${formatPercent(data?.summary.acceptanceRate ?? 0)}`}</AdminInsightChip>
+          </div>
+        }
+        description="Create secure offer links, capture candidate decisions, trigger notifications, and move accepted candidates into onboarding."
+        eyebrow="Digital Offer Lifecycle"
+        icon={<Mail className="h-3.5 w-3.5" />}
+        title="Offers Dashboard"
+      />
 
       {error && (
-        <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+        <AdminCallout tone="danger">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{error}</span>
-        </div>
+        </AdminCallout>
       )}
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <SummaryCard icon={<Mail className="h-4 w-4" />} label="Total offers" tone="blue" value={String(data?.summary.totalOffers ?? 0)} />
-        <SummaryCard icon={<CheckCircle2 className="h-4 w-4" />} label="Accepted" tone="emerald" value={String(data?.summary.acceptedOffers ?? 0)} />
-        <SummaryCard icon={<Clock3 className="h-4 w-4" />} label="Pending" tone="orange" value={String(data?.summary.pendingOffers ?? 0)} />
-        <SummaryCard icon={<XCircle className="h-4 w-4" />} label="Rejected" tone="rose" value={String(data?.summary.rejectedOffers ?? 0)} />
-        <SummaryCard icon={<BarChart3 className="h-4 w-4" />} label="Acceptance rate" tone="emerald" value={formatPercent(data?.summary.acceptanceRate ?? 0)} />
+        <AdminStatCard
+          description="Offers created in the selected time window."
+          icon={<Mail className="h-4 w-4" />}
+          label="Total Offers"
+          value={String(data?.summary.totalOffers ?? 0)}
+        />
+        <AdminStatCard
+          description="Offers marked as accepted."
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          label="Accepted"
+          value={String(data?.summary.acceptedOffers ?? 0)}
+        />
+        <AdminStatCard
+          description="Offers waiting for candidate response."
+          icon={<Clock3 className="h-4 w-4" />}
+          label="Pending"
+          value={String(data?.summary.pendingOffers ?? 0)}
+        />
+        <AdminStatCard
+          description="Offers declined or withdrawn."
+          icon={<XCircle className="h-4 w-4" />}
+          label="Rejected"
+          value={String(data?.summary.rejectedOffers ?? 0)}
+        />
+        <AdminStatCard
+          description="Ratio of accepted offers vs. total."
+          icon={<BarChart3 className="h-4 w-4" />}
+          label="Acceptance rate"
+          value={formatPercent(data?.summary.acceptanceRate ?? 0)}
+        />
       </div>
 
-      <div className="grid gap-6">
-        <Card className="overflow-hidden rounded-xl bg-white p-0">
-          <div className="border-b border-[#E2E8F0] p-5">
-            <h2 className="text-lg font-bold text-text">Offer pipeline</h2>
-            <p className="mt-1 text-sm text-text-secondary">
-              Accepted offers move to the hired pipeline and initialize onboarding.
-            </p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+      <AdminTableShell
+        description="Accepted offers move to the hired pipeline and initialize onboarding."
+        title="Offer Pipeline"
+      >
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+              <tr>
+                <th className="px-4 py-3">Candidate</th>
+                <th className="px-4 py-3">Role</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Salary</th>
+                <th className="px-4 py-3">Expires</th>
+                <th className="px-4 py-3">Next step</th>
+                <th className="px-4 py-3">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
                 <tr>
-                  <th className="px-4 py-3">Candidate</th>
-                  <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Salary</th>
-                  <th className="px-4 py-3">Expires</th>
-                  <th className="px-4 py-3">Next step</th>
-                  <th className="px-4 py-3">Action</th>
+                  <td className="px-4 py-10 text-center text-sm text-text-secondary" colSpan={7}>
+                    No offers yet.
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-10 text-center text-sm text-text-secondary" colSpan={7}>
-                      No offers yet.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((offer) => (
-                    <OfferRow
-                      approving={approvingId === offer.id}
-                      key={offer.id}
-                      offer={offer}
-                      onApprove={approveOffer}
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
+              ) : (
+                rows.map((offer) => (
+                  <OfferRow
+                    approving={approvingId === offer.id}
+                    key={offer.id}
+                    offer={offer}
+                    onApprove={approveOffer}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </AdminTableShell>
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/55 px-3 py-6 backdrop-blur-sm">
-          <div className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-white/20 bg-white shadow-[0_34px_90px_rgba(15,23,42,0.34)]">
+          <div className={`max-h-[92vh] max-w-4xl w-full overflow-hidden ${adminPanelClassName}`}>
             <div className="flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-[#0F172A] px-5 py-4 text-white sm:px-6">
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-orange-300">Phoenix Workforce</p>

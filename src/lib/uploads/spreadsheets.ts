@@ -30,12 +30,10 @@ export const excelSpreadsheetValidation = {
 } as const;
 
 export const salesSpreadsheetValidation = {
-  allowedExtensions: [".xls", ".xlsx", ".csv", ".tsv"],
+  allowedExtensions: [".xls", ".xlsx"],
   allowedMimeTypes: [
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "text/csv",
-    "text/tab-separated-values",
   ],
 } as const;
 

@@ -17,6 +17,12 @@ import {
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import {
+  AdminCallout,
+  AdminPageHero,
+  AdminTableShell,
+} from "@/components/admin/admin-design-system";
+import { adminPanelClassName } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -55,6 +61,9 @@ type DashboardView = {
   territoryRows: AnyRow[];
   trendRows: AnyRow[];
 };
+
+const panelClassName = adminPanelClassName;
+const adminTableHeaderClassName = "px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
 
 function valueAsNumber(value: unknown) {
   const parsed = Number(value ?? 0);
@@ -243,26 +252,23 @@ function MetricCard({
   value: string;
 }) {
   const toneClasses = {
-    danger: "bg-red-50 text-red-600 ring-red-100",
-    neutral: "bg-orange-50 text-orange-600 ring-orange-100",
-    success: "bg-emerald-50 text-emerald-600 ring-emerald-100",
-    warning: "bg-amber-50 text-amber-600 ring-amber-100",
+    danger: "bg-[#FEF2F2] text-[#DC2626] ring-[#FECACA]",
+    neutral: "bg-[#FFF7ED] text-[#EA580C] ring-[#FED7AA]",
+    success: "bg-[#F0FDF4] text-[#16A34A] ring-[#BBF7D0]",
+    warning: "bg-[#FFFBEB] text-[#D97706] ring-[#FDE68A]",
   };
 
   return (
-    <Card className="group min-h-[126px] overflow-hidden rounded-2xl border-[#E2E8F0] bg-white p-0 shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
-      <div className="h-1 bg-gradient-to-r from-orange-500 via-slate-900 to-slate-200" />
-      <div className="p-5">
+    <Card className={`${panelClassName} group min-h-[138px] p-5 transition hover:-translate-y-0.5`}>
       <div className="flex items-center gap-4">
-        <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ring-1", toneClasses[tone])}>
+        <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ring-1", toneClasses[tone])}>
           <Icon className="h-5 w-5" />
         </div>
         <div className="min-w-0">
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#64748B]">{label}</p>
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#64748B]">{label}</p>
           <p className="mt-1 truncate text-2xl font-black text-[#0F172A]">{value}</p>
-          {sub && <p className="mt-1 text-xs font-medium text-[#64748B]">{sub}</p>}
+          {sub && <p className="mt-2 text-sm leading-6 text-[#64748B]">{sub}</p>}
         </div>
-      </div>
       </div>
     </Card>
   );
@@ -288,18 +294,20 @@ function ProgressBar({ rate }: { rate: number }) {
 function SectionHeader({ title, subtitle }: { subtitle?: string; title: string }) {
   return (
     <div>
-      <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">{title}</h2>
-      {subtitle && <p className="mt-1 text-xs leading-5 text-[#64748B]">{subtitle}</p>}
+      <h2 className="text-base font-bold text-[#0F172A]">{title}</h2>
+      {subtitle && <p className="mt-1 text-sm leading-6 text-[#64748B]">{subtitle}</p>}
     </div>
   );
 }
 
 function ChartCard({ children, subtitle, title }: { children: React.ReactNode; subtitle?: string; title: string }) {
   return (
-    <Card className="rounded-2xl border-[#E2E8F0] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+    <Card className={`${panelClassName} p-5`}>
       <div className="flex items-start justify-between gap-3">
         <SectionHeader title={title} subtitle={subtitle} />
-        <span className="h-2 w-2 shrink-0 rounded-full bg-[#F97316]" />
+        <span className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#EA580C]">
+          Live
+        </span>
       </div>
       <div className="mt-5">{children}</div>
     </Card>
@@ -499,12 +507,12 @@ function RankingHalfTable({
       <table className="min-w-[720px] w-full text-left text-sm">
         <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.1em] text-[#64748B]">
           <tr>
-            <th className="px-3 py-2 font-black">#</th>
-            <th className="px-3 py-2 font-black">Name</th>
-            <th className="px-3 py-2 font-black">Area</th>
-            <th className="px-3 py-2 font-black">{valueLabel}</th>
-            <th className="px-3 py-2 font-black">Sales</th>
-            <th className="px-3 py-2 font-black">Target</th>
+            <th className={adminTableHeaderClassName}>#</th>
+            <th className={adminTableHeaderClassName}>Name</th>
+            <th className={adminTableHeaderClassName}>Area</th>
+            <th className={adminTableHeaderClassName}>{valueLabel}</th>
+            <th className={adminTableHeaderClassName}>Sales</th>
+            <th className={adminTableHeaderClassName}>Target</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
@@ -536,19 +544,19 @@ function LeadershipTable({ rows, title }: { rows: AnyRow[]; title: string }) {
   ];
 
   return (
-    <Card className="rounded-2xl border-[#E2E8F0] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-      <h3 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">{title}</h3>
-      <div className="mt-4 overflow-hidden rounded-lg border border-[#E2E8F0]">
+    <Card className={`${panelClassName} p-5`}>
+      <SectionHeader title={title} subtitle="Highest achievement, sales value, and month-over-month growth leaders in the current scope." />
+      <div className="mt-4 overflow-hidden rounded-[24px] border border-[#E2E8F0]">
         <div className="overflow-x-auto">
         <table className="min-w-[760px] w-full text-left text-sm">
           <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
             <tr>
-              <th className="px-3 py-2 font-black">Metric</th>
-              <th className="px-3 py-2 font-black">Name</th>
-              <th className="px-3 py-2 font-black">Area</th>
-              <th className="px-3 py-2 font-black">Value</th>
-              <th className="px-3 py-2 font-black">Sales</th>
-              <th className="px-3 py-2 font-black">Period</th>
+              <th className={adminTableHeaderClassName}>Metric</th>
+              <th className={adminTableHeaderClassName}>Name</th>
+              <th className={adminTableHeaderClassName}>Area</th>
+              <th className={adminTableHeaderClassName}>Value</th>
+              <th className={adminTableHeaderClassName}>Sales</th>
+              <th className={adminTableHeaderClassName}>Period</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
@@ -599,7 +607,7 @@ function RankingSplitTable({
       : [...eligibleRows].sort((left, right) => valueAsNumber(left.sales) - valueAsNumber(right.sales)).slice(0, limit);
 
   return (
-    <Card className="rounded-2xl border-[#E2E8F0] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+    <Card className={`${panelClassName} p-5`}>
       <SectionHeader title={title} subtitle={`${limit} highest and ${limit} lowest in the current filter selection.`} />
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <RankingHalfTable label={`Top ${limit}`} metric={metric} tableRows={topRows} tone="top" />
@@ -614,7 +622,7 @@ function ComparativeLineSales({ rows }: { rows: AnyRow[] }) {
   const maxSales = Math.max(...topRows.map((row) => valueAsNumber(row.sales)), 1);
 
   return (
-    <Card className="rounded-2xl border-[#E2E8F0] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+    <Card className={`${panelClassName} p-5`}>
       <SectionHeader title="Comparative Sales by Line" subtitle="Sales, target, achievement, and contribution by selected line." />
       <div className="mt-4 space-y-3">
         {topRows.length === 0 ? (
@@ -826,19 +834,19 @@ function PerformanceTable({
   rows: AnyRow[];
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
+    <div className="overflow-hidden rounded-[24px] border border-[#E2E8F0]">
       <div className="overflow-x-auto">
       <table className="min-w-[680px] w-full text-left text-sm">
         <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.14em] text-[#64748B]">
           <tr>
             {columns.map((column) => (
-              <th className="px-3 py-2 font-bold" key={column.key}>
+              <th className={adminTableHeaderClassName} key={column.key}>
                 {column.label}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-border bg-white">
+        <tbody className="divide-y divide-[#E2E8F0] bg-white">
           {rows.length === 0 ? (
             <tr>
               <td className="px-3 py-6 text-center text-text-secondary" colSpan={columns.length}>
@@ -871,19 +879,26 @@ export function SalesDashboard(props: Props) {
   if (error) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-text">Sales Dashboard</h1>
-          <p className="mt-1 text-text-secondary">Approved sales performance across all lines and periods.</p>
-        </div>
-        <Card className="border-danger/20 bg-red-50">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-danger" />
-            <div>
-              <p className="font-medium text-danger">Unable to load sales data</p>
-              <p className="text-sm text-text-secondary">{error}</p>
-            </div>
+        <AdminPageHero
+          actions={
+            !portalMode ? (
+              <Link href="/sales/queue">
+                <Button variant="secondary">Review Uploaded Sheets</Button>
+              </Link>
+            ) : null
+          }
+          description="We were unable to load the current sales dataset for dashboard visualizations."
+          eyebrow="Sales"
+          icon={<AlertTriangle className="h-3.5 w-3.5" />}
+          title="Sales dashboard unavailable"
+        />
+        <AdminCallout tone="danger">
+          <AlertTriangle className="mt-0.5 h-4 w-4" />
+          <div>
+            <p className="font-semibold">Unable to load sales data</p>
+            <p className="text-sm">{error}</p>
           </div>
-        </Card>
+        </AdminCallout>
       </div>
     );
   }
@@ -990,80 +1005,54 @@ function SalesDashboardContent({
 
   return (
     <div className="space-y-5">
-      <section className="overflow-hidden rounded-2xl border border-[#0F172A] bg-[#0F172A] shadow-[0_18px_46px_rgba(15,23,42,0.16)]">
-        <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_430px] lg:p-6">
-          <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#F97316]">
-              {portalMode ? "Employee Sales" : "Sales Intelligence"}
-            </p>
-            <h1 className="mt-2 text-2xl font-black text-white lg:text-3xl">
-              {portalMode ? "My Sales Dashboard" : "Sales Dashboard"}
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">
-              {portalMode
-                ? "Sales performance across the periods, territories, products, and scope assigned to your employee account."
-                : "Interactive monthly performance across periods, lines, areas, DSMs, medical reps, channels, and products."}
-            </p>
+      <AdminPageHero
+        actions={(
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {!portalMode && (
-              <div className="mt-5 flex flex-wrap gap-2">
+              <>
                 <Link href="/sales/queue">
-                  <Button className="gap-2 border border-white/10 bg-white text-[#0F172A] hover:bg-white/90">
+                  <Button className="gap-2 rounded-xl">
                     <FileSpreadsheet className="h-4 w-4" />
                     Uploaded Sheets
                   </Button>
                 </Link>
                 <Link href="/sales/upload">
-                  <Button className="gap-2 border border-white/10 bg-white/10 text-white hover:bg-white/15" variant="secondary">
+                  <Button className="gap-2 rounded-xl border border-[#E2E8F0] bg-white text-[#0F172A] hover:bg-[#FFF7ED]" variant="secondary">
                     <FileUp className="h-4 w-4" />
-                    Upload Monthly Sales
+                    Upload Monthly Closing Sheet
                   </Button>
                 </Link>
-              </div>
+              </>
             )}
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 text-white">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">Selected Period</p>
-              <p className="mt-1 truncate text-lg font-black">{periodRangeLabel(selectedPeriods)}</p>
-              <p className="mt-2 text-xs text-white/60">{formatNumber(summary.approvedRecords)} approved rows</p>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 text-white">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">Achievement</p>
-              <p className="mt-1 text-lg font-black">{formatPercent(summary.achievementRate)}</p>
-              <p className="mt-2 text-xs text-white/60">{formatPercent(salesDelta)} vs previous period</p>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 text-white">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">Sales</p>
-              <p className="mt-1 truncate text-lg font-black">{formatCurrency(summary.totalApprovedSales)}</p>
-              <p className="mt-2 text-xs text-white/60">Target {formatCurrency(summary.totalApprovedTarget)}</p>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 text-white">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">DSM Linkage</p>
-              <p className="mt-1 text-lg font-black">{formatPercent(summary.dataQualityRate)}</p>
-              <p className="mt-2 text-xs text-white/60">
-                {formatNumber(summary.dsmLinkedRecords ?? summary.linkedRecords)} / {formatNumber(summary.dsmTotalRecords ?? summary.approvedRecords)}
-              </p>
-            </div>
+        )}
+        badges={(
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">Period: {periodRangeLabel(selectedPeriods)}</span>
+            <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">{formatNumber(summary.approvedRecords)} approved rows</span>
+            <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">Achievement {formatPercent(summary.achievementRate)}</span>
           </div>
-        </div>
-      </section>
+        )}
+        description={portalMode
+          ? "Sales performance across the periods, territories, products, and scope assigned to your employee account."
+          : "Track approved sales, target progress, channel mix, line performance, and leadership rankings from one compact command surface."
+        }
+        eyebrow={portalMode ? "Employee sales" : "Sales intelligence"}
+        icon={<BarChart3 className="h-3.5 w-3.5" />}
+        title={portalMode ? "My Sales Dashboard" : "Sales dashboard"}
+      />
 
-      <Card className="rounded-2xl border-[#E2E8F0] bg-white p-0 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-        <div className="border-b border-[#E2E8F0] px-5 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#F97316]">Command Filters</p>
-              <p className="mt-1 text-xs text-[#64748B]">Filters cascade from period and line into area, DSM, rep, product, and channel.</p>
-            </div>
-            {activeFilterCount > 0 && (
-              <button className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 hover:bg-orange-100" onClick={resetFilters} type="button">
-                Clear {activeFilterCount}
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="p-4">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <AdminTableShell
+        action={activeFilterCount > 0 ? (
+          <button className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 hover:bg-orange-100" onClick={resetFilters} type="button">
+            Clear {activeFilterCount}
+          </button>
+        ) : null}
+        description="Filters cascade from period and line into area, DSM, rep, product, and channel."
+        title="Command Filters"
+      >
+        <div className="space-y-4 p-4 sm:p-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <FilterField label="Period">
             <ReadOnlyField value={periodRangeLabel(selectedPeriods)} />
           </FilterField>
@@ -1081,7 +1070,7 @@ function SalesDashboardContent({
             value={filters.area}
           />
         </div>
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <FilterSelect label="Product / SKU" onChange={(product) => setFilters((current) => ({ ...current, product }))} options={filterOptions.products} value={filters.product} />
           <FilterSelect
             label="Medical Rep"
@@ -1105,46 +1094,44 @@ function SalesDashboardContent({
             <ReadOnlyField value="All Uploaded Sheets" />
           </FilterField>
         </div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#E2E8F0] pt-4">
-          <div className="flex flex-wrap gap-2">
-            <FilterChip label={`Period: ${periodRangeLabel(selectedPeriods)}`} onRemove={() => setFilters((current) => ({ ...current, periods: [] }))} />
-            {filters.line && <FilterChip label={`Line: ${filters.line}`} onRemove={() => setFilters((current) => ({ ...current, area: "", line: "" }))} />}
-            {filters.area && <FilterChip label={`Area: ${filters.area}`} onRemove={() => setFilters((current) => ({ ...current, area: "" }))} />}
-            {filters.manager && <FilterChip label={`DSM: ${filters.manager}`} onRemove={() => setFilters((current) => ({ ...current, manager: "", medicalRep: "" }))} />}
-          </div>
-          <div className="flex flex-wrap gap-4">
-            <MiniStat icon={FileSpreadsheet} label="Rows" value={formatNumber(summary.approvedRecords)} />
-            <MiniStat icon={Package} label="Products" value={formatNumber(summary.activeProducts)} />
-            <MiniStat icon={Users} label="Reps" value={formatNumber(summary.linkedEmployees)} />
-            <MiniStat icon={MapPinned} label="Managers" value={formatNumber(summary.dsmTotalRecords ?? 0)} />
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#E2E8F0] pt-4">
+            <div className="flex flex-wrap gap-2">
+              <FilterChip label={`Period: ${periodRangeLabel(selectedPeriods)}`} onRemove={() => setFilters((current) => ({ ...current, periods: [] }))} />
+              {filters.line && <FilterChip label={`Line: ${filters.line}`} onRemove={() => setFilters((current) => ({ ...current, area: "", line: "" }))} />}
+              {filters.area && <FilterChip label={`Area: ${filters.area}`} onRemove={() => setFilters((current) => ({ ...current, area: "" }))} />}
+              {filters.manager && <FilterChip label={`DSM: ${filters.manager}`} onRemove={() => setFilters((current) => ({ ...current, manager: "", medicalRep: "" }))} />}
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <MiniStat icon={FileSpreadsheet} label="Rows" value={formatNumber(summary.approvedRecords)} />
+              <MiniStat icon={Package} label="Products" value={formatNumber(summary.activeProducts)} />
+              <MiniStat icon={Users} label="Reps" value={formatNumber(summary.linkedEmployees)} />
+              <MiniStat icon={MapPinned} label="Managers" value={formatNumber(summary.dsmTotalRecords ?? 0)} />
+            </div>
           </div>
         </div>
-        </div>
-      </Card>
+      </AdminTableShell>
 
       {!hasData && (
-        <Card className="border-orange-200 bg-orange-50">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-warning" />
-              <div>
-                <p className="font-semibold text-text">
-                  {portalMode ? "No sales data is available for your scope yet" : "No sales batches yet"}
-                </p>
-                <p className="text-sm text-text-secondary">
-                  {portalMode
-                    ? "Sales records will appear here once they are linked to your employee or team scope."
-                    : "Upload a monthly sales sheet to populate this dashboard."}
-                </p>
-              </div>
-            </div>
-            {!portalMode && (
-              <Link href="/sales/queue">
-                <Button variant="secondary">Review Uploaded Sheets</Button>
+        <AdminCallout tone="neutral">
+          <AlertTriangle className="mt-0.5 h-5 w-5" />
+          <div>
+            <p className="font-semibold">
+              {portalMode ? "No sales data is available for your scope yet" : "No sales batches yet"}
+            </p>
+            <p className="text-sm">
+              {portalMode
+                ? "Sales records will appear here once they are linked to your employee or team scope."
+                : "Upload a monthly sales sheet to populate this dashboard."}
+            </p>
+            {!portalMode ? (
+              <Link className="mt-3 inline-flex" href="/sales/queue">
+                <Button variant="secondary">
+                  Review Uploaded Sheets
+                </Button>
               </Link>
-            )}
+            ) : null}
           </div>
-        </Card>
+        </AdminCallout>
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -1192,9 +1179,11 @@ function SalesDashboardContent({
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.8fr)]">
-        <Card className="rounded-2xl border-[#E2E8F0] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-          <SectionHeader title="Monthly Comparison Table" subtitle="Sales, target, achievement, and linked employees by period." />
-          <div className="mt-4">
+        <AdminTableShell
+          description="Sales, target, achievement, and linked employees by period."
+          title="Monthly Comparison Table"
+        >
+          <div className="p-4 sm:p-5">
             <PerformanceTable
               columns={[
                 { key: "period", label: "Month", render: (row) => compactPeriod(valueAsText(row.period)) },
@@ -1215,11 +1204,11 @@ function SalesDashboardContent({
               rows={trendRows}
             />
           </div>
-        </Card>
+        </AdminTableShell>
         <TopList labelKey="product" rows={productRows} title="Top 5 Products (By Sales)" />
       </div>
 
-      <Card>
+      <Card className={`${panelClassName} p-5`}>
         <div className="grid gap-4 md:grid-cols-3">
           <div className="flex items-center gap-3">
             <Users className="h-5 w-5 text-[#F97316]" />

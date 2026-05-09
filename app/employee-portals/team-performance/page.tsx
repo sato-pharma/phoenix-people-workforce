@@ -6,6 +6,7 @@ import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import {
   TeamAchievementChart,
   TeamSalesVsTargetChart,
@@ -47,13 +48,10 @@ export default async function EmployeePortalTeamPerformancePage({
 
   if (!data) {
     return (
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <Users className="mx-auto h-10 w-10 text-slate-300 mb-3" />
-        <p className="text-lg font-semibold text-slate-900">Team Performance Unavailable</p>
-        <p className="mt-2 text-sm text-slate-500">
-          Unable to load your team&apos;s data. This page is only available for District Sales Managers.
-        </p>
-      </div>
+      <EmployeePortalEmptyState
+        message="Unable to load your team&apos;s data. This page is only available for District Sales Managers."
+        title="Team Performance Unavailable"
+      />
     );
   }
 
