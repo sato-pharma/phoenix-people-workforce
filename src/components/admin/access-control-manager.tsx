@@ -164,6 +164,8 @@ export function AccessControlManager({
   const [setupLinkSending, setSetupLinkSending] = React.useState<string | null>(null);
   const [showPermissions, setShowPermissions] = React.useState(false);
   const [showAudit, setShowAudit] = React.useState(false);
+  const [selectedLoginIds, setSelectedLoginIds] = React.useState<Set<string>>(new Set());
+  const [isBulkActing, setIsBulkActing] = React.useState(false);
 
   async function updatePermission(
     role: PhoenixRole,
@@ -344,6 +346,30 @@ export function AccessControlManager({
       role: user.role,
       salesScopeOverride: user.salesScopeOverride ?? "",
     });
+  }
+
+  async function bulkAction(action: "enable" | "disable") {
+    if (selectedLoginIds.size === 0) return;
+    setIsBulkActing(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/users/bulk-action", {
+        body: JSON.stringify({ action, loginIds: Array.from(selectedLoginIds) }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.message ?? "Bulk action failed.");
+      if (payload.dashboard) setData(payload.dashboard);
+      setSelectedLoginIds(new Set());
+      if (payload.failed?.length > 0) {
+        setError(`${payload.failed.length} user(s) could not be updated.`);
+      }
+    } catch (bulkError) {
+      setError(bulkError instanceof Error ? bulkError.message : "Bulk action failed.");
+    } finally {
+      setIsBulkActing(false);
+    }
   }
 
   const users = data?.users ?? [];

@@ -1,6 +1,7 @@
 "use client";
 
-import { Bell, ChevronDown, LogOut, Mail, Menu, Search } from "lucide-react";
+import { Bell, ChevronDown, LogOut, Mail, Menu, Search, UserCog } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
@@ -11,11 +12,19 @@ import type { ViewerIdentity } from "@/lib/auth/server";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Input } from "@/components/ui/input";
 
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
 export function Topbar({
+  currentUser,
   navigationMode = "admin",
   permissionLookup = {},
   viewer,
 }: {
+  currentUser?: { name: string; loginId: string; role: string };
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
   viewer: ViewerIdentity;
@@ -92,6 +101,15 @@ export function Topbar({
 
             {userMenuOpen && (
               <div className="absolute right-0 top-full mt-2 w-48 rounded-lg border border-[#E2E8F0] bg-white shadow-lg">
+                <Link
+                  className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[#0F172A] hover:bg-[#F8FAFC]"
+                  href="/admin/profile"
+                  onClick={() => setUserMenuOpen(false)}
+                >
+                  <UserCog className="h-4 w-4" />
+                  My Profile
+                </Link>
+                <div className="mx-3 h-px bg-[#E2E8F0]" />
                 <button
                   className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[#0F172A] hover:bg-[#F8FAFC]"
                   onClick={handleLogout}
