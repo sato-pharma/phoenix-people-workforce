@@ -1,9 +1,9 @@
-import ExcelJS from "exceljs";
+﻿import ExcelJS from "exceljs";
 
 export type SalaryValidationIssue = {
   code: string;
   column?: string;
-  employeeCode?: string;
+  hrId?: string;
   message: string;
   row: number;
 };
@@ -12,7 +12,7 @@ export type SalaryValidationRow = {
   area: string;
   bonus: number;
   crm: number;
-  employeeCode: string;
+  hrId: string;
   employmentIncomeTax: number;
   expenses: number;
   extraCostOfLiving: number;
@@ -56,7 +56,7 @@ export type SalaryValidationResult = {
 };
 
 const columnAliases = {
-  employeeCode: ["HR_ID", "HR ID", "Employee Code", "employee_code", "Code"],
+  hrId: ["HR_ID", "HR ID", "Employee Code", "employee_code", "Code"],
   fullName: ["Full Name", "Employee Name", "full_name", "Name"],
   line: ["Line", "line"],
   area: ["Area", "area", "Region"],
@@ -86,7 +86,7 @@ const columnAliases = {
   year: ["Year", "year"],
 } as const;
 
-const requiredColumns = ["employeeCode", "fullName", "grossSalary", "netSalary"] as const;
+const requiredColumns = ["hrId", "fullName", "grossSalary", "netSalary"] as const;
 
 function cellText(cell: ExcelJS.Cell) {
   const value = cell.value;
@@ -98,6 +98,37 @@ function cellText(cell: ExcelJS.Cell) {
 
 function normalizeHeader(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function headerScore(headers: string[]) {
+  const normalizedHeaders = new Set(headers.map(normalizeHeader));
+
+  return requiredColumns.filter((key) =>
+    columnAliases[key].some((alias) => normalizedHeaders.has(normalizeHeader(alias))),
+  ).length;
+}
+
+function findHeaderRow(sheet: ExcelJS.Worksheet) {
+  let bestRowNumber = 1;
+  let bestHeaders: string[] = [];
+  let bestScore = -1;
+  const rowsToScan = Math.min(sheet.rowCount, 12);
+
+  for (let rowNumber = 1; rowNumber <= rowsToScan; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+    const headers = Array.from({ length: row.cellCount }, (_, index) =>
+      cellText(row.getCell(index + 1)),
+    ).filter(Boolean);
+    const score = headerScore(headers);
+
+    if (score > bestScore) {
+      bestRowNumber = rowNumber;
+      bestHeaders = headers;
+      bestScore = score;
+    }
+  }
+
+  return { headers: bestHeaders, rowNumber: bestRowNumber };
 }
 
 function toNumber(value: unknown) {
@@ -136,17 +167,14 @@ export async function validateSalaryWorkbook(file: File): Promise<SalaryValidati
     throw new Error("Payroll workbook has no readable sheets.");
   }
 
-  const headerRow = sheet.getRow(1);
-  const headers = Array.from({ length: headerRow.cellCount }, (_, index) =>
-    cellText(headerRow.getCell(index + 1)),
-  ).filter(Boolean);
+  const { headers, rowNumber: headerRowNumber } = findHeaderRow(sheet);
   const normalizedHeaders = new Set(headers.map(normalizeHeader));
   const missingRequiredColumns = requiredColumns.filter((key) =>
     columnAliases[key].every((alias) => !normalizedHeaders.has(normalizeHeader(alias))),
   );
 
   const rows: Record<string, unknown>[] = [];
-  for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
+  for (let rowNumber = headerRowNumber + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
     const excelRow = sheet.getRow(rowNumber);
     const row = Object.fromEntries(
       headers.map((header, index) => [header, cellText(excelRow.getCell(index + 1))]),
@@ -161,37 +189,37 @@ export async function validateSalaryWorkbook(file: File): Promise<SalaryValidati
   const seenEmployees = new Map<string, number>();
   const rowsToImport = rows.map<SalaryValidationRow>((raw) => {
     const rowNumber = Number(raw.__rowNumber);
-    const employeeCode = String(rowValue(raw, columnAliases.employeeCode)).trim();
+    const hrId = String(rowValue(raw, columnAliases.hrId)).trim();
     const fullName = String(rowValue(raw, columnAliases.fullName)).trim();
     const grossSalary = toNumber(rowValue(raw, columnAliases.grossSalary));
     const totalAdditions = toNumber(rowValue(raw, columnAliases.totalAdditions));
     const totalDeductions = toNumber(rowValue(raw, columnAliases.totalDeductions));
     const netSalary = toNumber(rowValue(raw, columnAliases.netSalary));
 
-    if (!employeeCode) {
+    if (!hrId) {
       validationErrors.push({
         code: "missing_employee_code",
         column: "HR_ID",
-        message: "Employee code is required.",
+        message: "HR ID is required.",
         row: rowNumber,
       });
-    } else if (seenEmployees.has(employeeCode)) {
+    } else if (seenEmployees.has(hrId)) {
       validationWarnings.push({
         code: "duplicate_employee_code",
         column: "HR_ID",
-        employeeCode,
-        message: `Duplicate employee code also appears on row ${seenEmployees.get(employeeCode)}.`,
+        hrId,
+        message: `Duplicate HR ID also appears on row ${seenEmployees.get(hrId)}.`,
         row: rowNumber,
       });
     } else {
-      seenEmployees.set(employeeCode, rowNumber);
+      seenEmployees.set(hrId, rowNumber);
     }
 
     if (!fullName) {
       validationErrors.push({
         code: "missing_full_name",
         column: "Full Name",
-        employeeCode,
+        hrId,
         message: "Employee name is required.",
         row: rowNumber,
       });
@@ -201,7 +229,7 @@ export async function validateSalaryWorkbook(file: File): Promise<SalaryValidati
       validationWarnings.push({
         code: "non_positive_gross",
         column: "Gross Salary",
-        employeeCode,
+        hrId,
         message: "Gross salary is zero or missing.",
         row: rowNumber,
       });
@@ -211,7 +239,7 @@ export async function validateSalaryWorkbook(file: File): Promise<SalaryValidati
       validationWarnings.push({
         code: "negative_net",
         column: "Net Salary",
-        employeeCode,
+        hrId,
         message: "Net salary is negative.",
         row: rowNumber,
       });
@@ -221,7 +249,7 @@ export async function validateSalaryWorkbook(file: File): Promise<SalaryValidati
       area: String(rowValue(raw, columnAliases.area)).trim() || "Unassigned",
       bonus: toNumber(rowValue(raw, columnAliases.bonus)),
       crm: toNumber(rowValue(raw, columnAliases.crm)),
-      employeeCode,
+      hrId,
       employmentIncomeTax: toNumber(rowValue(raw, columnAliases.employmentIncomeTax)),
       expenses: toNumber(rowValue(raw, columnAliases.expenses)),
       extraCostOfLiving: toNumber(rowValue(raw, columnAliases.extraCostOfLiving)),
@@ -256,9 +284,9 @@ export async function validateSalaryWorkbook(file: File): Promise<SalaryValidati
 
   return {
     detectedColumns: headers,
-    duplicateHrIds: Array.from(seenEmployees.keys()).filter((employeeCode) =>
+    duplicateHrIds: Array.from(seenEmployees.keys()).filter((hrId) =>
       validationWarnings.some(
-        (warning) => warning.code === "duplicate_employee_code" && warning.employeeCode === employeeCode,
+        (warning) => warning.code === "duplicate_employee_code" && warning.hrId === hrId,
       ),
     ),
     failedRows: errorRows.size,

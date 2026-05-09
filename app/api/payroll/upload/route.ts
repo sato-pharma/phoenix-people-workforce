@@ -3,12 +3,17 @@ import { NextResponse } from "next/server";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { validateSalaryWorkbook } from "@/lib/payroll/salary-import";
 import { createSalaryBatch, isPayrollSchemaMissing } from "@/lib/payroll/service";
+import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "payroll", "import");
     const formData = await request.formData();
     const file = formData.get("file");
     const month = Number(formData.get("month"));
@@ -16,6 +21,21 @@ export async function POST(request: Request) {
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "missing_file", message: "Salary file is required." }, { status: 400 });
+    }
+    const fileValidation = validateSpreadsheetFile(file, {
+      ...excelSpreadsheetValidation,
+      emptyError: "invalid_salary_file",
+      emptyMessage: "Salary file is empty.",
+      tooLargeError: "salary_file_too_large",
+      tooLargeMessage: "Salary file exceeds the 10MB upload limit.",
+      unsupportedError: "unsupported_salary_file_type",
+      unsupportedMessage: "Upload an Excel salary file in .xls or .xlsx format.",
+    });
+    if (!fileValidation.ok) {
+      return NextResponse.json(
+        { error: fileValidation.error, message: fileValidation.message },
+        { status: fileValidation.status },
+      );
     }
 
     if (!month || !year) {
@@ -46,6 +66,7 @@ export async function POST(request: Request) {
       fileName: file.name,
       month,
       records: validation.rowsToImport,
+      uploadedBy: resolveEmployeeIdentityId(access) ?? access.loginId ?? "system",
       validationWarnings: validation.validationWarnings,
       year,
     });
@@ -68,6 +89,9 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Payroll upload failed.";
+    if (isForbiddenError(error)) {
+      return NextResponse.json({ error: "forbidden", message }, { status: 403 });
+    }
     const schemaMissing = isPayrollSchemaMissing(error);
 
     return NextResponse.json(

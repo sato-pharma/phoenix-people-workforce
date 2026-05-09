@@ -16,6 +16,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Phoenix Workforce",
   description: "A premium workforce intelligence foundation for Phoenix.",
+  icons: {
+    apple: "/apple-icon.png",
+    icon: [
+      { url: "/favicon.ico" },
+      { type: "image/png", url: "/icon.png" },
+    ],
+  },
 };
 
 export default function RootLayout({

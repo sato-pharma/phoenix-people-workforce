@@ -1,11 +1,12 @@
 ﻿import type { SalesRecordInput, SalesValidationState, TargetRecord } from "@/lib/sales/types";
 
 const salesColumnAliases = {
-  employeeHrId: ["HR_ID", "hr_id", "Employee HR ID", "employee_hr_id"],
+  employeeHrId: ["HR_ID", "hr_id", "HR ID", "hr id", "Employee HR ID", "employee_hr_id"],
   employeeCrmId: ["CRM_ID", "Employee CRM ID", "employee_crm_id"],
   employeeLookupKey: ["CRM Username", "crm_username", "employee_lookup_key", "D.M."],
   employeeName: ["Employee Name", "employee_name", "D.M."],
   line: ["Line", "line"],
+  managerHrId: ["manager hr id", "Manager HR ID", "manager_hr_id", "DSM HR ID", "dsm_hr_id"],
   territory: ["Sys", "Territory", "territory"],
   salesType: ["Type of Sales", "sales_type"],
   family: ["Family", "family"],
@@ -70,7 +71,7 @@ export function normalizeMonth(value: unknown) {
   return monthIndex >= 0 ? monthIndex + 1 : 0;
 }
 
-function buildValidationState(messages: string[]) {
+export function buildValidationState(messages: string[]) {
   return messages.some((message) => message.startsWith("FAIL:"))
     ? ("failed" as SalesValidationState)
     : messages.length > 0
@@ -126,8 +127,14 @@ export function parseSalesRow(row: Record<string, unknown>, fallbackLine: string
     salesColumnAliases.year,
     salesColumnAliases.salesUnits,
     salesColumnAliases.salesValue,
-    salesColumnAliases.targetUnits,
   ].forEach((aliases) => requireSheetValue(row, aliases, rowNumber, validationNotes));
+
+  const rawTargetUnits = firstValue(row, salesColumnAliases.targetUnits);
+  const rawTargetValue = firstValue(row, salesColumnAliases.targetValue);
+  const sheetTargetValue = normalizeNumber(rawTargetValue);
+  const targetUnitsHasValue = hasRawValue(rawTargetUnits);
+  const targetValueHasValue = hasRawValue(rawTargetValue);
+  const parsedTargetUnits = normalizeNumber(rawTargetUnits);
 
   const record: SalesRecordInput = {
     rowNumber,
@@ -136,6 +143,7 @@ export function parseSalesRow(row: Record<string, unknown>, fallbackLine: string
     employeeLookupKey: normalizeString(firstValue(row, salesColumnAliases.employeeLookupKey)),
     employeeName: normalizeString(firstValue(row, salesColumnAliases.employeeName)),
     line: normalizeString(firstValue(row, salesColumnAliases.line)) || fallbackLine,
+    managerHrId: normalizeString(firstValue(row, salesColumnAliases.managerHrId)),
     territory: normalizeString(firstValue(row, salesColumnAliases.territory)) || "Unassigned",
     salesType: normalizeString(firstValue(row, salesColumnAliases.salesType)) || "Unknown",
     family: normalizeString(firstValue(row, salesColumnAliases.family)) || "Unknown",
@@ -145,7 +153,7 @@ export function parseSalesRow(row: Record<string, unknown>, fallbackLine: string
     year: Number(normalizeString(firstValue(row, salesColumnAliases.year)) || 0),
     salesUnits: normalizeNumber(firstValue(row, salesColumnAliases.salesUnits)),
     salesValue: normalizeNumber(firstValue(row, salesColumnAliases.salesValue)),
-    targetUnits: normalizeNumber(firstValue(row, salesColumnAliases.targetUnits)),
+    targetUnits: targetUnitsHasValue ? parsedTargetUnits : 0,
     targetValue: 0,
     validationState: "valid",
     validationNotes,
@@ -156,15 +164,34 @@ export function parseSalesRow(row: Record<string, unknown>, fallbackLine: string
   if (!record.year || record.year < 2000) validationNotes.push("FAIL: Cannot import this sales row because Year is missing or invalid.");
   if (!Number.isFinite(record.salesUnits)) validationNotes.push("FAIL: Cannot import this sales row because Sales Units is not numeric.");
   if (!Number.isFinite(record.salesValue)) validationNotes.push("FAIL: Cannot import this sales row because Sales Value is not numeric.");
-  if (!Number.isFinite(record.targetUnits)) validationNotes.push("FAIL: Cannot import this sales row because Target Units is not numeric.");
+  if (targetUnitsHasValue && !Number.isFinite(record.targetUnits)) validationNotes.push("FAIL: Cannot import this sales row because Target Units is not numeric.");
+  if (targetValueHasValue && !Number.isFinite(sheetTargetValue)) validationNotes.push("FAIL: Cannot import this sales row because Target Value is not numeric.");
 
-  record.targetValue =
-    Number.isFinite(record.targetUnits) && Number.isFinite(record.factoryPrice)
-      ? record.targetUnits * record.factoryPrice
-      : Number.NaN;
+  if (targetValueHasValue && Number.isFinite(sheetTargetValue)) {
+    record.targetValue = sheetTargetValue;
+    if (!targetUnitsHasValue) {
+      record.targetUnits =
+        Number.isFinite(record.factoryPrice) && record.factoryPrice > 0
+          ? sheetTargetValue / record.factoryPrice
+          : 0;
+      validationNotes.push("WARN: Target Units is empty. The system derived it from Target Value and Factory Price.");
+    }
+  } else if (targetUnitsHasValue && Number.isFinite(record.targetUnits) && Number.isFinite(record.factoryPrice) && record.factoryPrice > 0) {
+    record.targetValue = record.targetUnits * record.factoryPrice;
+    validationNotes.push("WARN: Target Value is empty. The system derived it from Target Units and Factory Price.");
+  } else {
+    record.targetUnits = 0;
+    record.targetValue = 0;
+    validationNotes.push("WARN: Target Units and Target Value are empty. The system imported this row with zero target.");
+  }
 
   if (!record.employeeHrId && !record.employeeCrmId && !record.employeeLookupKey) {
     validationNotes.push("WARN: This sales row has no employee linkage key, so the system will try to import it but cannot connect it to a People Ops employee yet.");
+  }
+  if (!record.employeeHrId && record.managerHrId) {
+    validationNotes.push(
+      "WARN: Area row has no MR HR ID. It will stay unlinked at MR level but remains counted in DSM/manager and territory totals."
+    );
   }
   if (record.product === "Unknown") validationNotes.push("WARN: Product is missing in this sales row.");
   if (record.family === "Unknown") validationNotes.push("WARN: Family is missing in this sales row.");
@@ -186,11 +213,10 @@ export function parseSalesRow(row: Record<string, unknown>, fallbackLine: string
 
   if (Number.isFinite(record.targetUnits) && Number.isFinite(record.factoryPrice) && record.factoryPrice > 0) {
     const expectedTargetValue = record.targetUnits * record.factoryPrice;
-    const sheetTargetValue = normalizeNumber(firstValue(row, salesColumnAliases.targetValue));
-    if (Number.isFinite(sheetTargetValue) && hasRawValue(firstValue(row, salesColumnAliases.targetValue))) {
+    if (Number.isFinite(sheetTargetValue) && targetValueHasValue) {
       if (hasMaterialValueGap(sheetTargetValue, expectedTargetValue)) {
         validationNotes.push(
-          `WARN: Row ${rowNumber}, column "Target Value" differs from Target Units x Factory Price. The dashboard will use ${expectedTargetValue}.`
+          `WARN: Row ${rowNumber}, column "Target Value" differs from Target Units x Factory Price. The dashboard will use the sheet Target Value ${sheetTargetValue}.`
         );
       }
     }

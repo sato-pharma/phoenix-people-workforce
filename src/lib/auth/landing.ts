@@ -1,0 +1,20 @@
+const portalLandingRoleNames = new Set([
+  "employee",
+  "medical rep",
+  "district manager",
+  "regional manager",
+  "national sales manager",
+  "product manager",
+  "group product manager",
+  "sfe manager",
+  "training manager",
+  "marketing manager",
+  "finance manager",
+  "ceo",
+  "manager",
+]);
+
+export function resolveLandingPathForRole(role: string | null | undefined) {
+  const normalized = String(role ?? "").trim().toLowerCase();
+  return portalLandingRoleNames.has(normalized) ? "/employee-portals" : "/overview";
+}

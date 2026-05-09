@@ -10,7 +10,10 @@ export type EmployeeDirectoryRow = {
   employment_status: string | null;
   full_name: string | null;
   hr_id: string;
+  job_title?: string | null;
   line: string | null;
+  manager_hr_id?: string | null;
+  position_title?: string | null;
   region: string | null;
 };
 
@@ -25,6 +28,7 @@ export type SalesRecordInput = Record<string, any> & {
   line: string;
   linkConfidence?: number;
   linkStatus?: SalesLinkStatus;
+  managerHrId?: string | null;
   month: number;
   product: string;
   rowNumber: number;
@@ -100,17 +104,54 @@ export type TargetBatch = Record<string, any> & {
 export type SalesBatchDetail = Record<string, any>;
 export type SalesBatchIssue = Record<string, any>;
 export type SalesBatchReconciliation = Record<string, any>;
+export type SalesTrendPoint = {
+  achievementRate: number;
+  linkedEmployees: number;
+  period: string;
+  sales: number;
+  target: number;
+};
+
+export type SalesProductPerformanceRow = {
+  achievementRate: number;
+  family: string;
+  product: string;
+  sales: number;
+  target: number;
+};
+
+export type SalesDashboardFilterOptions = {
+  families: string[];
+  lines: string[];
+  managers: string[];
+  periods: string[];
+  products: string[];
+  salesTypes: string[];
+  territories: string[];
+};
+
 export type SalesDashboardData = {
   [key: string]: any;
   anomalies: Array<Record<string, any>>;
   familyMatrix: Array<Record<string, any>>;
+  filters: SalesDashboardFilterOptions;
   managerPerformance: Array<Record<string, any>>;
-  productPerformance: Array<Record<string, any>>;
+  productPerformance: SalesProductPerformanceRow[];
   recentBatches: Array<Record<string, any>>;
   summary: Record<string, any>;
   territories: Array<Record<string, any>>;
+  trend: SalesTrendPoint[];
 };
-export type SalesDashboardFilters = Record<string, any>;
+export type SalesDashboardFilters = Partial<{
+  family: string;
+  line: string;
+  manager: string;
+  period: string;
+  product: string | string[];
+  products: string[];
+  salesType: string;
+  territory: string;
+}>;
 export type SalesHistoryRow = Record<string, any>;
 
 export type SalesImportPayload = {

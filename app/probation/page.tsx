@@ -1,5 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { ProbationTracker } from "@/components/probation/probation-tracker";
+import { assertPermission } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   employeeDirectoryErrorMessage,
   getEmployeeDirectoryRows,
@@ -47,26 +49,30 @@ function daysRemaining(value: string) {
 }
 
 export default async function ProbationPage() {
+  const access = await resolveAccessContextFromPage();
+  await assertPermission(access, "probation", "read");
   let initialData: ProbationRow[] | null = null;
   let initialError: string | null = null;
 
   try {
     const rows = await getEmployeeDirectoryRows();
-    initialData = rows.map((employee) => {
-      const probationEndDate = addDays(employee.hireDate, probationDays);
+    initialData = rows
+      .map((employee) => {
+        const probationEndDate = addDays(employee.hireDate, probationDays);
 
-      return {
-        area_name: employee.areaName ?? "Unassigned",
-        crm_id: employee.crmId ?? "",
-        days_remaining: daysRemaining(probationEndDate),
-        full_name: employee.fullName,
-        hire_date: employee.hireDate ?? "",
-        hr_id: employee.hrId,
-        job_title: employee.jobTitle ?? "Unassigned",
-        line_name: employee.lineName ?? "Unassigned",
-        probation_end_date: probationEndDate,
-      };
-    });
+        return {
+          area_name: employee.areaName ?? "Unassigned",
+          crm_id: employee.crmId ?? "",
+          days_remaining: daysRemaining(probationEndDate),
+          full_name: employee.fullName,
+          hire_date: employee.hireDate ?? "",
+          hr_id: employee.hrId,
+          job_title: employee.positionTitle ?? employee.jobTitle ?? "Unassigned",
+          line_name: employee.lineName ?? "Unassigned",
+          probation_end_date: probationEndDate,
+        };
+      })
+      .filter((row) => row.days_remaining > 0);
   } catch (error) {
     initialError = probationPageError(error);
   }

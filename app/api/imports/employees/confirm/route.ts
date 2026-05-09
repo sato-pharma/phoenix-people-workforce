@@ -12,38 +12,13 @@ import type {
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SUPPORTED_EXTENSIONS = new Set([".xls", ".xlsx"]);
-const SUPPORTED_MIME_TYPES = new Set([
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-]);
-
 type IdMap = Map<string, number>;
 type SupabaseClient = ReturnType<typeof getSupabaseAdmin>;
-
-function getFileExtension(fileName: string) {
-  const dotIndex = fileName.lastIndexOf(".");
-
-  if (dotIndex === -1) {
-    return "";
-  }
-
-  return fileName.slice(dotIndex).toLowerCase();
-}
-
-function isSupportedExcelFile(file: File) {
-  const extension = getFileExtension(file.name);
-  const mimeType = file.type.toLowerCase();
-
-  return (
-    SUPPORTED_EXTENSIONS.has(extension) ||
-    (mimeType.length > 0 && SUPPORTED_MIME_TYPES.has(mimeType))
-  );
-}
 
 function truncate(value: string | null, maxLength: number) {
   return value ? value.slice(0, maxLength) : null;
@@ -67,14 +42,6 @@ function vacancyCodeFor(record: VacantPositionImportRecord) {
 }
 
 async function parseExcelRows(file: File) {
-  if (!isSupportedExcelFile(file)) {
-    return { error: "unsupported_format" as const };
-  }
-
-  if (file.size === 0) {
-    return { error: "invalid_excel_file" as const };
-  }
-
   let workbook: XLSX.WorkBook;
 
   try {
@@ -723,6 +690,18 @@ export async function POST(request: Request) {
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "missing_file" }, { status: 400 });
+    }
+    const fileValidation = validateSpreadsheetFile(file, {
+      ...excelSpreadsheetValidation,
+      emptyError: "invalid_excel_file",
+      emptyMessage: "Employee import file is empty.",
+      tooLargeError: "employee_import_file_too_large",
+      tooLargeMessage: "Employee import file exceeds the 10MB upload limit.",
+      unsupportedError: "unsupported_format",
+      unsupportedMessage: "Upload an employee import Excel file in .xls or .xlsx format.",
+    });
+    if (!fileValidation.ok) {
+      return NextResponse.json({ error: fileValidation.error, message: fileValidation.message }, { status: fileValidation.status });
     }
 
     const parsed = await parseExcelRows(file);

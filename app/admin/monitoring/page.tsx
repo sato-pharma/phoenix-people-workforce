@@ -1,0 +1,58 @@
+import { AlertCircle } from "lucide-react";
+import { redirect } from "next/navigation";
+
+import { MonitoringDashboard } from "@/components/admin/monitoring-dashboard";
+import { AppShell } from "@/components/layout/app-shell";
+import { Card } from "@/components/ui/card";
+import { canAccess } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { getAdminMonitoringStats } from "@/lib/admin/service";
+
+export const dynamic = "force-dynamic";
+
+export default async function AdminMonitoringPage() {
+  const access = await resolveAccessContextFromPage();
+  const [hasAdminRead, hasOverviewRead] = await Promise.all([
+    canAccess(access, "admin", "read"),
+    canAccess(access, "overview", "read"),
+  ]);
+
+  if (!hasAdminRead && !hasOverviewRead) {
+    redirect("/employee-portals");
+  }
+
+  let stats = null;
+  let loadError: string | null = null;
+
+  try {
+    stats = await getAdminMonitoringStats();
+  } catch (error) {
+    console.error("Failed to load monitoring dashboard:", error);
+    loadError = error instanceof Error ? error.message : "Unknown error occurred";
+  }
+
+  return (
+    <AppShell navigationMode="admin">
+      {stats ? (
+        <MonitoringDashboard stats={stats} />
+      ) : (
+        <div className="p-8">
+          <Card className="mx-auto max-w-2xl border-rose-100 bg-rose-50 p-6">
+            <div className="mb-4 flex items-center gap-3 text-rose-600">
+              <AlertCircle className="h-6 w-6" />
+              <h2 className="text-lg font-bold">Monitoring Error</h2>
+            </div>
+            <p className="mb-4 text-sm text-rose-700">
+              There was a problem loading the monitoring dashboard from Supabase.
+            </p>
+            <div className="rounded-lg border border-rose-200 bg-white/50 p-3">
+              <p className="break-all text-xs font-mono text-rose-800">
+                {loadError ?? "Unknown error occurred"}
+              </p>
+            </div>
+          </Card>
+        </div>
+      )}
+    </AppShell>
+  );
+}

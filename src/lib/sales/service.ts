@@ -1,6 +1,8 @@
-﻿import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { linkSalesRecords, linkTargetRecords } from "@/lib/sales/employees";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getSalesPeopleLabels, linkSalesRecords, linkTargetRecords, summarizeSalesLinkage } from "@/lib/sales/employees";
 import { formatUnits } from "@/lib/sales/format";
+import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getSalesScope, normalizeHrId, normalizeLineName, resolveEmployeeIdentityId, type AccessContext, type BusinessScope } from "@/lib/auth/permissions";
 import {
   type SalesBatch,
   type SalesBatchDetail,
@@ -19,9 +21,160 @@ import {
 } from "@/lib/sales/types";
 
 type ScopedRecord = SalesRecordInput & { batchId: string; period: string };
+type DbRow = Record<string, unknown>;
+type SalesAccessFilter = {
+  all: boolean;
+  allowedHrIds: Set<string>;
+  allowedLine?: string;
+};
 
-function toSafeArray<T>(value: T[] | null | undefined) {
+function toSafeArray<T = unknown>(value: readonly T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
+}
+
+function toFilterStringList(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => (typeof item === "string" ? item.split(",") : [])).map((item) => item.trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.split(",").map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeFilterToken(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function buildManagerMap(directory: Awaited<ReturnType<typeof getEmployeeDirectory>>) {
+  const managerMap = new Map<string, string[]>();
+  directory.employees.forEach((employee) => {
+    const managerId = normalizeHrId(employee.managerHrId);
+    const employeeId = normalizeHrId(employee.hrId);
+    if (!employeeId || !managerId) return;
+    const list = managerMap.get(managerId) ?? [];
+    list.push(employeeId);
+    managerMap.set(managerId, list);
+  });
+  return managerMap;
+}
+
+function collectHierarchy(managerMap: Map<string, string[]>, rootHrId: string) {
+  const allowedHrIds = new Set<string>();
+  const queue: string[] = [rootHrId];
+  while (queue.length > 0) {
+    const managerId = queue.shift();
+    if (!managerId) continue;
+    for (const subordinateId of managerMap.get(managerId) ?? []) {
+      if (!allowedHrIds.has(subordinateId)) {
+        allowedHrIds.add(subordinateId);
+        queue.push(subordinateId);
+      }
+    }
+  }
+  return allowedHrIds;
+}
+
+async function getPersistedSalesScopeOverride(accessContext: AccessContext): Promise<BusinessScope | null> {
+  if (!accessContext.loginId) return null;
+
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase
+    .from("app_auth_users")
+    .select("sales_scope_override")
+    .eq("login_id", accessContext.loginId)
+    .maybeSingle();
+
+  const raw = String((data as { sales_scope_override?: string | null } | null)?.sales_scope_override ?? "")
+    .trim()
+    .toUpperCase();
+
+  return ["SELF", "TEAM", "HIERARCHY", "LINE", "COMPANY", "NONE"].includes(raw)
+    ? (raw as BusinessScope)
+    : null;
+}
+
+async function resolveSalesAccessFilter(accessContext?: AccessContext | null): Promise<SalesAccessFilter> {
+  if (!accessContext) {
+    return { all: true, allowedHrIds: new Set() };
+  }
+
+  const currentHrId = resolveEmployeeIdentityId(accessContext);
+  const salesScope = accessContext.scope === "system"
+    ? "COMPANY"
+    : getSalesScope({
+        role: accessContext.role,
+        salesScopeOverride: await getPersistedSalesScopeOverride(accessContext),
+      });
+
+  if (salesScope === "COMPANY") {
+    return { all: true, allowedHrIds: new Set() };
+  }
+
+  if (salesScope === "NONE" || !currentHrId) {
+    return { all: false, allowedHrIds: new Set() };
+  }
+
+  const directory = await getEmployeeDirectory();
+  const directoryByHrId = new Map(
+    directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]),
+  );
+  const viewer = currentHrId ? directoryByHrId.get(currentHrId) : undefined;
+  if (salesScope === "SELF") {
+    return { all: false, allowedHrIds: new Set([currentHrId]) };
+  }
+
+  const managerMap = buildManagerMap(directory);
+  if (salesScope === "TEAM") {
+    return { all: false, allowedHrIds: new Set(managerMap.get(currentHrId) ?? []) };
+  }
+
+  if (salesScope === "HIERARCHY") {
+    return { all: false, allowedHrIds: collectHierarchy(managerMap, currentHrId) };
+  }
+
+  if (salesScope === "LINE" && viewer?.lineName) {
+    const targetLine = normalizeLineName(viewer.lineName);
+    const allowedHrIds = new Set<string>();
+    directory.employees.forEach((employee) => {
+      if (normalizeLineName(employee.lineName) === targetLine) {
+        const employeeId = normalizeHrId(employee.hrId);
+        if (employeeId) allowedHrIds.add(employeeId);
+      }
+    });
+    return { all: false, allowedHrIds, allowedLine: targetLine };
+  }
+
+  return { all: false, allowedHrIds: new Set() };
+}
+
+async function filterSalesRecordsForAccess(
+  records: ScopedRecord[],
+  accessContext?: AccessContext | null,
+) {
+  const accessFilter = await resolveSalesAccessFilter(accessContext);
+  if (accessFilter.all) return records;
+  
+  const hasLineFilter = Boolean(accessFilter.allowedLine);
+  if (accessFilter.allowedHrIds.size === 0 && !hasLineFilter) return [];
+
+  return records.filter((record) => {
+    // 1. If we have a line-level filter, it takes precedence for all records in that line
+    if (hasLineFilter && record.line) {
+      if (normalizeLineName(record.line) === accessFilter.allowedLine) return true;
+    }
+
+    // 2. Check if the record is explicitly linked to an allowed employee
+    const employeeHrId = normalizeHrId(record.employeeHrId);
+    if (employeeHrId && accessFilter.allowedHrIds.has(employeeHrId)) return true;
+
+    // 3. Check if the record is managed by an allowed manager (important for vacant areas)
+    const managerHrId = normalizeHrId(record.managerHrId);
+    if (managerHrId && accessFilter.allowedHrIds.has(managerHrId)) return true;
+
+    return false;
+  });
 }
 
 function uniq(values: Array<string | null | undefined>) {
@@ -86,6 +239,24 @@ function performanceMetric(sales: number, target: number) {
   return target > 0 ? sales / target : 0;
 }
 
+function sumUniqueTargets(items: ScopedRecord[], extraKey: (r: ScopedRecord) => string = () => "") {
+  const maxTargets = new Map<string, number>();
+  items.forEach((r) => {
+    const empId = r.employeeHrId || r.employeeLookupKey || r.employeeName || "unknown";
+    const key = `${extraKey(r)}::${empId}::${r.period}`;
+    const currentMax = maxTargets.get(key) ?? 0;
+    if (r.targetValue > currentMax) {
+      maxTargets.set(key, r.targetValue);
+    }
+  });
+
+  let total = 0;
+  maxTargets.forEach((val) => {
+    total += val;
+  });
+  return total;
+}
+
 function aggregate<T>(items: T[], keyBuilder: (item: T) => string) {
   const map = new Map<string, T[]>();
   items.forEach((item) => {
@@ -101,6 +272,25 @@ function countLinkedEmployees(records: ScopedRecord[]) {
 
 function dmName(record: ScopedRecord) {
   return record.employeeLookupKey || record.employeeName || "Unassigned";
+}
+
+function managerKey(record: ScopedRecord) {
+  return record.managerHrId ? `DSM [${record.managerHrId}]` : "Unassigned DSM";
+}
+
+function medicalRepKey(record: ScopedRecord) {
+  if (!record.employeeHrId) return "";
+  return `${record.employeeName || record.employeeLookupKey || "Medical Representative"} [${record.employeeHrId}]`;
+}
+
+function cleanPersonLabel(value: string) {
+  return value.replace(/\s*\[HR\s+[^\]]+\]/gi, "").replace(/\s*\[[^\]]+\]/g, "").trim();
+}
+
+function personLabel(labels: Map<string, string>, hrId: string | null | undefined, fallback: string) {
+  if (!hrId) return fallback;
+  const directoryLabel = labels.get(String(hrId).trim().toLowerCase());
+  return directoryLabel ? cleanPersonLabel(directoryLabel) : fallback;
 }
 
 function mapIssueField(note: string) {
@@ -135,9 +325,47 @@ function mapHistoryRows(batches: SalesBatch[], records: ScopedRecord[]): SalesHi
       return {
         ...batch,
         approvedSalesValue: sum(approvedRecords, (record) => record.salesValue),
-        approvedTargetValue: sum(approvedRecords, (record) => record.targetValue),
+        approvedTargetValue: sumUniqueTargets(approvedRecords, (r) => r.product),
+        linkageSummary: linkageSummaryForRecords(batchRecords),
       };
     });
+}
+
+function cleanIssueMessage(note: string) {
+  return note.replace(/^(FAIL:|WARN:)\s*/, "").replace(/^Row \d+,\s*/i, "").trim();
+}
+
+function linkageSummaryForRecords(records: ScopedRecord[]) {
+  const reasonCounts = new Map<string, number>();
+  const sampleRows = records
+    .filter((record) => record.linkStatus !== "linked")
+    .slice(0, 8)
+    .map((record) => ({
+      employeeHrId: record.employeeHrId ?? null,
+      managerHrId: record.managerHrId ?? null,
+      messages: record.validationNotes.map(cleanIssueMessage).filter(Boolean).slice(0, 3),
+      rowNumber: record.rowNumber,
+      territory: record.territory,
+    }));
+
+  records
+    .filter((record) => record.linkStatus !== "linked")
+    .forEach((record) => {
+      const messages = record.validationNotes.map(cleanIssueMessage).filter(Boolean);
+      const message = messages[0] ?? "No matching employee linkage was found.";
+      reasonCounts.set(message, (reasonCounts.get(message) ?? 0) + 1);
+    });
+
+  return {
+    ambiguous: records.filter((record) => record.linkStatus === "ambiguous").length,
+    linked: records.filter((record) => record.linkStatus === "linked").length,
+    reasons: [...reasonCounts.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 5)
+      .map(([message, count]) => ({ count, message })),
+    sampleRows,
+    unlinked: records.filter((record) => record.linkStatus === "unlinked").length,
+  };
 }
 
 function extractIssues(batches: SalesBatch[], records: ScopedRecord[]) {
@@ -176,22 +404,19 @@ function chainForBatch(history: SalesHistoryRow[], batchId: string) {
   return chain;
 }
 
-function approvedBatchSortValue(batch: SalesBatch) {
-  return [batch.approvedAt ?? "", batch.createdAt, String(batch.version).padStart(6, "0")].join("|");
-}
-
-function latestApprovedBatchesByPeriod(batches: SalesBatch[]) {
-  const latest = new Map<string, SalesBatch>();
-  batches
-    .filter((batch) => batch.status === "approved" && !batch.replacedByBatchId)
-    .forEach((batch) => {
-      const key = `${batch.line}::${batch.year}::${batch.month}`;
-      const current = latest.get(key);
-      if (!current || approvedBatchSortValue(batch) > approvedBatchSortValue(current)) {
-        latest.set(key, batch);
-      }
-    });
-  return [...latest.values()];
+function dashboardBatchSortValue(batch: SalesBatch) {
+  const statusPriority: Record<string, number> = {
+    approved: 3,
+    validated: 2,
+    needs_review: 1,
+    staged: 0,
+  };
+  return [
+    String(statusPriority[batch.status] ?? 0).padStart(2, "0"),
+    batch.approvedAt ?? "",
+    batch.createdAt,
+    String(batch.version).padStart(6, "0"),
+  ].join("|");
 }
 
 async function readAllSupabaseRows(
@@ -219,15 +444,35 @@ async function readAllSupabaseRows(
   return rows;
 }
 
-async function readSalesData() {
+async function readSalesData(options?: { batchId?: string; approvedOnly?: boolean; includeRecords?: boolean }) {
   const supabase = getSupabaseAdmin();
+  const includeRecords = options?.includeRecords ?? true;
 
-  const [batchRows, recordRows, targetBatchRows, targetRecordRows] = await Promise.all([
-    readAllSupabaseRows(supabase, "sales_import_batches", { orderBy: "created_at", ascending: false }),
-    readAllSupabaseRows(supabase, "sales_records"),
-    readAllSupabaseRows(supabase, "sales_target_batches", { orderBy: "created_at", ascending: false }),
-    readAllSupabaseRows(supabase, "sales_targets"),
+  let batchesQuery = supabase.from("sales_import_batches").select("*").order("created_at", { ascending: false });
+  let recordsQuery = supabase.from("sales_records").select("*");
+  const targetBatchesQuery = supabase.from("sales_target_batches").select("*").order("created_at", { ascending: false });
+  const targetRecordsQuery = supabase.from("sales_targets").select("*");
+
+  if (options?.batchId) {
+    batchesQuery = batchesQuery.eq("id", options.batchId);
+    recordsQuery = recordsQuery.eq("batch_id", options.batchId);
+  }
+
+  if (options?.approvedOnly) {
+    batchesQuery = batchesQuery.eq("status", "approved").is("replaced_by_batch_id", null);
+  }
+
+  const [batchResult, recordResult, targetBatchResult, targetRecordResult] = await Promise.all([
+    options?.batchId ? batchesQuery : readAllSupabaseRows(supabase, "sales_import_batches", { orderBy: "created_at", ascending: false }),
+    includeRecords ? (options?.batchId ? recordsQuery : readAllSupabaseRows(supabase, "sales_records")) : Promise.resolve({ data: [] as DbRow[] }),
+    options?.batchId ? targetBatchesQuery : readAllSupabaseRows(supabase, "sales_target_batches", { orderBy: "created_at", ascending: false }),
+    includeRecords ? (options?.batchId ? targetRecordsQuery : readAllSupabaseRows(supabase, "sales_targets")) : Promise.resolve({ data: [] as DbRow[] }),
   ]);
+
+  const batchRows = (Array.isArray(batchResult) ? batchResult : toSafeArray(batchResult.data)) as DbRow[];
+  const recordRows = (Array.isArray(recordResult) ? recordResult : toSafeArray(recordResult.data)) as DbRow[];
+  const targetBatchRows = (Array.isArray(targetBatchResult) ? targetBatchResult : toSafeArray(targetBatchResult.data)) as DbRow[];
+  const targetRecordRows = (Array.isArray(targetRecordResult) ? targetRecordResult : toSafeArray(targetRecordResult.data)) as DbRow[];
 
   const batches = batchRows.map((row) => {
     const batch: SalesBatch = {
@@ -273,6 +518,7 @@ async function readSalesData() {
     employeeCrmId: row.employee_crm_id ? String(row.employee_crm_id) : null,
     employeeLookupKey: row.employee_lookup_key ? String(row.employee_lookup_key) : null,
     employeeName: row.employee_name ? String(row.employee_name) : null,
+    managerHrId: row.manager_hr_id ? String(row.manager_hr_id) : null,
     line: String(row.line),
     territory: String(row.territory),
     salesType: String(row.sales_type),
@@ -310,6 +556,7 @@ async function readSalesData() {
     employeeCrmId: row.employee_crm_id ? String(row.employee_crm_id) : null,
     employeeLookupKey: row.employee_lookup_key ? String(row.employee_lookup_key) : null,
     employeeName: row.employee_name ? String(row.employee_name) : null,
+    managerHrId: row.manager_hr_id ? String(row.manager_hr_id) : null,
     line: String(row.line),
     month: Number(row.month),
     year: Number(row.year),
@@ -323,24 +570,31 @@ async function readSalesData() {
   return { batches, records, targetBatches, targetRecords };
 }
 
-export async function listSalesHistory() {
+export async function listSalesHistory(accessContext?: AccessContext | null) {
   const { batches, records } = await readSalesData();
-  return mapHistoryRows(batches, records);
+  const visibleRecords = await filterSalesRecordsForAccess(records, accessContext);
+  return mapHistoryRows(batches, visibleRecords);
 }
 
-export async function listSalesQueue() {
-  const history = await listSalesHistory();
-  return history.filter(
-    (batch) => batch.status === "staged" || batch.status === "validated" || batch.status === "needs_review"
+export async function listSalesQueue(accessContext?: AccessContext | null) {
+  const { batches, records } = await readSalesData();
+  const visibleRecords = await filterSalesRecordsForAccess(records, accessContext);
+  const history = mapHistoryRows(batches, visibleRecords);
+  return history.sort((left, right) =>
+    new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
   );
 }
 
-export async function getSalesBatchDetail(id: string): Promise<SalesBatchDetail | null> {
-  const { batches, records } = await readSalesData();
-  const history = mapHistoryRows(batches, records);
+export async function getSalesBatchDetail(
+  id: string,
+  accessContext?: AccessContext | null,
+): Promise<SalesBatchDetail | null> {
+  const { batches, records } = await readSalesData({ batchId: id });
+  const visibleRecords = await filterSalesRecordsForAccess(records, accessContext);
+  const history = mapHistoryRows(batches, visibleRecords);
   const batch = history.find((item) => item.id === id);
   if (!batch) return null;
-  const batchRecords = records.filter((record) => record.batchId === id);
+  const batchRecords = visibleRecords.filter((record) => record.batchId === id);
 
   return {
     ...batch,
@@ -394,38 +648,173 @@ function anomalyInsights(records: ScopedRecord[]) {
     }));
 }
 
-export async function getSalesDashboard(filters: SalesDashboardFilters = {}): Promise<SalesDashboardData> {
-  const { batches, records } = await readSalesData();
-  const dashboardBatches = latestApprovedBatchesByPeriod(batches);
-  const approvedBatchMap = new Map(dashboardBatches.map((batch) => [batch.id, batch] as const));
-  const approvedRecords = records.flatMap((record) => {
-    const batch = approvedBatchMap.get(record.batchId);
-    if (!batch) return [];
-    return [{ ...record, line: batch.line || record.line, month: batch.month || record.month, year: batch.year || record.year, period: batch.period || record.period }];
+export async function getSalesDashboard(
+  filters: SalesDashboardFilters = {},
+  accessContext?: AccessContext | null,
+): Promise<SalesDashboardData> {
+  const supabase = getSupabaseAdmin();
+
+  // 1. Get active, non-replaced batches. The dashboard reflects the latest uploaded usable sheet.
+  const { data: batchRows, error: batchError } = await supabase
+    .from("sales_import_batches")
+    .select("*")
+    .is("replaced_by_batch_id", null);
+
+  if (batchError) throw batchError;
+
+  const batches: SalesBatch[] = toSafeArray(batchRows).map((row) => ({
+    id: String(row.id),
+    fileName: String(row.file_name),
+    line: String(row.line),
+    month: Number(row.month),
+    year: Number(row.year),
+    period: String(row.period),
+    status: String(row.status) as SalesBatch["status"],
+    schemaType: (row.schema_type as SalesBatch["schemaType"]) || "raw_sales",
+    totalRecords: Number(row.total_records ?? 0),
+    validRecords: Number(row.valid_records ?? 0),
+    warningRecords: Number(row.warning_records ?? 0),
+    failedRecords: Number(row.failed_records ?? 0),
+    linkedRecords: Number(row.linked_records ?? 0),
+    linkageRate: Number(row.linkage_rate ?? 0),
+    uploadedBy: String(row.uploaded_by ?? "system"),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    version: Number(row.version ?? 1),
+    duplicateHash: String(row.duplicate_hash ?? ""),
+    isDuplicate: Boolean(row.is_duplicate),
+    canApprove: false,
+    replacementForBatchId: row.replacement_for_batch_id ? String(row.replacement_for_batch_id) : null,
+    replacedByBatchId: row.replaced_by_batch_id ? String(row.replaced_by_batch_id) : null,
+    approvedBy: row.approved_by ? String(row.approved_by) : null,
+    approvedAt: row.approved_at ? new Date(String(row.approved_at)).toISOString() : null,
+    rejectedBy: row.rejected_by ? String(row.rejected_by) : null,
+    rejectedAt: row.rejected_at ? new Date(String(row.rejected_at)).toISOString() : null,
+    previewUrl: `/sales/queue/${row.id}`,
+    approvalBlockedReason: null,
+  }));
+
+  const activeBatches = batches.filter((batch) => batch.status !== "rejected" && batch.status !== "replaced" && !batch.replacedByBatchId);
+  const activeBatchIds = activeBatches.map((batch) => batch.id);
+
+  if (activeBatchIds.length === 0) {
+    // Return empty dashboard if no active batches
+    return {
+      summary: {
+        totalApprovedSales: 0,
+        totalApprovedTarget: 0,
+        achievementRate: 0,
+        approvedRecords: 0,
+        dsmLinkedRecords: 0,
+        dsmTotalRecords: 0,
+        linkedRecords: 0,
+        linkedEmployees: 0,
+        openReviewBatches: 0,
+        activeTargetRecords: 0,
+        unitsSold: 0,
+        averageFactoryPrice: 0,
+        activeProducts: 0,
+        topManager: "-",
+        dataQualityRate: 1,
+      },
+      filters: { lines: [], periods: [], salesTypes: [], managers: [], territories: [], products: [], families: [] },
+      trend: [],
+      channelMix: [],
+      familyMatrix: [],
+      pareto: [],
+      territories: [],
+      linePerformance: [],
+      managerPerformance: [],
+      productPerformance: [],
+      forecast: [],
+      anomalies: [],
+      transactions: [],
+      linkage: { linked: 0, unlinked: 0, ambiguous: 0 },
+      recentBatches: [],
+    };
+  }
+
+  // 2. Get every active record with pagination. Supabase's default select page is 1,000 rows,
+  // and each monthly sales sheet can exceed that by itself.
+  const allRecordRows = await readAllSupabaseRows(supabase, "sales_records");
+  const activeBatchIdSet = new Set(activeBatchIds);
+
+  let records: ScopedRecord[] = allRecordRows.filter((row) => activeBatchIdSet.has(String(row.batch_id))).map((row) => ({
+    batchId: String(row.batch_id),
+    period: `${row.year}-${String(row.month).padStart(2, "0")}`,
+    rowNumber: Number(row.row_number),
+    employeeHrId: row.employee_hr_id ? String(row.employee_hr_id) : null,
+    employeeCrmId: row.employee_crm_id ? String(row.employee_crm_id) : null,
+    employeeLookupKey: row.employee_lookup_key ? String(row.employee_lookup_key) : null,
+    employeeName: row.employee_name ? String(row.employee_name) : null,
+    managerHrId: row.manager_hr_id ? String(row.manager_hr_id) : null,
+    line: String(row.line),
+    territory: String(row.territory),
+    salesType: String(row.sales_type),
+    family: String(row.family),
+    product: String(row.product),
+    factoryPrice: Number(row.factory_price ?? 0),
+    month: Number(row.month),
+    year: Number(row.year),
+    salesUnits: Number(row.sales_units ?? 0),
+    salesValue: Number(row.sales_value ?? 0),
+    targetUnits: Number(row.target_units ?? 0),
+    targetValue: Number(row.target_value ?? 0),
+    validationState: row.validation_state as SalesValidationState,
+    validationNotes: Array.isArray(row.validation_notes) ? row.validation_notes.map(String) : [],
+    linkStatus: (row.link_status ?? "unlinked") as SalesLinkStatus,
+    linkConfidence: Number(row.link_confidence ?? 0),
+  }));
+  records = await filterSalesRecordsForAccess(records, accessContext);
+
+  const activeBatchMap = new Map(activeBatches.map((batch) => [batch.id, batch] as const));
+  const latestBatchByRecordPeriod = new Map<string, SalesBatch>();
+
+  records.forEach((record) => {
+    const batch = activeBatchMap.get(record.batchId);
+    if (!batch || record.validationState === "failed") return;
+
+    const key = `${batch.line || record.line}::${record.year}::${record.month}`;
+    const current = latestBatchByRecordPeriod.get(key);
+    if (!current || dashboardBatchSortValue(batch) > dashboardBatchSortValue(current)) {
+      latestBatchByRecordPeriod.set(key, batch);
+    }
   });
 
+  const approvedRecords = records.flatMap((record) => {
+    const batch = activeBatchMap.get(record.batchId);
+    if (!batch) return [];
+    if (record.validationState === "failed") return [];
+    const key = `${batch.line || record.line}::${record.year}::${record.month}`;
+    if (latestBatchByRecordPeriod.get(key)?.id !== batch.id) return [];
+    return [{ ...record, line: batch.line || record.line }];
+  });
+
+  const productFilter = [...new Set([
+    ...toFilterStringList(filters.product),
+    ...toFilterStringList(filters.products),
+  ].map(normalizeFilterToken).filter(Boolean))];
+
   const filteredRecords = approvedRecords.filter((record) => {
+
     if (filters.line && record.line !== filters.line) return false;
     if (filters.period && record.period !== filters.period) return false;
     if (filters.salesType && record.salesType !== filters.salesType) return false;
-    if (filters.manager && dmName(record) !== filters.manager) return false;
+    if (filters.manager && managerKey(record) !== filters.manager) return false;
     if (filters.territory && record.territory !== filters.territory) return false;
-    if (filters.product && record.product !== filters.product) return false;
+    if (productFilter.length > 0 && !productFilter.includes(normalizeFilterToken(record.product))) return false;
     if (filters.family && record.family !== filters.family) return false;
     return true;
   });
 
   const totalSales = sum(filteredRecords, (record) => record.salesValue);
-  const totalTarget = sum(filteredRecords, (record) => record.targetValue);
+  const totalTarget = sumUniqueTargets(filteredRecords, (r) => `${r.line}::${r.product}`);
   const unitsSold = sum(filteredRecords, (record) => record.salesUnits);
-  const linkedCount = filteredRecords.filter((record) => record.linkStatus === "linked").length;
-
   const periodGroups = aggregate(filteredRecords, (record) => record.period);
   const sortedPeriods = [...periodGroups.keys()].sort();
   const trend = sortedPeriods.map((period) => {
     const items = periodGroups.get(period) ?? [];
     const sales = sum(items, (item) => item.salesValue);
-    const target = sum(items, (item) => item.targetValue);
+    const target = sumUniqueTargets(items, (r) => `${r.period}::${r.line}::${r.product}`);
     return { period, sales, target, achievementRate: performanceMetric(sales, target), linkedEmployees: countLinkedEmployees(items) };
   });
 
@@ -436,7 +825,7 @@ export async function getSalesDashboard(filters: SalesDashboardFilters = {}): Pr
   const familyGroupsMap = aggregate(filteredRecords, (record) => record.family);
   const familyMatrix = [...familyGroupsMap.entries()].map(([name, items]) => {
     const sales = sum(items, (item) => item.salesValue);
-    const target = sum(items, (item) => item.targetValue);
+    const target = sumUniqueTargets(items, (r) => r.product);
     const achievementRate = performanceMetric(sales, target);
     const status: "green" | "yellow" | "red" | "neutral" =
       target === 0 ? "neutral" : achievementRate >= 1 ? "green" : achievementRate >= 0.8 ? "yellow" : "red";
@@ -447,6 +836,9 @@ export async function getSalesDashboard(filters: SalesDashboardFilters = {}): Pr
   const productPerformance = [...productGroupsMap.entries()]
     .map(([product, items]) => {
       const sales = sum(items, (item) => item.salesValue);
+      // For products, we still sum all targets because targets are usually per-product
+      // if they are listed on the product row. If they are per-employee, this will still double count
+      // but there's no way to divide an employee target across products without more info.
       const target = sum(items, (item) => item.targetValue);
       return { product, family: items[0]?.family ?? "Unknown", sales, target, achievementRate: performanceMetric(sales, target) };
     })
@@ -462,7 +854,7 @@ export async function getSalesDashboard(filters: SalesDashboardFilters = {}): Pr
   const territoryPerformance = [...aggregate(filteredRecords, (record) => record.territory).entries()]
     .map(([name, items]) => {
       const sales = sum(items, (item) => item.salesValue);
-      const target = sum(items, (item) => item.targetValue);
+      const target = sumUniqueTargets(items, (r) => r.territory);
       return { name, sales, target, achievementRate: performanceMetric(sales, target) };
     })
     .sort((left, right) => right.sales - left.sales);
@@ -470,17 +862,22 @@ export async function getSalesDashboard(filters: SalesDashboardFilters = {}): Pr
   const linePerformance = [...aggregate(filteredRecords, (record) => record.line).entries()]
     .map(([line, items]) => {
       const sales = sum(items, (item) => item.salesValue);
-      const target = sum(items, (item) => item.targetValue);
+      const target = sumUniqueTargets(items, (r) => r.line);
       return { line, sales, target, achievementRate: performanceMetric(sales, target), linkedEmployees: countLinkedEmployees(items) };
     })
     .sort((left, right) => right.sales - left.sales);
 
-  const managerGroupsMap = aggregate(filteredRecords, (record) => dmName(record));
+  const peopleLabels = await getSalesPeopleLabels([
+    ...filteredRecords.map((record) => record.managerHrId),
+    ...filteredRecords.map((record) => record.employeeHrId),
+  ]);
+
+  const managerGroupsMap = aggregate(filteredRecords, (record) => personLabel(peopleLabels, record.managerHrId, managerKey(record)));
   const managerPerformance = [...managerGroupsMap.entries()]
     .filter(([name]) => name !== "Unassigned")
     .map(([manager, items]) => {
       const sales = sum(items, (item) => item.salesValue);
-      const target = sum(items, (item) => item.targetValue);
+      const target = sumUniqueTargets(items, () => manager);
       const retailItems = items.filter((item) => item.salesType?.toLowerCase().includes("retail"));
       const storesItems = items.filter((item) => item.salesType?.toLowerCase().includes("store"));
       const topProductEntry = [...aggregate(items, (item) => item.product).entries()]
@@ -500,13 +897,20 @@ export async function getSalesDashboard(filters: SalesDashboardFilters = {}): Pr
     .sort((left, right) => right.sales - left.sales);
 
   const transactions = filteredRecords
-    .slice(0, 200)
     .map((record) => ({
-      employeeName: dmName(record),
+      employeeHrId: record.employeeHrId ?? null,
+      employeeName: record.employeeHrId
+        ? personLabel(peopleLabels, record.employeeHrId, medicalRepKey(record))
+        : null,
+      employeeSourceName: dmName(record),
+      linkStatus: record.linkStatus,
+      managerHrId: record.managerHrId ?? null,
+      managerName: personLabel(peopleLabels, record.managerHrId, managerKey(record)),
       line: record.line,
       territory: record.territory,
       salesType: record.salesType,
       family: record.family,
+      factoryPrice: record.factoryPrice,
       product: record.product,
       period: record.period,
       salesUnits: record.salesUnits,
@@ -529,7 +933,10 @@ export async function getSalesDashboard(filters: SalesDashboardFilters = {}): Pr
   const allProducts = new Set(filteredRecords.map((record) => record.product));
   const factoryPrices = filteredRecords.filter((record) => record.factoryPrice > 0).map((record) => record.factoryPrice);
   const avgFactoryPrice = factoryPrices.length > 0 ? factoryPrices.reduce((sum, price) => sum + price, 0) / factoryPrices.length : 0;
-  const qualityRate = filteredRecords.length > 0 ? linkedCount / filteredRecords.length : 1;
+  const dashboardLinkage = await summarizeSalesLinkage(filteredRecords);
+  const linkedCount = dashboardLinkage.dsmLinked;
+  const linkageTotal = dashboardLinkage.dsmTotal;
+  const qualityRate = linkageTotal > 0 ? linkedCount / linkageTotal : 1;
 
   const recentBatches = mapHistoryRows(batches, records).slice(0, 5);
 
@@ -539,6 +946,8 @@ export async function getSalesDashboard(filters: SalesDashboardFilters = {}): Pr
       totalApprovedTarget: totalTarget,
       achievementRate: performanceMetric(totalSales, totalTarget),
       approvedRecords: filteredRecords.length,
+      dsmLinkedRecords: linkedCount,
+      dsmTotalRecords: linkageTotal,
       linkedRecords: linkedCount,
       linkedEmployees: countLinkedEmployees(filteredRecords),
       openReviewBatches,
@@ -546,14 +955,14 @@ export async function getSalesDashboard(filters: SalesDashboardFilters = {}): Pr
       unitsSold,
       averageFactoryPrice: avgFactoryPrice,
       activeProducts: allProducts.size,
-      topManager: topManagerEntry?.manager ?? "â€”",
+      topManager: topManagerEntry?.manager ?? "-",
       dataQualityRate: qualityRate,
     },
     filters: {
       lines: uniq(records.map((record) => record.line)),
       periods: uniq(records.map((record) => record.period)),
       salesTypes: uniq(records.map((record) => record.salesType)),
-      managers: uniq(records.map((record) => dmName(record))),
+      managers: uniq(records.map((record) => managerKey(record))),
       territories: uniq(records.map((record) => record.territory)),
       products: uniq(records.map((record) => record.product)),
       families: uniq(records.map((record) => record.family)),
@@ -577,8 +986,9 @@ export async function getSalesDashboard(filters: SalesDashboardFilters = {}): Pr
 export async function createSalesImport(payload: SalesImportPayload) {
   const supabase = getSupabaseAdmin();
   const linked = await linkSalesRecords(payload.records);
-  const linkedCount = linked.filter((record) => record.linkStatus === "linked").length;
-  const linkageRate = linked.length > 0 ? linkedCount / linked.length : 0;
+  const linkageBreakdown = await summarizeSalesLinkage(linked);
+  const linkedCount = linkageBreakdown.dsmLinked;
+  const linkageRate = linkageBreakdown.dsmTotal > 0 ? linkageBreakdown.dsmLinked / linkageBreakdown.dsmTotal : 0;
   const failedRecords = linked.filter((record) => record.validationState === "failed").length;
 
   const existingResult = await supabase
@@ -618,6 +1028,7 @@ export async function createSalesImport(payload: SalesImportPayload) {
       employee_crm_id: record.employeeCrmId ?? null,
       employee_lookup_key: record.employeeLookupKey ?? null,
       employee_name: record.employeeName ?? null,
+      manager_hr_id: record.managerHrId ?? null,
       line: record.line,
       territory: record.territory,
       sales_type: record.salesType,
@@ -653,6 +1064,7 @@ export async function createSalesImport(payload: SalesImportPayload) {
     topFailureReasons: [],
     topWarningReasons: [],
     reconciliation: null,
+    linkageBreakdown,
   };
 }
 

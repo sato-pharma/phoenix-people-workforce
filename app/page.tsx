@@ -1,5 +1,14 @@
 import { redirect } from "next/navigation";
 
-export default function Home() {
-  redirect("/payroll?tab=generate");
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+
+export default async function Home() {
+  const session = await resolveAccessContextFromPage();
+
+  if (!session.loginId) {
+    redirect("/login");
+  }
+
+  redirect(resolveLandingPathForRole(session.role));
 }

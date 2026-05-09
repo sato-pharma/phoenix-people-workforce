@@ -1,14 +1,23 @@
-﻿import { PayrollDashboard } from "@/components/payroll/payroll-dashboard";
+import { PayrollDashboard } from "@/components/payroll/payroll-dashboard";
 import { AppShell } from "@/components/layout/app-shell";
+import { assertPermission, getPayrollScope } from "@/lib/auth/permissions";
 import { getPayrollDashboard } from "@/lib/payroll/service";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { redirect } from "next/navigation";
 
 export default async function PayrollPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const sp = await searchParams;
+  const access = await resolveAccessContextFromPage();
+  const scope = getPayrollScope(access);
+  if (scope !== "COMPANY") {
+    redirect("/employee-portals/payroll");
+  }
+  await assertPermission(access, "payroll", "read");
   let data = null;
   let error: string | null = null;
 
   try {
-    data = await getPayrollDashboard(sp.batchId);
+    data = await getPayrollDashboard(sp.batchId, access);
   } catch (err) {
     error = err instanceof Error ? err.message : "Failed to load payroll data.";
   }
@@ -18,13 +27,6 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
       <PayrollDashboard
         initialData={data}
         initialError={error}
-        initialTab={
-          sp.tab === "governance"
-            ? "governance"
-            : sp.tab === "generate"
-              ? "generate"
-              : "governance"
-        }
       />
     </AppShell>
   );

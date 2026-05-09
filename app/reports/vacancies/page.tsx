@@ -1,5 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { VacanciesReport } from "@/components/reports/vacancies-report";
+import { assertPermission } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   errorMessage,
   getVacancyReport,
@@ -27,6 +29,8 @@ function vacanciesPageError(error: unknown) {
 }
 
 export default async function VacanciesPage() {
+  const access = await resolveAccessContextFromPage();
+  await assertPermission(access, "vacancies", "read");
   let initialError: string | null = null;
   let initialReport = null;
 
