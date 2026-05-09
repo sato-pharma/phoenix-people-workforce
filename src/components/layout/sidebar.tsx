@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   MapPinned,
   Network,
+  ScrollText,
   ShieldCheck,
   X,
   UsersRound,
@@ -60,6 +61,7 @@ function getAdminSections(permissionLookup: PermissionLookup): SidebarSection[] 
     {
       items: [
         { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
+        { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }] },
         { href: "/imports/employees", icon: FileUp, label: "Bulk Import", permissions: [{ resource: "imports" }] },
         { href: "/imports/bricks", icon: Network, label: "Brick Reference", permissions: [{ resource: "imports" }] },
       ],
