@@ -1,6 +1,5 @@
-"use client";
-
-import { 
+// Legacy component — superseded by AdminCommandCenter. Kept for reference only.
+import {
   Users, 
   UserCheck, 
   CreditCard, 

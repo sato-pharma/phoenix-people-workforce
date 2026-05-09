@@ -134,6 +134,8 @@ export function AccessControlManager({ initialData = null, initialError = null }
   const [tab, setTab] = React.useState<"users" | "permissions" | "audit">("users");
   const [uploadResults, setUploadResults] = React.useState<RowResult[] | null>(null);
   const [permissionSaving, setPermissionSaving] = React.useState<string | null>(null);
+  const [selectedLoginIds, setSelectedLoginIds] = React.useState<Set<string>>(new Set());
+  const [isBulkActing, setIsBulkActing] = React.useState(false);
 
   async function updatePermission(
     role: PhoenixRole,
@@ -269,6 +271,30 @@ export function AccessControlManager({ initialData = null, initialError = null }
       role: user.role,
       salesScopeOverride: user.salesScopeOverride ?? "",
     });
+  }
+
+  async function bulkAction(action: "enable" | "disable") {
+    if (selectedLoginIds.size === 0) return;
+    setIsBulkActing(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/users/bulk-action", {
+        body: JSON.stringify({ action, loginIds: Array.from(selectedLoginIds) }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.message ?? "Bulk action failed.");
+      if (payload.dashboard) setData(payload.dashboard);
+      setSelectedLoginIds(new Set());
+      if (payload.failed?.length > 0) {
+        setError(`${payload.failed.length} user(s) could not be updated: ${(payload.failed as Array<{ loginId: string; reason: string }>).map((f) => `${f.loginId} (${f.reason})`).join("; ")}`);
+      }
+    } catch (bulkError) {
+      setError(bulkError instanceof Error ? bulkError.message : "Bulk action failed.");
+    } finally {
+      setIsBulkActing(false);
+    }
   }
 
   const users = data?.users ?? [];
@@ -469,21 +495,74 @@ export function AccessControlManager({ initialData = null, initialError = null }
             <div className="grid gap-3 border-b border-[#E2E8F0] p-4 lg:grid-cols-[1fr_190px_160px]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-[#64748B]" />
-                <Input className="pl-9 border-[#E2E8F0]" onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search name, HR_ID, role, line" value={query} />
+                <Input className="pl-9 border-[#E2E8F0]" onChange={(e) => { setQuery(e.target.value); setPage(1); setSelectedLoginIds(new Set()); }} placeholder="Search name, HR_ID, role, line" value={query} />
               </div>
-              <select className="h-10 rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm" onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }} value={roleFilter}>
+              <select className="h-10 rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm" onChange={(e) => { setRoleFilter(e.target.value); setPage(1); setSelectedLoginIds(new Set()); }} value={roleFilter}>
                 <option value="all">All roles</option>
                 {phoenixRoles.map((role) => <option key={role} value={role}>{role}</option>)}
               </select>
-              <select className="h-10 rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm" onChange={(e) => { setLineFilter(e.target.value); setPage(1); }} value={lineFilter}>
+              <select className="h-10 rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm" onChange={(e) => { setLineFilter(e.target.value); setPage(1); setSelectedLoginIds(new Set()); }} value={lineFilter}>
                 <option value="all">All lines</option>
                 {(data?.lines ?? []).map((line) => <option key={line} value={line}>{line}</option>)}
               </select>
             </div>
+            {selectedLoginIds.size > 0 && (
+              <div className="flex items-center gap-3 border-b border-[#F97316]/20 bg-[#F97316]/5 px-4 py-2.5">
+                <span className="text-sm font-bold text-[#F97316]">{selectedLoginIds.size} selected</span>
+                <Button
+                  className="h-7 gap-1.5 px-3 text-xs"
+                  disabled={isBulkActing}
+                  onClick={() => void bulkAction("enable")}
+                  variant="secondary"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  Enable all
+                </Button>
+                <Button
+                  className="h-7 gap-1.5 px-3 text-xs"
+                  disabled={isBulkActing}
+                  onClick={() => void bulkAction("disable")}
+                  variant="destructive"
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                  Disable all
+                </Button>
+                <button
+                  className="ml-auto text-xs text-[#64748B] underline hover:text-[#0F172A]"
+                  onClick={() => setSelectedLoginIds(new Set())}
+                  type="button"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead className="bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
                   <tr>
+                    <th className="w-10 px-4 py-3">
+                      <input
+                        aria-label="Select all on this page"
+                        checked={visibleUsers.length > 0 && visibleUsers.every((u) => selectedLoginIds.has(u.loginId))}
+                        className="h-4 w-4 accent-[#F97316]"
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedLoginIds((prev) => {
+                              const next = new Set(prev);
+                              visibleUsers.forEach((u) => next.add(u.loginId));
+                              return next;
+                            });
+                          } else {
+                            setSelectedLoginIds((prev) => {
+                              const next = new Set(prev);
+                              visibleUsers.forEach((u) => next.delete(u.loginId));
+                              return next;
+                            });
+                          }
+                        }}
+                        type="checkbox"
+                      />
+                    </th>
                     <th className="px-4 py-3">User</th>
                     <th className="px-4 py-3">Role / Line</th>
                     <th className="px-4 py-3">Sales</th>
@@ -495,7 +574,29 @@ export function AccessControlManager({ initialData = null, initialError = null }
                 </thead>
                 <tbody>
                   {visibleUsers.map((user) => (
-                    <tr className="border-b border-[#E2E8F0] transition hover:bg-[#F8FAFC]" key={user.loginId}>
+                    <tr
+                      className={cn(
+                        "border-b border-[#E2E8F0] transition hover:bg-[#F8FAFC]",
+                        selectedLoginIds.has(user.loginId) && "bg-[#F97316]/5",
+                      )}
+                      key={user.loginId}
+                    >
+                      <td className="px-4 py-3">
+                        <input
+                          aria-label={`Select ${user.name}`}
+                          checked={selectedLoginIds.has(user.loginId)}
+                          className="h-4 w-4 accent-[#F97316]"
+                          onChange={(e) => {
+                            setSelectedLoginIds((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(user.loginId);
+                              else next.delete(user.loginId);
+                              return next;
+                            });
+                          }}
+                          type="checkbox"
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <p className="font-bold text-[#0F172A]">{user.name}</p>
                         <p className="text-xs text-[#64748B]">{user.hrId ?? "-"} / {user.loginId}</p>

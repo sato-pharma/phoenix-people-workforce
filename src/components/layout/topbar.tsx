@@ -1,6 +1,7 @@
 "use client";
 
-import { Bell, ChevronDown, LogOut, Mail, Menu, Search } from "lucide-react";
+import { Bell, ChevronDown, LogOut, Mail, Menu, Search, UserCog } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
@@ -10,10 +11,18 @@ import type { PermissionLookup } from "@/components/layout/sidebar";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Input } from "@/components/ui/input";
 
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
 export function Topbar({
+  currentUser,
   navigationMode = "admin",
   permissionLookup = {},
 }: {
+  currentUser?: { name: string; loginId: string; role: string };
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
 }) {
@@ -75,17 +84,26 @@ export function Topbar({
               type="button"
             >
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F97316]/15 text-xs font-black text-[#F97316] ring-[#F97316]/20 ring-1">
-                OAG
+                {getInitials(currentUser?.name ?? "U")}
               </div>
               <div className="hidden text-left sm:block">
-                <p className="text-sm font-semibold text-[#0F172A]">Omar Anwar Gawish</p>
-                <p className="text-xs text-[#64748B]">Admin</p>
+                <p className="text-sm font-semibold text-[#0F172A]">{currentUser?.name ?? "User"}</p>
+                <p className="text-xs text-[#64748B]">{currentUser?.role ?? "User"}</p>
               </div>
               <ChevronDown className="hidden h-4 w-4 text-[#64748B] sm:block" />
             </button>
 
             {userMenuOpen && (
               <div className="absolute right-0 top-full mt-2 w-48 rounded-lg border border-[#E2E8F0] bg-white shadow-lg">
+                <Link
+                  className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[#0F172A] hover:bg-[#F8FAFC]"
+                  href="/admin/profile"
+                  onClick={() => setUserMenuOpen(false)}
+                >
+                  <UserCog className="h-4 w-4" />
+                  My Profile
+                </Link>
+                <div className="mx-3 h-px bg-[#E2E8F0]" />
                 <button
                   className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[#0F172A] hover:bg-[#F8FAFC]"
                   onClick={handleLogout}

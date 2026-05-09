@@ -1,32 +1,31 @@
-import { AppShell } from "@/components/layout/app-shell";
-import { DataHealthDashboard } from "@/components/admin/data-health-dashboard";
-import { getDataHealthStats } from "@/lib/admin/service";
-import { canAccess } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { redirect } from "next/navigation";
-import { Card } from "@/components/ui/card";
 import { AlertCircle } from "lucide-react";
+import { redirect } from "next/navigation";
+
+import { DataHealthDashboard } from "@/components/admin/data-health-dashboard";
+import { AppShell } from "@/components/layout/app-shell";
+import { Card } from "@/components/ui/card";
+import { canAccess } from "@/lib/auth/permissions";
+import { getDataHealthStats, getSalaryFlags } from "@/lib/admin/service";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function DataHealthPage() {
   const access = await resolveAccessContextFromPage();
-  
-  // Verify permissions: admin:read or overview:read
-  const [hasAdminRead, hasOverviewRead] = await Promise.all([
-    canAccess(access, "admin", "read"),
-    canAccess(access, "overview", "read"),
-  ]);
 
-  if (!hasAdminRead && !hasOverviewRead) {
+  if (!canAccess(access, "admin", "read") && !canAccess(access, "overview", "read")) {
     redirect("/employee-portals");
   }
 
   let stats = null;
+  let salaryFlagsData = null;
   let loadError: string | null = null;
 
   try {
-    stats = await getDataHealthStats();
+    [stats, salaryFlagsData] = await Promise.all([
+      getDataHealthStats(),
+      getSalaryFlags(false),
+    ]);
   } catch (error) {
     console.error("Failed to load Data Health Dashboard:", error);
     loadError = error instanceof Error ? error.message : "Unknown error occurred";
@@ -35,7 +34,7 @@ export default async function DataHealthPage() {
   return (
     <AppShell navigationMode="admin">
       {stats ? (
-        <DataHealthDashboard stats={stats} />
+        <DataHealthDashboard salaryFlags={salaryFlagsData} stats={stats} />
       ) : (
         <div className="p-8">
           <Card className="mx-auto max-w-2xl border-rose-100 bg-rose-50 p-6">
@@ -47,7 +46,7 @@ export default async function DataHealthPage() {
               There was a problem loading the data health audit from Supabase. Please ensure your governance views are correctly configured.
             </p>
             <div className="rounded-lg border border-rose-200 bg-white/50 p-3">
-              <p className="break-all text-xs font-mono text-rose-800">
+              <p className="break-all font-mono text-xs text-rose-800">
                 {loadError ?? "Unknown error occurred"}
               </p>
             </div>

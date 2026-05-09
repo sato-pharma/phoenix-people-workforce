@@ -321,6 +321,23 @@ export async function resolveAccessContextFromPage(): Promise<AccessContext> {
   });
 }
 
+export async function resolveCurrentUserDisplay(
+  loginId: string | null | undefined,
+): Promise<{ name: string; loginId: string }> {
+  const fallback = { name: loginId ?? "User", loginId: loginId ?? "" };
+  if (!loginId) return fallback;
+  try {
+    const { data } = await getSupabaseAdmin()
+      .from("app_auth_users")
+      .select("name")
+      .eq("login_id", loginId)
+      .maybeSingle();
+    return { name: (data as { name?: string | null } | null)?.name ?? loginId, loginId };
+  } catch {
+    return fallback;
+  }
+}
+
 export function isForbiddenError(error: unknown) {
   return error instanceof Error && error.message.toLowerCase().startsWith("forbidden:");
 }

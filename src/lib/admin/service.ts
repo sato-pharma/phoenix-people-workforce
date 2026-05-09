@@ -22,6 +22,7 @@ export type PhoenixAdminStats = {
 export type AdminMonitoringStats = {
   auth: {
     authBridgeCoverageRate: number;
+    brokenAccounts: string[];
     failedAttempts24h: number;
     forcedPasswordResets: number;
     lockedAccounts: number;
@@ -108,6 +109,8 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
     notificationLogCount,
     notificationLogs24h,
     notificationEvents24h,
+    authUsersWithUid,
+    accessProfileUids,
   ] = await Promise.all([
     supabase.from("app_auth_users").select("login_id,auth_user_id,auth_email"),
     supabase.from("app_auth_users").select("*", { count: "exact", head: true }).gt("locked_until", new Date().toISOString()),
@@ -129,11 +132,23 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
       .from("notification_events")
       .select("status,created_at")
       .gte("created_at", since24h),
+    supabase.from("app_auth_users").select("login_id,auth_user_id").not("auth_user_id", "is", null),
+    supabase.from("user_access_profiles").select("auth_user_id"),
   ]);
 
   const bridgeData = bridgeRows.data ?? [];
   const bridgedUsers = bridgeData.filter((row) => row.auth_user_id && row.auth_email).length;
   const authBridgeCoverageRate = bridgeData.length > 0 ? bridgedUsers / bridgeData.length : 1;
+
+  const profileUidSet = new Set(
+    (accessProfileUids.data ?? [])
+      .map((row) => row.auth_user_id)
+      .filter((uid): uid is string => typeof uid === "string" && uid.length > 0),
+  );
+  const brokenAccounts = (authUsersWithUid.data ?? [])
+    .filter((row) => typeof row.auth_user_id === "string" && !profileUidSet.has(row.auth_user_id))
+    .map((row) => row.login_id as string)
+    .filter(Boolean);
 
   const failedAttemptsData = failedAttempts.data ?? [];
   const uniqueFailedIps24h = new Set(
@@ -148,6 +163,7 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
   return {
     auth: {
       authBridgeCoverageRate,
+      brokenAccounts,
       failedAttempts24h: failedAttemptsData.length,
       forcedPasswordResets: forcedPasswordResets.count ?? 0,
       lockedAccounts: lockedAccounts.count ?? 0,
@@ -197,6 +213,67 @@ export type DataHealthStats = {
     sample_name: string | null;
   }>;
 };
+
+export type SalaryFlag = {
+  id: number;
+  hrId: string | null;
+  flagType: string | null;
+  flagValue: unknown;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  createdAt: string;
+};
+
+export type SalaryFlagsResult = {
+  flags: SalaryFlag[];
+  total: number;
+  unresolvedCount: number;
+};
+
+export async function getSalaryFlags(showResolved = false): Promise<SalaryFlagsResult> {
+  const supabase = getSupabaseAdmin();
+
+  let query = supabase
+    .from("salary_flags")
+    .select("id, hr_id, flag_type, flag_value, resolved_at, resolved_by, created_at", { count: "exact" })
+    .order("created_at", { ascending: false });
+
+  if (!showResolved) {
+    query = query.is("resolved_at", null);
+  }
+
+  const { data, error, count } = await query;
+  if (error) throw error;
+
+  const unresolvedResult = showResolved
+    ? await supabase.from("salary_flags").select("*", { count: "exact", head: true }).is("resolved_at", null)
+    : null;
+
+  const flags: SalaryFlag[] = (data ?? []).map((row: Record<string, unknown>) => ({
+    id: row.id as number,
+    hrId: (row.hr_id as string | null) ?? null,
+    flagType: (row.flag_type as string | null) ?? null,
+    flagValue: row.flag_value,
+    resolvedAt: (row.resolved_at as string | null) ?? null,
+    resolvedBy: (row.resolved_by as string | null) ?? null,
+    createdAt: row.created_at as string,
+  }));
+
+  return {
+    flags,
+    total: count ?? 0,
+    unresolvedCount: showResolved ? (unresolvedResult?.count ?? 0) : (count ?? 0),
+  };
+}
+
+export async function resolveSalaryFlag(id: number, resolvedBy: string): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("salary_flags")
+    .update({ resolved_at: new Date().toISOString(), resolved_by: resolvedBy })
+    .eq("id", id);
+  if (error) throw error;
+}
 
 export async function getDataHealthStats(): Promise<DataHealthStats> {
   const supabase = getSupabaseAdmin();

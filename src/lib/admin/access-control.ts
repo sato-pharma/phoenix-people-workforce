@@ -110,8 +110,17 @@ type AccessUserRecord = Record<string, unknown> & {
 
 function normalizeLine(value: string | null | undefined): PhoenixLine {
   const normalized = String(value ?? "").trim().toLowerCase();
+  // Exact match first
   const matched = phoenixLines.find((line) => line.toLowerCase() === normalized);
-  return matched ?? "Other";
+  if (matched) return matched;
+  // Alias map for legacy / abbreviated line names from DB (e.g. "Anti Inf" → "Anti-Infective")
+  const aliases: Record<string, PhoenixLine> = {
+    "anti inf": "Anti-Infective",
+    "anti-inf": "Anti-Infective",
+    "antiinfective": "Anti-Infective",
+    "anti infective": "Anti-Infective",
+  };
+  return aliases[normalized] ?? "Other";
 }
 
 function normalizeScope(value: string | null | undefined): BusinessScope | null {

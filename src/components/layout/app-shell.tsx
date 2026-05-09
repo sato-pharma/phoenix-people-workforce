@@ -7,7 +7,7 @@ import {
   resolveNavigationMode,
   type NavigationMode,
 } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAccessContextFromPage, resolveCurrentUserDisplay } from "@/lib/auth/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import type { PermissionLookup } from "@/components/layout/sidebar";
@@ -23,7 +23,10 @@ export async function AppShell({
 }) {
   const access = await resolveAccessContextFromPage();
   const resolvedNavigationMode = navigationMode ?? resolveNavigationMode(access);
-  const matrix = await getPermissionMatrix();
+  const [matrix, userDisplay] = await Promise.all([
+    getPermissionMatrix(),
+    resolveCurrentUserDisplay(access.loginId),
+  ]);
 
   const permissionLookup: PermissionLookup = {};
   for (const resource of permissionResources) {
@@ -34,6 +37,8 @@ export async function AppShell({
     }
   }
 
+  const currentUser = { name: userDisplay.name, loginId: userDisplay.loginId, role: access.role };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A]">
       <div className="flex min-h-screen">
@@ -41,6 +46,7 @@ export async function AppShell({
         <div className="flex min-w-0 flex-1 flex-col">
           {showTopbar && (
             <Topbar
+              currentUser={currentUser}
               navigationMode={resolvedNavigationMode}
               permissionLookup={permissionLookup}
             />
