@@ -5,10 +5,12 @@ import { createAccessContext, type AccessContext, type PhoenixRole } from "@/lib
 export const phoenixSessionCookieName = "phoenix_session";
 
 export type SessionPayload = {
+  authUserId: string | null;
   exp: number;
   hrId: string | null;
   iat: number;
   loginId: string;
+  maxExp: number;
   role: PhoenixRole;
   sid: string;
   ver: number;
@@ -37,6 +39,7 @@ function sign(value: string) {
 }
 
 export function createSessionToken(input: {
+  authUserId: string | null;
   hrId: string | null;
   loginId: string;
   maxAgeSeconds: number;
@@ -46,10 +49,12 @@ export function createSessionToken(input: {
 }) {
   const issuedAt = Math.floor(Date.now() / 1000);
   const payload: SessionPayload = {
+    authUserId: input.authUserId,
     exp: issuedAt + input.maxAgeSeconds,
     hrId: input.hrId,
     iat: issuedAt,
     loginId: input.loginId,
+    maxExp: issuedAt + input.maxAgeSeconds,
     role: input.role,
     sid: input.sessionId,
     ver: input.sessionVersion,
@@ -81,10 +86,12 @@ export function verifySessionToken(token: string | null | undefined): SessionPay
       !payload.exp ||
       !payload.iat ||
       !payload.loginId ||
+      typeof payload.maxExp !== "number" ||
       !payload.role ||
       !payload.sid ||
       typeof payload.ver !== "number" ||
-      payload.exp < Math.floor(Date.now() / 1000)
+      payload.exp < Math.floor(Date.now() / 1000) ||
+      payload.maxExp < Math.floor(Date.now() / 1000)
     ) {
       return null;
     }

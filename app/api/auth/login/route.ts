@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import {
   clearFailedLoginState,
   getRequestIp,
+  getRequestUserAgent,
   isLoginRateLimited,
   registerFailedLoginAttempt,
   writeAuthAudit,
@@ -33,13 +34,16 @@ export async function POST(request: Request) {
     };
     const loginId = normalizeLoginId(payload.loginId ?? "");
     const ip = getRequestIp(request);
+    const userAgent = getRequestUserAgent(request);
 
     if (await isLoginRateLimited(loginId, ip)) {
       await writeAuthAudit({
         actorLoginId: loginId || null,
         entityId: loginId || null,
-        newValues: { ip, reason: "too_many_failures" },
+        newValues: { ip, reason: "too_many_failures", userAgent },
+        requestIp: ip,
         summary: "Login rate limited",
+        userAgent,
       }).catch(() => undefined);
 
       return NextResponse.json(
@@ -52,13 +56,15 @@ export async function POST(request: Request) {
 
     if (!user) {
       if (loginId) {
-        await registerFailedLoginAttempt({ ip, loginId }).catch(() => undefined);
+        await registerFailedLoginAttempt({ ip, loginId, userAgent }).catch(() => undefined);
       }
       await writeAuthAudit({
         actorLoginId: loginId || null,
         entityId: loginId || null,
-        newValues: { ip },
+        newValues: { ip, userAgent },
+        requestIp: ip,
         summary: "Login failed",
+        userAgent,
       }).catch(() => undefined);
 
       return NextResponse.json(
@@ -69,6 +75,25 @@ export async function POST(request: Request) {
 
     const maxAgeSeconds = payload.remember ? thirtyDaysSeconds : oneDaySeconds;
     const password = payload.password ?? "";
+    if (user.forcePasswordReset) {
+      await writeAuthAudit({
+        actorLoginId: user.loginId,
+        actorHrId: user.hrId,
+        actorRole: user.role,
+        entityId: user.loginId,
+        newValues: { ip, reason: "force_password_reset", userAgent },
+        requestIp: ip,
+        summary: "Login blocked: password reset required",
+        userAgent,
+      }).catch(() => undefined);
+
+      return NextResponse.json(
+        { error: "password_reset_required", message: "Password reset is required before access is restored." },
+        { status: 403 },
+      );
+    }
+
+    let sessionAuthUserId = user.authUserId ?? null;
     let supabaseSession:
       | {
           accessToken: string;
@@ -90,7 +115,7 @@ export async function POST(request: Request) {
         supabaseBridgeWarning = message;
       } else {
         try {
-          await provisionSupabaseAuthIdentity({
+          const repairedIdentity = await provisionSupabaseAuthIdentity({
             authUserId: user.authUserId ?? null,
             email: user.email ?? null,
             hrId: user.hrId,
@@ -102,6 +127,7 @@ export async function POST(request: Request) {
             password,
             role: user.role,
           });
+          sessionAuthUserId = repairedIdentity.authUserId;
 
           try {
             supabaseSession = await createSupabaseAuthSession(user.loginId, password);
@@ -127,8 +153,32 @@ export async function POST(request: Request) {
         "Supabase auth bridge unavailable; continuing with Phoenix session only.";
     }
 
+    if (!sessionAuthUserId) {
+      await writeAuthAudit({
+        actorLoginId: user.loginId,
+        actorHrId: user.hrId,
+        actorRole: user.role,
+        entityId: user.loginId,
+        newValues: {
+          ip,
+          reason: "missing_auth_user_link",
+          supabaseBridgeWarning,
+          userAgent,
+        },
+        requestIp: ip,
+        summary: "Login blocked: auth identity linkage missing",
+        userAgent,
+      }).catch(() => undefined);
+
+      return NextResponse.json(
+        { error: "identity_unavailable", message: "Account identity reconciliation is incomplete. Please contact an administrator." },
+        { status: 503 },
+      );
+    }
+
     const sessionId = randomUUID();
     const token = createSessionToken({
+      authUserId: sessionAuthUserId,
       hrId: user.hrId,
       loginId: user.loginId,
       maxAgeSeconds,
@@ -137,11 +187,14 @@ export async function POST(request: Request) {
       sessionVersion: user.sessionVersion,
     });
 
-    await clearFailedLoginState({ ip, loginId: user.loginId }).catch(() => undefined);
+    await clearFailedLoginState({ ip, loginId: user.loginId, userAgent }).catch(() => undefined);
     await writeAuthAudit({
+      actorHrId: user.hrId,
       actorLoginId: user.loginId,
+      actorRole: user.role,
       entityId: user.loginId,
       newValues: {
+        authUserId: sessionAuthUserId,
         ip,
         remember: Boolean(payload.remember),
         role: user.role,
@@ -149,8 +202,11 @@ export async function POST(request: Request) {
         supabaseBridgeWarning,
         supabaseSessionAvailable: Boolean(supabaseSession),
         sessionVersion: user.sessionVersion,
+        userAgent,
       },
+      requestIp: ip,
       summary: "Login succeeded",
+      userAgent,
     }).catch(() => undefined);
 
     const response = NextResponse.json({

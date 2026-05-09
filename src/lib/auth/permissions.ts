@@ -49,7 +49,10 @@ export type PermissionResource =
   | "hr_calendar"
   | "admin"
   | "user_admin"
-  | "permission_admin";
+  | "permission_admin"
+  | "role_admin"
+  | "password_admin"
+  | "audit_admin";
 
 export const permissionResources: PermissionResource[] = [
   "admin",
@@ -66,6 +69,9 @@ export const permissionResources: PermissionResource[] = [
   "contracts",
   "user_admin",
   "permission_admin",
+  "role_admin",
+  "password_admin",
+  "audit_admin",
   "employee_documents",
   "employee_profile",
   "vacancies",
@@ -139,10 +145,13 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: allActions,
     probation: allActions,
     permission_admin: allActions,
+    password_admin: allActions,
+    role_admin: allActions,
     sales: allActions,
     team: allActions,
     user_admin: allActions,
     vacancies: allActions,
+    audit_admin: allActions,
   },
   CEO: {
     admin: allActions,
@@ -156,6 +165,7 @@ const defaultPermissionMatrix: PermissionMap = {
     organogram: ["read", "export"],
     payroll: ["read", "export"],
     permission_admin: ["read"],
+    audit_admin: ["read"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
     team: ["read", "export"],
@@ -177,11 +187,14 @@ const defaultPermissionMatrix: PermissionMap = {
     offers: allActions,
     payroll: allActions,
     permission_admin: ["read"],
+    password_admin: ["read", "update"],
     payslips: allActions,
     probation: allActions,
+    role_admin: ["read", "update"],
     team: ["read", "export"],
-    user_admin: ["read", "update"],
+    user_admin: ["read", "create", "update"],
     vacancies: allActions,
+    audit_admin: ["read"],
   },
   "Finance Manager": {
     employee_documents: ["read", "export"],
@@ -457,13 +470,16 @@ export function createAccessContext(input: {
   role?: string | null;
   source?: AccessContext["source"];
 }): AccessContext {
-  const role = normalizeRole(input.role);
+  const parsedRole = input.role == null ? "Employee" : tryParseRole(input.role);
+  if (!parsedRole) {
+    throw new Error(`Invalid role "${String(input.role ?? "").trim()}".`);
+  }
 
   return {
     hrId: normalizeHrId(input.hrId),
     loginId: input.loginId ?? null,
-    role,
-    scope: scopeForRole(role),
+    role: parsedRole,
+    scope: scopeForRole(parsedRole),
     source: input.source ?? "session",
   };
 }
@@ -519,10 +535,10 @@ function toPermissionMatrix(overrides: PermissionDbOverrideRow[]): PermissionMat
   const merged = clonePermissionMatrix(defaultPermissionMatrix);
 
   overrides.forEach((override) => {
-    const role = normalizeRole(override.role_name);
+    const role = tryParseRole(override.role_name);
     const resource = normalizePermissionResource(override.resource);
     const action = normalizePermissionAction(override.action);
-    if (!resource || !action || typeof override.is_allowed !== "boolean") return;
+    if (!role || !resource || !action || typeof override.is_allowed !== "boolean") return;
 
     const current = merged[role][resource] ?? [];
     const withoutAction = current.filter((item) => item !== action);
