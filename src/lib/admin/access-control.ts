@@ -85,8 +85,11 @@ export type AccessUserMutation = {
 };
 
 export type AccessActor = {
+  hrId?: string | null;
   loginId: string | null;
+  requestIp?: string | null;
   role: PhoenixRole;
+  userAgent?: string | null;
 };
 
 type AccessUserRecord = Record<string, unknown> & {
@@ -180,12 +183,16 @@ async function auditUserChange(input: {
   summary: string;
 }) {
   await writeAuditLog({
+    actorHrId: input.actor?.hrId ?? null,
     actorLoginId: input.actor?.loginId ?? null,
+    actorRole: input.actor?.role ?? null,
     entityId: input.entityId,
     entityType: "user",
     newValues: input.newValues,
     oldValues: input.oldValues,
+    requestIp: input.actor?.requestIp ?? null,
     summary: input.summary,
+    userAgent: input.actor?.userAgent ?? null,
   });
 }
 
@@ -199,6 +206,17 @@ function getStoredSessionVersion(record: AccessUserRecord | null) {
 
 function isStoredActive(record: AccessUserRecord | null) {
   return Boolean(record?.is_active);
+}
+
+function sessionRevocationReason(input: {
+  nextIsActive: boolean;
+  passwordProvided: boolean;
+  roleChanged: boolean;
+}) {
+  if (!input.nextIsActive) return "deactivated";
+  if (input.passwordProvided) return "password_reset";
+  if (input.roleChanged) return "role_changed";
+  return null;
 }
 
 async function countActiveSuperAdmins() {
@@ -373,10 +391,17 @@ export async function upsertRolePermissionOverride(
   clearPermissionMatrixCache();
 
   await writeAuditLog({
+    actorHrId: actor.hrId ?? null,
     actorLoginId: actor.loginId,
+    actorRole: actor.role,
     entityId: `${permissionRole}.${resource}.${action}`,
     entityType: "permission_override",
     newValues: {
+      actor: {
+        hrId: actor.hrId ?? null,
+        loginId: actor.loginId,
+        role: actor.role,
+      },
       action,
       isAllowed: input.isAllowed,
       resource,
@@ -388,7 +413,9 @@ export async function upsertRolePermissionOverride(
       resource: previousRow.resource,
       role: previousRow.role_name,
     } : null,
+    requestIp: actor.requestIp ?? null,
     summary: `${permissionRole} ${action.toUpperCase()} ${resource} => ${input.isAllowed ? "allow" : "deny"}`,
+    userAgent: actor.userAgent ?? null,
   }).catch(() => undefined);
 
   return getAccessControlDashboard();
@@ -431,17 +458,23 @@ export async function upsertAccessUser(input: AccessUserMutation, actor?: Access
   await assertLastSuperAdminInvariant(existing, role, nextIsActive);
 
   const existingRole = getStoredRole(existing);
+  const roleChanged = Boolean(existingRole && existingRole !== role);
   const shouldInvalidateSessions = Boolean(
     existing &&
     (
       passwordProvided ||
-      existingRole !== role ||
+      roleChanged ||
       (isStoredActive(existing) && !nextIsActive)
     )
   );
   const nextSessionVersion = shouldInvalidateSessions
     ? getStoredSessionVersion(existing) + 1
     : getStoredSessionVersion(existing);
+  const revocationReason = sessionRevocationReason({
+    nextIsActive,
+    passwordProvided,
+    roleChanged,
+  });
 
   const payload: Record<string, unknown> = {
     email: input.email?.trim().toLowerCase() || null,
@@ -457,6 +490,19 @@ export async function upsertAccessUser(input: AccessUserMutation, actor?: Access
     session_version: nextSessionVersion,
     updated_at: new Date().toISOString(),
   };
+
+  if (passwordProvided) {
+    payload.last_password_reset_at = new Date().toISOString();
+  }
+
+  if (roleChanged) {
+    payload.last_role_change_at = new Date().toISOString();
+  }
+
+  if (shouldInvalidateSessions) {
+    payload.last_session_revocation_at = new Date().toISOString();
+    payload.last_session_revocation_reason = revocationReason;
+  }
 
   if (passwordProvided) {
     const password = input.password!.trim();
@@ -516,7 +562,6 @@ export async function upsertAccessUser(input: AccessUserMutation, actor?: Access
     }
   }
 
-  const roleChanged = Boolean(existingRole && existingRole !== role);
   const passwordReset = passwordProvided;
   const summary = !existing
     ? `Created ${loginId}`
@@ -530,7 +575,15 @@ export async function upsertAccessUser(input: AccessUserMutation, actor?: Access
     actor,
     entityId: loginId,
     oldValues: existing,
-    newValues: { ...payload, password_hash: passwordProvided ? "[reset]" : "[unchanged]" },
+    newValues: {
+      ...payload,
+      actor: actor ? {
+        hrId: actor.hrId ?? null,
+        loginId: actor.loginId,
+        role: actor.role,
+      } : null,
+      password_hash: passwordProvided ? "[reset]" : "[unchanged]",
+    },
     summary,
   }).catch(() => undefined);
 
@@ -576,11 +629,16 @@ export async function updateAccessUserStatus(
   const nextSessionVersion = isStoredActive(existing) && !isActive
     ? getStoredSessionVersion(existing) + 1
     : getStoredSessionVersion(existing);
+  const revocationTimestamp = isStoredActive(existing) && !isActive
+    ? new Date().toISOString()
+    : null;
 
   const { error } = await supabase
     .from("app_auth_users")
     .update({
       is_active: isActive,
+      last_session_revocation_at: revocationTimestamp,
+      last_session_revocation_reason: revocationTimestamp ? "deactivated" : null,
       session_version: nextSessionVersion,
       updated_at: new Date().toISOString(),
     })
@@ -601,7 +659,17 @@ export async function updateAccessUserStatus(
     actor,
     entityId: loginId,
     oldValues: existing,
-    newValues: { is_active: isActive, session_version: nextSessionVersion },
+    newValues: {
+      actor: actor ? {
+        hrId: actor.hrId ?? null,
+        loginId: actor.loginId,
+        role: actor.role,
+      } : null,
+      is_active: isActive,
+      last_session_revocation_at: revocationTimestamp,
+      last_session_revocation_reason: revocationTimestamp ? "deactivated" : null,
+      session_version: nextSessionVersion,
+    },
     summary: `${isActive ? "Activated" : "Deactivated"} ${loginId}`,
   }).catch(() => undefined);
 

@@ -4,7 +4,12 @@ import {
   assertPermission,
   getPermissionMatrix,
 } from "@/lib/auth/permissions";
-import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { getRequestIp, getRequestUserAgent } from "@/lib/auth/audit";
+import {
+  assertRecentAuthentication,
+  isForbiddenError,
+  resolveAccessContext,
+} from "@/lib/auth/server";
 import { upsertRolePermissionOverride } from "@/lib/admin/access-control";
 
 export const runtime = "nodejs";
@@ -27,7 +32,7 @@ function permissionsApiError(error: unknown) {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin_access", "read");
+    await assertPermission(access, "permission_admin", "read");
     return NextResponse.json(await getPermissionMatrix());
   } catch (error) {
     const { message, status } = permissionsApiError(error);
@@ -39,11 +44,14 @@ export async function PATCH(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "permission_admin", "update");
+    await assertRecentAuthentication(request);
     if (access.role !== "Super Admin") {
       return NextResponse.json({ error: "forbidden", message: "Only Super Admin can update permissions." }, { status: 403 });
     }
 
     const payload = await request.json();
+    const requestIp = getRequestIp(request);
+    const userAgent = getRequestUserAgent(request);
     const role = String(payload.role ?? "");
     const resource = String(payload.resource ?? "");
     const action = String(payload.action ?? "").trim().toLowerCase();
@@ -58,7 +66,13 @@ export async function PATCH(request: Request) {
         isAllowed: payload.isAllowed,
         resource,
         role,
-      }, { loginId: access.loginId ?? null, role: access.role }),
+      }, {
+        hrId: access.hrId ?? null,
+        loginId: access.loginId ?? null,
+        requestIp,
+        role: access.role,
+        userAgent,
+      }),
       { status: 200 },
     );
   } catch (error) {
