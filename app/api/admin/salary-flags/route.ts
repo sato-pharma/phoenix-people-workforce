@@ -46,8 +46,6 @@ export async function PATCH(request: Request) {
 
     await writeAuditLog({
       actorLoginId: access.loginId,
-      actorHrId: access.hrId,
-      actorRole: access.role,
       entityId: String(body.id),
       entityType: "salary_flag",
       summary: `Salary flag #${body.id} resolved by ${resolvedBy}`,

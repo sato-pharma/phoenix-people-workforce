@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
 
-    if (!canAccess(access, "admin", "read") && !canAccess(access, "audit_admin", "read")) {
+    if (!canAccess(access, "admin", "read")) {
       return NextResponse.json({ message: "Forbidden: insufficient permissions." }, { status: 403 });
     }
 
