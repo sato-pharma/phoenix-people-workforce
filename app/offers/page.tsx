@@ -34,14 +34,6 @@ export default async function OffersPage() {
       getOfferDashboard(),
       getOfferLookups(),
     ]);
-
-    console.log("OFFERS_LOOKUPS_DEBUG", {
-      hasLookups: Boolean(lookups),
-      lines: lookups?.lines?.length,
-      areas: lookups?.areas?.length,
-      medicalRepVacancies: lookups?.medicalRepVacancies?.length,
-      firstVacancy: lookups?.medicalRepVacancies?.[0],
-    });
   } catch (error) {
     initialError = pageError(error);
   }

@@ -21,7 +21,7 @@ export type SupabaseAuthProvisionInput = {
   loginId: string;
   managerHrId?: string | null;
   name?: string | null;
-  password: string;
+  password?: string | null;
   role: PhoenixRole;
 };
 
@@ -90,15 +90,26 @@ export async function provisionSupabaseAuthIdentity(
   const coarseRole = mapPhoenixRoleToCoarseAccessRole(input.role);
 
   if (input.authUserId) {
+    const updatePayload: {
+      app_metadata: ReturnType<typeof appMetadata>;
+      email: string;
+      email_confirm: true;
+      password?: string;
+      user_metadata: ReturnType<typeof userMetadata>;
+    } = {
+      app_metadata: appMetadata(input),
+      email: authEmail,
+      email_confirm: true,
+      user_metadata: userMetadata(input),
+    };
+
+    if (input.password) {
+      updatePayload.password = input.password;
+    }
+
     const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
       input.authUserId,
-      {
-        app_metadata: appMetadata(input),
-        email: authEmail,
-        email_confirm: true,
-        password: input.password,
-        user_metadata: userMetadata(input),
-      },
+      updatePayload,
     );
 
     if (!error && data.user) {
@@ -108,6 +119,10 @@ export async function provisionSupabaseAuthIdentity(
         coarseRole,
       };
     }
+  }
+
+  if (!input.password) {
+    throw new Error("Password is required to provision a new Supabase auth user.");
   }
 
   const { data, error } = await supabaseAdmin.auth.admin.createUser({

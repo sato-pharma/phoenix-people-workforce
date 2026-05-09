@@ -3,7 +3,11 @@ import { getPayrollDashboard } from "@/lib/payroll/service";
 import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
 import { getSalesDashboard } from "@/lib/sales/service";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import type { AccessContext } from "@/lib/auth/permissions";
+import {
+  canAccess,
+  filterEmployeeDirectoryForAccess,
+  type AccessContext,
+} from "@/lib/auth/permissions";
 
 export type OverviewDashboardData = {
   expenses: {
@@ -265,6 +269,26 @@ export async function getOverviewDashboard(
   accessContext: AccessContext,
 ): Promise<OverviewDashboardData> {
   const [
+    canReadEmployees,
+    canReadExpenses,
+    canReadOffers,
+    canReadPayroll,
+    canReadSales,
+    canReadVacancies,
+    canReadContracts,
+    canReadProbation,
+  ] = await Promise.all([
+    canAccess(accessContext, "employees", "read"),
+    canAccess(accessContext, "expenses", "read"),
+    canAccess(accessContext, "offers", "read"),
+    canAccess(accessContext, "payroll", "read"),
+    canAccess(accessContext, "sales", "read"),
+    canAccess(accessContext, "vacancies", "read"),
+    canAccess(accessContext, "contracts", "read"),
+    canAccess(accessContext, "probation", "read"),
+  ]);
+
+  const [
     payroll,
     sales,
     employees,
@@ -277,52 +301,68 @@ export async function getOverviewDashboard(
     salesAuditActivity,
     offerAuditActivity,
   ] = await Promise.all([
-    getPayrollDashboard(undefined, accessContext),
-    getSalesDashboard(),
-    getEmployeeDirectory(),
-    listPayrollExpenses(undefined, undefined, undefined, accessContext),
-    listPayrollExpenseReports(accessContext),
-    getOfferDashboard(),
-    supabaseRest<OverviewContractRow[]>("v_lifecycle_dashboard").catch(() => []),
-    supabaseRest<OverviewProbationRow[]>("v_probation_tracker").catch(() => []),
-    supabaseRest<OverviewSalaryBatchActivityRow[]>(
-      `salary_batches?${new URLSearchParams({
-        order: "updated_at.desc",
-        select: "month,year,status,uploaded_by,approved_by,approved_at,created_at,updated_at",
-      })}`,
-    ).catch(() => []),
-    supabaseRest<OverviewSalesAuditRow[]>(
-      `sales_audit_logs?${new URLSearchParams({
-        limit: "5",
-        order: "created_at.desc",
-        select: "action,actor_username,actor_display_name,line,period,created_at",
-      })}`,
-    ).catch(() => []),
-    supabaseRest<OverviewOfferAuditRow[]>(
-      `job_offer_audit_logs?${new URLSearchParams({
-        limit: "5",
-        order: "created_at.desc",
-        select: "action,actor_type,actor_reference,details,created_at",
-      })}`,
-    ).catch(() => []),
+    canReadPayroll ? getPayrollDashboard(undefined, accessContext) : Promise.resolve(null),
+    canReadSales ? getSalesDashboard({}, accessContext) : Promise.resolve(null),
+    canReadEmployees
+      ? getEmployeeDirectory().then((directory) => filterEmployeeDirectoryForAccess(directory, accessContext))
+      : Promise.resolve(null),
+    canReadExpenses
+      ? listPayrollExpenses(undefined, undefined, undefined, accessContext)
+      : Promise.resolve([]),
+    canReadExpenses
+      ? listPayrollExpenseReports(accessContext)
+      : Promise.resolve([]),
+    canReadOffers ? getOfferDashboard() : Promise.resolve(null),
+    canReadContracts
+      ? supabaseRest<OverviewContractRow[]>("v_lifecycle_dashboard").catch(() => [])
+      : Promise.resolve([]),
+    canReadProbation
+      ? supabaseRest<OverviewProbationRow[]>("v_probation_tracker").catch(() => [])
+      : Promise.resolve([]),
+    canReadPayroll
+      ? supabaseRest<OverviewSalaryBatchActivityRow[]>(
+          `salary_batches?${new URLSearchParams({
+            order: "updated_at.desc",
+            select: "month,year,status,uploaded_by,approved_by,approved_at,created_at,updated_at",
+          })}`,
+        ).catch(() => [])
+      : Promise.resolve([]),
+    canReadSales
+      ? supabaseRest<OverviewSalesAuditRow[]>(
+          `sales_audit_logs?${new URLSearchParams({
+            limit: "5",
+            order: "created_at.desc",
+            select: "action,actor_username,actor_display_name,line,period,created_at",
+          })}`,
+        ).catch(() => [])
+      : Promise.resolve([]),
+    canReadOffers
+      ? supabaseRest<OverviewOfferAuditRow[]>(
+          `job_offer_audit_logs?${new URLSearchParams({
+            limit: "5",
+            order: "created_at.desc",
+            select: "action,actor_type,actor_reference,details,created_at",
+          })}`,
+        ).catch(() => [])
+      : Promise.resolve([]),
   ]);
 
-  const payrollRecords = payroll.records ?? [];
+  const payrollRecords = payroll?.records ?? [];
   const expenseRows = Array.isArray(expenses) ? expenses : [];
-  const salesSummary = sales.summary ?? {};
-  const salesLinePerformance = Array.isArray(sales.linePerformance)
+  const salesSummary = sales?.summary ?? {};
+  const salesLinePerformance = Array.isArray(sales?.linePerformance)
     ? (sales.linePerformance as Array<Record<string, unknown>>)
     : [];
-  const salesTrend = Array.isArray(sales.trend)
+  const salesTrend = Array.isArray(sales?.trend)
     ? (sales.trend as Array<Record<string, unknown>>)
     : [];
-  const activeEmployees = employees.summary.activeEmployees;
-  const totalEmployees = employees.summary.totalEmployees;
+  const activeEmployees = employees?.summary.activeEmployees ?? 0;
+  const totalEmployees = employees?.summary.totalEmployees ?? 0;
   const totalExpenses = sum(expenseRows, (row) => row.total);
   const approvedExpenses = sum(expenseRows.filter((row) => row.hrApproved), (row) => row.total);
   
   const statusDistribution = Array.from(
-    employees.employees.reduce((map, emp) => {
+    (employees?.employees ?? []).reduce((map, emp) => {
       const status = emp.employmentStatus || "Unknown";
       map.set(status, (map.get(status) || 0) + 1);
       return map;
@@ -380,7 +420,7 @@ export async function getOverviewDashboard(
   }));
 
   const hireExitTrend = Array.from(
-    employees.employees.reduce((map, emp) => {
+    (employees?.employees ?? []).reduce((map, emp) => {
       if (emp.hireDate) {
         const key = monthKey(emp.hireDate);
         const current = map.get(key) ?? { m: key, h: 0, e: 0 };
@@ -417,7 +457,7 @@ export async function getOverviewDashboard(
     .slice(-6);
 
   const totalRevenue = Number(salesSummary.totalApprovedSales ?? 0);
-  const latestPayrollPeriod = payroll.batch
+  const latestPayrollPeriod = payroll?.batch
     ? periodKeyFromMonthYear(payroll.batch.month, payroll.batch.year)
     : null;
   const currentPeriodExpenses = latestPayrollPeriod
@@ -425,12 +465,12 @@ export async function getOverviewDashboard(
         .filter((row) => expensePeriodKey(row) === latestPayrollPeriod)
         .reduce((total, row) => total + row.total, 0)
     : 0;
-  const peopleCost = payroll.summary.totalNet + currentPeriodExpenses;
+  const peopleCost = (payroll?.summary.totalNet ?? 0) + currentPeriodExpenses;
 
-  const visiblePayrollBatches = (payroll.batches ?? []).slice(0, 6);
+  const visiblePayrollBatches = (payroll?.batches ?? []).slice(0, 6);
   const payrollTrendDashboards = await Promise.all(
     visiblePayrollBatches.map((batch) =>
-      payroll.batch?.id === batch.id ? payroll : getPayrollDashboard(batch.id, accessContext),
+      payroll?.batch?.id === batch.id ? payroll : getPayrollDashboard(batch.id, accessContext),
     ),
   );
 
@@ -501,11 +541,13 @@ export async function getOverviewDashboard(
     }
   });
 
-  const openVacancies = (
-    await supabaseRest<Array<{ id: number }>>(
-      `position_vacancies?${new URLSearchParams({ select: "id", status: "eq.open" })}`,
-    ).catch(() => [])
-  ).length;
+  const openVacancies = canReadVacancies
+    ? (
+        await supabaseRest<Array<{ id: number }>>(
+          `position_vacancies?${new URLSearchParams({ select: "id", status: "eq.open" })}`,
+        ).catch(() => [])
+      ).length
+    : 0;
 
   const recentActivity = [
     ...salaryBatchActivity.slice(0, 3).map((row) => ({
@@ -545,22 +587,22 @@ export async function getOverviewDashboard(
     hr: {
       activeEmployees,
       employeeHealthRate: totalEmployees ? activeEmployees / totalEmployees : 1,
-      employeesWithoutManagers: employees.summary.employeesWithoutManagers,
+      employeesWithoutManagers: employees?.summary.employeesWithoutManagers ?? 0,
       totalEmployees,
-      uniqueAreas: employees.summary.uniqueAreas,
-      uniqueLines: employees.summary.uniqueLines,
+      uniqueAreas: employees?.summary.uniqueAreas ?? 0,
+      uniqueLines: employees?.summary.uniqueLines ?? 0,
       statusDistribution,
       hireExitTrend,
     },
     payroll: {
-      additions: payroll.summary.totalAdditions,
-      batchLabel: payroll.batch ? `${payroll.batch.month}/${payroll.batch.year}` : "No batch",
-      employees: payroll.summary.totalEmployees,
-      flags: payroll.flags.length,
-      gross: payroll.summary.totalGross,
-      governmentDeductions: payroll.summary.totalGovernmentDeductions,
-      net: payroll.summary.totalNet,
-      readinessRate: payroll.summary.readinessRate,
+      additions: payroll?.summary.totalAdditions ?? 0,
+      batchLabel: payroll?.batch ? `${payroll.batch.month}/${payroll.batch.year}` : "No batch",
+      employees: payroll?.summary.totalEmployees ?? 0,
+      flags: payroll?.flags.length ?? 0,
+      gross: payroll?.summary.totalGross ?? 0,
+      governmentDeductions: payroll?.summary.totalGovernmentDeductions ?? 0,
+      net: payroll?.summary.totalNet ?? 0,
+      readinessRate: payroll?.summary.readinessRate ?? 1,
       distribution: payrollDistribution,
     },
     sales: {
@@ -577,15 +619,15 @@ export async function getOverviewDashboard(
       distribution: salesDistribution,
     },
     recruitment: {
-      acceptanceRate: offersData.summary.acceptanceRate,
-      totalOffers: offersData.summary.totalOffers,
-      pendingOffers: offersData.summary.pendingOffers,
-      acceptedOffers: offersData.summary.acceptedOffers,
-      rejectedOffers: offersData.summary.rejectedOffers,
+      acceptanceRate: offersData?.summary.acceptanceRate ?? 0,
+      totalOffers: offersData?.summary.totalOffers ?? 0,
+      pendingOffers: offersData?.summary.pendingOffers ?? 0,
+      acceptedOffers: offersData?.summary.acceptedOffers ?? 0,
+      rejectedOffers: offersData?.summary.rejectedOffers ?? 0,
       pipeline: [
-        { name: "Accepted", value: offersData.summary.acceptedOffers, color: "#10B981" },
-        { name: "Pending", value: offersData.summary.pendingOffers, color: "#3B82F6" },
-        { name: "Rejected", value: offersData.summary.rejectedOffers, color: "#EF4444" },
+        { name: "Accepted", value: offersData?.summary.acceptedOffers ?? 0, color: "#10B981" },
+        { name: "Pending", value: offersData?.summary.pendingOffers ?? 0, color: "#3B82F6" },
+        { name: "Rejected", value: offersData?.summary.rejectedOffers ?? 0, color: "#EF4444" },
       ]
     },
     risk: {

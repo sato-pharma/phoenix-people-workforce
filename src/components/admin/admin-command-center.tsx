@@ -271,7 +271,7 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
           {/* Quick actions */}
           <div className="relative z-10 mt-6 flex flex-wrap gap-2">
             <QuickAction href="/employees" label="Employees" icon={Users} />
-            <QuickAction href="/payroll/dashboard" label="Payroll" icon={Wallet} />
+            <QuickAction href="/payroll" label="Payroll" icon={Wallet} />
             <QuickAction href="/sales" label="Sales" icon={TrendingUp} />
             <QuickAction href="/admin/access" label="Access Control" icon={ShieldCheck} />
             <QuickAction href="/imports/employees" label="Bulk Import" icon={FileUp} />
@@ -370,7 +370,7 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
             <ModuleCard
               title="Payroll Operations"
               description="Salary batches, payslip distribution, deductions, and financial reconciliation."
-              href="/payroll/dashboard"
+              href="/payroll"
               icon={FileSpreadsheet}
               accentColor="emerald"
               metrics={[

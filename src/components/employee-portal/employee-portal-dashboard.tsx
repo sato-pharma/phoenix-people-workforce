@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -71,6 +71,15 @@ import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 
+type ContributionMetric = "sales" | "units";
+type ContributionRow = {
+  name: string;
+  sales: number;
+  units: number;
+  salesPercentage?: number;
+  unitsPercentage?: number;
+};
+
 function egp(value: number) {
   return new Intl.NumberFormat("en-US", {
     currency: "EGP",
@@ -105,12 +114,91 @@ function formatUnits(value: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Number.isFinite(value) ? value : 0);
 }
 
+function formatContributionValue(metric: ContributionMetric, value: number) {
+  return metric === "sales" ? egp(value) : formatUnits(value);
+}
+
+function getContributionValue(row: ContributionRow, metric: ContributionMetric) {
+  return metric === "sales" ? row.sales : row.units;
+}
+
+function getContributionPercentage(row: ContributionRow, metric: ContributionMetric) {
+  return metric === "sales"
+    ? Number(row.salesPercentage ?? 0)
+    : Number(row.unitsPercentage ?? 0);
+}
+
+function sortContributionRows(rows: ContributionRow[], metric: ContributionMetric) {
+  return [...rows].sort((left, right) => getContributionValue(right, metric) - getContributionValue(left, metric));
+}
+
+function ContributionMetricToggle({
+  metric,
+  onChange,
+}: {
+  metric: ContributionMetric;
+  onChange: (metric: ContributionMetric) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+      {(["sales", "units"] as const).map((option) => {
+        const active = metric === option;
+        return (
+          <button
+            className={active
+              ? "rounded-md bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
+              : "rounded-md px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"}
+            key={option}
+            onClick={() => onChange(option)}
+            type="button"
+          >
+            {option === "sales" ? "Sales" : "Units"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function asStatus(value: string) {
   const normalized = value.toLowerCase();
   if (normalized.includes("active") || normalized.includes("approved") || normalized.includes("locked")) return "success" as const;
   if (normalized.includes("pending") || normalized.includes("review")) return "warning" as const;
   if (normalized.includes("rejected") || normalized.includes("terminated")) return "danger" as const;
   return "neutral" as const;
+}
+
+function payrollStatusTone(value: string) {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("paid") || normalized.includes("approved") || normalized.includes("finalized")) {
+    return "success" as const;
+  }
+  if (
+    normalized.includes("pending") ||
+    normalized.includes("processing") ||
+    normalized.includes("draft")
+  ) {
+    return "warning" as const;
+  }
+  if (normalized.includes("rejected") || normalized.includes("failed")) {
+    return "danger" as const;
+  }
+  return "neutral" as const;
+}
+
+function PayrollStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-slate-50/50 px-4 py-3">
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="mt-1 text-xl font-semibold text-slate-900">{value}</p>
+    </div>
+  );
 }
 
 function navItemClass(active: boolean) {
@@ -823,7 +911,7 @@ function IncentiveSchemeDescriptionCard() {
           <li>90% achievement: 50%</li>
           <li>91% to 100%: add +5% per 1%</li>
           <li>101% to 120%: add +1.5% per 1%</li>
-          <li>Above 120%: add +3% per 1%, achievement capped at 150%</li>
+          <li>Above 120%: add +3% per 1%, achievement capped at 150% and payout tops at 220%</li>
         </ul>
       </div>
     </Card>
@@ -962,10 +1050,9 @@ function OverviewPagePanel({
 }
 
 function OverviewInsightsAlerts({ data }: { data: MedicalRepPortalData }) {
-  const remainingTargetPercent = Math.max(0, 100 - data.sales.achievementPercent);
   const topProduct = data.sales.productContribution[0];
-  const totalTopSales = data.sales.productContribution.reduce((sum, p) => sum + p.value, 0);
-  const topProductContribution = topProduct && totalTopSales > 0 ? (topProduct.value / totalTopSales) * 100 : 0;
+  const totalTopSales = data.sales.productContribution.reduce((sum, p) => sum + p.sales, 0);
+  const topProductContribution = topProduct && totalTopSales > 0 ? (topProduct.sales / totalTopSales) * 100 : 0;
 
   const raw = [
     data.sales.achievementPercent < 100
@@ -1011,21 +1098,28 @@ function OverviewInsightsAlerts({ data }: { data: MedicalRepPortalData }) {
 }
 
 function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
-  const rows = data.sales.productContribution.slice(0, 4);
-  const max = Math.max(1, ...rows.map((row) => row.value));
-  const total = rows.reduce((sum, row) => sum + row.value, 0);
+  const [metric, setMetric] = useState<ContributionMetric>("sales");
+  const rows = sortContributionRows(data.sales.productContribution, metric).slice(0, 4);
+  const max = Math.max(1, ...rows.map((row) => getContributionValue(row, metric)));
+  const total = rows.reduce((sum, row) => sum + getContributionValue(row, metric), 0);
   
   return (
     <OverviewPagePanel
       title="Top Products"
-      action={<Button className="h-8 px-3 text-xs" variant="secondary">View All</Button>}
+      action={
+        <div className="flex items-center gap-2">
+          <ContributionMetricToggle metric={metric} onChange={setMetric} />
+          <Button className="h-8 px-3 text-xs" variant="secondary">View All</Button>
+        </div>
+      }
     >
       <div className="space-y-3">
         {rows.length === 0 ? (
           <p className="text-sm text-slate-500">No product contribution data.</p>
         ) : rows.map((row) => {
-          const width = Math.max(8, Math.round((row.value / max) * 100));
-          const contributionPercent = total > 0 ? (row.value / total) * 100 : 0;
+          const value = getContributionValue(row, metric);
+          const width = Math.max(8, Math.round((value / max) * 100));
+          const contributionPercent = total > 0 ? (value / total) * 100 : 0;
           return (
             <div key={row.name}>
               <div className="mb-1 flex items-center justify-between text-sm">
@@ -1033,7 +1127,7 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
                   <span className="font-medium text-slate-700">{row.name}</span>
                   <span className="text-[10px] text-slate-500">{contributionPercent.toFixed(1)}% of top 4</span>
                 </div>
-                <span className="font-semibold text-slate-900">{egp(row.value)}</span>
+                <span className="font-semibold text-slate-900">{formatContributionValue(metric, value)}</span>
               </div>
               <div className="h-2 rounded-full bg-slate-100">
                 <div className="h-2 rounded-full bg-orange-500" style={{ width: `${width}%` }} />
@@ -1047,116 +1141,120 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
 }
 
 function OverviewAchievementByLine({ data }: { data: MedicalRepPortalData }) {
+  const [metric, setMetric] = useState<ContributionMetric>("sales");
   const palette = ["#f97316", "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#06b6d4", "#ef4444", "#14b8a6"];
-  const rows = [...data.sales.familyContribution].sort((a, b) => b.value - a.value);
+  const rows = sortContributionRows(data.sales.familyContribution, metric);
   const source = rows.map((row, index) => ({
     name: row.name,
-    value: row.value,
+    value: getContributionValue(row, metric),
+    percentage: getContributionPercentage(row, metric),
     color: palette[index % palette.length],
   }));
   const total = Math.max(1, source.reduce((sum, row) => sum + row.value, 0));
-  const currentMonth = data.sales.currentMonthLabel;
   
   return (
-    <Link className="flex h-full flex-col" href={`/employee-portals/sales?source=dashboard&month=${currentMonth}`}>
-      <motion.div
-        layoutId="sales-performance-family"
-        className="flex h-full flex-col"
-        whileHover={{ scale: 1.01 }}
-        transition={{ duration: 0.2 }}
+    <motion.div
+      layoutId="sales-performance-family"
+      className="flex h-full flex-col"
+      whileHover={{ scale: 1.01 }}
+      transition={{ duration: 0.2 }}
+    >
+      <OverviewPagePanel
+        title="Achievement by Product Family"
+        action={<ContributionMetricToggle metric={metric} onChange={setMetric} />}
       >
-        <OverviewPagePanel title="Achievement by Product Family">
-          <div className="grid gap-3 md:grid-cols-[0.9fr_1.1fr]">
-            <div className="relative h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={source} dataKey="value" innerRadius={60} outerRadius={84} paddingAngle={1}>
-                    {source.map((item) => (
-                      <Cell key={item.name} fill={item.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={chartTooltipStyle()} formatter={(v: unknown) => egp(Number(v ?? 0))} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <p className="text-[22px] font-semibold tracking-tight text-slate-900">
-                  {new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(data.sales.currentMonthSales)}
-                </p>
-                <p className="text-[11px] text-slate-500">EGP Achievement</p>
-              </div>
-            </div>
-            <div className="space-y-2 pt-2">
-              {source.map((row) => {
-                const percent = Math.max(0, Math.round((row.value / total) * 100));
-                return (
-                  <div key={row.name} className="flex items-center justify-between gap-3 text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
-                      <span className="text-slate-700">{row.name}</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-slate-900">{percent}%</p>
-                      <p className="text-xs text-slate-500">{egp(row.value)}</p>
-                    </div>
-                  </div>
-                );
-              })}
+        <div className="grid gap-3 md:grid-cols-[0.9fr_1.1fr]">
+          <div className="relative h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={source} dataKey="value" innerRadius={60} outerRadius={84} paddingAngle={1}>
+                  {source.map((item) => (
+                    <Cell key={item.name} fill={item.color} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={chartTooltipStyle()} formatter={(v: unknown) => formatContributionValue(metric, Number(v ?? 0))} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+              <p className="text-[22px] font-semibold tracking-tight text-slate-900">
+                {formatContributionValue(metric, source.reduce((sum, row) => sum + row.value, 0))}
+              </p>
+              <p className="text-[11px] text-slate-500">{metric === "sales" ? "Sales Value" : "Units Sold"}</p>
             </div>
           </div>
-        </OverviewPagePanel>
-      </motion.div>
-    </Link>
+          <div className="space-y-2 pt-2">
+            {source.map((row) => {
+              const percent = Math.max(0, Math.round(row.percentage || (row.value / total) * 100));
+              return (
+                <div key={row.name} className="flex items-center justify-between gap-3 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
+                    <span className="text-slate-700">{row.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold text-slate-900">{percent}%</p>
+                    <p className="text-xs text-slate-500">{formatContributionValue(metric, row.value)}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </OverviewPagePanel>
+    </motion.div>
   );
 }
 
 function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
-  const currentMonth = data.sales.currentMonthLabel;
-  
   return (
-    <Link className="flex h-full flex-col" href={`/employee-portals/sales?source=dashboard&month=${currentMonth}`}>
-      <motion.div
-        layoutId="sales-performance-chart"
-        className="flex h-full flex-col"
-        whileHover={{ scale: 1.01 }}
-        transition={{ duration: 0.2 }}
+    <motion.div
+      layoutId="sales-performance-chart"
+      className="flex h-full flex-col"
+      whileHover={{ scale: 1.01 }}
+      transition={{ duration: 0.2 }}
+    >
+      <OverviewPagePanel
+        title="Performance Overview"
+        action={<div className="rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-600">This Month</div>}
       >
-        <OverviewPagePanel
-          title="Performance Overview"
-          action={<div className="rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-600">This Month</div>}
-        >
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data.sales.trend}>
-                <defs>
-                  <linearGradient id="overviewSalesFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.16} />
-                    <stop offset="95%" stopColor="#f97316" stopOpacity={0.01} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-                <XAxis dataKey="period" tickFormatter={periodLabel} stroke="#64748b" />
-                <YAxis stroke="#64748b" tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
-                <Tooltip
-                  contentStyle={chartTooltipStyle()}
-                  cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 3" }}
-                  formatter={(value: unknown) => tooltipCurrency(value)}
-                  labelFormatter={(value) => `Period: ${periodLabel(String(value))}`}
-                />
-                <Area dataKey="sales" name="Achievement" stroke="#f97316" strokeWidth={2.5} fill="url(#overviewSalesFill)" activeDot={{ r: 4 }} type="monotone" />
-                <Area dataKey="target" name="Target" stroke="#94a3b8" strokeDasharray="4 4" fillOpacity={0} type="monotone" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </OverviewPagePanel>
-      </motion.div>
-    </Link>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data.sales.trend}>
+              <defs>
+                <linearGradient id="overviewSalesFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.16} />
+                  <stop offset="95%" stopColor="#f97316" stopOpacity={0.01} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+              <XAxis dataKey="period" tickFormatter={periodLabel} stroke="#64748b" />
+              <YAxis stroke="#64748b" tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
+              <Tooltip
+                contentStyle={chartTooltipStyle()}
+                cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 3" }}
+                formatter={(value: unknown) => tooltipCurrency(value)}
+                labelFormatter={(value) => `Period: ${periodLabel(String(value))}`}
+              />
+              <Area dataKey="sales" name="Achievement" stroke="#f97316" strokeWidth={2.5} fill="url(#overviewSalesFill)" activeDot={{ r: 4 }} type="monotone" />
+              <Area dataKey="target" name="Target" stroke="#94a3b8" strokeDasharray="4 4" fillOpacity={0} type="monotone" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </OverviewPagePanel>
+    </motion.div>
   );
 }
 
 export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }) {
+  const [productMetric, setProductMetric] = useState<ContributionMetric>("sales");
   const chartColors = ["#f97316", "#f59e0b", "#fdba74", "#94a3b8", "#cbd5e1"];
   const trendData = data.sales.trend;
   const salesMissing = data.empty.sales;
+  const productRows = sortContributionRows(data.sales.productContribution, productMetric);
+  const productChartRows = productRows.map((row) => ({
+    ...row,
+    value: getContributionValue(row, productMetric),
+  }));
 
   return (
     <section id="sales" className="space-y-4">
@@ -1236,37 +1334,40 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
             </div>
 
             <Card className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-              <p className="mb-3 text-sm font-semibold text-slate-900">Product Mix & Contribution</p>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-slate-900">Product Mix & Contribution</p>
+                <ContributionMetricToggle metric={productMetric} onChange={setProductMetric} />
+              </div>
               <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
                 <div className="h-56 w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                       <Pie
-                        data={data.sales.productContribution}
+                        data={productChartRows}
                         dataKey="value"
                         innerRadius={54}
                         outerRadius={84}
                         paddingAngle={2}
                         nameKey="name"
                       >
-                        {data.sales.productContribution.map((entry, index) => (
+                        {productChartRows.map((entry, index) => (
                           <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />
                         ))}
                       </Pie>
-                      <Tooltip contentStyle={chartTooltipStyle()} formatter={(value: unknown) => tooltipCurrency(value)} />
+                      <Tooltip contentStyle={chartTooltipStyle()} formatter={(value: unknown) => formatContributionValue(productMetric, Number(value ?? 0))} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
                 <div className="flex flex-col justify-center space-y-2">
-                  {data.sales.productContribution.slice(0, 5).map((p, i) => (
+                  {productRows.slice(0, 5).map((p, i) => (
                     <div key={p.name} className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">
                         <div className="h-2 w-2 rounded-full" style={{ backgroundColor: chartColors[i % chartColors.length] }} />
                         <span className="max-w-[120px] truncate text-slate-600" title={p.name}>{p.name}</span>
                       </div>
                       <div className="flex gap-3">
-                        <span className="font-semibold text-slate-900">{(p.percentage || 0).toFixed(1)}%</span>
-                        <span className="text-slate-400">{egp(p.value)}</span>
+                        <span className="font-semibold text-slate-900">{getContributionPercentage(p, productMetric).toFixed(1)}%</span>
+                        <span className="text-slate-400">{formatContributionValue(productMetric, getContributionValue(p, productMetric))}</span>
                       </div>
                     </div>
                   ))}
@@ -1284,73 +1385,191 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
 
 export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData }) {
   const payrollMissing = data.empty.payroll;
+  const latestStatus = data.payroll.latestBatchStatus?.replace(/_/g, " ") ?? "Unknown";
+  const historyRows = [...data.payroll.payslipRows];
+  const latestRow = historyRows[0];
+  const hasRows = historyRows.length > 0;
+  const grossReference = Math.max(1, data.payroll.grossSalary || 1);
+  const additionsWidth = Math.max(
+    2,
+    Math.min(100, Math.round((Math.max(0, data.payroll.totalAdditions) / grossReference) * 100)),
+  );
+  const deductionsWidth = Math.max(
+    2,
+    Math.min(100, Math.round((Math.max(0, data.payroll.totalDeductions) / grossReference) * 100)),
+  );
 
   return (
     <section id="payroll" className="space-y-4">
-      {sectionTitle("Payroll & Payslips", "Compensation and Monthly Payslips")}
-
       {payrollMissing ? (
-        <Card className="rounded-3xl border border-slate-100 bg-white p-10 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-          <div className="mx-auto flex max-w-lg flex-col items-center text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 text-slate-500">
-              <MinusCircle className="h-5 w-5" />
+        <div className="rounded-[18px] border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          <div className="flex flex-col gap-4 rounded-2xl border border-slate-100 bg-slate-50/70 p-6">
+            <div className="mx-auto flex max-w-md flex-col items-center text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-500 shadow">
+                <MinusCircle className="h-5 w-5" />
+              </div>
+              <p className="mt-4 text-sm font-semibold text-slate-900">Payroll Unavailable</p>
+              <p className="mt-1 text-sm text-slate-600">Payslip data has not been uploaded yet.</p>
+              <Button className="mt-5 rounded-xl" disabled variant="secondary">
+                View Payslip
+              </Button>
             </div>
-            <p className="mt-4 text-sm font-semibold text-slate-900">Payroll Unavailable</p>
-            <p className="mt-1 text-sm text-slate-600">Payslip data has not been uploaded yet.</p>
-            <Button className="mt-5" disabled variant="secondary">View Payslip</Button>
           </div>
-        </Card>
+        </div>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-          <Card className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-            <p className="text-sm font-semibold text-slate-900">Latest Payslip Summary</p>
-            <p className="mt-1 text-xs text-slate-500">{data.payroll.latestBatchLabel}</p>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <MetricCard label="Gross Salary" value={egp(data.payroll.grossSalary)} />
-              <MetricCard label="Net Salary" value={egp(data.payroll.netSalary)} tooltip="Final net salary" />
-              <MetricCard label="Total Additions" value={egp(data.payroll.totalAdditions)} tooltip="Total additions" />
-              <MetricCard label="Total Deductions" value={egp(data.payroll.totalDeductions)} tooltip="Total deductions" />
-              <MetricCard label="First Part" value={egp(data.payroll.firstPart)} />
-              <MetricCard label="Second Part" value={egp(data.payroll.secondPart)} />
-              <MetricCard label="Statutory Deductions" value={egp(data.payroll.statutoryDeductions)} />
-              <MetricCard label="Internal Deductions" value={egp(data.payroll.internalDeductions)} />
+        <div className="space-y-4">
+          <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0 space-y-3">
+                <p className="inline-flex w-fit items-center rounded-full border border-orange-100 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#B45309]">
+                  Payroll
+                </p>
+                <h2 className="text-[1.4rem] font-semibold leading-tight text-slate-900">
+                  Payroll & Payslips
+                </h2>
+                <p className="text-sm leading-6 text-slate-600">
+                  Track your latest compensation, review monthly earnings components, and open historical payslip files.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Badge className="h-7 px-3 py-1" variant="neutral">
+                  Latest period {data.payroll.latestBatchLabel}
+                </Badge>
+                <Badge className="h-7 px-3 py-1" variant={payrollStatusTone(latestStatus)}>
+                  {latestStatus}
+                </Badge>
+                {hasRows ? (
+                  <Badge className="h-7 px-3 py-1" variant="neutral">
+                    {historyRows.length} records
+                  </Badge>
+                ) : null}
+              </div>
             </div>
-          </Card>
 
-          <Card className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-semibold text-slate-900">Payslip History</p>
-              <Badge variant={asStatus(data.payroll.latestBatchStatus ?? "unknown")}>
-                {(data.payroll.latestBatchStatus ?? "unknown").replace(/_/g, " ")}
-              </Badge>
-            </div>
-            <div className="max-h-[340px] overflow-auto rounded-2xl border border-slate-100">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
-                    <th className="px-3 py-2">Month</th>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.payroll.payslipRows.map((row) => (
-                    <tr key={row.id} className="border-b border-slate-100">
-                      <td className="px-3 py-2 font-semibold text-slate-900">{row.label}</td>
-                      <td className="px-3 py-2">
-                        <Badge variant={asStatus(row.status)}>{row.status.replace(/_/g, " ")}</Badge>
-                      </td>
-                      <td className="px-3 py-2">
-                        <Link href={`/api/payroll/${row.id}/payslips`} target="_blank">
-                          <Button className="h-8 px-3 text-xs" variant="secondary">View payslip</Button>
-                        </Link>
-                      </td>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <PayrollStat label="Net Salary" value={egp(data.payroll.netSalary)} />
+            <PayrollStat label="Gross Salary" value={egp(data.payroll.grossSalary)} />
+            <PayrollStat label="Total Additions" value={egp(data.payroll.totalAdditions)} />
+            <PayrollStat label="Total Deductions" value={egp(data.payroll.totalDeductions)} />
+          </div>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[1.1fr_1.5fr]">
+            <Card className="rounded-[18px] border border-slate-200 bg-white p-5">
+              <p className="text-sm font-semibold text-slate-900">Latest Payslip Components</p>
+              <p className="mt-1 text-xs text-slate-500">{data.payroll.latestBatchLabel}</p>
+
+              <div className="mt-4 space-y-3">
+                <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-500">Gross</span>
+                    <span className="font-semibold text-slate-900">{egp(data.payroll.grossSalary)}</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                    <div className="h-full rounded-full bg-orange-500" style={{ width: "100%" }} />
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-100 bg-emerald-50/40 p-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-500">Additions</span>
+                    <span className="font-semibold text-emerald-700">{egp(data.payroll.totalAdditions)}</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-emerald-100">
+                    <div
+                      className="h-full rounded-full bg-emerald-500"
+                      style={{ width: `${additionsWidth}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-100 bg-rose-50/50 p-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-500">Deductions</span>
+                    <span className="font-semibold text-rose-700">{egp(data.payroll.totalDeductions)}</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-rose-100">
+                    <div
+                      className="h-full rounded-full bg-rose-500"
+                      style={{ width: `${deductionsWidth}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-2 border-t border-slate-200 pt-4 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">First Part</span>
+                  <span className="font-semibold text-slate-900">{egp(data.payroll.firstPart)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Second Part</span>
+                  <span className="font-semibold text-slate-900">{egp(data.payroll.secondPart)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Statutory / Internal</span>
+                  <span className="font-semibold text-slate-900">{egp(data.payroll.statutoryDeductions + data.payroll.internalDeductions)}</span>
+                </div>
+              </div>
+              <div className="mt-4">
+                {latestRow ? (
+                  <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-3">
+                    <span className="text-sm text-slate-600">
+                      Latest file: <strong>{latestRow.label}</strong>
+                    </span>
+                    <Link href={`/api/payroll/${latestRow.id}/payslips`} target="_blank">
+                      <Button className="h-8 px-3 text-xs" variant="secondary">
+                        Open latest payslip
+                      </Button>
+                    </Link>
+                  </div>
+                ) : null}
+              </div>
+            </Card>
+
+            <Card className="rounded-[18px] border border-slate-200 bg-white p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-900">Payslip History</p>
+                <span className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-500">
+                  {historyRows.length} record{historyRows.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className="max-h-[320px] overflow-auto rounded-2xl border border-slate-100">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
+                      <th className="px-3 py-2">Month</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+                  </thead>
+                  <tbody>
+                    {historyRows.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-6 text-center text-slate-500" colSpan={3}>
+                          No payroll history records found yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      historyRows.map((row) => (
+                        <tr className="border-b border-slate-100 transition hover:bg-slate-50" key={row.id}>
+                          <td className="px-3 py-2.5 text-slate-900">{row.label}</td>
+                          <td className="px-3 py-2.5">
+                            <Badge variant={payrollStatusTone(row.status)}>{row.status.replace(/_/g, " ")}</Badge>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <Link href={`/api/payroll/${row.id}/payslips`} target="_blank">
+                              <Button className="h-8 px-3 text-xs" variant="secondary">
+                                View payslip
+                              </Button>
+                            </Link>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </div>
         </div>
       )}
     </section>
@@ -1741,43 +1960,49 @@ export function ContactHRSupportPage({ data }: { data: MedicalRepPortalData }) {
   const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const hrTeam: { name: string; role: string; email: string; phone?: string; avatar?: string }[] = [
+  const hrTeam: { id: string; name: string; role: string; summary: string }[] = [
     {
-      name: "Omar Anwar Gawish",
-      role: "HR Section Head",
-      email: "omar.anwar@satopharma.com",
-      phone: "01280955558",
-      avatar: "/images/hr/omar-anwar-gawish.jpg",
+      id: "hr-support",
+      name: "HR Support Desk",
+      role: "General HR support",
+      summary: "Use the request form for policy questions, profile issues, and HR process support.",
     },
     {
-      name: "Youmna Kotb",
-      role: "Talent Acquisition",
-      email: "youmna.kotb@satopharma.com",
-      phone: "01123566677",
-      avatar: "/images/hr/youmna-kotb.jpg",
+      id: "talent-support",
+      name: "Talent Support Desk",
+      role: "Recruitment and onboarding support",
+      summary: "Use this channel for onboarding status, hiring requests, and talent coordination.",
     },
     {
-      name: "Nada Ali",
-      role: "Office Coordinator",
-      email: "head.office@satopharma.com",
-      phone: "01144333347",
-      avatar: "/images/hr/nada-ali.jpg",
+      id: "ops-support",
+      name: "Operations Support Desk",
+      role: "Workplace and office support",
+      summary: "Use this channel for office coordination, workplace requests, and operational help.",
     },
   ];
 
   const recentRequests: { id: string; subject: string; category: string; status: string; date: string }[] = [];
 
+  useEffect(() => {
+    return () => {
+      if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+    };
+  }, []);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setTimeout(() => {
+    submitTimeoutRef.current = setTimeout(() => {
       setIsSubmitting(false);
       setShowSuccess(true);
       setCategory("");
       setSubject("");
       setDescription("");
-      setTimeout(() => setShowSuccess(false), 3000);
+      successTimeoutRef.current = setTimeout(() => setShowSuccess(false), 3000);
     }, 1000);
   };
 
@@ -1808,39 +2033,32 @@ export function ContactHRSupportPage({ data }: { data: MedicalRepPortalData }) {
           <div className="space-y-4">
             {hrTeam.length > 0 ? (
               hrTeam.map((member) => (
-                <div key={member.email} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3 transition hover:bg-slate-50">
+                <div key={member.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3 transition hover:bg-slate-50">
                   <div className="flex items-start gap-3">
                     <div className="shrink-0 overflow-hidden rounded-lg ring-2 ring-orange-100"
                       style={{ width: "2cm", height: "3cm" }}>
-                      {member.avatar ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={member.avatar}
-                          alt={member.name}
-                          className="h-full w-full object-cover object-top"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-orange-100 text-sm font-semibold text-orange-700">
-                          {member.name.split(" ").map(n => n[0]).join("")}
-                        </div>
-                      )}
+                      <div className="flex h-full w-full items-center justify-center bg-orange-100 text-sm font-semibold text-orange-700">
+                        {member.name.split(" ").map((n) => n[0]).join("")}
+                      </div>
                     </div>
                     <div>
                     <p className="text-sm font-semibold text-slate-900">{member.name}</p>
                     <p className="text-xs text-slate-500">{member.role}</p>
                     <div className="mt-1 flex flex-col gap-0.5">
-                      <p className="text-[10px] text-slate-400">{member.email}</p>
-                      {member.phone && <p className="text-[10px] font-medium text-orange-600/80">{member.phone}</p>}
+                      <p className="text-[10px] text-slate-400">{member.summary}</p>
                     </div>
                   </div>
                   </div>
                   <Button
                     className="h-8 rounded-lg text-xs"
                     variant="secondary"
-                    onClick={() => window.location.href = `mailto:${member.email}`}
+                    onClick={() => {
+                      setCategory("HR Request");
+                      setSubject(`${member.name} request`);
+                    }}
                   >
                     <Send className="mr-1.5 h-3 w-3" />
-                    Email
+                    Use Form
                   </Button>
                 </div>
               ))
@@ -1865,7 +2083,7 @@ export function ContactHRSupportPage({ data }: { data: MedicalRepPortalData }) {
             </div>
           </div>
 
-          <p className="mt-4 text-xs text-slate-500 italic">For urgent HR matters, please contact one of the HR team members above.</p>
+          <p className="mt-4 text-xs text-slate-500 italic">For urgent HR matters, use the support form below so the request is tracked inside Phoenix Workforce.</p>
         </Card>
 
         <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">

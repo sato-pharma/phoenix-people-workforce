@@ -1,6 +1,10 @@
-import { redirect } from "next/navigation";
-
 import { SalesPerformancePage } from "@/components/sales/sales-performance-page";
+import {
+  EmployeePortalActionBar,
+  EmployeePortalActionLink,
+  EmployeePortalEmptyState,
+  EmployeePortalPageShell,
+} from "@/components/employee-portal/enterprise-shell";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getSalesDashboard } from "@/lib/sales/service";
@@ -19,6 +23,18 @@ function normalizeProductsInput(value?: string | string[]) {
     .filter(Boolean);
 }
 
+function buildFiltersLabel(filters: {
+  period?: string;
+  family?: string;
+  products: string[];
+}) {
+  const parts: string[] = [];
+  if (filters.period) parts.push(`Period ${filters.period}`);
+  if (filters.family) parts.push(`Family ${filters.family}`);
+  if (filters.products.length > 0) parts.push(`Products ${filters.products.length}`);
+  return parts.length > 0 ? parts.join(" / ") : "No filters";
+}
+
 export default async function EmployeePortalSalesPage({
   searchParams,
 }: {
@@ -26,7 +42,16 @@ export default async function EmployeePortalSalesPage({
 }) {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) !== "employee-portal") {
-    redirect("/sales");
+    return (
+      <EmployeePortalEmptyState
+        message="Sign in with a portal role (Medical Rep, Employee, District Manager, etc.) to view this view."
+        title="This page is only available in employee portal mode."
+      >
+        <div className="mt-4">
+          <EmployeePortalActionLink href="/sales" label="Go to Sales Queue" />
+        </div>
+      </EmployeePortalEmptyState>
+    );
   }
 
   const resolvedParams = await searchParams;
@@ -50,12 +75,37 @@ export default async function EmployeePortalSalesPage({
 
   if (!initialData) {
     return (
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <p className="text-lg font-semibold text-slate-900">Sales Data Unavailable</p>
-        <p className="mt-2 text-sm text-slate-600">Unable to load sales performance data. Please try again later.</p>
-      </div>
+      <EmployeePortalEmptyState
+        message="Unable to load sales performance data. Please try again later."
+        title="Sales Data Unavailable"
+      />
     );
   }
 
-  return <SalesPerformancePage data={initialData} isLoading={false} />;
+  const normalizedProducts = normalizeProductsInput(resolvedParams.products);
+  const filtersLabel = buildFiltersLabel({
+    family: resolvedParams.family,
+    period: resolvedParams.period,
+    products: normalizedProducts,
+  });
+
+  return (
+    <EmployeePortalPageShell
+      description="Deep performance view with team filters, product mix, and trend diagnostics."
+      title="Sales Performance"
+    >
+      <EmployeePortalActionBar
+        actions={
+          <>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
+              {filtersLabel}
+            </span>
+            <EmployeePortalActionLink href="/employee-portals" label="Back to Command Center" />
+            <EmployeePortalActionLink href="/employee-portals/payroll" label="Open Payroll" />
+          </>
+        }
+      />
+      <SalesPerformancePage data={initialData} isLoading={false} />
+    </EmployeePortalPageShell>
+  );
 }

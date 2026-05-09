@@ -1,6 +1,12 @@
 import { redirect } from "next/navigation";
 
-import { MedicalRepOverviewPage, EmptyStateCard } from "@/components/employee-portal/employee-portal-dashboard";
+import { MedicalRepOverviewPage } from "@/components/employee-portal/employee-portal-dashboard";
+import {
+  EmployeePortalActionBar,
+  EmployeePortalActionLink,
+  EmployeePortalEmptyState,
+  EmployeePortalPageShell,
+} from "@/components/employee-portal/enterprise-shell";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
@@ -35,12 +41,37 @@ export default async function EmployeePortalsHomePage({
 
   if (!data) {
     return (
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <p className="text-lg font-semibold text-slate-900">Portal Unavailable</p>
-        <p className="mt-2 text-sm text-slate-600">Your command center is temporarily unavailable. Please try again in a moment.</p>
-      </div>
+      <EmployeePortalEmptyState
+        message="Your command center is temporarily unavailable. Please try again in a moment."
+        title="Portal Unavailable"
+      />
     );
   }
 
-  return <MedicalRepOverviewPage data={data} />;
+  const formattedTeamPeriod = teamComparisonPeriod
+    ? new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(
+      new Date(`${teamComparisonPeriod}-01T00:00:00.000Z`),
+    )
+    : "Current period";
+
+  return (
+    <EmployeePortalPageShell
+      badge="Employee Portal"
+      description="Performance, payroll, and team comparison in one command surface."
+      title="Dashboard Overview"
+    >
+      <EmployeePortalActionBar
+        actions={
+          <>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
+              Team View: {formattedTeamPeriod}
+            </span>
+            <EmployeePortalActionLink href="/employee-portals/sales" label="Open Sales Workspace" />
+            <EmployeePortalActionLink href="/employee-portals/payroll" label="Open Payroll Center" />
+          </>
+        }
+      />
+      <MedicalRepOverviewPage data={data} />
+    </EmployeePortalPageShell>
+  );
 }

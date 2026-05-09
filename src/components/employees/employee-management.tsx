@@ -1,19 +1,32 @@
-"use client";
+﻿﻿"use client";
 
 import {
   AlertCircle,
   Building2,
   Check,
+  CircleAlert,
   Download,
   Pencil,
+  Users,
   RefreshCw,
   Search,
   Upload,
+  UserCheck2,
   UserPlus,
+  UserX,
   X,
 } from "lucide-react";
 import * as React from "react";
 
+import {
+  AdminCallout,
+  AdminInsightChip,
+  AdminPageHero,
+  AdminSectionHeader,
+  AdminStatCard,
+  AdminTableShell,
+  adminPanelClassName,
+} from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -33,6 +46,14 @@ type EmployeeManagementProps = {
   initialError?: string | null;
 };
 
+type ResignationFormState = {
+  effectiveDate: string;
+  employeeStatus: string;
+  reason: string;
+  submittedDate: string;
+  workflowNotes: string;
+};
+
 type EmployeeFormState = {
   areaId: string;
   crmId: string;
@@ -49,6 +70,9 @@ type EmployeeFormState = {
   mobileNumber: string;
   nameAr: string;
   positionId: string;
+  residenceAddress: string;
+  residenceArea: string;
+  residenceCity: string;
   salaryPaymentMode: string;
   workEmail: string;
 };
@@ -69,6 +93,9 @@ const emptyForm: EmployeeFormState = {
   mobileNumber: "",
   nameAr: "",
   positionId: "",
+  residenceAddress: "",
+  residenceArea: "",
+  residenceCity: "",
   salaryPaymentMode: "one_part",
   workEmail: "",
 };
@@ -84,31 +111,23 @@ const salaryPaymentModeOptions = [
   },
 ];
 
-function SummaryCard({
-  label,
-  tone = "neutral",
-  value,
-}: {
-  label: string;
-  tone?: "neutral" | "success" | "warning" | "danger";
-  value: number;
-}) {
-  const toneClass = {
-    danger: "bg-rose-50 text-rose-800",
-    neutral: "bg-[#F8FAFC] text-[#0F172A]",
-    success: "bg-emerald-50 text-emerald-800",
-    warning: "bg-orange-50 text-orange-800",
-  }[tone];
+const resignationStatusOptions = [
+  { label: "Resigned", value: "resigned" },
+  { label: "Terminated", value: "terminated" },
+  { label: "Inactive", value: "inactive" },
+];
 
-  return (
-    <div className={cn("rounded-2xl border border-[#E2E8F0] p-4", toneClass)}>
-      <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{label}</p>
-      <p className="mt-2 font-mono text-2xl font-bold">
-        {formatNumberValue(value)}
-      </p>
-    </div>
-  );
-}
+const emptyResignationForm: ResignationFormState = {
+  effectiveDate: new Date().toISOString().slice(0, 10),
+  employeeStatus: "resigned",
+  reason: "",
+  submittedDate: new Date().toISOString().slice(0, 10),
+  workflowNotes: "",
+};
+
+const panelClassName = adminPanelClassName;
+const selectClassName =
+  "h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 
 function emptyText(value: string | number | null | undefined) {
   return value === null || value === undefined || value === "" ? "-" : String(value);
@@ -162,7 +181,7 @@ function SelectField({
         {label}
       </span>
       <select
-        className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className={cn(selectClassName, disabled ? "bg-[#F8FAFC] text-[#94A3B8]" : "bg-white", className)}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -224,9 +243,22 @@ function employeeToForm(employee: EmployeeDirectoryRow): EmployeeFormState {
     mobileNumber: employee.mobileNumber ?? "",
     nameAr: employee.nameAr ?? "",
     positionId: employee.positionId ? String(employee.positionId) : "",
+    residenceAddress: employee.residenceAddress ?? "",
+    residenceArea: employee.residenceArea ?? "",
+    residenceCity: employee.residenceCity ?? "",
     salaryPaymentMode: employee.salaryPaymentMode,
     workEmail: employee.workEmail ?? "",
   };
+}
+
+function employeeRowKey(employee: EmployeeDirectoryRow, index: number) {
+  return [
+    employee.hrId,
+    employee.createdAt,
+    employee.updatedAt,
+    employee.fullName,
+    index,
+  ].join(":");
 }
 
 function formToPayload(form: EmployeeFormState): EmployeeMutationInput {
@@ -249,6 +281,9 @@ function formToPayload(form: EmployeeFormState): EmployeeMutationInput {
     mobileNumber: optionalText(form.mobileNumber),
     nameAr: optionalText(form.nameAr),
     positionId: optionalNumber(form.positionId),
+    residenceAddress: optionalText(form.residenceAddress),
+    residenceArea: optionalText(form.residenceArea),
+    residenceCity: optionalText(form.residenceCity),
     salaryPaymentMode: optionalText(form.salaryPaymentMode),
     workEmail: optionalText(form.workEmail),
   };
@@ -277,6 +312,11 @@ export function EmployeeManagement({
   const [editingHrId, setEditingHrId] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = React.useState(false);
+  const [isResigning, setIsResigning] = React.useState(false);
+  const [isResignationOpen, setIsResignationOpen] = React.useState(false);
+  const [resignationError, setResignationError] = React.useState<string | null>(null);
+  const [resigningEmployee, setResigningEmployee] = React.useState<EmployeeDirectoryRow | null>(null);
+  const [resignationForm, setResignationForm] = React.useState<ResignationFormState>(emptyResignationForm);
   const templateInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const employees = React.useMemo(() => data?.employees ?? [], [data?.employees]);
@@ -308,15 +348,6 @@ export function EmployeeManagement({
       (v) => String(v.lineId) === String(form.lineId),
     );
   }, [isManualMedicalRep, lookups.medicalRepVacancies, form.lineId]);
-
-  // Debugging in development
-  React.useEffect(() => {
-    if (process.env.NODE_ENV === "development") {
-      console.log("manual medical rep", isManualMedicalRep);
-      console.log("manual selected position", selectedPositionTitle);
-      console.log("manual vacant areas", filteredManualVacantAreas);
-    }
-  }, [isManualMedicalRep, selectedPositionTitle, filteredManualVacantAreas]);
 
   const loadEmployees = React.useCallback(async () => {
     setIsLoading(true);
@@ -442,6 +473,29 @@ export function EmployeeManagement({
     setIsFormOpen(false);
   }
 
+  function startResignation(employee: EmployeeDirectoryRow) {
+    setResigningEmployee(employee);
+    setResignationForm({
+      ...emptyResignationForm,
+      effectiveDate: new Date().toISOString().slice(0, 10),
+      submittedDate: new Date().toISOString().slice(0, 10),
+    });
+    setNotice(null);
+    setError(null);
+    setResignationError(null);
+    setIsResignationOpen(true);
+  }
+
+  function closeResignation() {
+    setIsResignationOpen(false);
+    setResigningEmployee(null);
+    setResignationError(null);
+  }
+
+  function updateResignationForm(key: keyof ResignationFormState, value: string) {
+    setResignationForm((current) => ({ ...current, [key]: value }));
+  }
+
   async function saveEmployee() {
     setIsSaving(true);
     setError(null);
@@ -513,71 +567,116 @@ export function EmployeeManagement({
     }
   }
 
-  return (
-    <Card className="overflow-hidden border-[#E2E8F0] bg-white p-0 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-      <div className="border-b border-[#E2E8F0] bg-[#0F172A] px-5 py-5 text-white">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
-              Employee Management
-            </p>
-            <h1 className="mt-2 text-2xl font-bold">Employee Directory</h1>
-            <p className="mt-1 max-w-2xl text-sm text-white/70">
-              Manage employee master data with single-record editing, salary payout mode, and safe bulk operations.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-          <a href="/api/employees/template">
-            <Button className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15" variant="secondary">
-              <Download className="mr-2 h-3.5 w-3.5" />
-              Download Template
-            </Button>
-          </a>
-          <input
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={(event) => void uploadTemplate(event.target.files?.[0] ?? null)}
-            ref={templateInputRef}
-            type="file"
-          />
-          <Button
-            className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
-            disabled={isImportingTemplate}
-            onClick={() => templateInputRef.current?.click()}
-            variant="secondary"
-          >
-            {isImportingTemplate ? (
-              <LoadingSpinner />
-            ) : (
-              <Upload className="mr-2 h-3.5 w-3.5" />
-            )}
-            Upload Template
-          </Button>
-          <Button
-            className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
-            disabled={isLoading}
-            onClick={() => void loadEmployees()}
-            variant="secondary"
-          >
-            {isLoading ? <LoadingSpinner /> : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
-            Refresh
-          </Button>
-          <Button
-            className="bg-[#F97316] px-3 py-2 text-xs text-white hover:bg-[#F97316]/90"
-            onClick={startCreate}
-          >
-            <UserPlus className="mr-2 h-3.5 w-3.5" />
-            Add Employee
-          </Button>
-          </div>
-        </div>
-      </div>
+  async function submitResignation() {
+    if (!resigningEmployee) return;
+    setIsResigning(true);
+    setError(null);
+    setNotice(null);
+    setResignationError(null);
 
-      <div className="space-y-4 p-5">
+    try {
+      const response = await fetch(`/api/employees/${encodeURIComponent(resigningEmployee.hrId)}/resign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resignation: {
+            employeeHrId: resigningEmployee.hrId,
+            effectiveDate: resignationForm.effectiveDate,
+            employeeStatus: resignationForm.employeeStatus,
+            reason: resignationForm.reason,
+            submittedDate: resignationForm.submittedDate,
+            workflowNotes: resignationForm.workflowNotes,
+          },
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setResignationError(payload.message ?? payload.error ?? "employee_resign_failed");
+        return;
+      }
+
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              employees: current.employees.map((employee) =>
+                employee.hrId === resigningEmployee.hrId
+                  ? {
+                      ...employee,
+                      employmentStatus: resignationForm.employeeStatus,
+                      updatedAt: new Date().toISOString(),
+                    }
+                  : employee,
+              ),
+            }
+          : current,
+      );
+      setNotice(`Resignation recorded for ${resigningEmployee.fullName}. Vacancy ${payload.data?.vacancyCode ?? "opened"} created and employee moved to ${resignationForm.employeeStatus}.`);
+      closeResignation();
+    } catch {
+      setResignationError("Unable to process employee resignation.");
+    } finally {
+      setIsResigning(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <AdminPageHero
+        actions={
+          <div className="grid w-full grid-cols-1 gap-2 sm:min-w-[560px] sm:grid-cols-2 xl:grid-cols-1">
+            <a
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#D7E0EA] bg-white px-3 text-xs font-semibold text-[#0F172A] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+              href="/api/employees/template"
+            >
+              <Download className="h-3.5 w-3.5 text-[#F97316]" />
+              Download Template
+            </a>
+            <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#D7E0EA] bg-white px-3 text-xs font-semibold text-[#0F172A] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]">
+              {isImportingTemplate ? (
+                <LoadingSpinner />
+              ) : (
+                <Upload className="h-3.5 w-3.5 text-[#F97316]" />
+              )}
+              Upload Template
+              <input
+                accept=".xlsx,.xls"
+                className="sr-only"
+                onChange={(event) => void uploadTemplate(event.target.files?.[0] ?? null)}
+                ref={templateInputRef}
+                type="file"
+              />
+            </label>
+            <Button
+              className="h-10 rounded-xl px-3 text-xs"
+              disabled={isLoading}
+              onClick={() => void loadEmployees()}
+              variant="secondary"
+            >
+              {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Refresh
+            </Button>
+            <Button className="h-10 rounded-xl px-3 text-xs" onClick={startCreate}>
+              <UserPlus className="mr-1 h-3.5 w-3.5" />
+              Add Employee
+            </Button>
+          </div>
+        }
+        badges={
+          <div className="flex flex-wrap gap-2 text-xs text-[#475569]">
+            <AdminInsightChip>Single-record editing and bulk template workflows stay aligned.</AdminInsightChip>
+            <AdminInsightChip tone="orange">Salary payout mode remains visible for downstream payroll automation.</AdminInsightChip>
+          </div>
+        }
+        description="Manage employee master data with structured filters, single-record editing, salary payout mode, and safer bulk operations."
+        eyebrow="People Ops / Employees"
+        icon={<Building2 className="h-3.5 w-3.5" />}
+        title="Employee directory"
+      />
 
       {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <div className="flex gap-3">
+        <AdminCallout tone="danger">
             <AlertCircle className="mt-0.5 h-5 w-5 text-danger" />
             <div>
               <h2 className="text-base font-semibold text-text">
@@ -585,268 +684,265 @@ export function EmployeeManagement({
               </h2>
               <p className="mt-1 text-sm text-text-secondary">{error}</p>
             </div>
-          </div>
-        </div>
+        </AdminCallout>
       ) : null}
 
       {notice ? (
-        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3">
-          <div className="flex items-center gap-3 text-sm text-text">
+        <AdminCallout tone="success">
             <Check className="h-5 w-5 text-success" />
             {notice}
-          </div>
-        </div>
+        </AdminCallout>
       ) : null}
 
       {data ? (
         <>
           <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard label="Total Employees" tone="neutral" value={data.summary.totalEmployees} />
-            <SummaryCard
-              label="Active Employees"
-              tone="success"
-              value={data.summary.activeEmployees}
+            <AdminStatCard
+              description="Active workforce currently in system."
+              icon={<Users className="h-4 w-4" />}
+              label="Total Employees"
+              value={formatNumberValue(data.summary.totalEmployees)}
             />
-            <SummaryCard label="Lines Covered" tone="warning" value={data.summary.uniqueLines} />
-            <SummaryCard
+            <AdminStatCard
+              description="Records flagged as active and available for payroll."
+              icon={<UserCheck2 className="h-4 w-4" />}
+              label="Active Employees"
+              value={formatNumberValue(data.summary.activeEmployees)}
+            />
+            <AdminStatCard
+              description="Unique operating lines represented in the directory."
+              icon={<CircleAlert className="h-4 w-4" />}
+              label="Lines Covered"
+              value={formatNumberValue(data.summary.uniqueLines)}
+            />
+            <AdminStatCard
+              description="Employees missing direct manager linkage and require assignment."
+              icon={<Building2 className="h-4 w-4" />}
               label="No Manager Set"
-              tone="danger"
-              value={data.summary.employeesWithoutManagers}
+              value={formatNumberValue(data.summary.employeesWithoutManagers)}
             />
           </section>
 
-          <section>
-            <div className="rounded-2xl border border-[#E2E8F0] bg-white">
-              <div className="flex flex-col gap-4 border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 xl:flex-row xl:items-start xl:justify-between">
-                <div>
-                  <h2 className="text-base font-semibold text-text">
-                    Employee Directory
-                  </h2>
-                  <p className="mt-1 text-sm text-text-secondary">
-                    Showing {filteredEmployees.length} of {employees.length} records.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 text-[#F97316]">
-                  <Building2 className="h-5 w-5" />
-                  <Badge variant="neutral">{formatNumberValue(filteredEmployees.length)} visible</Badge>
-                </div>
-              </div>
+          <AdminTableShell
+            action={<Badge variant="neutral">{formatNumberValue(filteredEmployees.length)} visible</Badge>}
+            description={`Showing ${filteredEmployees.length} of ${employees.length} employees.`}
+            title="Employee Directory"
+          >
+            <div className="grid gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] p-4 xl:grid-cols-[minmax(0,1.5fr)_repeat(7,minmax(0,1fr))_auto]">
+              <label className="relative">
+                <span className="sr-only">Search employees</span>
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
+                <Input
+                  className="h-10 rounded-2xl border-[#D7E0EA] bg-white pl-9"
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search name, HR_ID, email, manager..."
+                  value={query}
+                />
+              </label>
+              <SelectField
+                label="Department"
+                onChange={setDepartmentFilter}
+                options={lookups.departments}
+                placeholder="Department"
+                value={departmentFilter}
+              />
+              <SelectField
+                label="Line"
+                onChange={setLineFilter}
+                options={lookups.lines}
+                placeholder="Line"
+                value={lineFilter}
+              />
+              <SelectField
+                label="Area"
+                onChange={setAreaFilter}
+                options={lookups.areas}
+                placeholder="Area"
+                value={areaFilter}
+              />
+              <SelectField
+                label="Position"
+                onChange={setPositionFilter}
+                options={lookups.positions}
+                placeholder="Position"
+                value={positionFilter}
+              />
+              <SelectField
+                label="Manager"
+                onChange={setManagerFilter}
+                options={lookups.managers}
+                placeholder="Manager"
+                value={managerFilter}
+              />
+              <SelectField
+                label="Status"
+                onChange={setStatusFilter}
+                options={lookups.statuses}
+                placeholder="Status"
+                value={statusFilter}
+              />
+              <SelectField
+                label="Pay Mode"
+                onChange={setSalaryPaymentModeFilter}
+                options={salaryPaymentModeOptions}
+                placeholder="Pay Mode"
+                value={salaryPaymentModeFilter}
+              />
+              <Button
+                className="gap-2 whitespace-nowrap"
+                disabled={!hasActiveFilters}
+                onClick={clearFilters}
+                variant="secondary"
+              >
+                <X className="h-4 w-4" />
+                Clear {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
+              </Button>
+            </div>
 
-              <div className="grid gap-3 border-b border-[#E2E8F0] bg-white p-4 xl:grid-cols-[1.4fr_repeat(7,minmax(0,1fr))_auto]">
-                <label className="relative block">
-                  <span className="sr-only">Search employees</span>
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
-                  <Input
-                    className="bg-white pl-9"
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search name, HR_ID, email, manager..."
-                    value={query}
-                  />
-                </label>
-                <SelectField
-                  label="Department"
-                  onChange={setDepartmentFilter}
-                  options={lookups.departments}
-                  placeholder="Department"
-                  value={departmentFilter}
-                />
-                <SelectField
-                  label="Line"
-                  onChange={setLineFilter}
-                  options={lookups.lines}
-                  placeholder="Line"
-                  value={lineFilter}
-                />
-                <SelectField
-                  label="Area"
-                  onChange={setAreaFilter}
-                  options={lookups.areas}
-                  placeholder="Area"
-                  value={areaFilter}
-                />
-                <SelectField
-                  label="Position"
-                  onChange={setPositionFilter}
-                  options={lookups.positions}
-                  placeholder="Position"
-                  value={positionFilter}
-                />
-                <SelectField
-                  label="Manager"
-                  onChange={setManagerFilter}
-                  options={lookups.managers}
-                  placeholder="Manager"
-                  value={managerFilter}
-                />
-                <SelectField
-                  label="Status"
-                  onChange={setStatusFilter}
-                  options={lookups.statuses}
-                  placeholder="Status"
-                  value={statusFilter}
-                />
-                <SelectField
-                  label="Pay Mode"
-                  onChange={setSalaryPaymentModeFilter}
-                  options={salaryPaymentModeOptions}
-                  placeholder="Pay Mode"
-                  value={salaryPaymentModeFilter}
-                />
-                <Button
-                  className="gap-2 whitespace-nowrap"
-                  disabled={!hasActiveFilters}
-                  onClick={clearFilters}
-                  variant="secondary"
-                >
-                  <X className="h-4 w-4" />
-                  Clear {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
-                </Button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1380px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs uppercase tracking-[0.12em] text-[#64748B]">
-                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Employee</th>
-                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Position</th>
-                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Department</th>
-                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Line</th>
-                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Area</th>
-                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Pay Mode</th>
-                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Manager</th>
-                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Contact</th>
-                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Status</th>
-                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Actions</th>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1380px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs uppercase tracking-[0.16em] text-[#64748B]">
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Employee</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Position</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Department</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Line</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Area</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Pay Mode</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Manager</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Contact</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Status</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredEmployees.length === 0 ? (
+                    <tr>
+                      <td
+                        className="px-4 py-10 text-center text-sm text-text-secondary"
+                        colSpan={10}
+                      >
+                        No employees match the current filters.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredEmployees.length === 0 ? (
-                      <tr>
-                        <td
-                          className="px-4 py-10 text-center text-sm text-text-secondary"
-                          colSpan={10}
-                        >
-                          No employees match the current filters.
+                  ) : (
+                    filteredEmployees.map((employee, index) => (
+                      <tr
+                        className="transition-colors hover:bg-[#F8FAFC]"
+                        key={employeeRowKey(employee, index)}
+                      >
+                        <td className="px-4 py-4">
+                          <button
+                            className="text-left"
+                            onClick={() => startEdit(employee)}
+                            type="button"
+                          >
+                            <p className="font-medium text-text">
+                              {employee.fullName}
+                            </p>
+                            <p className="mt-1 font-mono text-xs text-text-secondary">
+                              {employee.hrId}
+                            </p>
+                          </button>
                         </td>
-                      </tr>
-                    ) : (
-                      filteredEmployees.map((employee) => (
-                        <tr
-                          className="transition-colors hover:bg-[#F8FAFC]"
-                          key={employee.hrId}
-                        >
-                          <td className="px-4 py-4">
-                            <button
-                              className="text-left"
-                              onClick={() => startEdit(employee)}
-                              type="button"
-                            >
-                              <p className="font-medium text-text">
-                                {employee.fullName}
-                              </p>
-                              <p className="mt-1 font-mono text-xs text-text-secondary">
-                                {employee.hrId}
-                              </p>
-                            </button>
-                          </td>
-                          <td className="px-4 py-4 text-text-secondary">
-                            {emptyText(employee.positionTitle ?? employee.jobTitle)}
-                          </td>
-                          <td className="px-4 py-4 text-text-secondary">
-                            {emptyText(employee.departmentName)}
-                          </td>
-                          <td className="px-4 py-4 text-text-secondary">
-                            {emptyText(employee.lineName)}
-                          </td>
-                          <td className="px-4 py-4 text-text-secondary">
-                            {emptyText(employee.areaName)}
-                          </td>
-                          <td className="px-4 py-4">
-                            <Badge
-                              variant={
-                                employee.salaryPaymentMode === "two_parts"
-                                  ? "warning"
-                                  : "success"
-                              }
-                            >
-                              {employee.salaryPaymentMode === "two_parts"
-                                ? "Two parts"
-                                : "One part"}
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-4">
-                            <p className="text-text-secondary">
-                              {emptyText(employee.managerName)}
-                            </p>
-                            {employee.managerHrId ? (
-                              <p className="mt-1 text-xs text-text-secondary">
-                                {employee.managerHrId}
-                              </p>
-                            ) : null}
-                          </td>
-                          <td className="px-4 py-4">
-                            <p className="text-text-secondary">
-                              {emptyText(employee.workEmail)}
-                            </p>
+                        <td className="px-4 py-4 text-text-secondary">
+                          {emptyText(employee.positionTitle ?? employee.jobTitle)}
+                        </td>
+                        <td className="px-4 py-4 text-text-secondary">
+                          {emptyText(employee.departmentName)}
+                        </td>
+                        <td className="px-4 py-4 text-text-secondary">
+                          {emptyText(employee.lineName)}
+                        </td>
+                        <td className="px-4 py-4 text-text-secondary">
+                          {emptyText(employee.areaName)}
+                        </td>
+                        <td className="px-4 py-4">
+                          <Badge
+                            variant={
+                              employee.salaryPaymentMode === "two_parts"
+                                ? "warning"
+                                : "success"
+                            }
+                          >
+                            {employee.salaryPaymentMode === "two_parts"
+                              ? "Two parts"
+                              : "One part"}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-4">
+                          <p className="text-text-secondary">
+                            {emptyText(employee.managerName)}
+                          </p>
+                          {employee.managerHrId ? (
                             <p className="mt-1 text-xs text-text-secondary">
-                              {emptyText(employee.mobileNumber)}
+                              {employee.managerHrId}
                             </p>
-                          </td>
-                          <td className="px-4 py-4">
-                            <Badge
-                              variant={statusBadgeVariant(
-                                employee.employmentStatus,
-                              )}
-                            >
-                              {optionName(employee.employmentStatus ?? "active")}
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-4">
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-4">
+                          <p className="text-text-secondary">
+                            {emptyText(employee.workEmail)}
+                          </p>
+                          <p className="mt-1 text-xs text-text-secondary">
+                            {emptyText(employee.mobileNumber)}
+                          </p>
+                        </td>
+                        <td className="px-4 py-4">
+                          <Badge
+                            variant={statusBadgeVariant(
+                              employee.employmentStatus,
+                            )}
+                          >
+                            {optionName(employee.employmentStatus ?? "active")}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex flex-wrap gap-2">
                             <Button
-                              className="gap-2 px-3 py-1.5 text-xs"
+                              className="h-9 gap-2 rounded-xl px-3 text-xs"
                               onClick={() => startEdit(employee)}
                               variant="secondary"
                             >
                               <Pencil className="h-3.5 w-3.5" />
                               Edit
                             </Button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                            <Button
+                              className="h-9 gap-2 rounded-xl px-3 text-xs"
+                              onClick={() => startResignation(employee)}
+                              variant="destructive"
+                            >
+                              <UserX className="h-3.5 w-3.5" />
+                              Resigned
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
-          </section>
+          </AdminTableShell>
         </>
       ) : null}
 
       {isFormOpen && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-6 backdrop-blur-sm">
-          <Card className="w-full max-w-5xl">
-            <div className="flex items-start justify-between gap-4 rounded-t-2xl border-b border-[#E2E8F0] bg-[#0F172A] px-5 py-5 text-white">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
-                  Employee Record
-                </p>
-                <h2 className="mt-2 text-xl font-bold">
-                  {editingHrId ? "Edit Employee" : "Add Employee"}
-                </h2>
-                <p className="mt-1 max-w-3xl text-sm text-white/70">
-                  Manual entry uses the same employee master-data model as the
-                  bulk Excel template. Salary payout mode controls automated
-                  payroll sheet generation.
-                </p>
-              </div>
-              <Button
-                className="border-white/15 bg-white/10 text-white hover:bg-white/15"
-                onClick={closeForm}
-                variant="secondary"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+          <Card className={`${panelClassName} w-full max-w-5xl overflow-hidden`}>
+            <AdminSectionHeader
+              action={
+                <Button
+                  className="h-9 rounded-xl px-3 text-xs"
+                  onClick={closeForm}
+                  variant="secondary"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              }
+              description="Manual entry uses the same employee master-data model as the bulk template. Salary payout mode controls automated payroll split."
+              title={editingHrId ? "Edit Employee" : "Add Employee"}
+            />
 
             <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
               <TextField
@@ -997,6 +1093,24 @@ export function EmployeeManagement({
                 value=""
               />
               <TextField
+                label="residence_address"
+                onChange={(value) => updateForm("residenceAddress", value)}
+                placeholder="Address from employee ID card"
+                value={form.residenceAddress}
+              />
+              <TextField
+                label="residence_city"
+                onChange={(value) => updateForm("residenceCity", value)}
+                placeholder="Cairo"
+                value={form.residenceCity}
+              />
+              <TextField
+                label="residence_area"
+                onChange={(value) => updateForm("residenceArea", value)}
+                placeholder="Nasr City"
+                value={form.residenceArea}
+              />
+              <TextField
                 label="name_ar"
                 onChange={(value) => updateForm("nameAr", value)}
                 value={form.nameAr}
@@ -1035,6 +1149,10 @@ export function EmployeeManagement({
             </div>
 
             <div className="mx-5 rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+              Residence address is geocoded through Google Maps on save, so Phoenix Workforce can store the latitude and longitude automatically for distance-based expense validation.
+            </div>
+
+            <div className="mx-5 rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
               One Part employees receive net salary on day 1 and any approved
               previous-month expenses on day 10. Two Parts employees receive
               70% of Adjusted Net on day 1 (Basic Salary), where Adjusted Net =
@@ -1059,7 +1177,95 @@ export function EmployeeManagement({
           </Card>
         </div>
       )}
-      </div>
-    </Card>
+      {isResignationOpen && resigningEmployee ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-6 backdrop-blur-sm">
+          <Card className={`${panelClassName} w-full max-w-3xl overflow-hidden`}>
+            <AdminSectionHeader
+              action={
+                <Button
+                  className="h-9 rounded-xl px-3 text-xs"
+                  onClick={closeResignation}
+                  variant="secondary"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              }
+              description="Update employee status and create the corresponding vacancy record for payroll and headcount continuity."
+              title="Mark As Resigned"
+            />
+
+            <div className="grid gap-4 p-5 md:grid-cols-2">
+              {resignationError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 md:col-span-2">
+                  <div className="flex gap-3">
+                    <AlertCircle className="mt-0.5 h-5 w-5 text-danger" />
+                    <div>
+                      <h3 className="text-sm font-semibold text-text">Unable to confirm resignation</h3>
+                      <p className="mt-1 text-sm text-text-secondary">{resignationError}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 md:col-span-2">
+                <p className="font-semibold text-rose-900">{resigningEmployee.fullName}</p>
+                <p className="mt-1 text-sm text-rose-800">
+                  {resigningEmployee.hrId} · {emptyText(resigningEmployee.positionTitle ?? resigningEmployee.jobTitle)} · {emptyText(resigningEmployee.areaName)}
+                </p>
+              </div>
+
+              <TextField
+                label="submitted_date"
+                onChange={(value) => updateResignationForm("submittedDate", value)}
+                type="date"
+                value={resignationForm.submittedDate}
+              />
+              <TextField
+                label="effective_date"
+                onChange={(value) => updateResignationForm("effectiveDate", value)}
+                type="date"
+                value={resignationForm.effectiveDate}
+              />
+              <SelectField
+                label="employee_status"
+                onChange={(value) => updateResignationForm("employeeStatus", value)}
+                options={resignationStatusOptions}
+                value={resignationForm.employeeStatus}
+              />
+              <TextField
+                label="reason"
+                onChange={(value) => updateResignationForm("reason", value)}
+                placeholder="Employee resignation reason"
+                value={resignationForm.reason}
+              />
+              <label className="block md:col-span-2">
+                <span className="mb-1.5 block text-xs font-medium text-text-secondary">
+                  workflow_notes
+                </span>
+                <textarea
+                  className="min-h-28 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  onChange={(event) => updateResignationForm("workflowNotes", event.target.value)}
+                  placeholder="Optional workflow note for the resignation report."
+                  value={resignationForm.workflowNotes}
+                />
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-3 p-5">
+              <Button onClick={closeResignation} variant="secondary">
+                Cancel
+              </Button>
+              <Button
+                className="gap-2 bg-[#B91C1C] text-white hover:bg-[#B91C1C]/90"
+                disabled={isResigning}
+                onClick={() => void submitResignation()}
+              >
+                {isResigning ? <LoadingSpinner /> : <UserX className="h-4 w-4" />}
+                Confirm Resignation
+              </Button>
+            </div>
+          </Card>
+        </div>
+      ) : null}
+    </div>
   );
 }

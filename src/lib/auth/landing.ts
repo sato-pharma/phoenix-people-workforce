@@ -16,5 +16,5 @@ const portalLandingRoleNames = new Set([
 
 export function resolveLandingPathForRole(role: string | null | undefined) {
   const normalized = String(role ?? "").trim().toLowerCase();
-  return portalLandingRoleNames.has(normalized) ? "/employee-portals" : "/overview";
+  return portalLandingRoleNames.has(normalized) ? "/employee-portals" : "/admin/access";
 }

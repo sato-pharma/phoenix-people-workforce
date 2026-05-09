@@ -1,5 +1,10 @@
-import { EmployeePortalTopNav, EmployeePortalSidebar } from "@/components/employee-portal/employee-portal-layout";
+import {
+  EmployeePortalTopNav,
+  EmployeePortalSidebar,
+} from "@/components/employee-portal/employee-portal-layout";
 import { IdentityCard } from "@/components/employee-portal/employee-portal-dashboard";
+import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
@@ -24,47 +29,20 @@ export default async function EmployeePortalLayout({
 
   if (!data) {
     return (
-      <div className="min-h-screen bg-[#f7f8fb] p-4">
-        <div className="mx-auto w-full max-w-[1200px]">
-          <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-            <p className="text-lg font-semibold text-slate-900">Portal Unavailable</p>
-            <p className="mt-2 text-sm text-slate-600">Your command center is temporarily unavailable. Please try again in a moment.</p>
-          </div>
-        </div>
-      </div>
+      <EmployeePortalEmptyState
+        message="Your command center is temporarily unavailable. Please try again in a moment."
+        title="Portal Unavailable"
+      />
     );
   }
 
-  const MANAGEMENT_ROLES = ["district sales manager", "national sales manager", "product manager", "training manager"];
-  const roleLabel = String(data.employee.roleLabel ?? "").trim();
-  const roleNormalized = roleLabel.toLowerCase();
-  const showManagementTab = MANAGEMENT_ROLES.includes(roleNormalized);
-  const showTeamPerformanceTab =
-    roleNormalized.includes("district manager") ||
-    roleNormalized.includes("district sales manager") ||
-    roleNormalized.includes("dsm");
-  const showMedRepsPerformanceTab = roleNormalized.includes("national sales manager");
-  const showDsmsPerformanceTab = roleNormalized.includes("national sales manager");
-  const showVacanciesTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
+  const visibility = resolveEmployeePortalNavVisibility(data.employee.roleLabel);
 
   return (
-    <div className="min-h-screen bg-[#f6f7fb]">
-      <EmployeePortalTopNav
-        data={data}
-        showManagementTab={showManagementTab}
-        showTeamPerformanceTab={showTeamPerformanceTab}
-        showMedRepsPerformanceTab={showMedRepsPerformanceTab}
-        showDsmsPerformanceTab={showDsmsPerformanceTab}
-        showVacanciesTab={showVacanciesTab}
-      />
-      <div className="mx-auto flex w-full max-w-[1600px] gap-6 px-4 py-6 lg:gap-8 lg:px-8 lg:py-8">
-        <EmployeePortalSidebar
-          showManagementTab={showManagementTab}
-          showTeamPerformanceTab={showTeamPerformanceTab}
-          showMedRepsPerformanceTab={showMedRepsPerformanceTab}
-          showDsmsPerformanceTab={showDsmsPerformanceTab}
-          showVacanciesTab={showVacanciesTab}
-        />
+    <div className="min-h-screen bg-[#f5f7fb]">
+      <EmployeePortalTopNav data={data} visibility={visibility} />
+      <div className="mx-auto flex w-full max-w-[1560px] gap-6 px-4 py-6 lg:gap-8 lg:px-8 lg:py-8">
+        <EmployeePortalSidebar visibility={visibility} />
         <main className="min-w-0 flex-1 space-y-6 lg:space-y-8">
           <IdentityCard data={data} />
           <PageTransition>{children}</PageTransition>

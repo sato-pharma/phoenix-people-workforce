@@ -19,33 +19,20 @@ export function getRequestIp(request: Request) {
   return realIp || null;
 }
 
-export function getRequestUserAgent(request: Request) {
-  const value = request.headers.get("user-agent")?.trim();
-  return value || null;
-}
-
 export async function writeAuthAudit(input: {
   actorLoginId?: string | null;
-  actorHrId?: string | null;
-  actorRole?: string | null;
   entityId?: string | null;
   newValues?: Record<string, unknown> | null;
   oldValues?: Record<string, unknown> | null;
-  requestIp?: string | null;
   summary: string;
-  userAgent?: string | null;
 }) {
   await writeAuditLog({
-    actorHrId: input.actorHrId,
     actorLoginId: input.actorLoginId,
-    actorRole: input.actorRole,
     entityId: input.entityId ?? input.actorLoginId ?? null,
     entityType: "auth_session",
     newValues: input.newValues,
     oldValues: input.oldValues,
-    requestIp: input.requestIp,
     summary: input.summary,
-    userAgent: input.userAgent,
   });
 }
 
@@ -53,36 +40,14 @@ export async function recordLoginAttempt(input: {
   ip: string | null;
   loginId: string;
   success: boolean;
-  userAgent?: string | null;
 }) {
   const supabase = getSupabaseAdmin();
-  const result = await supabase.from("auth_login_attempts").insert({
-    attempted_at: new Date().toISOString(),
-    ip: input.ip,
-    login_id: input.loginId,
-    success: input.success,
-    user_agent: input.userAgent ?? null,
-  });
-
-  if (!result.error) {
-    return;
-  }
-
-  const errorCode = (result.error as { code?: string }).code;
-  if (errorCode !== "42703") {
-    throw result.error;
-  }
-
-  const fallbackResult = await supabase.from("auth_login_attempts").insert({
+  await supabase.from("auth_login_attempts").insert({
     attempted_at: new Date().toISOString(),
     ip: input.ip,
     login_id: input.loginId,
     success: input.success,
   });
-
-  if (fallbackResult.error) {
-    throw fallbackResult.error;
-  }
 }
 
 type AppAuthSecurityRow = {
@@ -95,7 +60,6 @@ type AppAuthSecurityRow = {
 export async function registerFailedLoginAttempt(input: {
   ip: string | null;
   loginId: string;
-  userAgent?: string | null;
 }) {
   const attemptedIdentifier = normalizeLoginId(input.loginId);
   if (!attemptedIdentifier) return;
@@ -106,7 +70,6 @@ export async function registerFailedLoginAttempt(input: {
     ip: input.ip,
     loginId,
     success: false,
-    userAgent: input.userAgent ?? null,
   }).catch(() => undefined);
 
   const supabase = getSupabaseAdmin();
@@ -146,7 +109,6 @@ export async function registerFailedLoginAttempt(input: {
 export async function clearFailedLoginState(input: {
   ip: string | null;
   loginId: string;
-  userAgent?: string | null;
 }) {
   const attemptedIdentifier = normalizeLoginId(input.loginId);
   if (!attemptedIdentifier) return;
@@ -157,7 +119,6 @@ export async function clearFailedLoginState(input: {
     ip: input.ip,
     loginId,
     success: true,
-    userAgent: input.userAgent ?? null,
   }).catch(() => undefined);
 
   const supabase = getSupabaseAdmin();

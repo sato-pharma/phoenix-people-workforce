@@ -153,17 +153,8 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
     if (!filteredData) return null;
 
     const products = filteredData.productPerformance;
-    const trends = filteredData.trend;
-
-    const usePeriodKpis = Boolean(selectedPeriod) && trends.length > 0;
-    const kpiSource = usePeriodKpis ? trends : products;
-    let totalSales = 0;
-    let totalTarget = 0;
-
-    for (const row of kpiSource) {
-      totalSales += row.sales || 0;
-      totalTarget += row.target || 0;
-    }
+    const totalSales = data?.summary?.totalApprovedSales ?? 0;
+    const totalTarget = data?.summary?.totalApprovedTarget ?? 0;
 
     const achievementRate = totalTarget > 0 ? totalSales / totalTarget : 0;
     const remainingGap = Math.max(0, totalTarget - totalSales);
@@ -251,7 +242,7 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
       productMix,
       insights,
     };
-  }, [filteredData, selectedPeriod]);
+  }, [data, filteredData]);
 
   const kpis = salesAnalytics?.kpis ?? null;
   const topProducts = salesAnalytics?.topProducts ?? [];

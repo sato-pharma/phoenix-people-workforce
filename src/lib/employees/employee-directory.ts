@@ -2,6 +2,7 @@ import {
   normalizePayrollPaymentMode,
   type PayrollPaymentMode,
 } from "@/lib/payroll/policy";
+import { googleGeocodeAddress } from "@/lib/geo-intelligence/google";
 import { generateNextHrIdForLine } from "./hr-id-helper";
 
 export type EmployeeDirectoryRow = {
@@ -34,6 +35,12 @@ export type EmployeeDirectoryRow = {
   salaryPaymentMode: PayrollPaymentMode;
   positionId: number | null;
   positionTitle: string | null;
+  residenceAddress: string | null;
+  residenceArea: string | null;
+  residenceCity: string | null;
+  residenceGeocodeStatus: string | null;
+  residenceLatitude: number | null;
+  residenceLongitude: number | null;
   regionName: string | null;
   socialInsurance: number | null;
   subscriptionWage: number | null;
@@ -91,6 +98,9 @@ export type EmployeeMutationInput = {
   mobileNumber?: string | null;
   nameAr?: string | null;
   positionId?: number | null;
+  residenceAddress?: string | null;
+  residenceArea?: string | null;
+  residenceCity?: string | null;
   salaryPaymentMode?: string | null;
   workEmail?: string | null;
 };
@@ -143,6 +153,16 @@ type EmployeeCompensationDbRow = {
   taxes: number | null;
 };
 
+type EmployeeResidenceDbRow = {
+  employee_hr_id: string;
+  geocode_status: string | null;
+  residence_address: string | null;
+  residence_area: string | null;
+  residence_city: string | null;
+  residence_latitude: number | null;
+  residence_longitude: number | null;
+};
+
 type JoinedEmployeeDbRow = EmployeeDbRow & {
   areas?: { name: string | null } | null;
   departments?: { name: string | null } | null;
@@ -161,7 +181,7 @@ let directoryCache: {
 } | null = null;
 
 const CACHE_TTL = 30000; // 30 seconds
-const statusOptions = ["active", "inactive", "on_leave", "terminated"];
+const statusOptions = ["active", "inactive", "on_leave", "terminated", "resigned"];
 
 function getRequiredEnv(name: string) {
   const value = process.env[name];
@@ -407,6 +427,30 @@ async function loadCompensationByHrId(hrIds: string[]) {
   }
 }
 
+async function loadResidenceByHrId(hrIds: string[]) {
+  const cleanedHrIds = Array.from(new Set(hrIds.map(compact).filter(Boolean))) as string[];
+  if (cleanedHrIds.length === 0) {
+    return new Map<string, EmployeeResidenceDbRow>();
+  }
+
+  try {
+    const rows = await supabaseRest<EmployeeResidenceDbRow[]>(
+      `employee_locations?employee_hr_id=${encodeURIComponent(
+        textInFilter(cleanedHrIds),
+      )}&select=employee_hr_id,residence_address,residence_city,residence_area,residence_latitude,residence_longitude,geocode_status`,
+    );
+
+    return new Map(
+      rows.map((row) => [row.employee_hr_id.trim().toUpperCase(), row]),
+    );
+  } catch (error) {
+    if (isMissingRelationMessage(error)) {
+      return new Map<string, EmployeeResidenceDbRow>();
+    }
+    throw error;
+  }
+}
+
 export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const now = Date.now();
   if (directoryCache && now - directoryCache.timestamp < CACHE_TTL) {
@@ -459,6 +503,8 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     employeeRows = await supabaseRest<EmployeeDbRow[]>(`employees?${fallbackParams}`);
   }
 
+  const residenceByHrId = await loadResidenceByHrId(uniqueTextValues(employeeRows, "hr_id"));
+
   // Check if we got joined data
   const hasJoinedData = employeeRows.length > 0 && (employeeRows[0].employee_compensation || employeeRows[0].departments);
 
@@ -510,6 +556,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
     const employeesData = employeeRows.map((row) => {
       const compensation = compensationByHrId.get(row.hr_id);
+      const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
       return {
         areaId: row.area_id,
         areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
@@ -540,6 +587,12 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         salaryPaymentMode: normalizePayrollPaymentMode(compensation?.payment_mode),
         positionId: row.position_id,
         positionTitle: row.position_id ? positionTitles.get(row.position_id) ?? null : null,
+        residenceAddress: residence?.residence_address ?? null,
+        residenceArea: residence?.residence_area ?? null,
+        residenceCity: residence?.residence_city ?? null,
+        residenceGeocodeStatus: residence?.geocode_status ?? null,
+        residenceLatitude: residence?.residence_latitude ?? null,
+        residenceLongitude: residence?.residence_longitude ?? null,
         regionName: row.region_name ?? null,
         socialInsurance: compensation?.social_insurance ?? null,
         subscriptionWage: compensation?.subscription_wage ?? null,
@@ -620,6 +673,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
     const employeesData = employeeRows.map((row) => {
       const comp = compensationByHrId.get(row.hr_id);
+      const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
       return {
         areaId: row.area_id,
         areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
@@ -650,6 +704,12 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         salaryPaymentMode: normalizePayrollPaymentMode(comp?.payment_mode),
         positionId: row.position_id,
         positionTitle: row.position_id ? positionTitles.get(row.position_id) ?? null : null,
+        residenceAddress: residence?.residence_address ?? null,
+        residenceArea: residence?.residence_area ?? null,
+        residenceCity: residence?.residence_city ?? null,
+        residenceGeocodeStatus: residence?.geocode_status ?? null,
+        residenceLatitude: residence?.residence_latitude ?? null,
+        residenceLongitude: residence?.residence_longitude ?? null,
         regionName: row.region_name ?? null,
         socialInsurance: comp?.social_insurance ?? null,
         subscriptionWage: comp?.subscription_wage ?? null,
@@ -693,6 +753,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
   const employees = employeeRows.map((row) => {
     const compensation = compensationByHrId.get(row.hr_id);
+    const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
 
     return {
       areaId: row.area_id,
@@ -730,6 +791,12 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       positionTitle: row.position_id
         ? positionTitles.get(row.position_id) ?? null
         : null,
+      residenceAddress: residence?.residence_address ?? null,
+      residenceArea: residence?.residence_area ?? null,
+      residenceCity: residence?.residence_city ?? null,
+      residenceGeocodeStatus: residence?.geocode_status ?? null,
+      residenceLatitude: residence?.residence_latitude ?? null,
+      residenceLongitude: residence?.residence_longitude ?? null,
       regionName: row.region_name ?? null,
       socialInsurance: compensation?.social_insurance ?? null,
       subscriptionWage: compensation?.subscription_wage ?? null,
@@ -810,50 +877,62 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
     ]);
 
-  return employeeRows.map((row) => ({
-    areaId: row.area_id,
-    areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
-    birthDate: row.birth_date ?? null,
-    comprehensiveWage: null,
-    createdAt: row.created_at,
-    crmId: row.crm_id,
-    crmUsername: row.crm_username,
-    departmentId: row.department_id,
-    departmentName: row.department_id
-      ? departmentNames.get(row.department_id) ?? null
-      : null,
-    education: row.education,
-    employmentStatus: row.employment_status,
-    extraCostOfLiving: null,
-    fullName: row.full_name,
-    fuelAllowance: null,
-    grossSalary: null,
-    hireDate: row.hire_date,
-    hrId: row.hr_id,
-    jobTitle: row.job_title,
-    lineId: row.line_id,
-    lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
-    managerHrId: row.manager_hr_id,
-    managerName: row.manager_hr_id
-      ? managerNames.get(row.manager_hr_id) ?? null
-      : null,
-    medicalInsurance: null,
-    mobileNumber: row.mobile_number,
-    nameAr: row.name_ar,
-    netSalary: null,
-    salaryPaymentMode: "one_part",
-    positionId: row.position_id,
-    positionTitle: row.position_id
-      ? positionTitles.get(row.position_id) ?? null
-      : null,
-    regionName: row.region_name ?? null,
-    socialInsurance: null,
-    subscriptionWage: null,
-    taxes: null,
-    teamId: row.team_id,
-    updatedAt: row.updated_at,
-    workEmail: row.work_email,
-  }));
+  const residenceByHrId = await loadResidenceByHrId(uniqueTextValues(employeeRows, "hr_id"));
+
+  return employeeRows.map((row) => {
+    const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
+
+    return {
+      areaId: row.area_id,
+      areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
+      birthDate: row.birth_date ?? null,
+      comprehensiveWage: null,
+      createdAt: row.created_at,
+      crmId: row.crm_id,
+      crmUsername: row.crm_username,
+      departmentId: row.department_id,
+      departmentName: row.department_id
+        ? departmentNames.get(row.department_id) ?? null
+        : null,
+      education: row.education,
+      employmentStatus: row.employment_status,
+      extraCostOfLiving: null,
+      fullName: row.full_name,
+      fuelAllowance: null,
+      grossSalary: null,
+      hireDate: row.hire_date,
+      hrId: row.hr_id,
+      jobTitle: row.job_title,
+      lineId: row.line_id,
+      lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
+      managerHrId: row.manager_hr_id,
+      managerName: row.manager_hr_id
+        ? managerNames.get(row.manager_hr_id) ?? null
+        : null,
+      medicalInsurance: null,
+      mobileNumber: row.mobile_number,
+      nameAr: row.name_ar,
+      netSalary: null,
+      salaryPaymentMode: "one_part",
+      positionId: row.position_id,
+      positionTitle: row.position_id
+        ? positionTitles.get(row.position_id) ?? null
+        : null,
+      residenceAddress: residence?.residence_address ?? null,
+      residenceArea: residence?.residence_area ?? null,
+      residenceCity: residence?.residence_city ?? null,
+      residenceGeocodeStatus: residence?.geocode_status ?? null,
+      residenceLatitude: residence?.residence_latitude ?? null,
+      residenceLongitude: residence?.residence_longitude ?? null,
+      regionName: row.region_name ?? null,
+      socialInsurance: null,
+      subscriptionWage: null,
+      taxes: null,
+      teamId: row.team_id,
+      updatedAt: row.updated_at,
+      workEmail: row.work_email,
+    };
+  });
 }
 
 async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) {
@@ -950,6 +1029,53 @@ async function upsertEmployeePaymentMode(
   }
 }
 
+async function upsertEmployeeResidenceLocation(
+  input: EmployeeMutationInput,
+  hrId: string,
+) {
+  if (
+    input.residenceAddress === undefined &&
+    input.residenceArea === undefined &&
+    input.residenceCity === undefined
+  ) {
+    return;
+  }
+
+  const residenceAddress = compact(input.residenceAddress);
+  const residenceArea = compact(input.residenceArea);
+  const residenceCity = compact(input.residenceCity);
+  const geocodeQuery = [residenceAddress, residenceArea, residenceCity, "Egypt"]
+    .filter(Boolean)
+    .join(", ");
+  const geocoded = geocodeQuery
+    ? await googleGeocodeAddress(geocodeQuery).catch(() => null)
+    : null;
+
+  await supabaseRest<EmployeeResidenceDbRow[]>(
+    "employee_locations?on_conflict=employee_hr_id",
+    {
+      body: JSON.stringify({
+        employee_hr_id: hrId,
+        geocode_status: residenceAddress
+          ? geocoded
+            ? "success"
+            : "failed"
+          : "missing_address",
+        residence_address: residenceAddress,
+        residence_area: residenceArea,
+        residence_city: residenceCity,
+        residence_latitude: geocoded?.lat ?? null,
+        residence_longitude: geocoded?.lng ?? null,
+        updated_at: new Date().toISOString(),
+      }),
+      headers: {
+        Prefer: "resolution=merge-duplicates",
+      },
+      method: "POST",
+    },
+  );
+}
+
 export async function upsertEmployee(input: EmployeeMutationInput) {
   const hrId = compact(input.hrId)?.toUpperCase();
   let isUpdate = false;
@@ -976,6 +1102,7 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
 
   const actions: Promise<unknown>[] = [
     upsertEmployeePaymentMode(payload.hr_id, input.salaryPaymentMode),
+    upsertEmployeeResidenceLocation(input, payload.hr_id),
   ];
 
   // Requirement: closeVacancyForOffer should only run after a NEW employee is created

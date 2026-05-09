@@ -1,7 +1,7 @@
 ﻿import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
-import type { EmployeeDirectoryRow, SalesLinkStatus, SalesRecordInput, TargetRecord } from "@/lib/sales/types";
+import type { EmployeeDirectoryRow, SalesLinkStatus, SalesRecordInput } from "@/lib/sales/types";
 
 type LinkResult = {
   employeeHrId?: string | null;
@@ -247,9 +247,8 @@ export function linkSalesRecordAgainstDirectory(
   const diagnostics: string[] = [];
 
   if (isOthersBucket(source)) {
-    const bucketHrId = otherBucketForLine(source.line);
     return {
-      employeeHrId: bucketHrId,
+      employeeHrId: null,
       employeeCrmId: source.employeeCrmId ?? null,
       employeeLookupKey: "Others",
       employeeName: "Others",
@@ -454,22 +453,18 @@ export async function summarizeSalesLinkage(records: SalesRecordInput[]) {
   };
 }
 
-export async function linkTargetRecords(records: TargetRecord[]) {
+export async function filterClosingSheetRollupRecords(records: SalesRecordInput[]) {
   const directory = await loadDirectory();
-  return records.map((record) => {
-    const link = linkSalesRecordAgainstDirectory(record, directory);
-    return {
-      ...record,
-      employeeHrId: link.employeeHrId ?? record.employeeHrId ?? null,
-      employeeCrmId: link.employeeCrmId ?? record.employeeCrmId ?? null,
-      employeeLookupKey: link.employeeLookupKey ?? record.employeeLookupKey ?? null,
-      employeeName: link.employeeName ?? record.employeeName ?? null,
-      line: record.line || link.line || "Unassigned",
-      validationNotes:
-        link.linkStatus === "linked"
-          ? [...record.validationNotes, ...link.diagnostics]
-          : [...record.validationNotes, ...link.diagnostics.map((message) => `FAIL: ${message}`)],
-      status: link.linkStatus === "linked" ? record.status : "failed",
-    };
+  const directoryByHrId = new Map(directory.map((employee) => [normalize(employee.hr_id), employee]));
+
+  return records.filter((record) => {
+    const employeeHrId = compact(record.employeeHrId);
+    if (!employeeHrId) return true;
+
+    const employee = directoryByHrId.get(normalize(employeeHrId));
+    if (!employee) return true;
+
+    if (hasDsmRole(employee) || hasNsmRole(employee)) return false;
+    return true;
   });
 }

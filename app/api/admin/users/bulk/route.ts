@@ -15,7 +15,6 @@ const requiredColumns = [
   "HR_ID",
   "Role",
   "Line",
-  "Password",
   "Is Active",
 ] as const;
 
@@ -25,7 +24,6 @@ const templateHeaders = [
   "Role",
   "Line",
   "Manager_HR_ID",
-  "Password",
   "Is Active",
 ];
 
@@ -154,7 +152,6 @@ function buildTemplateWorkbook(
     { key: "role", width: 24 },
     { key: "line", width: 16 },
     { key: "manager_hr_id", width: 16 },
-    { key: "password", width: 16 },
     { key: "is_active", width: 12 },
   ];
   template.getRow(1).font = { bold: true };
@@ -164,7 +161,6 @@ function buildTemplateWorkbook(
     role: "Employee",
     line: "Other",
     manager_hr_id: "",
-    password: "",
     is_active: "true",
   });
 
@@ -175,7 +171,6 @@ function buildTemplateWorkbook(
       role: "Employee",
       line: "Other",
       manager_hr_id: "",
-      password: "",
       is_active: "true",
     });
   } else {
@@ -186,7 +181,6 @@ function buildTemplateWorkbook(
         role: "Employee",
         line: employee.lineName ?? "Other",
         manager_hr_id: employee.managerHrId ?? "",
-        password: "",
         is_active: "true",
       });
 
@@ -360,7 +354,6 @@ export async function POST(request: Request) {
       line: string;
       name: string;
       managerHrId: string;
-      password: string;
       isActive: string;
       email: string | null;
     };
@@ -386,14 +379,11 @@ export async function POST(request: Request) {
       const managerValue = readOptional("Manager_HR_ID");
       const nameFromExcel = readOptional("Name");
       const activeValue = read("Is Active");
-      const password = read("Password");
-
       const hasAnyData = Boolean(
         hrId ||
           roleText ||
           lineRaw ||
           managerValue ||
-          password ||
           nameFromExcel ||
           activeValue,
       );
@@ -402,7 +392,6 @@ export async function POST(request: Request) {
         roleText === "Employee" &&
         lineRaw === "Other" &&
         managerValue === "" &&
-        password === "" &&
         activeValue.toLowerCase() === "true" &&
         !nameFromExcel;
 
@@ -422,10 +411,6 @@ export async function POST(request: Request) {
       }
       if (line && !phoenixLines.some((item) => item.toLowerCase() === line.trim().toLowerCase())) {
         rowErrors.push(`Line "${line}" is invalid. Valid lines: ${phoenixLines.join(", ")}`);
-      }
-
-      if (password.length < 8) {
-        rowErrors.push("Password must be at least 8 characters");
       }
 
       const employee = directoryEmployees.find(
@@ -458,7 +443,6 @@ export async function POST(request: Request) {
         line: resolvedLine,
         name,
         managerHrId: readOptional("Manager_HR_ID") || employee?.managerHrId || "",
-        password,
         isActive: read("Is Active"),
         email: readOptional("Email") || null,
       });
@@ -514,7 +498,6 @@ export async function POST(request: Request) {
             loginId: row.hrId,
             managerHrId: row.managerHrId,
             name: row.name,
-            password: row.password,
             role: row.role,
           },
           { loginId: access.loginId ?? null, role: access.role },

@@ -12,8 +12,10 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import type { ComponentType } from "react";
 import { useMemo, useState } from "react";
 
+import { AdminCallout, AdminPageHero, AdminTableShell, adminPanelClassName } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatCurrencyValue, formatNumberValue } from "@/lib/i18n/format";
@@ -23,6 +25,20 @@ import type {
   PayrollExpenseReport,
 } from "@/lib/payroll/types";
 import { cn } from "@/lib/utils";
+
+const panelClassName = adminPanelClassName;
+const adminTableHeaderClassName = "px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+
+type ExpenseFilters = {
+  manager: string;
+  month: string;
+  payout: string;
+  reportId: string;
+  requestType: string;
+  specialist: string;
+  status: string;
+  transportationType: string;
+};
 
 type Props = {
   initialError: string | null;
@@ -158,30 +174,29 @@ function StatCard({
   tone = "orange",
   value,
 }: {
-  icon: typeof ReceiptText;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   sub: string;
   tone?: "orange" | "green" | "blue" | "red";
   value: string;
 }) {
   const tones = {
-    blue: "bg-sky-50 text-sky-700 ring-sky-100",
-    green: "bg-emerald-50 text-emerald-700 ring-emerald-100",
-    orange: "bg-orange-50 text-orange-700 ring-orange-100",
-    red: "bg-red-50 text-red-700 ring-red-100",
+    blue: "bg-[#EFF6FF] text-[#1D4ED8] ring-[#BFDBFE]",
+    green: "bg-[#ECFDF5] text-[#047857] ring-[#A7F3D0]",
+    orange: "bg-[#FFF7ED] text-[#C2410C] ring-[#FED7AA]",
+    red: "bg-[#FEF2F2] text-[#B91C1C] ring-[#FECACA]",
   };
 
   return (
-    <Card className="overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-[0_12px_34px_rgba(15,23,42,0.06)]">
-      <div className="h-1 bg-gradient-to-r from-orange-500 to-slate-900" />
-      <div className="flex items-center gap-4 p-5">
+    <Card className={cn(panelClassName, "p-5")}>
+      <div className="flex items-center gap-4">
         <span className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ring-1", tones[tone])}>
           <Icon className="h-5 w-5" />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
-          <p className="mt-1 truncate text-2xl font-black text-slate-950">{value}</p>
-          <p className="mt-1 text-xs font-medium text-slate-500">{sub}</p>
+          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</p>
+          <p className="mt-1 truncate text-2xl font-black text-[#0F172A]">{value}</p>
+          <p className="mt-1 text-xs font-medium text-[#64748B]">{sub}</p>
         </div>
       </div>
     </Card>
@@ -201,9 +216,9 @@ function SelectFilter({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</span>
+      <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.14em] text-[#64748B]">{label}</span>
       <select
-        className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+        className="h-10 w-full rounded-lg border border-[#DDE6F1] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#F97316] focus:ring-2 focus:ring-[#FED7AA]"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -222,24 +237,24 @@ function BarRows({ rows, title }: { rows: GroupRow[]; title: string }) {
   const max = Math.max(...rows.map((row) => row.total), 1);
 
   return (
-    <Card className="rounded-xl border-slate-200 bg-white p-5 shadow-[0_12px_34px_rgba(15,23,42,0.06)]">
-      <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-950">{title}</h2>
+    <Card className={`${panelClassName} p-5`}>
+      <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">{title}</h2>
       <div className="mt-4 space-y-3">
         {rows.slice(0, 8).map((row, index) => (
           <div className="grid grid-cols-[24px_minmax(0,1fr)_86px] items-center gap-3" key={row.key}>
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-100 text-xs font-black text-slate-600">
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#F8FAFC] text-xs font-black text-[#64748B]">
               {index + 1}
             </span>
             <div className="min-w-0">
               <div className="flex items-center justify-between gap-3">
-                <p className="truncate text-sm font-bold text-slate-900">{row.key}</p>
-                <p className="shrink-0 text-[11px] font-semibold text-slate-500">{formatNumber(row.count)} rows</p>
+                <p className="truncate text-sm font-bold text-[#0F172A]">{row.key}</p>
+                <p className="shrink-0 text-[11px] font-semibold text-[#64748B]">{formatNumber(row.count)} rows</p>
               </div>
-              <div className="mt-1.5 h-2 rounded-full bg-slate-100">
+              <div className="mt-1.5 h-2 rounded-full bg-[#F1F5F9]">
                 <div className="h-full rounded-full bg-orange-500" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
               </div>
             </div>
-            <p className="text-right text-xs font-black text-slate-700">{formatEGP(row.total).replace("EGP", "")}</p>
+            <p className="text-right text-xs font-black text-[#0F172A]">{formatEGP(row.total).replace("EGP", "")}</p>
           </div>
         ))}
       </div>
@@ -251,40 +266,40 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
   const max = Math.max(...rows.map((row) => row.total), 1);
 
   return (
-    <Card className="rounded-xl border-slate-200 bg-white p-5 shadow-[0_12px_34px_rgba(15,23,42,0.06)]">
+    <Card className={`${panelClassName} p-5`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-950">Monthly Comparison</h2>
-          <p className="mt-1 text-xs text-slate-500">Trip month comparison by travel, meetings, allowance, total, and KM.</p>
+          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Monthly Comparison</h2>
+          <p className="mt-1 text-xs text-[#64748B]">Trip month comparison by travel, meetings, allowance, total, and KM.</p>
         </div>
       </div>
-      <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
+      <div className="mt-4 overflow-hidden rounded-lg border border-[#E2E8F0]">
         <div className="overflow-x-auto">
           <table className="min-w-[760px] w-full text-left text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+            <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
               <tr>
-                <th className="px-3 py-2 font-black">Month</th>
-                <th className="px-3 py-2 font-black">Trips</th>
-                <th className="px-3 py-2 font-black">Travel</th>
-                <th className="px-3 py-2 font-black">Meeting</th>
-                <th className="px-3 py-2 font-black">Allowance</th>
-                <th className="px-3 py-2 font-black">Total</th>
-                <th className="px-3 py-2 font-black">KM</th>
-                <th className="px-3 py-2 font-black">Trend</th>
+                <th className={adminTableHeaderClassName}>Month</th>
+                <th className={adminTableHeaderClassName}>Trips</th>
+                <th className={adminTableHeaderClassName}>Travel</th>
+                <th className={adminTableHeaderClassName}>Meeting</th>
+                <th className={adminTableHeaderClassName}>Allowance</th>
+                <th className={adminTableHeaderClassName}>Total</th>
+                <th className={adminTableHeaderClassName}>KM</th>
+                <th className={adminTableHeaderClassName}>Trend</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
+            <tbody className="divide-y divide-[#E2E8F0] bg-white">
               {rows.map((row) => (
-                <tr className="hover:bg-slate-50/80" key={row.key}>
-                  <td className="px-3 py-2 font-bold text-slate-950">{compactMonth(row.key)}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatNumber(row.count)}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatEGP(row.travel)}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatEGP(row.meeting)}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatEGP(row.allowance)}</td>
-                  <td className="px-3 py-2 font-black text-orange-600">{formatEGP(row.total)}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatNumber(row.km)}</td>
+                <tr className="transition-colors hover:bg-[#F8FAFC]/80" key={row.key}>
+                  <td className="px-3 py-2 font-bold text-[#0F172A]">{compactMonth(row.key)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.count)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.travel)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.meeting)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.allowance)}</td>
+                  <td className="px-3 py-2 font-black text-[#EA580C]">{formatEGP(row.total)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.km)}</td>
                   <td className="px-3 py-2">
-                    <div className="h-2 w-28 rounded-full bg-slate-100">
+                    <div className="h-2 w-28 rounded-full bg-[#F1F5F9]">
                       <div className="h-full rounded-full bg-orange-500" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
                     </div>
                   </td>
@@ -300,37 +315,37 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
 
 function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
   return (
-    <Card className="rounded-xl border-slate-200 bg-white p-5 shadow-[0_12px_34px_rgba(15,23,42,0.06)]">
-      <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-950">Specialist Detailed Comparison</h2>
-      <p className="mt-1 text-xs text-slate-500">Compare specialists by trips, total, KM, cost per trip, and cost per KM.</p>
-      <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
+    <Card className={`${panelClassName} p-5`}>
+      <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Specialist Detailed Comparison</h2>
+      <p className="mt-1 text-xs text-[#64748B]">Compare specialists by trips, total, KM, cost per trip, and cost per KM.</p>
+      <div className="mt-4 overflow-hidden rounded-lg border border-[#E2E8F0]">
         <div className="overflow-x-auto">
           <table className="min-w-[860px] w-full text-left text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+            <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
               <tr>
-                <th className="px-3 py-2 font-black">Specialist</th>
-                <th className="px-3 py-2 font-black">Trips</th>
-                <th className="px-3 py-2 font-black">Total</th>
-                <th className="px-3 py-2 font-black">Travel</th>
-                <th className="px-3 py-2 font-black">Meeting</th>
-                <th className="px-3 py-2 font-black">Allowance</th>
-                <th className="px-3 py-2 font-black">KM</th>
-                <th className="px-3 py-2 font-black">Cost / Trip</th>
-                <th className="px-3 py-2 font-black">Cost / KM</th>
+                <th className={adminTableHeaderClassName}>Specialist</th>
+                <th className={adminTableHeaderClassName}>Trips</th>
+                <th className={adminTableHeaderClassName}>Total</th>
+                <th className={adminTableHeaderClassName}>Travel</th>
+                <th className={adminTableHeaderClassName}>Meeting</th>
+                <th className={adminTableHeaderClassName}>Allowance</th>
+                <th className={adminTableHeaderClassName}>KM</th>
+                <th className={adminTableHeaderClassName}>Cost / Trip</th>
+                <th className={adminTableHeaderClassName}>Cost / KM</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
+            <tbody className="divide-y divide-[#E2E8F0] bg-white">
               {rows.slice(0, 50).map((row) => (
-                <tr className="hover:bg-slate-50/80" key={row.key}>
-                  <td className="max-w-[220px] truncate px-3 py-2 font-bold text-slate-950">{row.key}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatNumber(row.count)}</td>
-                  <td className="px-3 py-2 font-black text-orange-600">{formatEGP(row.total)}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatEGP(row.travel)}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatEGP(row.meeting)}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatEGP(row.allowance)}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatNumber(row.km)}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatEGP(row.count ? row.total / row.count : 0)}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatEGP(row.km ? row.total / row.km : 0)}</td>
+                <tr className="transition-colors hover:bg-[#F8FAFC]/80" key={row.key}>
+                  <td className="max-w-[220px] truncate px-3 py-2 font-bold text-[#0F172A]">{row.key}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.count)}</td>
+                  <td className="px-3 py-2 font-black text-[#EA580C]">{formatEGP(row.total)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.travel)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.meeting)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.allowance)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.km)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.count ? row.total / row.count : 0)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.km ? row.total / row.km : 0)}</td>
                 </tr>
               ))}
             </tbody>
@@ -346,41 +361,41 @@ function DestinationChart({ rows }: { rows: GroupRow[] }) {
   const topRows = rows.slice(0, 10);
 
   return (
-    <Card className="rounded-xl border-slate-200 bg-white p-5 shadow-[0_12px_34px_rgba(15,23,42,0.06)]">
+    <Card className={`${panelClassName} p-5`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-950">Top Destinations</h2>
-          <p className="mt-1 text-xs text-slate-500">Destination names are normalized before comparison. Bars show total cost; side metric shows cost per visit.</p>
+          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Top Destinations</h2>
+          <p className="mt-1 text-xs text-[#64748B]">Destination names are normalized before comparison. Bars show total cost; side metric shows cost per visit.</p>
         </div>
-        <span className="rounded-full bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700">
+        <span className="rounded-full bg-[#FFF7ED] px-3 py-1 text-xs font-bold text-[#C2410C]">
           {formatNumber(rows.length)} destinations
         </span>
       </div>
       <div className="mt-5 space-y-4">
         {topRows.length === 0 ? (
-          <p className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">No destination data for the current filters.</p>
+          <p className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-4 text-sm text-[#64748B]">No destination data for the current filters.</p>
         ) : (
           topRows.map((row, index) => {
             const costPerVisit = row.count ? row.total / row.count : 0;
             return (
               <div className="grid gap-2" key={row.key}>
                 <div className="grid grid-cols-[28px_minmax(0,1fr)_120px] items-center gap-3">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-xs font-black text-slate-600">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#F8FAFC] text-xs font-black text-[#64748B]">
                     {index + 1}
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-black text-slate-950">{row.key}</p>
-                    <p className="text-[11px] font-semibold text-slate-500">
+                    <p className="truncate text-sm font-black text-[#0F172A]">{row.key}</p>
+                    <p className="text-[11px] font-semibold text-[#64748B]">
                       {formatNumber(row.count)} visits - {formatNumber(row.km)} KM
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-black text-orange-600">{formatEGP(row.total)}</p>
-                    <p className="text-[11px] font-semibold text-slate-500">{formatEGP(costPerVisit)} / visit</p>
+                    <p className="text-sm font-black text-[#EA580C]">{formatEGP(row.total)}</p>
+                    <p className="text-[11px] font-semibold text-[#64748B]">{formatEGP(costPerVisit)} / visit</p>
                   </div>
                 </div>
-                <div className="ml-10 h-2.5 rounded-full bg-slate-100">
-                  <div className="h-full rounded-full bg-gradient-to-r from-orange-500 to-slate-900" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
+                <div className="ml-10 h-2.5 rounded-full bg-[#F1F5F9]">
+                  <div className="h-full rounded-full bg-gradient-to-r from-[#FB923C] to-[#FDBA74]" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
                 </div>
               </div>
             );
@@ -398,7 +413,7 @@ export function ExpensesDashboard({
   initialReports,
   portalMode = false,
 }: Props) {
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<ExpenseFilters>({
     manager: "",
     month: "",
     payout: "",
@@ -481,105 +496,157 @@ export function ExpensesDashboard({
   const requestRows = useMemo(() => groupBy(filteredExpenses, (expense) => expense.requestType), [filteredExpenses]);
   const transportRows = useMemo(() => groupBy(filteredExpenses, (expense) => expense.transportationType || "No Transportation"), [filteredExpenses]);
   const statusRows = useMemo(() => groupBy(filteredExpenses, (expense) => expense.status), [filteredExpenses]);
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+
+  const compactFilterValue = (name: keyof ExpenseFilters) => {
+    switch (name) {
+      case "month":
+      case "payout":
+        return compactMonth(filters[name]);
+      default:
+        return filters[name];
+    }
+  };
+
+  const filterLabelByKey: Record<keyof ExpenseFilters, string> = {
+    manager: "Manager",
+    month: "Trip Month",
+    payout: "Payout Month",
+    reportId: "Uploaded Report",
+    requestType: "Request Type",
+    specialist: "Specialist",
+    status: "Status",
+    transportationType: "Transportation",
+  };
+
+  const activeFilters = (Object.entries(filters) as Array<[keyof ExpenseFilters, string]>)
+    .map(([key, value]) => {
+      if (!value) return null;
+      return { key, label: `${filterLabelByKey[key]}: ${compactFilterValue(key) || value}` };
+    })
+    .filter(Boolean) as Array<{ key: keyof ExpenseFilters; label: string }>;
+
+  function clearFilter(name: keyof ExpenseFilters) {
+    setFilters((current) => ({ ...current, [name]: "" }));
+  }
+
+  function clearFilters() {
+    setFilters({
+      manager: "",
+      month: "",
+      payout: "",
+      reportId: "",
+      requestType: "",
+      specialist: "",
+      status: "",
+      transportationType: "",
+    });
+  }
 
   if (initialError) {
     return (
-      <Card className="border-red-200 bg-red-50">
-        <div className="flex items-center gap-3">
-          <AlertTriangle className="h-5 w-5 text-red-600" />
-          <p className="text-sm font-semibold text-red-900">{initialError}</p>
-        </div>
-      </Card>
+      <div className="space-y-5">
+        <AdminPageHero
+          description="The expenses dashboard failed to load and cannot render analytics."
+          eyebrow="Expenses dashboard"
+          icon={<AlertTriangle className="h-3.5 w-3.5" />}
+          title="Unable to load expense analytics"
+        />
+        <AdminCallout tone="danger">
+          <AlertTriangle className="mt-0.5 h-5 w-5 text-[#B91C1C]" />
+          <p className="font-semibold text-[#B91C1C]">{initialError}</p>
+        </AdminCallout>
+      </div>
     );
   }
 
   return (
     <div className="space-y-5">
-      <section className="overflow-hidden rounded-2xl border border-slate-900 bg-slate-950 shadow-[0_18px_46px_rgba(15,23,42,0.16)]">
-        <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:p-6">
-          <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">
-              {portalMode ? "Employee Expenses" : "Expense Intelligence"}
-            </p>
-            <h1 className="mt-2 text-2xl font-black text-white lg:text-3xl">
-              {portalMode ? "My Expenses Dashboard" : "Expenses Dashboard"}
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">
-              {portalMode
-                ? "Your expense activity by trip month, payout period, request type, transportation, and approval status."
-                : "Detailed comparison for uploaded expense sheets by month, payout period, specialist, status, request type, transportation, and cost structure."}
-            </p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              {!portalMode && (
-                <Link href="/payroll/expenses">
-                  <Button className="gap-2 border border-white/10 bg-white text-slate-950 hover:bg-white/90">
-                    <FileSpreadsheet className="h-4 w-4" />
-                    Expense Reports
-                  </Button>
-                </Link>
-              )}
-              <Button
-                className="gap-2 border border-white/10 bg-white/10 text-white hover:bg-white/15"
-                onClick={() => setFilters({ manager: "", month: "", payout: "", reportId: "", requestType: "", specialist: "", status: "", transportationType: "" })}
-                variant="secondary"
-              >
-                <BarChart3 className="h-4 w-4" />
-                Reset View
-              </Button>
-            </div>
+      <AdminPageHero
+        actions={
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+            {!portalMode && (
+              <Link href="/payroll/expenses">
+                <Button className="gap-2 rounded-xl">
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Expense Upload Workflow
+                </Button>
+              </Link>
+            )}
+            <Button
+              className="gap-2 rounded-xl"
+              onClick={clearFilters}
+              variant="secondary"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Reset Filters {activeFilterCount ? `(${activeFilterCount})` : ""}
+            </Button>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 text-white">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">Loaded Reports</p>
-              <p className="mt-1 text-lg font-black">{formatNumber(initialReports.length)}</p>
-              <p className="mt-2 text-xs text-white/60">{formatNumber(initialExpenses.length)} saved rows</p>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 text-white">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">Filtered Total</p>
-              <p className="mt-1 truncate text-lg font-black">{formatEGP(summary.total)}</p>
-              <p className="mt-2 text-xs text-white/60">{formatNumber(summary.trips)} trips</p>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 text-white">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">Approved</p>
-              <p className="mt-1 truncate text-lg font-black">{formatEGP(summary.approvedAmount)}</p>
-              <p className="mt-2 text-xs text-white/60">{formatNumber(summary.approvedRows)} rows approved by HR</p>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 text-white">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">Distance</p>
-              <p className="mt-1 text-lg font-black">{formatNumber(summary.km)} KM</p>
-              <p className="mt-2 text-xs text-white/60">{summary.km ? formatEGP(summary.total / summary.km) : formatEGP(0)} / KM</p>
-            </div>
+        }
+        badges={(
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Reports: {formatNumber(initialReports.length)}</span>
+            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Saved rows: {formatNumber(initialExpenses.length)}</span>
+            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Filtered: {formatNumber(summary.trips)} trips</span>
+            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">{formatEGP(summary.total)} total</span>
           </div>
-        </div>
-      </section>
+        )}
+        description={portalMode
+          ? "Track your expense distribution across trip month, payout month, specialist, status, and transportation with refined dashboard views."
+          : "Use this dashboard to review uploaded expense performance by month, payout period, specialist, status, request type, and location in one compact surface."
+        }
+        eyebrow={portalMode ? "Employee Expenses" : "Expense Intelligence"}
+        icon={<BarChart3 className="h-3.5 w-3.5" />}
+        title={portalMode ? "My Expenses Dashboard" : "Expenses Dashboard"}
+      />
 
-      <Card className="rounded-xl border-slate-200 bg-white p-0 shadow-[0_12px_34px_rgba(15,23,42,0.06)]">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Comparison Filters</p>
-          <p className="mt-1 text-xs text-slate-500">Use filters to compare exact months, payout periods, specialists, report files, statuses, and expense types.</p>
+      <AdminTableShell
+        action={activeFilterCount > 0 ? (
+          <Button onClick={clearFilters} variant="secondary">
+            Reset Filters ({activeFilterCount})
+          </Button>
+        ) : null}
+        description="Use filters to compare exact months, payout periods, specialists, report files, statuses, and expense types."
+        title="Comparison Filters"
+      >
+        <div className="space-y-4 p-4 sm:p-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <SelectFilter label="Manager" onChange={(manager) => setFilters((current) => ({ ...current, manager }))} options={options.managers} value={filters.manager} />
+            <SelectFilter label="Trip Month" onChange={(label) => {
+              const value = options.months.find((item) => compactMonth(item) === label) ?? "";
+              setFilters((current) => ({ ...current, month: value }));
+            }} options={options.months.map(compactMonth)} value={filters.month ? compactMonth(filters.month) : ""} />
+            <SelectFilter label="Payout Month" onChange={(label) => {
+              const value = options.payouts.find((item) => compactMonth(item) === label) ?? "";
+              setFilters((current) => ({ ...current, payout: value }));
+            }} options={options.payouts.map(compactMonth)} value={filters.payout ? compactMonth(filters.payout) : ""} />
+            <SelectFilter label="Specialist" onChange={(specialist) => setFilters((current) => ({ ...current, specialist }))} options={options.specialists} value={filters.specialist} />
+            <SelectFilter label="Status" onChange={(status) => setFilters((current) => ({ ...current, status }))} options={options.statuses} value={filters.status} />
+            <SelectFilter label="Request Type" onChange={(requestType) => setFilters((current) => ({ ...current, requestType }))} options={options.requestTypes} value={filters.requestType} />
+            <SelectFilter label="Transportation" onChange={(transportationType) => setFilters((current) => ({ ...current, transportationType }))} options={options.transportationTypes} value={filters.transportationType} />
+            <SelectFilter
+              label="Uploaded Report"
+              onChange={(reportId) => setFilters((current) => ({ ...current, reportId }))}
+              options={initialReports.map((report) => report.id)}
+              value={filters.reportId}
+            />
+          </div>
+          {activeFilters.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 border-t border-[#E2E8F0] pt-4">
+              {activeFilters.map((filter) => (
+                <button
+                  className="inline-flex items-center rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-1.5 text-xs font-semibold text-[#64748B] transition hover:border-[#F97316] hover:text-[#EA580C]"
+                  key={filter.key}
+                  onClick={() => clearFilter(filter.key)}
+                  type="button"
+                >
+                  {filter.label} [x]
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
-        <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
-          <SelectFilter label="Manager" onChange={(manager) => setFilters((current) => ({ ...current, manager, specialist: "" }))} options={options.managers} value={filters.manager} />
-          <SelectFilter label="Trip Month" onChange={(label) => {
-            const value = options.months.find((item) => compactMonth(item) === label) ?? "";
-            setFilters((current) => ({ ...current, month: value }));
-          }} options={options.months.map(compactMonth)} value={filters.month ? compactMonth(filters.month) : ""} />
-          <SelectFilter label="Payout Month" onChange={(label) => {
-            const value = options.payouts.find((item) => compactMonth(item) === label) ?? "";
-            setFilters((current) => ({ ...current, payout: value }));
-          }} options={options.payouts.map(compactMonth)} value={filters.payout ? compactMonth(filters.payout) : ""} />
-          <SelectFilter label="Specialist" onChange={(specialist) => setFilters((current) => ({ ...current, specialist }))} options={options.specialists} value={filters.specialist} />
-          <SelectFilter label="Status" onChange={(status) => setFilters((current) => ({ ...current, status }))} options={options.statuses} value={filters.status} />
-          <SelectFilter label="Request Type" onChange={(requestType) => setFilters((current) => ({ ...current, requestType }))} options={options.requestTypes} value={filters.requestType} />
-          <SelectFilter label="Transportation" onChange={(transportationType) => setFilters((current) => ({ ...current, transportationType }))} options={options.transportationTypes} value={filters.transportationType} />
-          <SelectFilter
-            label="Uploaded Report"
-            onChange={(reportId) => setFilters((current) => ({ ...current, reportId }))}
-            options={initialReports.map((report) => report.id)}
-            value={filters.reportId}
-          />
-        </div>
-      </Card>
+      </AdminTableShell>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard icon={ReceiptText} label="Total Expenses" sub={`${formatNumber(summary.trips)} trips`} value={formatEGP(summary.total)} />
@@ -607,27 +674,27 @@ export function ExpensesDashboard({
         <SpecialistComparison rows={specialistRows} />
       </div>
 
-      <Card className="rounded-xl border-slate-200 bg-white p-5 shadow-[0_12px_34px_rgba(15,23,42,0.06)]">
+      <Card className={`${panelClassName} p-5`}>
         <div className="grid gap-4 md:grid-cols-3">
           <div className="flex items-center gap-3">
-            <MapPinned className="h-5 w-5 text-primary" />
+            <MapPinned className="h-5 w-5 text-[#F97316]" />
             <div>
-              <p className="text-xs text-slate-500">Travel + Allowance</p>
-              <p className="font-bold text-slate-950">{formatEGP(summary.travel + filteredExpenses.reduce((sum, expense) => sum + expense.allowance, 0))}</p>
+              <p className="text-xs text-[#64748B]">Travel + Allowance</p>
+              <p className="font-bold text-[#0F172A]">{formatEGP(summary.travel + filteredExpenses.reduce((sum, expense) => sum + expense.allowance, 0))}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <ReceiptText className="h-5 w-5 text-primary" />
+            <ReceiptText className="h-5 w-5 text-[#F97316]" />
             <div>
-              <p className="text-xs text-slate-500">Cost / Trip</p>
-              <p className="font-bold text-slate-950">{formatEGP(summary.trips ? summary.total / summary.trips : 0)}</p>
+              <p className="text-xs text-[#64748B]">Cost / Trip</p>
+              <p className="font-bold text-[#0F172A]">{formatEGP(summary.trips ? summary.total / summary.trips : 0)}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Car className="h-5 w-5 text-primary" />
+            <Car className="h-5 w-5 text-[#F97316]" />
             <div>
-              <p className="text-xs text-slate-500">Cost / KM</p>
-              <p className="font-bold text-slate-950">{formatEGP(summary.km ? summary.total / summary.km : 0)}</p>
+              <p className="text-xs text-[#64748B]">Cost / KM</p>
+              <p className="font-bold text-[#0F172A]">{formatEGP(summary.km ? summary.total / summary.km : 0)}</p>
             </div>
           </div>
         </div>
@@ -635,3 +702,4 @@ export function ExpensesDashboard({
     </div>
   );
 }
+

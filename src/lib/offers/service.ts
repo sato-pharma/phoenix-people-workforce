@@ -327,9 +327,6 @@ export async function getOpenMedicalRepVacancies(): Promise<VacancyLookupRow[]> 
     ),
   ]);
 
-  console.log("OPEN_MED_REP_VACANCIES_RAW_COUNT", vacancies.length);
-  console.log("OPEN_MED_REP_VACANCIES_FIRST", vacancies[0]);
-
   const lineMap = new Map(lines.map((l) => [String(l.value), l.label]));
   const areaMap = new Map(areas.map((a) => [String(a.value), a.label]));
   const positionMap = new Map(
@@ -371,7 +368,6 @@ export async function getOpenMedicalRepVacancies(): Promise<VacancyLookupRow[]> 
     })
     .filter((v): v is NonNullable<typeof v> => v !== null);
 
-  console.log("vacancies", medicalRepVacancies);
   return medicalRepVacancies;
 }
 

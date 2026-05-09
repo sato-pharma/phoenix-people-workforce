@@ -341,7 +341,7 @@ function AccessPanel({
             href="#"
             onClick={(event) => event.preventDefault()}
           >
-            Forgot password?
+            Ask admin for a password link
           </a>
         </div>
 

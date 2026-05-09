@@ -12,10 +12,15 @@ import {
   type BusinessScope,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { listBrickReferenceRows, normalizeBrickText } from "@/lib/bricks/service";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import type { PayrollExpenseApproval, SalaryRecord } from "@/lib/payroll/types";
+import type {
+  PayrollExpenseApproval,
+  PayrollExpenseReport,
+  SalaryRecord,
+} from "@/lib/payroll/types";
 import type { SalesDashboardData } from "@/lib/sales/types";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 
@@ -286,6 +291,18 @@ function normalizeTeamComparisonPeriod(value: string | null | undefined) {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (!normalized || normalized === "all" || normalized === "all periods" || normalized === "all-periods" || normalized === "all_periods") return null;
   return /^\d{4}-\d{2}$/.test(normalized) ? normalized : null;
+}
+
+function normalizeTeamComparisonPeriods(value: string | string[] | null | undefined) {
+  const values = Array.isArray(value) ? value : [value];
+  return Array.from(
+    new Set(
+      values
+        .flatMap((entry) => String(entry ?? "").split(","))
+        .map((entry) => normalizeTeamComparisonPeriod(entry))
+        .filter(Boolean) as string[],
+    ),
+  ).sort();
 }
 
 function toInt(value: unknown): number | null {
@@ -1450,6 +1467,12 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     salaryPaymentMode: "one_part",
     positionId: null,
     positionTitle: null,
+    residenceAddress: null,
+    residenceArea: null,
+    residenceCity: null,
+    residenceGeocodeStatus: null,
+    residenceLatitude: null,
+    residenceLongitude: null,
     regionName: null,
     socialInsurance: null,
     subscriptionWage: null,
@@ -1775,8 +1798,8 @@ export type MedicalRepPortalData = {
     overviewSales: number;
     overviewTarget: number;
     growthVsLastMonthPercent: number | null;
-    familyContribution: Array<{ name: string; value: number; percentage?: number }>;
-    productContribution: Array<{ name: string; value: number; percentage?: number }>;
+    familyContribution: Array<{ name: string; sales: number; units: number; salesPercentage?: number; unitsPercentage?: number }>;
+    productContribution: Array<{ name: string; sales: number; units: number; salesPercentage?: number; unitsPercentage?: number }>;
     teamComparisonPeriod: string | null;
     rankInTeam: { position: number; total: number } | null;
     teamComparison: Array<{
@@ -1828,6 +1851,172 @@ export function toPeriodLabel(value: string) {
   return new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(
     new Date(Date.UTC(year, month - 1, 1)),
   );
+}
+
+function expensePeriodKey(expense: {
+  date?: string | null;
+  payoutMonth?: number | null;
+  payoutYear?: number | null;
+}) {
+  const rawDate = String(expense.date ?? "").trim();
+  if (rawDate) {
+    const date = new Date(rawDate);
+    if (!Number.isNaN(date.getTime())) {
+      return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+    }
+  }
+
+  if (
+    Number.isFinite(expense.payoutYear as number | null) &&
+    Number.isFinite(expense.payoutMonth as number | null)
+  ) {
+    return `${expense.payoutYear}-${String(expense.payoutMonth).padStart(2, "0")}`;
+  }
+
+  return null;
+}
+
+function normalizeExpenseRequestType(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().replace(/\s+/g, " ");
+  return normalized || "Other";
+}
+
+function isMissingOutstationTable(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes("outstation_expense_requests") ||
+    message.includes("could not find the table") ||
+    message.includes("schema cache") ||
+    (message.includes("relation") && message.includes("does not exist"))
+  );
+}
+
+function expenseTypeLabel(value: unknown) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "traveling") return "Traveling";
+  if (normalized === "meeting") return "Meeting";
+  if (normalized === "other") return "Other";
+  return "Other";
+}
+
+function statusLabelFromOutstation(value: unknown) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized.includes("approve") || normalized.includes("confirm")) return "Confirmed by HR";
+  if (normalized.includes("reject") || normalized.includes("decline")) return "Declined";
+  return "Pending";
+}
+
+function mapOutstationExpenseToPayrollApproval(row: Record<string, unknown>): PayrollExpenseApproval {
+  const status = statusLabelFromOutstation(row.status);
+  const requestType = expenseTypeLabel(row.expense_type);
+  const transportationType = String(row.transportation_type ?? "car").trim() || "car";
+  const expectedTotal = toNumber(row.expected_total_amount);
+  const claimedTotal = toNumber(row.claimed_total_amount);
+  const total = claimedTotal > 0 ? claimedTotal : expectedTotal;
+  const ticketAmount = toNumber(row.ticket_amount);
+  const fuelAmount = toNumber(row.fuel_amount);
+  const tripId = `OUT-${String(row.id ?? "").trim() || "request"}`;
+  const createdAt = String(row.created_at ?? "").trim();
+  const tripStartDate = String(row.trip_start_date ?? createdAt).trim();
+  const tripEndDate = String(row.trip_end_date ?? tripStartDate).trim();
+  const employeeHrId = String(row.employee_hr_id ?? "").trim();
+  const employeeName = String(row.employee_name ?? "").trim();
+  const destination =
+    String(row.to_label ?? "").trim() ||
+    [row.to_area, row.to_city].map((value) => String(value ?? "").trim()).filter(Boolean).join(", ");
+  const origin =
+    String(row.residence_address ?? "").trim() ||
+    [row.residence_area, row.residence_city].map((value) => String(value ?? "").trim()).filter(Boolean).join(", ");
+
+  return {
+    allowance: toNumber(row.allowance_amount),
+    amWorkload: 0,
+    approvedAt: null,
+    approvedBy: null,
+    date: tripStartDate,
+    description: String(row.notes ?? "").trim() || "Live outstation expense request",
+    from: origin,
+    hr: employeeName,
+    hrApproved: status === "Confirmed by HR",
+    hrComment: String(row.approval_reason ?? "").trim(),
+    hrId: employeeHrId,
+    hrNotes: String(row.eligibility_reason ?? "").trim(),
+    km: toNumber(row.distance_km ?? row.distance_from_residence_km),
+    location: destination,
+    meetingAmount: requestType === "Meeting" ? total : 0,
+    open: "",
+    payoutMonth: (() => {
+      const date = new Date(tripStartDate || createdAt);
+      return Number.isNaN(date.getTime()) ? 0 : date.getUTCMonth() + 1;
+    })(),
+    payoutYear: (() => {
+      const date = new Date(tripStartDate || createdAt);
+      return Number.isNaN(date.getTime()) ? 0 : date.getUTCFullYear();
+    })(),
+    pmWorkload: 0,
+    reportId: null,
+    requestType,
+    returnTicketAmount: 0,
+    row: Number(row.id ?? 0),
+    sourceFileName: "Live Outstation Requests",
+    specialist: employeeName,
+    status,
+    to: destination,
+    toDate: tripEndDate,
+    total,
+    transportationType,
+    travelCost: ticketAmount + fuelAmount,
+    tripId,
+    tripType: requestType === "Traveling" ? "Travel" : requestType,
+  } as PayrollExpenseApproval;
+}
+
+async function listOutstationExpensesForPortal(hrIds?: Array<string | null | undefined>) {
+  const normalizedFilter = new Set(
+    (hrIds ?? [])
+      .map((hrId) => normalizeHrIdForAccess(hrId))
+      .filter(Boolean) as string[],
+  );
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("outstation_expense_requests")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    if (isMissingOutstationTable(error)) return [];
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as Array<Record<string, unknown>>)
+    .map(mapOutstationExpenseToPayrollApproval)
+    .filter((expense) => {
+      if (normalizedFilter.size === 0) return true;
+      const canonicalHrId = normalizeHrIdForAccess(expense.hrId);
+      return Boolean(canonicalHrId && normalizedFilter.has(canonicalHrId));
+    });
+}
+
+function resolveExpenseLocationCandidates(
+  expense: Pick<PayrollExpenseApproval, "location" | "to" | "from">,
+) {
+  const rawValues = [expense.location, expense.to, expense.from]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+  const ordered = new Set<string>();
+
+  rawValues.forEach((value) => {
+    ordered.add(value);
+
+    value
+      .split(/(?:->|\/|\\|\||,|;|\n|\r)+/g)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .forEach((part) => ordered.add(part));
+  });
+
+  return Array.from(ordered);
 }
 
 function serviceDurationText(days: number) {
@@ -2230,7 +2419,7 @@ export async function getMedicalRepPortalData(
     }
 
     // Prefetch dashboards to avoid double fetching inside getEmployeePortalData
-    const [salesDashboard, payrollDashboard, expenses, expenseReports] = await Promise.all([
+    const [salesDashboard, payrollDashboard, historicalExpenses, liveOutstationExpenses, expenseReports] = await Promise.all([
       salesScope === "LINE" 
         ? getEmployeePortalSalesDashboard(null, { line: currentUser.line })
         : targetSalesHrIds.length > 0 
@@ -2238,11 +2427,14 @@ export async function getMedicalRepPortalData(
           : Promise.resolve(null),
       currentHrId ? getEmployeePortalPayrollDashboard(currentHrId) : Promise.resolve(null),
       listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
+      listOutstationExpensesForPortal(currentHrId ? [currentHrId] : []),
       listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     ]);
+    const expenses = [...historicalExpenses, ...liveOutstationExpenses];
 
     if (isDevelopment) {
       console.debug("[employee-portal] fetched expenses count:", expenses.length);
+      console.debug("[employee-portal] fetched live outstation expenses count:", liveOutstationExpenses.length);
       console.debug("[employee-portal] fetched reports count:", expenseReports.length);
     }
 
@@ -2301,11 +2493,12 @@ export async function getMedicalRepPortalData(
           const product = String((item as Record<string, unknown>).product ?? "Unknown");
           return {
             name: product,
-            value: Number((item as Record<string, unknown>).sales ?? 0),
+            sales: Number((item as Record<string, unknown>).sales ?? 0),
+            units: Number((item as Record<string, unknown>).salesUnits ?? 0),
           };
         })
-        .filter((item) => item.value > 0)
-        .sort((a, b) => b.value - a.value)
+        .filter((item) => item.sales > 0 || item.units > 0)
+        .sort((a, b) => b.sales - a.sales)
         .slice(0, 5)
     : [];
 
@@ -2313,22 +2506,27 @@ export async function getMedicalRepPortalData(
     ? salesDashboard.familyMatrix
         .map((item) => ({
           name: String((item as Record<string, unknown>).name ?? "Unknown"),
-          value: Number((item as Record<string, unknown>).sales ?? 0),
+          sales: Number((item as Record<string, unknown>).sales ?? 0),
+          units: Number((item as Record<string, unknown>).units ?? 0),
         }))
-        .filter((item) => item.value > 0)
-        .sort((a, b) => b.value - a.value)
+        .filter((item) => item.sales > 0 || item.units > 0)
+        .sort((a, b) => b.sales - a.sales)
     : [];
 
-  const totalProductSales = productContribution.reduce((sum, p) => sum + p.value, 0);
+  const totalProductSales = productContribution.reduce((sum, p) => sum + p.sales, 0);
+  const totalProductUnits = productContribution.reduce((sum, p) => sum + p.units, 0);
   const productContributionWithPercent = productContribution.map(p => ({
     ...p,
-    percentage: totalProductSales > 0 ? (p.value / totalProductSales) * 100 : 0
+    salesPercentage: totalProductSales > 0 ? (p.sales / totalProductSales) * 100 : 0,
+    unitsPercentage: totalProductUnits > 0 ? (p.units / totalProductUnits) * 100 : 0,
   }));
 
-  const totalFamilySales = familyContribution.reduce((sum, f) => sum + f.value, 0);
+  const totalFamilySales = familyContribution.reduce((sum, f) => sum + f.sales, 0);
+  const totalFamilyUnits = familyContribution.reduce((sum, f) => sum + f.units, 0);
   const familyContributionWithPercent = familyContribution.map(f => ({
     ...f,
-    percentage: totalFamilySales > 0 ? (f.value / totalFamilySales) * 100 : 0
+    salesPercentage: totalFamilySales > 0 ? (f.sales / totalFamilySales) * 100 : 0,
+    unitsPercentage: totalFamilyUnits > 0 ? (f.units / totalFamilyUnits) * 100 : 0,
   }));
 
   const topProduct = productContribution[0]?.name ?? null;
@@ -2564,9 +2762,8 @@ export async function getMedicalRepPortalData(
         { label: "Active Days", value: new Set(expenses.map(e => e.date?.slice(0, 10)).filter(Boolean)).size.toString(), delta: "0" },
         { label: "Avg Trips / Active Day", value: (new Set(expenses.map(e => e.hrId).filter(Boolean)).size > 0 && new Set(expenses.map(e => e.date?.slice(0, 10)).filter(Boolean)).size > 0) ? (expenses.length / new Set(expenses.map(e => e.date?.slice(0, 10)).filter(Boolean)).size).toFixed(1) : "0", delta: "0" },
       ],
-      tripsVsDistanceTrend: Array.from(new Set(expenses.map(e => `${e.payoutYear}-${String(e.payoutMonth).padStart(2, "0")}`).filter(p => !p.includes("NaN")))).sort().map(period => {
-        const [year, month] = period.split("-").map(Number);
-        const periodExpenses = expenses.filter(e => e.payoutYear === year && e.payoutMonth === month);
+      tripsVsDistanceTrend: Array.from(new Set(expenses.map((e) => expensePeriodKey(e)).filter(Boolean) as string[])).sort().map(period => {
+        const periodExpenses = expenses.filter((e) => expensePeriodKey(e) === period);
         return {
           month: toPeriodLabel(period),
           trips: periodExpenses.length,
@@ -2603,9 +2800,8 @@ export async function getMedicalRepPortalData(
         { label: "Cost per KM", value: expenses.reduce((sum, e) => sum + (e.km || 0), 0) > 0 ? `EGP ${(expenses.reduce((sum, e) => sum + (e.total || 0), 0) / expenses.reduce((sum, e) => sum + (e.km || 0), 0)).toFixed(1)}` : "EGP 0", delta: "0%" },
         { label: "Highest Single Trip", value: egp(Math.max(0, ...expenses.map(t => t.total))), delta: "N/A" },
       ],
-      expenseTrend: Array.from(new Set(expenses.map(e => `${e.payoutYear}-${String(e.payoutMonth).padStart(2, "0")}`).filter(p => !p.includes("NaN")))).sort().map(period => {
-        const [year, month] = period.split("-").map(Number);
-        const periodExpenses = expenses.filter(e => e.payoutYear === year && e.payoutMonth === month);
+      expenseTrend: Array.from(new Set(expenses.map((e) => expensePeriodKey(e)).filter(Boolean) as string[])).sort().map(period => {
+        const periodExpenses = expenses.filter((e) => expensePeriodKey(e) === period);
         return {
           month: toPeriodLabel(period),
           expenses: periodExpenses.reduce((sum, e) => sum + (e.total || 0), 0),
@@ -2922,6 +3118,89 @@ export type NsmDsmPerformanceData = {
   lineTotalTarget: number;
 };
 
+export type NsmTeamExpensesDsmSummary = {
+  activeDays: number;
+  approvedAmount: number;
+  approvedTrips: number;
+  avgCostPerTrip: number;
+  hrId: string;
+  lastTripDate: string | null;
+  lineName: string | null;
+  name: string;
+  pendingAmount: number;
+  pendingTrips: number;
+  totalDistance: number;
+  totalExpenses: number;
+  totalTrips: number;
+};
+
+export type NsmTeamExpensesData = {
+  dsms: NsmTeamExpensesDsmSummary[];
+  expenseRows: Array<
+    PayrollExpenseApproval & {
+      dsmName: string;
+      lineName: string | null;
+    }
+  >;
+  monthlyTrend: Array<{
+    expenses: number;
+    month: string;
+    trips: number;
+  }>;
+  periods: string[];
+  requestTypes: string[];
+  reports: PayrollExpenseReport[];
+  selectedReportId: string | null;
+  selectedRequestType: string | null;
+  scopeLabel: string;
+  selectedDsmHrId: string | null;
+  selectedPeriod: string | null;
+  selectedPeriods: string[];
+  summary: {
+    activeDsms: number;
+    approvedAmount: number;
+    approvedTrips: number;
+    avgCostPerTrip: number;
+    pendingAmount: number;
+    pendingTrips: number;
+    totalDistance: number;
+    totalExpenses: number;
+    totalTrips: number;
+  };
+};
+
+export type NsmBrickCoverageData = {
+  dsms: Array<{
+    hrId: string;
+    lineName: string | null;
+    name: string;
+  }>;
+  periods: string[];
+  scopeLabel: string;
+  selectedDsmHrId: string | null;
+  selectedPeriods: string[];
+  summary: {
+    selectedDsmName: string;
+    totalAssignedBricks: number;
+    unvisitedBrickRows: Array<{
+      area: string;
+      brick: string;
+    }>;
+    unvisitedBricks: number;
+    visitedBrickRows: Array<{
+      avgCostPerVisit: number;
+      area: string;
+      brick: string;
+      lastVisitDate: string | null;
+      totalAmWorkload: number;
+      totalExpenses: number;
+      totalPmWorkload: number;
+      visits: number;
+    }>;
+    visitedBricks: number;
+  } | null;
+};
+
 type PortalVacancyDbRow = {
   area_id: number | null;
   area_name?: string | null;
@@ -2980,6 +3259,15 @@ function isDistrictManagerVacancyTitle(...values: Array<string | null | undefine
     normalized.includes("district manager") ||
     normalized.includes(" dsm") ||
     normalized.startsWith("dsm ")
+  );
+}
+
+function isDistrictManagerEmployee(
+  employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
+) {
+  return isDistrictManagerVacancyTitle(
+    employee.jobTitle,
+    employee.positionTitle,
   );
 }
 
@@ -3266,6 +3554,562 @@ export async function getNsmDsmPerformance(
     };
   } catch (error) {
     if (isDevelopment) console.error("[employee-portal] getNsmDsmPerformance failed:", error);
+    return null;
+  }
+}
+
+export async function getNsmTeamExpenses(
+  access: AccessContext,
+  options: {
+    dsmHrId?: string | null;
+    period?: string | string[] | null;
+    reportId?: string | null;
+    requestType?: string | null;
+  } = {},
+): Promise<NsmTeamExpensesData | null> {
+  try {
+    const currentUser = await resolvePortalCurrentUser(access);
+    if (!currentUser?.hrId) return null;
+
+    const currentRole = normalizeRole(currentUser.role);
+    if (currentRole !== "National Sales Manager") return null;
+
+    const directory = await getEmployeeDirectory().catch(() => null);
+    if (!directory) return null;
+
+    const viewerCanonicalHrId = normalizeHrIdForAccess(currentUser.hrId);
+    const viewer = directory.employees.find(
+      (employee) =>
+        normalizeHrIdForAccess(employee.hrId) === viewerCanonicalHrId,
+    );
+    if (!viewer) return null;
+
+    const directDsms = directory.employees.filter((employee) => {
+      const managerCanonical = normalizeHrIdForAccess(employee.managerHrId);
+      return (
+        isDistrictManagerEmployee(employee) &&
+        Boolean(viewerCanonicalHrId) &&
+        managerCanonical === viewerCanonicalHrId
+      );
+    });
+
+    const lineDsms = directory.employees.filter((employee) => {
+      if (!isDistrictManagerEmployee(employee)) {
+        return false;
+      }
+
+      if (typeof viewer.lineId === "number" && typeof employee.lineId === "number") {
+        return employee.lineId === viewer.lineId;
+      }
+
+      return normalizeLineName(employee.lineName) === normalizeLineName(viewer.lineName);
+    });
+
+    const scopedDsms = directDsms.length > 0 ? directDsms : lineDsms;
+    if (scopedDsms.length === 0) return null;
+
+    const dsmByCanonicalHrId = new Map<
+      string,
+      Pick<EmployeeDirectoryRow, "fullName" | "hrId" | "lineName">
+    >();
+
+    scopedDsms.forEach((employee) => {
+      const canonicalHrId = normalizeHrIdForAccess(employee.hrId);
+      if (!canonicalHrId) return;
+      dsmByCanonicalHrId.set(canonicalHrId, employee);
+    });
+
+    const selectedPeriods = normalizeTeamComparisonPeriods(options.period);
+    const selectedPeriod = selectedPeriods[0] ?? null;
+    const selectedDsmHrId = normalizeHrId(options.dsmHrId);
+    const selectedDsmCanonicalHrId = normalizeHrIdForAccess(selectedDsmHrId);
+    const selectedRequestType = normalizeExpenseRequestType(options.requestType);
+    const reports = await listPayrollExpenseReports(access);
+    const selectedReportId =
+      options.reportId && reports.some((report) => report.id === options.reportId)
+        ? options.reportId
+        : reports[0]?.id ?? null;
+
+    const reportExpenses = selectedReportId
+      ? await listPayrollExpenses(
+          undefined,
+          undefined,
+          selectedReportId,
+          access,
+        )
+      : [];
+    const liveOutstationExpenses = await listOutstationExpensesForPortal(
+      scopedDsms.map((employee) => employee.hrId),
+    );
+
+    const combinedExpenses = [...reportExpenses, ...liveOutstationExpenses];
+
+    const lineExpenses = combinedExpenses.filter((expense) => {
+      const canonicalHrId = normalizeHrIdForAccess(expense.hrId);
+      return Boolean(canonicalHrId && dsmByCanonicalHrId.has(canonicalHrId));
+    });
+
+    const dsmExpenses = lineExpenses.filter((expense) => {
+      const canonicalHrId = normalizeHrIdForAccess(expense.hrId);
+      if (!canonicalHrId || !dsmByCanonicalHrId.has(canonicalHrId)) {
+        return false;
+      }
+
+      if (
+        selectedDsmCanonicalHrId &&
+        canonicalHrId !== selectedDsmCanonicalHrId
+      ) {
+        return false;
+      }
+
+      if (
+        options.requestType &&
+        normalizeExpenseRequestType(expense.requestType).toLowerCase() !==
+          selectedRequestType.toLowerCase()
+      ) {
+        return false;
+      }
+
+      if (selectedPeriods.length === 0) {
+        return true;
+      }
+
+      const period = expensePeriodKey(expense);
+      return Boolean(period && selectedPeriods.includes(period));
+    });
+
+    const periods = Array.from(
+      new Set(
+        lineExpenses
+          .map((expense) => expensePeriodKey(expense))
+          .filter(Boolean) as string[],
+      ),
+    ).sort((left, right) => right.localeCompare(left));
+    const requestTypes = Array.from(
+      new Set(lineExpenses.map((expense) => normalizeExpenseRequestType(expense.requestType))),
+    ).sort((left, right) => left.localeCompare(right));
+
+    const summaryByDsm = new Map<string, NsmTeamExpensesDsmSummary>();
+
+    scopedDsms.forEach((employee) => {
+      const canonicalHrId = normalizeHrIdForAccess(employee.hrId);
+      if (!canonicalHrId) return;
+
+      summaryByDsm.set(canonicalHrId, {
+        activeDays: 0,
+        approvedAmount: 0,
+        approvedTrips: 0,
+        avgCostPerTrip: 0,
+        hrId: employee.hrId,
+        lastTripDate: null,
+        lineName: employee.lineName ?? null,
+        name: employee.fullName,
+        pendingAmount: 0,
+        pendingTrips: 0,
+        totalDistance: 0,
+        totalExpenses: 0,
+        totalTrips: 0,
+      });
+    });
+
+    dsmExpenses.forEach((expense) => {
+      const canonicalHrId = normalizeHrIdForAccess(expense.hrId);
+      if (!canonicalHrId) return;
+
+      const employee = dsmByCanonicalHrId.get(canonicalHrId);
+      if (!employee) return;
+
+      const existing = summaryByDsm.get(canonicalHrId);
+      if (!existing) return;
+
+      existing.totalTrips += 1;
+      existing.totalExpenses += expense.total || 0;
+      existing.totalDistance += expense.km || 0;
+
+      if (expense.hrApproved) {
+        existing.approvedTrips += 1;
+        existing.approvedAmount += expense.total || 0;
+      } else {
+        existing.pendingTrips += 1;
+        existing.pendingAmount += expense.total || 0;
+      }
+
+      if (expense.date) {
+        const tripDate = expense.date.slice(0, 10);
+        if (!existing.lastTripDate || tripDate > existing.lastTripDate) {
+          existing.lastTripDate = tripDate;
+        }
+      }
+
+      summaryByDsm.set(canonicalHrId, existing);
+    });
+
+    const dsms = Array.from(summaryByDsm.values())
+      .map((dsm) => {
+        const dsmCanonicalHrId = normalizeHrIdForAccess(dsm.hrId);
+        const dsmRows = dsmExpenses.filter(
+          (expense) =>
+            normalizeHrIdForAccess(expense.hrId) === dsmCanonicalHrId,
+        );
+
+        return {
+          ...dsm,
+          activeDays: new Set(
+            dsmRows.map((expense) => expense.date?.slice(0, 10)).filter(Boolean),
+          ).size,
+          avgCostPerTrip:
+            dsm.totalTrips > 0 ? dsm.totalExpenses / dsm.totalTrips : 0,
+        };
+      })
+      .sort(
+        (left, right) =>
+          right.totalExpenses - left.totalExpenses ||
+          right.totalTrips - left.totalTrips ||
+          left.name.localeCompare(right.name),
+      );
+
+    const monthlyTrend = Array.from(
+      new Set(
+        dsmExpenses
+          .map((expense) => expensePeriodKey(expense))
+          .filter(Boolean) as string[],
+      ),
+    )
+      .sort((left, right) => left.localeCompare(right))
+      .map((period) => {
+        const periodRows = dsmExpenses.filter(
+          (expense) => expensePeriodKey(expense) === period,
+        );
+
+        return {
+          expenses: periodRows.reduce((sum, expense) => sum + (expense.total || 0), 0),
+          month: toPeriodLabel(period),
+          trips: periodRows.length,
+        };
+      });
+
+    const expenseRows = dsmExpenses
+      .map((expense) => {
+        const employee =
+          dsmByCanonicalHrId.get(normalizeHrIdForAccess(expense.hrId) ?? "") ??
+          null;
+
+        return {
+          ...expense,
+          dsmName: employee?.fullName ?? expense.specialist ?? expense.hrId ?? "Unknown DSM",
+          lineName: employee?.lineName ?? null,
+        };
+      })
+      .sort((left, right) => {
+        const leftDate = left.date ? new Date(left.date).getTime() : 0;
+        const rightDate = right.date ? new Date(right.date).getTime() : 0;
+        return rightDate - leftDate;
+      });
+
+    const summary = {
+      activeDsms: dsms.length,
+      approvedAmount: dsmExpenses
+        .filter((expense) => expense.hrApproved)
+        .reduce((sum, expense) => sum + (expense.total || 0), 0),
+      approvedTrips: dsmExpenses.filter((expense) => expense.hrApproved).length,
+      avgCostPerTrip:
+        dsmExpenses.length > 0
+          ? dsmExpenses.reduce((sum, expense) => sum + (expense.total || 0), 0) /
+            dsmExpenses.length
+          : 0,
+      pendingAmount: dsmExpenses
+        .filter((expense) => !expense.hrApproved)
+        .reduce((sum, expense) => sum + (expense.total || 0), 0),
+      pendingTrips: dsmExpenses.filter((expense) => !expense.hrApproved).length,
+      totalDistance: dsmExpenses.reduce((sum, expense) => sum + (expense.km || 0), 0),
+      totalExpenses: dsmExpenses.reduce((sum, expense) => sum + (expense.total || 0), 0),
+      totalTrips: dsmExpenses.length,
+    };
+
+    return {
+      dsms,
+      expenseRows,
+      monthlyTrend,
+      periods,
+      reports,
+      selectedReportId,
+      requestTypes,
+      selectedRequestType: options.requestType ? selectedRequestType : null,
+      scopeLabel: viewer.lineName ?? currentUser.line ?? "Your line",
+      selectedDsmHrId: selectedDsmHrId ?? null,
+      selectedPeriod,
+      selectedPeriods,
+      summary,
+    };
+  } catch (error) {
+    if (isDevelopment) {
+      console.error("[employee-portal] getNsmTeamExpenses failed:", error);
+    }
+
+    return null;
+  }
+}
+
+export async function getNsmBrickCoverage(
+  access: AccessContext,
+  options: {
+    dsmHrId?: string | null;
+    period?: string | string[] | null;
+    reportId?: string | null;
+  } = {},
+): Promise<NsmBrickCoverageData | null> {
+  try {
+    const currentUser = await resolvePortalCurrentUser(access);
+    if (!currentUser?.hrId) return null;
+
+    const currentRole = normalizeRole(currentUser.role);
+    if (currentRole !== "National Sales Manager") return null;
+
+    const directory = await getEmployeeDirectory().catch(() => null);
+    if (!directory) return null;
+
+    const viewerCanonicalHrId = normalizeHrIdForAccess(currentUser.hrId);
+    const viewer = directory.employees.find(
+      (employee) => normalizeHrIdForAccess(employee.hrId) === viewerCanonicalHrId,
+    );
+    if (!viewer) return null;
+
+    const directDsms = directory.employees.filter((employee) => {
+      const managerCanonical = normalizeHrIdForAccess(employee.managerHrId);
+      return (
+        isDistrictManagerEmployee(employee) &&
+        Boolean(viewerCanonicalHrId) &&
+        managerCanonical === viewerCanonicalHrId
+      );
+    });
+
+    const lineDsms = directory.employees.filter((employee) => {
+      if (!isDistrictManagerEmployee(employee)) {
+        return false;
+      }
+
+      if (typeof viewer.lineId === "number" && typeof employee.lineId === "number") {
+        return employee.lineId === viewer.lineId;
+      }
+
+      return normalizeLineName(employee.lineName) === normalizeLineName(viewer.lineName);
+    });
+
+    const scopedDsms = directDsms.length > 0 ? directDsms : lineDsms;
+    if (scopedDsms.length === 0) return null;
+
+    const dsmByCanonicalHrId = new Map<
+      string,
+      Pick<EmployeeDirectoryRow, "fullName" | "hrId" | "lineName">
+    >();
+
+    scopedDsms.forEach((employee) => {
+      const canonicalHrId = normalizeHrIdForAccess(employee.hrId);
+      if (!canonicalHrId) return;
+      dsmByCanonicalHrId.set(canonicalHrId, employee);
+    });
+
+    const selectedPeriods = normalizeTeamComparisonPeriods(options.period);
+    const selectedDsmHrId = normalizeHrId(options.dsmHrId);
+    const selectedDsmCanonicalHrId = normalizeHrIdForAccess(selectedDsmHrId);
+    const reports = await listPayrollExpenseReports(access);
+    const selectedReportId =
+      options.reportId && reports.some((report) => report.id === options.reportId)
+        ? options.reportId
+        : reports[0]?.id ?? null;
+
+    const reportExpenses = selectedReportId
+      ? await listPayrollExpenses(undefined, undefined, selectedReportId, access)
+      : [];
+
+    const lineExpenses = reportExpenses.filter((expense) => {
+      const canonicalHrId = normalizeHrIdForAccess(expense.hrId);
+      return Boolean(canonicalHrId && dsmByCanonicalHrId.has(canonicalHrId));
+    });
+
+    const periods = Array.from(
+      new Set(
+        lineExpenses
+          .map((expense) => expensePeriodKey(expense))
+          .filter(Boolean) as string[],
+      ),
+    ).sort((left, right) => right.localeCompare(left));
+
+    const dsms = scopedDsms
+      .map((employee) => ({
+        hrId: employee.hrId,
+        lineName: employee.lineName ?? null,
+        name: employee.fullName,
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+
+    if (!selectedDsmCanonicalHrId || !dsmByCanonicalHrId.has(selectedDsmCanonicalHrId)) {
+      return {
+        dsms,
+        periods,
+        scopeLabel: viewer.lineName ?? currentUser.line ?? "Your line",
+        selectedDsmHrId: selectedDsmHrId ?? null,
+        selectedPeriods,
+        summary: null,
+      };
+    }
+
+    const selectedExpenses = lineExpenses.filter((expense) => {
+      const canonicalHrId = normalizeHrIdForAccess(expense.hrId);
+      if (canonicalHrId !== selectedDsmCanonicalHrId) return false;
+      if (selectedPeriods.length === 0) return true;
+      const period = expensePeriodKey(expense);
+      return Boolean(period && selectedPeriods.includes(period));
+    });
+
+    const brickReferenceRows = await listBrickReferenceRows(viewer.lineName ?? currentUser.line);
+    const directBrickRows = brickReferenceRows.filter(
+      (row) => normalizeHrIdForAccess(row.dsmHrId) === selectedDsmCanonicalHrId,
+    );
+    const assignedBricks = new Map<
+      string,
+      {
+        area: string;
+        brick: string;
+      }
+    >();
+
+    if (directBrickRows.length > 0) {
+      directBrickRows.forEach((row) => {
+        const brickKey = row.brickNameNormalized || normalizeBrickText(row.brickNameRaw);
+        if (!brickKey) return;
+        if (!assignedBricks.has(brickKey)) {
+          assignedBricks.set(brickKey, {
+            area: row.area,
+            brick: row.brickNameRaw,
+          });
+        }
+      });
+    } else {
+      const salesRecords = await fetchPortalSalesRecords(null, {
+        line: viewer.lineName ?? currentUser.line,
+      });
+      const territoryKeys = new Set<string>();
+
+      salesRecords.forEach((record) => {
+        const managerCanonical = normalizeHrIdForAccess(record.managerHrId);
+        if (managerCanonical !== selectedDsmCanonicalHrId) return;
+        if (selectedPeriods.length > 0 && !selectedPeriods.includes(record.period)) return;
+
+        const territoryKey = normalizeBrickText(record.territory);
+        if (territoryKey) {
+          territoryKeys.add(territoryKey);
+        }
+      });
+
+      brickReferenceRows.forEach((row) => {
+        const areaKey = normalizeBrickText(row.area);
+        const brickKey = row.brickNameNormalized || normalizeBrickText(row.brickNameRaw);
+        if (!brickKey) return;
+        if (territoryKeys.size > 0 && !territoryKeys.has(areaKey)) return;
+        if (!assignedBricks.has(brickKey)) {
+          assignedBricks.set(brickKey, {
+            area: row.area,
+            brick: row.brickNameRaw,
+          });
+        }
+      });
+    }
+
+    const visitedBricks = new Map<
+      string,
+      {
+        avgCostPerVisit: number;
+        area: string;
+        brick: string;
+        lastVisitDate: string | null;
+        totalAmWorkload: number;
+        totalExpenses: number;
+        totalPmWorkload: number;
+        visits: number;
+      }
+    >();
+
+    selectedExpenses.forEach((expense) => {
+      const matchKey = resolveExpenseLocationCandidates(expense)
+        .map((candidate) => normalizeBrickText(candidate))
+        .find((candidate) => Boolean(candidate) && assignedBricks.has(candidate));
+
+      if (!matchKey) return;
+
+      const assignedBrick = assignedBricks.get(matchKey);
+      if (!assignedBrick) return;
+
+      const existing = visitedBricks.get(matchKey) ?? {
+        avgCostPerVisit: 0,
+        area: assignedBrick.area,
+        brick: assignedBrick.brick,
+        lastVisitDate: null,
+        totalAmWorkload: 0,
+        totalExpenses: 0,
+        totalPmWorkload: 0,
+        visits: 0,
+      };
+
+      existing.visits += 1;
+      existing.totalExpenses += expense.total || 0;
+      existing.totalAmWorkload += expense.amWorkload || 0;
+      existing.totalPmWorkload += expense.pmWorkload || 0;
+      existing.avgCostPerVisit =
+        existing.visits > 0 ? existing.totalExpenses / existing.visits : 0;
+
+      const expenseDate = expense.date ? expense.date.slice(0, 10) : null;
+      if (expenseDate && (!existing.lastVisitDate || expenseDate > existing.lastVisitDate)) {
+        existing.lastVisitDate = expenseDate;
+      }
+
+      visitedBricks.set(matchKey, existing);
+    });
+
+    const visitedBrickRows = Array.from(visitedBricks.values()).sort(
+      (left, right) =>
+        right.visits - left.visits ||
+        right.totalExpenses - left.totalExpenses ||
+        left.brick.localeCompare(right.brick),
+    );
+
+    const unvisitedBrickRows = Array.from(assignedBricks.entries())
+      .filter(([brickKey]) => !visitedBricks.has(brickKey))
+      .map(([, value]) => ({
+        area: value.area,
+        brick: value.brick,
+      }))
+      .sort(
+        (left, right) =>
+          left.area.localeCompare(right.area) ||
+          left.brick.localeCompare(right.brick),
+      );
+
+    const selectedDsmName =
+      dsmByCanonicalHrId.get(selectedDsmCanonicalHrId)?.fullName ??
+      selectedDsmHrId ??
+      "Selected DSM";
+
+    return {
+      dsms,
+      periods,
+      scopeLabel: viewer.lineName ?? currentUser.line ?? "Your line",
+      selectedDsmHrId: selectedDsmHrId ?? null,
+      selectedPeriods,
+      summary: {
+        selectedDsmName,
+        totalAssignedBricks: assignedBricks.size,
+        unvisitedBrickRows,
+        unvisitedBricks: unvisitedBrickRows.length,
+        visitedBrickRows,
+        visitedBricks: visitedBrickRows.length,
+      },
+    };
+  } catch (error) {
+    if (isDevelopment) {
+      console.error("[employee-portal] getNsmBrickCoverage failed:", error);
+    }
+
     return null;
   }
 }

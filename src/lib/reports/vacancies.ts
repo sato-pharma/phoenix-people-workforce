@@ -117,6 +117,12 @@ function uniqueCount(values: Array<string | null>) {
   return new Set(values.filter(Boolean)).size;
 }
 
+function isEmployeeVisibleInOrganogram(status: string | null | undefined) {
+  const normalizedStatus = String(status ?? "active").trim().toLowerCase();
+
+  return normalizedStatus !== "resigned" && normalizedStatus !== "terminated";
+}
+
 function ids(rows: VacancyDbRow[], key: keyof VacancyDbRow) {
   return Array.from(
     new Set(
@@ -296,23 +302,27 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
   }));
   const openRows = rows.filter((row) => row.status === "open");
   const employeeOrganogramRows: OrganogramReportRow[] =
-    employeeDirectory.employees.map((employee) => ({
-      areaName: employee.areaName,
-      departmentName: employee.departmentName,
-      fullName: employee.fullName,
-      hireDate: employee.hireDate,
-      hrId: employee.hrId,
-      jobTitle: employee.jobTitle,
-      lineName: employee.lineName,
-      managerHrId: employee.managerHrId,
-      managerName: employee.managerName,
-      positionTitle: employee.positionTitle,
-      regionName: employee.regionName,
-      sourceRowNumber: null,
-      status: employee.employmentStatus ?? "active",
-      type: "employee",
-    }));
-  const vacancyOrganogramRows: OrganogramReportRow[] = rows.map((row) => ({
+    employeeDirectory.employees
+      .filter((employee) =>
+        isEmployeeVisibleInOrganogram(employee.employmentStatus),
+      )
+      .map((employee) => ({
+        areaName: employee.areaName,
+        departmentName: employee.departmentName,
+        fullName: employee.fullName,
+        hireDate: employee.hireDate,
+        hrId: employee.hrId,
+        jobTitle: employee.jobTitle,
+        lineName: employee.lineName,
+        managerHrId: employee.managerHrId,
+        managerName: employee.managerName,
+        positionTitle: employee.positionTitle,
+        regionName: employee.regionName,
+        sourceRowNumber: null,
+        status: employee.employmentStatus ?? "active",
+        type: "employee",
+      }));
+  const vacancyOrganogramRows: OrganogramReportRow[] = openRows.map((row) => ({
     areaName: row.areaName,
     departmentName: row.departmentName,
     fullName: "Vacant",
@@ -345,6 +355,12 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
 }
 
 function vacancyLabelForReport(vacancyCode: string) {
+  const resignationMatch = vacancyCode.match(/^resignation_(.+?)_\d{14}$/i);
+
+  if (resignationMatch?.[1]) {
+    return resignationMatch[1].toUpperCase();
+  }
+
   const match = vacancyCode.match(/^vacancy_(?:vac_)?(\d+)/i);
 
   return match ? `VAC-${match[1]}` : vacancyCode;

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   AlertTriangle,
@@ -8,10 +8,19 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
+  X,
 } from "lucide-react";
-import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 
+import {
+  AdminCallout,
+  AdminInsightChip,
+  AdminPageHero,
+  AdminStatCard,
+  AdminTableShell,
+  AdminSectionHeader,
+  adminPanelClassName,
+} from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -34,6 +43,12 @@ type SortKey =
 
 const allValue = "__all__";
 
+const selectClassName =
+  "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12";
+
+const adminTableHeaderClassName =
+  "px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+
 function getTrafficStatus(daysRemaining: number): TrafficStatus {
   if (daysRemaining > 60) {
     return "safe";
@@ -49,10 +64,19 @@ function getTrafficStatus(daysRemaining: number): TrafficStatus {
 function getProbationProgress(daysRemaining: number) {
   const total = 90;
 
-  return Math.max(
-    0,
-    Math.min(100, Math.round(((total - Math.max(0, daysRemaining)) / total) * 100)),
-  );
+  return Math.max(0, Math.min(100, Math.round(((total - Math.max(0, daysRemaining)) / total) * 100)));
+}
+
+function statusLabel(status: TrafficStatus) {
+  if (status === "safe") {
+    return "Safe";
+  }
+
+  if (status === "warning") {
+    return "Warning";
+  }
+
+  return "Critical";
 }
 
 function formatDate(value: string) {
@@ -70,72 +94,7 @@ function formatDate(value: string) {
 }
 
 function uniqueOptions(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean))).sort((a, b) =>
-    a.localeCompare(b),
-  );
-}
-
-function statusLabel(status: TrafficStatus) {
-  if (status === "safe") {
-    return "Safe";
-  }
-
-  if (status === "warning") {
-    return "Warning";
-  }
-
-  return "Critical";
-}
-
-const summaryCardVariants = {
-  primary: {
-    tone: "bg-slate-50 text-slate-900",
-    icon: "bg-white/70 text-primary",
-  },
-  success: {
-    tone: "bg-emerald-50 text-emerald-800",
-    icon: "bg-white/70 text-success",
-  },
-  warning: {
-    tone: "bg-orange-50 text-orange-800",
-    icon: "bg-white/70 text-warning",
-  },
-  danger: {
-    tone: "bg-rose-50 text-rose-800",
-    icon: "bg-white/70 text-danger",
-  },
-};
-
-function SummaryCard({
-  description,
-  icon,
-  label,
-  value,
-  variant = "primary",
-}: {
-  description: string;
-  icon: ReactNode;
-  label: string;
-  value: number;
-  variant?: keyof typeof summaryCardVariants;
-}) {
-  const styles = summaryCardVariants[variant];
-  return (
-    <div className={cn("rounded-xl border border-slate-200 p-4", styles.tone)}>
-      <div className="flex items-start gap-4">
-        <div className={cn("flex h-10 w-10 items-center justify-center rounded-lg", styles.icon)}>
-          {icon}
-        </div>
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{label}</p>
-          <p className="mt-2 font-mono text-2xl font-bold tracking-tight">
-            {value}
-          </p>
-          <p className="mt-1 text-xs opacity-70">{description}</p>
-        </div>
-      </div>
-    </div>
-  );
+  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }
 
 function SelectFilter({
@@ -151,9 +110,11 @@ function SelectFilter({
 }) {
   return (
     <label className="block">
-      <span className="sr-only">{label}</span>
+      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+        {label}
+      </span>
       <select
-        className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className={selectClassName}
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -163,6 +124,60 @@ function SelectFilter({
             {option}
           </option>
         ))}
+      </select>
+    </label>
+  );
+}
+
+function ZoneSelect({
+  onChange,
+  value,
+}: {
+  onChange: (value: TrafficStatus | "all") => void;
+  value: TrafficStatus | "all";
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+        Zone
+      </span>
+      <select
+        className={selectClassName}
+        onChange={(event) => onChange(event.target.value as TrafficStatus | "all")}
+        value={value}
+      >
+        <option value="all">All zones</option>
+        <option value="safe">Safe</option>
+        <option value="warning">Warning</option>
+        <option value="critical">Critical</option>
+      </select>
+    </label>
+  );
+}
+
+function SortSelect({
+  onChange,
+  value,
+}: {
+  onChange: (value: SortKey) => void;
+  value: SortKey;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+        Sort
+      </span>
+      <select
+        className={selectClassName}
+        onChange={(event) => onChange(event.target.value as SortKey)}
+        value={value}
+      >
+        <option value="days-asc">Days ascending</option>
+        <option value="days-desc">Days descending</option>
+        <option value="hire-asc">Hire date ascending</option>
+        <option value="hire-desc">Hire date descending</option>
+        <option value="name-asc">Name A-Z</option>
+        <option value="name-desc">Name Z-A</option>
       </select>
     </label>
   );
@@ -193,9 +208,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
 
     return rows
       .filter((row) => {
-        const searchable = [row.full_name, row.hr_id, row.crm_id]
-          .join(" ")
-          .toLowerCase();
+        const searchable = [row.full_name, row.hr_id, row.crm_id].join(" ").toLowerCase();
         const traffic = getTrafficStatus(row.days_remaining);
 
         return (
@@ -250,11 +263,12 @@ export function ProbationTracker({ initialData, initialError }: Props) {
     sortBy !== "days-asc" ||
     trafficFilter !== "all" ||
     employmentFilter !== allValue;
+
   const activeFilterCount = [
     areaFilter !== allValue ? areaFilter : "",
     jobFilter !== allValue ? jobFilter : "",
     lineFilter !== allValue ? lineFilter : "",
-    query,
+    query ? query : "",
     sortBy !== "days-asc" ? sortBy : "",
     trafficFilter !== "all" ? trafficFilter : "",
     employmentFilter !== allValue ? employmentFilter : "",
@@ -271,106 +285,112 @@ export function ProbationTracker({ initialData, initialError }: Props) {
   }
 
   return (
-    <Card className="overflow-hidden border-slate-200 bg-white p-0 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
-      <div className="border-b border-slate-200 bg-slate-950 px-5 py-5 text-white">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
-              People Operations
-            </p>
-            <h1 className="mt-2 text-2xl font-bold">Probation Tracker</h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-300">
-              Monitor employees inside the 90-day probation window and prioritize reviews before deadlines become people-risk.
-            </p>
+    <div className="space-y-6">
+      <AdminPageHero
+        actions={
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+            <Button
+              className="h-10 gap-2 rounded-xl"
+              disabled={!hasActiveFilters}
+              onClick={resetFilters}
+              variant="secondary"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Reset Filters
+            </Button>
+            <a
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#D7E0EA] bg-white px-3 py-2 text-xs font-semibold text-[#0F172A] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+              href="/api/exports?report=probation&format=pdf"
+            >
+              <Download className="h-4 w-4 text-[#EA580C]" />
+              Export PDF
+            </a>
+            <a
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#D7E0EA] bg-white px-3 py-2 text-xs font-semibold text-[#0F172A] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+              href="/api/exports?report=probation&format=xlsx"
+            >
+              <Download className="h-4 w-4 text-[#EA580C]" />
+              Export Excel
+            </a>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={summary.critical > 0 ? "danger" : "neutral"}>
-              {summary.critical} critical
-            </Badge>
-          <Button
-            className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
-            disabled={!hasActiveFilters}
-            onClick={resetFilters}
-            variant="secondary"
-          >
-            <RefreshCw className="mr-2 h-3.5 w-3.5" />
-            Reset
-          </Button>
-          <a
-            className={cn(
-              "inline-flex items-center justify-center rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/15",
-            )}
-            href="/api/exports?report=probation&format=pdf"
-          >
-            <Download className="mr-2 h-3.5 w-3.5" />
-            Export PDF
-          </a>
-          <a
-            className={cn(
-              "inline-flex items-center justify-center rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/15",
-            )}
-            href="/api/exports?report=probation&format=xlsx"
-          >
-            <Download className="mr-2 h-3.5 w-3.5" />
-            Export Excel
-          </a>
+        }
+        badges={(
+          <div className="flex flex-wrap gap-2">
+            <AdminInsightChip>Employees in probation: {summary.total}</AdminInsightChip>
+            <AdminInsightChip tone="orange">
+              {rows.length > 0 ? `${((summary.critical / summary.total) * 100).toFixed(0)}% critical` : "0% critical"}
+            </AdminInsightChip>
+            <AdminInsightChip tone="slate">
+              {summary.warning} warning, {summary.safe} safe
+            </AdminInsightChip>
           </div>
-        </div>
-      </div>
+        )}
+        description="Track employees inside the 90-day probation window and prioritize deadlines by risk zone before deadlines become people-risk."
+        eyebrow="People Operations"
+        icon={<Shield className="h-3.5 w-3.5" />}
+        title="Probation Tracker"
+      />
 
-      <div className="space-y-4 p-5">
       {initialError ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <div className="flex gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 text-danger" />
-            <div>
-              <h2 className="text-base font-semibold text-text">
-                Probation data unavailable
-              </h2>
-              <p className="mt-1 text-sm text-text-secondary">{initialError}</p>
-            </div>
+        <AdminCallout tone="danger">
+          <AlertTriangle className="mt-0.5 h-5 w-5 text-danger" />
+          <div>
+            <h2 className="text-base font-semibold text-text">Probation data unavailable</h2>
+            <p className="mt-1 text-sm text-text-secondary">{initialError}</p>
           </div>
-        </div>
+        </AdminCallout>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <AdminStatCard
           description="Matching current filters"
           icon={<Shield className="h-5 w-5" />}
           label="Total in Probation"
           value={summary.total}
-          variant="primary"
         />
-        <SummaryCard
-          description="More than 60 days left"
+        <AdminStatCard
+          description="More than 60 days remaining"
           icon={<ShieldCheck className="h-5 w-5" />}
           label="Safe Zone"
           value={summary.safe}
-          variant="success"
         />
-        <SummaryCard
-          description="30 to 60 days left"
+        <AdminStatCard
+          description="30 to 60 days remaining"
           icon={<ShieldAlert className="h-5 w-5" />}
           label="Warning Zone"
           value={summary.warning}
-          variant="warning"
         />
-        <SummaryCard
-          description="Less than 30 days left"
+        <AdminStatCard
+          description="Less than 30 days remaining"
           icon={<AlertTriangle className="h-5 w-5" />}
           label="Critical Zone"
           value={summary.critical}
-          variant="danger"
         />
-      </section>
+      </div>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <div className="grid gap-3 xl:grid-cols-[1.5fr_repeat(5,minmax(0,1fr))_auto]">
+      <AdminTableShell
+        action={
+          <Button
+            className="h-10 gap-2 rounded-xl"
+            disabled={!hasActiveFilters}
+            onClick={resetFilters}
+            variant="secondary"
+          >
+            <X className="h-4 w-4" />
+            {activeFilterCount > 0 ? `Clear (${activeFilterCount})` : "Clear"}
+          </Button>
+        }
+        description="Use line, area, role, employment status, risk zone, and sort to focus on actionable probation windows."
+        title="Workflow Filters"
+      >
+        <div className="grid gap-3 p-4 sm:p-5 xl:grid-cols-[1.5fr_repeat(4,minmax(0,1fr))_auto]">
           <label className="relative block">
-            <span className="sr-only">Search probation employees</span>
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+              Search
+            </span>
+            <Search className="pointer-events-none absolute left-3 top-10 h-4 w-4 text-text-secondary" />
             <Input
-              className="bg-white pl-9"
+              className="h-10 rounded-xl border-[#D8E0EA] bg-white pl-9"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, HR ID, CRM ID"
               value={query}
@@ -400,63 +420,26 @@ export function ProbationTracker({ initialData, initialError }: Props) {
             options={filterOptions.employmentStatuses}
             value={employmentFilter}
           />
-          <select
-            className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text"
-            onChange={(event) =>
-              setTrafficFilter(event.target.value as TrafficStatus | "all")
-            }
-            value={trafficFilter}
-          >
-            <option value="all">All zones</option>
-            <option value="safe">Safe</option>
-            <option value="warning">Warning</option>
-            <option value="critical">Critical</option>
-          </select>
-          <select
-            className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text"
-            onChange={(event) => setSortBy(event.target.value as SortKey)}
-            value={sortBy}
-          >
-            <option value="days-asc">Days asc</option>
-            <option value="days-desc">Days desc</option>
-            <option value="hire-asc">Hire date asc</option>
-            <option value="hire-desc">Hire date desc</option>
-            <option value="name-asc">Name A-Z</option>
-            <option value="name-desc">Name Z-A</option>
-          </select>
-          <Button
-            className="gap-2 whitespace-nowrap"
-            disabled={!hasActiveFilters}
-            onClick={resetFilters}
-            variant="secondary"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Clear {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
-          </Button>
+          <ZoneSelect onChange={setTrafficFilter} value={trafficFilter} />
+          <SortSelect onChange={setSortBy} value={sortBy} />
         </div>
-      </div>
+      </AdminTableShell>
 
-      <div className="rounded-xl border border-slate-200 bg-white">
-        <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-text">
-              Current Probation Employees
-            </h2>
-            <p className="mt-1 text-sm text-text-secondary">
-              Showing {filteredRows.length} of {rows.length} employees in the
-              active probation window.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Badge variant="warning">{summary.warning} warning</Badge>
-            <Badge variant="danger">{summary.critical} critical</Badge>
-          </div>
-        </div>
-
-        <div className="max-h-[680px] overflow-auto">
+      <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+        <AdminSectionHeader
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="warning">{summary.warning} warning</Badge>
+              <Badge variant="danger">{summary.critical} critical</Badge>
+            </div>
+          }
+          description={`Showing ${filteredRows.length} of ${rows.length} employees in the active probation window.`}
+          title="Current Probation Employees"
+        />
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[1120px] text-left text-sm">
-            <thead className="sticky top-0 bg-slate-100">
-              <tr className="border-b border-slate-200 text-xs uppercase tracking-[0.12em] text-text-secondary">
+            <thead className="sticky top-0 bg-[#F8FAFC]">
+              <tr className="border-b border-[#E2E8F0] text-xs uppercase tracking-[0.12em] text-text-secondary">
                 {[
                   "HR ID",
                   "CRM ID",
@@ -471,19 +454,16 @@ export function ProbationTracker({ initialData, initialError }: Props) {
                   "Status",
                   "Actions",
                 ].map((column) => (
-                  <th className="px-3 py-3 font-semibold" key={column}>
+                  <th className={adminTableHeaderClassName} key={column}>
                     {column}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[#E2E8F0]">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td
-                    className="px-4 py-10 text-center text-sm text-text-secondary"
-                    colSpan={12}
-                  >
+                  <td className="px-4 py-12 text-center text-sm text-text-secondary" colSpan={12}>
                     No probation records match the current filters.
                   </td>
                 </tr>
@@ -493,37 +473,18 @@ export function ProbationTracker({ initialData, initialError }: Props) {
                   const progress = getProbationProgress(row.days_remaining);
 
                   return (
-                    <tr
-                      className="transition-colors hover:bg-slate-50"
-                      key={row.hr_id}
-                    >
-                      <td className="px-3 py-4 font-mono text-xs text-text-secondary">
-                        {row.hr_id || "-"}
-                      </td>
+                    <tr className="transition-colors hover:bg-[#F8FAFC]" key={row.hr_id}>
+                      <td className="px-3 py-4 font-mono text-xs text-text-secondary">{row.hr_id || "-"}</td>
                       <td className="px-3 py-4 font-mono text-xs text-text-secondary">{row.crm_id || "-"}</td>
-                      <td className="px-3 py-4 font-semibold text-text">
-                        {row.full_name}
-                      </td>
-                      <td className="px-3 py-4 text-text-secondary">
-                        {row.job_title}
-                      </td>
-                      <td className="px-3 py-4 text-text-secondary">
-                        {row.line_name}
-                      </td>
-                      <td className="px-3 py-4 text-text-secondary">
-                        {row.area_name}
-                      </td>
-                      <td className="px-3 py-4 text-text-secondary">
-                        {formatDate(row.hire_date)}
-                      </td>
-                      <td className="px-3 py-4 text-text-secondary">
-                        {formatDate(row.probation_end_date)}
-                      </td>
-                      <td className="px-3 py-4 font-semibold text-text">
-                        {row.days_remaining}
-                      </td>
+                      <td className="px-3 py-4 font-semibold text-text">{row.full_name}</td>
+                      <td className="max-w-[220px] truncate px-3 py-4 text-text-secondary">{row.job_title}</td>
+                      <td className="px-3 py-4 text-text-secondary">{row.line_name}</td>
+                      <td className="px-3 py-4 text-text-secondary">{row.area_name}</td>
+                      <td className="px-3 py-4 text-text-secondary">{formatDate(row.hire_date)}</td>
+                      <td className="px-3 py-4 text-text-secondary">{formatDate(row.probation_end_date)}</td>
+                      <td className="px-3 py-4 font-semibold text-text">{row.days_remaining}</td>
                       <td className="min-w-[150px] px-3 py-4">
-                        <div className="space-y-1.5">
+                        <div className="space-y-1">
                           <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                             <div
                               className={cn(
@@ -537,28 +498,22 @@ export function ProbationTracker({ initialData, initialError }: Props) {
                               style={{ width: `${progress}%` }}
                             />
                           </div>
-                          <p className="text-xs text-text-secondary">
-                            {progress}% complete
-                          </p>
+                          <p className="text-[11px] leading-tight text-text-secondary">{progress}% complete</p>
                         </div>
                       </td>
                       <td className="px-3 py-4">
-                        <Badge
-                          variant={
-                            traffic === "safe"
-                              ? "success"
-                              : traffic === "warning"
-                                ? "warning"
-                                : "danger"
-                          }
-                        >
+                        <Badge variant={traffic === "safe" ? "success" : traffic === "warning" ? "warning" : "danger"}>
                           {statusLabel(traffic)}
                         </Badge>
                       </td>
                       <td className="px-3 py-4">
                         <div className="flex flex-wrap gap-2">
-                          <Button variant="secondary">Review</Button>
-                          <Button variant="ghost">Reminder</Button>
+                          <Button className="h-9 rounded-xl px-2.5 text-xs" variant="secondary">
+                            Review
+                          </Button>
+                          <Button className="h-9 rounded-xl px-2.5 text-xs" variant="ghost">
+                            Reminder
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -568,8 +523,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
             </tbody>
           </table>
         </div>
-      </div>
-      </div>
-    </Card>
+      </Card>
+    </div>
   );
 }

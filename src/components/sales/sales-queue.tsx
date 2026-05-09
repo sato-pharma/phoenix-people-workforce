@@ -3,23 +3,25 @@
 import {
   AlertTriangle,
   BarChart3,
-  CheckCircle,
   CheckCircle2,
   Clock,
-  Database,
   FileSpreadsheet,
   FileText,
   Loader2,
   RefreshCw,
-  ShieldCheck,
   Trash2,
-  TrendingUp,
   UploadCloud,
-  XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  AdminCallout,
+  AdminInsightChip,
+  AdminPageHero,
+  AdminTableShell,
+  adminPanelClassName,
+} from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -76,6 +78,34 @@ type LinkageSummary = {
 };
 
 const fallbackLines = ["CNS"];
+const panelClassName = adminPanelClassName;
+const adminTableHeaderClassName = "px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]";
+
+function StatusBanner({
+  message,
+  title,
+  tone,
+}: {
+  message: string;
+  title: string;
+  tone: "danger" | "success";
+}) {
+  const isSuccess = tone === "success";
+
+  return (
+    <AdminCallout tone={isSuccess ? "success" : "danger"}>
+      {isSuccess ? (
+        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+      ) : (
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+      )}
+      <div>
+        <p className="font-semibold">{title}</p>
+        <p className="mt-1 leading-6">{message}</p>
+      </div>
+    </AdminCallout>
+  );
+}
 
 function Metric({
   label,
@@ -87,52 +117,25 @@ function Metric({
   value: number | string;
 }) {
   const tones = {
-    bad: "border-red-100 bg-red-50 text-red-900",
-    good: "border-emerald-100 bg-emerald-50 text-emerald-900",
-    neutral: "border-slate-200 bg-white text-slate-950",
-    warn: "border-amber-100 bg-amber-50 text-amber-900",
+    bad: "border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]",
+    good: "border-[#BBF7D0] bg-[#F0FDF4] text-[#166534]",
+    neutral: "border-[#E2E8F0] bg-[#FCFDFE] text-[#0F172A]",
+    warn: "border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]",
   };
   return (
-    <div className={cn("rounded-lg border px-3 py-3 shadow-sm", tones[tone])}>
-      <p className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-70">{label}</p>
-      <p className="mt-1 text-lg font-bold">{value}</p>
-    </div>
-  );
-}
-
-function SummaryStat({
-  icon: Icon,
-  label,
-  value,
-  detail,
-}: {
-  detail: string;
-  icon: typeof BarChart3;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 text-white shadow-sm">
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-white">
-          <Icon className="h-5 w-5" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/60">{label}</p>
-          <p className="mt-1 truncate text-xl font-bold">{value}</p>
-        </div>
-      </div>
-      <p className="mt-3 text-xs text-white/65">{detail}</p>
-    </div>
+    <Card className={cn(panelClassName, "p-4", tones[tone])}>
+      <p className="text-[10px] font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
+      <p className="mt-2 text-2xl font-black tracking-[-0.03em]">{value}</p>
+    </Card>
   );
 }
 
 function LinkageList({ linked, notLinked, title }: { linked: string[]; notLinked: string[]; title: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <Card className={cn(panelClassName, "p-4")}>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-bold uppercase tracking-[0.16em] text-text-secondary">{title}</p>
-        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-text-secondary">
+        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#64748B]">{title}</p>
+        <span className="rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1 text-xs font-semibold text-[#64748B]">
           {linked.length + notLinked.length} people
         </span>
       </div>
@@ -142,7 +145,7 @@ function LinkageList({ linked, notLinked, title }: { linked: string[]; notLinked
           <div className="mt-2 max-h-44 space-y-1 overflow-auto pr-1">
             {linked.length === 0
               ? <p className="text-xs text-text-secondary">No linked records.</p>
-              : linked.map((name) => <p className="rounded-md bg-emerald-50 px-2 py-1 text-xs text-emerald-900" key={name}>{name}</p>)}
+              : linked.map((name, index) => <p className="rounded-md bg-emerald-50 px-2 py-1 text-xs text-emerald-900" key={`${title}:linked:${name}:${index}`}>{name}</p>)}
           </div>
         </div>
         <div>
@@ -150,11 +153,11 @@ function LinkageList({ linked, notLinked, title }: { linked: string[]; notLinked
           <div className="mt-2 max-h-44 space-y-1 overflow-auto pr-1">
             {notLinked.length === 0
               ? <p className="text-xs text-text-secondary">No missing links.</p>
-              : notLinked.map((name) => <p className="rounded-md bg-red-50 px-2 py-1 text-xs text-red-900" key={name}>{name}</p>)}
+              : notLinked.map((name, index) => <p className="rounded-md bg-red-50 px-2 py-1 text-xs text-red-900" key={`${title}:missing:${name}:${index}`}>{name}</p>)}
           </div>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -321,17 +324,18 @@ export function SalesQueue({ initialData, initialError }: Props) {
 
   if (initialError) {
     return (
-      <div className="space-y-6">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">Sales</p>
-          <h1 className="mt-1 text-2xl font-bold text-text">Monthly Sales</h1>
-        </div>
-        <Card className="border-danger/20 bg-red-50 dark:bg-red-950/20">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-danger" />
-            <p className="text-sm text-danger">{initialError}</p>
-          </div>
-        </Card>
+      <div className="space-y-5">
+        <AdminPageHero
+          actions={<Link href="/sales"><Button>Sales Dashboard</Button></Link>}
+          description="The sales queue could not be loaded."
+          eyebrow="Sales queue"
+          icon={<AlertTriangle className="h-3.5 w-3.5" />}
+          title="Unable to open sales queue"
+        />
+        <AdminCallout tone="danger">
+          <AlertTriangle className="h-4 w-4" />
+          <p className="text-sm">{initialError}</p>
+        </AdminCallout>
       </div>
     );
   }
@@ -339,88 +343,56 @@ export function SalesQueue({ initialData, initialError }: Props) {
   return (
     <div className="space-y-6">
       <input
-        accept=".xlsx,.xls,.csv,.tsv"
+        accept=".xlsx,.xls"
         className="hidden"
         onChange={(event) => void handleReplaceFile(event.target.files?.[0] ?? null)}
         ref={replaceInputRef}
         type="file"
       />
 
-      <section className="overflow-hidden rounded-2xl border border-slate-900 bg-slate-950 shadow-sm">
-        <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_520px] lg:p-6">
-          <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary">Sales Operations</p>
-            <h1 className="mt-2 text-2xl font-bold text-white lg:text-3xl">Monthly Sales Report</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/65">
-              Upload, validate, approve, replace, and delete monthly sales sheets before they flow into the sales dashboard.
-            </p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <Link href="/sales">
-                <Button className="gap-2 border border-white/10 bg-white text-slate-950 hover:bg-white/90">
-                  <BarChart3 className="h-4 w-4" />
-                  Sales Dashboard
-                </Button>
-              </Link>
-              <Button
-                className="gap-2 border border-white/10 bg-white/10 text-white hover:bg-white/15"
-                onClick={() => fileInputRef.current?.click()}
-                variant="secondary"
-              >
-                <UploadCloud className="h-4 w-4" />
-                Upload Sheet
+      <AdminPageHero
+        actions={(
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <Link href="/sales">
+              <Button className="gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Sales Dashboard
               </Button>
-            </div>
+            </Link>
+            <Button
+              className="gap-2"
+              onClick={() => fileInputRef.current?.click()}
+              variant="secondary"
+            >
+              <UploadCloud className="h-4 w-4" />
+              Upload Sheet
+            </Button>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <SummaryStat
-              detail={`${reportSummary.approvedCount} approved sheets`}
-              icon={Database}
-              label="Active Sheets"
-              value={formatNumber(reportSummary.activeCount)}
-            />
-            <SummaryStat
-              detail={reportSummary.latestPeriod}
-              icon={TrendingUp}
-              label="Approved Sales"
-              value={formatCurrency(reportSummary.approvedSales)}
-            />
-            <SummaryStat
-              detail={`${formatNumber(reportSummary.totalWarnings)} warnings`}
-              icon={FileSpreadsheet}
-              label="Rows Loaded"
-              value={formatNumber(reportSummary.totalRows)}
-            />
-            <SummaryStat
-              detail={`${formatNumber(reportSummary.totalFailures)} failed rows`}
-              icon={ShieldCheck}
-              label="Validation"
-              value={reportSummary.totalFailures === 0 ? "Clean" : "Review"}
-            />
+        )}
+        badges={(
+          <div className="flex flex-wrap gap-2">
+            <AdminInsightChip>Active sheets: {formatNumber(reportSummary.activeCount)}</AdminInsightChip>
+            <AdminInsightChip>Approved sales: {formatCurrency(reportSummary.approvedSales)}</AdminInsightChip>
+            <AdminInsightChip>Latest period: {reportSummary.latestPeriod}</AdminInsightChip>
           </div>
-        </div>
-      </section>
+        )}
+        description="Validate monthly closing data, fix linkage issues, and advance a sheet into reporting workflow."
+        eyebrow="Sales queue"
+        icon={<FileSpreadsheet className="h-3.5 w-3.5" />}
+        title="Monthly closing sheets"
+      />
 
-      <Card className="overflow-hidden p-0">
-        <div className="border-b border-border bg-white px-5 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-text">Upload Monthly Sheet</h2>
-              <p className="mt-1 text-xs text-text-secondary">
-                Choose the sales line, attach the workbook, then validate the totals before approval.
-              </p>
-            </div>
-            <span className="rounded-full border border-orange-100 bg-orange-50 px-3 py-1 text-xs font-semibold text-primary">
-              {line || "No line selected"}
-            </span>
-          </div>
-        </div>
-        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-5 p-5">
-            <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
-              <label className="space-y-2">
-                <span className="text-xs font-bold uppercase tracking-[0.16em] text-text-secondary">Line</span>
+      <AdminTableShell
+        description="Choose the sales line, attach the closing sheet, then validate the totals before approval."
+        title="Upload monthly sheet"
+      >
+        <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
+              <label className="space-y-1.5">
+                <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Line</span>
                 <select
-                  className="h-11 w-full rounded-lg border border-border bg-white px-3 text-sm font-medium text-text outline-none transition focus:border-primary focus:ring-4 focus:ring-orange-100"
+                  className="h-11 w-full rounded-lg border border-[#D8E0EA] bg-white px-3.5 text-sm font-medium text-[#0F172A] outline-none transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   onChange={(event) => setLine(event.target.value)}
                   value={line}
                 >
@@ -430,22 +402,31 @@ export function SalesQueue({ initialData, initialError }: Props) {
                 </select>
               </label>
               <div className="space-y-2">
-                <span className="text-xs font-bold uppercase tracking-[0.16em] text-text-secondary">Workbook</span>
+                <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Workbook</span>
                 <button
-                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-left text-sm transition hover:border-primary hover:bg-orange-50/40"
+                  className="flex min-h-[112px] w-full items-center justify-between gap-4 rounded-xl border border-dashed border-[#CBD5E1] bg-white px-4 py-4 text-left text-sm transition hover:border-[#F97316] hover:bg-[#FFF7ED]/40"
                   onClick={() => fileInputRef.current?.click()}
                   type="button"
                 >
                   <span className="flex min-w-0 items-center gap-2">
-                    <FileSpreadsheet className="h-4 w-4 shrink-0 text-primary" />
-                    <span className="truncate font-medium text-text">
-                      {selectedFile?.name ?? "Choose .xlsx sales workbook"}
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#FED7AA] bg-[#FFF7ED] text-[#F97316]">
+                      <FileSpreadsheet className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-base font-semibold text-[#0F172A]">
+                        {selectedFile?.name ?? "Choose .xlsx closing sheet"}
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-[#64748B]">
+                        {selectedFile
+                          ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB selected`
+                          : "Validation will run before the file enters queue."}
+                      </span>
                     </span>
                   </span>
-                  <UploadCloud className="h-4 w-4 shrink-0 text-text-secondary" />
+                  <UploadCloud className="h-4 w-4 shrink-0 text-[#64748B]" />
                 </button>
                 <input
-                  accept=".xlsx,.xls,.csv,.tsv"
+                  accept=".xlsx,.xls"
                   className="hidden"
                   onChange={(event) => { setSelectedFile(event.target.files?.[0] ?? null); setUploadResult(null); }}
                   ref={fileInputRef}
@@ -456,42 +437,33 @@ export function SalesQueue({ initialData, initialError }: Props) {
             <div className="flex flex-wrap items-center gap-3">
               <Button className="gap-2" disabled={!canUpload} onClick={handleUpload}>
                 {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                Validate & Upload
+                Validate and upload
               </Button>
               {selectedFile && (
-                <p className="text-xs text-text-secondary">
+                <p className="text-xs text-[#64748B]">
                   {selectedFile.name} - {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                 </p>
               )}
             </div>
           </div>
 
-          <div className="border-t border-border bg-slate-50 p-5 lg:border-l lg:border-t-0">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-text-secondary">Validation Output</p>
+          <div className="border-t border-[#E2E8F0] pt-2 lg:border-l lg:border-t-0 lg:pl-5">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Validation output</p>
             {!uploadResult && (
-              <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-white p-5 text-sm text-text-secondary">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-50 text-primary">
-                  <FileSpreadsheet className="h-5 w-5" />
-                </div>
-                <p className="mt-3 font-medium text-text">Waiting for workbook</p>
-                <p className="mt-1 text-xs leading-5 text-text-secondary">
-                  Validation will show rows read, totals, linkage, manager totals, and blocking errors.
-                </p>
-              </div>
+              <AdminCallout tone="neutral">
+                <Clock className="mt-0.5 h-4 w-4" />
+                <span>Upload a workbook to show rows read, totals, linkage, and blocking errors.</span>
+              </AdminCallout>
             )}
             {uploadResult && (
-              <div className="mt-4 space-y-3">
-                <div className={cn("rounded-lg border p-4", isUploadFailure ? "border-red-200 bg-red-50 text-red-900" : "border-emerald-200 bg-emerald-50 text-emerald-900")}>
-                  <div className="flex gap-2">
-                    {isUploadFailure ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
-                    <div>
-                      <p className="font-semibold">{uploadResult.error ?? uploadResult.message}</p>
-                      {uploadResult.code && <p className="mt-1 text-xs opacity-75">Code: {uploadResult.code}</p>}
-                    </div>
-                  </div>
-                </div>
+              <div className="mt-3 space-y-3">
+                <StatusBanner
+                  message={uploadResult.code ? `${uploadResult.error ?? uploadResult.message} (${uploadResult.code})` : (uploadResult.error ?? uploadResult.message ?? "")}
+                  title={isUploadFailure ? "Validation failed" : "Validation completed"}
+                  tone={isUploadFailure ? "danger" : "success"}
+                />
                 {uploadResult.batchSummary && (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                     <Metric label="Rows" value={uploadResult.batchSummary.totalRecords ?? 0} />
                     <Metric label="Valid" tone="good" value={uploadResult.batchSummary.validRecords ?? 0} />
                     <Metric label="Warnings" tone="warn" value={uploadResult.batchSummary.warningRecords ?? 0} />
@@ -502,22 +474,22 @@ export function SalesQueue({ initialData, initialError }: Props) {
             )}
           </div>
         </div>
-      </Card>
+      </AdminTableShell>
 
       {uploadResult?.details?.validationTotals && (
-        <Card>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-text">Sheet Read Summary</h2>
-              <p className="mt-1 text-xs text-text-secondary">Totals calculated from the rows the system read from the workbook.</p>
-            </div>
-            {uploadResult.batchSummary?.period && (
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-text-secondary">
+      <AdminTableShell
+        description="Totals calculated from the rows the system read from the workbook."
+        title="Sheet Read Summary"
+      >
+        <div className="px-4 py-4 md:px-5">
+          {uploadResult.batchSummary?.period && (
+            <div className="mb-3 flex items-center justify-end">
+              <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-xs font-semibold text-[#64748B]">
                 {uploadResult.batchSummary.period}
               </span>
-            )}
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            </div>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Metric label="Rows Read" value={formatNumber(uploadResult.details.validationTotals.totalRows)} />
             <Metric label="Importable" tone="good" value={formatNumber(uploadResult.details.validationTotals.importableRows)} />
             <Metric label="Warnings" tone="warn" value={formatNumber(uploadResult.details.validationTotals.warningRows)} />
@@ -538,197 +510,202 @@ export function SalesQueue({ initialData, initialError }: Props) {
             <LinkageList linked={uploadResult.details.validationTotals.dsmLinkedNames} notLinked={uploadResult.details.validationTotals.dsmNotLinkedNames} title="DSM Linkage" />
             <LinkageList linked={uploadResult.details.validationTotals.nsmLinkedNames} notLinked={uploadResult.details.validationTotals.nsmNotLinkedNames} title="NSM Linkage" />
           </div>
-        </Card>
+        </div>
+      </AdminTableShell>
       )}
 
       {uploadResult?.details?.managerTotals && uploadResult.details.managerTotals.length > 0 && (
-        <Card>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-text">District Manager Validation Totals</h2>
-              <p className="mt-1 text-xs text-text-secondary">
-                Totals grouped by the manager HR ID read from the monthly sales sheet.
-              </p>
+        <AdminTableShell
+          description="Totals grouped by the manager HR ID read from the monthly sales sheet."
+          title="District Manager Validation Totals"
+        >
+          <div className="px-4 py-4 md:px-5">
+            <div className="mb-3 flex items-center justify-end">
+              <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-xs font-semibold text-[#64748B]">
+                {formatNumber(uploadResult.details.managerTotals.length)} managers
+              </span>
             </div>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-text-secondary">
-              {formatNumber(uploadResult.details.managerTotals.length)} managers
-            </span>
-          </div>
-          <div className="mt-4 overflow-hidden rounded-lg border border-border">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-[0.14em] text-text-secondary">
-                <tr>
-                  <th className="px-3 py-2">District Manager</th>
-                  <th className="px-3 py-2">Rows</th>
-                  <th className="px-3 py-2">Sales Units</th>
-                  <th className="px-3 py-2">Sales Value</th>
-                  <th className="px-3 py-2">Target Units</th>
-                  <th className="px-3 py-2">Target Value</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {uploadResult.details.managerTotals.map((manager) => (
-                  <tr key={manager.manager}>
-                    <td className="px-3 py-2 font-semibold text-text">{manager.manager}</td>
-                    <td className="px-3 py-2 text-text-secondary">{formatNumber(manager.rows)}</td>
-                    <td className="px-3 py-2 text-text-secondary">{formatNumber(manager.salesUnits)}</td>
-                    <td className="px-3 py-2 text-text-secondary">{formatCurrency(manager.salesValue)}</td>
-                    <td className="px-3 py-2 text-text-secondary">{formatNumber(manager.targetUnits)}</td>
-                    <td className="px-3 py-2 text-text-secondary">{formatCurrency(manager.targetValue)}</td>
+            <div className="overflow-hidden rounded-[16px] border border-[#E2E8F0]">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead className="bg-[#F8FAFC]">
+                  <tr>
+                    <th className={adminTableHeaderClassName}>District Manager</th>
+                    <th className={adminTableHeaderClassName}>Rows</th>
+                    <th className={adminTableHeaderClassName}>Sales Units</th>
+                    <th className={adminTableHeaderClassName}>Sales Value</th>
+                    <th className={adminTableHeaderClassName}>Target Units</th>
+                    <th className={adminTableHeaderClassName}>Target Value</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-[#E2E8F0]">
+                  {uploadResult.details.managerTotals.map((manager, index) => (
+                    <tr className="text-[#64748B]" key={`${manager.manager}:${index}`}>
+                      <td className="px-4 py-2.5 font-semibold text-[#0F172A]">{manager.manager}</td>
+                      <td className="px-4 py-2.5">{formatNumber(manager.rows)}</td>
+                      <td className="px-4 py-2.5">{formatNumber(manager.salesUnits)}</td>
+                      <td className="px-4 py-2.5">{formatCurrency(manager.salesValue)}</td>
+                      <td className="px-4 py-2.5">{formatNumber(manager.targetUnits)}</td>
+                      <td className="px-4 py-2.5">{formatCurrency(manager.targetValue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </Card>
+        </AdminTableShell>
       )}
 
       {uploadResult?.details?.blockingReasons && uploadResult.details.blockingReasons.length > 0 && (
-        <Card className="border-red-200 bg-red-50">
-          <h2 className="text-sm font-bold text-red-950">Why the upload stopped</h2>
-          <div className="mt-3 space-y-2">
-            {uploadResult.details.blockingReasons.map((reason) => (
-              <p className="rounded-lg bg-white/70 px-3 py-2 text-sm text-red-900" key={reason}>{reason}</p>
-            ))}
+        <AdminCallout tone="danger">
+          <AlertTriangle className="mt-0.5 h-4 w-4" />
+          <div>
+            <p className="font-semibold">Why the upload stopped</p>
+            <div className="mt-2 space-y-2 text-sm">
+              {uploadResult.details.blockingReasons.map((reason, index) => (
+                <p key={`${reason}:${index}`}>{reason}</p>
+              ))}
+            </div>
           </div>
-        </Card>
+        </AdminCallout>
       )}
 
       {(failureReasons.length > 0 || warningReasons.length > 0) && (
         <div className="grid gap-4 lg:grid-cols-2">
           {failureReasons.length > 0 && (
-            <Card>
-              <h2 className="text-sm font-bold text-text">Top Errors</h2>
-              <div className="mt-3 space-y-2">
-                {failureReasons.map((reason) => (
-                  <div className="flex gap-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm" key={reason.message}>
-                    <span className="font-bold text-red-700">{reason.count}</span>
-                    <span className="text-red-950">{reason.message}</span>
-                  </div>
-                ))}
+            <AdminTableShell
+              description="Counts by the most frequent blocking reasons from this uploaded file."
+              title="Top Errors"
+            >
+              <div className="space-y-2 p-4 md:p-5">
+                {failureReasons.map((reason, index) => (
+                  <AdminCallout tone="danger" key={`${reason.message}:${index}`}>
+                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-xs font-black text-[#991B1B]">
+                      {reason.count}
+                    </span>
+                    <span>{reason.message}</span>
+                  </AdminCallout>
+                  ))}
               </div>
-            </Card>
+            </AdminTableShell>
           )}
           {warningReasons.length > 0 && (
-            <Card>
-              <details>
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-bold text-text">Warnings</h2>
-                    <p className="mt-1 text-xs text-text-secondary">
-                      {formatNumber(warningReasons.reduce((sum, reason) => sum + reason.count, 0))} warnings found. Open only when you need details.
-                    </p>
-                  </div>
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
-                    Show
-                  </span>
+            <AdminTableShell
+              description={`${formatNumber(warningReasons.reduce((sum, reason) => sum + reason.count, 0))} warnings found.`}
+              title="Warnings"
+            >
+              <details className="group p-4 md:p-5">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] bg-[#FFFBEB] px-3 py-2.5 text-sm">
+                  <span className="font-semibold text-[#92400E]">Open warning details</span>
+                  <span className="rounded-full border border-[#FDE68A] bg-white px-3 py-0.5 text-xs font-semibold text-[#92400E]">Show</span>
                 </summary>
                 <div className="mt-3 space-y-2">
-                  {warningReasons.map((reason) => (
-                    <div className="flex gap-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm" key={reason.message}>
-                      <span className="font-bold text-amber-700">{reason.count}</span>
-                      <span className="text-amber-950">{reason.message}</span>
-                    </div>
+                  {warningReasons.map((reason, index) => (
+                    <AdminCallout tone="neutral" key={`${reason.message}:${index}`}>
+                      <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#FDE68A] bg-[#FFFBEB] text-xs font-black text-[#92400E]">
+                        {reason.count}
+                      </span>
+                      <span className="text-[#78350F]">{reason.message}</span>
+                    </AdminCallout>
                   ))}
                 </div>
               </details>
-            </Card>
+            </AdminTableShell>
           )}
         </div>
       )}
 
       {invalidRows.length > 0 && (
-        <Card>
-          <h2 className="text-sm font-bold text-text">Rows To Fix</h2>
-          <div className="mt-3 overflow-hidden rounded-lg border border-border">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-[0.14em] text-text-secondary">
+        <AdminTableShell
+          description="Rows with required fixes before the sheet can move through validation."
+          title="Rows To Fix"
+        >
+          <div className="overflow-x-auto p-4 md:p-5">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="bg-[#F8FAFC]">
                 <tr>
-                  <th className="w-24 px-3 py-2">Row</th>
-                  <th className="px-3 py-2">Error</th>
+                  <th className={adminTableHeaderClassName}>Row</th>
+                  <th className={adminTableHeaderClassName}>Error</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
-                {invalidRows.map((row) => (
-                  <tr key={row.rowNumber}>
-                    <td className="px-3 py-2 font-semibold text-text">{row.rowNumber}</td>
-                    <td className="px-3 py-2 text-text-secondary">{row.messages.join(" | ")}</td>
+              <tbody className="divide-y divide-[#E2E8F0]">
+                {invalidRows.map((row, index) => (
+                  <tr className="text-[#64748B]" key={`${row.rowNumber}:${index}`}>
+                    <td className="w-24 px-4 py-3 font-semibold text-[#0F172A]">{row.rowNumber}</td>
+                    <td className="px-4 py-3">{row.messages.join(" | ")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </Card>
+        </AdminTableShell>
       )}
-
-      <section className="rounded-2xl border border-border bg-white p-5 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary">Repository</p>
-            <h2 className="mt-1 text-lg font-bold text-text">Uploaded Sales Sheets</h2>
-            <p className="mt-0.5 text-sm text-text-secondary">
-              {batches.length === 0 ? "No uploaded sheets yet." : `${batches.length} uploaded sheet${batches.length === 1 ? "" : "s"}.`}
-            </p>
-          </div>
+      
+      <AdminTableShell
+        description={batches.length === 0 ? "No uploaded sheets yet. Start a new upload from the action bar." : `${batches.length} uploaded sheet${batches.length === 1 ? "" : "s"} in repository.`}
+        title="Uploaded Sales Sheets"
+        action={(
           <Button className="gap-2" onClick={() => fileInputRef.current?.click()} variant="secondary">
             <UploadCloud className="h-4 w-4" />
             New Upload
           </Button>
-        </div>
+        )}
+      >
+        <div className="px-1 pb-1 pt-0">
 
         {actionMessage && (
-          <Card className={cn("mb-4 border", actionMessage.type === "success" ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50")}>
-            <div className="flex items-center gap-3">
-              {actionMessage.type === "success" ? <CheckCircle className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-danger" />}
-              <p className="text-sm font-medium">{actionMessage.text}</p>
-            </div>
-          </Card>
+          <div className="mb-4">
+            <StatusBanner
+              message={actionMessage.text}
+              title={actionMessage.type === "success" ? "Queue updated" : "Queue action failed"}
+              tone={actionMessage.type === "success" ? "success" : "danger"}
+            />
+          </div>
         )}
 
         {batches.length === 0 ? (
-          <Card>
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <Clock className="h-10 w-10 text-text-secondary" />
-              <p className="font-medium text-text">No sales sheets uploaded yet</p>
-              <p className="text-sm text-text-secondary">Use the form above to upload a monthly sales file.</p>
+          <AdminCallout tone="neutral">
+            <Clock className="mt-0.5 h-4 w-4" />
+            <div>
+              <p className="font-semibold">No sales sheets uploaded yet</p>
+              <p className="text-sm">Use the form above to upload a monthly closing sheet.</p>
             </div>
-          </Card>
+          </AdminCallout>
         ) : (
-          <div className="space-y-3">
+          <div className="divide-y divide-[#E2E8F0] rounded-[18px] border border-[#E2E8F0] overflow-hidden">
             {batches.map((batch) => {
               const isBusy = actionLoading?.startsWith(`${batch.id}:`);
               return (
-                <div className="rounded-xl border border-border bg-slate-50/60 p-4 shadow-sm" key={batch.id}>
-                  <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="bg-white px-4 py-4 sm:px-5" key={batch.id}>
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                     <div className="flex min-w-0 items-start gap-4">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white text-primary shadow-sm ring-1 ring-orange-100">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#FFF7ED] text-[#F97316]">
                         <FileText className="h-5 w-5" />
                       </div>
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-text">{batch.fileName}</p>
                         <p className="text-sm text-text-secondary">{batch.line} - {batch.period}</p>
                         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-                          <span className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-text-secondary shadow-sm">
+                          <span className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-text-secondary">
                             {formatNumber(Number(batch.totalRecords ?? 0))} rows
                           </span>
-                          <span className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-warning">
+                          <span className="rounded-lg border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 text-xs font-semibold text-warning">
                             {formatNumber(Number(batch.warningRecords ?? 0))} warnings
                           </span>
-                          <span className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-danger">
+                          <span className="rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-danger">
                             {formatNumber(Number(batch.failedRecords ?? 0))} failures
                           </span>
-                          <span className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-success">
+                          <span className="rounded-lg border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-2 text-xs font-semibold text-success">
                             {formatNumber(Number(batch.linkedRecords ?? 0))} DSM linked ({Math.round((batch.linkageRate ?? 0) * 100)}%)
                           </span>
                           {batch.approvedSalesValue !== undefined && (
-                            <span className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-text shadow-sm">
+                            <span className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-text">
                               {formatCurrency(Number(batch.approvedSalesValue))}
                             </span>
                           )}
                         </div>
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center justify-end gap-2">
+                    <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
                       {statusBadge(String(batch.status))}
                       {batch.canApprove && (
                         <Button className="px-3 py-1.5 text-xs" disabled={isBusy} onClick={() => handleAction(batch.id, "approve")}>
@@ -753,7 +730,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
                         Reject
                       </Button>
                       <Button
-                        className="gap-1 px-3 py-1.5 text-xs"
+                        className="gap-1 rounded-xl px-3 py-1.5 text-xs"
                         disabled={isBusy}
                         onClick={() => handleAction(batch.id, "delete")}
                         variant="destructive"
@@ -788,8 +765,8 @@ export function SalesQueue({ initialData, initialError }: Props) {
                       </summary>
                       <div className="mt-3 grid gap-3 lg:grid-cols-2">
                         <div className="space-y-2">
-                          {(batch.linkageSummary as LinkageSummary).reasons.map((reason) => (
-                            <div className="rounded-md bg-white/80 px-3 py-2 text-xs text-amber-950" key={reason.message}>
+                          {(batch.linkageSummary as LinkageSummary).reasons.map((reason, index) => (
+                            <div className="rounded-md bg-white/80 px-3 py-2 text-xs text-amber-950" key={`${reason.message}:${index}`}>
                               <span className="font-bold">{formatNumber(reason.count)}</span> {reason.message}
                             </div>
                           ))}
@@ -805,8 +782,8 @@ export function SalesQueue({ initialData, initialError }: Props) {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-amber-100">
-                              {(batch.linkageSummary as LinkageSummary).sampleRows.map((row) => (
-                                <tr key={row.rowNumber}>
+                              {(batch.linkageSummary as LinkageSummary).sampleRows.map((row, index) => (
+                                <tr key={`${row.rowNumber}:${index}`}>
                                   <td className="px-2 py-1 font-semibold">{row.rowNumber}</td>
                                   <td className="px-2 py-1">{row.employeeHrId || "-"}</td>
                                   <td className="px-2 py-1">{row.territory}</td>
@@ -822,7 +799,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
 
                   {batch.approvalBlockedReason && (
                     <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 dark:border-orange-800 dark:bg-orange-950/20">
-                      <p className="text-xs font-medium text-warning">{batch.approvalBlockedReason}</p>
+                    <p className="text-xs font-medium text-warning">{batch.approvalBlockedReason}</p>
                     </div>
                   )}
                 </div>
@@ -830,7 +807,8 @@ export function SalesQueue({ initialData, initialError }: Props) {
             })}
           </div>
         )}
-      </section>
+        </div>
+      </AdminTableShell>
     </div>
   );
 }

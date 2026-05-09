@@ -7,12 +7,12 @@ import {
   ChartNoAxesColumnIncreasing,
   ChevronRight,
   ChartColumnBig,
-  Database,
   FileSpreadsheet,
   FileUp,
   Hourglass,
   IdCard,
   LayoutDashboard,
+  MapPinned,
   Network,
   ShieldCheck,
   X,
@@ -21,7 +21,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { type NavigationMode, type PermissionAction, type PermissionResource } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
@@ -59,14 +59,11 @@ function getAdminSections(permissionLookup: PermissionLookup): SidebarSection[] 
   const sections: SidebarSection[] = [
     {
       items: [
-        { href: "/admin", icon: LayoutDashboard, label: "Admin Command", permissions: [{ resource: "admin" }] },
-        { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }] },
-        { href: "/admin/monitoring", icon: ShieldCheck, label: "Monitoring", permissions: [{ resource: "admin" }] },
-        { href: "/overview", icon: ChartColumnBig, label: "Overview Dashboard", permissions: [{ resource: "overview" }] },
         { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
         { href: "/imports/employees", icon: FileUp, label: "Bulk Import", permissions: [{ resource: "imports" }] },
+        { href: "/imports/bricks", icon: Network, label: "Brick Reference", permissions: [{ resource: "imports" }] },
       ],
-      label: "Command Center",
+      label: "Core Admin",
     },
     {
       items: [
@@ -78,15 +75,18 @@ function getAdminSections(permissionLookup: PermissionLookup): SidebarSection[] 
     {
       items: [
         { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }] },
-        { href: "/payroll/dashboard", icon: ChartColumnBig, label: "Payroll Dashboard", permissions: [{ resource: "payroll" }] },
         { href: "/payroll/expenses", icon: FileSpreadsheet, label: "Expenses", permissions: [{ resource: "expenses" }] },
         { href: "/payroll/expenses/dashboard", icon: ChartColumnBig, label: "Expenses Dashboard", permissions: [{ resource: "expenses" }] },
+        { href: "/admin/outstation/requests", icon: MapPinned, label: "Outstation Requests", permissions: [{ resource: "outstation" }] },
+        { href: "/admin/outstation/policy", icon: CalendarClock, label: "Outstation Policy", permissions: [{ resource: "outstation", action: "update" }] },
+        { href: "/admin/outstation/heatmaps", icon: MapPinned, label: "Outstation Heatmaps", permissions: [{ resource: "outstation" }] },
+        { href: "/admin/geo-intelligence", icon: MapPinned, label: "Geo Intelligence", permissions: [{ resource: "geo_intelligence" }] },
       ],
-      label: "Control Tower",
+      label: "Payroll & Expenses",
     },
     {
       items: [{ href: "/payslips", icon: IdCard, label: "Payslips Center", permissions: [{ resource: "payslips" }] }],
-      label: "Employee Portals",
+      label: "Documents",
     },
     {
       items: [
@@ -95,11 +95,12 @@ function getAdminSections(permissionLookup: PermissionLookup): SidebarSection[] 
         { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }] },
         { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       ],
-      label: "Employee Management",
+      label: "People Ops",
     },
     {
       items: [
         { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },
+        { href: "/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
         { href: "/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
         { href: "/hr-calendar", icon: CalendarDays, label: "HR Calendar", permissions: [{ resource: "hr_calendar" }] },
       ],
@@ -122,6 +123,7 @@ function getEmployeePortalSections(permissionLookup: PermissionLookup): SidebarS
         { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", permissions: [{ resource: "employee_profile" }] },
         { href: "/employee-portals/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales", permissions: [{ resource: "sales" }] },
         { href: "/employee-portals/payroll", icon: ChartColumnBig, label: "Payroll & Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }] },
+        { href: "/employee/outstation/new", icon: MapPinned, label: "Outstation", permissions: [{ resource: "outstation" }] },
       ],
       label: "Medical Rep Portal",
     },
@@ -143,20 +145,18 @@ function getSections(mode: NavigationMode, permissionLookup: PermissionLookup): 
 
 function getHomePath(mode: NavigationMode) {
   if (mode === "employee-portal") return "/employee-portals";
-  return "/admin";
+  return "/admin/access";
 }
 
 function isActivePath(pathname: string, href: string, activeTab: string | null) {
   const baseHref = href.split("?")[0];
   if (href.includes("tab=governance")) return pathname === baseHref && activeTab === "governance";
   if (href.includes("tab=generate")) return pathname === baseHref && activeTab === "generate";
-  if (baseHref === "/overview") return pathname === "/overview";
   if (baseHref === "/employee-portals") return pathname === "/employee-portals";
   if (baseHref === "/sales") return pathname === "/sales";
   if (baseHref === "/employee-portals/sales") return pathname === "/employee-portals/sales";
   if (baseHref === "/payroll") return pathname === "/payroll";
   if (baseHref === "/employee-portals/payroll") return pathname === "/employee-portals/payroll";
-  if (baseHref === "/payroll/dashboard") return pathname === "/payroll/dashboard";
   if (baseHref === "/payroll/expenses") return pathname === "/payroll/expenses";
   return pathname.startsWith(baseHref);
 }
@@ -174,87 +174,97 @@ function SidebarNav({
   const pathname = usePathname();
   const [activeTab, setActiveTab] = useState<string | null>(pathname === "/payroll" ? "governance" : null);
 
-  const initialCollapsed = Object.fromEntries(sections.map((s) => [s.label, false]));
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(initialCollapsed);
-
-  function toggleSection(label: string) {
-    setCollapsed((prev) => ({ ...prev, [label]: !prev[label] }));
-  }
-
   return (
     <>
-      <nav className="flex-1 overflow-auto px-3 py-4">
+      <nav className="flex-1 overflow-auto px-3 py-5 text-[#000000]">
         {sections.map((section, sectionIndex) => {
-          const isCollapsed = collapsed[section.label];
           const hasActive = section.items.some((item) => isActivePath(pathname, item.href, activeTab));
+          const adminSection = mode === "admin";
 
           return (
-            <div className={cn(sectionIndex > 0 && "mt-5")} key={section.label}>
-              <button
+            <Fragment key={section.label}>
+              <div
                 className={cn(
-                  "group mb-1.5 flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 transition-colors duration-150 hover:bg-[#F8FAFC]",
+                  adminSection ? "px-1.5" : "px-2",
+                  sectionIndex > 0 && "mt-6",
                 )}
-                onClick={() => toggleSection(section.label)}
-                type="button"
               >
-                <ChevronRight
-                  className={cn(
-                    "h-3 w-3 shrink-0 transition-transform duration-200",
-                    isCollapsed ? "rotate-0 text-[#64748B]" : "rotate-90 text-[#64748B]",
-                    hasActive && "text-[#F97316]",
-                  )}
-                />
-                <span
-                  className={cn(
-                    "text-[9px] font-black uppercase tracking-[0.24em] transition-colors",
-                    hasActive ? "text-[#F97316]" : "text-[#64748B] group-hover:text-[#0F172A]",
-                  )}
-                >
-                  {section.label}
-                </span>
-              </button>
+                <div className={cn("flex items-center gap-2", adminSection && "border-t border-[#333333] px-2 pt-4")}>
+                  <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#FFF7ED]", adminSection && "bg-[#000000] ring-1 ring-[#333333]")}>
+                    <ChevronRight
+                      className={cn(
+                        "h-3 w-3 shrink-0 transition-transform duration-200 text-[#F97316]",
+                        adminSection && "text-[#F59E0B]",
+                        hasActive && "text-[#FB923C]",
+                      )}
+                    />
+                  </span>
+                  <span className={cn("text-[11px] font-black uppercase tracking-[0.18em] text-[#F97316]", adminSection && "text-[#F8B56B]")}>
+                    {section.label}
+                  </span>
+                </div>
+              </div>
 
-              {!isCollapsed && (
-                <div className="space-y-1">
-                  {section.items.map((item) => {
-                    const active = isActivePath(pathname, item.href, activeTab);
-                    return (
-                      <a
-                        className={cn(
-                          "group relative flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-xs font-semibold transition-all duration-150",
-                          active
-                            ? "bg-gradient-to-r from-[#F97316]/10 to-[#F97316]/5 text-[#0F172A] shadow-[0_4px_12px_rgba(249,115,22,0.1)] border border-[#F97316]/20"
+              <div
+                className={cn(
+                  "mt-2 space-y-1.5 px-1",
+                  adminSection && "p-1",
+                )}
+              >
+                {section.items.map((item) => {
+                  const active = isActivePath(pathname, item.href, activeTab);
+                  return (
+                    <Link
+                      className={cn(
+                        "group relative flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-[13px] font-semibold transition-all duration-150",
+                        adminSection
+                          ? active
+                            ? "bg-[linear-gradient(180deg,#1a1a1a_0%,#000000_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_24px_rgba(0,0,0,0.24)]"
+                            : "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-white"
+                          : active
+                            ? "bg-[#FFF7ED] text-[#0F172A]"
                             : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]",
+                      )}
+                      href={item.href}
+                      key={item.label}
+                      onClick={() => {
+                        if (item.href.includes("tab=generate")) setActiveTab("generate");
+                        else if (item.href.includes("tab=governance")) setActiveTab("governance");
+                        else setActiveTab(null);
+                        onNavigate?.();
+                      }}
+                    >
+                        {adminSection && (
+                          <span
+                            className={cn(
+                              "absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full bg-[#F97316] transition-opacity",
+                              active ? "opacity-100" : "opacity-0",
+                            )}
+                          />
                         )}
-                        href={item.href}
-                        key={item.label}
-                        onClick={() => {
-                          if (item.href.includes("tab=generate")) setActiveTab("generate");
-                          else if (item.href.includes("tab=governance")) setActiveTab("governance");
-                          else setActiveTab(null);
-                          onNavigate?.();
-                        }}
-                      >
                         <span
                           className={cn(
-                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors duration-150",
-                            active
-                              ? "bg-[#F97316] text-white"
-                              : "bg-[#F8FAFC] text-[#64748B] group-hover:bg-[#F97316]/10 group-hover:text-[#F97316]",
+                            "flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] transition-colors duration-150",
+                            adminSection
+                              ? active
+                                ? "bg-[linear-gradient(180deg,#FF8A1C_0%,#F97316_100%)] text-white shadow-[0_10px_18px_rgba(249,115,22,0.28)]"
+                                : "bg-[#000000] text-[#94A3B8] ring-1 ring-[#333333] group-hover:border-[#3A475C] group-hover:text-[#F8B56B]"
+                              : active
+                                ? "bg-[#F97316] text-white"
+                                : "bg-[#F8FAFC] text-[#64748B] ring-1 ring-[#E2E8F0] group-hover:bg-white group-hover:text-[#F97316]",
                           )}
                         >
-                          <item.icon className="h-3.5 w-3.5" />
+                          <item.icon className="h-4 w-4" />
                         </span>
-                        <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                        {active && (
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#F97316] shadow-[0_0_8px_rgba(249,115,22,0.5)]" />
-                        )}
-                      </a>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                      <span className={cn("min-w-0 flex-1 truncate", adminSection && "tracking-[-0.01em]")}>{item.label}</span>
+                      {active && (
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#F59E0B] shadow-[0_0_10px_rgba(245,158,11,0.7)]" />
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </Fragment>
           );
         })}
       </nav>
@@ -273,40 +283,71 @@ function SidebarLogo({
 
   return (
     <Link
-      className="mx-3 mt-3 flex items-center gap-3 rounded-2xl border border-[#E2E8F0] bg-white px-3 py-3 transition hover:bg-[#F8FAFC]"
+      className={cn(
+        "mx-3 mt-3 flex items-center gap-3 rounded-[22px] px-4 py-4 transition",
+        mode === "admin" && "border border-[#333333] bg-[linear-gradient(180deg,#1a1a1a_0%,#000000_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
+      )}
       href={homePath}
       onClick={onNavigate}
     >
       <Image
         alt="Phoenix"
-        className="h-10 w-10 object-contain drop-shadow-[0_0_12px_rgba(249,115,22,0.55)]"
-        height={40}
+        className="h-11 w-11 object-contain drop-shadow-[0_0_16px_rgba(249,115,22,0.5)]"
+        height={44}
         src="/brand/phoenix-bird-icon.png"
-        width={40}
+        width={44}
       />
       <div className="min-w-0">
-        <p className="whitespace-nowrap text-sm font-black tracking-[0.2em] text-[#0F172A]">
+        <p className={cn("whitespace-nowrap text-[15px] font-black tracking-[0.26em] text-[#0F172A]", mode === "admin" && "text-white")}>
           PHOENI<span className="text-[#F97316]">X</span>
         </p>
-        <p className="mt-0.5 truncate text-[9px] font-semibold uppercase tracking-[0.18em] text-[#64748B]">
-          People Intelligence
+        <p className={cn("mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.22em] text-[#64748B]", mode === "admin" && "text-[#94A3B8]")}>
+          {mode === "admin" ? "Admin Intelligence" : "Workforce Portal"}
         </p>
       </div>
     </Link>
   );
 }
 
-function SidebarFooter() {
+function SidebarIntro({ mode = "admin" }: { mode?: NavigationMode }) {
+  if (mode === "admin") {
+    return null;
+  }
+
+  return (
+    <div className="mx-3 mt-3 rounded-[24px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#F97316]">
+        Portal
+      </p>
+      <p className="mt-2 text-lg font-black tracking-[-0.03em] text-[#0F172A]">
+        Employee workspace
+      </p>
+      <p className="mt-2 text-sm leading-6 text-[#64748B]">
+        Personal access to performance, payroll, and support workflows.
+      </p>
+    </div>
+  );
+}
+
+function SidebarFooter({ mode = "admin" }: { mode?: NavigationMode }) {
+  if (mode === "admin") {
+    return null;
+  }
+
   return (
     <div className="p-3">
-      <div className="overflow-hidden rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-2">
-        <Image
-          alt="Phoenix People Performance Intelligence"
-          className="h-full w-full object-contain opacity-90"
-          height={172}
-          src="/brand/phoenix-sidebar-square.png"
-          width={172}
-        />
+      <div className="overflow-hidden rounded-[24px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#fff7ed_0%,#ffffff_100%)] p-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#F97316]/10 text-[#F97316]">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-[#0F172A]">Portal workspace</p>
+            <p className="mt-1 text-xs leading-5 text-[#64748B]">
+              Your links and views adapt to the access granted to this account.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -320,11 +361,11 @@ export function Sidebar({
   permissionLookup?: PermissionLookup;
 }) {
   return (
-    <aside className="sticky top-0 hidden h-screen w-[236px] shrink-0 flex-col border-r border-[#E2E8F0] bg-white text-[#0F172A] shadow-[0_8px_20px_rgba(15,23,42,0.04)] lg:flex">
+    <aside className="sticky top-0 hidden h-screen w-[276px] shrink-0 flex-col border-r border-[#1a1a1a] bg-[#000000] text-[#0F172A] lg:flex">
       <SidebarLogo mode={navigationMode} />
-      <div className="mx-5 mt-3 h-px bg-[#E2E8F0]" />
+      <SidebarIntro mode={navigationMode} />
       <SidebarNav mode={navigationMode} onNavigate={undefined} permissionLookup={permissionLookup} />
-      <SidebarFooter />
+      <SidebarFooter mode={navigationMode} />
     </aside>
   );
 }
@@ -357,9 +398,9 @@ export function MobileSidebar({
         onClick={onClose}
         type="button"
       />
-      <aside
-        className={cn(
-          "absolute inset-y-0 left-0 flex w-[min(86vw,310px)] flex-col border-r border-[#E2E8F0] bg-white text-[#0F172A] shadow-2xl transition-transform duration-200",
+        <aside
+          className={cn(
+          "absolute inset-y-0 left-0 flex w-[min(90vw,320px)] flex-col border-r border-[#1a1a1a] bg-[#000000] text-[#0F172A] shadow-2xl transition-transform duration-200",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
@@ -374,13 +415,13 @@ export function MobileSidebar({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="mx-5 mt-3 h-px bg-[#E2E8F0]" />
+        <SidebarIntro mode={navigationMode} />
         <SidebarNav
           mode={navigationMode}
           onNavigate={onClose}
           permissionLookup={permissionLookup}
         />
-        <SidebarFooter />
+        <SidebarFooter mode={navigationMode} />
       </aside>
     </div>
   );

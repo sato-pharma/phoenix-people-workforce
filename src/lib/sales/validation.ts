@@ -1,4 +1,4 @@
-﻿import type { SalesRecordInput, SalesValidationState, TargetRecord } from "@/lib/sales/types";
+import type { SalesRecordInput, SalesValidationState } from "@/lib/sales/types";
 
 const salesColumnAliases = {
   employeeHrId: ["HR_ID", "hr_id", "HR ID", "hr id", "Employee HR ID", "employee_hr_id"],
@@ -16,18 +16,6 @@ const salesColumnAliases = {
   year: ["Year", "year"],
   salesUnits: ["Sales Units", "sales_units"],
   salesValue: ["Sales Value", "sales_value"],
-  targetUnits: ["Target Units", "target_units"],
-  targetValue: ["Target Value", "target_value"],
-} as const;
-
-const targetColumnAliases = {
-  employeeHrId: ["HR_ID", "hr_id", "Employee HR ID", "employee_hr_id"],
-  employeeCrmId: ["CRM_ID", "Employee CRM ID", "employee_crm_id"],
-  employeeLookupKey: ["CRM Username", "crm_username", "employee_lookup_key"],
-  employeeName: ["Employee Name", "employee_name", "Full Name"],
-  line: ["Line", "line"],
-  month: ["Month", "month"],
-  year: ["Year", "year"],
   targetUnits: ["Target Units", "target_units"],
   targetValue: ["Target Value", "target_value"],
 } as const;
@@ -79,10 +67,6 @@ export function buildValidationState(messages: string[]) {
       : ("valid" as SalesValidationState);
 }
 
-function hasRowData(values: unknown[]) {
-  return values.some((value) => String(value ?? "").trim() !== "");
-}
-
 function hasMaterialValueGap(actual: number, expected: number) {
   if (!Number.isFinite(actual) || !Number.isFinite(expected)) return false;
   const tolerance = Math.max(Math.abs(expected) * VALUE_MISMATCH_RATIO, VALUE_MISMATCH_FLOOR);
@@ -117,7 +101,6 @@ function requireSheetValue(
 export function parseSalesRow(row: Record<string, unknown>, fallbackLine: string, rowNumber: number) {
   const validationNotes: string[] = [];
   [
-    salesColumnAliases.employeeLookupKey,
     salesColumnAliases.territory,
     salesColumnAliases.salesType,
     salesColumnAliases.family,
@@ -158,6 +141,13 @@ export function parseSalesRow(row: Record<string, unknown>, fallbackLine: string
     validationState: "valid",
     validationNotes,
   };
+
+  const hasIdentityKey = Boolean(record.employeeHrId || record.employeeCrmId || record.employeeLookupKey);
+  if (!hasIdentityKey && !record.employeeName) {
+    validationNotes.push(
+      `FAIL: Row ${rowNumber} has no HR ID, CRM ID, lookup key, or employee name, so the system cannot attribute this sales row safely.`
+    );
+  }
 
   if (!record.line) validationNotes.push("FAIL: Cannot import this sales row because Line is missing.");
   if (!record.month) validationNotes.push("FAIL: Cannot import this sales row because Month is missing or invalid.");
@@ -213,67 +203,13 @@ export function parseSalesRow(row: Record<string, unknown>, fallbackLine: string
 
   if (Number.isFinite(record.targetUnits) && Number.isFinite(record.factoryPrice) && record.factoryPrice > 0) {
     const expectedTargetValue = record.targetUnits * record.factoryPrice;
-    if (Number.isFinite(sheetTargetValue) && targetValueHasValue) {
-      if (hasMaterialValueGap(sheetTargetValue, expectedTargetValue)) {
-        validationNotes.push(
-          `WARN: Row ${rowNumber}, column "Target Value" differs from Target Units x Factory Price. The dashboard will use the sheet Target Value ${sheetTargetValue}.`
-        );
-      }
+    if (Number.isFinite(sheetTargetValue) && targetValueHasValue && hasMaterialValueGap(sheetTargetValue, expectedTargetValue)) {
+      validationNotes.push(
+        `WARN: Row ${rowNumber}, column "Target Value" differs from Target Units x Factory Price. The dashboard will use the sheet Target Value ${sheetTargetValue}.`
+      );
     }
   }
 
   record.validationState = buildValidationState(validationNotes);
-  return record;
-}
-
-export function parseTargetRow(row: Record<string, unknown>) {
-  const validationNotes: string[] = [];
-  const month = normalizeMonth(firstValue(row, targetColumnAliases.month));
-  const year = Number(normalizeString(firstValue(row, targetColumnAliases.year)) || 0);
-  const targetUnits = normalizeNumber(firstValue(row, targetColumnAliases.targetUnits));
-  const targetValue = normalizeNumber(firstValue(row, targetColumnAliases.targetValue));
-  const status = buildValidationState(validationNotes);
-
-  const record: TargetRecord = {
-    id: crypto.randomUUID(),
-    batchId: "",
-    employeeHrId: normalizeString(firstValue(row, targetColumnAliases.employeeHrId)),
-    employeeCrmId: normalizeString(firstValue(row, targetColumnAliases.employeeCrmId)),
-    employeeLookupKey: normalizeString(firstValue(row, targetColumnAliases.employeeLookupKey)),
-    employeeName: normalizeString(firstValue(row, targetColumnAliases.employeeName)),
-    line: normalizeString(firstValue(row, targetColumnAliases.line)) || "Unassigned",
-    month,
-    year,
-    targetUnits,
-    targetValue,
-    status,
-    validationNotes,
-    createdAt: new Date().toISOString(),
-  };
-
-  const targetRowHasAnyBusinessData = hasRowData([
-    firstValue(row, targetColumnAliases.employeeHrId),
-    firstValue(row, targetColumnAliases.employeeCrmId),
-    firstValue(row, targetColumnAliases.employeeLookupKey),
-    firstValue(row, targetColumnAliases.employeeName),
-    firstValue(row, targetColumnAliases.line),
-    firstValue(row, targetColumnAliases.month),
-    firstValue(row, targetColumnAliases.year),
-    firstValue(row, targetColumnAliases.targetUnits),
-    firstValue(row, targetColumnAliases.targetValue),
-  ]);
-
-  if (!targetRowHasAnyBusinessData) {
-    validationNotes.push("FAIL: Cannot import this target row because it is empty.");
-  }
-  if (!record.employeeHrId && !record.employeeCrmId && !record.employeeLookupKey) {
-    validationNotes.push("FAIL: Cannot import this target row because employee_hr_id, employee_crm_id, and employee_lookup_key are all empty.");
-  }
-  if (!month) validationNotes.push("FAIL: Cannot import this target row because Month is missing or invalid.");
-  if (!year || year < 2000) validationNotes.push("FAIL: Cannot import this target row because Year is missing or invalid.");
-  if (!Number.isFinite(targetUnits)) validationNotes.push("FAIL: Cannot import this target row because Target Units is not numeric.");
-  if (!Number.isFinite(targetValue)) validationNotes.push("FAIL: Cannot import this target row because Target Value is not numeric.");
-
-  record.status = buildValidationState(validationNotes);
   return record;
 }

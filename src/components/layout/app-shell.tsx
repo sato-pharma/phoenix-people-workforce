@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { adminShellBackgroundClassName } from "@/components/admin/admin-design-system";
 import {
   getPermissionMatrix,
   permissionActions,
@@ -7,7 +8,7 @@ import {
   resolveNavigationMode,
   type NavigationMode,
 } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import type { PermissionLookup } from "@/components/layout/sidebar";
@@ -22,6 +23,7 @@ export async function AppShell({
   navigationMode?: NavigationMode;
 }) {
   const access = await resolveAccessContextFromPage();
+  const viewer = await resolveViewerIdentityFromPage();
   const resolvedNavigationMode = navigationMode ?? resolveNavigationMode(access);
   const matrix = await getPermissionMatrix();
 
@@ -34,8 +36,10 @@ export async function AppShell({
     }
   }
 
+  const isAdminMode = resolvedNavigationMode === "admin";
+
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A]">
+    <div className={`min-h-screen text-[#0F172A] ${isAdminMode ? adminShellBackgroundClassName : "bg-[#F8FAFC]"}`}>
       <div className="flex min-h-screen">
         <Sidebar navigationMode={resolvedNavigationMode} permissionLookup={permissionLookup} />
         <div className="flex min-w-0 flex-1 flex-col">
@@ -43,10 +47,11 @@ export async function AppShell({
             <Topbar
               navigationMode={resolvedNavigationMode}
               permissionLookup={permissionLookup}
+              viewer={viewer}
             />
           )}
-          <main className="min-w-0 flex-1 px-3 py-4 sm:px-4 sm:py-5 lg:px-5 lg:py-6 xl:px-6">
-            <div className="w-full max-w-none">{children}</div>
+          <main className="min-w-0 flex-1 px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6 xl:px-8">
+            <div className={`w-full ${isAdminMode ? "mx-auto max-w-[1480px]" : "max-w-none"}`}>{children}</div>
           </main>
         </div>
       </div>

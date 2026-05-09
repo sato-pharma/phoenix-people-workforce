@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { getSalesPeopleLabels, linkSalesRecords, linkTargetRecords, summarizeSalesLinkage } from "@/lib/sales/employees";
+import { getSalesPeopleLabels, linkSalesRecords, summarizeSalesLinkage } from "@/lib/sales/employees";
 import { formatUnits } from "@/lib/sales/format";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSalesScope, normalizeHrId, normalizeLineName, resolveEmployeeIdentityId, type AccessContext, type BusinessScope } from "@/lib/auth/permissions";
@@ -15,9 +15,6 @@ import {
   type SalesLinkStatus,
   type SalesRecordInput,
   type SalesValidationState,
-  type TargetBatch,
-  type TargetRecord,
-  type TargetUploadPayload,
 } from "@/lib/sales/types";
 
 type ScopedRecord = SalesRecordInput & { batchId: string; period: string };
@@ -239,22 +236,8 @@ function performanceMetric(sales: number, target: number) {
   return target > 0 ? sales / target : 0;
 }
 
-function sumUniqueTargets(items: ScopedRecord[], extraKey: (r: ScopedRecord) => string = () => "") {
-  const maxTargets = new Map<string, number>();
-  items.forEach((r) => {
-    const empId = r.employeeHrId || r.employeeLookupKey || r.employeeName || "unknown";
-    const key = `${extraKey(r)}::${empId}::${r.period}`;
-    const currentMax = maxTargets.get(key) ?? 0;
-    if (r.targetValue > currentMax) {
-      maxTargets.set(key, r.targetValue);
-    }
-  });
-
-  let total = 0;
-  maxTargets.forEach((val) => {
-    total += val;
-  });
-  return total;
+function sumTargetValues(items: ScopedRecord[]) {
+  return sum(items, (item) => item.targetValue);
 }
 
 function aggregate<T>(items: T[], keyBuilder: (item: T) => string) {
@@ -325,7 +308,7 @@ function mapHistoryRows(batches: SalesBatch[], records: ScopedRecord[]): SalesHi
       return {
         ...batch,
         approvedSalesValue: sum(approvedRecords, (record) => record.salesValue),
-        approvedTargetValue: sumUniqueTargets(approvedRecords, (r) => r.product),
+        approvedTargetValue: sumTargetValues(approvedRecords),
         linkageSummary: linkageSummaryForRecords(batchRecords),
       };
     });
@@ -450,8 +433,6 @@ async function readSalesData(options?: { batchId?: string; approvedOnly?: boolea
 
   let batchesQuery = supabase.from("sales_import_batches").select("*").order("created_at", { ascending: false });
   let recordsQuery = supabase.from("sales_records").select("*");
-  const targetBatchesQuery = supabase.from("sales_target_batches").select("*").order("created_at", { ascending: false });
-  const targetRecordsQuery = supabase.from("sales_targets").select("*");
 
   if (options?.batchId) {
     batchesQuery = batchesQuery.eq("id", options.batchId);
@@ -462,17 +443,13 @@ async function readSalesData(options?: { batchId?: string; approvedOnly?: boolea
     batchesQuery = batchesQuery.eq("status", "approved").is("replaced_by_batch_id", null);
   }
 
-  const [batchResult, recordResult, targetBatchResult, targetRecordResult] = await Promise.all([
+  const [batchResult, recordResult] = await Promise.all([
     options?.batchId ? batchesQuery : readAllSupabaseRows(supabase, "sales_import_batches", { orderBy: "created_at", ascending: false }),
     includeRecords ? (options?.batchId ? recordsQuery : readAllSupabaseRows(supabase, "sales_records")) : Promise.resolve({ data: [] as DbRow[] }),
-    options?.batchId ? targetBatchesQuery : readAllSupabaseRows(supabase, "sales_target_batches", { orderBy: "created_at", ascending: false }),
-    includeRecords ? (options?.batchId ? targetRecordsQuery : readAllSupabaseRows(supabase, "sales_targets")) : Promise.resolve({ data: [] as DbRow[] }),
   ]);
 
   const batchRows = (Array.isArray(batchResult) ? batchResult : toSafeArray(batchResult.data)) as DbRow[];
   const recordRows = (Array.isArray(recordResult) ? recordResult : toSafeArray(recordResult.data)) as DbRow[];
-  const targetBatchRows = (Array.isArray(targetBatchResult) ? targetBatchResult : toSafeArray(targetBatchResult.data)) as DbRow[];
-  const targetRecordRows = (Array.isArray(targetRecordResult) ? targetRecordResult : toSafeArray(targetRecordResult.data)) as DbRow[];
 
   const batches = batchRows.map((row) => {
     const batch: SalesBatch = {
@@ -483,7 +460,7 @@ async function readSalesData(options?: { batchId?: string; approvedOnly?: boolea
       year: Number(row.year),
       period: String(row.period),
       status: String(row.status) as SalesBatch["status"],
-      schemaType: (row.schema_type as SalesBatch["schemaType"]) || "raw_sales",
+      schemaType: (row.schema_type as SalesBatch["schemaType"]) || "closing_sheet",
       totalRecords: Number(row.total_records ?? 0),
       validRecords: Number(row.valid_records ?? 0),
       warningRecords: Number(row.warning_records ?? 0),
@@ -537,37 +514,7 @@ async function readSalesData(options?: { batchId?: string; approvedOnly?: boolea
     linkConfidence: Number(row.link_confidence ?? 0),
   }));
 
-  const targetBatches = targetBatchRows.map((row) => ({
-    id: String(row.id),
-    fileName: String(row.file_name),
-    month: Number(row.month),
-    year: Number(row.year),
-    status: row.status as TargetBatch["status"],
-    totalRecords: Number(row.total_records ?? 0),
-    validRecords: Number(row.valid_records ?? 0),
-    failedRecords: Number(row.failed_records ?? 0),
-    createdAt: new Date(String(row.created_at)).toISOString(),
-  }));
-
-  const targetRecords = targetRecordRows.map((row) => ({
-    id: String(row.id),
-    batchId: String(row.batch_id),
-    employeeHrId: row.employee_hr_id ? String(row.employee_hr_id) : null,
-    employeeCrmId: row.employee_crm_id ? String(row.employee_crm_id) : null,
-    employeeLookupKey: row.employee_lookup_key ? String(row.employee_lookup_key) : null,
-    employeeName: row.employee_name ? String(row.employee_name) : null,
-    managerHrId: row.manager_hr_id ? String(row.manager_hr_id) : null,
-    line: String(row.line),
-    month: Number(row.month),
-    year: Number(row.year),
-    targetUnits: Number(row.target_units ?? 0),
-    targetValue: Number(row.target_value ?? 0),
-    status: row.status as TargetRecord["status"],
-    validationNotes: Array.isArray(row.validation_notes) ? row.validation_notes.map(String) : [],
-    createdAt: new Date(String(row.created_at)).toISOString(),
-  }));
-
-  return { batches, records, targetBatches, targetRecords };
+  return { batches, records };
 }
 
 export async function listSalesHistory(accessContext?: AccessContext | null) {
@@ -603,11 +550,6 @@ export async function getSalesBatchDetail(
     replacementChain: chainForBatch(history, id),
     reconciliation: buildBatchReconciliation(batchRecords),
   };
-}
-
-export async function listTargetBatches() {
-  const { targetBatches } = await readSalesData();
-  return targetBatches.slice().sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
 function pareto(items: Array<{ name: string; sales: number }>, totalSales: number) {
@@ -670,7 +612,7 @@ export async function getSalesDashboard(
     year: Number(row.year),
     period: String(row.period),
     status: String(row.status) as SalesBatch["status"],
-    schemaType: (row.schema_type as SalesBatch["schemaType"]) || "raw_sales",
+    schemaType: (row.schema_type as SalesBatch["schemaType"]) || "closing_sheet",
     totalRecords: Number(row.total_records ?? 0),
     validRecords: Number(row.valid_records ?? 0),
     warningRecords: Number(row.warning_records ?? 0),
@@ -807,14 +749,14 @@ export async function getSalesDashboard(
   });
 
   const totalSales = sum(filteredRecords, (record) => record.salesValue);
-  const totalTarget = sumUniqueTargets(filteredRecords, (r) => `${r.line}::${r.product}`);
+  const totalTarget = sumTargetValues(filteredRecords);
   const unitsSold = sum(filteredRecords, (record) => record.salesUnits);
   const periodGroups = aggregate(filteredRecords, (record) => record.period);
   const sortedPeriods = [...periodGroups.keys()].sort();
   const trend = sortedPeriods.map((period) => {
     const items = periodGroups.get(period) ?? [];
     const sales = sum(items, (item) => item.salesValue);
-    const target = sumUniqueTargets(items, (r) => `${r.period}::${r.line}::${r.product}`);
+    const target = sumTargetValues(items);
     return { period, sales, target, achievementRate: performanceMetric(sales, target), linkedEmployees: countLinkedEmployees(items) };
   });
 
@@ -825,7 +767,7 @@ export async function getSalesDashboard(
   const familyGroupsMap = aggregate(filteredRecords, (record) => record.family);
   const familyMatrix = [...familyGroupsMap.entries()].map(([name, items]) => {
     const sales = sum(items, (item) => item.salesValue);
-    const target = sumUniqueTargets(items, (r) => r.product);
+    const target = sumTargetValues(items);
     const achievementRate = performanceMetric(sales, target);
     const status: "green" | "yellow" | "red" | "neutral" =
       target === 0 ? "neutral" : achievementRate >= 1 ? "green" : achievementRate >= 0.8 ? "yellow" : "red";
@@ -854,7 +796,7 @@ export async function getSalesDashboard(
   const territoryPerformance = [...aggregate(filteredRecords, (record) => record.territory).entries()]
     .map(([name, items]) => {
       const sales = sum(items, (item) => item.salesValue);
-      const target = sumUniqueTargets(items, (r) => r.territory);
+      const target = sumTargetValues(items);
       return { name, sales, target, achievementRate: performanceMetric(sales, target) };
     })
     .sort((left, right) => right.sales - left.sales);
@@ -862,7 +804,7 @@ export async function getSalesDashboard(
   const linePerformance = [...aggregate(filteredRecords, (record) => record.line).entries()]
     .map(([line, items]) => {
       const sales = sum(items, (item) => item.salesValue);
-      const target = sumUniqueTargets(items, (r) => r.line);
+      const target = sumTargetValues(items);
       return { line, sales, target, achievementRate: performanceMetric(sales, target), linkedEmployees: countLinkedEmployees(items) };
     })
     .sort((left, right) => right.sales - left.sales);
@@ -877,7 +819,7 @@ export async function getSalesDashboard(
     .filter(([name]) => name !== "Unassigned")
     .map(([manager, items]) => {
       const sales = sum(items, (item) => item.salesValue);
-      const target = sumUniqueTargets(items, () => manager);
+      const target = sumTargetValues(items);
       const retailItems = items.filter((item) => item.salesType?.toLowerCase().includes("retail"));
       const storesItems = items.filter((item) => item.salesType?.toLowerCase().includes("store"));
       const topProductEntry = [...aggregate(items, (item) => item.product).entries()]
@@ -999,7 +941,7 @@ export async function createSalesImport(payload: SalesImportPayload) {
 
   const isDuplicate = Boolean(existingResult.data);
 
-  await supabase.from("sales_import_batches").insert({
+  const batchInsert = await supabase.from("sales_import_batches").insert({
     id: payload.batch.id,
     file_name: payload.batch.fileName,
     line: payload.batch.line,
@@ -1019,6 +961,9 @@ export async function createSalesImport(payload: SalesImportPayload) {
     duplicate_hash: payload.batch.duplicateHash,
     is_duplicate: isDuplicate,
   });
+  if (batchInsert.error) {
+    throw batchInsert.error;
+  }
 
   if (linked.length > 0) {
     const recordInserts = linked.map((record) => ({
@@ -1048,7 +993,10 @@ export async function createSalesImport(payload: SalesImportPayload) {
     }));
 
     for (let i = 0; i < recordInserts.length; i += 500) {
-      await supabase.from("sales_records").insert(recordInserts.slice(i, i + 500));
+      const recordInsert = await supabase.from("sales_records").insert(recordInserts.slice(i, i + 500));
+      if (recordInsert.error) {
+        throw recordInsert.error;
+      }
     }
   }
 
@@ -1065,52 +1013,6 @@ export async function createSalesImport(payload: SalesImportPayload) {
     topWarningReasons: [],
     reconciliation: null,
     linkageBreakdown,
-  };
-}
-
-export async function createTargetBatch(payload: TargetUploadPayload) {
-  const supabase = getSupabaseAdmin();
-  const linked = await linkTargetRecords(payload.records);
-  const failedCount = linked.filter((record) => record.status === "failed").length;
-
-  await supabase.from("sales_target_batches").insert({
-    id: payload.batch.id,
-    file_name: payload.batch.fileName,
-    month: payload.batch.month,
-    year: payload.batch.year,
-    status: failedCount > 0 ? "uploaded" : "validated",
-    total_records: linked.length,
-    valid_records: linked.filter((record) => record.status === "valid").length,
-    failed_records: failedCount,
-  });
-
-  if (linked.length > 0) {
-    const inserts = linked.map((record) => ({
-      batch_id: payload.batch.id,
-      employee_hr_id: record.employeeHrId ?? null,
-      employee_crm_id: record.employeeCrmId ?? null,
-      employee_lookup_key: record.employeeLookupKey ?? null,
-      employee_name: record.employeeName ?? null,
-      line: record.line,
-      month: record.month,
-      year: record.year,
-      target_units: record.targetUnits,
-      target_value: record.targetValue,
-      status: record.status,
-      validation_notes: record.validationNotes,
-    }));
-
-    for (let i = 0; i < inserts.length; i += 500) {
-      await supabase.from("sales_targets").insert(inserts.slice(i, i + 500));
-    }
-  }
-
-  return {
-    ...payload.batch,
-    failedRecords: failedCount,
-    blockingReasons: [],
-    topFailureReasons: [],
-    topWarningReasons: [],
   };
 }
 
