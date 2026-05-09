@@ -1,5 +1,7 @@
 import { HrCalendar } from "@/components/hr-calendar/hr-calendar";
 import { AppShell } from "@/components/layout/app-shell";
+import { assertPermission } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   employeeDirectoryErrorMessage,
   getEmployeeDirectoryRows,
@@ -28,6 +30,8 @@ function calendarPageError(error: unknown) {
 }
 
 export default async function HrCalendarPage() {
+  const access = await resolveAccessContextFromPage();
+  await assertPermission(access, "hr_calendar", "read");
   let initialData: HrCalendarEmployee[] | null = null;
   let initialError: string | null = null;
 
@@ -39,7 +43,7 @@ export default async function HrCalendarPage() {
       fullName: employee.fullName,
       hireDate: employee.hireDate ?? "",
       hrId: employee.hrId,
-      jobTitle: employee.jobTitle ?? "Unassigned",
+      jobTitle: employee.positionTitle ?? employee.jobTitle ?? "Unassigned",
       lineName: employee.lineName ?? "Unassigned",
       managerName: employee.managerName ?? "Unassigned",
       workEmail: employee.workEmail,

@@ -141,9 +141,18 @@ export async function parseSalesUpload(file: File, line: string, uploadedBy: str
   const firstValid = parsedRecords.find((record) => record.month && record.year);
   const month = firstValid?.month || new Date().getMonth() + 1;
   const year = firstValid?.year || new Date().getFullYear();
-  const validRecords = parsedRecords.filter((record) => record.validationState === "valid").length;
-  const warningRecords = parsedRecords.filter((record) => record.validationState === "warning").length;
-  const failedRecords = parsedRecords.filter((record) => record.validationState === "failed").length;
+  const normalizedRecords = parsedRecords;
+  const periods = [
+    ...new Set(
+      normalizedRecords
+        .filter((record) => record.month && record.year)
+        .map((record) => periodLabel(record.year, record.month))
+    ),
+  ].sort();
+  const batchPeriod = periods.length > 1 ? `${periods[0]} to ${periods[periods.length - 1]}` : periodLabel(year, month);
+  const validRecords = normalizedRecords.filter((record) => record.validationState === "valid").length;
+  const warningRecords = normalizedRecords.filter((record) => record.validationState === "warning").length;
+  const failedRecords = normalizedRecords.filter((record) => record.validationState === "failed").length;
 
   return {
     batch: {
@@ -152,10 +161,10 @@ export async function parseSalesUpload(file: File, line: string, uploadedBy: str
       line,
       month,
       year,
-      period: periodLabel(year, month),
+      period: batchPeriod,
       status: failedRecords > 0 ? "needs_review" : "validated",
       schemaType: parsed.schemaType,
-      totalRecords: parsedRecords.length,
+      totalRecords: normalizedRecords.length,
       validRecords,
       warningRecords,
       failedRecords,
@@ -176,7 +185,7 @@ export async function parseSalesUpload(file: File, line: string, uploadedBy: str
       previewUrl: null,
       approvalBlockedReason: failedRecords > 0 ? "This batch contains failed rows." : null,
     },
-    records: parsedRecords,
+    records: normalizedRecords,
   };
 }
 

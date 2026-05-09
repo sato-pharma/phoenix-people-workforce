@@ -1,0 +1,221 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { Users, TrendingUp, Target, Award, BarChart3 } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
+import { toPeriodLabel } from "@/lib/employee-portal/period";
+import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import {
+  TeamAchievementChart,
+  TeamSalesVsTargetChart,
+  TeamLeaderboardTable,
+  TeamMembersBreakdown,
+} from "./team-members-breakdown.client";
+
+export const dynamic = "force-dynamic";
+
+function egp(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    currency: "EGP",
+    maximumFractionDigits: 0,
+    style: "currency",
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function pct(value: number) {
+  return `${Number.isFinite(value) ? value.toFixed(1) : "0.0"}%`;
+}
+
+export default async function EmployeePortalTeamPerformancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const access = await resolveAccessContextFromPage();
+
+  if (resolveNavigationMode(access) !== "employee-portal") {
+    redirect("/overview");
+  }
+
+  await assertPermission(access, "sales", "read");
+
+  const resolvedParams = await searchParams;
+  const requestedPeriod = resolvedParams.period?.trim() ?? null;
+
+  const data = await getDsmTeamPerformance(access, { period: requestedPeriod });
+
+  if (!data) {
+    return (
+      <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <Users className="mx-auto h-10 w-10 text-slate-300 mb-3" />
+        <p className="text-lg font-semibold text-slate-900">Team Performance Unavailable</p>
+        <p className="mt-2 text-sm text-slate-500">
+          Unable to load your team&apos;s data. This page is only available for District Sales Managers.
+        </p>
+      </div>
+    );
+  }
+
+  const { members, periods, teamAchievementPercent, teamMemberCount, teamTotalSales, teamTotalTarget } = data;
+
+  // Validate requested period
+  const validPeriod =
+    requestedPeriod && periods.includes(requestedPeriod) ? requestedPeriod : null;
+
+  // If a period was requested but is not in the data, redirect to clear view
+  if (requestedPeriod && !validPeriod) {
+    redirect("/employee-portals/team-performance");
+  }
+
+  const eligibleCount = members.filter((m) => m.achievementPercent >= 90).length;
+  const teamAvg =
+    members.length > 0
+      ? members.reduce((s, m) => s + m.achievementPercent, 0) / members.length
+      : 0;
+
+  return (
+    <div className="space-y-6">
+      {/* ── Page header + period filter ────────────────────────────────── */}
+      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">District Performance</p>
+            <h1 className="mt-1 text-2xl font-semibold text-slate-900">Team Performance</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"}
+              {" · "}
+              {teamMemberCount > 0 ? `${teamMemberCount} medical reps` : "No team data"}
+            </p>
+          </div>
+
+          {/* Period filter buttons */}
+          {periods.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                className={`rounded-xl border px-3 py-2 text-xs font-medium transition hover:bg-slate-50 ${
+                  !validPeriod
+                    ? "bg-slate-900 text-white border-slate-900"
+                    : "text-slate-600 border-slate-200 hover:text-slate-900"
+                }`}
+                href="/employee-portals/team-performance"
+              >
+                All periods
+              </Link>
+              {periods.map((period) => (
+                <Link
+                  key={period}
+                  className={`rounded-xl border px-3 py-2 text-xs font-medium transition hover:bg-slate-50 ${
+                    validPeriod === period
+                      ? "bg-slate-900 text-white border-slate-900"
+                      : "text-slate-600 border-slate-200 hover:text-slate-900"
+                  }`}
+                  href={`/employee-portals/team-performance?period=${period}`}
+                >
+                  {toPeriodLabel(period)}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── KPI cards ───────────────────────────────────────────────── */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-2xl border border-slate-100 bg-gradient-to-br from-orange-50 to-amber-50 px-4 py-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Award className="h-4 w-4 text-orange-500" />
+              <p className="text-xs font-medium text-slate-500">Team Achievement</p>
+            </div>
+            <p className="text-2xl font-black text-slate-900">{pct(teamAchievementPercent)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">Avg: {pct(teamAvg)}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+            <div className="flex items-center gap-2 mb-1">
+              <TrendingUp className="h-4 w-4 text-slate-400" />
+              <p className="text-xs font-medium text-slate-500">Total Sales</p>
+            </div>
+            <p className="text-2xl font-black text-slate-900">{egp(teamTotalSales)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">Combined team</p>
+          </div>
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Target className="h-4 w-4 text-slate-400" />
+              <p className="text-xs font-medium text-slate-500">Total Target</p>
+            </div>
+            <p className="text-2xl font-black text-slate-900">{egp(teamTotalTarget)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">Combined target</p>
+          </div>
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Users className="h-4 w-4 text-slate-400" />
+              <p className="text-xs font-medium text-slate-500">Incentive Eligible</p>
+            </div>
+            <p className="text-2xl font-black text-slate-900">
+              {eligibleCount}
+              <span className="text-base font-medium text-slate-400"> / {teamMemberCount}</span>
+            </p>
+            <p className="text-xs text-slate-400 mt-0.5">≥ 90% achievement</p>
+          </div>
+        </div>
+      </Card>
+
+      {members.length === 0 ? (
+        <Card className="rounded-3xl border border-slate-100 bg-white p-12 text-center shadow-sm">
+          <BarChart3 className="mx-auto h-10 w-10 text-slate-300 mb-3" />
+          <p className="text-base font-semibold text-slate-700">No sales data</p>
+          <p className="mt-1 text-sm text-slate-400">
+            {validPeriod
+              ? `No records found for ${toPeriodLabel(validPeriod)}.`
+              : "Sales data has not been uploaded yet."}
+          </p>
+        </Card>
+      ) : (
+        <>
+          {/* ── Charts ──────────────────────────────────────────────────── */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Achievement chart */}
+            <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-500 mb-1">Ranking</p>
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">Achievement Rate</h3>
+              <TeamAchievementChart
+                members={members}
+                teamAchievementPercent={teamAchievementPercent}
+              />
+            </Card>
+
+            {/* Sales vs Target chart */}
+            <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-500 mb-1">Comparison</p>
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">Sales vs Target</h3>
+              <TeamSalesVsTargetChart members={members} />
+            </Card>
+          </div>
+
+          {/* ── Full leaderboard table ───────────────────────────────────── */}
+          <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Leaderboard</p>
+                <h3 className="text-lg font-semibold text-slate-900">Full Rankings</h3>
+              </div>
+              <span className="text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
+                {members.length} reps
+              </span>
+            </div>
+            <TeamLeaderboardTable members={members} />
+          </Card>
+
+          {/* ── Per-rep product breakdown ────────────────────────────────── */}
+          <div>
+            <div className="mb-4">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Detailed View</p>
+              <h3 className="text-lg font-semibold text-slate-900">Per-Rep Product Breakdown</h3>
+              <p className="text-sm text-slate-400 mt-0.5">Tap any card to see the full product breakdown</p>
+            </div>
+            <TeamMembersBreakdown members={members} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

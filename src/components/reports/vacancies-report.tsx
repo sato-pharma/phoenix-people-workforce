@@ -3,6 +3,7 @@
 import {
   AlertCircle,
   BriefcaseBusiness,
+  Building2,
   Download,
   Layers3,
   RefreshCw,
@@ -34,16 +35,20 @@ function SummaryCard({
   tone?: "neutral" | "success" | "warning" | "danger";
   value: number;
 }) {
+  const toneClass = {
+    danger: "bg-rose-50 text-rose-800",
+    neutral: "bg-slate-50 text-slate-900",
+    success: "bg-emerald-50 text-emerald-800",
+    warning: "bg-orange-50 text-orange-800",
+  }[tone];
+
   return (
-    <Card>
-      <p className="text-sm font-medium text-text-secondary">{label}</p>
-      <p className="mt-3 text-3xl font-semibold tracking-tight text-text">
+    <div className={cn("rounded-xl border border-slate-200 p-4", toneClass)}>
+      <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{label}</p>
+      <p className="mt-2 font-mono text-2xl font-bold">
         {value}
       </p>
-      <Badge className="mt-4" variant={tone}>
-        Vacancies
-      </Badge>
-    </Card>
+    </div>
   );
 }
 
@@ -109,7 +114,7 @@ function MiniBreakdown({
   const total = items.reduce((sum, item) => sum + item.count, 0);
 
   return (
-    <Card>
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-text">{title}</h2>
@@ -117,7 +122,7 @@ function MiniBreakdown({
             Top groups by visible vacancies.
           </p>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-primary">
           {icon}
         </div>
       </div>
@@ -137,9 +142,9 @@ function MiniBreakdown({
                   </span>
                   <span className="text-text-secondary">{item.count}</span>
                 </div>
-                <div className="mt-2 h-2 rounded-full bg-bg-muted">
+                <div className="mt-2 h-2 rounded-full bg-slate-100">
                   <div
-                    className="h-2 rounded-full bg-primary"
+                    className="h-2 rounded-full bg-primary shadow-[0_0_12px_rgba(249,115,22,0.24)]"
                     style={{ width }}
                   />
                 </div>
@@ -148,7 +153,7 @@ function MiniBreakdown({
           })
         )}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -169,7 +174,7 @@ function SelectFilter({
     <label className={cn("block", className)}>
       <span className="sr-only">{label}</span>
       <select
-        className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -323,6 +328,16 @@ export function VacanciesReport({
       regionFilter ||
       statusFilter,
   );
+  const activeFilterCount = [
+    areaFilter,
+    departmentFilter,
+    lineFilter,
+    managerFilter,
+    positionFilter,
+    query,
+    regionFilter,
+    statusFilter,
+  ].filter(Boolean).length;
 
   function clearFilters() {
     setAreaFilter("");
@@ -377,44 +392,48 @@ export function VacanciesReport({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">
-            Phoenix Workforce
-          </p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-text">
-            Vacancies Report
-          </h1>
-          <p className="mt-2 max-w-2xl text-base text-text-secondary">
-            Open positions recorded from employee master data rows without
-            HR_ID, grouped by the same Phoenix organization structure.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <Button
-            className="gap-2"
-            disabled={!report || filteredRows.length === 0}
-            onClick={exportCsv}
-            variant="secondary"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </Button>
-          <Button
-            className="gap-2"
-            disabled={isLoading}
-            onClick={() => void loadReport()}
-            variant="secondary"
-          >
-            {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-4 w-4" />}
-            Refresh
-          </Button>
+    <Card className="overflow-hidden border-slate-200 bg-white p-0 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+      <div className="border-b border-slate-200 bg-slate-950 px-5 py-5 text-white">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
+              Workforce Reports
+            </p>
+            <h1 className="mt-2 text-2xl font-bold">Vacancies Report</h1>
+            <p className="mt-1 max-w-2xl text-sm text-slate-300">
+              Open positions recorded from employee master data rows without HR_ID, grouped by the Phoenix organization structure.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="neutral">
+              {report ? `${filteredRows.length} visible` : "No data"}
+            </Badge>
+            <Button
+              className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
+              disabled={!report || filteredRows.length === 0}
+              onClick={exportCsv}
+              variant="secondary"
+            >
+              <Download className="mr-2 h-3.5 w-3.5" />
+              Export CSV
+            </Button>
+            <Button
+              className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
+              disabled={isLoading}
+              onClick={() => void loadReport()}
+              variant="secondary"
+            >
+              {isLoading ? <LoadingSpinner /> : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
+              Refresh
+            </Button>
+          </div>
         </div>
       </div>
 
+      <div className="space-y-4 p-5">
+
       {error ? (
-        <Card className="border-danger/30">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
           <div className="flex gap-3">
             <AlertCircle className="mt-0.5 h-5 w-5 text-danger" />
             <div>
@@ -424,21 +443,21 @@ export function VacanciesReport({
               <p className="mt-1 text-sm text-text-secondary">{error}</p>
             </div>
           </div>
-        </Card>
+        </div>
       ) : null}
 
       {isLoading && !report ? (
-        <Card>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center gap-3 text-sm text-text-secondary">
             <LoadingSpinner />
             Loading vacancies...
           </div>
-        </Card>
+        </div>
       ) : null}
 
       {report ? (
         <>
-          <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <SummaryCard
               label="Open Vacancies"
               tone="warning"
@@ -461,7 +480,7 @@ export function VacanciesReport({
             />
           </section>
 
-          <section className="grid gap-5 xl:grid-cols-3">
+          <section className="grid gap-3 xl:grid-cols-3">
             <MiniBreakdown
               icon={<Layers3 className="h-5 w-5" />}
               items={breakdowns.regions}
@@ -479,8 +498,8 @@ export function VacanciesReport({
             />
           </section>
 
-          <Card>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="rounded-xl border border-slate-200 bg-white">
+            <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50 px-4 py-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <h2 className="text-base font-semibold text-text">
                   Vacancy Records
@@ -491,17 +510,17 @@ export function VacanciesReport({
                 </p>
               </div>
               <div className="flex items-center gap-2 text-primary">
-                <BriefcaseBusiness className="h-5 w-5" />
+                <Building2 className="h-5 w-5" />
                 <Badge variant="warning">{filteredRows.length} visible</Badge>
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3 xl:grid-cols-[1.6fr_repeat(7,minmax(0,1fr))_auto]">
+            <div className="grid gap-3 border-b border-slate-200 bg-white p-4 xl:grid-cols-[1.6fr_repeat(7,minmax(0,1fr))_auto]">
               <label className="relative block">
                 <span className="sr-only">Search vacancies</span>
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
                 <Input
-                  className="pl-9"
+                  className="bg-white pl-9"
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search vacancy, area, line, position..."
                   value={query}
@@ -556,30 +575,30 @@ export function VacanciesReport({
                 variant="secondary"
               >
                 <X className="h-4 w-4" />
-                Clear
+                Clear {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
               </Button>
             </div>
 
-            <div className="mt-5 overflow-x-auto">
+            <div className="overflow-x-auto">
               <table className="w-full min-w-[1150px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-border text-xs uppercase tracking-[0.16em] text-text-secondary">
-                    <th className="py-3 pr-4 font-semibold">Vacancy</th>
-                    <th className="px-4 py-3 font-semibold">Position</th>
-                    <th className="px-4 py-3 font-semibold">Department</th>
-                    <th className="px-4 py-3 font-semibold">Line</th>
-                    <th className="px-4 py-3 font-semibold">Region</th>
-                    <th className="px-4 py-3 font-semibold">Area</th>
-                    <th className="px-4 py-3 font-semibold">Manager</th>
-                    <th className="px-4 py-3 font-semibold">Source</th>
-                    <th className="py-3 pl-4 font-semibold">Status</th>
+                  <tr className="border-b border-slate-200 bg-slate-100 text-xs uppercase tracking-[0.12em] text-text-secondary">
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Vacancy</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Position</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Department</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Line</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Region</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Area</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Manager</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Source</th>
+                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Status</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-slate-100">
                   {filteredRows.length === 0 ? (
                     <tr>
                       <td
-                        className="py-8 text-center text-text-secondary"
+                        className="px-4 py-10 text-center text-sm text-text-secondary"
                         colSpan={9}
                       >
                         No vacancies match the current filters.
@@ -588,11 +607,11 @@ export function VacanciesReport({
                   ) : (
                     filteredRows.map((row) => (
                       <tr
-                        className="border-b border-border last:border-0"
+                        className="transition-colors hover:bg-slate-50"
                         key={row.id}
                       >
-                        <td className="py-4 pr-4">
-                          <p className="font-medium text-text">
+                        <td className="px-4 py-4">
+                          <p className="font-mono text-xs font-bold text-text">
                             {vacancyLabel(row.vacancyCode)}
                           </p>
                           <p className="mt-1 text-xs text-text-secondary">
@@ -643,9 +662,10 @@ export function VacanciesReport({
                 </tbody>
               </table>
             </div>
-          </Card>
+          </div>
         </>
       ) : null}
-    </div>
+      </div>
+    </Card>
   );
 }

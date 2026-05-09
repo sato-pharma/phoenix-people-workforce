@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  Download,
   RefreshCw,
   Search,
   Shield,
@@ -86,32 +87,54 @@ function statusLabel(status: TrafficStatus) {
   return "Critical";
 }
 
+const summaryCardVariants = {
+  primary: {
+    tone: "bg-slate-50 text-slate-900",
+    icon: "bg-white/70 text-primary",
+  },
+  success: {
+    tone: "bg-emerald-50 text-emerald-800",
+    icon: "bg-white/70 text-success",
+  },
+  warning: {
+    tone: "bg-orange-50 text-orange-800",
+    icon: "bg-white/70 text-warning",
+  },
+  danger: {
+    tone: "bg-rose-50 text-rose-800",
+    icon: "bg-white/70 text-danger",
+  },
+};
+
 function SummaryCard({
   description,
   icon,
   label,
   value,
+  variant = "primary",
 }: {
   description: string;
   icon: ReactNode;
   label: string;
   value: number;
+  variant?: keyof typeof summaryCardVariants;
 }) {
+  const styles = summaryCardVariants[variant];
   return (
-    <Card>
+    <div className={cn("rounded-xl border border-slate-200 p-4", styles.tone)}>
       <div className="flex items-start gap-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <div className={cn("flex h-10 w-10 items-center justify-center rounded-lg", styles.icon)}>
           {icon}
         </div>
         <div>
-          <p className="text-sm text-text-secondary">{label}</p>
-          <p className="mt-1 text-2xl font-semibold tracking-tight text-text">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{label}</p>
+          <p className="mt-2 font-mono text-2xl font-bold tracking-tight">
             {value}
           </p>
-          <p className="mt-0.5 text-xs text-text-secondary">{description}</p>
+          <p className="mt-1 text-xs opacity-70">{description}</p>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -130,7 +153,7 @@ function SelectFilter({
     <label className="block">
       <span className="sr-only">{label}</span>
       <select
-        className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -152,6 +175,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>("days-asc");
   const [trafficFilter, setTrafficFilter] = useState<TrafficStatus | "all">("all");
+  const [employmentFilter, setEmploymentFilter] = useState<string>(allValue);
   const rows = useMemo(() => initialData ?? [], [initialData]);
 
   const filterOptions = useMemo(
@@ -159,6 +183,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
       areas: uniqueOptions(rows.map((row) => row.area_name)),
       jobs: uniqueOptions(rows.map((row) => row.job_title)),
       lines: uniqueOptions(rows.map((row) => row.line_name)),
+      employmentStatuses: uniqueOptions(rows.map((row) => row.employment_status ?? "")),
     }),
     [rows],
   );
@@ -178,6 +203,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
           (lineFilter === allValue || row.line_name === lineFilter) &&
           (areaFilter === allValue || row.area_name === areaFilter) &&
           (jobFilter === allValue || row.job_title === jobFilter) &&
+          (employmentFilter === allValue || row.employment_status === employmentFilter) &&
           (trafficFilter === "all" || traffic === trafficFilter)
         );
       })
@@ -204,7 +230,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
 
         return left.days_remaining - right.days_remaining;
       });
-  }, [areaFilter, jobFilter, lineFilter, query, rows, sortBy, trafficFilter]);
+  }, [areaFilter, employmentFilter, jobFilter, lineFilter, query, rows, sortBy, trafficFilter]);
 
   const summary = useMemo(
     () => ({
@@ -222,45 +248,79 @@ export function ProbationTracker({ initialData, initialError }: Props) {
     lineFilter !== allValue ||
     query.length > 0 ||
     sortBy !== "days-asc" ||
-    trafficFilter !== "all";
+    trafficFilter !== "all" ||
+    employmentFilter !== allValue;
+  const activeFilterCount = [
+    areaFilter !== allValue ? areaFilter : "",
+    jobFilter !== allValue ? jobFilter : "",
+    lineFilter !== allValue ? lineFilter : "",
+    query,
+    sortBy !== "days-asc" ? sortBy : "",
+    trafficFilter !== "all" ? trafficFilter : "",
+    employmentFilter !== allValue ? employmentFilter : "",
+  ].filter(Boolean).length;
 
   function resetFilters() {
     setAreaFilter(allValue);
     setJobFilter(allValue);
     setLineFilter(allValue);
+    setEmploymentFilter(allValue);
     setQuery("");
     setSortBy("days-asc");
     setTrafficFilter("all");
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">
-            People Operations
-          </p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-text">
-            Probation Tracker
-          </h1>
-          <p className="mt-2 max-w-2xl text-base text-text-secondary">
-            Monitor employees inside the 90-day probation window and prioritize
-            reviews before deadlines become people-risk.
-          </p>
+    <Card className="overflow-hidden border-slate-200 bg-white p-0 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+      <div className="border-b border-slate-200 bg-slate-950 px-5 py-5 text-white">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
+              People Operations
+            </p>
+            <h1 className="mt-2 text-2xl font-bold">Probation Tracker</h1>
+            <p className="mt-1 max-w-2xl text-sm text-slate-300">
+              Monitor employees inside the 90-day probation window and prioritize reviews before deadlines become people-risk.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={summary.critical > 0 ? "danger" : "neutral"}>
+              {summary.critical} critical
+            </Badge>
+          <Button
+            className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
+            disabled={!hasActiveFilters}
+            onClick={resetFilters}
+            variant="secondary"
+          >
+            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+            Reset
+          </Button>
+          <a
+            className={cn(
+              "inline-flex items-center justify-center rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/15",
+            )}
+            href="/api/exports?report=probation&format=pdf"
+          >
+            <Download className="mr-2 h-3.5 w-3.5" />
+            Export PDF
+          </a>
+          <a
+            className={cn(
+              "inline-flex items-center justify-center rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/15",
+            )}
+            href="/api/exports?report=probation&format=xlsx"
+          >
+            <Download className="mr-2 h-3.5 w-3.5" />
+            Export Excel
+          </a>
+          </div>
         </div>
-        <Button
-          className="gap-2"
-          disabled={!hasActiveFilters}
-          onClick={resetFilters}
-          variant="secondary"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Reset
-        </Button>
       </div>
 
+      <div className="space-y-4 p-5">
       {initialError ? (
-        <Card className="border-danger/30">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
           <div className="flex gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 text-danger" />
             <div>
@@ -270,43 +330,47 @@ export function ProbationTracker({ initialData, initialError }: Props) {
               <p className="mt-1 text-sm text-text-secondary">{initialError}</p>
             </div>
           </div>
-        </Card>
+        </div>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           description="Matching current filters"
           icon={<Shield className="h-5 w-5" />}
           label="Total in Probation"
           value={summary.total}
+          variant="primary"
         />
         <SummaryCard
           description="More than 60 days left"
           icon={<ShieldCheck className="h-5 w-5" />}
           label="Safe Zone"
           value={summary.safe}
+          variant="success"
         />
         <SummaryCard
           description="30 to 60 days left"
           icon={<ShieldAlert className="h-5 w-5" />}
           label="Warning Zone"
           value={summary.warning}
+          variant="warning"
         />
         <SummaryCard
           description="Less than 30 days left"
           icon={<AlertTriangle className="h-5 w-5" />}
           label="Critical Zone"
           value={summary.critical}
+          variant="danger"
         />
       </section>
 
-      <Card>
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
         <div className="grid gap-3 xl:grid-cols-[1.5fr_repeat(5,minmax(0,1fr))_auto]">
           <label className="relative block">
             <span className="sr-only">Search probation employees</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
             <Input
-              className="pl-9"
+              className="bg-white pl-9"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, HR ID, CRM ID"
               value={query}
@@ -330,8 +394,14 @@ export function ProbationTracker({ initialData, initialError }: Props) {
             options={filterOptions.jobs}
             value={jobFilter}
           />
+          <SelectFilter
+            label="All statuses"
+            onChange={setEmploymentFilter}
+            options={filterOptions.employmentStatuses}
+            value={employmentFilter}
+          />
           <select
-            className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text"
+            className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text"
             onChange={(event) =>
               setTrafficFilter(event.target.value as TrafficStatus | "all")
             }
@@ -343,7 +413,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
             <option value="critical">Critical</option>
           </select>
           <select
-            className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text"
+            className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text"
             onChange={(event) => setSortBy(event.target.value as SortKey)}
             value={sortBy}
           >
@@ -361,13 +431,13 @@ export function ProbationTracker({ initialData, initialError }: Props) {
             variant="secondary"
           >
             <RefreshCw className="h-4 w-4" />
-            Clear
+            Clear {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
           </Button>
         </div>
-      </Card>
+      </div>
 
-      <Card>
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="rounded-xl border border-slate-200 bg-white">
+        <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-base font-semibold text-text">
               Current Probation Employees
@@ -385,10 +455,11 @@ export function ProbationTracker({ initialData, initialError }: Props) {
 
         <div className="max-h-[680px] overflow-auto">
           <table className="w-full min-w-[1120px] text-left text-sm">
-            <thead className="sticky top-0 bg-card">
-              <tr className="border-b border-border text-xs uppercase tracking-[0.16em] text-text-secondary">
+            <thead className="sticky top-0 bg-slate-100">
+              <tr className="border-b border-slate-200 text-xs uppercase tracking-[0.12em] text-text-secondary">
                 {[
                   "HR ID",
+                  "CRM ID",
                   "Full Name",
                   "Job Title",
                   "Line",
@@ -398,6 +469,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
                   "Days",
                   "Progress",
                   "Status",
+                  "Actions",
                 ].map((column) => (
                   <th className="px-3 py-3 font-semibold" key={column}>
                     {column}
@@ -405,12 +477,12 @@ export function ProbationTracker({ initialData, initialError }: Props) {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-slate-100">
               {filteredRows.length === 0 ? (
                 <tr>
                   <td
-                    className="py-8 text-center text-sm text-text-secondary"
-                    colSpan={10}
+                    className="px-4 py-10 text-center text-sm text-text-secondary"
+                    colSpan={12}
                   >
                     No probation records match the current filters.
                   </td>
@@ -422,12 +494,13 @@ export function ProbationTracker({ initialData, initialError }: Props) {
 
                   return (
                     <tr
-                      className="transition-colors hover:bg-bg-muted"
+                      className="transition-colors hover:bg-slate-50"
                       key={row.hr_id}
                     >
                       <td className="px-3 py-4 font-mono text-xs text-text-secondary">
                         {row.hr_id || "-"}
                       </td>
+                      <td className="px-3 py-4 font-mono text-xs text-text-secondary">{row.crm_id || "-"}</td>
                       <td className="px-3 py-4 font-semibold text-text">
                         {row.full_name}
                       </td>
@@ -451,7 +524,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
                       </td>
                       <td className="min-w-[150px] px-3 py-4">
                         <div className="space-y-1.5">
-                          <div className="h-2 overflow-hidden rounded-full bg-bg-muted">
+                          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                             <div
                               className={cn(
                                 "h-full rounded-full transition-all",
@@ -482,6 +555,12 @@ export function ProbationTracker({ initialData, initialError }: Props) {
                           {statusLabel(traffic)}
                         </Badge>
                       </td>
+                      <td className="px-3 py-4">
+                        <div className="flex flex-wrap gap-2">
+                          <Button variant="secondary">Review</Button>
+                          <Button variant="ghost">Reminder</Button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })
@@ -489,7 +568,8 @@ export function ProbationTracker({ initialData, initialError }: Props) {
             </tbody>
           </table>
         </div>
-      </Card>
-    </div>
+      </div>
+      </div>
+    </Card>
   );
 }

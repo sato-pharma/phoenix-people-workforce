@@ -184,14 +184,14 @@ function eventLabel(event: CalendarEvent) {
 
 function eventClass(eventType: CalendarEventType) {
   if (eventType === "new_hire") {
-    return "border-success/30 bg-success/10 text-success";
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
   }
 
   if (eventType === "birthday") {
-    return "border-border bg-bg-muted text-text";
+    return "border-slate-200 bg-slate-50 text-slate-900";
   }
 
-  return "border-warning/30 bg-orange-50 text-warning dark:bg-orange-950/20";
+  return "border-orange-200 bg-orange-50 text-orange-800";
 }
 
 function eventBadgeVariant(eventType: CalendarEventType) {
@@ -221,7 +221,7 @@ function SelectFilter({
     <label className="block">
       <span className="sr-only">{label}</span>
       <select
-        className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -248,20 +248,20 @@ function SummaryCard({
   value: number;
 }) {
   return (
-    <Card>
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-900">
       <div className="flex items-start gap-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/70 text-primary">
           {icon}
         </div>
         <div>
-          <p className="text-sm text-text-secondary">{label}</p>
-          <p className="mt-1 text-2xl font-semibold tracking-tight text-text">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{label}</p>
+          <p className="mt-2 font-mono text-2xl font-bold tracking-tight">
             {value}
           </p>
-          <p className="mt-0.5 text-xs text-text-secondary">{description}</p>
+          <p className="mt-1 text-xs opacity-70">{description}</p>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -339,47 +339,87 @@ export function HrCalendar({ initialData, initialError }: Props) {
   const birthdayCount = filteredEvents.filter(
     (event) => event.eventType === "birthday",
   ).length;
+  const hasActiveFilters =
+    areaFilter !== allValue ||
+    eventTypeFilter !== "all" ||
+    lineFilter !== allValue ||
+    query.trim() ||
+    selectedMonth !== today.getMonth() + 1 ||
+    selectedYear !== today.getFullYear();
+  const activeFilterCount = [
+    areaFilter !== allValue ? areaFilter : "",
+    eventTypeFilter !== "all" ? eventTypeFilter : "",
+    lineFilter !== allValue ? lineFilter : "",
+    query.trim(),
+    selectedMonth !== today.getMonth() + 1 ? String(selectedMonth) : "",
+    selectedYear !== today.getFullYear() ? String(selectedYear) : "",
+  ].filter(Boolean).length;
+
+  function resetFilters() {
+    setAreaFilter(allValue);
+    setEventTypeFilter("all");
+    setLineFilter(allValue);
+    setQuery("");
+    setSelectedMonth(today.getMonth() + 1);
+    setSelectedYear(today.getFullYear());
+  }
 
   if (initialError) {
     return (
-      <div className="space-y-6">
-        <div>
-          <p className="text-sm font-medium uppercase tracking-[0.18em] text-primary">
+      <Card className="overflow-hidden border-slate-200 bg-white p-0 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+        <div className="border-b border-slate-200 bg-slate-950 px-5 py-5 text-white">
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
             People Operations
           </p>
-          <h1 className="mt-2 text-2xl font-bold text-text">HR Calendar</h1>
-          <p className="mt-1 text-text-secondary">
+          <h1 className="mt-2 text-2xl font-bold">HR Calendar</h1>
+          <p className="mt-1 text-sm text-slate-300">
             Track anniversaries, new hires, and birthdays.
           </p>
         </div>
-        <Card className="border-danger/20 bg-red-50 dark:bg-red-950/20">
+        <div className="p-5">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
           <div className="flex items-center gap-3">
             <CalendarDays className="h-5 w-5 text-danger" />
             <p className="text-sm text-danger">{initialError}</p>
           </div>
-        </Card>
-      </div>
+        </div>
+        </div>
+      </Card>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-sm font-medium uppercase tracking-[0.18em] text-primary">
-            People Operations
-          </p>
-          <h1 className="mt-2 text-2xl font-bold text-text">HR Calendar</h1>
-          <p className="mt-1 text-text-secondary">
-            Anniversaries, birthdays, and new hires in a monthly calendar.
-          </p>
+    <Card className="overflow-hidden border-slate-200 bg-white p-0 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+      <div className="border-b border-slate-200 bg-slate-950 px-5 py-5 text-white">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
+              People Operations
+            </p>
+            <h1 className="mt-2 text-2xl font-bold">HR Calendar</h1>
+            <p className="mt-1 max-w-2xl text-sm text-slate-300">
+              Anniversaries, birthdays, and new hires in a monthly calendar.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="neutral">
+              {selectedMonthLabel} {selectedYear}
+            </Badge>
+            <Button
+              className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
+              disabled={!hasActiveFilters}
+              onClick={resetFilters}
+              variant="secondary"
+            >
+              <RefreshCw className="mr-2 h-3.5 w-3.5" />
+              Reset
+            </Button>
+          </div>
         </div>
-        <Badge variant="neutral">
-          {selectedMonthLabel} {selectedYear}
-        </Badge>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="space-y-4 p-5">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           description="Calendar items in scope"
           icon={<CalendarDays className="h-5 w-5" />}
@@ -406,10 +446,10 @@ export function HrCalendar({ initialData, initialError }: Props) {
         />
       </div>
 
-      <Card>
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
           <select
-            className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             onChange={(event) => setSelectedMonth(Number(event.target.value))}
             value={selectedMonth}
           >
@@ -421,7 +461,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
           </select>
 
           <select
-            className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             onChange={(event) => setSelectedYear(Number(event.target.value))}
             value={selectedYear}
           >
@@ -438,7 +478,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
           <div className="relative md:col-span-2">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
             <Input
-              className="pl-9"
+              className="bg-white pl-9"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, HR ID, manager"
               value={query}
@@ -446,7 +486,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
           </div>
 
           <select
-            className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             onChange={(event) =>
               setEventTypeFilter(event.target.value as CalendarEventType | "all")
             }
@@ -473,24 +513,18 @@ export function HrCalendar({ initialData, initialError }: Props) {
         </div>
         <div className="mt-4 flex justify-end">
           <Button
+            disabled={!hasActiveFilters}
             variant="secondary"
-            onClick={() => {
-              setAreaFilter(allValue);
-              setEventTypeFilter("all");
-              setLineFilter(allValue);
-              setQuery("");
-              setSelectedMonth(today.getMonth() + 1);
-              setSelectedYear(today.getFullYear());
-            }}
+            onClick={resetFilters}
           >
             <RefreshCw className="mr-2 h-4 w-4" />
-            Reset
+            Reset {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
           </Button>
         </div>
-      </Card>
+      </div>
 
-      <Card className="overflow-hidden p-0">
-        <div className="border-b border-border px-5 py-4">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
           <h2 className="text-base font-semibold text-text">
             {selectedMonthLabel} {selectedYear}
           </h2>
@@ -502,7 +536,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
 
         <div className="overflow-x-auto">
           <div className="min-w-[1120px]">
-            <div className="grid grid-cols-7 border-b border-border bg-bg-muted">
+            <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-100">
               {weekdays.map((weekday) => (
                 <div
                   className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-text-secondary"
@@ -525,8 +559,8 @@ export function HrCalendar({ initialData, initialError }: Props) {
                 return (
                   <div
                     className={cn(
-                      "min-h-36 border-b border-r border-border bg-card p-2",
-                      !date && "bg-bg-soft",
+                      "min-h-36 border-b border-r border-slate-200 bg-white p-2",
+                      !date && "bg-slate-50",
                     )}
                     key={`${index}-${day ?? "empty"}`}
                   >
@@ -559,7 +593,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
                             </div>
                           ))}
                           {dayEvents.length > 4 ? (
-                            <div className="rounded-lg border border-border bg-bg-muted px-2 py-1 text-xs font-medium text-text-secondary">
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-text-secondary">
                               +{dayEvents.length - 4} more
                             </div>
                           ) : null}
@@ -572,25 +606,30 @@ export function HrCalendar({ initialData, initialError }: Props) {
             </div>
           </div>
         </div>
-      </Card>
+      </div>
 
-      <Card>
-        <div className="mb-4">
-          <h2 className="text-base font-semibold text-text">
-            Event Details ({filteredEvents.length})
-          </h2>
-          <p className="mt-1 text-sm text-text-secondary">
-            Compact list for review and filtering.
-          </p>
+      <div className="rounded-xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-text">
+                Event Details ({filteredEvents.length})
+              </h2>
+              <p className="mt-1 text-sm text-text-secondary">
+                Compact list for review and filtering.
+              </p>
+            </div>
+            <Badge variant="neutral">{filteredEvents.length} visible</Badge>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1040px] text-left text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b border-slate-200 bg-slate-100 text-xs uppercase tracking-[0.12em] text-text-secondary">
                 {["Date", "Event", "Employee", "HR ID", "Job Title", "Line", "Area", "Manager"].map(
                   (column) => (
                     <th
-                      className="pb-3 pr-4 font-medium text-text-secondary"
+                      className="px-4 py-3 font-semibold"
                       key={column}
                     >
                       {column}
@@ -599,10 +638,10 @@ export function HrCalendar({ initialData, initialError }: Props) {
                 )}
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-slate-100">
               {filteredEvents.length === 0 ? (
                 <tr>
-                  <td className="py-10 text-center" colSpan={8}>
+                  <td className="px-4 py-10 text-center" colSpan={8}>
                     <p className="text-sm font-semibold text-text">
                       No HR calendar events found.
                     </p>
@@ -614,18 +653,18 @@ export function HrCalendar({ initialData, initialError }: Props) {
               ) : (
                 filteredEvents.map((event) => (
                   <tr
-                    className="transition-colors hover:bg-bg-muted"
+                    className="transition-colors hover:bg-slate-50"
                     key={`${event.eventType}-${event.employee.hrId}-${event.date}-row`}
                   >
-                    <td className="whitespace-nowrap py-3 pr-4 font-medium text-text">
+                    <td className="whitespace-nowrap px-4 py-3 font-medium text-text">
                       {formatDate(event.date)}
                     </td>
-                    <td className="py-3 pr-4">
+                    <td className="px-4 py-3">
                       <Badge variant={eventBadgeVariant(event.eventType)}>
                         {eventLabel(event)}
                       </Badge>
                     </td>
-                    <td className="py-3 pr-4">
+                    <td className="px-4 py-3">
                       <div>
                         <p className="font-semibold text-text">
                           {event.employee.fullName}
@@ -635,19 +674,19 @@ export function HrCalendar({ initialData, initialError }: Props) {
                         </p>
                       </div>
                     </td>
-                    <td className="whitespace-nowrap py-3 pr-4 font-mono text-xs text-text-secondary">
+                    <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-text-secondary">
                       {event.employee.hrId}
                     </td>
-                    <td className="py-3 pr-4 text-text-secondary">
+                    <td className="px-4 py-3 text-text-secondary">
                       {event.employee.jobTitle}
                     </td>
-                    <td className="py-3 pr-4 text-text-secondary">
+                    <td className="px-4 py-3 text-text-secondary">
                       {event.employee.lineName}
                     </td>
-                    <td className="py-3 pr-4 text-text-secondary">
+                    <td className="px-4 py-3 text-text-secondary">
                       {event.employee.areaName}
                     </td>
-                    <td className="py-3 pr-4 text-text-secondary">
+                    <td className="px-4 py-3 text-text-secondary">
                       {event.employee.managerName}
                     </td>
                   </tr>
@@ -656,7 +695,8 @@ export function HrCalendar({ initialData, initialError }: Props) {
             </tbody>
           </table>
         </div>
-      </Card>
-    </div>
+      </div>
+      </div>
+    </Card>
   );
 }

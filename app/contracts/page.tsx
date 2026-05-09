@@ -1,5 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { ContractRenewal } from "@/components/contracts/contract-renewal";
+import { assertPermission } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   employeeDirectoryErrorMessage,
   getEmployeeDirectoryRows,
@@ -36,6 +38,8 @@ function addYears(value: string | null, years: number) {
 }
 
 export default async function ContractsPage() {
+  const access = await resolveAccessContextFromPage();
+  await assertPermission(access, "contracts", "read");
   let initialData: ContractRow[] | null = null;
   let initialError: string | null = null;
 

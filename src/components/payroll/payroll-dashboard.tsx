@@ -5,36 +5,36 @@ import {
   ArrowDown,
   ArrowRight,
   ArrowUp,
-  BarChart3,
-  Bell,
-  CalendarDays,
   CheckCircle,
   Download,
-  DollarSign,
   FileCheck2,
   FileSpreadsheet,
   Gauge,
-  Landmark,
-  Layers3,
   Loader2,
-  Search,
-  Settings,
-  ShieldCheck,
   Sparkles,
-  Star,
-  TrendingUp,
   Trash2,
   Upload,
-  Users,
 } from "lucide-react";
 import Link from "next/link";
+import type { RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import {
+  formatCompactNumber,
+  formatCurrencyValue,
+  formatDateTimeValue,
+  formatDateValue,
+  formatNumberValue,
+} from "@/lib/i18n/format";
 import type {
+  ExpenseAnalysisResult,
+  ExpenseTripRecord,
+  PayrollExpenseReport,
   PayrollDashboardData,
   SalaryBatch,
   SalaryRecord,
@@ -44,13 +44,13 @@ import { cn } from "@/lib/utils";
 type Props = {
   initialData: PayrollDashboardData | null;
   initialError: string | null;
-  initialTab?: PayrollTab;
+  initialSheetTab?: PayrollSheetTab;
 };
 
 type SalaryValidationIssue = {
   code: string;
   column?: string;
-  employeeCode?: string;
+  hrId?: string;
   message: string;
   row: number;
 };
@@ -66,7 +66,7 @@ type SalaryValidationResult = {
   };
   rowsToImport: Array<{
     area: string;
-    employeeCode: string;
+    hrId: string;
     fullName: string;
     jobTitle: string;
     line: string;
@@ -81,6 +81,7 @@ type SalaryValidationResult = {
 };
 
 type PayrollTab = "dashboard" | "governance" | "generate";
+type PayrollSheetTab = "salary" | "expenses";
 type GroupMode = "line" | "area" | "jobTitle";
 type ImpactLevel = "Low" | "Medium" | "High" | "Critical";
 type InsightSentiment = "positive" | "neutral" | "risk";
@@ -493,24 +494,15 @@ function PayrollMotionStyles() {
 }
 
 function formatEGP(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    currency: "EGP",
-    maximumFractionDigits: 0,
-    style: "currency",
-  }).format(Number.isFinite(value) ? value : 0);
+  return formatCurrencyValue(Number.isFinite(value) ? value : 0);
 }
 
 function formatCompact(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 1,
-    notation: "compact",
-  }).format(Number.isFinite(value) ? value : 0);
+  return formatCompactNumber(Number.isFinite(value) ? value : 0);
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(
-    Number.isFinite(value) ? value : 0,
-  );
+  return formatNumberValue(Number.isFinite(value) ? value : 0);
 }
 
 function formatPercent(value: number) {
@@ -569,6 +561,10 @@ function shortPayrollPeriodLabel(month: number, year: number) {
     `M${month}`;
 
   return `${monthName} ${year}`;
+}
+
+function formatPayrollDate(value: string | null | undefined) {
+  return formatDateValue(value);
 }
 
 function amount(value: unknown) {
@@ -663,8 +659,8 @@ function buildSalaryBands(records: SalaryRecord[]) {
 }
 
 function buildPeriodDelta(current: SalaryRecord[], previous: SalaryRecord[]) {
-  const prevMap = new Map(previous.map((record) => [record.employeeCode, record]));
-  const currMap = new Map(current.map((record) => [record.employeeCode, record]));
+  const prevMap = new Map(previous.map((record) => [record.hrId, record]));
+  const currMap = new Map(current.map((record) => [record.hrId, record]));
   const allCodes = new Set([...prevMap.keys(), ...currMap.keys()]);
 
   return Array.from(allCodes)
@@ -677,7 +673,7 @@ function buildPeriodDelta(current: SalaryRecord[], previous: SalaryRecord[]) {
       return {
         currentNet,
         delta: currentNet - previousNet,
-        employeeCode: code,
+        hrId: code,
         fullName: currentRecord?.fullName ?? previousRecord?.fullName ?? code,
         previousNet,
       };
@@ -796,7 +792,7 @@ function payrollSignalMatches(record: SalaryRecord, signal: string) {
     case "bonus":
       return record.bonus > 0;
     case "missing_core":
-      return [record.employeeCode, record.fullName, record.line, record.area, record.jobTitle].some(
+      return [record.hrId, record.fullName, record.line, record.area, record.jobTitle].some(
         (value) => !String(value ?? "").trim(),
       );
     default:
@@ -845,7 +841,7 @@ function scoreTone(score: number) {
 
 function dataCompleteness(records: SalaryRecord[]) {
   const requiredTextFields: Array<keyof SalaryRecord> = [
-    "employeeCode",
+    "hrId",
     "fullName",
     "line",
     "area",
@@ -875,7 +871,7 @@ function dataCompleteness(records: SalaryRecord[]) {
 }
 
 function matchedPreviousMap(previousRecords: SalaryRecord[]) {
-  return new Map(previousRecords.map((record) => [record.employeeCode, record]));
+  return new Map(previousRecords.map((record) => [record.hrId, record]));
 }
 
 function averageMatchedVariance(
@@ -886,7 +882,7 @@ function averageMatchedVariance(
   const previous = matchedPreviousMap(previousRecords);
   const variances = records
     .map((record) => {
-      const previousRecord = previous.get(record.employeeCode);
+      const previousRecord = previous.get(record.hrId);
       if (!previousRecord) return null;
       const prevValue = selector(previousRecord);
       return prevValue > 0 ? Math.abs((selector(record) - prevValue) / prevValue) : null;
@@ -905,7 +901,7 @@ function detectPayrollAnomalies(records: SalaryRecord[], previousRecords: Salary
 
   return records
     .map((record) => {
-      const previousRecord = previous.get(record.employeeCode);
+      const previousRecord = previous.get(record.hrId);
       const netVariance = previousRecord
         ? Math.abs(percentDelta(record.netSalary, previousRecord.netSalary))
         : 0;
@@ -914,7 +910,7 @@ function detectPayrollAnomalies(records: SalaryRecord[], previousRecords: Salary
       const salaryOutlier =
         medianNet > 0 && (record.netSalary > medianNet * 2.25 || record.netSalary < medianNet * 0.35);
       const missingFields = [
-        record.employeeCode,
+        record.hrId,
         record.fullName,
         record.line,
         record.area,
@@ -939,7 +935,7 @@ function detectPayrollAnomalies(records: SalaryRecord[], previousRecords: Salary
             : "Medium";
 
       return {
-        employeeCode: record.employeeCode,
+        hrId: record.hrId,
         fullName: record.fullName,
         record,
         severity,
@@ -971,7 +967,7 @@ function calculatePayrollHealthScore({
   const warningFlags = flags.filter((flag) => flag.severity === "warning").length;
   const matchedCoverage =
     records.length > 0
-      ? (records.filter((record) => matchedPreviousMap(previousRecords).has(record.employeeCode)).length /
+      ? (records.filter((record) => matchedPreviousMap(previousRecords).has(record.hrId)).length /
           records.length) *
         100
       : 100;
@@ -1058,8 +1054,8 @@ function calculateEmployeeScores(records: SalaryRecord[], previousRecords: Salar
 
   return records
     .map((record): EntityScore => {
-      const previousRecord = previous.get(record.employeeCode);
-      const missing = [record.employeeCode, record.fullName, record.line, record.area, record.jobTitle].filter(
+      const previousRecord = previous.get(record.hrId);
+      const missing = [record.hrId, record.fullName, record.line, record.area, record.jobTitle].filter(
         (value) => !String(value ?? "").trim(),
       ).length;
       const netVariance = previousRecord ? Math.abs(percentDelta(record.netSalary, previousRecord.netSalary)) : 0;
@@ -1087,8 +1083,8 @@ function calculateEmployeeScores(records: SalaryRecord[], previousRecords: Salar
       return {
         band: scoreBand(clamp(score)),
         key: record.id,
-        label: record.fullName || record.employeeCode,
-        meta: `${record.employeeCode} / ${formatEGP(record.netSalary)}`,
+        label: record.fullName || record.hrId,
+        meta: `${record.hrId} / ${formatEGP(record.netSalary)}`,
         reasons: [
           `${formatNumber(missing)} missing identity fields`,
           `${formatPercent(netVariance)} net variance`,
@@ -1105,7 +1101,7 @@ function insightConfidence(records: SalaryRecord[], previousRecords: SalaryRecor
   const completeness = dataCompleteness(records).score;
   const coverage =
     records.length > 0
-      ? (records.filter((record) => matchedPreviousMap(previousRecords).has(record.employeeCode)).length /
+      ? (records.filter((record) => matchedPreviousMap(previousRecords).has(record.hrId)).length /
           records.length) *
         100
       : 100;
@@ -1324,7 +1320,7 @@ function generatePredictiveAlerts({
     const lead = anomalies[0];
     alerts.push({
       action: "Open anomaly review and inspect this employee before approval.",
-      affected: lead.fullName || lead.employeeCode,
+      affected: lead.fullName || lead.hrId,
       confidence,
       reason: `${lead.signals.join(", ")} detected from uploaded payroll values.`,
       risk: lead.severity,
@@ -1492,7 +1488,7 @@ function Donut({
               x={Math.min(Math.max(tooltipPoint.x - 75, 4), viewBox - 154)}
               y={Math.min(Math.max(tooltipPoint.y - 62, 4), viewBox - 86)}
             >
-              <div className="rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs shadow-[0_18px_44px_rgba(15,23,42,0.16)] backdrop-blur">
+              <div className="rounded-2xl border border-[#E2E8F0] bg-white/95 p-3 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur">
                 <p className="font-semibold text-text">{activeSegment.label}</p>
                 <p className="mt-1 font-mono text-text">{formatEGP(activeSegment.value)}</p>
                 <p className="mt-1 text-text-secondary">{activeSegment.percent.toFixed(2)}%</p>
@@ -1505,7 +1501,7 @@ function Donut({
       <div
         className={cn(
           innerInset,
-          "pointer-events-none z-20 rounded-full border border-slate-100 bg-white shadow-[inset_0_0_24px_rgba(148,163,184,0.22),0_0_26px_rgba(14,165,233,0.13)]",
+          "pointer-events-none z-20 rounded-full border border-[#E2E8F0] bg-white shadow-[inset_0_0_24px_rgba(148,163,184,0.22),0_0_26px_rgba(14,165,233,0.13)]",
         )}
       />
       <div className="pointer-events-none relative z-30 text-center">
@@ -1567,12 +1563,12 @@ function BarRows({
     >
       {rows.length > 3 && (
         <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
+          <div className="flex items-center gap-1 rounded-xl border border-[#E2E8F0] bg-white p-1">
             {(["3M", "6M", "12M", "All"] as ZoomPreset[]).map((preset) => (
               <button
                 className={cn(
                   "rounded-lg px-2 py-1 text-[10px] font-semibold transition",
-                  zoomPreset === preset ? "bg-orange-50 text-primary" : "text-text-secondary hover:bg-slate-50",
+                  zoomPreset === preset ? "bg-[#F97316]/10 text-[#F97316]" : "text-[#64748B] hover:bg-[#F8FAFC]",
                 )}
                 key={preset}
                 onClick={() => {
@@ -1586,7 +1582,7 @@ function BarRows({
             ))}
           </div>
           <button
-            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary"
+            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#F97316]"
             onClick={() => {
               setZoomPreset("All");
               setViewStart(0);
@@ -1633,7 +1629,7 @@ function BarRows({
                     style={{ left: `${hoveredRow.x}%` }}
                   />
                   <span
-                    className="phoenix-bar-crosshair pointer-events-none absolute -top-11 z-10 -translate-x-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-text shadow-[0_14px_34px_rgba(15,23,42,0.14)]"
+                    className="phoenix-bar-crosshair pointer-events-none absolute -top-11 z-10 -translate-x-1/2 rounded-xl border border-[#E2E8F0] bg-white px-3 py-2 text-[11px] font-semibold text-[#0F172A] shadow-[0_8px_20px_rgba(15,23,42,0.04)]"
                     style={{ left: `${clamp(hoveredRow.x, 12, 88)}%` }}
                   >
                     {row.label}: {valueFormatter(row.value)}
@@ -1704,12 +1700,12 @@ function InteractiveVerticalBars({
     <div>
       {bars.length > 3 && (
         <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
+          <div className="flex items-center gap-1 rounded-xl border border-[#E2E8F0] bg-white p-1">
             {(["3M", "6M", "12M", "All"] as ZoomPreset[]).map((preset) => (
               <button
                 className={cn(
                   "rounded-lg px-2 py-1 text-[10px] font-semibold transition",
-                  zoomPreset === preset ? "bg-orange-50 text-primary" : "text-text-secondary hover:bg-slate-50",
+                  zoomPreset === preset ? "bg-[#F97316]/10 text-[#F97316]" : "text-[#64748B] hover:bg-[#F8FAFC]",
                 )}
                 key={preset}
                 onClick={() => {
@@ -1723,7 +1719,7 @@ function InteractiveVerticalBars({
             ))}
           </div>
           <button
-            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary"
+            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#F97316]"
             onClick={() => {
               setZoomPreset("All");
               setViewStart(0);
@@ -1761,14 +1757,14 @@ function InteractiveVerticalBars({
             style={{ left: `${hover.x}%` }}
           />
           <span
-            className="phoenix-crosshair pointer-events-none absolute left-6 right-6 border-t border-dashed border-slate-400/40"
+            className="phoenix-crosshair pointer-events-none absolute left-6 right-6 border-t border-dashed border-[#CBD5E1]/40"
             style={{ top: `${hover.y}%` }}
           />
         </>
       )}
       {activeBar && hover && (
         <div
-          className="phoenix-chart-tooltip pointer-events-none absolute z-20 w-52 rounded-2xl border border-slate-200 bg-white/95 p-4 text-xs shadow-[0_22px_55px_rgba(15,23,42,0.16)] backdrop-blur"
+          className="phoenix-chart-tooltip pointer-events-none absolute z-20 w-52 rounded-2xl border border-[#E2E8F0] bg-white/95 p-4 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur"
           style={{
             left: `${clamp(hover.x, 18, 82)}%`,
             top: `${clamp(hover.y, 28, 90)}%`,
@@ -1854,7 +1850,7 @@ function ComparePayrollChart({
   }[metric];
   const modeSelector = {
     area: (record: SalaryRecord) => record.area,
-    employee: (record: SalaryRecord) => record.employeeCode,
+    employee: (record: SalaryRecord) => record.hrId,
     jobTitle: (record: SalaryRecord) => record.jobTitle,
     line: (record: SalaryRecord) => record.line,
   }[compareMode];
@@ -1865,8 +1861,8 @@ function ComparePayrollChart({
         .sort((left, right) => right.netSalary - left.netSalary)
         .slice(0, 16)
         .map((record) => ({
-          key: record.employeeCode,
-          label: record.fullName || record.employeeCode,
+          key: record.hrId,
+          label: record.fullName || record.hrId,
           meta: record.jobTitle || record.line || "Employee",
         }));
     }
@@ -1892,7 +1888,7 @@ function ComparePayrollChart({
     const valueFor = (source: SalaryRecord[]) =>
       sumRecords(
         source.filter((record) => {
-          const key = compareMode === "employee" ? record.employeeCode : modeSelector(record)?.trim() || "Unassigned";
+          const key = compareMode === "employee" ? record.hrId : modeSelector(record)?.trim() || "Unassigned";
           return key === option.key;
         }),
         metricSelector,
@@ -1933,7 +1929,7 @@ function ComparePayrollChart({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select
-            className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs text-text shadow-sm"
+            className="h-9 rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs text-[#0F172A] shadow-sm"
             onChange={(event) => {
               setCompareMode(event.target.value as GroupMode | "employee");
               setSelectedKeys([]);
@@ -1947,7 +1943,7 @@ function ComparePayrollChart({
             <option value="employee">Employees</option>
           </select>
           <select
-            className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs text-text shadow-sm"
+            className="h-9 rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs text-[#0F172A] shadow-sm"
             onChange={(event) => setMetric(event.target.value as typeof metric)}
             value={metric}
           >
@@ -1957,7 +1953,7 @@ function ComparePayrollChart({
             <option value="deductions">Deductions</option>
           </select>
           <select
-            className="h-9 max-w-[190px] rounded-xl border border-slate-200 bg-white px-3 text-xs text-text shadow-sm"
+            className="h-9 max-w-[190px] rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs text-[#0F172A] shadow-sm"
             onChange={(event) => {
               const value = event.target.value;
               if (value && !activeKeys.includes(value)) {
@@ -1981,8 +1977,8 @@ function ComparePayrollChart({
             className={cn(
               "rounded-full border px-3 py-1 text-xs font-semibold transition",
               hiddenKeys.includes(option.key)
-                ? "border-slate-200 bg-slate-50 text-text-secondary opacity-50"
-                : "border-orange-200 bg-orange-50 text-primary",
+                ? "border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B] opacity-50"
+                : "border-[#F97316]/20 bg-[#F97316]/10 text-[#F97316]",
             )}
             key={option.key}
             onClick={() =>
@@ -2105,14 +2101,14 @@ function ComparePayrollChart({
         </svg>
         {hoverIndex !== null && activeCompareSeries && (
           <div
-            className="phoenix-chart-tooltip pointer-events-none absolute z-20 w-56 rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs shadow-[0_18px_44px_rgba(15,23,42,0.16)] backdrop-blur"
+            className="phoenix-chart-tooltip pointer-events-none absolute z-20 w-56 rounded-2xl border border-[#E2E8F0] bg-white/95 p-3 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur"
             style={{
               left: `${clamp((xFor(hoverIndex) / width) * 100, 18, 82)}%`,
               top: `${clamp((yFor(activeCompareSeries.values[hoverIndex]) / height) * 100, 24, 92)}%`,
             }}
           >
             <p className="mb-2 text-sm font-semibold text-text">{periods[hoverIndex]} comparison</p>
-            <div className="rounded-xl bg-orange-50 px-2 py-1.5 text-primary">
+            <div className="rounded-xl bg-[#F97316]/10 px-2 py-1.5 text-[#F97316]">
               <div className="flex items-center justify-between gap-3">
                 <span className="flex min-w-0 items-center gap-2 truncate">
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: activeCompareSeries.color }} />
@@ -2268,12 +2264,12 @@ function PayrollOverviewChart({
           </button>
         ))}
         </div>
-        <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+        <div className="flex items-center gap-1 rounded-xl border border-[#E2E8F0] bg-white p-1 shadow-sm">
           {(["3M", "6M", "12M", "All"] as ZoomPreset[]).map((preset) => (
             <button
               className={cn(
                 "rounded-lg px-2.5 py-1 text-[11px] font-semibold transition",
-                zoomPreset === preset ? "bg-orange-50 text-primary" : "text-text-secondary hover:bg-slate-50",
+                zoomPreset === preset ? "bg-[#F97316]/10 text-[#F97316]" : "text-[#64748B] hover:bg-[#F8FAFC]",
               )}
               key={preset}
               onClick={() => setPreset(preset)}
@@ -2283,7 +2279,7 @@ function PayrollOverviewChart({
             </button>
           ))}
           <button
-            className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-text-secondary transition hover:bg-slate-50 hover:text-text"
+            className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-[#64748B] transition hover:bg-[#F8FAFC] hover:text-[#0F172A]"
             onClick={() => {
               setPreset("All");
               setHiddenSeries([]);
@@ -2532,7 +2528,7 @@ function PayrollOverviewChart({
           </svg>
           {hover && activeValue && (
             <div
-              className="phoenix-chart-tooltip pointer-events-none absolute z-20 w-52 rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs shadow-[0_18px_44px_rgba(15,23,42,0.16)] backdrop-blur"
+              className="phoenix-chart-tooltip pointer-events-none absolute z-20 w-52 rounded-2xl border border-[#E2E8F0] bg-white/95 p-3 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur"
               style={{
                 left: `${clamp((hoverX / width) * 100, 18, 82)}%`,
                 top: `${clamp((activeValue.y / height) * 100, 24, 92)}%`,
@@ -2609,7 +2605,7 @@ function KpiCard({
   const toneClass = {
     blue: "bg-blue-50 text-blue-600 shadow-[0_0_18px_rgba(37,99,235,0.12)]",
     green: "bg-green-50 text-success shadow-[0_0_18px_rgba(34,197,94,0.12)]",
-    orange: "bg-orange-50 text-primary shadow-[0_0_18px_rgba(249,115,22,0.12)]",
+    orange: "bg-[#F97316]/10 text-[#F97316] shadow-[0_0_18px_rgba(249,115,22,0.12)]",
     red: "bg-red-50 text-danger shadow-[0_0_18px_rgba(239,68,68,0.12)]",
     violet: "bg-violet-50 text-violet-600 shadow-[0_0_18px_rgba(124,58,237,0.12)]",
   }[tone];
@@ -2656,8 +2652,8 @@ function PayrollTabs({
   onChange: (tab: PayrollTab) => void;
 }) {
   const tabs: Array<{ label: string; value: PayrollTab }> = [
-    { label: "Generate Ready Monthly Payroll Sheet", value: "generate" },
-    { label: "Upload & Governance", value: "governance" },
+    { label: "Governance & Operations", value: "governance" },
+    { label: "Generate Payroll Sheet", value: "generate" },
   ];
 
   return (
@@ -2704,7 +2700,7 @@ function GenerateReadyPayrollSheet({
     <Card>
       <div className="grid gap-6 xl:grid-cols-[1fr_380px] xl:items-center">
         <div>
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-50 text-primary shadow-[0_0_24px_rgba(249,115,22,0.18)]">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#F97316]/10 text-[#F97316] shadow-[0_0_24px_rgba(249,115,22,0.18)]">
             <FileSpreadsheet className="h-6 w-6" />
           </div>
           <h2 className="mt-4 text-xl font-semibold text-text">
@@ -2745,7 +2741,7 @@ function GenerateReadyPayrollSheet({
         </div>
 
         <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 shadow-[0_18px_45px_rgba(249,115,22,0.10)]">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#F97316]">
             Payroll Period
           </p>
           <div className="mt-4 grid gap-3">
@@ -2813,7 +2809,7 @@ function GenerateReadyPayrollSheet({
 function ImpactBadge({ level }: { level: ImpactLevel }) {
   const className = {
     Critical: "border-red-200 bg-red-50 text-red-600",
-    High: "border-orange-200 bg-orange-50 text-primary",
+    High: "border-[#F97316]/20 bg-[#F97316]/10 text-[#F97316]",
     Low: "border-green-200 bg-green-50 text-success",
     Medium: "border-amber-200 bg-amber-50 text-amber-600",
   }[level];
@@ -2891,7 +2887,7 @@ function IntelligenceSkeleton() {
           <div className="phoenix-skeleton h-28 rounded-2xl" key={item} />
         ))}
       </div>
-      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#F97316]">
         Analyzing payroll intelligence...
       </p>
     </Card>
@@ -2912,7 +2908,7 @@ function AiPayrollInsights({
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-orange-50 text-primary shadow-[0_0_18px_rgba(249,115,22,0.18)]">
+            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[#F97316]/10 text-[#F97316] shadow-[0_0_18px_rgba(249,115,22,0.18)]">
               <Sparkles className="h-4 w-4" />
             </span>
             <div>
@@ -2954,7 +2950,7 @@ function AiPayrollInsights({
             </p>
             <p className="mt-2 min-h-12 text-sm text-text-secondary">{insight.summary}</p>
             <div className="mt-4 rounded-xl border border-white/70 bg-white/70 p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary">
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#F97316]">
                 Suggested action
               </p>
               <p className="mt-1 text-xs text-text">{insight.action}</p>
@@ -3006,7 +3002,7 @@ function PayrollScoringPanel({
                 <span className="font-medium text-text-secondary">{component.label}</span>
                 <span className="font-mono font-semibold text-text">{Math.round(component.score)}%</span>
               </div>
-              <div className="h-2 rounded-full bg-slate-200">
+              <div className="h-2 rounded-full bg-[#E2E8F0]">
                 <div
                   className="phoenix-bar-fill h-2 rounded-full bg-gradient-to-r from-orange-400 to-amber-300"
                   style={{ width: `${clamp(component.score)}%` }}
@@ -3043,7 +3039,7 @@ function PayrollScoringPanel({
                       className={cn(
                         "rounded-full px-2.5 py-1 text-xs font-bold",
                         row.score >= 90 && "bg-green-50 text-success",
-                        row.score >= 75 && row.score < 90 && "bg-orange-50 text-primary",
+                        row.score >= 75 && row.score < 90 && "bg-[#F97316]/10 text-[#F97316]",
                         row.score >= 60 && row.score < 75 && "bg-amber-50 text-amber-600",
                         row.score < 60 && "bg-red-50 text-danger",
                       )}
@@ -3051,7 +3047,7 @@ function PayrollScoringPanel({
                       {row.score}
                     </span>
                   </div>
-                  <div className="mt-2 h-1.5 rounded-full bg-slate-200">
+                  <div className="mt-2 h-1.5 rounded-full bg-[#E2E8F0]">
                     <div
                       className="h-1.5 rounded-full"
                       style={{
@@ -3099,8 +3095,8 @@ function ExecutiveActionPanel({
   return (
     <Card className="overflow-hidden border-orange-200 bg-gradient-to-br from-white via-white to-orange-50/55">
       <div className="grid gap-5 xl:grid-cols-[0.72fr_1fr_1fr]">
-        <div className="rounded-3xl border border-orange-200 bg-white p-5 shadow-[0_0_32px_rgba(249,115,22,0.12)]">
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">
+        <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-[0_0_32px_rgba(249,115,22,0.12)]">
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#F97316]">
             Executive Action Panel
           </p>
           <p className="mt-4 text-5xl font-semibold tracking-tight text-text">
@@ -3110,7 +3106,7 @@ function ExecutiveActionPanel({
             Payroll readiness
           </p>
           <button
-            className="phoenix-action-button mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(249,115,22,0.28)]"
+            className="phoenix-action-button mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#F97316] px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(249,115,22,0.28)]"
             onClick={onApprove}
             type="button"
           >
@@ -3155,7 +3151,7 @@ function ExecutiveActionPanel({
             ))}
           </div>
           <button
-            className="mt-3 text-xs font-semibold text-primary"
+            className="mt-3 text-xs font-semibold text-[#F97316]"
             onClick={onDrilldown}
             type="button"
           >
@@ -3166,6 +3162,38 @@ function ExecutiveActionPanel({
     </Card>
   );
 }
+
+const retainedLegacyPayrollDashboardArtifacts = [
+  additionFields,
+  governmentalDeductionFields,
+  otherDeductionFields,
+  PayrollMotionStyles,
+  parseMonthInput,
+  shortPayrollPeriodLabel,
+  buildBreakdown,
+  buildSalaryBands,
+  buildPeriodDelta,
+  salaryBandMatches,
+  payrollSignalMatches,
+  payrollTrendPoint,
+  calculatePayrollHealthScore,
+  calculateEntityScores,
+  calculateEmployeeScores,
+  generatePayrollInsights,
+  generatePredictiveAlerts,
+  Donut,
+  BarRows,
+  InteractiveVerticalBars,
+  ComparePayrollChart,
+  PayrollOverviewChart,
+  KpiCard,
+  PayrollTabs,
+  GenerateReadyPayrollSheet,
+  AiPayrollInsights,
+  PayrollScoringPanel,
+  ExecutiveActionPanel,
+];
+void retainedLegacyPayrollDashboardArtifacts;
 
 function ValidationSummary({ result }: { result: SalaryValidationResult }) {
   const issuePreview = [
@@ -3257,7 +3285,7 @@ function ValidationSummary({ result }: { result: SalaryValidationResult }) {
                     {issue.row}
                   </td>
                   <td className="py-2 pr-4 font-mono text-xs text-text-secondary">
-                    {issue.employeeCode ?? "-"}
+                    {issue.hrId ?? "-"}
                   </td>
                   <td className="py-2 pr-4 text-text-secondary">
                     {issue.column ?? "-"}
@@ -3282,17 +3310,137 @@ function ValidationSummary({ result }: { result: SalaryValidationResult }) {
   );
 }
 
+function TableHeaderMenu({
+  label,
+  filterValue,
+  onFilterChange,
+  onSortAsc,
+  onSortDesc,
+}: {
+  label: string;
+  filterValue: string;
+  onFilterChange: (value: string) => void;
+  onSortAsc?: () => void;
+  onSortDesc?: () => void;
+}) {
+  return (
+    <details className="group relative">
+      <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-text-secondary">
+        {label}
+        <span className="text-[10px] text-text-secondary group-open:rotate-180">v</span>
+      </summary>
+      <div className="absolute left-0 top-7 z-20 w-56 rounded-xl border border-border bg-card p-3 normal-case tracking-normal shadow-xl">
+        <div className="mb-2 grid gap-2">
+          <button
+            className="rounded-lg px-3 py-2 text-left text-xs font-medium text-text hover:bg-bg-muted disabled:opacity-50"
+            disabled={!onSortAsc}
+            onClick={onSortAsc}
+            type="button"
+          >
+            Sort A to Z / Low to High
+          </button>
+          <button
+            className="rounded-lg px-3 py-2 text-left text-xs font-medium text-text hover:bg-bg-muted disabled:opacity-50"
+            disabled={!onSortDesc}
+            onClick={onSortDesc}
+            type="button"
+          >
+            Sort Z to A / High to Low
+          </button>
+        </div>
+        <Input
+          className="h-9 text-xs"
+          onChange={(event) => onFilterChange(event.target.value)}
+          placeholder={`Search ${label}`}
+          value={filterValue}
+        />
+      </div>
+    </details>
+  );
+}
+
 function PayrollHistory({
   activeBatchId,
   batches,
   deletingBatchId,
   onDelete,
+  onReplace,
+  replacingBatchId,
 }: {
   activeBatchId?: string;
   batches: SalaryBatch[];
   deletingBatchId: string | null;
   onDelete: (batchId: string) => void;
+  onReplace: (batch: SalaryBatch) => void;
+  replacingBatchId: string | null;
 }) {
+  const [fileSearch, setFileSearch] = useState("");
+  const [fileColumnFilters, setFileColumnFilters] = useState<Record<string, string>>({});
+  const [fileSort, setFileSort] = useState("period-desc");
+  const fileColumns = useMemo(
+    () => [
+      { asc: "period-asc", desc: "period-desc", key: "period", label: "Period" },
+      { asc: "file", desc: "file-desc", key: "fileName", label: "File" },
+      { asc: "status", desc: "status-desc", key: "status", label: "Status" },
+      { asc: "uploaded-asc", desc: "uploaded-desc", key: "createdAt", label: "Uploaded" },
+    ],
+    [],
+  );
+  const fileColumnValue = (batch: SalaryBatch, key: string) => {
+    if (key === "period") return payrollPeriodLabel(batch.month, batch.year);
+    if (key === "fileName") return batch.fileName;
+    if (key === "status") return batch.status.replace(/_/g, " ");
+    if (key === "createdAt") return formatDateTimeValue(batch.createdAt);
+    return "";
+  };
+  const visibleBatches = useMemo(() => {
+    const query = fileSearch.trim().toLowerCase();
+    const searched = batches.filter((batch) => {
+      const haystack = [
+        payrollPeriodLabel(batch.month, batch.year),
+        batch.fileName,
+        batch.status,
+        batch.uploadedBy ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const matchesGlobal = !query || haystack.includes(query);
+      const matchesColumns = fileColumns.every((column) => {
+        const filter = fileColumnFilters[column.key]?.trim().toLowerCase();
+        return !filter || fileColumnValue(batch, column.key).toLowerCase().includes(filter);
+      });
+
+      return matchesGlobal && matchesColumns;
+    });
+
+    return searched.slice().sort((left, right) => {
+      if (fileSort === "period-asc") {
+        return payrollPeriodIndex(left.month, left.year) - payrollPeriodIndex(right.month, right.year);
+      }
+      if (fileSort === "uploaded-desc") {
+        return right.createdAt.localeCompare(left.createdAt);
+      }
+      if (fileSort === "uploaded-asc") {
+        return left.createdAt.localeCompare(right.createdAt);
+      }
+      if (fileSort === "status") {
+        return left.status.localeCompare(right.status);
+      }
+      if (fileSort === "status-desc") {
+        return right.status.localeCompare(left.status);
+      }
+      if (fileSort === "file") {
+        return left.fileName.localeCompare(right.fileName);
+      }
+      if (fileSort === "file-desc") {
+        return right.fileName.localeCompare(left.fileName);
+      }
+
+      return payrollPeriodIndex(right.month, right.year) - payrollPeriodIndex(left.month, left.year);
+    });
+  }, [batches, fileColumnFilters, fileColumns, fileSearch, fileSort]);
+
   if (batches.length === 0) return null;
 
   return (
@@ -3303,24 +3451,64 @@ function PayrollHistory({
             Uploaded Files History
           </h2>
           <p className="mt-1 text-sm text-text-secondary">
-            Review payroll runs and delete incorrect batches before approval.
+            Review uploaded payroll sheets, download stored data, replace incorrect files, or delete batches.
           </p>
         </div>
         <Badge variant="neutral">{batches.length} files</Badge>
+      </div>
+      <div className="mb-4 grid gap-3 md:grid-cols-[1fr_220px]">
+        <Input
+          onChange={(event) => setFileSearch(event.target.value)}
+          placeholder="Filter uploaded files by period, file, status..."
+          value={fileSearch}
+        />
+        <select
+          className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text focus:outline-none"
+          onChange={(event) => setFileSort(event.target.value)}
+          value={fileSort}
+        >
+          <option value="period-desc">Period newest</option>
+          <option value="period-asc">Period oldest</option>
+          <option value="uploaded-desc">Uploaded newest</option>
+          <option value="uploaded-asc">Uploaded oldest</option>
+          <option value="status">Status A-Z</option>
+          <option value="file">File A-Z</option>
+        </select>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead>
             <tr className="border-b border-border">
-              {["Period", "File", "Status", "Uploaded", "Action"].map((column) => (
-                <th className="pb-3 pr-4 font-medium text-text-secondary" key={column}>
-                  {column}
+              {[...fileColumns, { key: "actions", label: "Actions" }].map((column) => (
+                <th className="pb-3 pr-4 font-medium text-text-secondary" key={column.key}>
+                  {column.key === "actions" ? (
+                    column.label
+                  ) : (
+                    <TableHeaderMenu
+                      filterValue={fileColumnFilters[column.key] ?? ""}
+                      label={column.label}
+                      onFilterChange={(value) =>
+                        setFileColumnFilters((filters) => ({
+                          ...filters,
+                          [column.key]: value,
+                        }))
+                      }
+                      onSortAsc={() => setFileSort("asc" in column ? column.asc : "period-asc")}
+                      onSortDesc={() => setFileSort("desc" in column ? column.desc : "period-desc")}
+                    />
+                  )}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {batches.map((batch) => (
+            {visibleBatches.length === 0 ? (
+              <tr>
+                <td className="py-8 text-center text-sm text-text-secondary" colSpan={5}>
+                  No uploaded files match the current filter.
+                </td>
+              </tr>
+            ) : visibleBatches.map((batch) => (
               <tr
                 className={cn(
                   "transition-colors hover:bg-bg-muted",
@@ -3338,22 +3526,49 @@ function PayrollHistory({
                 </td>
                 <td className="py-3 pr-4">{statusBadge(batch.status)}</td>
                 <td className="py-3 pr-4 text-text-secondary">
-                  {new Date(batch.createdAt).toLocaleString()}
+                  {formatDateTimeValue(batch.createdAt)}
                 </td>
                 <td className="py-3 pr-4">
-                  <Button
-                    className="px-3 py-1.5 text-xs"
-                    disabled={deletingBatchId === batch.id || batch.status === "locked"}
-                    onClick={() => onDelete(batch.id)}
-                    variant="secondary"
-                  >
-                    {deletingBatchId === batch.id ? (
-                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="mr-2 h-3.5 w-3.5" />
-                    )}
-                    Delete
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Link href={`/api/payroll/${batch.id}/download`}>
+                      <Button className="px-3 py-1.5 text-xs" variant="secondary">
+                        <Download className="mr-2 h-3.5 w-3.5" />
+                        Download
+                      </Button>
+                    </Link>
+                    <Link href={`/api/payroll/${batch.id}/payslips`} target="_blank">
+                      <Button className="px-3 py-1.5 text-xs" variant="secondary">
+                        <FileCheck2 className="mr-2 h-3.5 w-3.5" />
+                        Payslips
+                      </Button>
+                    </Link>
+                    <Button
+                      className="px-3 py-1.5 text-xs"
+                      disabled={replacingBatchId === batch.id}
+                      onClick={() => onReplace(batch)}
+                      variant="secondary"
+                    >
+                      {replacingBatchId === batch.id ? (
+                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Upload className="mr-2 h-3.5 w-3.5" />
+                      )}
+                      Replace
+                    </Button>
+                    <Button
+                      className="px-3 py-1.5 text-xs"
+                      disabled={deletingBatchId === batch.id}
+                      onClick={() => onDelete(batch.id)}
+                      variant="secondary"
+                    >
+                      {deletingBatchId === batch.id ? (
+                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="mr-2 h-3.5 w-3.5" />
+                      )}
+                      Delete
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -3364,50 +3579,694 @@ function PayrollHistory({
   );
 }
 
+function expenseColumnValue(record: ExpenseTripRecord, key: string) {
+  if (key === "hrId") return record.hrId ?? "";
+
+  const value = record[key as keyof ExpenseTripRecord];
+
+  if (typeof value === "number") return String(value);
+  if (typeof value === "string") return value;
+  return "";
+}
+
+function buildExpenseAnalysis(fileName: string, records: ExpenseTripRecord[]): ExpenseAnalysisResult {
+  const specialists = Array.from(
+    records.reduce((map, record) => {
+      const current =
+        map.get(record.specialist) ??
+        {
+          allowance: 0,
+          meetingAmount: 0,
+          specialist: record.specialist || "Unassigned",
+          total: 0,
+          travelCost: 0,
+          trips: 0,
+        };
+
+      current.allowance += record.allowance;
+      current.meetingAmount += record.meetingAmount;
+      current.total += record.total;
+      current.travelCost += record.travelCost;
+      current.trips += 1;
+      map.set(current.specialist, current);
+      return map;
+    }, new Map<string, ExpenseAnalysisResult["specialists"][number]>()),
+  )
+    .map(([, value]) => value)
+    .sort((left, right) => right.total - left.total);
+
+  return {
+    columns: [],
+    fileName,
+    records,
+    specialists,
+    summary: {
+      confirmedByFinance: records.filter((record) =>
+        record.status.toLowerCase().includes("confirmed by finance"),
+      ).length,
+      refusedByHr: records.filter((record) => record.hr.toLowerCase().includes("refused")).length,
+      specialists: specialists.length,
+      systemApproved: records.filter((record) =>
+        record.status.toLowerCase().includes("system approval"),
+      ).length,
+      totalAllowance: records.reduce((sum, record) => sum + record.allowance, 0),
+      totalExpenses: records.reduce((sum, record) => sum + record.total, 0),
+      totalKm: records.reduce((sum, record) => sum + record.km, 0),
+      totalMeetingAmount: records.reduce((sum, record) => sum + record.meetingAmount, 0),
+      totalTravelCost: records.reduce((sum, record) => sum + record.travelCost, 0),
+      trips: records.length,
+    },
+    warnings: [],
+  };
+}
+
+function ExpenseReport({
+  analysis,
+  analyzing,
+  error,
+  inputRef,
+  onImportToPayroll,
+  onDeleteReport,
+  onReplaceReport,
+  onSaveApprovals,
+  onSelectReport,
+  onUpload,
+  payrollMonthsForImport,
+  payrollYearsForImport,
+  reports,
+  selectedReportId,
+  deletingReportId,
+  importingToPayroll,
+  replacingReportId,
+  savingApprovals,
+}: {
+  analysis: ExpenseAnalysisResult | null;
+  analyzing: boolean;
+  error: string | null;
+  inputRef: RefObject<HTMLInputElement | null>;
+  onImportToPayroll: (
+    records: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>,
+    month: number,
+    year: number,
+  ) => void;
+  onDeleteReport: (reportId: string) => void;
+  onReplaceReport: (reportId: string, file: File | null) => void;
+  onSaveApprovals: (records: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>) => void;
+  onSelectReport: (reportId: string) => void;
+  onUpload: (file: File | null) => void;
+  payrollMonthsForImport: typeof payrollMonths;
+  payrollYearsForImport: string[];
+  reports: PayrollExpenseReport[];
+  selectedReportId: string | null;
+  deletingReportId: string | null;
+  importingToPayroll: boolean;
+  replacingReportId: string | null;
+  savingApprovals: boolean;
+}) {
+  const [search, setSearch] = useState("");
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [approvals, setApprovals] = useState<Record<string, { hrApproved: boolean; hrComment: string }>>({});
+  const [tripDateFrom, setTripDateFrom] = useState("");
+  const [tripDateTo, setTripDateTo] = useState("");
+  const [importMonth, setImportMonth] = useState(String(new Date().getMonth() + 1));
+  const [importYear, setImportYear] = useState(String(new Date().getFullYear()));
+  const [replaceReportId, setReplaceReportId] = useState<string | null>(null);
+  const [sort, setSort] = useState("total-desc");
+  const replaceReportInputRef = useRef<HTMLInputElement | null>(null);
+  const approvalFor = (record: ExpenseTripRecord) => {
+    const saved = record as ExpenseTripRecord & { hrApproved?: boolean; hrComment?: string };
+
+    return (
+      approvals[record.tripId] ?? {
+        hrApproved: Boolean(saved.hrApproved),
+        hrComment: saved.hrComment ?? "",
+      }
+    );
+  };
+  const columns = [
+    { asc: "specialist-asc", desc: "specialist-desc", key: "specialist", label: "Specialist" },
+    { asc: "hrId-asc", desc: "hrId-desc", key: "hrId", label: "HR ID" },
+    { asc: "date-asc", desc: "date-desc", key: "date", label: "Date" },
+    { asc: "tripId-asc", desc: "tripId-desc", key: "tripId", label: "Trip ID" },
+    { asc: "from-asc", desc: "from-desc", key: "from", label: "From" },
+    { asc: "to-asc", desc: "to-desc", key: "to", label: "To" },
+    { asc: "transportationType-asc", desc: "transportationType-desc", key: "transportationType", label: "Transport" },
+    { asc: "travelCost-asc", desc: "travelCost-desc", key: "travelCost", label: "Travel" },
+    { asc: "meetingAmount-asc", desc: "meetingAmount-desc", key: "meetingAmount", label: "Meeting" },
+    { asc: "allowance-asc", desc: "allowance-desc", key: "allowance", label: "Allowance" },
+    { asc: "total-asc", desc: "total-desc", key: "total", label: "Total" },
+    { asc: "status-asc", desc: "status-desc", key: "status", label: "Status" },
+  ];
+  const records = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const fromDate = tripDateFrom ? new Date(`${tripDateFrom}T00:00:00`) : null;
+    const toDate = tripDateTo ? new Date(`${tripDateTo}T23:59:59`) : null;
+    const source = analysis?.records ?? [];
+    const filtered = source.filter((record) => {
+      const tripDate = record.date ? new Date(record.date) : null;
+      const matchesTripDate =
+        (!fromDate || (tripDate && tripDate >= fromDate)) &&
+        (!toDate || (tripDate && tripDate <= toDate));
+      const haystack = [
+        record.specialist,
+        record.hrId ?? "",
+        record.tripId,
+        record.from,
+        record.to,
+        record.transportationType,
+        record.status,
+        record.description,
+      ]
+        .join(" ")
+        .toLowerCase();
+      const matchesSearch = !query || haystack.includes(query);
+      const matchesColumns = Object.entries(columnFilters).every(([key, value]) => {
+        const filter = value.trim().toLowerCase();
+        const columnValue =
+          key === "hrId" ? record.hrId ?? "" : expenseColumnValue(record, key);
+
+        return !filter || columnValue.toLowerCase().includes(filter);
+      });
+
+      return matchesTripDate && matchesSearch && matchesColumns;
+    });
+
+    return filtered.slice().sort((left, right) => {
+      const [key, direction] = sort.split("-");
+      const leftValue =
+        key === "hrId" ? left.hrId ?? "" : expenseColumnValue(left, key);
+      const rightValue =
+        key === "hrId" ? right.hrId ?? "" : expenseColumnValue(right, key);
+      const numericKeys = new Set(["travelCost", "meetingAmount", "allowance", "total"]);
+      const recordKey = key;
+
+      if (numericKeys.has(key)) {
+        const leftNumber = Number(left[recordKey as keyof ExpenseTripRecord] ?? 0);
+        const rightNumber = Number(right[recordKey as keyof ExpenseTripRecord] ?? 0);
+        return direction === "desc" ? rightNumber - leftNumber : leftNumber - rightNumber;
+      }
+
+      return direction === "desc"
+        ? rightValue.localeCompare(leftValue)
+        : leftValue.localeCompare(rightValue);
+    });
+  }, [analysis?.records, columnFilters, search, sort, tripDateFrom, tripDateTo]);
+
+  const approvedRecords = (analysis?.records ?? []).filter((record) => approvalFor(record).hrApproved);
+  const approvedTotal = approvedRecords.reduce((sum, record) => sum + record.total, 0);
+  const unmappedRecords = (analysis?.records ?? []).filter((record) => !record.hrId);
+  const missingTripDateRecords = (analysis?.records ?? []).filter((record) => !record.date);
+  const filteredTotal = records.reduce((sum, record) => sum + record.total, 0);
+  const expenseFilterCount =
+    (search.trim() ? 1 : 0) +
+    (tripDateFrom ? 1 : 0) +
+    (tripDateTo ? 1 : 0) +
+    Object.values(columnFilters).filter((value) => value.trim()).length;
+
+  function saveApprovals() {
+    if (!analysis) return;
+
+    onSaveApprovals(
+      analysis.records.map((record) => ({
+        ...record,
+        hrApproved: approvalFor(record).hrApproved,
+        hrComment: approvalFor(record).hrComment,
+      })),
+    );
+  }
+
+  function importToPayroll() {
+    if (!analysis) return;
+
+    onImportToPayroll(
+      analysis.records.map((record) => ({
+        ...record,
+        hrApproved: approvalFor(record).hrApproved,
+        hrComment: approvalFor(record).hrComment,
+      })),
+      Number(importMonth),
+      Number(importYear),
+    );
+  }
+
+  function downloadFilteredExpenses() {
+    const headers = [
+      "Specialist",
+      "HR ID",
+      "Date",
+      "Trip ID",
+      "From",
+      "To",
+      "Transport",
+      "Travel",
+      "Meeting",
+      "Allowance",
+      "Total",
+      "Status",
+      "HR Approved",
+      "Comment",
+    ];
+    const escapeCsv = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const rows = records.map((record) => [
+      record.specialist,
+      record.hrId ?? "",
+      formatPayrollDate(record.date),
+      record.tripId,
+      record.from,
+      record.to,
+      record.transportationType,
+      record.travelCost,
+      record.meetingAmount,
+      record.allowance,
+      record.total,
+      record.status,
+      approvalFor(record).hrApproved ? "Approved" : "",
+      approvalFor(record).hrComment,
+    ]);
+    const csv = [headers, ...rows].map((row) => row.map(escapeCsv).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `expenses-filtered-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <Card className="overflow-hidden border-[#E2E8F0] bg-white p-0 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+      <div className="border-b border-[#E2E8F0] bg-[#0F172A] px-5 py-5 text-white">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
+              Expense Operations
+            </p>
+            <h2 className="mt-2 text-xl font-bold">Expenses Report</h2>
+            <p className="mt-1 max-w-2xl text-sm text-white/70">
+              {analysis
+                ? `${analysis.fileName} - ${formatNumber(analysis.summary.trips)} trips saved for review`
+                : "Upload an expenses sheet, approve rows from HR, then import approved expenses into payroll."}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+          <input
+            accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="hidden"
+            onChange={(event) => onUpload(event.target.files?.[0] ?? null)}
+            ref={inputRef}
+            type="file"
+          />
+          <Button
+            className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
+            disabled={analyzing}
+            onClick={() => inputRef.current?.click()}
+            variant="secondary"
+          >
+            {analyzing ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
+            Upload Expenses
+          </Button>
+          <Button
+            className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
+            disabled={!analysis || records.length === 0}
+            onClick={downloadFilteredExpenses}
+            variant="secondary"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Download Expenses
+          </Button>
+          <Button
+            className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15"
+            disabled={!analysis || savingApprovals}
+            onClick={saveApprovals}
+            variant="secondary"
+          >
+            {savingApprovals ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <FileCheck2 className="mr-2 h-4 w-4" />
+            )}
+            Save HR Approvals
+          </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-4 p-5">
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-danger">
+          {error}
+        </div>
+      )}
+
+      {reports.length > 0 && (
+        <div className="rounded-2xl border border-[#E2E8F0] bg-white">
+          <input
+            accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="hidden"
+            onChange={(event) => {
+              onReplaceReport(replaceReportId ?? "", event.target.files?.[0] ?? null);
+              event.target.value = "";
+            }}
+            ref={replaceReportInputRef}
+            type="file"
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
+            <div>
+              <h3 className="text-sm font-semibold text-text">Saved Expense Reports</h3>
+              <p className="mt-0.5 text-xs text-text-secondary">
+                Preview, replace, or delete uploaded expense reports from the system database.
+              </p>
+            </div>
+            <Badge variant="neutral">{formatNumber(reports.length)} reports</Badge>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {reports.slice(0, 12).map((report) => (
+              <div
+                className={cn(
+                  "flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-[#F8FAFC]",
+                  selectedReportId === report.id && "bg-green-50/80",
+                )}
+                key={report.id}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-text">{report.fileName}</p>
+                  <p className="text-xs text-text-secondary">
+                    {formatNumber(report.rowCount)} rows - {formatPayrollDate(report.tripDateFrom)} to {formatPayrollDate(report.tripDateTo)} - uploaded {formatPayrollDate(report.createdAt)}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="mr-2 text-right">
+                    <p className="font-mono text-sm font-semibold text-text">{formatEGP(report.totalExpenses)}</p>
+                    <p className="text-xs text-text-secondary">{formatNumber(report.approvedRows)} approved</p>
+                  </div>
+                  <Button className="px-3 py-1.5 text-xs" onClick={() => onSelectReport(report.id)} variant="secondary">
+                    <FileSpreadsheet className="mr-2 h-3.5 w-3.5" />
+                    Preview
+                  </Button>
+                  <Button
+                    className="px-3 py-1.5 text-xs"
+                    disabled={replacingReportId === report.id}
+                    onClick={() => {
+                      setReplaceReportId(report.id);
+                      replaceReportInputRef.current?.click();
+                    }}
+                    variant="secondary"
+                  >
+                    {replacingReportId === report.id ? (
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    Replace
+                  </Button>
+                  <Button
+                    className="px-3 py-1.5 text-xs"
+                    disabled={deletingReportId === report.id}
+                    onClick={() => onDeleteReport(report.id)}
+                    variant="secondary"
+                  >
+                    {deletingReportId === report.id ? (
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {analysis ? (
+        <div className="space-y-5">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            {[
+              { label: "Trips", tone: "bg-[#F8FAFC] text-[#0F172A]", value: formatNumber(analysis.summary.trips) },
+              { label: "Specialists", tone: "bg-[#F8FAFC] text-[#0F172A]", value: formatNumber(analysis.summary.specialists) },
+              { label: "Filtered Total", tone: "bg-orange-50 text-orange-800", value: formatEGP(filteredTotal) },
+              { label: "Travel Cost", tone: "bg-amber-50 text-amber-800", value: formatEGP(analysis.summary.totalTravelCost) },
+              { label: "HR Approved", tone: "bg-emerald-50 text-emerald-800", value: formatEGP(approvedTotal) },
+              { label: "Unmapped", tone: "bg-rose-50 text-rose-800", value: formatNumber(unmappedRecords.length) },
+            ].map((metric) => (
+              <div className={cn("rounded-2xl border border-[#E2E8F0] p-4", metric.tone)} key={metric.label}>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{metric.label}</p>
+                <p className="mt-2 truncate font-mono text-lg font-bold">{metric.value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+            <div className="mr-2">
+              <p className="text-sm font-semibold text-text">Import to Payroll</p>
+              <p className="text-xs text-text-secondary">Approved rows with HR ID only.</p>
+            </div>
+            <select
+              className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+              onChange={(event) => setImportMonth(event.target.value)}
+              value={importMonth}
+            >
+              {payrollMonthsForImport.map((month) => (
+                <option key={month.value} value={month.value}>
+                  {month.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+              onChange={(event) => setImportYear(event.target.value)}
+              value={importYear}
+            >
+              {payrollYearsForImport.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+            <Button disabled={!analysis || importingToPayroll} onClick={importToPayroll}>
+              {importingToPayroll ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FileCheck2 className="mr-2 h-4 w-4" />
+              )}
+              Import to Payroll
+            </Button>
+            <p className="text-xs text-text-secondary">
+              Select the payroll month that will receive the approved expenses.
+            </p>
+          </div>
+
+          <div className="grid gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 md:grid-cols-[1fr_180px_180px_auto]">
+            <Input
+              className="bg-white"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search specialist, HR ID, route, trip, status..."
+              value={search}
+            />
+            <input
+              className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+              onChange={(event) => setTripDateFrom(event.target.value)}
+              type="date"
+              value={tripDateFrom}
+            />
+            <input
+              className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+              onChange={(event) => setTripDateTo(event.target.value)}
+              type="date"
+              value={tripDateTo}
+            />
+            <Button
+              onClick={() => {
+                setSearch("");
+                setTripDateFrom("");
+                setTripDateTo("");
+                setColumnFilters({});
+              }}
+              variant="secondary"
+            >
+              Reset {expenseFilterCount > 0 ? `(${expenseFilterCount})` : ""}
+            </Button>
+          </div>
+
+          <div>
+            <div className="min-w-0">
+              <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
+                <table className="w-full min-w-[1420px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs uppercase tracking-[0.12em] text-[#64748B]">
+                      {columns.map((column) => (
+                        <th className="sticky top-0 z-10 px-3 py-3 font-semibold" key={column.key}>
+                          <TableHeaderMenu
+                            filterValue={columnFilters[column.key] ?? ""}
+                            label={column.label}
+                            onFilterChange={(value) =>
+                              setColumnFilters((filters) => ({
+                                ...filters,
+                                [column.key]: value,
+                              }))
+                            }
+                            onSortAsc={() => setSort(column.asc)}
+                            onSortDesc={() => setSort(column.desc)}
+                          />
+                        </th>
+                      ))}
+                      <th className="sticky top-0 z-10 px-3 py-3 font-semibold">
+                        HR Approved
+                      </th>
+                      <th className="sticky top-0 z-10 px-3 py-3 font-semibold">
+                        Comment
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {records.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-8 text-center text-sm text-text-secondary" colSpan={columns.length + 2}>
+                          No expenses match the current filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      records.slice(0, 250).map((record) => (
+                        <tr className="transition-colors hover:bg-[#F8FAFC]" key={`${record.tripId}-${record.row}`}>
+                          <td className="px-3 py-3 font-medium text-text">{record.specialist}</td>
+                          <td className="px-3 py-3 font-mono text-xs text-text-secondary">
+                            {record.hrId ? record.hrId : (
+                              <Badge variant="warning">Not mapped</Badge>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-text-secondary">{formatPayrollDate(record.date)}</td>
+                          <td className="px-3 py-3 font-mono text-xs text-text-secondary">{record.tripId}</td>
+                          <td className="px-3 py-3 text-text-secondary">{record.from || "-"}</td>
+                          <td className="px-3 py-3 text-text-secondary">{record.to || "-"}</td>
+                          <td className="px-3 py-3 text-text-secondary">{record.transportationType || "-"}</td>
+                          <td className="px-3 py-3 font-mono text-xs text-text-secondary">{formatEGP(record.travelCost)}</td>
+                          <td className="px-3 py-3 font-mono text-xs text-text-secondary">{formatEGP(record.meetingAmount)}</td>
+                          <td className="px-3 py-3 font-mono text-xs text-text-secondary">{formatEGP(record.allowance)}</td>
+                          <td className="px-3 py-3 font-mono font-semibold text-text">{formatEGP(record.total)}</td>
+                          <td className="px-3 py-3 text-text-secondary">{record.status || "-"}</td>
+                          <td className="px-3 py-3">
+                            <Switch
+                              checked={approvalFor(record).hrApproved}
+                              label="Approved by HR"
+                              onChange={(checked) =>
+                                setApprovals((current) => ({
+                                  ...current,
+                                  [record.tripId]: {
+                                    hrApproved: checked,
+                                    hrComment: approvalFor(record).hrComment,
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td className="px-3 py-3">
+                            <Input
+                              className="h-9 min-w-[220px] text-xs"
+                              onChange={(event) =>
+                                setApprovals((current) => ({
+                                  ...current,
+                                  [record.tripId]: {
+                                    hrApproved: approvalFor(record).hrApproved,
+                                    hrComment: event.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="HR comment"
+                              value={approvalFor(record).hrComment}
+                            />
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {records.length > 250 ? (
+                <p className="mt-3 text-xs text-text-secondary">
+                  Showing first 250 rows. Use filters to narrow the expenses report.
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          {analysis.warnings.length > 0 ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {analysis.warnings.slice(0, 3).join(" ")}
+            </div>
+          ) : null}
+          {(unmappedRecords.length > 0 || missingTripDateRecords.length > 0) && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {unmappedRecords.length > 0
+                ? `${formatNumber(unmappedRecords.length)} expenses are not mapped to HR ID. `
+                : ""}
+              {missingTripDateRecords.length > 0
+                ? `${formatNumber(missingTripDateRecords.length)} expenses are missing trip date.`
+                : ""}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border bg-bg-muted px-4 py-8 text-center text-sm text-text-secondary">
+          No expenses sheet analyzed yet.
+        </div>
+      )}
+      </div>
+    </Card>
+  );
+}
+
 export function PayrollDashboard({
   initialData,
   initialError,
-  initialTab = "governance",
+  initialSheetTab = "salary",
 }: Props) {
   const currentYear = new Date().getFullYear();
-  const [search, setSearch] = useState("");
-  const [lineFilter, setLineFilter] = useState("__all__");
-  const [areaFilter, setAreaFilter] = useState("__all__");
-  const [jobTitleFilter, setJobTitleFilter] = useState("__all__");
-  const [employeeFilter, setEmployeeFilter] = useState("__all__");
-  const [salaryBandFilter, setSalaryBandFilter] = useState("__all__");
-  const [batchStatusFilter, setBatchStatusFilter] = useState("__all__");
-  const [payrollSignalFilter, setPayrollSignalFilter] = useState("__all__");
-  const [periodFromFilter, setPeriodFromFilter] = useState("");
-  const [periodToFilter, setPeriodToFilter] = useState("");
-  const [groupMode, setGroupMode] = useState<GroupMode>("line");
-  const [isAnalyzingIntelligence, setIsAnalyzingIntelligence] = useState(false);
-  const [payrollMonth, setPayrollMonth] = useState("");
-  const [payrollYear, setPayrollYear] = useState("");
-  const [generateMonth, setGenerateMonth] = useState("");
-  const [generateYear, setGenerateYear] = useState(String(currentYear));
-  const [activePayrollTab, setActivePayrollTab] = useState<PayrollTab>(initialTab);
-  const [showAnomalyReview, setShowAnomalyReview] = useState(false);
+  const [payrollSheetTab, setPayrollSheetTab] = useState<PayrollSheetTab>(initialSheetTab);
+  const [salaryReportSearch, setSalaryReportSearch] = useState("");
+  const [salaryColumnFilters, setSalaryColumnFilters] = useState<Record<string, string>>({});
+  const [salaryReportSort, setSalaryReportSort] = useState("employee-asc");
+  const [salaryReportYear, setSalaryReportYear] = useState<number | null>(null);
+  const [salaryReportMonth, setSalaryReportMonth] = useState<number | null>(null);
+  const [expenseAnalysis, setExpenseAnalysis] = useState<ExpenseAnalysisResult | null>(null);
+  const [expenseAnalysisError, setExpenseAnalysisError] = useState<string | null>(null);
+  const [expenseReports, setExpenseReports] = useState<PayrollExpenseReport[]>([]);
+  const [selectedExpenseReportId, setSelectedExpenseReportId] = useState<string | null>(null);
+  const [expenseAnalyzing, setExpenseAnalyzing] = useState(false);
+  const [expenseApprovalsSaving, setExpenseApprovalsSaving] = useState(false);
+  const [deletingExpenseReportId, setDeletingExpenseReportId] = useState<string | null>(null);
+  const [expenseImportingToPayroll, setExpenseImportingToPayroll] = useState(false);
+  const [replacingExpenseReportId, setReplacingExpenseReportId] = useState<string | null>(null);
+  const [expenseApprovalMessage, setExpenseApprovalMessage] = useState<string | null>(null);
+  const [salaryHolds, setSalaryHolds] = useState<Set<string>>(new Set());
+  const [payrollMonth, setPayrollMonth] = useState(String(new Date().getMonth() + 1));
+  const [payrollYear, setPayrollYear] = useState(String(currentYear));
   const [salaryValidation, setSalaryValidation] =
     useState<SalaryValidationResult | null>(null);
   const [salaryUploadError, setSalaryUploadError] = useState<string | null>(null);
   const [selectedSalaryFile, setSelectedSalaryFile] = useState<File | null>(null);
   const [confirmingSalary, setConfirmingSalary] = useState(false);
   const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
+  const [replaceTargetBatch, setReplaceTargetBatch] = useState<SalaryBatch | null>(null);
+  const [replacingBatchId, setReplacingBatchId] = useState<string | null>(null);
   const [validatingSalary, setValidatingSalary] = useState(false);
   const [workflowMessage, setWorkflowMessage] = useState<{
     text: string;
     type: "success" | "error";
   } | null>(null);
-  const [working, setWorking] = useState(false);
   const salaryFileInputRef = useRef<HTMLInputElement | null>(null);
+  const replaceFileInputRef = useRef<HTMLInputElement | null>(null);
+  const expenseFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const data = initialData;
   const activeBatch = data?.batch ?? null;
-  const allBatches = data?.batches ?? [];
-  const records = data?.records ?? [];
-  const flags = data?.flags ?? [];
-  const previousRecords = data?.previousRecords ?? [];
+  const allBatches = useMemo(() => data?.batches ?? [], [data?.batches]);
+  const records = useMemo(() => data?.records ?? [], [data?.records]);
+  const flags = useMemo(() => data?.flags ?? [], [data?.flags]);
   const payrollYears = Array.from({ length: 7 }, (_, index) =>
     String(currentYear - 3 + index),
   );
@@ -3419,6 +4278,48 @@ export function PayrollDashboard({
       salaryValidation.missingRequiredColumns.length === 0 &&
       salaryValidation.duplicateHrIds.length === 0,
   );
+
+  async function loadSavedExpenseReport(reportId?: string) {
+    const query = reportId ? `?reportId=${encodeURIComponent(reportId)}` : "";
+    const response = await fetch(`/api/payroll/expenses${query}`);
+    const payload = await response.json();
+
+    if (!response.ok) return;
+
+    const reports = Array.isArray(payload.reports)
+      ? (payload.reports as PayrollExpenseReport[])
+      : [];
+    const targetReportId = reportId ?? reports[0]?.id ?? null;
+    const savedRecords = Array.isArray(payload.expenses)
+      ? (payload.expenses as ExpenseTripRecord[])
+      : [];
+
+    setExpenseReports(reports);
+    setSelectedExpenseReportId(targetReportId);
+
+    if (savedRecords.length > 0) {
+      const reportName =
+        reports.find((report) => report.id === targetReportId)?.fileName ??
+        "Saved payroll expenses";
+      setExpenseAnalysis(buildExpenseAnalysis(reportName, savedRecords));
+    } else if (targetReportId) {
+      setExpenseAnalysis(buildExpenseAnalysis("Saved payroll expenses", []));
+    }
+  }
+
+  useEffect(() => {
+    if (payrollSheetTab !== "expenses" || expenseAnalysis || expenseAnalyzing) return;
+
+    async function loadSavedExpenses() {
+      try {
+        await loadSavedExpenseReport();
+      } catch {
+        // Keep the upload flow usable if saved expenses cannot be loaded.
+      }
+    }
+
+    void loadSavedExpenses();
+  }, [expenseAnalysis, expenseAnalyzing, payrollSheetTab]);
 
   async function handleSalaryTemplateUpload(file: File | null) {
     if (!file) return;
@@ -3445,7 +4346,6 @@ export function PayrollDashboard({
       const payload = await response.json();
 
       if (!response.ok) {
-        setActivePayrollTab("governance");
         setSalaryUploadError(
           payload.error === "missing_payroll_period"
             ? "Choose payroll month and year before uploading."
@@ -3455,7 +4355,6 @@ export function PayrollDashboard({
       }
 
       setSalaryValidation(payload as SalaryValidationResult);
-      setActivePayrollTab("governance");
     } catch {
       setSalaryUploadError("Unable to validate salary file.");
     } finally {
@@ -3509,44 +4408,11 @@ export function PayrollDashboard({
         text: `${payload.importedRecords ?? 0} salary records imported with ${payload.governanceWarnings ?? 0} governance warnings.`,
         type: "success",
       });
-      setActivePayrollTab("governance");
-      window.location.href = `/payroll?tab=governance&batchId=${payload.batch.id}`;
+      window.location.href = `/payroll?batchId=${payload.batch.id}`;
     } catch {
       setSalaryUploadError("Unable to confirm payroll upload.");
     } finally {
       setConfirmingSalary(false);
-    }
-  }
-
-  async function handleWorkflow(action: string) {
-    if (!data?.batch) return;
-    setWorking(true);
-    setWorkflowMessage(null);
-
-    try {
-      const response = await fetch(`/api/payroll/${data.batch.id}/workflow`, {
-        body: JSON.stringify({ action }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = await response.json();
-
-      if (payload.success) {
-        setWorkflowMessage({
-          text: `Action "${action}" completed.`,
-          type: "success",
-        });
-        window.location.reload();
-      } else {
-        setWorkflowMessage({
-          text: payload.error ?? "Action failed.",
-          type: "error",
-        });
-      }
-    } catch {
-      setWorkflowMessage({ text: "Network error.", type: "error" });
-    } finally {
-      setWorking(false);
     }
   }
 
@@ -3583,6 +4449,289 @@ export function PayrollDashboard({
     }
   }
 
+  function handleReplaceBatch(batch: SalaryBatch) {
+    setReplaceTargetBatch(batch);
+    replaceFileInputRef.current?.click();
+  }
+
+  async function handleReplaceFile(file: File | null) {
+    if (!file || !replaceTargetBatch) return;
+
+    const confirmed = window.confirm(
+      `Replace ${payrollPeriodLabel(replaceTargetBatch.month, replaceTargetBatch.year)} with this file? The old uploaded sheet will be removed after the new file is imported.`,
+    );
+
+    if (!confirmed) {
+      setReplaceTargetBatch(null);
+      return;
+    }
+
+    setReplacingBatchId(replaceTargetBatch.id);
+    setSalaryUploadError(null);
+    setWorkflowMessage(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(`/api/payroll/${replaceTargetBatch.id}/replace`, {
+        body: formData,
+        method: "POST",
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setSalaryUploadError(payload.message ?? payload.error ?? "Payroll replace failed.");
+
+        if (payload.validation) {
+          setSalaryValidation(payload.validation as SalaryValidationResult);
+        }
+
+        return;
+      }
+
+      setWorkflowMessage({
+        text: `${payload.importedRecords ?? 0} salary records imported as replacement.`,
+        type: "success",
+      });
+      window.location.href = `/payroll?batchId=${payload.batch.id}`;
+    } catch {
+      setSalaryUploadError("Unable to replace payroll upload.");
+    } finally {
+      setReplacingBatchId(null);
+      setReplaceTargetBatch(null);
+      if (replaceFileInputRef.current) replaceFileInputRef.current.value = "";
+    }
+  }
+
+  async function handleDeleteExpenseReport(reportId: string) {
+    const report = expenseReports.find((item) => item.id === reportId);
+    const confirmed = window.confirm(
+      `Delete expense report "${report?.fileName ?? reportId}"? This removes the saved report and all expense rows inside it.`,
+    );
+
+    if (!confirmed) return;
+
+    setDeletingExpenseReportId(reportId);
+    setExpenseAnalysisError(null);
+    setExpenseApprovalMessage(null);
+
+    try {
+      const response = await fetch(`/api/payroll/expenses/reports/${reportId}`, {
+        method: "DELETE",
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.success) {
+        setExpenseAnalysisError(payload.message ?? payload.error ?? "Unable to delete expense report.");
+        return;
+      }
+
+      if (selectedExpenseReportId === reportId) {
+        setExpenseAnalysis(null);
+        setSelectedExpenseReportId(null);
+      }
+
+      setExpenseApprovalMessage("Expense report deleted.");
+      await loadSavedExpenseReport(
+        selectedExpenseReportId === reportId ? undefined : selectedExpenseReportId ?? undefined,
+      );
+    } catch {
+      setExpenseAnalysisError("Unable to delete expense report.");
+    } finally {
+      setDeletingExpenseReportId(null);
+    }
+  }
+
+  async function handleReplaceExpenseReport(reportId: string, file: File | null) {
+    if (!reportId || !file) return;
+
+    const report = expenseReports.find((item) => item.id === reportId);
+    const confirmed = window.confirm(
+      `Replace expense report "${report?.fileName ?? reportId}" with this file? Existing rows in this report will be removed.`,
+    );
+
+    if (!confirmed) return;
+
+    setReplacingExpenseReportId(reportId);
+    setExpenseAnalysisError(null);
+    setExpenseApprovalMessage(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(`/api/payroll/expenses/reports/${reportId}`, {
+        body: formData,
+        method: "PUT",
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setExpenseAnalysisError(payload.message ?? payload.error ?? "Unable to replace expense report.");
+        return;
+      }
+
+      setExpenseApprovalMessage(
+        `${payload.saved ?? 0} expense rows replaced and saved to the report.`,
+      );
+      await loadSavedExpenseReport(reportId);
+    } catch {
+      setExpenseAnalysisError("Unable to replace expense report.");
+    } finally {
+      setReplacingExpenseReportId(null);
+    }
+  }
+
+  async function handleExpenseUpload(file: File | null) {
+    if (!file) return;
+
+    setExpenseAnalyzing(true);
+    setExpenseAnalysisError(null);
+    setExpenseApprovalMessage(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/payroll/expenses/analyze", {
+        body: formData,
+        method: "POST",
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setExpenseAnalysisError(
+          payload.error === "payroll_expenses_schema_not_ready"
+            ? "Payroll expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
+            : payload.message ?? payload.error ?? "Expenses upload failed.",
+        );
+        return;
+      }
+
+      setExpenseAnalysis(payload as ExpenseAnalysisResult);
+      const uploadedReportId = Array.isArray(payload.records)
+        ? (payload.records.find((record: { reportId?: string | null }) => record.reportId)?.reportId ?? null)
+        : null;
+      if (uploadedReportId) {
+        await loadSavedExpenseReport(uploadedReportId);
+      }
+      setExpenseApprovalMessage(
+        `${payload.saved ?? (payload.records?.length ?? 0)} expense rows uploaded and saved to the system. Review HR approvals, then import approved expenses to payroll.`,
+      );
+    } catch {
+      setExpenseAnalysisError("Unable to upload expenses file.");
+    } finally {
+      setExpenseAnalyzing(false);
+      if (expenseFileInputRef.current) expenseFileInputRef.current.value = "";
+    }
+  }
+
+  async function handleSaveExpenseApprovals(
+    recordsToSave: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>,
+  ) {
+    if (!expenseAnalysis) return;
+
+    setExpenseApprovalsSaving(true);
+    setExpenseAnalysisError(null);
+    setExpenseApprovalMessage(null);
+
+    try {
+      const response = await fetch("/api/payroll/expenses", {
+        body: JSON.stringify({
+          fileName: expenseAnalysis.fileName,
+          records: recordsToSave,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setExpenseAnalysisError(
+          payload.error === "payroll_expenses_schema_not_ready"
+            ? "Payroll expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
+            : payload.message ?? payload.error ?? "Unable to save expense approvals.",
+        );
+        return;
+      }
+
+      const approvedTotal = recordsToSave
+        .filter((record) => record.hrApproved)
+        .reduce((sum, record) => sum + record.total, 0);
+
+      setExpenseApprovalMessage(
+        `${payload.saved ?? recordsToSave.length} expense rows saved. Approved total ${formatEGP(approvedTotal)} will appear in the next payroll month.`,
+      );
+    } catch {
+      setExpenseAnalysisError("Unable to save expense approvals.");
+    } finally {
+      setExpenseApprovalsSaving(false);
+    }
+  }
+
+  async function handleImportExpensesToPayroll(
+    recordsToImport: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>,
+    month: number,
+    year: number,
+  ) {
+    if (!expenseAnalysis) return;
+
+    setExpenseImportingToPayroll(true);
+    setExpenseAnalysisError(null);
+    setExpenseApprovalMessage(null);
+
+    try {
+      const approvedWithHrId = recordsToImport.filter(
+        (record) => record.hrApproved && record.hrId,
+      );
+
+      if (recordsToImport.length > 0 && approvedWithHrId.length === 0) {
+        setExpenseAnalysisError(
+          "Choose approved expenses mapped to HR ID before importing to payroll. If rows are not mapped, update the employee name/CRM username in Employee Management or upload an expenses sheet with an HR ID column.",
+        );
+        return;
+      }
+
+      const response = await fetch("/api/payroll/expenses/import", {
+        body: JSON.stringify({
+          fileName: expenseAnalysis.fileName,
+          month,
+          records: recordsToImport,
+          year,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setExpenseAnalysisError(
+          payload.error === "payroll_expenses_schema_not_ready"
+            ? "Payroll expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
+            : payload.message ?? payload.error ?? "Unable to import expenses to payroll.",
+        );
+        return;
+      }
+
+      if (!payload.targetBatch) {
+        setExpenseAnalysisError(`No payroll sheet found for ${month}/${year}. Upload that payroll first, then import expenses.`);
+        return;
+      }
+
+      setExpenseApprovalMessage(
+        `${payload.importedEmployees ?? 0} employees updated in payroll ${month}/${year}. Imported approved expenses ${formatEGP(payload.importedTotal ?? 0)}.`,
+      );
+      window.setTimeout(() => {
+        window.location.href = `/payroll?batchId=${payload.targetBatch.id}`;
+      }, 700);
+    } catch {
+      setExpenseAnalysisError("Unable to import expenses to payroll.");
+    } finally {
+      setExpenseImportingToPayroll(false);
+    }
+  }
+
   const salaryTemplateActions = (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-2">
       <input
@@ -3592,6 +4741,15 @@ export function PayrollDashboard({
           void handleSalaryTemplateUpload(event.target.files?.[0] ?? null)
         }
         ref={salaryFileInputRef}
+        type="file"
+      />
+      <input
+        accept=".xlsx"
+        className="hidden"
+        onChange={(event) =>
+          void handleReplaceFile(event.target.files?.[0] ?? null)
+        }
+        ref={replaceFileInputRef}
         type="file"
       />
       <select
@@ -3628,10 +4786,10 @@ export function PayrollDashboard({
           </option>
         ))}
       </select>
-      <Link href="/api/payroll/template">
+      <Link href="/api/payroll/template?upload=1">
         <Button variant="secondary">
           <Download className="mr-2 h-4 w-4" />
-          Download Salary Template
+          Download Upload Template
         </Button>
       </Link>
       {hasPayrollPeriod ? (
@@ -3680,354 +4838,98 @@ export function PayrollDashboard({
     </div>
   );
 
-  const lines = [...new Set(records.map((record) => record.line).filter(Boolean))].sort();
-  const areas = [
-    ...new Set(records.filter(isOperationalAreaRecord).map((record) => record.area)),
-  ].sort();
-  const jobTitles = [...new Set(records.map((record) => record.jobTitle).filter(Boolean))].sort();
-  const employees = Array.from(
-    new Map(
-      records
-        .filter((record) => record.employeeCode || record.fullName)
-        .map((record) => [
-          record.employeeCode || record.fullName,
-          {
-            key: record.employeeCode || record.fullName,
-            label: record.fullName || record.employeeCode,
-            meta: record.employeeCode,
-          },
-        ]),
-    ).values(),
-  ).sort((left, right) => left.label.localeCompare(right.label));
-  const batchStatusById = new Map(allBatches.map((item) => [item.id, item.status]));
-  const batchPeriodById = new Map(
-    allBatches.map((item) => [item.id, payrollPeriodIndex(item.month, item.year)]),
-  );
-  const batchStatuses = [...new Set(allBatches.map((item) => item.status).filter(Boolean))].sort();
-  const fromPeriodIndex = parseMonthInput(periodFromFilter);
-  const toPeriodIndex = parseMonthInput(periodToFilter);
-  const periodRangeStart =
-    fromPeriodIndex !== null && toPeriodIndex !== null
-      ? Math.min(fromPeriodIndex, toPeriodIndex)
-      : fromPeriodIndex;
-  const periodRangeEnd =
-    fromPeriodIndex !== null && toPeriodIndex !== null
-      ? Math.max(fromPeriodIndex, toPeriodIndex)
-      : toPeriodIndex;
-  const periodRangeMatches = (record: SalaryRecord) => {
-    const recordPeriod = batchPeriodById.get(record.batchId);
+  const salaryReportBatch = useMemo(() => {
+    const year = salaryReportYear ?? activeBatch?.year ?? null;
+    const month = salaryReportMonth ?? activeBatch?.month ?? null;
+    if (!year && !month) return allBatches[0] ?? null;
+    return (
+      allBatches.find((b) => b.year === year && b.month === month) ??
+      allBatches[0] ??
+      null
+    );
+  }, [activeBatch, allBatches, salaryReportMonth, salaryReportYear]);
 
-    if (recordPeriod === undefined) return true;
-    if (periodRangeStart !== null && recordPeriod < periodRangeStart) return false;
-    if (periodRangeEnd !== null && recordPeriod > periodRangeEnd) return false;
-    return true;
-  };
-  const advancedFilterCount = [
-    search.trim(),
-    periodFromFilter,
-    periodToFilter,
-    lineFilter !== "__all__",
-    areaFilter !== "__all__",
-    jobTitleFilter !== "__all__",
-    employeeFilter !== "__all__",
-    salaryBandFilter !== "__all__",
-    batchStatusFilter !== "__all__",
-    payrollSignalFilter !== "__all__",
-  ].filter(Boolean).length;
-  const resetDashboardFilters = () => {
-    triggerIntelligenceAnalysis();
-    setSearch("");
-    setLineFilter("__all__");
-    setAreaFilter("__all__");
-    setJobTitleFilter("__all__");
-    setEmployeeFilter("__all__");
-    setSalaryBandFilter("__all__");
-    setBatchStatusFilter("__all__");
-    setPayrollSignalFilter("__all__");
-    setPeriodFromFilter("");
-    setPeriodToFilter("");
-  };
+  const salaryReportRows = useMemo(() => {
+    if (!salaryReportBatch) return [];
+    const salaryColumnValue = (record: SalaryRecord, key: string) => {
+      if (key === "hrId") return record.hrId;
+      if (key === "fullName") return record.fullName;
+      if (key === "hireDate") return formatPayrollDate(record.hireDate);
+      if (key === "line") return record.line;
+      if (key === "area") return record.area;
+      if (key === "jobTitle") return record.jobTitle;
+      if (key === "totalAdditions") return String(record.totalAdditions);
+      if (key === "otherDeductions") return String(otherDeductionsFor(record));
+      if (key === "netSalary") return String(record.netSalary);
+      if (key === "firstPart") return String(record.firstPart);
+      if (key === "secondPart") return String(record.secondPart);
+      return "";
+    };
+    const query = salaryReportSearch.trim().toLowerCase();
+    const searched = records.filter((record) => {
+      if (record.batchId !== salaryReportBatch.id) return false;
 
-  const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase();
+      const haystack = [
+        record.hrId,
+        record.fullName,
+        record.hireDate ?? "",
+        record.line,
+        record.area,
+        record.jobTitle,
+      ]
+        .join(" ")
+        .toLowerCase();
+      const matchesColumns = Object.entries(salaryColumnFilters).every(([key, value]) => {
+        const filter = value.trim().toLowerCase();
+        const columnValue =
+          key === "hrId" ? record.hrId : salaryColumnValue(record, key);
 
-    return records.filter((record) => {
-      const matchesSearch =
-        !query ||
-        `${record.employeeCode} ${record.fullName} ${record.jobTitle} ${record.line} ${record.area}`
-          .toLowerCase()
-          .includes(query);
-      const matchesLine = lineFilter === "__all__" || record.line === lineFilter;
-      const matchesArea = areaFilter === "__all__" || record.area === areaFilter;
-      const matchesJobTitle = jobTitleFilter === "__all__" || record.jobTitle === jobTitleFilter;
-      const matchesEmployee =
-        employeeFilter === "__all__" ||
-        record.employeeCode === employeeFilter ||
-        record.fullName === employeeFilter;
-      const matchesSalaryBand = salaryBandMatches(record, salaryBandFilter);
-      const matchesBatchStatus =
-        batchStatusFilter === "__all__" || batchStatusById.get(record.batchId) === batchStatusFilter;
-      const matchesPayrollSignal = payrollSignalMatches(record, payrollSignalFilter);
-      const matchesPeriodRange = periodRangeMatches(record);
+        return !filter || columnValue.toLowerCase().includes(filter);
+      });
 
-      return (
-        matchesSearch &&
-        matchesLine &&
-        matchesArea &&
-        matchesJobTitle &&
-        matchesEmployee &&
-        matchesSalaryBand &&
-        matchesBatchStatus &&
-        matchesPayrollSignal &&
-        matchesPeriodRange
-      );
+      return (!query || haystack.includes(query)) && matchesColumns;
     });
-  }, [
-    areaFilter,
-    batchPeriodById,
-    batchStatusById,
-    batchStatusFilter,
-    employeeFilter,
-    jobTitleFilter,
-    lineFilter,
-    payrollSignalFilter,
-    periodRangeEnd,
-    periodRangeStart,
-    records,
-    salaryBandFilter,
-    search,
-  ]);
 
-  const previousFilteredRecords = useMemo(
-    () =>
-      previousRecords.filter((record) => {
-        const matchesLine = lineFilter === "__all__" || record.line === lineFilter;
-        const matchesArea = areaFilter === "__all__" || record.area === areaFilter;
-        const matchesJobTitle = jobTitleFilter === "__all__" || record.jobTitle === jobTitleFilter;
-        const matchesEmployee =
-          employeeFilter === "__all__" ||
-          record.employeeCode === employeeFilter ||
-          record.fullName === employeeFilter;
-        const matchesSalaryBand = salaryBandMatches(record, salaryBandFilter);
-        const matchesBatchStatus =
-          batchStatusFilter === "__all__" || batchStatusById.get(record.batchId) === batchStatusFilter;
-        const matchesPayrollSignal = payrollSignalMatches(record, payrollSignalFilter);
-        const matchesPeriodRange = periodRangeMatches(record);
-        return (
-          matchesLine &&
-          matchesArea &&
-          matchesJobTitle &&
-          matchesEmployee &&
-          matchesSalaryBand &&
-          matchesBatchStatus &&
-          matchesPayrollSignal &&
-          matchesPeriodRange
-        );
-      }),
-    [
-      areaFilter,
-      batchPeriodById,
-      batchStatusById,
-      batchStatusFilter,
-      employeeFilter,
-      jobTitleFilter,
-      lineFilter,
-      payrollSignalFilter,
-      periodRangeEnd,
-      periodRangeStart,
-      previousRecords,
-      salaryBandFilter,
-    ],
-  );
-  const operationalAreaRecords = useMemo(
-    () => filteredRecords.filter(isOperationalAreaRecord),
-    [filteredRecords],
-  );
-  const previousOperationalAreaRecords = useMemo(
-    () => previousFilteredRecords.filter(isOperationalAreaRecord),
-    [previousFilteredRecords],
-  );
+    return searched.slice().sort((left, right) => {
+      if (salaryReportSort === "employee-desc") return right.fullName.localeCompare(left.fullName);
+      if (salaryReportSort === "hr-asc") return left.hrId.localeCompare(right.hrId);
+      if (salaryReportSort === "hr-desc") return right.hrId.localeCompare(left.hrId);
+      if (salaryReportSort === "hire-asc") return (left.hireDate ?? "").localeCompare(right.hireDate ?? "");
+      if (salaryReportSort === "hire-desc") return (right.hireDate ?? "").localeCompare(left.hireDate ?? "");
+      if (salaryReportSort === "net-desc") return right.netSalary - left.netSalary;
+      if (salaryReportSort === "net-asc") return left.netSalary - right.netSalary;
+      if (salaryReportSort === "additions-desc") return right.totalAdditions - left.totalAdditions;
+      if (salaryReportSort === "additions-asc") return left.totalAdditions - right.totalAdditions;
+      if (salaryReportSort === "deductions-desc") return otherDeductionsFor(right) - otherDeductionsFor(left);
+      if (salaryReportSort === "deductions-asc") return otherDeductionsFor(left) - otherDeductionsFor(right);
+      if (salaryReportSort === "line") return left.line.localeCompare(right.line) || left.fullName.localeCompare(right.fullName);
+      if (salaryReportSort === "line-desc") return right.line.localeCompare(left.line) || left.fullName.localeCompare(right.fullName);
+      if (salaryReportSort === "area") return left.area.localeCompare(right.area) || left.fullName.localeCompare(right.fullName);
+      if (salaryReportSort === "area-desc") return right.area.localeCompare(left.area) || left.fullName.localeCompare(right.fullName);
+      if (salaryReportSort === "job") return left.jobTitle.localeCompare(right.jobTitle) || left.fullName.localeCompare(right.fullName);
+      if (salaryReportSort === "job-desc") return right.jobTitle.localeCompare(left.jobTitle) || left.fullName.localeCompare(right.fullName);
+      if (salaryReportSort === "first-asc") return left.firstPart - right.firstPart;
+      if (salaryReportSort === "first-desc") return right.firstPart - left.firstPart;
+      if (salaryReportSort === "second-asc") return left.secondPart - right.secondPart;
+      if (salaryReportSort === "second-desc") return right.secondPart - left.secondPart;
 
-  const totals = {
-    additions: sumRecords(filteredRecords, (record) => record.totalAdditions),
-    deductions: sumRecords(filteredRecords, (record) => record.totalDeductions),
-    employees: filteredRecords.length,
-    governmentalDeductions: sumRecords(filteredRecords, governmentalDeductionsFor),
-    gross: sumRecords(filteredRecords, (record) => record.grossSalary),
-    net: sumRecords(filteredRecords, (record) => record.netSalary),
-    otherDeductions: sumRecords(filteredRecords, otherDeductionsFor),
-  };
-  const previousTotals = {
-    additions: sumRecords(previousFilteredRecords, (record) => record.totalAdditions),
-    deductions: sumRecords(previousFilteredRecords, (record) => record.totalDeductions),
-    employees: previousFilteredRecords.length,
-    governmentalDeductions: sumRecords(previousFilteredRecords, governmentalDeductionsFor),
-    gross: sumRecords(previousFilteredRecords, (record) => record.grossSalary),
-    net: sumRecords(previousFilteredRecords, (record) => record.netSalary),
-    otherDeductions: sumRecords(previousFilteredRecords, otherDeductionsFor),
-  };
-  const payrollTrendPoints = useMemo(() => {
-    if (!activeBatch) return [];
-
-    if (data?.scope !== "batch") {
-      return allBatches
-        .slice()
-        .sort((left, right) => left.year - right.year || left.month - right.month)
-        .map((item) =>
-          payrollTrendPoint(
-            shortPayrollPeriodLabel(item.month, item.year),
-            filteredRecords.filter((record) => record.batchId === item.id),
-          ),
-        )
-        .filter((point) => point.employees > 0);
-    }
-
-    const points: PayrollTrendPoint[] = [];
-    const previousBatchId = previousFilteredRecords[0]?.batchId;
-    const previousBatch = previousBatchId
-      ? allBatches.find((item) => item.id === previousBatchId)
-      : null;
-
-    if (previousBatch && previousFilteredRecords.length > 0) {
-      points.push(
-        payrollTrendPoint(
-          shortPayrollPeriodLabel(previousBatch.month, previousBatch.year),
-          previousFilteredRecords,
-        ),
-      );
-    }
-
-    if (filteredRecords.length > 0) {
-      points.push(
-        payrollTrendPoint(
-          shortPayrollPeriodLabel(activeBatch.month, activeBatch.year),
-          filteredRecords,
-        ),
-      );
-    }
-
-    return points;
-  }, [activeBatch, allBatches, data?.scope, filteredRecords, previousFilteredRecords]);
-  const comparisonCurrentPoint =
-    payrollTrendPoints[payrollTrendPoints.length - 1] ??
-    payrollTrendPoint("Current", filteredRecords);
-  const comparisonPreviousPoint =
-    payrollTrendPoints.length > 1
-      ? payrollTrendPoints[payrollTrendPoints.length - 2]
-      : null;
-  const comparisonBatches = data?.scope !== "batch"
-    ? allBatches
-        .slice()
-        .sort((left, right) => left.year - right.year || left.month - right.month)
-        .filter((item) => filteredRecords.some((record) => record.batchId === item.id))
-    : [];
-  const comparisonCurrentBatch = comparisonBatches[comparisonBatches.length - 1] ?? null;
-  const comparisonPreviousBatch =
-    comparisonBatches.length > 1 ? comparisonBatches[comparisonBatches.length - 2] : null;
-  const comparisonChartRecords =
-    data?.scope !== "batch" && comparisonCurrentBatch
-      ? filteredRecords.filter((record) => record.batchId === comparisonCurrentBatch.id)
-      : filteredRecords;
-  const comparisonChartPreviousRecords =
-    data?.scope !== "batch" && comparisonPreviousBatch
-      ? filteredRecords.filter((record) => record.batchId === comparisonPreviousBatch.id)
-      : previousFilteredRecords;
-  const avgNet = totals.employees > 0 ? totals.net / totals.employees : 0;
-  const medianNet = median(filteredRecords.map((record) => record.netSalary));
-  const costPerHead = totals.employees > 0 ? totals.gross / totals.employees : 0;
-  const netGrossRatio = totals.gross > 0 ? (totals.net / totals.gross) * 100 : 0;
-  const deltaPercent = (current: number, previous: number) =>
-    previous > 0 ? ((current - previous) / previous) * 100 : null;
-
-  const lineGroups = useMemo(
-    () => buildGroups(filteredRecords, (record) => record.line),
-    [filteredRecords],
+      return left.fullName.localeCompare(right.fullName);
+    });
+  }, [records, salaryColumnFilters, salaryReportBatch, salaryReportSearch, salaryReportSort]);
+  const salaryReportTotals = useMemo(
+    () => ({
+      additions: salaryReportRows.reduce((sum, record) => sum + record.totalAdditions, 0),
+      employees: salaryReportRows.length,
+      firstPart: salaryReportRows.reduce((sum, record) => sum + record.firstPart, 0),
+      net: salaryReportRows.reduce((sum, record) => sum + record.netSalary, 0),
+      otherDeductions: salaryReportRows.reduce((sum, record) => sum + otherDeductionsFor(record), 0),
+      secondPart: salaryReportRows.reduce((sum, record) => sum + record.secondPart, 0),
+    }),
+    [salaryReportRows],
   );
-  const areaGroups = useMemo(
-    () => buildGroups(operationalAreaRecords, (record) => record.area),
-    [operationalAreaRecords],
-  );
-  const jobGroups = useMemo(
-    () => buildGroups(filteredRecords, (record) => record.jobTitle),
-    [filteredRecords],
-  );
-  const currentGroups =
-    groupMode === "area" ? areaGroups : groupMode === "jobTitle" ? jobGroups : lineGroups;
-  const salaryBands = useMemo(() => buildSalaryBands(filteredRecords), [filteredRecords]);
-  const additionsBreakdown = useMemo(
-    () => buildBreakdown(filteredRecords, additionFields),
-    [filteredRecords],
-  );
-  const governmentalDeductionsBreakdown = useMemo(
-    () => buildBreakdown(filteredRecords, governmentalDeductionFields),
-    [filteredRecords],
-  );
-  const otherDeductionsBreakdown = useMemo(
-    () => buildBreakdown(filteredRecords, otherDeductionFields),
-    [filteredRecords],
-  );
-  const periodDelta = useMemo(
-    () => buildPeriodDelta(filteredRecords, previousFilteredRecords),
-    [filteredRecords, previousFilteredRecords],
-  );
-  const anomalyThreshold = avgNet * 2.25;
-  const anomalyRecords = useMemo(
-    () =>
-      filteredRecords
-        .filter((record) => avgNet > 0 && record.netSalary > anomalyThreshold)
-        .sort((left, right) => right.netSalary - left.netSalary),
-    [avgNet, anomalyThreshold, filteredRecords],
-  );
-  const topJobTitles = jobGroups.slice(0, 5);
-  const payrollScore = useMemo(
-    () =>
-      calculatePayrollHealthScore({
-        batchStatus: activeBatch?.status ?? "uploaded",
-        flags,
-        previousRecords: previousFilteredRecords,
-        records: filteredRecords,
-      }),
-    [activeBatch?.status, filteredRecords, flags, previousFilteredRecords],
-  );
-  const lineScores = useMemo(
-    () => calculateEntityScores(filteredRecords, previousFilteredRecords, (record) => record.line),
-    [filteredRecords, previousFilteredRecords],
-  );
-  const areaScores = useMemo(
-    () => calculateEntityScores(operationalAreaRecords, previousOperationalAreaRecords, (record) => record.area),
-    [operationalAreaRecords, previousOperationalAreaRecords],
-  );
-  const employeeScores = useMemo(
-    () => calculateEmployeeScores(filteredRecords, previousFilteredRecords),
-    [filteredRecords, previousFilteredRecords],
-  );
-  const payrollInsights = useMemo(
-    () =>
-      generatePayrollInsights({
-        areaGroups,
-        flags,
-        lineGroups,
-        previousRecords: previousFilteredRecords,
-        previousTotals,
-        records: filteredRecords,
-        totals,
-      }),
-    [areaGroups, filteredRecords, flags, lineGroups, previousFilteredRecords, previousTotals, totals],
-  );
-  const predictiveAlerts = useMemo(
-    () =>
-      generatePredictiveAlerts({
-        areaGroups,
-        flags,
-        lineGroups,
-        previousRecords: previousFilteredRecords,
-        previousTotals,
-        records: filteredRecords,
-        totals,
-      }),
-    [areaGroups, filteredRecords, flags, lineGroups, previousFilteredRecords, previousTotals, totals],
-  );
-
+  const salaryReportFilterCount =
+    (salaryReportSearch.trim() ? 1 : 0) +
+    Object.values(salaryColumnFilters).filter((value) => value.trim()).length;
   if (initialError) {
     return (
       <div className="space-y-6">
@@ -4060,20 +4962,7 @@ export function PayrollDashboard({
           {salaryTemplateActions}
         </div>
 
-        <PayrollTabs activeTab={activePayrollTab} onChange={setActivePayrollTab} />
-
-        {activePayrollTab === "generate" && (
-          <GenerateReadyPayrollSheet
-            month={generateMonth}
-            months={payrollMonths}
-            onMonthChange={setGenerateMonth}
-            onYearChange={setGenerateYear}
-            year={generateYear}
-            years={payrollYears}
-          />
-        )}
-
-        {activePayrollTab !== "generate" && salaryUploadError && (
+        {salaryUploadError && (
           <Card className="border-danger/20 bg-red-50 dark:bg-red-950/20">
             <div className="flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 text-danger" />
@@ -4082,9 +4971,9 @@ export function PayrollDashboard({
           </Card>
         )}
 
-        {activePayrollTab !== "generate" && salaryValidation && <ValidationSummary result={salaryValidation} />}
+        {salaryValidation && <ValidationSummary result={salaryValidation} />}
 
-        {activePayrollTab !== "generate" && workflowMessage && (
+        {workflowMessage && (
           <Card
             className={cn(
               "border",
@@ -4104,15 +4993,15 @@ export function PayrollDashboard({
           </Card>
         )}
 
-        {activePayrollTab !== "generate" && (
-          <PayrollHistory
-            batches={allBatches}
-            deletingBatchId={deletingBatchId}
-            onDelete={handleDeleteBatch}
-          />
-        )}
+        <PayrollHistory
+          batches={allBatches}
+          deletingBatchId={deletingBatchId}
+          onDelete={handleDeleteBatch}
+          onReplace={handleReplaceBatch}
+          replacingBatchId={replacingBatchId}
+        />
 
-        {activePayrollTab !== "generate" && <Card>
+        <Card>
           <div className="flex flex-col items-center gap-3 py-12 text-center">
             <FileCheck2 className="h-10 w-10 text-text-secondary" />
             <p className="font-medium text-text">No payroll batch selected</p>
@@ -4121,334 +5010,49 @@ export function PayrollDashboard({
               numbers, additions, deductions, net salary, gross salary, and salary split.
             </p>
           </div>
-        </Card>}
+        </Card>
       </div>
     );
   }
 
   const batch = activeBatch;
   const isAllTimeScope = data?.scope !== "batch";
-  const selectedPeriod = isAllTimeScope ? "All Time" : payrollPeriodLabel(batch.month, batch.year);
-  const selectedStatusLabel = isAllTimeScope
-    ? `${formatNumber(allBatches.length)} payroll runs`
-    : batch.status.replace(/_/g, " ");
-  const periodFilterValue = isAllTimeScope ? "__all_time__" : batch.id;
-  const triggerIntelligenceAnalysis = () => {
-    setIsAnalyzingIntelligence(true);
-    window.setTimeout(() => setIsAnalyzingIntelligence(false), 320);
-  };
-  const handlePeriodFilterChange = (value: string) => {
-    triggerIntelligenceAnalysis();
-    window.location.href = value === "__all_time__" ? "/payroll" : `/payroll?batchId=${value}`;
-  };
-  const primaryWorkflowAction =
-    !isAllTimeScope && batch.status === "uploaded"
-      ? { action: "mark_review", label: "Mark Review" }
-      : !isAllTimeScope && batch.status === "under_review"
-        ? { action: "approve", label: "Approve Payroll" }
-        : !isAllTimeScope && batch.status === "approved"
-          ? { action: "lock", label: "Lock Payroll" }
-          : null;
+  const salaryReportColumns = [
+    { asc: "hr-asc", desc: "hr-desc", key: "hrId", label: "HR ID" },
+    { asc: "employee-asc", desc: "employee-desc", key: "fullName", label: "Employee" },
+    { asc: "hire-asc", desc: "hire-desc", key: "hireDate", label: "Hiring Date" },
+    { asc: "line", desc: "line-desc", key: "line", label: "Line" },
+    { asc: "area", desc: "area-desc", key: "area", label: "Area" },
+    { asc: "job", desc: "job-desc", key: "jobTitle", label: "Job Title" },
+    { asc: "additions-asc", desc: "additions-desc", key: "totalAdditions", label: "Additions" },
+    { asc: "deductions-asc", desc: "deductions-desc", key: "otherDeductions", label: "Other Deductions" },
+    { asc: "net-asc", desc: "net-desc", key: "netSalary", label: "Net" },
+    { asc: "first-asc", desc: "first-desc", key: "firstPart", label: "First Part" },
+    { asc: "second-asc", desc: "second-desc", key: "secondPart", label: "Second Part" },
+  ];
+
+  const salaryReportAvailableYears = Array.from(
+    new Set(allBatches.map((b) => b.year)),
+  ).sort((a, b) => a - b);
+
+  const salaryReportAvailableMonths = salaryReportAvailableYears.length > 0
+    ? allBatches
+        .filter((b) => b.year === (salaryReportYear ?? salaryReportBatch?.year ?? salaryReportAvailableYears[0]))
+        .map((b) => b.month)
+    : [];
 
   return (
-    <div className="payroll-dashboard-surface min-h-screen bg-bg-soft text-text">
-      <PayrollMotionStyles />
-      <div className="mx-auto w-full max-w-[1880px] px-5 py-3">
-            <div className="mb-4 grid grid-cols-[1fr_auto_1fr] items-center gap-5">
-              <div className="md:hidden">
-                <Link className="flex items-center gap-2" href="/">
-                  <img
-                    alt="Phoenix"
-                    className="h-10 w-10 object-contain"
-                    src="/brand/phoenix-bird-icon.png"
-                  />
-                  <span className="text-sm font-bold tracking-[0.22em] text-text">
-                    PHOENIX <span className="text-primary">X</span>
-                  </span>
-                </Link>
-              </div>
-              <div className="text-center">
-                <h1 className="text-2xl font-semibold uppercase tracking-[0.32em] text-text">
-                  Godmode <span className="text-primary">Advanced Premium</span> SaaS
-                </h1>
-                <p className="mt-1 text-sm font-semibold uppercase tracking-[0.32em] text-text-secondary">
-                  Enterprise Payroll Intelligence Platform
-                </p>
-              </div>
-              <div className="flex items-center justify-end gap-2">
-                <button className="phoenix-action-button flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-text-secondary shadow-sm" type="button">
-                  <Star className="h-4 w-4" />
-                </button>
-                <button className="phoenix-action-button flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-text-secondary shadow-sm" type="button">
-                  <Layers3 className="h-4 w-4" />
-                </button>
-                <button className="phoenix-action-button relative flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-text-secondary shadow-sm" type="button">
-                  <Bell className="h-4 w-4" />
-                  {predictiveAlerts.some((alert) => alert.risk === "High" || alert.risk === "Critical") && (
-                    <span className="absolute -right-1 -top-1 h-4 min-w-4 rounded-full bg-red-500 px-1 text-[9px] font-bold leading-4 text-white">
-                      {predictiveAlerts.filter((alert) => alert.risk === "High" || alert.risk === "Critical").length}
-                    </span>
-                  )}
-                </button>
-                <button className="phoenix-action-button flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-text-secondary shadow-sm" type="button">
-                  <Settings className="h-4 w-4" />
-                </button>
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                  <img
-                    alt=""
-                    className="h-8 w-8 rounded-full bg-orange-50 object-contain p-1"
-                    src="/brand/phoenix-bird-icon.png"
-                  />
-                  <div>
-                    <p className="text-xs font-semibold text-text">GODMODE ADMIN</p>
-                    <p className="text-[10px] text-text-secondary">Super Administrator</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mb-4 grid grid-cols-[minmax(320px,1fr)_150px_190px_210px_230px] items-center gap-4">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
-                <Input
-                  className="h-11 rounded-xl border-slate-200 bg-white pl-10 text-sm shadow-[0_8px_22px_rgba(15,23,42,0.04)]"
-                  onChange={(event) => {
-                    triggerIntelligenceAnalysis();
-                    setSearch(event.target.value);
-                  }}
-                  placeholder="Search employees, departments, payroll runs..."
-                  value={search}
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-text-secondary">
-                  {formatNumber(totals.employees)}
-                </span>
-              </div>
-              <select
-                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs text-text shadow-sm focus:outline-none"
-                onChange={(event) => {
-                  triggerIntelligenceAnalysis();
-                  setLineFilter(event.target.value);
-                }}
-                value={lineFilter}
-              >
-                <option value="__all__">All Lines</option>
-                {lines.map((line) => (
-                  <option key={line} value={line}>
-                    {line}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs text-text shadow-sm focus:outline-none"
-                onChange={(event) => {
-                  triggerIntelligenceAnalysis();
-                  setAreaFilter(event.target.value);
-                }}
-                value={areaFilter}
-              >
-                <option value="__all__">All Territories</option>
-                {areas.map((area) => (
-                  <option key={area} value={area}>
-                    {area}
-                  </option>
-                ))}
-              </select>
-              <div className="relative">
-                <select
-                  className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white px-9 text-xs font-semibold text-text shadow-sm focus:outline-none"
-                  onChange={(event) => handlePeriodFilterChange(event.target.value)}
-                  value={periodFilterValue}
-                >
-                  <option value="__all_time__">All Time / All Runs</option>
-                  {allBatches.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {payrollPeriodLabel(item.month, item.year)} / {item.status.replace(/_/g, " ")}
-                    </option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2">
-                  <CalendarDays className="h-4 w-4 text-text-secondary" />
-                </span>
-                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary">
-                  v
-                </span>
-              </div>
-              <Button
-                className="phoenix-action-button h-11 justify-between rounded-xl px-5 text-sm shadow-[0_16px_32px_rgba(249,115,22,0.22)]"
-                disabled={!primaryWorkflowAction || working}
-                onClick={() => {
-                  if (primaryWorkflowAction) {
-                    void handleWorkflow(primaryWorkflowAction.action);
-                  }
-                }}
-              >
-                {primaryWorkflowAction?.label ?? (isAllTimeScope ? "Select Period" : "Payroll Locked")}
-                <span className="ml-3 border-l border-white/30 pl-4">v</span>
-              </Button>
-            </div>
-
-            <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-text-secondary">
-                    Advanced Filters
-                  </p>
-                  <p className="mt-1 text-xs text-text-secondary">
-                    {formatNumber(filteredRecords.length)} of {formatNumber(records.length)} payroll rows in scope
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={advancedFilterCount > 0 ? "warning" : "neutral"}>
-                    {advancedFilterCount} active
-                  </Badge>
-                  <Button
-                    className="h-9 rounded-xl px-3 text-xs"
-                    onClick={resetDashboardFilters}
-                    variant="secondary"
-                  >
-                    Reset Filters
-                  </Button>
-                </div>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase tracking-[0.12em] text-text-secondary">
-                    From
-                  </span>
-                  <input
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-14 pr-3 text-xs text-text shadow-sm focus:outline-none"
-                    onChange={(event) => {
-                      triggerIntelligenceAnalysis();
-                      setPeriodFromFilter(event.target.value);
-                    }}
-                    type="month"
-                    value={periodFromFilter}
-                  />
-                </div>
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase tracking-[0.12em] text-text-secondary">
-                    To
-                  </span>
-                  <input
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-xs text-text shadow-sm focus:outline-none"
-                    onChange={(event) => {
-                      triggerIntelligenceAnalysis();
-                      setPeriodToFilter(event.target.value);
-                    }}
-                    type="month"
-                    value={periodToFilter}
-                  />
-                </div>
-                <select
-                  className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-xs text-text shadow-sm focus:outline-none"
-                  onChange={(event) => {
-                    triggerIntelligenceAnalysis();
-                    setJobTitleFilter(event.target.value);
-                  }}
-                  value={jobTitleFilter}
-                >
-                  <option value="__all__">All Job Titles</option>
-                  {jobTitles.map((jobTitle) => (
-                    <option key={jobTitle} value={jobTitle}>
-                      {jobTitle}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-xs text-text shadow-sm focus:outline-none"
-                  onChange={(event) => {
-                    triggerIntelligenceAnalysis();
-                    setEmployeeFilter(event.target.value);
-                  }}
-                  value={employeeFilter}
-                >
-                  <option value="__all__">All Employees</option>
-                  {employees.map((employee) => (
-                    <option key={employee.key} value={employee.key}>
-                      {employee.label}{employee.meta ? ` / ${employee.meta}` : ""}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-xs text-text shadow-sm focus:outline-none"
-                  onChange={(event) => {
-                    triggerIntelligenceAnalysis();
-                    setSalaryBandFilter(event.target.value);
-                  }}
-                  value={salaryBandFilter}
-                >
-                  <option value="__all__">All Salary Bands</option>
-                  <option value="under_10k">&lt; 10K Net</option>
-                  <option value="10k_20k">10K - 20K Net</option>
-                  <option value="20k_30k">20K - 30K Net</option>
-                  <option value="30k_45k">30K - 45K Net</option>
-                  <option value="45k_plus">45K+ Net</option>
-                </select>
-                <select
-                  className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-xs text-text shadow-sm focus:outline-none"
-                  onChange={(event) => {
-                    triggerIntelligenceAnalysis();
-                    setBatchStatusFilter(event.target.value);
-                  }}
-                  value={batchStatusFilter}
-                >
-                  <option value="__all__">All Payroll Statuses</option>
-                  {batchStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {status.replace(/_/g, " ")}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-xs text-text shadow-sm focus:outline-none"
-                  onChange={(event) => {
-                    triggerIntelligenceAnalysis();
-                    setPayrollSignalFilter(event.target.value);
-                  }}
-                  value={payrollSignalFilter}
-                >
-                  <option value="__all__">All Payroll Signals</option>
-                  <option value="with_additions">Has Additions</option>
-                  <option value="with_deductions">Has Deductions</option>
-                  <option value="loans">Has Loans</option>
-                  <option value="overtime">Has Overtime</option>
-                  <option value="bonus">Has Bonus</option>
-                  <option value="missing_core">Missing Core Fields</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="mb-3 flex items-center justify-between gap-3 md:hidden">
-              <PayrollTabs activeTab={activePayrollTab} onChange={setActivePayrollTab} />
-              <div className="flex items-center gap-2">
-                {isAllTimeScope ? <Badge variant="neutral">All Time</Badge> : statusBadge(batch.status)}
-                {!isAllTimeScope && batch.status === "uploaded" && (
-                  <Button className="h-8 px-3 text-xs" disabled={working} onClick={() => void handleWorkflow("mark_review")}>
-                    Mark for Review
-                  </Button>
-                )}
-                {!isAllTimeScope && batch.status === "under_review" && (
-                  <Button className="h-8 px-3 text-xs" disabled={working} onClick={() => void handleWorkflow("approve")}>
-                    Approve
-                  </Button>
-                )}
-                {!isAllTimeScope && batch.status === "approved" && (
-                  <Button className="h-8 px-3 text-xs" disabled={working} onClick={() => void handleWorkflow("lock")}>
-                    Lock Payroll
-                  </Button>
-                )}
-                {!isAllTimeScope && (batch.status === "uploaded" || batch.status === "under_review") && (
-                  <Button
-                    className="h-8 px-3 text-xs"
-                    disabled={working}
-                    onClick={() => void handleWorkflow("reject")}
-                    variant="secondary"
-                  >
-                    Reject
-                  </Button>
-                )}
-              </div>
-            </div>
+    <div className="min-h-screen bg-bg-soft text-text">
+      <div className="mx-auto w-full max-w-[1500px] space-y-5 px-5 py-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-text">Payroll Upload</h1>
+            <p className="mt-1 text-sm text-text-secondary">
+              Upload payroll files, validate the data, and review the imported rows.
+            </p>
+          </div>
+          {!isAllTimeScope ? statusBadge(batch.status) : <Badge variant="neutral">All Time</Badge>}
+        </div>
 
       {workflowMessage && (
         <Card
@@ -4470,27 +5074,15 @@ export function PayrollDashboard({
         </Card>
       )}
 
-      {activePayrollTab === "generate" && (
-        <GenerateReadyPayrollSheet
-          month={generateMonth}
-          months={payrollMonths}
-          onMonthChange={setGenerateMonth}
-          onYearChange={setGenerateYear}
-          year={generateYear}
-          years={payrollYears}
-        />
-      )}
-
-      {activePayrollTab === "governance" && (
         <div className="space-y-5">
           <Card>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h2 className="text-base font-semibold text-text">
-                  Upload, Validation & Governance
+                  Payroll Report & Upload
                 </h2>
                 <p className="mt-1 max-w-2xl text-sm text-text-secondary">
-                  Validate the monthly salary template, confirm clean files, review governance warnings, and manage payroll uploads.
+                  Choose the payroll period, download a system-readable template, generate the ready payroll sheet, then upload and validate salary files in one workflow.
                 </p>
               </div>
               {salaryTemplateActions}
@@ -4523,9 +5115,9 @@ export function PayrollDashboard({
                     key={flag.id}
                   >
                     <div>
-                      {flag.employeeCode && (
+                      {flag.hrId && (
                         <p className="font-mono text-xs text-text-secondary">
-                          {flag.employeeCode}
+                          {flag.hrId}
                         </p>
                       )}
                       <p className="text-sm text-text">{flag.message}</p>
@@ -4547,677 +5139,260 @@ export function PayrollDashboard({
             </Card>
           )}
 
-          <PayrollHistory
-            activeBatchId={isAllTimeScope ? undefined : batch.id}
-            batches={allBatches}
-            deletingBatchId={deletingBatchId}
-            onDelete={handleDeleteBatch}
-          />
-        </div>
-      )}
-
-      {activePayrollTab === "dashboard" && (
-        <div className="space-y-5">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiCard
-              delta={deltaPercent(totals.gross, previousTotals.gross)}
-              icon={<DollarSign className="h-5 w-5" />}
-              label="Total Gross Salary"
-              value={formatEGP(totals.gross)}
-            />
-            <KpiCard
-              delta={deltaPercent(totals.additions, previousTotals.additions)}
-              icon={<Layers3 className="h-5 w-5" />}
-              label="Total Additions"
-              tone="green"
-              value={formatEGP(totals.additions)}
-            />
-            <KpiCard
-              delta={deltaPercent(totals.governmentalDeductions, previousTotals.governmentalDeductions)}
-              icon={<Landmark className="h-5 w-5" />}
-              label="Governmental Deductions"
-              tone="red"
-              value={formatEGP(totals.governmentalDeductions)}
-            />
-            <KpiCard
-              delta={deltaPercent(totals.otherDeductions, previousTotals.otherDeductions)}
-              icon={<Trash2 className="h-5 w-5" />}
-              label="Other Deductions"
-              tone="red"
-              value={formatEGP(totals.otherDeductions)}
-            />
-            <KpiCard
-              delta={deltaPercent(totals.net, previousTotals.net)}
-              icon={<ShieldCheck className="h-5 w-5" />}
-              label="Net Pay"
-              tone="blue"
-              value={formatEGP(totals.net)}
-            />
-            <KpiCard
-              delta={deltaPercent(totals.employees, previousTotals.employees)}
-              icon={<Users className="h-5 w-5" />}
-              label="Total Employees"
-              tone="violet"
-              value={formatNumber(totals.employees)}
-            />
-            <KpiCard
-              icon={<TrendingUp className="h-5 w-5" />}
-              label="Avg Net Salary"
-              value={formatEGP(avgNet)}
-            />
-            <KpiCard
-              icon={<BarChart3 className="h-5 w-5" />}
-              label="Payroll Cost / Head"
-              value={formatEGP(costPerHead)}
-            />
-          </div>
-
-          <div className="grid gap-5 xl:grid-cols-[1.25fr_0.95fr_0.9fr]">
-            <Card>
-              <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold text-text">
-                    Payroll Overview
-                  </h2>
-                  <p className="mt-1 text-sm text-text-secondary">
-                    Previous batch compared with the current approved scope.
-                  </p>
-                </div>
-                <Badge variant="neutral">
-                  {previousFilteredRecords.length > 0 ? "2 periods" : "Current only"}
-                </Badge>
-              </div>
-              <PayrollOverviewChart points={payrollTrendPoints} />
-            </Card>
-
-            <Card>
-              <div className="mb-4">
-                <h2 className="text-base font-semibold text-text">
-                  Component Breakdown ({selectedPeriod})
-                </h2>
-                <p className="mt-1 text-sm text-text-secondary">
-                  Net pay calculated from the uploaded net_salary column.
-                </p>
-              </div>
-              <div className="grid items-center gap-5 md:grid-cols-[1fr_0.95fr]">
-                <Donut
-                  centerLabel="Net Pay"
-                  centerMeta="EGP"
-                  centerSubValue={`${netGrossRatio.toFixed(2)}%`}
-                  centerValue={formatCompact(totals.net)}
-                  items={[
-                    { color: "#F97316", label: "Gross Salary", value: totals.gross },
-                    { color: "#22C55E", label: "Additions", value: totals.additions },
-                    { color: "#EF4444", label: "Gov. Deductions", value: totals.governmentalDeductions },
-                    { color: "#F59E0B", label: "Other Deductions", value: totals.otherDeductions },
-                    { color: "#2563EB", label: "Net Pay", value: totals.net },
-                  ]}
-                  size="lg"
-                />
-                <div className="space-y-4">
-                  {[
-                    ["Gross Salary", totals.gross, totals.gross > 0 ? 100 : 0, "#F97316"],
-                    ["Additions", totals.additions, totals.gross > 0 ? (totals.additions / totals.gross) * 100 : 0, "#22C55E"],
-                    ["Gov. Deductions", totals.governmentalDeductions, totals.gross > 0 ? (totals.governmentalDeductions / totals.gross) * 100 : 0, "#EF4444"],
-                    ["Other Deductions", totals.otherDeductions, totals.gross > 0 ? (totals.otherDeductions / totals.gross) * 100 : 0, "#F59E0B"],
-                    ["Net Pay", totals.net, netGrossRatio, "#2563EB"],
-                  ].map(([label, value, percent, color]) => (
-                    <div className="grid grid-cols-[auto_1fr] items-start gap-3 text-sm" key={String(label)}>
-                      <span className="mt-1 h-3 w-3 rounded-sm" style={{ backgroundColor: String(color) }} />
-                      <div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="font-medium text-text">{label}</span>
-                          <span className="font-mono font-semibold text-text">
-                            {formatEGP(Number(value))}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs text-text-secondary">
-                          {Number(percent).toFixed(2)}%
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Card>
-
-            <Card className="relative overflow-hidden">
-              <div className="absolute -right-2 top-8 h-72 w-72 opacity-[0.18]">
-                <img
-                  alt=""
-                  className="h-full w-full object-contain drop-shadow-[0_0_26px_rgba(249,115,22,0.32)]"
-                  src="/brand/phoenix-bird-icon.png"
-                />
-              </div>
-              <div className="relative">
-                <h2 className="text-base font-semibold text-text">Payroll Summary</h2>
-                <p className="mt-1 text-sm capitalize text-text-secondary">
-                  {selectedPeriod} / {selectedStatusLabel}
-                </p>
-                <div className="mt-5 space-y-3">
-                  {[
-                    { Icon: Users, label: "Employees", value: formatNumber(totals.employees) },
-                    { Icon: DollarSign, label: "Gross Salary", value: formatEGP(totals.gross) },
-                    { Icon: Layers3, label: "Additions", value: formatEGP(totals.additions) },
-                    { Icon: Landmark, label: "Governmental Deductions", value: formatEGP(totals.governmentalDeductions) },
-                    { Icon: Trash2, label: "Other Deductions", value: formatEGP(totals.otherDeductions) },
-                    { Icon: FileCheck2, label: "Total Deductions", value: formatEGP(totals.deductions) },
-                    { Icon: ShieldCheck, label: "Net Pay", value: formatEGP(totals.net) },
-                  ].map(({ Icon, label, value }) => (
-                    <div
-                      className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/90 px-3 py-2.5 text-sm"
-                      key={label}
-                    >
-                      <span className="flex items-center gap-2 text-text-secondary">
-                        <Icon className="h-4 w-4" />
-                        {label}
-                      </span>
-                      <span className="font-mono font-semibold text-text">{value}</span>
-                    </div>
-                  ))}
-                </div>
-                <Button
-                  className="mt-5 w-full rounded-2xl border-orange-200 bg-white py-3 text-primary hover:bg-orange-50"
-                  onClick={() => setActivePayrollTab("governance")}
-                  variant="secondary"
-                >
-                  View Payroll Run Details <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </Card>
-          </div>
-
-          <ComparePayrollChart
-            previousRecords={comparisonChartPreviousRecords}
-            records={comparisonChartRecords}
-          />
-
-          <div className="grid gap-5 xl:grid-cols-[0.9fr_1.05fr_0.95fr_1fr]">
-            <Card>
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-text">Payroll by Line</h2>
-                <Badge variant="neutral">{lineGroups.length} lines</Badge>
-              </div>
-              <Donut
-                centerLabel="Employees"
-                centerValue={formatNumber(totals.employees)}
-                items={lineGroups.slice(0, 5).map((group, index) => ({
-                  color: ["#F97316", "#22C55E", "#0F172A", "#F59E0B", "#64748B"][index] ?? "#94A3B8",
-                  label: group.label,
-                  value: group.net,
-                }))}
-              />
-              <div className="mt-4 space-y-2">
-                {lineGroups.slice(0, 5).map((group) => (
-                  <div className="flex items-center justify-between text-xs" key={group.label}>
-                    <span className="text-text-secondary">{group.label}</span>
-                    <span className="font-mono text-text">
-                      {group.employees} / {formatCompact(group.net)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            <Card>
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-text">Payroll by Territory</h2>
-                <a className="text-xs font-medium text-primary" href="/organogram">
-                  View structure
-                </a>
-              </div>
-              <BarRows
-                rows={areaGroups.slice(0, 7).map((group) => ({
-                  label: group.label,
-                  meta: `${group.employees}`,
-                  value: group.net,
-                }))}
-              />
-            </Card>
-
-            <Card>
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-text">
-                  Top Job Titles by Net Pay
-                </h2>
-                <Badge variant="neutral">By Net</Badge>
-              </div>
-              <div className="space-y-3">
-                {topJobTitles.map((group, index) => (
-                  <div className="flex items-center justify-between gap-3 text-sm" key={group.label}>
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-xs font-semibold text-primary dark:bg-orange-950/30">
-                        {index + 1}
-                      </span>
-                      <span className="truncate font-medium text-text">{group.label}</span>
-                    </div>
-                    <span className="shrink-0 font-mono text-xs text-text-secondary">
-                      {formatEGP(group.net)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            <Card>
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-text">Payroll Runs</h2>
-                <button
-                  className="text-xs font-medium text-primary"
-                  onClick={() => setActivePayrollTab("governance")}
-                  type="button"
-                >
-                  View All
-                </button>
-              </div>
-              <div className="space-y-3">
-                {allBatches.slice(0, 5).map((item) => (
-                  <a
-                    className={cn(
-                      "grid grid-cols-[1fr_auto] gap-3 rounded-xl border border-border bg-bg-soft px-3 py-2 text-sm transition hover:border-primary/40",
-                      item.id === batch.id && "border-primary/40 bg-orange-50 dark:bg-orange-950/10",
-                    )}
-                    href={`/payroll?batchId=${item.id}`}
-                    key={item.id}
-                  >
-                    <div>
-                      <p className="font-medium text-text">
-                        {payrollPeriodLabel(item.month, item.year)}
-                      </p>
-                      <p className="max-w-[180px] truncate text-xs text-text-secondary">
-                        {item.fileName}
-                      </p>
-                    </div>
-                    {statusBadge(item.status)}
-                  </a>
-                ))}
-              </div>
-            </Card>
-          </div>
-
-          <div className="grid gap-5 xl:grid-cols-[1fr_1fr_0.9fr]">
-            <Card>
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-text">
-                  Additions vs Deductions
-                </h2>
-                <Badge variant="neutral">Current Scope</Badge>
-              </div>
-              <InteractiveVerticalBars
-                bars={[
-                  {
-                    color: "linear-gradient(180deg, #22C55E 0%, #86EFAC 100%)",
-                    glow: "rgba(34,197,94,0.42)",
-                    label: "Additions",
-                    value: totals.additions,
-                  },
-                  {
-                    color: "linear-gradient(180deg, #EF4444 0%, #FB7185 100%)",
-                    glow: "rgba(239,68,68,0.42)",
-                    label: "Gov. Deductions",
-                    value: totals.governmentalDeductions,
-                  },
-                  {
-                    color: "linear-gradient(180deg, #F59E0B 0%, #FDBA74 100%)",
-                    glow: "rgba(245,158,11,0.42)",
-                    label: "Other Deductions",
-                    value: totals.otherDeductions,
-                  },
-                ]}
-              />
-            </Card>
-
-            <Card>
-              <div className="mb-4">
-                <h2 className="text-base font-semibold text-text">
-                  Month Over Month Comparison
-                </h2>
-                <p className="mt-1 text-sm text-text-secondary">
-                  Based on real payroll periods in the current filter scope.
-                </p>
-              </div>
-              <div className="mb-4">
-                <InteractiveVerticalBars
-                  bars={[
-                    {
-                      color: "linear-gradient(180deg, #FDBA74 0%, #F97316 100%)",
-                      glow: "rgba(249,115,22,0.38)",
-                      label: `${comparisonPreviousPoint?.label ?? "Previous"} Gross`,
-                      value: comparisonPreviousPoint?.gross ?? 0,
-                    },
-                    {
-                      color: "linear-gradient(180deg, #60A5FA 0%, #2563EB 100%)",
-                      glow: "rgba(37,99,235,0.36)",
-                      label: `${comparisonPreviousPoint?.label ?? "Previous"} Net`,
-                      value: comparisonPreviousPoint?.net ?? 0,
-                    },
-                    {
-                      color: "linear-gradient(180deg, #FDBA74 0%, #F97316 100%)",
-                      glow: "rgba(249,115,22,0.42)",
-                      label: `${comparisonCurrentPoint.label} Gross`,
-                      value: comparisonCurrentPoint.gross,
-                    },
-                    {
-                      color: "linear-gradient(180deg, #60A5FA 0%, #2563EB 100%)",
-                      glow: "rgba(37,99,235,0.4)",
-                      label: `${comparisonCurrentPoint.label} Net`,
-                      value: comparisonCurrentPoint.net,
-                    },
-                  ]}
-                  heightClass="h-32"
-                />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  [`${comparisonPreviousPoint?.label ?? "Previous"} Net`, comparisonPreviousPoint?.net ?? 0],
-                  [`${comparisonCurrentPoint.label} Net`, comparisonCurrentPoint.net],
-                  ["Changed Rows", periodDelta.length],
-                  ["Median Net", medianNet],
-                ].map(([label, value]) => (
-                  <div className="rounded-xl border border-border bg-bg-soft p-4" key={label}>
-                    <p className="text-xs text-text-secondary">{label}</p>
-                    <p className="mt-2 text-lg font-semibold text-text">
-                      {typeof value === "number" && label !== "Changed Rows"
-                        ? formatEGP(value)
-                        : formatNumber(Number(value))}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 rounded-xl border border-border bg-card p-4">
-                <p className="text-xs text-text-secondary">Net Movement</p>
-                <p
-                  className={cn(
-                    "mt-1 text-xl font-semibold",
-                    comparisonCurrentPoint.net - (comparisonPreviousPoint?.net ?? 0) >= 0 ? "text-success" : "text-danger",
-                  )}
-                >
-                  {formatEGP(comparisonCurrentPoint.net - (comparisonPreviousPoint?.net ?? 0))}
-                </p>
-              </div>
-            </Card>
-
-            <Card>
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-text">
-                  Salary Distribution
-                </h2>
-                <Badge variant="neutral">Net Pay</Badge>
-              </div>
-              <BarRows
-                rows={salaryBands.map((band) => ({
-                  label: band.label,
-                  value: band.value,
-                }))}
-                valueFormatter={(value) => `${formatNumber(value)} employees`}
-              />
-            </Card>
-          </div>
-
-          <div className="grid gap-5 xl:grid-cols-[0.82fr_0.82fr_0.86fr_1fr]">
-            <Card>
-              <div className="mb-4">
-                <h2 className="text-base font-semibold text-text">
-                  Governmental Deductions
-                </h2>
-                <p className="mt-1 text-sm text-text-secondary">
-                  Statutory payroll deductions separated from operational deductions.
-                </p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="pb-2 pr-4 font-medium text-text-secondary">
-                        Deduction Type
-                      </th>
-                      <th className="pb-2 pr-4 font-medium text-text-secondary">
-                        Amount
-                      </th>
-                      <th className="pb-2 font-medium text-text-secondary">
-                        %
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {governmentalDeductionsBreakdown.map((item) => (
-                      <tr key={item.label}>
-                        <td className="py-2 pr-4 text-text">{item.label}</td>
-                        <td className="py-2 pr-4 font-mono text-text-secondary">
-                          {formatEGP(item.value)}
-                        </td>
-                        <td className="py-2 text-text-secondary">
-                          {totals.governmentalDeductions > 0
-                            ? `${((item.value / totals.governmentalDeductions) * 100).toFixed(1)}%`
-                            : "0%"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-
-            <Card>
-              <div className="mb-4">
-                <h2 className="text-base font-semibold text-text">
-                  Other Deductions
-                </h2>
-                <p className="mt-1 text-sm text-text-secondary">
-                  Medical, loans, attendance, CRM, and uploaded other deductions.
-                </p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="pb-2 pr-4 font-medium text-text-secondary">
-                        Deduction Type
-                      </th>
-                      <th className="pb-2 pr-4 font-medium text-text-secondary">
-                        Amount
-                      </th>
-                      <th className="pb-2 font-medium text-text-secondary">
-                        %
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {otherDeductionsBreakdown.map((item) => (
-                      <tr key={item.label}>
-                        <td className="py-2 pr-4 text-text">{item.label}</td>
-                        <td className="py-2 pr-4 font-mono text-text-secondary">
-                          {formatEGP(item.value)}
-                        </td>
-                        <td className="py-2 text-text-secondary">
-                          {totals.otherDeductions > 0
-                            ? `${((item.value / totals.otherDeductions) * 100).toFixed(1)}%`
-                            : "0%"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-
-            <Card>
-              <div className="mb-4">
-                <h2 className="text-base font-semibold text-text">
-                  Additions Breakdown
-                </h2>
-                <p className="mt-1 text-sm text-text-secondary">
-                  Incentives, allowances, and variable additions.
-                </p>
-              </div>
-              <BarRows rows={additionsBreakdown.slice(0, 7)} />
-            </Card>
-
-            <Card>
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold text-text">
-                    Payroll Cost Analysis
-                  </h2>
-                  <p className="mt-1 text-sm text-text-secondary">
-                    Grouped view by line, area, or job title.
-                  </p>
-                </div>
-                <select
-                  className="h-9 rounded-lg border border-border bg-card px-3 text-xs text-text focus:outline-none"
-                  onChange={(event) => setGroupMode(event.target.value as GroupMode)}
-                  value={groupMode}
-                >
-                  <option value="line">By Line</option>
-                  <option value="area">By Territory</option>
-                  <option value="jobTitle">By Job Title</option>
-                </select>
-              </div>
-              <BarRows
-                rows={currentGroups.slice(0, 7).map((group) => ({
-                  label: group.label,
-                  meta: `${group.percent.toFixed(1)}%`,
-                  value: group.net,
-                }))}
-              />
-              <div className="mt-4 rounded-xl border border-border bg-bg-soft p-3">
-                <p className="text-xs text-text-secondary">Overall Cost / Head</p>
-                <p className="mt-1 text-lg font-semibold text-text">
-                  {formatEGP(costPerHead)}
-                </p>
-              </div>
-            </Card>
-          </div>
-
-          <ExecutiveActionPanel
-            alerts={predictiveAlerts}
-            insights={payrollInsights}
-            onApprove={() => {
-              if (primaryWorkflowAction) {
-                void handleWorkflow(primaryWorkflowAction.action);
-                return;
-              }
-              setActivePayrollTab("governance");
-            }}
-            onDrilldown={() => setShowAnomalyReview(true)}
-            readiness={payrollScore.readiness}
-          />
-
-          <AiPayrollInsights
-            insights={payrollInsights}
-            isAnalyzing={isAnalyzingIntelligence}
-          />
-
-          <PayrollScoringPanel
-            areaScores={areaScores}
-            employeeScores={employeeScores}
-            isAnalyzing={isAnalyzingIntelligence}
-            lineScores={lineScores}
-            score={payrollScore}
-          />
-
-          <Card>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold text-text">Anomaly Review</h2>
-                <p className="mt-1 text-sm text-text-secondary">
-                  Hidden by default. Open only when you want to inspect net salaries above {formatEGP(anomalyThreshold)}.
-                </p>
-              </div>
-              <Button
-                onClick={() => setShowAnomalyReview((value) => !value)}
-                variant={showAnomalyReview ? "primary" : "secondary"}
-              >
-                {showAnomalyReview
-                  ? "Hide Anomalies"
-                  : `Show Anomalies (${anomalyRecords.length})`}
-              </Button>
-            </div>
-
-            {showAnomalyReview && (
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full min-w-[880px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      {["HR ID", "Employee", "Job Title", "Line", "Area", "Net Salary", "Reason"].map((column) => (
-                        <th className="pb-3 pr-4 font-medium text-text-secondary" key={column}>
-                          {column}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {anomalyRecords.length === 0 && (
-                      <tr>
-                        <td className="py-6 text-center text-sm text-text-secondary" colSpan={7}>
-                          No salary anomalies detected for this batch.
-                        </td>
-                      </tr>
-                    )}
-                    {anomalyRecords.map((record) => (
-                      <tr
-                        className="bg-orange-50/40 transition-colors hover:bg-orange-50 dark:bg-orange-950/10"
-                        key={record.id}
-                      >
-                        <td className="py-3 pr-4 font-mono text-xs text-text-secondary">
-                          {record.employeeCode}
-                        </td>
-                        <td className="py-3 pr-4 font-medium text-text">
-                          {record.fullName}
-                        </td>
-                        <td className="py-3 pr-4 text-text-secondary">
-                          {record.jobTitle || "-"}
-                        </td>
-                        <td className="py-3 pr-4 text-text-secondary">
-                          {record.line || "-"}
-                        </td>
-                        <td className="py-3 pr-4 text-text-secondary">
-                          {record.area || "-"}
-                        </td>
-                        <td className="py-3 pr-4 font-mono font-semibold text-text">
-                          {formatEGP(record.netSalary)}
-                        </td>
-                        <td className="py-3 pr-4 text-text-secondary">
-                          {formatEGP(record.netSalary - avgNet)} above average net salary.
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-
-          <div className="mx-auto flex max-w-4xl items-center justify-center gap-2 rounded-3xl border border-slate-200 bg-white p-2 shadow-[0_14px_40px_rgba(15,23,42,0.07)]">
+          <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-card p-2">
             {[
-              "Executive Dashboard",
-              "Deep Analytics",
-              "Employee Drilldown",
-              "Validation & Audit",
-            ].map((label, index) => (
-              <button
+              { label: "Payroll Sheet", value: "salary" },
+              { label: "Expenses", value: "expenses" },
+            ].map((tab) => (
+              <Button
                 className={cn(
-                  "flex min-h-11 flex-1 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold transition",
-                  index === 0
-                    ? "bg-primary text-white shadow-[0_12px_26px_rgba(249,115,22,0.28)]"
-                    : "text-text-secondary hover:bg-slate-50 hover:text-text",
+                  "rounded-lg px-4 py-2 text-sm",
+                  payrollSheetTab === tab.value && "border border-green-200 bg-green-50 text-success hover:bg-green-100",
                 )}
-                key={label}
-                onClick={() => {
-                  if (index === 2) setShowAnomalyReview(true);
-                  if (index === 3) setActivePayrollTab("governance");
-                }}
-                type="button"
+                key={tab.value}
+                onClick={() => setPayrollSheetTab(tab.value as PayrollSheetTab)}
+                variant="secondary"
               >
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 font-mono text-xs">
-                  {index + 1}
-                </span>
-                {label}
-              </button>
+                {tab.label}
+              </Button>
             ))}
           </div>
+
+          {payrollSheetTab === "salary" ? (
+            <>
+              <Card className="overflow-hidden border-[#E2E8F0] bg-white p-0 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+                <div className="border-b border-[#E2E8F0] bg-[#0F172A] px-5 py-5 text-white">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-300">
+                        Payroll Statement
+                      </p>
+                      <h2 className="mt-2 text-xl font-bold">Salary Report</h2>
+                      <p className="mt-1 text-sm text-white/70">
+                        {salaryReportBatch
+                          ? `${payrollMonths.find((m) => m.value === String(salaryReportBatch.month))?.label ?? ""} ${salaryReportBatch.year} - ${formatNumber(salaryReportTotals.employees)} employees`
+                          : "No payroll data available."}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {salaryReportBatch ? (
+                        <>
+                          <Link href={`/api/payroll/${salaryReportBatch.id}/download`}>
+                            <Button className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15" variant="secondary">
+                              <Download className="mr-2 h-3.5 w-3.5" />
+                              Download
+                            </Button>
+                          </Link>
+                          <Link href={`/api/payroll/${salaryReportBatch.id}/payslips`} target="_blank">
+                            <Button className="border-white/15 bg-white/10 px-3 py-2 text-xs text-white hover:bg-white/15" variant="secondary">
+                              <FileCheck2 className="mr-2 h-3.5 w-3.5" />
+                              Payslips
+                            </Button>
+                          </Link>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4 p-5">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    {[
+                      { label: "Employees", tone: "bg-[#F8FAFC] text-[#0F172A]", value: formatNumber(salaryReportTotals.employees) },
+                      { label: "Additions", tone: "bg-emerald-50 text-emerald-800", value: formatEGP(salaryReportTotals.additions) },
+                      { label: "Other Deductions", tone: "bg-rose-50 text-rose-800", value: formatEGP(salaryReportTotals.otherDeductions) },
+                      { label: "Net", tone: "bg-[#0F172A] text-white", value: formatEGP(salaryReportTotals.net) },
+                      { label: "First Part", tone: "bg-orange-50 text-orange-800", value: formatEGP(salaryReportTotals.firstPart) },
+                      { label: "Second Part", tone: "bg-amber-50 text-amber-800", value: formatEGP(salaryReportTotals.secondPart) },
+                    ].map((metric) => (
+                      <div className={cn("rounded-2xl border border-[#E2E8F0] p-4", metric.tone)} key={metric.label}>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{metric.label}</p>
+                        <p className="mt-2 truncate font-mono text-lg font-bold">{metric.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 xl:grid-cols-[1fr_auto_auto_auto]">
+                    <Input
+                      className="bg-white"
+                      onChange={(event) => setSalaryReportSearch(event.target.value)}
+                      placeholder="Search HR ID, employee, line, area, job title..."
+                      value={salaryReportSearch}
+                    />
+                    <select
+                      className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+                      onChange={(event) => {
+                        setSalaryReportYear(Number(event.target.value));
+                        setSalaryReportMonth(null);
+                      }}
+                      value={salaryReportYear ?? salaryReportBatch?.year ?? ""}
+                    >
+                      {salaryReportAvailableYears.map((year) => (
+                        <option key={year} value={year}>{year}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+                      onChange={(event) => setSalaryReportMonth(Number(event.target.value))}
+                      value={salaryReportMonth ?? salaryReportBatch?.month ?? ""}
+                    >
+                      {salaryReportAvailableMonths.map((month) => (
+                        <option key={month} value={month}>
+                          {payrollMonths.find((m) => m.value === String(month))?.label ?? month}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      onClick={() => {
+                        setSalaryReportSearch("");
+                        setSalaryColumnFilters({});
+                        setSalaryReportSort("employee-asc");
+                      }}
+                      variant="secondary"
+                    >
+                      Reset {salaryReportFilterCount > 0 ? `(${salaryReportFilterCount})` : ""}
+                    </Button>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
+                <table className="w-full min-w-[1180px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs uppercase tracking-[0.12em] text-[#64748B]">
+                      {salaryReportColumns.map((column) => (
+                        <th className="sticky top-0 z-10 px-4 py-3 font-semibold" key={column.key}>
+                          <TableHeaderMenu
+                            filterValue={salaryColumnFilters[column.key] ?? ""}
+                            label={column.label}
+                            onFilterChange={(value) =>
+                              setSalaryColumnFilters((filters) => ({
+                                ...filters,
+                                [column.key]: value,
+                              }))
+                            }
+                            onSortAsc={() => setSalaryReportSort(column.asc)}
+                            onSortDesc={() => setSalaryReportSort(column.desc)}
+                          />
+                        </th>
+                      ))}
+                      <th className="sticky top-0 z-10 px-4 py-3 font-semibold">
+                        <span className="text-xs uppercase tracking-[0.12em] text-text-secondary">Salary Status</span>
+                      </th>
+                    </tr>
+                  </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {salaryReportRows.length === 0 ? (
+                    <tr>
+                      <td className="px-4 py-8 text-center text-sm text-text-secondary" colSpan={12}>
+                        No salary rows match the current filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    salaryReportRows.slice(0, 250).map((record) => {
+                      const isOnHold = salaryHolds.has(record.hrId);
+                      return (
+                        <tr
+                          className={cn(
+                            "transition-colors hover:bg-[#F8FAFC]",
+                            isOnHold && "bg-red-50/70",
+                          )}
+                          key={record.id}
+                        >
+                          <td className="px-4 py-3 font-mono text-xs text-text-secondary">{record.hrId}</td>
+                          <td className="px-4 py-3 font-medium text-text">{record.fullName}</td>
+                          <td className="px-4 py-3 text-text-secondary">{formatPayrollDate(record.hireDate)}</td>
+                          <td className="px-4 py-3 text-text-secondary">{record.line || "-"}</td>
+                          <td className="px-4 py-3 text-text-secondary">{record.area || "-"}</td>
+                          <td className="px-4 py-3 text-text-secondary">{record.jobTitle || "-"}</td>
+                          <td className="px-4 py-3 font-mono font-semibold text-success">{formatEGP(record.totalAdditions)}</td>
+                          <td className="px-4 py-3 font-mono font-semibold text-danger">
+                            {formatEGP(record.totalDeductions - record.socialInsurance - record.employmentIncomeTax)}
+                          </td>
+                          <td className="px-4 py-3 font-mono font-bold text-text">{formatEGP(record.netSalary)}</td>
+                          <td className="px-4 py-3 font-mono text-text-secondary">{formatEGP(record.firstPart)}</td>
+                          <td className="px-4 py-3 font-mono text-text-secondary">{formatEGP(record.secondPart)}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={isOnHold}
+                                label={isOnHold ? "Remove hold" : "Put on hold"}
+                                onChange={(checked) =>
+                                  setSalaryHolds((prev) => {
+                                    const next = new Set(prev);
+                                    if (checked) {
+                                      next.add(record.hrId);
+                                    } else {
+                                      next.delete(record.hrId);
+                                    }
+                                    return next;
+                                  })
+                                }
+                              />
+                              {isOnHold && (
+                                <Badge variant="danger">Hold</Badge>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {salaryReportRows.length > 250 ? (
+              <p className="mt-3 text-xs text-text-secondary">
+                Showing first 250 rows. Use filters to narrow the report.
+              </p>
+            ) : null}
+                </div>
+              </Card>
+
+              <PayrollHistory
+                activeBatchId={isAllTimeScope ? undefined : batch.id}
+                batches={allBatches}
+                deletingBatchId={deletingBatchId}
+                onDelete={handleDeleteBatch}
+                onReplace={handleReplaceBatch}
+                replacingBatchId={replacingBatchId}
+              />
+            </>
+          ) : (
+            <>
+              {expenseApprovalMessage && (
+                <Card className="border-green-200 bg-green-50">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle className="h-4 w-4 text-success" />
+                    <p className="text-sm text-green-800">{expenseApprovalMessage}</p>
+                  </div>
+                </Card>
+              )}
+              <ExpenseReport
+                analysis={expenseAnalysis}
+                analyzing={expenseAnalyzing}
+                deletingReportId={deletingExpenseReportId}
+                error={expenseAnalysisError}
+                importingToPayroll={expenseImportingToPayroll}
+                inputRef={expenseFileInputRef}
+                onDeleteReport={(reportId) => void handleDeleteExpenseReport(reportId)}
+                onImportToPayroll={(recordsToImport, month, year) =>
+                  void handleImportExpensesToPayroll(recordsToImport, month, year)
+                }
+                onReplaceReport={(reportId, file) => void handleReplaceExpenseReport(reportId, file)}
+                onSelectReport={(reportId) => {
+                  void loadSavedExpenseReport(reportId);
+                }}
+                onSaveApprovals={(recordsToSave) => void handleSaveExpenseApprovals(recordsToSave)}
+                onUpload={(file) => void handleExpenseUpload(file)}
+                payrollMonthsForImport={payrollMonths}
+                payrollYearsForImport={payrollYears}
+                replacingReportId={replacingExpenseReportId}
+                reports={expenseReports}
+                selectedReportId={selectedExpenseReportId}
+                savingApprovals={expenseApprovalsSaving}
+              />
+            </>
+          )}
         </div>
-      )}
       </div>
     </div>
   );

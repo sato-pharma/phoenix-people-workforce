@@ -1,9 +1,13 @@
+import crypto from "crypto";
+
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+
 type NotificationMetric = {
   label: string;
   value: string | number;
 };
 
-type NotificationEmailInput = {
+export type NotificationEmailInput = {
   ctaHref?: string;
   ctaLabel?: string;
   metrics?: NotificationMetric[];
@@ -18,7 +22,33 @@ type SendEmailResult =
   | { id?: string; skipped?: false }
   | { reason: string; skipped: true };
 
+type NotificationOutboxRow = {
+  attempts: number;
+  created_at: string;
+  dedupe_key: string;
+  id: string;
+  last_error: string | null;
+  locked_at: string | null;
+  max_attempts: number;
+  next_attempt_at: string | null;
+  payload: NotificationEmailInput;
+  provider_message_id: string | null;
+  sent_at: string | null;
+  status: "pending" | "processing" | "sent" | "failed";
+  updated_at: string;
+};
+
+type NotificationOutboxProcessResult = {
+  attempted: number;
+  failed: number;
+  processedIds: string[];
+  sent: number;
+};
+
 const resendEndpoint = "https://api.resend.com/emails";
+const notificationOutboxTable = "notification_outbox";
+const notificationOutboxMaxAttempts = 5;
+const notificationOutboxBatchSize = 10;
 
 function envFlag(value: string | undefined) {
   return ["1", "true", "yes", "on"].includes(String(value ?? "").toLowerCase());
@@ -112,7 +142,51 @@ export function emailNotificationsEnabled() {
   return envFlag(process.env.EMAIL_NOTIFICATIONS_ENABLED);
 }
 
-export async function sendNotificationEmail(input: NotificationEmailInput): Promise<SendEmailResult> {
+function notificationSchemaMissing(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes(notificationOutboxTable) ||
+    message.includes("could not find the table") ||
+    message.includes("schema cache") ||
+    (message.includes("relation") && message.includes("does not exist"))
+  );
+}
+
+function normalizeNotificationPayload(input: NotificationEmailInput) {
+  return {
+    ctaHref: input.ctaHref ?? null,
+    ctaLabel: input.ctaLabel ?? null,
+    metrics: (input.metrics ?? []).map((metric) => ({
+      label: metric.label,
+      value: String(metric.value),
+    })),
+    recipients: input.recipients?.map((recipient) => recipient.trim().toLowerCase()).sort() ?? null,
+    subject: input.subject,
+    summary: input.summary,
+    title: input.title,
+    tone: input.tone ?? "neutral",
+  };
+}
+
+function notificationDedupeKey(input: NotificationEmailInput) {
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(normalizeNotificationPayload(input)))
+    .digest("hex");
+}
+
+function retryDelayMinutes(attemptNumber: number) {
+  const delays = [5, 15, 60, 240];
+  return delays[Math.min(Math.max(attemptNumber - 1, 0), delays.length - 1)];
+}
+
+function nextAttemptAtIso(attemptNumber: number) {
+  const next = new Date();
+  next.setMinutes(next.getMinutes() + retryDelayMinutes(attemptNumber));
+  return next.toISOString();
+}
+
+async function sendNotificationEmailDirect(input: NotificationEmailInput): Promise<SendEmailResult> {
   if (!emailNotificationsEnabled()) {
     return { reason: "EMAIL_NOTIFICATIONS_ENABLED is not true.", skipped: true };
   }
@@ -150,10 +224,185 @@ export async function sendNotificationEmail(input: NotificationEmailInput): Prom
   return { id: payload?.id, skipped: false };
 }
 
+export async function sendNotificationEmail(input: NotificationEmailInput): Promise<SendEmailResult> {
+  return sendNotificationEmailDirect(input);
+}
+
+async function getNotificationOutboxRowByDedupeKey(dedupeKey: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(notificationOutboxTable)
+    .select("*")
+    .eq("dedupe_key", dedupeKey)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as NotificationOutboxRow | null) ?? null;
+}
+
+async function enqueueNotificationEmail(input: NotificationEmailInput) {
+  const dedupeKey = notificationDedupeKey(input);
+  const existing = await getNotificationOutboxRowByDedupeKey(dedupeKey);
+  if (existing) return existing;
+
+  const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from(notificationOutboxTable)
+    .insert({
+      attempts: 0,
+      dedupe_key: dedupeKey,
+      max_attempts: notificationOutboxMaxAttempts,
+      next_attempt_at: now,
+      payload: input,
+      status: "pending",
+      updated_at: now,
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    const fallback = await getNotificationOutboxRowByDedupeKey(dedupeKey);
+    if (fallback) return fallback;
+    throw error;
+  }
+
+  return data as NotificationOutboxRow;
+}
+
+async function claimNotificationOutboxRow(id: string) {
+  const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from(notificationOutboxTable)
+    .update({
+      locked_at: now,
+      status: "processing",
+      updated_at: now,
+    })
+    .eq("id", id)
+    .in("status", ["pending", "failed"])
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as NotificationOutboxRow | null) ?? null;
+}
+
+async function markNotificationOutboxSent(row: NotificationOutboxRow, providerMessageId?: string) {
+  const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
+  await supabase
+    .from(notificationOutboxTable)
+    .update({
+      attempts: row.attempts + 1,
+      last_error: null,
+      locked_at: null,
+      next_attempt_at: null,
+      provider_message_id: providerMessageId ?? null,
+      sent_at: now,
+      status: "sent",
+      updated_at: now,
+    })
+    .eq("id", row.id);
+}
+
+async function markNotificationOutboxFailed(row: NotificationOutboxRow, errorMessage: string) {
+  const supabase = getSupabaseAdmin();
+  const attempts = row.attempts + 1;
+  const terminal = attempts >= row.max_attempts;
+  const now = new Date().toISOString();
+  await supabase
+    .from(notificationOutboxTable)
+    .update({
+      attempts,
+      last_error: errorMessage,
+      locked_at: null,
+      next_attempt_at: terminal ? null : nextAttemptAtIso(attempts),
+      status: "failed",
+      updated_at: now,
+    })
+    .eq("id", row.id);
+}
+
+async function loadDueNotificationOutboxRows(limit: number) {
+  const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from(notificationOutboxTable)
+    .select("*")
+    .in("status", ["pending", "failed"])
+    .or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  if (error) throw error;
+  return ((data ?? []) as NotificationOutboxRow[]).filter((row) => row.attempts < row.max_attempts);
+}
+
+async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise<SendEmailResult> {
+  const claimed = await claimNotificationOutboxRow(row.id);
+  if (!claimed) {
+    return { reason: "Notification is already being processed.", skipped: true };
+  }
+
+  try {
+    const result = await sendNotificationEmailDirect(claimed.payload);
+    if (result.skipped) {
+      await markNotificationOutboxFailed(claimed, result.reason);
+      return result;
+    }
+
+    await markNotificationOutboxSent(claimed, result.id);
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Email notification failed.";
+    await markNotificationOutboxFailed(claimed, message);
+    return { reason: message, skipped: true };
+  }
+}
+
+export async function processNotificationOutbox(limit = notificationOutboxBatchSize): Promise<NotificationOutboxProcessResult> {
+  const rows = await loadDueNotificationOutboxRows(limit);
+  const processedIds: string[] = [];
+  let attempted = 0;
+  let sent = 0;
+  let failed = 0;
+
+  for (const row of rows) {
+    attempted += 1;
+    const result = await processNotificationOutboxRow(row);
+    processedIds.push(row.id);
+    if (result.skipped) {
+      failed += 1;
+    } else {
+      sent += 1;
+    }
+  }
+
+  return { attempted, failed, processedIds, sent };
+}
+
 export async function safeSendNotificationEmail(input: NotificationEmailInput) {
   try {
-    return await sendNotificationEmail(input);
+    const queued = await enqueueNotificationEmail(input);
+    if (queued.status === "sent") {
+      return { id: queued.provider_message_id ?? queued.id, skipped: false } satisfies SendEmailResult;
+    }
+
+    const result = await processNotificationOutboxRow(queued);
+    if (result.skipped) {
+      return {
+        reason: `Queued for retry: ${result.reason}`,
+        skipped: true,
+      } satisfies SendEmailResult;
+    }
+
+    return result;
   } catch (error) {
+    if (notificationSchemaMissing(error)) {
+      return sendNotificationEmailDirect(input);
+    }
     console.error("Email notification failed", error);
     return {
       reason: error instanceof Error ? error.message : "Email notification failed.",

@@ -1,7 +1,6 @@
-﻿import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-let cachedClient: SupabaseClient | null = null;
-const supabaseRequestTimeoutMs = 8000;
+const supabaseRequestTimeoutMs = 15000;
 
 function getRequiredEnv(name: string) {
   const value = process.env[name];
@@ -13,14 +12,10 @@ function getRequiredEnv(name: string) {
   return value;
 }
 
-export function getSupabaseAdmin() {
-  if (cachedClient) {
-    return cachedClient;
-  }
-
-  cachedClient = createClient(
+function createSupabaseClient(apiKey: string): SupabaseClient {
+  return createClient(
     getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    apiKey,
     {
       auth: {
         autoRefreshToken: false,
@@ -52,6 +47,20 @@ export function getSupabaseAdmin() {
       },
     },
   );
+}
 
-  return cachedClient;
+/**
+ * Admin client using service role key.
+ * Bypasses RLS. Use ONLY for system jobs, background tasks, or admin-only logic.
+ */
+export function getSupabaseAdmin(): SupabaseClient {
+  return createSupabaseClient(getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
+}
+
+/**
+ * User-scoped client using the anonymous key.
+ * Respects RLS. Use for client-facing operations where a user session might be present.
+ */
+export function getSupabaseUserClient(): SupabaseClient {
+  return createSupabaseClient(getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"));
 }

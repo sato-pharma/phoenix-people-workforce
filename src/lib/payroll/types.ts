@@ -1,4 +1,4 @@
-export type PayrollWorkflowAction =
+﻿export type PayrollWorkflowAction =
   | "mark_review"
   | "approve"
   | "lock"
@@ -25,6 +25,7 @@ export type SalaryRecord = {
   bonus: number;
   crm: number;
   employeeCode: string;
+  hrId: string;
   employmentIncomeTax: number;
   expenses: number;
   extraCostOfLiving: number;
@@ -33,6 +34,7 @@ export type SalaryRecord = {
   fuelAllowance: number;
   fullName: string;
   grossSalary: number;
+  hireDate: string | null;
   id: string;
   incentive: number;
   jobTitle: string;
@@ -53,11 +55,91 @@ export type SalaryRecord = {
 export type SalaryFlag = {
   batchId: string;
   createdAt: string;
-  employeeCode: string | null;
+  hrId?: string | null;
   flagType: string;
   id: string;
   message: string;
   severity: "info" | "warning" | "critical" | string;
+};
+
+export type ExpenseTripRecord = {
+  allowance: number;
+  amWorkload: number;
+  date: string;
+  description: string;
+  hrId?: string | null;
+  from: string;
+  hr: string;
+  hrNotes: string;
+  km: number;
+  location: string;
+  meetingAmount: number;
+  open: string;
+  pmWorkload: number;
+  requestType: string;
+  row: number;
+  specialist: string;
+  status: string;
+  to: string;
+  toDate: string;
+  total: number;
+  transportationType: string;
+  travelCost: number;
+  tripId: string;
+  tripType: string;
+};
+
+export type PayrollExpenseApproval = ExpenseTripRecord & {
+  approvedAt: string | null;
+  approvedBy: string | null;
+  hrId: string | null;
+  hrApproved: boolean;
+  hrComment: string;
+  payoutMonth: number;
+  payoutYear: number;
+  reportId: string | null;
+  sourceFileName: string;
+};
+
+export type PayrollExpenseReport = {
+  approvedRows: number;
+  createdAt: string;
+  fileName: string;
+  id: string;
+  rowCount: number;
+  totalExpenses: number;
+  tripDateFrom: string | null;
+  tripDateTo: string | null;
+  updatedAt: string;
+};
+
+export type ExpenseSpecialistSummary = {
+  allowance: number;
+  meetingAmount: number;
+  specialist: string;
+  total: number;
+  travelCost: number;
+  trips: number;
+};
+
+export type ExpenseAnalysisResult = {
+  columns: string[];
+  fileName: string;
+  records: ExpenseTripRecord[];
+  specialists: ExpenseSpecialistSummary[];
+  summary: {
+    confirmedByFinance: number;
+    refusedByHr: number;
+    specialists: number;
+    systemApproved: number;
+    totalAllowance: number;
+    totalExpenses: number;
+    totalKm: number;
+    totalMeetingAmount: number;
+    totalTravelCost: number;
+    trips: number;
+  };
+  warnings: string[];
 };
 
 export type PayrollDashboardData = {

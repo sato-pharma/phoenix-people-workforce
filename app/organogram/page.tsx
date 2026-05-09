@@ -1,5 +1,7 @@
 ﻿import { AppShell } from "@/components/layout/app-shell";
 import { OrganogramReport } from "@/components/reports/organogram-report";
+import { assertPermission } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   errorMessage,
   getVacancyReport,
@@ -27,6 +29,8 @@ function organogramPageError(error: unknown) {
 }
 
 export default async function OrganogramPage() {
+  const access = await resolveAccessContextFromPage();
+  await assertPermission(access, "organogram", "read");
   let initialError: string | null = null;
   let initialReport = null;
 

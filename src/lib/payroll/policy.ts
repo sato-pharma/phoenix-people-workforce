@@ -1,8 +1,10 @@
 export type PayrollPaymentMode = "one_part" | "two_parts";
 
 export type PayrollPartsInput = {
+  deductions?: number | null;
   extraCostOfLiving?: number | null;
   fuelAllowance?: number | null;
+  additions?: number | null;
   netSalary?: number | null;
   paymentMode?: string | null;
   previousExpenses?: number | null;
@@ -57,28 +59,39 @@ export function calculatePayrollParts(input: PayrollPartsInput): PayrollParts {
   const extraCostOfLiving = amount(input.extraCostOfLiving);
   const fuelAllowance = amount(input.fuelAllowance);
   const previousExpenses = amount(input.previousExpenses);
-  const totalPayable = money(netSalary + previousExpenses);
+  const additions = amount(input.additions);
+  const deductions = amount(input.deductions);
 
   if (paymentMode === "two_parts") {
-    const basicSalary = Math.max(0, netSalary - extraCostOfLiving - fuelAllowance);
-    const firstPart = money(basicSalary * 0.7);
+    const adjustedNet = netSalary - extraCostOfLiving - fuelAllowance;
+    const basicSalary = money(adjustedNet * 0.7);
+    const firstPart = basicSalary;
+    const secondPart =
+      money(adjustedNet * 0.3) +
+      extraCostOfLiving +
+      fuelAllowance +
+      previousExpenses +
+      additions -
+      deductions;
 
     return {
-      basicSalary: money(basicSalary),
+      basicSalary,
       firstPart,
       paymentMode,
       previousExpenses: money(previousExpenses),
-      secondPart: money(totalPayable - firstPart),
-      totalPayable,
+      secondPart: money(secondPart),
+      totalPayable: money(firstPart + secondPart),
     };
   }
+
+  const secondPart = money(previousExpenses + additions - deductions);
 
   return {
     basicSalary: money(netSalary),
     firstPart: money(netSalary),
     paymentMode,
     previousExpenses: money(previousExpenses),
-    secondPart: money(previousExpenses),
-    totalPayable,
+    secondPart,
+    totalPayable: money(netSalary + secondPart),
   };
 }

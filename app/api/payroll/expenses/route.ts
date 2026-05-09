@@ -1,0 +1,81 @@
+import { NextResponse } from "next/server";
+
+import {
+  isPayrollExpensesSchemaMissing,
+  listPayrollExpenseReports,
+  listPayrollExpenses,
+  savePayrollExpenseApprovals,
+} from "@/lib/payroll/expenses";
+import { assertPermission } from "@/lib/auth/permissions";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function GET(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "expenses", "read");
+    const url = new URL(request.url);
+    const month = Number(url.searchParams.get("month"));
+    const year = Number(url.searchParams.get("year"));
+    const reportId = url.searchParams.get("reportId") ?? undefined;
+    const reports = await listPayrollExpenseReports(access);
+    const targetReportId = reportId ?? (!month && !year ? reports[0]?.id : undefined);
+    const expenses = await listPayrollExpenses(
+      month || undefined,
+      year || undefined,
+      targetReportId,
+      access,
+    );
+
+    return NextResponse.json({ expenses, reports });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to load expenses.";
+    if (isForbiddenError(error)) {
+      return NextResponse.json({ error: "forbidden", message }, { status: 403 });
+    }
+    return NextResponse.json(
+      {
+        error: isPayrollExpensesSchemaMissing(error) ? "payroll_expenses_schema_not_ready" : "expenses_load_failed",
+        message,
+      },
+      { status: isPayrollExpensesSchemaMissing(error) ? 503 : 500 },
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "expenses", "approve");
+
+    const body = await request.json();
+    const fileName = String(body.fileName ?? "expenses-upload.xls");
+    const reportId = typeof body.reportId === "string" ? body.reportId : null;
+    const records = Array.isArray(body.records) ? body.records : [];
+
+    if (records.length === 0) {
+      return NextResponse.json(
+        { error: "missing_records", message: "No expenses were provided." },
+        { status: 400 },
+      );
+    }
+
+    const expenses = await savePayrollExpenseApprovals({ fileName, records, reportId }, access);
+
+    return NextResponse.json({ expenses, saved: expenses.length });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to save expense approvals.";
+    if (isForbiddenError(error)) {
+      return NextResponse.json({ error: "forbidden", message }, { status: 403 });
+    }
+    return NextResponse.json(
+      {
+        error: isPayrollExpensesSchemaMissing(error) ? "payroll_expenses_schema_not_ready" : "expenses_save_failed",
+        message,
+      },
+      { status: isPayrollExpensesSchemaMissing(error) ? 503 : 500 },
+    );
+  }
+}
