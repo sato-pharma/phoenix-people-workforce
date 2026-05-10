@@ -1,15 +1,21 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { ContractRenewal } from "@/components/contracts/contract-renewal";
-import { assertPermission } from "@/lib/auth/permissions";
+import { redirect } from "next/navigation";
+
+import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
+  contractRenewalErrorMessage,
+  getContractRenewalDashboardData,
+  isContractRenewalSchemaMissing,
+} from "@/lib/contracts/service";
+import {
   employeeDirectoryErrorMessage,
-  getEmployeeDirectoryRows,
   isEmployeeDirectoryEnvMissing,
   isEmployeeDirectorySchemaMissing,
   isEmployeeDirectoryTimeout,
 } from "@/lib/employees/employee-directory";
-import type { ContractRow } from "@/lib/contracts/types";
+import type { ContractRenewalDashboardData } from "@/lib/contracts/types";
 
 export const dynamic = "force-dynamic";
 
@@ -26,47 +32,29 @@ function contractsPageError(error: unknown) {
     return "Supabase schema is not ready. Run supabase/phoenix-schema.sql in Supabase SQL editor.";
   }
 
-  return employeeDirectoryErrorMessage(error);
-}
+  if (isContractRenewalSchemaMissing(error)) {
+    return "Contract renewal workflow schema is not ready. Run supabase/20260509_contract_renewal_workflow.sql in Supabase SQL editor.";
+  }
 
-function addYears(value: string | null, years: number) {
-  if (!value) return "";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return "";
-  date.setFullYear(date.getFullYear() + years);
-  return date.toISOString().slice(0, 10);
+  return contractRenewalErrorMessage(error) || employeeDirectoryErrorMessage(error);
 }
 
 export default async function ContractsPage() {
   const access = await resolveAccessContextFromPage();
-  await assertPermission(access, "contracts", "read");
-  let initialData: ContractRow[] | null = null;
+  if (!await canAccess(access, "contracts", "read")) {
+    redirect("/employee-portals");
+  }
+  let initialData: ContractRenewalDashboardData | null = null;
   let initialError: string | null = null;
 
   try {
-    const rows = await getEmployeeDirectoryRows();
-    initialData = rows.map((employee) => {
-      const renewalDate = addYears(employee.hireDate, 1);
-      const renewalDay = renewalDate ? new Date(`${renewalDate}T00:00:00`).getDate() : 0;
-
-      return {
-        area: employee.areaName ?? "Unassigned",
-        contract_renewal_date: renewalDate,
-        contract_signed_date: employee.hireDate ?? "",
-        crm_id: employee.crmId ?? "",
-        full_name: employee.fullName,
-        hr_id: employee.hrId,
-        job_title: employee.jobTitle ?? "Unassigned",
-        line: employee.lineName ?? "Unassigned",
-        renewal_day: renewalDay,
-      };
-    });
+    initialData = await getContractRenewalDashboardData();
   } catch (error) {
     initialError = contractsPageError(error);
   }
 
   return (
-    <AppShell>
+    <AppShell navigationMode="admin">
       <ContractRenewal
         initialData={initialData}
         initialError={initialError}

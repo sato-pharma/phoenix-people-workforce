@@ -49,7 +49,7 @@ export async function getAuditLogs(filter: AuditLogFilter = {}): Promise<AuditLo
 
   let query = supabase
     .from("audit_logs")
-    .select("id, actor_hr_id, actor_login_id, actor_role, entity_id, entity_type, summary, request_ip, created_at", { count: "exact" })
+    .select("id, actor_login_id, entity_id, entity_type, summary, created_at", { count: "exact" })
     .order("created_at", { ascending: false })
     .range(offset, offset + pageSize - 1);
 
@@ -65,13 +65,13 @@ export async function getAuditLogs(filter: AuditLogFilter = {}): Promise<AuditLo
   const total = count ?? 0;
   const logs: FullAuditLogRow[] = (data ?? []).map((row: Record<string, unknown>) => ({
     id: String(row.id),
-    actorHrId: (row.actor_hr_id as string | null) ?? null,
+    actorHrId: null,
     actorLoginId: (row.actor_login_id as string) ?? "system",
-    actorRole: (row.actor_role as string | null) ?? null,
+    actorRole: null,
     entityId: (row.entity_id as string | null) ?? null,
     entityType: (row.entity_type as string | null) ?? null,
     summary: (row.summary as string | null) ?? null,
-    requestIp: (row.request_ip as string | null) ?? null,
+    requestIp: null,
     createdAt: row.created_at as string,
   }));
 

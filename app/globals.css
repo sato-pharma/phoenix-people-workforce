@@ -43,6 +43,41 @@ body {
   color: var(--foreground);
 }
 
+.phoenix-admin-sidebar-scroll {
+  scrollbar-color: rgba(251, 146, 60, 0.88) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.phoenix-admin-sidebar-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.phoenix-admin-sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+  margin-block: 14px;
+}
+
+.phoenix-admin-sidebar-scroll::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(180deg, rgba(255, 184, 93, 0.98), rgba(249, 115, 22, 0.98));
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  min-height: 56px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 16px rgba(249, 115, 22, 0.5);
+}
+
+.phoenix-admin-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(180deg, #ffd08a, #fb923c 45%, #ea580c);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
 .login-grid-bg {
   background:
     linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),

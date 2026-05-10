@@ -19,7 +19,6 @@ import {
   AdminSectionHeader,
   AdminStatCard,
   AdminTableShell,
-  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,7 +57,19 @@ function groupBy<T>(items: T[], keyFor: (item: T) => string) {
 }
 
 const selectClassName =
-  "h-10 w-full rounded-xl border border-[#D7E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12";
+  "h-11 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+
+const panelClassName =
+  "rounded-[28px] border border-white/75 bg-white/94 shadow-[0_28px_90px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/5";
+
+function OrganogramPageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative overflow-hidden rounded-[34px] border border-[#FED7AA]/80 bg-[radial-gradient(circle_at_12%_0%,rgba(249,115,22,0.12),transparent_32%),linear-gradient(135deg,#FFF7ED_0%,#F8FAFC_42%,#FFFFFF_100%)] p-4 shadow-[0_30px_110px_rgba(15,23,42,0.10)] sm:p-5">
+      <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[#F97316]/45 to-transparent" />
+      <div className="relative space-y-6">{children}</div>
+    </div>
+  );
+}
 
 function SelectFilter({
   className,
@@ -216,7 +227,7 @@ function HierarchyNode({
   return (
     <div
       className={cn(
-        "w-full max-w-64 rounded-xl border px-4 py-3 text-center shadow-sm",
+        "w-full max-w-[220px] rounded-2xl border px-3 py-2.5 text-center shadow-sm",
         tone === "dark"
           ? "border-[#0F172A] bg-[#0F172A] text-white shadow-lg"
           : tone === "primary"
@@ -225,13 +236,13 @@ function HierarchyNode({
         className,
       )}
     >
-      <div className="mb-2 flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-[#F97316]">
+      <div className="mb-1.5 flex items-center justify-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#F97316]">
         {icon}
         {label}
       </div>
       <p
         className={cn(
-          "text-sm font-semibold",
+          "text-xs font-semibold leading-snug",
           tone === "dark" ? "text-bg dark:text-white" : "text-text",
         )}
       >
@@ -249,7 +260,7 @@ function TeamMemberCard({ row }: { row: OrganogramRow }) {
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-lg border px-3 py-2.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
+        "relative overflow-hidden rounded-xl border px-2.5 py-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
         isVacancy
           ? "border-orange-200 bg-orange-50"
           : "border-[#E2E8F0] bg-white",
@@ -263,10 +274,10 @@ function TeamMemberCard({ row }: { row: OrganogramRow }) {
       />
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="whitespace-normal break-words text-xs font-semibold text-text leading-tight">
+          <p className="whitespace-normal break-words text-[11px] font-semibold leading-tight text-text">
             {row.fullName}
           </p>
-          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-text-secondary">
+          <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-text-secondary">
             <span className="font-mono font-medium">{row.hrId}</span>
             {title && !showRepFields ? (
             <span className="break-words leading-snug text-text">{title}</span>
@@ -277,7 +288,7 @@ function TeamMemberCard({ row }: { row: OrganogramRow }) {
       </div>
 
       {showRepFields ? (
-        <dl className="mt-2.5 grid grid-cols-[60px_minmax(0,1fr)] gap-y-1 text-[11px]">
+        <dl className="mt-2 grid grid-cols-[48px_minmax(0,1fr)] gap-y-0.5 text-[10px]">
           <dt className="text-text-secondary">Hiring</dt>
           <dd className="truncate text-right font-medium text-text">
             {formatDate(row.hireDate)}
@@ -338,9 +349,9 @@ function TeamMemberNode({ node }: { node: MemberNode }) {
       <TeamMemberCard row={node.row} />
 
       {node.children.length > 0 ? (
-        <div className="ml-6 mt-2 border-l border-[#F97316]/35 pl-3.5">
-          <div className="-ml-[19px] mb-2 h-3 w-3 rounded-bl-lg border-b border-l border-[#F97316]/35" />
-          <div className="space-y-2.5">
+        <div className="ml-3 mt-1.5 border-l border-[#F97316]/35 pl-2">
+          <div className="-ml-[13px] mb-1.5 h-2.5 w-2.5 rounded-bl-lg border-b border-l border-[#F97316]/35" />
+          <div className="space-y-1.5">
             {node.children.map((child) => (
               <TeamMemberNode key={rowKey(child.row)} node={child} />
             ))}
@@ -471,9 +482,10 @@ function OrganogramView({
       : []),
   ].filter((group) => group.members.length > 0 || group.dsm);
   const filledLaneCount = groups.filter((group) => group.members.length > 0).length;
+  const laneCount = Math.max(groups.length, 1);
 
   return (
-    <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
+    <Card className={cn(panelClassName, "overflow-hidden p-0")}>
       <AdminSectionHeader
         action={
           <div className="flex flex-wrap gap-2">
@@ -488,7 +500,7 @@ function OrganogramView({
         title={selectedLine ? `${selectedLine} structure` : "Select a line"}
       />
       <div
-        className="overflow-x-hidden bg-[#F8FAFC] px-5 py-8"
+        className="overflow-hidden bg-[#F8FAFC] px-3 py-5 sm:px-4"
         style={{
           backgroundImage:
             "linear-gradient(rgba(226, 232, 240, 0.55) 1px, transparent 1px), linear-gradient(90deg, rgba(226, 232, 240, 0.55) 1px, transparent 1px)",
@@ -496,7 +508,7 @@ function OrganogramView({
         }}
       >
         {!selectedLine ? (
-          <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-white p-10 text-center">
+          <div className="rounded-3xl border border-dashed border-[#CBD5E1] bg-white/90 p-10 text-center shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-[#F97316]/10 text-[#F97316]">
               <Network className="h-5 w-5" />
             </div>
@@ -509,12 +521,12 @@ function OrganogramView({
             </p>
           </div>
         ) : rows.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-white p-8 text-center text-sm text-[#64748B]">
+          <div className="rounded-3xl border border-dashed border-[#CBD5E1] bg-white/90 p-8 text-center text-sm text-[#64748B]">
             No organogram rows match the current filters.
           </div>
         ) : (
           <div className="w-full">
-            <div className="mb-7 grid w-full gap-3 md:grid-cols-3 xl:max-w-3xl">
+            <div className="mb-5 grid w-full gap-2 md:grid-cols-3 xl:max-w-2xl">
               <AdminStatCard
                 description="Active employees included in this scope."
                 icon={<UsersRound className="h-4 w-4" />}
@@ -542,22 +554,22 @@ function OrganogramView({
                 name={chiefExecutive?.fullName ?? "Executive Leadership"}
                 tone="dark"
               />
-              <div className="h-8 w-px bg-border" />
+              <div className="h-5 w-px bg-border" />
               <HierarchyNode
                 icon={<Network className="h-3.5 w-3.5" />}
                 label="Line"
                 name={lineName}
                 tone="default"
               />
-              <div className="h-8 w-px bg-border" />
+              <div className="h-5 w-px bg-border" />
               <HierarchyNode
                 icon={<UsersRound className="h-3.5 w-3.5" />}
                 label={lineLeader ? lineLeader.positionTitle ?? lineLeader.jobTitle ?? "Line Leadership" : "Line Leadership"}
                 name={lineLeader?.fullName ?? lineName}
                 tone="primary"
               />
-              <div className="h-8 w-px bg-border" />
-              <div className="relative h-px w-[86%] bg-[#CBD5E1]">
+              <div className="h-5 w-px bg-border" />
+              <div className="relative h-px w-[92%] bg-[#CBD5E1]">
                 <span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#F97316]" />
               </div>
             </div>
@@ -567,9 +579,14 @@ function OrganogramView({
                 No manager lanes found for this line.
               </div>
             ) : (
-    <div className="relative mt-8">
+              <div className="relative mt-6">
                 <div className="absolute left-0 right-0 top-0 h-px bg-[#CBD5E1]" />
-                <div className="grid gap-2 pt-6 [grid-template-columns:repeat(auto-fit,minmax(250px,1fr))]">
+                <div
+                  className="grid w-full gap-2 pt-5"
+                  style={{
+                    gridTemplateColumns: `repeat(${laneCount}, minmax(0, 1fr))`,
+                  }}
+                >
                   {groups.map((group) => {
                     const groupVacancies = group.members.filter(
                       (member) => member.type === "vacancy",
@@ -578,33 +595,33 @@ function OrganogramView({
                     return (
                       <div
                         className={cn(
-                          "relative min-w-0 rounded-xl border border-[#E2E8F0] bg-white p-2.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
+                          "relative min-w-0 rounded-2xl border border-[#E2E8F0] bg-white/95 p-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
                         )}
                         key={group.dsm?.hrId ?? group.name}
                       >
-                        <div className="absolute -top-6 left-1/2 h-6 w-px -translate-x-1/2 bg-[#CBD5E1]" />
+                        <div className="absolute -top-5 left-1/2 h-5 w-px -translate-x-1/2 bg-[#CBD5E1]" />
                         <div className="absolute left-3 right-3 top-0 h-1 rounded-b-full bg-[#F97316]" />
-                        <div className="rounded-lg bg-[#0F172A] px-2.5 py-2 text-white">
+                        <div className="rounded-xl bg-[#0F172A] px-2 py-2 text-white">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 text-left">
-                              <div className="mb-1 flex h-6 w-6 items-center justify-center rounded-md bg-white/10">
-                                <BriefcaseBusiness className="h-3.5 w-3.5" />
+                              <div className="mb-1 flex h-5 w-5 items-center justify-center rounded-md bg-white/10">
+                                <BriefcaseBusiness className="h-3 w-3" />
                               </div>
-                              <p className="text-[11px] font-semibold leading-4 break-words">
+                              <p className="break-words text-[10px] font-semibold leading-3">
                                 {group.name}
                               </p>
-                              <p className="mt-1 text-[10px] font-medium leading-4 opacity-70 break-words">
+                              <p className="mt-1 break-words text-[9px] font-medium leading-3 opacity-70">
                                 {group.title}
                               </p>
                             </div>
-                            <div className="shrink-0 rounded-md bg-white/10 px-1.5 py-1 text-center text-[10px] font-semibold">
-                              <p className="text-[11px] leading-none">{group.members.length}</p>
+                            <div className="shrink-0 rounded-md bg-white/10 px-1.5 py-1 text-center text-[9px] font-semibold">
+                              <p className="text-[10px] leading-none">{group.members.length}</p>
                               <p className="mt-0.5 opacity-70">rows</p>
                             </div>
                           </div>
                         </div>
 
-                        <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-1.5 text-[10px] text-[#64748B]">
+                        <div className="mt-2 flex items-center justify-between gap-1.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-1.5 text-[9px] text-[#64748B]">
                           <span className="truncate">{group.members.length} team rows</span>
                           {groupVacancies > 0 ? (
                             <span className="shrink-0 font-medium text-primary">
@@ -615,7 +632,7 @@ function OrganogramView({
                           )}
                         </div>
 
-                        <div className="mt-2.5 space-y-2">
+                        <div className="mt-2 space-y-1.5">
                           {group.members.length === 0 ? (
                             <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-text-secondary">
                               No team rows under this manager.
@@ -802,11 +819,11 @@ export function OrganogramReport({
   }
 
   return (
-    <div className="space-y-6">
+    <OrganogramPageShell>
       <AdminPageHero
         actions={
           <Button
-            className="h-10 rounded-xl px-3 text-xs"
+            className="h-11 rounded-2xl px-4 text-xs"
             disabled={isLoading}
             onClick={() => void loadReport()}
             variant="secondary"
@@ -842,7 +859,7 @@ export function OrganogramReport({
       ) : null}
 
       {isLoading && !report ? (
-        <Card className={`${adminPanelClassName} p-4`}>
+        <Card className={`${panelClassName} p-4`}>
           <div className="flex items-center gap-3 text-sm text-[#64748B]">
             <LoadingSpinner />
             Loading organogram...
@@ -856,7 +873,7 @@ export function OrganogramReport({
             action={
               !fixedLine ? (
                 <Button
-                  className="h-10 gap-2"
+                  className="h-11 gap-2 rounded-2xl"
                   disabled={!hasActiveFilters}
                   onClick={clearFilters}
                   variant="secondary"
@@ -879,7 +896,7 @@ export function OrganogramReport({
                 />
               ) : null}
               <div className="flex items-end">
-                <div className="rounded-xl border border-[#E2E8F0] bg-[#FCFDFE] px-4 py-3 text-sm text-text-secondary">
+                <div className="rounded-2xl border border-[#E2E8F0] bg-white/80 px-4 py-3 text-sm text-text-secondary shadow-[0_12px_36px_rgba(15,23,42,0.06)]">
                   {effectiveLineFilter
                     ? `Showing ${filteredRows.length} rows inside ${effectiveLineFilter}.`
                     : "Pick a line to render the hierarchy in one focused view."}
@@ -894,6 +911,6 @@ export function OrganogramReport({
           />
         </>
       ) : null}
-    </div>
+    </OrganogramPageShell>
   );
 }

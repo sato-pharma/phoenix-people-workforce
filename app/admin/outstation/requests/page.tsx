@@ -12,7 +12,7 @@ export default async function AdminOutstationRequestsPage() {
   const requests = await listOutstationRequests();
 
   return (
-    <AppShell showTopbar={false}>
+    <AppShell navigationMode="admin">
       <OutstationRequestsAdmin requests={requests} />
     </AppShell>
   );

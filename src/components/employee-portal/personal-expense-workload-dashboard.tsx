@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -46,9 +46,9 @@ type ExpenseRow = {
 };
 
 const BRAND = {
-  bg: "#F8FAFC",
+  bg: "#FFF7ED",
   card: "#FFFFFF",
-  border: "#E2E8F0",
+  border: "#FED7AA",
   textPrimary: "#0F172A",
   textMuted: "#64748B",
   primary: "#F97316",
@@ -57,9 +57,28 @@ const BRAND = {
   error: "#EF4444",
 };
 
+const premiumCardClass =
+  "rounded-[28px] border border-orange-100/80 bg-white/94 shadow-[0_22px_58px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03] backdrop-blur";
+
+const premiumControlClass =
+  "h-11 w-full rounded-2xl border border-orange-100 bg-white/95 px-3 text-sm text-slate-800 shadow-[0_12px_30px_rgba(15,23,42,0.05)] outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100";
+
+const chartPanelClass =
+  "rounded-[28px] border border-orange-100/80 bg-white/96 p-5 shadow-[0_22px_60px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03]";
+
 const statusOptions = ["All", "System Approval", "Pending", "Declined", "Confirmed by HR", "Other"] as const;
-const SORT_FIELDS = ["date", "tripId", "toDate", "requestType", "total", "travelCost", "meetingAmount", "allowance", "km", "status", "transportationType"] as const;
-type SortField = (typeof SORT_FIELDS)[number];
+type SortField =
+  | "date"
+  | "tripId"
+  | "toDate"
+  | "requestType"
+  | "total"
+  | "travelCost"
+  | "meetingAmount"
+  | "allowance"
+  | "km"
+  | "status"
+  | "transportationType";
 
 type SortDirection = "asc" | "desc";
 
@@ -166,18 +185,18 @@ function extractDestination(to: string, fallback: string) {
 
 function chartTooltipStyle() {
   return {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 12,
-    boxShadow: "0 10px 30px rgba(15,23,42,0.08)",
+    background: "rgba(255,255,255,0.98)",
+    border: "1px solid #fed7aa",
+    borderRadius: 16,
+    boxShadow: "0 18px 44px rgba(15,23,42,0.12)",
   };
 }
 
 function EmptyState({ title, message }: { title: string; message: string }) {
   return (
-    <Card className="rounded-2xl border bg-white p-8 text-center" style={{ borderColor: BRAND.border, backgroundColor: BRAND.card }}>
-      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">{title}</p>
-      <p className="mt-2 text-sm text-slate-600">{message}</p>
+    <Card className={`${premiumCardClass} p-8 text-center`}>
+      <p className="text-sm font-black uppercase tracking-[0.18em] text-orange-600">{title}</p>
+      <p className="mt-2 text-sm font-medium text-slate-600">{message}</p>
     </Card>
   );
 }
@@ -196,14 +215,15 @@ function DashboardCard({
   const showDelta = delta === undefined ? "" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`;
   const isPositive = delta === undefined ? false : delta >= 0;
   return (
-    <Card className="rounded-2xl border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md" style={{ borderColor: BRAND.border, backgroundColor: BRAND.card }}>
-      <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-900" style={{ color: BRAND.textPrimary }}>
+    <Card className="group relative overflow-hidden rounded-[26px] border border-orange-100/80 bg-white/95 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.07)] ring-1 ring-slate-950/[0.03] transition hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(249,115,22,0.13)]">
+      <div className="absolute -right-8 -top-10 h-24 w-24 rounded-full bg-orange-100/70 blur-2xl transition group-hover:bg-orange-200/80" />
+      <p className="relative text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className="relative mt-3 text-2xl font-black text-slate-950" style={{ color: BRAND.textPrimary }}>
         {value}
       </p>
-      {helper ? <p className="mt-1 text-xs text-slate-500">{helper}</p> : null}
+      {helper ? <p className="relative mt-1 text-xs font-medium text-slate-500">{helper}</p> : null}
       {delta === undefined ? null : (
-        <span className={`mt-2 inline-block rounded-full px-2.5 py-1 text-xs font-medium ${isPositive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+        <span className={`relative mt-3 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${isPositive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
           {showDelta}
         </span>
       )}
@@ -246,7 +266,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
       description: normalizeString(expense.description),
       hrNotes: normalizeString(expense.hrNotes || expense.description),
     }));
-  }, [data.employee?.hrId, data.workload?.expenseRows, currentEmployeeCanonicalHrId, currentEmployeeHrId]);
+  }, [data.workload?.expenseRows, currentEmployeeCanonicalHrId, currentEmployeeHrId]);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -476,7 +496,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
   };
 
   const header = (field: SortField, title: string) => (
-    <button className="inline-flex items-center gap-1 text-left text-xs font-medium uppercase tracking-[0.12em] text-slate-500" type="button" onClick={() => onSort(field)}>
+    <button className="inline-flex items-center gap-1 text-left text-[11px] font-black uppercase tracking-[0.14em] text-slate-500 transition hover:text-orange-600" type="button" onClick={() => onSort(field)}>
       <span>{title}</span>
       {searchSortField === field ? (searchSortDirection === "desc" ? "▼" : "▲") : "↕"}
     </button>
@@ -487,30 +507,45 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
   }
 
   return (
-    <div className="space-y-6" style={{ color: BRAND.textPrimary, backgroundColor: BRAND.bg }}>
-      <section>
-        <h1 className="text-3xl font-semibold text-slate-900">Expense Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500">Track your personal trips, expenses, approvals, and workload.</p>
+    <div className="space-y-6 text-slate-950">
+      <section className="relative overflow-hidden rounded-[30px] border border-orange-100 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_46%,#fff1e6_100%)] p-6 shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
+        <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full bg-orange-200/45 blur-3xl" />
+        <div className="absolute -bottom-20 left-10 h-40 w-40 rounded-full bg-amber-100/60 blur-3xl" />
+        <div className="relative flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <span className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">
+              Personal expense command
+            </span>
+            <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Expense Dashboard</h1>
+            <p className="mt-2 max-w-2xl text-sm font-medium text-slate-600">
+              Track your personal trips, expenses, approvals, and workload from one clean view.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-right shadow-[0_14px_35px_rgba(15,23,42,0.07)]">
+            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Filtered spend</p>
+            <p className="mt-1 text-2xl font-black text-orange-600">{formatMoney(totalExpenses)}</p>
+          </div>
+        </div>
       </section>
 
-      <Card className="rounded-2xl border p-4 shadow-sm md:p-5" style={{ borderColor: BRAND.border, backgroundColor: BRAND.card }}>
-        <div className="mb-4 flex flex-wrap items-end gap-3">
+      <Card className={`${premiumCardClass} p-4 md:p-5`}>
+        <div className="mb-1 flex flex-wrap items-end gap-3">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">Filter by date</p>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Filter by date</p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <label className="min-w-0 flex-1">
-                <span className="mb-1 block text-[11px] font-medium text-slate-500">Date From</span>
+                <span className="mb-1 block text-[11px] font-bold text-slate-500">Date From</span>
                 <input
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-300"
+                  className={premiumControlClass}
                   onChange={(event) => setDateFrom(event.target.value)}
                   type="date"
                   value={dateFrom}
                 />
               </label>
               <label className="min-w-0 flex-1">
-                <span className="mb-1 block text-[11px] font-medium text-slate-500">Date To</span>
+                <span className="mb-1 block text-[11px] font-bold text-slate-500">Date To</span>
                 <input
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-300"
+                  className={premiumControlClass}
                   onChange={(event) => setDateTo(event.target.value)}
                   type="date"
                   value={dateTo}
@@ -519,9 +554,9 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
             </div>
           </div>
           <label className="min-w-0 flex-1">
-            <span className="mb-1 block text-[11px] font-medium text-slate-500">Status</span>
+            <span className="mb-1 block text-[11px] font-bold text-slate-500">Status</span>
             <select
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-300"
+              className={premiumControlClass}
               onChange={(event) => setStatusFilter(event.target.value as (typeof statusOptions)[number])}
               value={statusFilter}
             >
@@ -531,9 +566,9 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
             </select>
           </label>
           <label className="min-w-0 flex-1">
-            <span className="mb-1 block text-[11px] font-medium text-slate-500">Request Type</span>
+            <span className="mb-1 block text-[11px] font-bold text-slate-500">Request Type</span>
             <select
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-300"
+              className={premiumControlClass}
               onChange={(event) => setRequestTypeFilter(event.target.value)}
               value={requestTypeFilter}
             >
@@ -543,9 +578,9 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
             </select>
           </label>
           <label className="min-w-0 flex-1">
-            <span className="mb-1 block text-[11px] font-medium text-slate-500">Transportation Type</span>
+            <span className="mb-1 block text-[11px] font-bold text-slate-500">Transportation Type</span>
             <select
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-300"
+              className={premiumControlClass}
               onChange={(event) => setTransportationFilter(event.target.value)}
               value={transportationFilter}
             >
@@ -555,9 +590,9 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
             </select>
           </label>
           <label className="min-w-0 flex-1">
-            <span className="mb-1 block text-[11px] font-medium text-slate-500">Destination City</span>
+            <span className="mb-1 block text-[11px] font-bold text-slate-500">Destination City</span>
             <select
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-300"
+              className={premiumControlClass}
               onChange={(event) => setDestinationFilter(event.target.value)}
               value={destinationFilter}
             >
@@ -567,7 +602,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
             </select>
           </label>
           <button
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-medium text-orange-700 hover:bg-orange-100"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-orange-200 bg-orange-500 px-4 text-sm font-black text-white shadow-[0_14px_34px_rgba(249,115,22,0.25)] transition hover:-translate-y-0.5 hover:bg-orange-600"
             onClick={resetFilters}
             type="button"
           >
@@ -611,13 +646,15 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
-        <Card className="rounded-2xl border p-4 shadow-sm" style={{ borderColor: BRAND.border, backgroundColor: BRAND.card }}>
+        <Card className={chartPanelClass}>
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Monthly Expense Trend</p>
-              <p className="text-sm text-slate-500">Spend rhythm and unusual spikes</p>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Monthly Expense Trend</p>
+              <p className="text-sm font-medium text-slate-500">Spend rhythm and unusual spikes</p>
             </div>
-            <Filter className="h-4 w-4 text-slate-400" />
+            <span className="rounded-2xl border border-orange-100 bg-orange-50 p-2 text-orange-600">
+              <Filter className="h-4 w-4" />
+            </span>
           </div>
           <div className="h-72">
             {monthlyTrend.length === 0 ? (
@@ -631,7 +668,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                   <YAxis yAxisId="trips" orientation="right" stroke="#64748b" style={{ fontSize: 12 }} />
                   <Tooltip
                     contentStyle={chartTooltipStyle()}
-                    formatter={(value, name, props) => {
+                    formatter={(value, name) => {
                       if (name === "expense") return formatMoney(Number(value));
                       if (name === "trips") return Number(value).toLocaleString();
                       return String(value);
@@ -647,10 +684,10 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
           </div>
         </Card>
 
-        <Card className="rounded-2xl border p-4 shadow-sm" style={{ borderColor: BRAND.border, backgroundColor: BRAND.card }}>
+        <Card className={chartPanelClass}>
           <div className="mb-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Expense Breakdown by Category</p>
-            <p className="text-sm text-slate-500">Travel Cost, Meeting Amount, Allowance</p>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Expense Breakdown by Category</p>
+            <p className="text-sm font-medium text-slate-500">Travel Cost, Meeting Amount, Allowance</p>
           </div>
           <div className="h-72">
             {categoryBreakdown.total <= 0 ? (
@@ -676,9 +713,9 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <div className="rounded-full bg-white px-4 py-2 text-center">
-                    <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Total</p>
-                    <p className="text-lg font-semibold text-slate-900">{formatMoney(categoryBreakdown.total)}</p>
+                  <div className="rounded-full border border-orange-100 bg-white/95 px-4 py-2 text-center shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
+                    <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Total</p>
+                    <p className="text-lg font-black text-slate-950">{formatMoney(categoryBreakdown.total)}</p>
                   </div>
                 </div>
               </div>
@@ -688,10 +725,10 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
-        <Card className="rounded-2xl border p-4 shadow-sm" style={{ borderColor: BRAND.border, backgroundColor: BRAND.card }}>
+        <Card className={chartPanelClass}>
           <div className="mb-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Trip Status Distribution</p>
-            <p className="text-sm text-slate-500">System Approval, Pending, Declined, Confirmed by HR</p>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Trip Status Distribution</p>
+            <p className="text-sm font-medium text-slate-500">System Approval, Pending, Declined, Confirmed by HR</p>
           </div>
           <div className="h-72">
             {statusDistribution.length === 0 ? (
@@ -715,9 +752,9 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
               </ResponsiveContainer>
             )}
           </div>
-          <div className="mt-2 space-y-1 text-xs text-slate-600">
+          <div className="mt-2 space-y-1 text-xs font-semibold text-slate-600">
             {statusDistribution.map((status) => (
-              <div key={status.name} className="flex items-center justify-between border-t border-slate-100 py-1">
+              <div key={status.name} className="flex items-center justify-between border-t border-orange-50 py-1.5">
                 <span className="inline-flex items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: status.color }} />
                   {status.name}
@@ -728,16 +765,16 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
           </div>
         </Card>
 
-        <Card className="rounded-2xl border p-4 shadow-sm" style={{ borderColor: BRAND.border, backgroundColor: BRAND.card }}>
+        <Card className={chartPanelClass}>
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Trips by Transportation Type</p>
-              <p className="text-sm text-slate-500">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Trips by Transportation Type</p>
+              <p className="text-sm font-medium text-slate-500">
                 {showCostByTransportation ? "Total cost per transportation type" : "Trip count by transportation type"}
               </p>
             </div>
             <button
-              className="rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
+              className="rounded-2xl border border-orange-100 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700 transition hover:bg-orange-100"
               onClick={() => setShowCostByTransportation((prev) => !prev)}
               type="button"
             >
@@ -769,10 +806,10 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
-        <Card className="rounded-2xl border p-4 shadow-sm" style={{ borderColor: BRAND.border, backgroundColor: BRAND.card }}>
+        <Card className={chartPanelClass}>
           <div className="mb-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Trips by Destination City</p>
-            <p className="text-sm text-slate-500">Top destination cities visited</p>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Trips by Destination City</p>
+            <p className="text-sm font-medium text-slate-500">Top destination cities visited</p>
           </div>
           <div className="h-72">
                 {destinationSummary.length === 0 ? (
@@ -801,9 +838,9 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
           </div>
         </Card>
 
-        <Card className="rounded-2xl border p-4 shadow-sm" style={{ borderColor: BRAND.border, backgroundColor: BRAND.card }}>
+        <Card className={chartPanelClass}>
           <div className="mb-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Workload Summary</p>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Workload Summary</p>
           </div>
           {!hasWorkloadData ? (
             <p className="text-sm text-slate-600">Workload data is not available for this period.</p>
@@ -840,12 +877,15 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
 
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-900">Detailed Trip Table</h2>
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Trip ledger</p>
+            <h2 className="mt-1 text-xl font-black text-slate-950">Detailed Trip Table</h2>
+          </div>
           <label className="relative min-w-0 flex-1 sm:max-w-sm">
             <span className="sr-only">Search trips</span>
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-3 top-3.5 h-4 w-4 text-orange-500" />
             <input
-              className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-orange-300"
+              className="h-11 w-full rounded-2xl border border-orange-100 bg-white/95 py-2 pl-9 pr-3 text-sm font-medium text-slate-800 shadow-[0_12px_30px_rgba(15,23,42,0.05)] outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
               onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Search trips..."
               value={searchTerm}
@@ -853,10 +893,10 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
           </label>
         </div>
 
-        <Card className="overflow-hidden rounded-2xl border shadow-sm" style={{ borderColor: BRAND.border, backgroundColor: BRAND.card }}>
+        <Card className="overflow-hidden rounded-[28px] border border-orange-100/80 bg-white/95 shadow-[0_24px_65px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03]">
           <div className="hidden overflow-x-auto md:block">
-            <table className="min-w-full divide-y divide-slate-100 text-left text-sm">
-              <thead className="bg-slate-50">
+            <table className="min-w-full divide-y divide-orange-50 text-left text-sm">
+              <thead className="bg-orange-50/70">
                 <tr>
                   <th className="px-4 py-3">{header("tripId", "TripID")}</th>
                   <th className="px-4 py-3">{header("date", "Date")}</th>
@@ -874,25 +914,25 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                   <th className="px-4 py-3">HR Notes</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
+              <tbody className="divide-y divide-orange-50 bg-white">
                 {pagedTrips.map((trip) => {
                   const category = mapStatusCategory(trip.status);
                   return (
-                    <tr className="transition hover:bg-slate-50" key={`${trip.tripId}-${trip.date}-${trip.requestType}`}>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-600">{trip.tripId || "N/A"}</td>
-                      <td className="px-4 py-3 text-slate-700">{formatDate(trip.date)}</td>
-                      <td className="px-4 py-3 text-slate-700">{trip.toDate ? formatDate(trip.toDate) : "—"}</td>
-                      <td className="px-4 py-3 text-slate-700">{trip.requestType || "N/A"}</td>
-                      <td className="px-4 py-3 text-slate-700">{trip.from || "N/A"} → {trip.to || "N/A"}</td>
+                    <tr className="transition hover:bg-orange-50/45" key={`${trip.tripId}-${trip.date}-${trip.requestType}`}>
+                      <td className="px-4 py-3 font-mono text-xs font-bold text-slate-600">{trip.tripId || "N/A"}</td>
+                      <td className="px-4 py-3 font-medium text-slate-700">{formatDate(trip.date)}</td>
+                      <td className="px-4 py-3 font-medium text-slate-700">{trip.toDate ? formatDate(trip.toDate) : "—"}</td>
+                      <td className="px-4 py-3 font-medium text-slate-700">{trip.requestType || "N/A"}</td>
+                      <td className="px-4 py-3 font-medium text-slate-700">{trip.from || "N/A"} → {trip.to || "N/A"}</td>
                       <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatMoney(trip.total)}</td>
-                      <td className="px-4 py-3 text-right text-slate-700">{formatMoney(trip.travelCost)}</td>
-                      <td className="px-4 py-3 text-right text-slate-700">{formatMoney(trip.meetingAmount)}</td>
-                      <td className="px-4 py-3 text-right text-slate-700">{formatMoney(trip.allowance)}</td>
-                      <td className="px-4 py-3 text-right text-slate-700">{formatKm(trip.km)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-slate-700">{formatMoney(trip.travelCost)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-slate-700">{formatMoney(trip.meetingAmount)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-slate-700">{formatMoney(trip.allowance)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-slate-700">{formatKm(trip.km)}</td>
                       <td className="px-4 py-3"><Badge variant={statusVariant(category)}>{category}</Badge></td>
-                      <td className="px-4 py-3 text-slate-700">{trip.transportationType || "N/A"}</td>
-                      <td className="max-w-xs px-4 py-3 text-slate-700">{trip.description || "—"}</td>
-                      <td className="max-w-xs px-4 py-3 text-slate-700">{trip.hrNotes || "—"}</td>
+                      <td className="px-4 py-3 font-medium text-slate-700">{trip.transportationType || "N/A"}</td>
+                      <td className="max-w-xs px-4 py-3 font-medium text-slate-700">{trip.description || "—"}</td>
+                      <td className="max-w-xs px-4 py-3 font-medium text-slate-700">{trip.hrNotes || "—"}</td>
                     </tr>
                   );
                 })}
@@ -904,7 +944,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
             {pagedTrips.map((trip) => {
               const category = mapStatusCategory(trip.status);
               return (
-                <Card key={`${trip.tripId}-${trip.date}-mobile`} className="rounded-xl border border-slate-100 bg-white p-3">
+                <Card key={`${trip.tripId}-${trip.date}-mobile`} className="rounded-2xl border border-orange-100 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-semibold text-slate-900">{trip.tripId || "N/A"}</p>
                     <Badge variant={statusVariant(category)}>{category}</Badge>
@@ -927,22 +967,22 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
             {pagedTrips.length === 0 ? <p className="px-3 py-6 text-sm text-slate-600">No trips available.</p> : null}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-3 py-2">
-            <p className="text-xs text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-orange-100 bg-orange-50/70 px-4 py-3">
+            <p className="text-xs font-bold text-slate-500">
               {sortedTrips.length === 0 ? "No records" : `Showing ${pageSummary}`}
             </p>
             <div className="flex items-center gap-2">
               <button
-                className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 disabled:opacity-50"
+                className="rounded-xl border border-orange-100 bg-white p-2 text-slate-600 shadow-sm transition hover:text-orange-600 disabled:opacity-50"
                 disabled={safePage <= 1}
                 onClick={() => setPage((value) => Math.max(1, value - 1))}
                 type="button"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="text-xs font-semibold text-slate-700">{safePage} / {totalPages}</span>
+              <span className="text-xs font-black text-slate-700">{safePage} / {totalPages}</span>
               <button
-                className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 disabled:opacity-50"
+                className="rounded-xl border border-orange-100 bg-white p-2 text-slate-600 shadow-sm transition hover:text-orange-600 disabled:opacity-50"
                 disabled={safePage >= totalPages}
                 onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
                 type="button"

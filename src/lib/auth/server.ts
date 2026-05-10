@@ -218,8 +218,8 @@ function buildInitials(input: string) {
   return parts.map((part) => part.charAt(0).toUpperCase()).join("");
 }
 
-export async function resolveViewerIdentityFromPage(): Promise<ViewerIdentity> {
-  const access = await resolveAccessContextFromPage();
+export async function resolveViewerIdentityFromPage(accessContext?: AccessContext): Promise<ViewerIdentity> {
+  const access = accessContext ?? await resolveAccessContextFromPage();
   const fallbackName = access.loginId || access.hrId || "User";
   const fallbackRole = access.role;
 

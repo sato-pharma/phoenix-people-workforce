@@ -1,6 +1,8 @@
 import { HrCalendar } from "@/components/hr-calendar/hr-calendar";
 import { AppShell } from "@/components/layout/app-shell";
-import { assertPermission } from "@/lib/auth/permissions";
+import { redirect } from "next/navigation";
+
+import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   employeeDirectoryErrorMessage,
@@ -31,7 +33,9 @@ function calendarPageError(error: unknown) {
 
 export default async function HrCalendarPage() {
   const access = await resolveAccessContextFromPage();
-  await assertPermission(access, "hr_calendar", "read");
+  if (!await canAccess(access, "hr_calendar", "read")) {
+    redirect("/employee-portals");
+  }
   let initialData: HrCalendarEmployee[] | null = null;
   let initialError: string | null = null;
 
@@ -53,7 +57,7 @@ export default async function HrCalendarPage() {
   }
 
   return (
-    <AppShell>
+    <AppShell navigationMode="admin">
       <HrCalendar
         initialData={initialData}
         initialError={initialError}

@@ -132,6 +132,7 @@ create table if not exists public.salary_records (
   hr_id text not null references public.employees(hr_id) on update cascade,
   employee_code text null,
   full_name text not null default '',
+  name_ar text null,
   line text not null default '',
   area text not null default '',
   job_title text not null default '',
@@ -157,6 +158,7 @@ create table if not exists public.salary_records (
   first_part numeric(20, 2) not null default 0,
   second_part numeric(20, 2) not null default 0,
   hire_date date null,
+  comment text null,
   created_at timestamptz not null default now(),
   unique (batch_id, hr_id)
 );

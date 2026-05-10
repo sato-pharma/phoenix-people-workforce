@@ -9,7 +9,6 @@ import { MobileSidebar } from "@/components/layout/sidebar";
 import { type NavigationMode } from "@/lib/auth/permissions";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import type { ViewerIdentity } from "@/lib/auth/server";
-import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Input } from "@/components/ui/input";
 
 export function Topbar({
@@ -23,6 +22,7 @@ export function Topbar({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const isAdminMode = navigationMode === "admin";
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
@@ -40,11 +40,19 @@ export function Topbar({
         open={menuOpen}
         permissionLookup={permissionLookup}
       />
-      <header className="sticky top-0 z-20 border-b border-[#E2E8F0]/80 bg-white/82 px-3 py-3 backdrop-blur-xl sm:px-6">
+      <header className={`sticky top-0 z-20 px-3 py-3 backdrop-blur-xl sm:px-6 ${
+        isAdminMode
+          ? "border-b border-[#1a1a1a] bg-[#000000]"
+          : "border-b border-[#E2E8F0]/80 bg-white/82"
+      }`}>
         <div className="mx-auto flex min-h-14 w-full max-w-[1480px] items-center gap-2 sm:min-h-16 sm:gap-4">
         <button
           aria-label="Open menu"
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A] lg:hidden"
+          className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg lg:hidden ${
+            isAdminMode
+              ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]"
+              : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+          }`}
           onClick={() => setMenuOpen(true)}
           type="button"
         >
@@ -56,28 +64,41 @@ export function Topbar({
         </div>
 
         <div className="relative hidden flex-1 md:block md:max-w-[280px] xl:max-w-xl">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#64748B]" />
+          <Search className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${isAdminMode ? "text-[#F8B56B]" : "text-[#64748B]"}`} />
           <Input
             aria-label="Search"
-            className="h-12 rounded-2xl border-[#E2E8F0] bg-[#FCFDFE] pl-9 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]"
+            className={`h-12 rounded-2xl pl-9 ${
+              isAdminMode
+                ? "border-[#333333] bg-[#0B0B0B] text-[#F8FAFC] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] placeholder:text-[#64748B] focus:border-[#F97316]"
+                : "border-[#E2E8F0] bg-[#FCFDFE] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]"
+            }`}
             placeholder="Search employees, reports, pages..."
           />
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-3">
-          <button className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A] md:hidden">
+          <button className={`inline-flex h-10 w-10 items-center justify-center rounded-lg md:hidden ${
+            isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+          }`}>
             <Search className="h-5 w-5" />
           </button>
-          <ThemeToggle />
-          <button aria-label="Notifications" className="hidden h-10 w-10 items-center justify-center rounded-lg text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A] sm:inline-flex" type="button">
+          <button aria-label="Notifications" className={`hidden h-10 w-10 items-center justify-center rounded-lg sm:inline-flex ${
+            isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+          }`} type="button">
             <Bell className="h-5 w-5" />
           </button>
-          <button aria-label="Messages" className="hidden h-10 w-10 items-center justify-center rounded-lg text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A] xl:inline-flex" type="button">
+          <button aria-label="Messages" className={`hidden h-10 w-10 items-center justify-center rounded-lg xl:inline-flex ${
+            isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+          }`} type="button">
             <Mail className="h-5 w-5" />
           </button>
           <div className="relative">
             <button
-              className="flex max-w-[calc(100vw-7rem)] items-center gap-2 rounded-full border border-[#E2E8F0] bg-white/95 py-1 pl-1 pr-2 shadow-[0_10px_30px_rgba(15,23,42,0.06)] sm:max-w-none sm:gap-3 sm:pr-3 hover:bg-[#FCFDFE]"
+              className={`flex max-w-[calc(100vw-7rem)] items-center gap-2 rounded-full border py-1 pl-1 pr-2 sm:max-w-none sm:gap-3 sm:pr-3 ${
+                isAdminMode
+                  ? "border-[#333333] bg-[#0B0B0B] shadow-[0_10px_30px_rgba(0,0,0,0.24)] hover:bg-[#111111]"
+                  : "border-[#E2E8F0] bg-white/95 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:bg-[#FCFDFE]"
+              }`}
               onClick={() => setUserMenuOpen(!userMenuOpen)}
               type="button"
             >
@@ -85,25 +106,31 @@ export function Topbar({
                 {viewer.initials}
               </div>
               <div className="hidden text-left sm:block">
-                <p className="text-sm font-semibold text-[#0F172A]">{viewer.displayName}</p>
-                <p className="text-xs text-[#64748B]">{viewer.roleLabel}</p>
+                <p className={`text-sm font-semibold ${isAdminMode ? "text-white" : "text-[#0F172A]"}`}>{viewer.displayName}</p>
+                <p className={`text-xs ${isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]"}`}>{viewer.roleLabel}</p>
               </div>
-              <ChevronDown className="hidden h-4 w-4 text-[#64748B] sm:block" />
+              <ChevronDown className={`hidden h-4 w-4 sm:block ${isAdminMode ? "text-[#F8B56B]" : "text-[#64748B]"}`} />
             </button>
 
             {userMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-48 rounded-lg border border-[#E2E8F0] bg-white shadow-lg">
+              <div className={`absolute right-0 top-full mt-2 w-48 rounded-lg border shadow-lg ${
+                isAdminMode ? "border-[#333333] bg-[#050505]" : "border-[#E2E8F0] bg-white"
+              }`}>
                 <Link
-                  className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[#0F172A] hover:bg-[#F8FAFC]"
+                  className={`flex w-full items-center gap-2 px-4 py-2 text-sm ${
+                    isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#0F172A] hover:bg-[#F8FAFC]"
+                  }`}
                   href="/admin/profile"
                   onClick={() => setUserMenuOpen(false)}
                 >
                   <UserCog className="h-4 w-4" />
                   My Profile
                 </Link>
-                <div className="mx-3 h-px bg-[#E2E8F0]" />
+                <div className={`mx-3 h-px ${isAdminMode ? "bg-[#333333]" : "bg-[#E2E8F0]"}`} />
                 <button
-                  className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[#0F172A] hover:bg-[#F8FAFC]"
+                  className={`flex w-full items-center gap-2 px-4 py-2 text-sm ${
+                    isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#0F172A] hover:bg-[#F8FAFC]"
+                  }`}
                   onClick={handleLogout}
                   type="button"
                 >

@@ -13,7 +13,6 @@ import {
   CheckCircle2,
   Activity,
   FileUp,
-  ChartColumnBig,
   Target,
   Wallet,
   HeartPulse,
@@ -63,12 +62,13 @@ function KpiCard({
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border px-5 py-4 transition hover:-translate-y-0.5 hover:shadow-md ${
+      className={`relative overflow-hidden rounded-[22px] border px-5 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.055)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_44px_rgba(15,23,42,0.09)] ${
         accent
-          ? "border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50"
-          : "border-slate-100 bg-white"
+          ? "border-orange-200/80 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_46%,#ffedd5_100%)]"
+          : "border-white bg-[linear-gradient(180deg,#ffffff_0%,#fbfcfd_100%)] ring-1 ring-slate-200/70"
       }`}
     >
+      <div className={`pointer-events-none absolute inset-x-0 top-0 h-1 ${accent ? "bg-gradient-to-r from-orange-500 to-amber-300" : "bg-gradient-to-r from-slate-200 to-transparent"}`} />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-medium uppercase tracking-widest text-slate-400">{label}</p>
@@ -79,7 +79,7 @@ function KpiCard({
         </div>
         <div
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-            accent ? "bg-orange-100 text-orange-600" : warn ? "bg-amber-50 text-amber-500" : "bg-slate-50 text-slate-400"
+            accent ? "bg-orange-500 text-white shadow-[0_12px_22px_rgba(249,115,22,0.26)]" : warn ? "bg-amber-50 text-amber-500 ring-1 ring-amber-100" : "bg-slate-50 text-slate-500 ring-1 ring-slate-200"
           }`}
         >
           <Icon className="h-4 w-4" />
@@ -111,17 +111,17 @@ function ModuleCard({
   accentColor?: "orange" | "blue" | "emerald" | "violet" | "amber" | "rose";
 }) {
   const colors: Record<string, { bg: string; text: string; ring: string; btn: string }> = {
-    orange:  { bg: "bg-orange-50",  text: "text-orange-600",  ring: "ring-orange-100",  btn: "bg-orange-600 hover:bg-orange-700" },
-    blue:    { bg: "bg-blue-50",    text: "text-blue-600",    ring: "ring-blue-100",    btn: "bg-blue-600 hover:bg-blue-700" },
-    emerald: { bg: "bg-emerald-50", text: "text-emerald-600", ring: "ring-emerald-100", btn: "bg-emerald-600 hover:bg-emerald-700" },
-    violet:  { bg: "bg-violet-50",  text: "text-violet-600",  ring: "ring-violet-100",  btn: "bg-violet-600 hover:bg-violet-700" },
-    amber:   { bg: "bg-amber-50",   text: "text-amber-600",   ring: "ring-amber-100",   btn: "bg-amber-600 hover:bg-amber-700" },
-    rose:    { bg: "bg-rose-50",    text: "text-rose-600",    ring: "ring-rose-100",    btn: "bg-rose-600 hover:bg-rose-700" },
+    orange:  { bg: "bg-orange-50",  text: "text-orange-600",  ring: "ring-orange-100",  btn: "bg-[#0B0B0B] hover:bg-[#F97316]" },
+    blue:    { bg: "bg-blue-50",    text: "text-blue-600",    ring: "ring-blue-100",    btn: "bg-[#0B0B0B] hover:bg-[#F97316]" },
+    emerald: { bg: "bg-emerald-50", text: "text-emerald-600", ring: "ring-emerald-100", btn: "bg-[#0B0B0B] hover:bg-[#F97316]" },
+    violet:  { bg: "bg-violet-50",  text: "text-violet-600",  ring: "ring-violet-100",  btn: "bg-[#0B0B0B] hover:bg-[#F97316]" },
+    amber:   { bg: "bg-amber-50",   text: "text-amber-600",   ring: "ring-amber-100",   btn: "bg-[#0B0B0B] hover:bg-[#F97316]" },
+    rose:    { bg: "bg-rose-50",    text: "text-rose-600",    ring: "ring-rose-100",    btn: "bg-[#0B0B0B] hover:bg-[#F97316]" },
   };
   const c = colors[accentColor] ?? colors.orange;
 
   return (
-    <div className="group flex flex-col rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_4px_20px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
+    <div className="group flex flex-col rounded-3xl border border-[#E2E8F0] bg-white/95 p-6 shadow-[0_18px_42px_rgba(15,23,42,0.07)] transition duration-200 hover:-translate-y-1 hover:border-[#FDBA74] hover:bg-white hover:shadow-[0_24px_58px_rgba(15,23,42,0.12)]">
       {/* Icon + title */}
       <div className="mb-4 flex items-start gap-3">
         <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${c.bg} ${c.text} ${c.ring}`}>
@@ -137,8 +137,8 @@ function ModuleCard({
       {metrics.length > 0 && (
         <div className="mb-4 grid grid-cols-3 gap-2">
           {metrics.map((m) => (
-            <div key={m.label} className="rounded-xl bg-slate-50 px-3 py-2">
-              <p className="text-[10px] uppercase tracking-wider text-slate-400">{m.label}</p>
+            <div key={m.label} className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{m.label}</p>
               <p className={`mt-0.5 text-sm font-bold ${m.ok === false ? "text-rose-500" : m.ok === true ? "text-emerald-600" : "text-slate-900"}`}>
                 {m.value}
               </p>
@@ -152,7 +152,7 @@ function ModuleCard({
 
       <Link
         href={href}
-        className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold text-white transition ${c.btn}`}
+        className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-xs font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition ${c.btn}`}
       >
         Open Module
         <ArrowRight className="h-3.5 w-3.5" />
@@ -169,7 +169,7 @@ function QuickAction({ href, label, icon: Icon }: { href: string; label: string;
   return (
     <Link
       href={href}
-      className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-medium text-slate-700 shadow-sm backdrop-blur-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+      className="flex items-center gap-2 rounded-full border border-white/60 bg-white/90 px-4 py-2 text-xs font-black text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.18)] backdrop-blur-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
     >
       <Icon className="h-3.5 w-3.5" />
       {label}
@@ -186,7 +186,7 @@ function RiskStrip({ expiringContracts, probationEndings }: { expiringContracts:
   if (!hasRisk) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3">
+    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-[linear-gradient(135deg,#FFFBEB_0%,#FFFFFF_100%)] px-5 py-3 shadow-[0_16px_36px_rgba(245,158,11,0.10)]">
       <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
       <p className="text-sm font-medium text-amber-800">Attention required:</p>
       {expiringContracts > 0 && (
@@ -210,7 +210,7 @@ function RiskStrip({ expiringContracts, probationEndings }: { expiringContracts:
 function DataUnavailableBanner({ messages }: { messages: string[] }) {
   if (messages.length === 0) return null;
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3">
+    <div className="flex items-start gap-3 rounded-2xl border border-[#E2E8F0] bg-white/90 px-5 py-3 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
       <Activity className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
       <div>
         <p className="text-xs font-medium text-slate-600">Some data sources are temporarily unavailable:</p>
@@ -235,14 +235,14 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
   const offerAcceptance = o.recruitment.acceptanceRate * 100;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] px-4 py-8 sm:px-8">
-      <div className="mx-auto max-w-screen-xl space-y-8">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.10),transparent_32%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] px-4 py-8 sm:px-8">
+      <div className="mx-auto max-w-[1480px] space-y-8">
 
         {/* ── Hero header ─────────────────────────────────────────────── */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-8 py-10 shadow-[0_20px_60px_rgba(15,23,42,0.3)]">
+        <div className="relative overflow-hidden rounded-3xl border border-[#242424] bg-[linear-gradient(135deg,#000000_0%,#0B0B0B_54%,#1a1208_100%)] px-8 py-10 shadow-[0_20px_60px_rgba(0,0,0,0.34)]">
           {/* Orange glow blobs */}
-          <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-orange-500/20 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-8 left-24 h-48 w-48 rounded-full bg-amber-400/10 blur-2xl" />
+          <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-[#F97316]/18 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-10 left-24 h-48 w-48 rounded-full bg-[#F59E0B]/10 blur-2xl" />
 
           <div className="relative z-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -259,7 +259,7 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
             </div>
 
             {/* Live indicator */}
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800/60 px-4 py-2.5 backdrop-blur">
+            <div className="flex items-center gap-2 rounded-2xl border border-[#333333] bg-[#050505]/80 px-4 py-2.5 backdrop-blur">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
@@ -288,7 +288,10 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
 
         {/* ── KPI strip ────────────────────────────────────────────────── */}
         <div>
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">Key Metrics</p>
+          <p className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-slate-700">
+            <span className="h-2 w-2 rounded-full bg-[#F97316]" />
+            Key Metrics
+          </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
             <KpiCard
               label="Total Employees"
@@ -349,7 +352,10 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
 
         {/* ── Module grid ──────────────────────────────────────────────── */}
         <div>
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">Modules</p>
+          <p className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-slate-700">
+            <span className="h-2 w-2 rounded-full bg-[#F97316]" />
+            Modules
+          </p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 
             {/* People & Organogram */}
@@ -467,7 +473,7 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
         <div className="grid gap-4 sm:grid-cols-3">
           <Link
             href="/probation"
-            className="group flex items-center justify-between rounded-2xl border border-slate-100 bg-white px-5 py-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            className="group flex items-center justify-between rounded-2xl border border-[#E2E8F0] bg-white/95 px-5 py-4 shadow-[0_16px_36px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:border-[#FDBA74] hover:bg-white hover:shadow-[0_22px_48px_rgba(15,23,42,0.10)]"
           >
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-500">
@@ -487,7 +493,7 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
 
           <Link
             href="/contracts"
-            className="group flex items-center justify-between rounded-2xl border border-slate-100 bg-white px-5 py-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            className="group flex items-center justify-between rounded-2xl border border-[#E2E8F0] bg-white/95 px-5 py-4 shadow-[0_16px_36px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:border-[#FDBA74] hover:bg-white hover:shadow-[0_22px_48px_rgba(15,23,42,0.10)]"
           >
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-500">
@@ -505,25 +511,10 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
             <ArrowRight className="h-4 w-4 text-slate-300 transition group-hover:text-orange-500" />
           </Link>
 
-          <Link
-            href="/payslips"
-            className="group flex items-center justify-between rounded-2xl border border-slate-100 bg-white px-5 py-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-500">
-                <ChartColumnBig className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Payslips Center</p>
-                <p className="text-xs text-slate-400">Distribute & manage payslips</p>
-              </div>
-            </div>
-            <ArrowRight className="h-4 w-4 text-slate-300 transition group-hover:text-orange-500" />
-          </Link>
         </div>
 
         {/* ── Footer ──────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+        <div className="flex items-center justify-between rounded-2xl border border-[#E2E8F0] bg-white/80 px-5 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <p className="text-[11px] text-slate-400">Phoenix Workforce · Admin Command Center</p>
           <p className="text-[11px] text-slate-400">Data refreshes on each page load</p>
         </div>

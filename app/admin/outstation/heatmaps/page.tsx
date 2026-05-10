@@ -1,11 +1,31 @@
 import { AppShell } from "@/components/layout/app-shell";
-import { AdminInsightChip, AdminPageHero, adminPanelClassName } from "@/components/admin/admin-design-system";
+import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { ExpenseHeatmap } from "@/components/outstation/expense-heatmap";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getOutstationHeatmapData } from "@/lib/outstation/service";
+import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
+
+const panelClassName =
+  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
+
+function HeatmapAdminShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+      />
+      <div className="relative z-10 space-y-6">{children}</div>
+    </div>
+  );
+}
 
 function egp(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -21,8 +41,8 @@ export default async function AdminOutstationHeatmapsPage() {
   const data = await getOutstationHeatmapData();
 
   return (
-    <AppShell showTopbar={false}>
-      <div className="space-y-6">
+    <AppShell navigationMode="admin">
+      <HeatmapAdminShell>
         <AdminPageHero
           badges={(
             <div className="flex flex-wrap gap-2 text-xs">
@@ -56,14 +76,14 @@ export default async function AdminOutstationHeatmapsPage() {
             }))}
             title="Expenses by City"
           />
-              <SummaryTable
-                rows={data.heatmapRows.byArea.map((row) => ({
-                  label: row.label,
-                  secondary: `${row.trips} trips`,
-                  value: egp(row.totalVariance),
-                }))}
-                title="Variance by Area"
-              />
+          <SummaryTable
+            rows={data.heatmapRows.byArea.map((row) => ({
+              label: row.label,
+              secondary: `${row.trips} trips`,
+              value: egp(row.totalVariance),
+            }))}
+            title="Variance by Area"
+          />
           <SummaryTable
             rows={data.heatmapRows.byLine.map((row) => ({
               label: row.label,
@@ -81,7 +101,7 @@ export default async function AdminOutstationHeatmapsPage() {
             title="High-Risk by Location"
           />
         </div>
-      </div>
+      </HeatmapAdminShell>
     </AppShell>
   );
 }
@@ -94,7 +114,7 @@ function MetricBlock({
   value: string;
 }) {
   return (
-    <div className={`${adminPanelClassName} rounded-[18px] p-4`}>
+    <div className={`${panelClassName} p-4 transition-transform duration-200 hover:-translate-y-0.5`}>
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
       <p className="mt-2 truncate text-2xl font-black text-[#0F172A]">{value}</p>
     </div>
@@ -109,13 +129,13 @@ function SummaryTable({
   title: string;
 }) {
   return (
-    <section className={`${adminPanelClassName} p-0`}>
-      <div className="border-b border-[#E2E8F0] px-5 py-4">
+    <section className={`${panelClassName} overflow-hidden p-0`}>
+      <div className="border-b border-[#E2E8F0] bg-[linear-gradient(135deg,#F8FAFC_0%,#FFF7ED_100%)] px-5 py-4">
         <h2 className="text-lg font-black tracking-[-0.03em] text-[#0F172A]">{title}</h2>
       </div>
       <div className="space-y-2 p-5">
         {rows.slice(0, 8).map((row) => (
-          <div className="flex items-center justify-between gap-4 rounded-[12px] border border-[#E2E8F0] bg-[#F8FAFC] p-4" key={`${title}-${row.label}`}>
+          <div className="flex items-center justify-between gap-4 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC]/85 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]" key={`${title}-${row.label}`}>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-[#0F172A]">{row.label}</p>
               <p className="mt-1 text-xs text-[#64748B]">{row.secondary}</p>

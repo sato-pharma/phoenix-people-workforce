@@ -35,6 +35,7 @@ export type SalaryRecord = {
   fullName: string;
   grossSalary: number;
   hireDate: string | null;
+  nameAr: string | null;
   id: string;
   incentive: number;
   jobTitle: string;
@@ -45,6 +46,7 @@ export type SalaryRecord = {
   otherAdditions: number;
   otherDeductions: number;
   overtime: number;
+  payrollComment: string | null;
   secondPart: number;
   socialInsurance: number;
   totalAdditions: number;

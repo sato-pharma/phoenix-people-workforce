@@ -6,6 +6,38 @@ import { useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 
+type GoogleMarkerLike = {
+  map?: unknown;
+  setMap?: (map: unknown) => void;
+};
+
+type GoogleMapsNamespace = {
+  importLibrary?: (name: string) => Promise<Record<string, unknown>>;
+  LatLngBounds?: new () => {
+    extend: (point: { lat: number; lng: number }) => void;
+  };
+  Map?: new (
+    element: HTMLElement,
+    options: Record<string, unknown>,
+  ) => {
+    fitBounds: (
+      bounds: {
+        extend: (point: { lat: number; lng: number }) => void;
+      },
+      padding?: number,
+    ) => void;
+  };
+  marker?: {
+    AdvancedMarkerElement?: new (options: Record<string, unknown>) => GoogleMarkerLike;
+  };
+  Marker?: new (options: Record<string, unknown>) => GoogleMarkerLike;
+  Polyline?: new (options: Record<string, unknown>) => GoogleMarkerLike;
+};
+
+function googleMapsNamespace() {
+  return (window as { google?: { maps?: GoogleMapsNamespace } }).google?.maps;
+}
+
 function decodePolyline(encoded: string): Array<{ lat: number; lng: number }> {
   const points: Array<{ lat: number; lng: number }> = [];
   let index = 0;
@@ -65,16 +97,18 @@ export function OutstationReviewMap({
   const browserKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY ?? "";
   const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "";
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const markersRef = useRef<any[]>([]);
-  const polylineRef = useRef<any>(null);
+  const markersRef = useRef<GoogleMarkerLike[]>([]);
+  const polylineRef = useRef<GoogleMarkerLike | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shouldLoadScript, setShouldLoadScript] = useState(false);
 
   useEffect(() => {
-    if ((window as { google?: { maps?: any } }).google?.maps) {
-      setReady(true);
-      setShouldLoadScript(false);
+    if (googleMapsNamespace()) {
+      queueMicrotask(() => {
+        setReady(true);
+        setShouldLoadScript(false);
+      });
       return;
     }
 
@@ -85,11 +119,11 @@ export function OutstationReviewMap({
     if (existingGoogleMapsScript) {
       const handleExistingLoad = () => setReady(true);
       existingGoogleMapsScript.addEventListener("load", handleExistingLoad, { once: true });
-      setShouldLoadScript(false);
+      queueMicrotask(() => setShouldLoadScript(false));
       return () => existingGoogleMapsScript.removeEventListener("load", handleExistingLoad);
     }
 
-    setShouldLoadScript(true);
+    queueMicrotask(() => setShouldLoadScript(true));
   }, []);
 
   useEffect(() => {
@@ -97,7 +131,7 @@ export function OutstationReviewMap({
       return;
     }
 
-    const googleMaps = (window as { google?: { maps?: any } }).google?.maps;
+    const googleMaps = googleMapsNamespace();
     const mapElement = mapRef.current;
 
     if (
@@ -117,19 +151,19 @@ export function OutstationReviewMap({
 
     const run = async () => {
       try {
-        const mapsLibrary: any = googleMaps.importLibrary
+        const mapsLibrary = googleMaps.importLibrary
           ? await googleMaps.importLibrary("maps")
           : { Map: googleMaps.Map };
-        const markerLibrary: any = googleMaps.importLibrary
+        const markerLibrary = googleMaps.importLibrary
           ? await googleMaps.importLibrary("marker")
           : { Marker: googleMaps.Marker };
         if (cancelled) return;
 
-        const MapCtor = mapsLibrary?.Map;
+        const MapCtor = mapsLibrary?.Map as GoogleMapsNamespace["Map"];
         const useAdvancedMarkers = Boolean(mapId.trim().length > 0);
         const MarkerCtor = useAdvancedMarkers
-          ? markerLibrary?.AdvancedMarkerElement ?? googleMaps.marker?.AdvancedMarkerElement
-          : markerLibrary?.Marker ?? googleMaps.Marker;
+          ? markerLibrary?.AdvancedMarkerElement as GoogleMapsNamespace["Marker"] ?? googleMaps.marker?.AdvancedMarkerElement
+          : markerLibrary?.Marker as GoogleMapsNamespace["Marker"] ?? googleMaps.Marker;
         const LatLngBoundsCtor = googleMaps.LatLngBounds;
         const PolylineCtor = googleMaps.Polyline;
 
@@ -215,7 +249,7 @@ export function OutstationReviewMap({
 
   if (!browserKey) {
     return (
-      <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+      <Card className="rounded-[28px] border border-[#D8E0EA] bg-white/94 p-6 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur">
         <p className="text-sm font-semibold text-slate-900">Map unavailable</p>
         <p className="mt-2 text-sm text-slate-500">
           NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY is missing from the environment.
@@ -225,7 +259,7 @@ export function OutstationReviewMap({
   }
 
   return (
-    <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+    <Card className="rounded-[28px] border border-[#D8E0EA] bg-white/94 p-6 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur">
       {shouldLoadScript ? (
         <Script
           id="phoenix-google-maps-js"
@@ -248,12 +282,12 @@ export function OutstationReviewMap({
 
       {coordinatesReady(request) ? (
         <div className="space-y-3">
-          <div className="h-[420px] rounded-3xl border border-slate-200 bg-slate-50" ref={mapRef} />
+          <div className="h-[420px] rounded-[28px] border border-[#E2E8F0] bg-[#F8FAFC] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]" ref={mapRef} />
           {!ready ? <p className="text-sm text-slate-500">Loading Google Maps...</p> : null}
           {error ? <p className="text-sm text-amber-700">{error}</p> : null}
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+        <div className="rounded-[24px] border border-[#E2E8F0] bg-[#F8FAFC] p-6 text-sm text-slate-600">
           Select a request with both residence and captured coordinates to review the route on the map.
         </div>
       )}

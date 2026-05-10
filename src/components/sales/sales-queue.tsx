@@ -18,9 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AdminCallout,
   AdminInsightChip,
-  AdminPageHero,
   AdminTableShell,
-  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -78,8 +76,9 @@ type LinkageSummary = {
 };
 
 const fallbackLines = ["CNS"];
-const panelClassName = adminPanelClassName;
-const adminTableHeaderClassName = "px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]";
+const panelClassName =
+  "rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
+const adminTableHeaderClassName = "px-5 py-4 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]";
 
 function StatusBanner({
   message,
@@ -324,14 +323,15 @@ export function SalesQueue({ initialData, initialError }: Props) {
 
   if (initialError) {
     return (
-      <div className="space-y-5">
-        <AdminPageHero
-          actions={<Link href="/sales"><Button>Sales Dashboard</Button></Link>}
-          description="The sales queue could not be loaded."
-          eyebrow="Sales queue"
-          icon={<AlertTriangle className="h-3.5 w-3.5" />}
-          title="Unable to open sales queue"
-        />
+      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
+        <div className="mb-5 flex items-center justify-between rounded-3xl border border-[#D8E0EA] bg-white/95 p-7 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">Sales queue</p>
+            <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Unable to open sales queue</h1>
+            <p className="mt-1 text-sm text-slate-500">The sales queue could not be loaded.</p>
+          </div>
+          <Link href="/sales"><Button>Sales Dashboard</Button></Link>
+        </div>
         <AdminCallout tone="danger">
           <AlertTriangle className="h-4 w-4" />
           <p className="text-sm">{initialError}</p>
@@ -341,7 +341,8 @@ export function SalesQueue({ initialData, initialError }: Props) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
+      <div className="space-y-7">
       <input
         accept=".xlsx,.xls"
         className="hidden"
@@ -350,11 +351,30 @@ export function SalesQueue({ initialData, initialError }: Props) {
         type="file"
       />
 
-      <AdminPageHero
-        actions={(
+      <div className="relative overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 p-7 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-orange-200/35 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 left-12 h-28 w-28 rounded-full bg-slate-200/45 blur-2xl" />
+        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">Sales queue</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0B0B0B] text-orange-400 shadow-[0_14px_30px_rgba(15,23,42,0.22)]">
+                <FileSpreadsheet className="h-5 w-5" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-black tracking-tight text-slate-950">Monthly Closing Sheets</h1>
+                <p className="mt-1 max-w-3xl text-sm text-slate-500">
+                  Validate monthly closing data, fix linkage issues, and advance a sheet into reporting workflow.
+                </p>
+              </div>
+            </div>
+          </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <Link href="/sales">
-              <Button className="gap-2">
+              <Button className="gap-2 rounded-xl bg-[#0B0B0B] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-[#F97316]">
                 <BarChart3 className="h-4 w-4" />
                 Sales Dashboard
               </Button>
@@ -368,31 +388,27 @@ export function SalesQueue({ initialData, initialError }: Props) {
               Upload Sheet
             </Button>
           </div>
-        )}
-        badges={(
+        </div>
+        <div className="relative mt-5 flex flex-wrap gap-2 border-t border-[#E2E8F0] pt-4">
           <div className="flex flex-wrap gap-2">
             <AdminInsightChip>Active sheets: {formatNumber(reportSummary.activeCount)}</AdminInsightChip>
             <AdminInsightChip>Approved sales: {formatCurrency(reportSummary.approvedSales)}</AdminInsightChip>
             <AdminInsightChip>Latest period: {reportSummary.latestPeriod}</AdminInsightChip>
           </div>
-        )}
-        description="Validate monthly closing data, fix linkage issues, and advance a sheet into reporting workflow."
-        eyebrow="Sales queue"
-        icon={<FileSpreadsheet className="h-3.5 w-3.5" />}
-        title="Monthly closing sheets"
-      />
+        </div>
+      </div>
 
       <AdminTableShell
         description="Choose the sales line, attach the closing sheet, then validate the totals before approval."
         title="Upload monthly sheet"
       >
-        <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_400px]">
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
               <label className="space-y-1.5">
                 <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Line</span>
                 <select
-                  className="h-11 w-full rounded-lg border border-[#D8E0EA] bg-white px-3.5 text-sm font-medium text-[#0F172A] outline-none transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
                   onChange={(event) => setLine(event.target.value)}
                   value={line}
                 >
@@ -404,12 +420,12 @@ export function SalesQueue({ initialData, initialError }: Props) {
               <div className="space-y-2">
                 <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Workbook</span>
                 <button
-                  className="flex min-h-[112px] w-full items-center justify-between gap-4 rounded-xl border border-dashed border-[#CBD5E1] bg-white px-4 py-4 text-left text-sm transition hover:border-[#F97316] hover:bg-[#FFF7ED]/40"
+                  className="flex min-h-[140px] w-full items-center justify-between gap-4 rounded-[24px] border border-dashed border-[#CBD5E1] bg-white px-4 py-5 text-left text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition hover:border-[#F97316] hover:bg-[#FFF7ED]/50"
                   onClick={() => fileInputRef.current?.click()}
                   type="button"
                 >
                   <span className="flex min-w-0 items-center gap-2">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#FED7AA] bg-[#FFF7ED] text-[#F97316]">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[#FED7AA] bg-[#FFF7ED] text-[#F97316] shadow-[0_12px_24px_rgba(249,115,22,0.12)]">
                       <FileSpreadsheet className="h-5 w-5" />
                     </span>
                     <span className="min-w-0">
@@ -435,7 +451,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <Button className="gap-2" disabled={!canUpload} onClick={handleUpload}>
+              <Button className="gap-2 rounded-xl bg-[#0B0B0B] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-[#F97316]" disabled={!canUpload} onClick={handleUpload}>
                 {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
                 Validate and upload
               </Button>
@@ -447,7 +463,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
             </div>
           </div>
 
-          <div className="border-t border-[#E2E8F0] pt-2 lg:border-l lg:border-t-0 lg:pl-5">
+          <div className="rounded-[24px] border border-[#E2E8F0] bg-[#FCFDFE] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Validation output</p>
             {!uploadResult && (
               <AdminCallout tone="neutral">
@@ -671,19 +687,19 @@ export function SalesQueue({ initialData, initialError }: Props) {
             </div>
           </AdminCallout>
         ) : (
-          <div className="divide-y divide-[#E2E8F0] rounded-[18px] border border-[#E2E8F0] overflow-hidden">
+          <div className="divide-y divide-[#E2E8F0] overflow-hidden rounded-3xl border border-[#E2E8F0] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.06)]">
             {batches.map((batch) => {
               const isBusy = actionLoading?.startsWith(`${batch.id}:`);
               return (
-                <div className="bg-white px-4 py-4 sm:px-5" key={batch.id}>
+                <div className="bg-white px-5 py-5 transition-colors hover:bg-orange-50/35" key={batch.id}>
                   <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                     <div className="flex min-w-0 items-start gap-4">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#FFF7ED] text-[#F97316]">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#FFF7ED] text-[#F97316] ring-8 ring-orange-100/70">
                         <FileText className="h-5 w-5" />
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate font-semibold text-text">{batch.fileName}</p>
-                        <p className="text-sm text-text-secondary">{batch.line} - {batch.period}</p>
+                        <p className="truncate text-sm font-black text-[#0F172A]">{batch.fileName}</p>
+                        <p className="text-sm font-medium text-[#64748B]">{batch.line} - {batch.period}</p>
                         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                           <span className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-text-secondary">
                             {formatNumber(Number(batch.totalRecords ?? 0))} rows
@@ -809,6 +825,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
         )}
         </div>
       </AdminTableShell>
+      </div>
     </div>
   );
 }

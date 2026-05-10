@@ -1,9 +1,10 @@
 ﻿"use client";
 
 import { ReceiptText, Search, ShieldAlert } from "lucide-react";
+import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 
-import { AdminCallout, AdminPageHero, AdminTableShell, adminPanelClassName } from "@/components/admin/admin-design-system";
+import { AdminCallout, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { ApprovalRecommendationBadge } from "@/components/outstation/approval-recommendation-badge";
 import { FraudFlagsPanel } from "@/components/outstation/fraud-flags-panel";
 import { OutstationReviewMap } from "@/components/outstation/outstation-review-map";
@@ -41,8 +42,25 @@ function recommendationTone(value: string) {
   return "text-[#C2410C]";
 }
 
-const panelClassName = adminPanelClassName;
+const panelClassName =
+  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 const adminTableHeaderClassName = "px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+
+function OutstationAdminShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+      />
+      <div className="relative z-10 space-y-6">{children}</div>
+    </div>
+  );
+}
 
 function Metric({
   label,
@@ -52,7 +70,7 @@ function Metric({
   value: string;
 }) {
   return (
-    <Card className={`${panelClassName} p-4`}>
+    <Card className={`${panelClassName} p-4 transition-transform duration-200 hover:-translate-y-0.5`}>
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
       <p className="mt-2 truncate text-lg font-black text-[#0F172A]">{value}</p>
     </Card>
@@ -67,7 +85,7 @@ function Info({
   value: string;
 }) {
   return (
-    <div className="rounded-[14px] border border-[#E2E8F0] bg-[#F8FAFC] p-4">
+    <div className="rounded-[18px] border border-[#E2E8F0] bg-[#F8FAFC]/85 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
       <p className="mt-2 text-sm font-semibold text-[#0F172A]">{value}</p>
     </div>
@@ -136,7 +154,7 @@ export function OutstationRequestsAdmin({
 
   if (requests.length === 0) {
     return (
-      <div className="space-y-5">
+      <OutstationAdminShell>
         <AdminPageHero
           description="No residence-validated outstation request data is currently available."
           eyebrow="Outstation requests"
@@ -147,11 +165,12 @@ export function OutstationRequestsAdmin({
           <ShieldAlert className="mt-0.5 h-5 w-5 text-[#EA580C]" />
           <p className="font-semibold text-[#334155]">No requests were returned from the data source.</p>
         </AdminCallout>
-      </div>
+      </OutstationAdminShell>
     );
   }
 
   return (
+    <OutstationAdminShell>
     <div className="space-y-6">
       <AdminPageHero
         description="Review captured distance, eligibility, expected payout, claimed amount, and route validation against the registered residence profile for each request."
@@ -160,10 +179,10 @@ export function OutstationRequestsAdmin({
         title="Residence-validated expense requests"
         badges={(
           <div className="flex flex-wrap gap-2 text-xs">
-            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">Requests: {filtered.length}</span>
-            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">Expected: {formatCurrency(totals.expected)}</span>
-            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">Claimed: {formatCurrency(totals.claimed)}</span>
-            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">High Risk: {totals.highRisk}</span>
+            <span className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 font-semibold text-[#EA580C]">Requests: {filtered.length}</span>
+            <span className="rounded-full border border-[#DDE6F1] bg-white/85 px-3 py-2 font-semibold text-[#64748B]">Expected: {formatCurrency(totals.expected)}</span>
+            <span className="rounded-full border border-[#DDE6F1] bg-white/85 px-3 py-2 font-semibold text-[#64748B]">Claimed: {formatCurrency(totals.claimed)}</span>
+            <span className="rounded-full border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 font-semibold text-[#B91C1C]">High Risk: {totals.highRisk}</span>
           </div>
         )}
       />
@@ -178,7 +197,7 @@ export function OutstationRequestsAdmin({
       <AdminTableShell
         action={hasActiveFilters ? (
           <button
-            className="inline-flex rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B] transition hover:border-[#F97316] hover:text-[#EA580C]"
+            className="inline-flex rounded-2xl border border-[#E2E8F0] bg-white px-3 py-2 text-xs font-semibold text-[#64748B] shadow-sm transition hover:border-[#F97316] hover:text-[#EA580C]"
             onClick={clearFilters}
             type="button"
           >
@@ -194,7 +213,7 @@ export function OutstationRequestsAdmin({
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
               <Input
-                className="pl-9"
+                className="h-11 rounded-2xl border-[#DDE6F1] bg-white/95 pl-9 shadow-sm"
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Employee, HR ID, area, city"
                 value={search}
@@ -205,7 +224,7 @@ export function OutstationRequestsAdmin({
           <label className="block">
             <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Eligibility</span>
             <select
-              className="h-10 w-full rounded-xl border border-[#DDE6F1] bg-white px-3 text-sm font-semibold text-[#0F172A] focus:outline-none"
+              className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
               onChange={(event) => setEligibility(event.target.value)}
               value={eligibility}
             >
@@ -219,7 +238,7 @@ export function OutstationRequestsAdmin({
           <label className="block">
             <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Role</span>
             <select
-              className="h-10 w-full rounded-xl border border-[#DDE6F1] bg-white px-3 text-sm font-semibold text-[#0F172A] focus:outline-none"
+              className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
               onChange={(event) => setRole(event.target.value)}
               value={role}
             >
@@ -235,11 +254,17 @@ export function OutstationRequestsAdmin({
       </AdminTableShell>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.9fr)]">
-        <Card className={`${panelClassName} p-0`}>
-          <div className="space-y-1.5 border-b border-[#E2E8F0] px-5 py-4">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EA580C]">Request queue</p>
-            <h2 className="text-lg font-black tracking-[-0.03em] text-[#0F172A]">Submitted outstation requests</h2>
-            <p className="text-sm text-[#64748B]">Click any row to inspect route metrics and fraud validation.</p>
+        <Card className={`${panelClassName} overflow-hidden p-0`}>
+          <div className="relative overflow-hidden border-b border-[#1F2937] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_34%),linear-gradient(135deg,#080B10_0%,#111827_58%,#24150D_100%)] px-5 py-5 text-white">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#F97316]/20 blur-3xl"
+            />
+            <div className="relative z-10 space-y-1.5">
+              <p className="inline-flex rounded-full border border-[#F97316]/35 bg-[#F97316]/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-[#FDBA74]">Request queue</p>
+              <h2 className="text-xl font-black tracking-[-0.03em] text-white">Submitted outstation requests</h2>
+              <p className="text-sm text-[#CBD5E1]">Click any row to inspect route metrics and fraud validation.</p>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -261,7 +286,7 @@ export function OutstationRequestsAdmin({
                   const selected = request.id === selectedRequest?.id;
                   return (
                     <tr
-                      className={`cursor-pointer ${selected ? "bg-[#FFF7ED]" : "transition-colors hover:bg-[#F8FAFC]/80"}`}
+                      className={`cursor-pointer ${selected ? "bg-[#FFF7ED] ring-1 ring-inset ring-[#FDBA74]/60" : "transition-colors hover:bg-[#FFF7ED]/65"}`}
                       key={request.id}
                       onClick={() => setSelectedId(request.id)}
                     >
@@ -305,7 +330,7 @@ export function OutstationRequestsAdmin({
         <div className="space-y-6">
           <Card className={`${panelClassName} p-5`}>
             <div className="mb-4 flex items-start gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FFF7ED] text-[#EA580C]">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FFF7ED] text-[#EA580C] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
                 <ReceiptText className="h-5 w-5" />
               </span>
               <div>
@@ -352,7 +377,7 @@ export function OutstationRequestsAdmin({
 
           <Card className={`${panelClassName} p-5`}>
             <div className="flex items-start gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FFF7ED] text-[#EA580C]">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FFF7ED] text-[#EA580C] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
                 <ShieldAlert className="h-5 w-5" />
               </span>
               <div>
@@ -368,6 +393,7 @@ export function OutstationRequestsAdmin({
         </div>
       </div>
     </div>
+    </OutstationAdminShell>
   );
 }
 

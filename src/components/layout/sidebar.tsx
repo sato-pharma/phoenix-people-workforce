@@ -2,6 +2,7 @@
 
 import {
   BriefcaseBusiness,
+  BellRing,
   CalendarClock,
   CalendarDays,
   ChartNoAxesColumnIncreasing,
@@ -12,6 +13,7 @@ import {
   Hourglass,
   IdCard,
   LayoutDashboard,
+  Mail,
   MapPinned,
   Network,
   Database,
@@ -67,8 +69,9 @@ function getAdminSections(permissionLookup: PermissionLookup): SidebarSection[] 
         { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }] },
         { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
         { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }] },
+        { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "admin" }] },
+        { href: "/admin/email-notifications", icon: BellRing, label: "Email Governance", permissions: [{ resource: "admin" }] },
         { href: "/imports/employees", icon: FileUp, label: "Bulk Import", permissions: [{ resource: "imports" }] },
-        { href: "/imports/bricks", icon: Network, label: "Brick Reference", permissions: [{ resource: "imports" }] },
       ],
       label: "Core Admin",
     },
@@ -82,6 +85,7 @@ function getAdminSections(permissionLookup: PermissionLookup): SidebarSection[] 
     {
       items: [
         { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }] },
+        { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }] },
         { href: "/payroll/expenses", icon: FileSpreadsheet, label: "Expenses", permissions: [{ resource: "expenses" }] },
         { href: "/payroll/expenses/dashboard", icon: ChartColumnBig, label: "Expenses Dashboard", permissions: [{ resource: "expenses" }] },
         { href: "/admin/outstation/requests", icon: MapPinned, label: "Outstation Requests", permissions: [{ resource: "outstation" }] },
@@ -90,10 +94,6 @@ function getAdminSections(permissionLookup: PermissionLookup): SidebarSection[] 
         { href: "/admin/geo-intelligence", icon: MapPinned, label: "Geo Intelligence", permissions: [{ resource: "geo_intelligence" }] },
       ],
       label: "Payroll & Expenses",
-    },
-    {
-      items: [{ href: "/payslips", icon: IdCard, label: "Payslips Center", permissions: [{ resource: "payslips" }] }],
-      label: "Documents",
     },
     {
       items: [
@@ -165,7 +165,16 @@ function isActivePath(pathname: string, href: string, activeTab: string | null) 
   if (baseHref === "/payroll") return pathname === "/payroll";
   if (baseHref === "/employee-portals/payroll") return pathname === "/employee-portals/payroll";
   if (baseHref === "/payroll/expenses") return pathname === "/payroll/expenses";
-  return pathname.startsWith(baseHref);
+  return pathname === baseHref || pathname.startsWith(`${baseHref}/`);
+}
+
+function getActiveHref(pathname: string, sections: SidebarSection[], activeTab: string | null) {
+  const matches = sections
+    .flatMap((section) => section.items)
+    .filter((item) => isActivePath(pathname, item.href, activeTab))
+    .sort((left, right) => right.href.split("?")[0].length - left.href.split("?")[0].length);
+
+  return matches[0]?.href ?? null;
 }
 
 function SidebarNav({
@@ -180,12 +189,13 @@ function SidebarNav({
   const sections = getSections(mode, permissionLookup);
   const pathname = usePathname();
   const [activeTab, setActiveTab] = useState<string | null>(pathname === "/payroll" ? "governance" : null);
+  const activeHref = getActiveHref(pathname, sections, activeTab);
 
   return (
     <>
-      <nav className="flex-1 overflow-auto px-3 py-5 text-[#000000]">
+      <nav className="phoenix-admin-sidebar-scroll flex-1 overflow-auto px-3 py-5 text-[#000000]">
         {sections.map((section, sectionIndex) => {
-          const hasActive = section.items.some((item) => isActivePath(pathname, item.href, activeTab));
+          const hasActive = section.items.some((item) => item.href === activeHref);
           const adminSection = mode === "admin";
 
           return (
@@ -219,7 +229,7 @@ function SidebarNav({
                 )}
               >
                 {section.items.map((item) => {
-                  const active = isActivePath(pathname, item.href, activeTab);
+                  const active = item.href === activeHref;
                   return (
                     <Link
                       className={cn(
@@ -234,6 +244,7 @@ function SidebarNav({
                       )}
                       href={item.href}
                       key={item.label}
+                      prefetch={false}
                       onClick={() => {
                         if (item.href.includes("tab=generate")) setActiveTab("generate");
                         else if (item.href.includes("tab=governance")) setActiveTab("governance");
@@ -288,11 +299,29 @@ function SidebarLogo({
 }) {
   const homePath = getHomePath(mode);
 
+  if (mode === "admin") {
+    return (
+      <Link
+        className="mx-2 mt-2 block overflow-hidden rounded-[22px] border border-[#333333] bg-[#050505] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_30px_rgba(0,0,0,0.28)] transition hover:border-[#F97316]/60"
+        href={homePath}
+        onClick={onNavigate}
+      >
+        <Image
+          alt="Phoenix Admin Intelligence"
+          className="h-[82px] w-full object-cover"
+          height={82}
+          priority
+          src="/brand/phoenix-admin-intelligence-badge.png"
+          width={260}
+        />
+      </Link>
+    );
+  }
+
   return (
     <Link
       className={cn(
         "mx-3 mt-3 flex items-center gap-3 rounded-[22px] px-4 py-4 transition",
-        mode === "admin" && "border border-[#333333] bg-[linear-gradient(180deg,#1a1a1a_0%,#000000_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
       )}
       href={homePath}
       onClick={onNavigate}
@@ -305,11 +334,11 @@ function SidebarLogo({
         width={44}
       />
       <div className="min-w-0">
-        <p className={cn("whitespace-nowrap text-[15px] font-black tracking-[0.26em] text-[#0F172A]", mode === "admin" && "text-white")}>
+        <p className="whitespace-nowrap text-[15px] font-black tracking-[0.26em] text-[#0F172A]">
           PHOENI<span className="text-[#F97316]">X</span>
         </p>
-        <p className={cn("mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.22em] text-[#64748B]", mode === "admin" && "text-[#94A3B8]")}>
-          {mode === "admin" ? "Admin Intelligence" : "Workforce Portal"}
+        <p className="mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.22em] text-[#64748B]">
+          Workforce Portal
         </p>
       </div>
     </Link>

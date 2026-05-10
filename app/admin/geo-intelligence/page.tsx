@@ -1,6 +1,8 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { GeoIntelligenceDashboard } from "@/components/geo/geo-intelligence-dashboard";
-import { assertPermission } from "@/lib/auth/permissions";
+import { redirect } from "next/navigation";
+
+import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getGeoDashboardData } from "@/lib/geo-intelligence/service";
 
@@ -10,7 +12,9 @@ export default async function GeoIntelligencePage(
   props: PageProps<"/admin/geo-intelligence">,
 ) {
   const access = await resolveAccessContextFromPage();
-  await assertPermission(access, "geo_intelligence", "read");
+  if (!await canAccess(access, "geo_intelligence", "read")) {
+    redirect("/employee-portals");
+  }
   const searchParams = await props.searchParams;
   const data = await getGeoDashboardData(access, {
     area: typeof searchParams.area === "string" ? searchParams.area : null,
@@ -22,7 +26,7 @@ export default async function GeoIntelligencePage(
   });
 
   return (
-    <AppShell showTopbar={false}>
+    <AppShell navigationMode="admin">
       <GeoIntelligenceDashboard data={data} />
     </AppShell>
   );

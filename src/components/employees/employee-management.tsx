@@ -25,7 +25,6 @@ import {
   AdminSectionHeader,
   AdminStatCard,
   AdminTableShell,
-  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -125,9 +124,26 @@ const emptyResignationForm: ResignationFormState = {
   workflowNotes: "",
 };
 
-const panelClassName = adminPanelClassName;
+const panelClassName =
+  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 const selectClassName =
-  "h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+  "h-11 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-sm text-text shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+
+function EmployeePageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+      />
+      <div className="relative z-10 space-y-6">{children}</div>
+    </div>
+  );
+}
 
 function emptyText(value: string | number | null | undefined) {
   return value === null || value === undefined || value === "" ? "-" : String(value);
@@ -216,7 +232,7 @@ function TextField({
         {label}
       </span>
       <Input
-        className="bg-white"
+        className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 shadow-sm"
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         type={type}
@@ -622,18 +638,19 @@ export function EmployeeManagement({
   }
 
   return (
+    <EmployeePageShell>
     <div className="space-y-6">
       <AdminPageHero
         actions={
           <div className="grid w-full grid-cols-1 gap-2 sm:min-w-[560px] sm:grid-cols-2 xl:grid-cols-1">
             <a
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#D7E0EA] bg-white px-3 text-xs font-semibold text-[#0F172A] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-xs font-semibold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
               href="/api/employees/template"
             >
               <Download className="h-3.5 w-3.5 text-[#F97316]" />
               Download Template
             </a>
-            <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#D7E0EA] bg-white px-3 text-xs font-semibold text-[#0F172A] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]">
+            <label className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-xs font-semibold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]">
               {isImportingTemplate ? (
                 <LoadingSpinner />
               ) : (
@@ -649,7 +666,7 @@ export function EmployeeManagement({
               />
             </label>
             <Button
-              className="h-10 rounded-xl px-3 text-xs"
+              className="h-11 rounded-2xl px-3 text-xs shadow-sm"
               disabled={isLoading}
               onClick={() => void loadEmployees()}
               variant="secondary"
@@ -657,7 +674,7 @@ export function EmployeeManagement({
               {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-3.5 w-3.5" />}
               Refresh
             </Button>
-            <Button className="h-10 rounded-xl px-3 text-xs" onClick={startCreate}>
+            <Button className="h-11 rounded-2xl px-3 text-xs shadow-[0_14px_30px_rgba(249,115,22,0.22)]" onClick={startCreate}>
               <UserPlus className="mr-1 h-3.5 w-3.5" />
               Add Employee
             </Button>
@@ -728,12 +745,12 @@ export function EmployeeManagement({
             description={`Showing ${filteredEmployees.length} of ${employees.length} employees.`}
             title="Employee Directory"
           >
-            <div className="grid gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] p-4 xl:grid-cols-[minmax(0,1.5fr)_repeat(7,minmax(0,1fr))_auto]">
+            <div className="grid gap-3 border-b border-[#E2E8F0] bg-[linear-gradient(135deg,#F8FAFC_0%,#FFF7ED_100%)] p-4 xl:grid-cols-[minmax(0,1.5fr)_repeat(7,minmax(0,1fr))_auto]">
               <label className="relative">
                 <span className="sr-only">Search employees</span>
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
                 <Input
-                  className="h-10 rounded-2xl border-[#D7E0EA] bg-white pl-9"
+                  className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 pl-9 shadow-sm"
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search name, HR_ID, email, manager..."
                   value={query}
@@ -789,7 +806,7 @@ export function EmployeeManagement({
                 value={salaryPaymentModeFilter}
               />
               <Button
-                className="gap-2 whitespace-nowrap"
+                className="h-11 gap-2 whitespace-nowrap rounded-2xl shadow-sm"
                 disabled={!hasActiveFilters}
                 onClick={clearFilters}
                 variant="secondary"
@@ -828,7 +845,7 @@ export function EmployeeManagement({
                   ) : (
                     filteredEmployees.map((employee, index) => (
                       <tr
-                        className="transition-colors hover:bg-[#F8FAFC]"
+                        className="transition-colors hover:bg-[#FFF7ED]/65"
                         key={employeeRowKey(employee, index)}
                       >
                         <td className="px-4 py-4">
@@ -928,7 +945,7 @@ export function EmployeeManagement({
       ) : null}
 
       {isFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-6 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0F172A]/60 px-4 py-6 backdrop-blur-md">
           <Card className={`${panelClassName} w-full max-w-5xl overflow-hidden`}>
             <AdminSectionHeader
               action={
@@ -1148,11 +1165,11 @@ export function EmployeeManagement({
               />
             </div>
 
-            <div className="mx-5 rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+            <div className="mx-5 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
               Residence address is geocoded through Google Maps on save, so Phoenix Workforce can store the latitude and longitude automatically for distance-based expense validation.
             </div>
 
-            <div className="mx-5 rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+            <div className="mx-5 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
               One Part employees receive net salary on day 1 and any approved
               previous-month expenses on day 10. Two Parts employees receive
               70% of Adjusted Net on day 1 (Basic Salary), where Adjusted Net =
@@ -1178,7 +1195,7 @@ export function EmployeeManagement({
         </div>
       )}
       {isResignationOpen && resigningEmployee ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-6 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0F172A]/60 px-4 py-6 backdrop-blur-md">
           <Card className={`${panelClassName} w-full max-w-3xl overflow-hidden`}>
             <AdminSectionHeader
               action={
@@ -1196,7 +1213,7 @@ export function EmployeeManagement({
 
             <div className="grid gap-4 p-5 md:grid-cols-2">
               {resignationError ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 md:col-span-2">
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 md:col-span-2">
                   <div className="flex gap-3">
                     <AlertCircle className="mt-0.5 h-5 w-5 text-danger" />
                     <div>
@@ -1206,7 +1223,7 @@ export function EmployeeManagement({
                   </div>
                 </div>
               ) : null}
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 md:col-span-2">
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 md:col-span-2">
                 <p className="font-semibold text-rose-900">{resigningEmployee.fullName}</p>
                 <p className="mt-1 text-sm text-rose-800">
                   {resigningEmployee.hrId} · {emptyText(resigningEmployee.positionTitle ?? resigningEmployee.jobTitle)} · {emptyText(resigningEmployee.areaName)}
@@ -1242,7 +1259,7 @@ export function EmployeeManagement({
                   workflow_notes
                 </span>
                 <textarea
-                  className="min-h-28 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  className="min-h-28 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 py-2 text-sm text-text shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   onChange={(event) => updateResignationForm("workflowNotes", event.target.value)}
                   placeholder="Optional workflow note for the resignation report."
                   value={resignationForm.workflowNotes}
@@ -1255,7 +1272,7 @@ export function EmployeeManagement({
                 Cancel
               </Button>
               <Button
-                className="gap-2 bg-[#B91C1C] text-white hover:bg-[#B91C1C]/90"
+                className="gap-2 rounded-2xl bg-[#B91C1C] text-white hover:bg-[#B91C1C]/90"
                 disabled={isResigning}
                 onClick={() => void submitResignation()}
               >
@@ -1267,5 +1284,6 @@ export function EmployeeManagement({
         </div>
       ) : null}
     </div>
+    </EmployeePageShell>
   );
 }

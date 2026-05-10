@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { createAccessContext, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 
 export const phoenixSessionCookieName = "phoenix_session";
+const defaultSessionIdleTimeoutSeconds = 45 * 60;
 
 export type SessionPayload = {
   exp: number;
@@ -56,6 +57,15 @@ export function createSessionToken(input: {
   };
   const encodedPayload = base64UrlEncode(JSON.stringify(payload));
   return `${encodedPayload}.${sign(encodedPayload)}`;
+}
+
+export function sessionIdleTimeoutSecondsForRole(role: PhoenixRole) {
+  switch (role) {
+    case "Super Admin":
+      return defaultSessionIdleTimeoutSeconds;
+    default:
+      return defaultSessionIdleTimeoutSeconds;
+  }
 }
 
 export function verifySessionToken(token: string | null | undefined): SessionPayload | null {

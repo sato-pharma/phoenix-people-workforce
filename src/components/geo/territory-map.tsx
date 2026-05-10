@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   AdminSectionHeader,
-  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { Card } from "@/components/ui/card";
 import type { GeoDashboardData, GeoMarker } from "@/lib/geo-intelligence/types";
@@ -83,6 +82,9 @@ type GoogleCoreMaps = {
 type WindowWithGoogle = Window & {
   google?: GoogleCoreMaps;
 };
+
+const panelClassName =
+  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 
 function markerColor(marker: GeoMarker) {
   switch (marker.status) {
@@ -188,7 +190,7 @@ export function TerritoryMap({ data }: { data: GeoDashboardData }) {
   }, [data, ready]);
 
   return (
-    <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+    <Card className={`${panelClassName} overflow-hidden p-0`}>
       <Script
         onLoad={() => setReady(true)}
         src={`https://maps.googleapis.com/maps/api/js?key=${browserKey}&libraries=places&loading=async`}
@@ -198,9 +200,9 @@ export function TerritoryMap({ data }: { data: GeoDashboardData }) {
         description="Inspect route clusters, vacancies, and trip points on a single visual layer."
         title="Territory map"
       />
-      <div className="h-[560px] border-t border-[#E2E8F0] bg-[#F8FAFC] px-4 py-4">
+      <div className="h-[560px] border-t border-[#E2E8F0] bg-[#F8FAFC]/80 px-4 py-4">
         <div
-          className="h-full min-h-[400px] rounded-[12px] border border-[#E2E8F0] bg-white"
+          className="h-full min-h-[400px] rounded-[28px] border border-[#E2E8F0] bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]"
           ref={mapRef}
         />
       </div>
