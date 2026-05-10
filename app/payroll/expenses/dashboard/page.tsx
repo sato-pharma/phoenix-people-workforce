@@ -39,7 +39,7 @@ export default async function PayrollExpensesDashboardPage() {
   }
 
   return (
-    <AppShell showTopbar={false}>
+    <AppShell navigationMode="admin">
       <ExpensesDashboard
         initialError={error}
         initialEmployees={employees}

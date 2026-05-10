@@ -1,0 +1,264 @@
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+type SalaryRecordLookupRow = {
+  area: string | null;
+  batch_id: string;
+  employee_code: string | null;
+  full_name: string | null;
+  gross_salary: number | null;
+  hr_id: string | null;
+  id: string | number;
+  job_title: string | null;
+  line: string | null;
+  net_salary: number | null;
+  total_additions: number | null;
+  total_deductions: number | null;
+};
+
+type SalaryBatchLookupRow = {
+  created_at: string;
+  id: string;
+  month: number;
+  status: string;
+  year: number;
+};
+
+export type PayslipCenterRow = {
+  area: string;
+  batchId: string;
+  employeeCode: string;
+  fullName: string;
+  grossSalary: number;
+  hrId: string;
+  jobTitle: string;
+  line: string;
+  month: number;
+  netSalary: number;
+  recordId: string;
+  status: string;
+  totalAdditions: number;
+  totalDeductions: number;
+  uploadedAt: string;
+  year: number;
+};
+
+export type PayslipCenterEmployee = {
+  area: string;
+  employeeCode: string;
+  fullName: string;
+  hrId: string;
+  jobTitle: string;
+  line: string;
+  payslips: PayslipCenterRow[];
+};
+
+export type PayslipCenterEmployeeOption = {
+  employeeCode: string;
+  fullName: string;
+  hrId: string;
+  label: string;
+  value: string;
+};
+
+function cleanSearch(value: string | string[] | undefined) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return String(raw ?? "").trim();
+}
+
+function normalizeKey(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function errorMessage(error: unknown) {
+  if (typeof error === "object" && error && "message" in error) {
+    return String((error as { message?: unknown }).message ?? "");
+  }
+  return String(error ?? "");
+}
+
+function isMissingColumn(error: unknown, columnName: string) {
+  const message = errorMessage(error).toLowerCase();
+  const tableQualifiedColumn = `salary_records.${columnName}`;
+  return (
+    message.includes(`column "${columnName}"`) ||
+    message.includes(`column ${columnName}`) ||
+    message.includes(`column ${tableQualifiedColumn}`) ||
+    message.includes(`column "${tableQualifiedColumn}"`) ||
+    message.includes(`${tableQualifiedColumn} does not exist`) ||
+    message.includes("42703")
+  );
+}
+
+function uniqueRows(rows: SalaryRecordLookupRow[]) {
+  const byId = new Map<string, SalaryRecordLookupRow>();
+  rows.forEach((row) => byId.set(String(row.id), row));
+  return [...byId.values()];
+}
+
+export async function getPayslipCenterEmployeeOptions() {
+  const supabase = getSupabaseAdmin();
+  const initialResult = await supabase
+    .from("salary_records")
+    .select("employee_code,hr_id,full_name,line,area,job_title")
+    .order("full_name", { ascending: true })
+    .limit(2000);
+  let data: unknown[] | null = initialResult.data;
+  let error: unknown = initialResult.error;
+
+  if (error && isMissingColumn(error, "employee_code")) {
+    const fallbackResult = await supabase
+      .from("salary_records")
+      .select("hr_id,full_name,line,area,job_title")
+      .order("full_name", { ascending: true })
+      .limit(2000);
+    data = fallbackResult.data;
+    error = fallbackResult.error;
+  }
+
+  if (error) throw error;
+
+  const optionsByKey = new Map<string, PayslipCenterEmployeeOption>();
+  ((data ?? []) as Array<Partial<Pick<SalaryRecordLookupRow, "area" | "employee_code" | "full_name" | "hr_id" | "job_title" | "line">>>).forEach((row) => {
+    const hrId = String(row.hr_id ?? "").trim();
+    const employeeCode = String(row.employee_code ?? "").trim();
+    const fullName = String(row.full_name ?? "").trim();
+    const value = hrId || employeeCode;
+    if (!value || !fullName) return;
+
+    const key = normalizeKey(value);
+    if (optionsByKey.has(key)) return;
+
+    const secondary = [
+      hrId || employeeCode,
+      row.job_title,
+      row.line,
+      row.area,
+    ].filter(Boolean).join(" - ");
+
+    optionsByKey.set(key, {
+      employeeCode,
+      fullName,
+      hrId,
+      label: `${fullName}${secondary ? ` (${secondary})` : ""}`,
+      value,
+    });
+  });
+
+  return [...optionsByKey.values()].sort((left, right) => left.fullName.localeCompare(right.fullName));
+}
+
+async function querySalaryRecords(column: "employee_code" | "full_name" | "hr_id", query: string) {
+  const supabase = getSupabaseAdmin();
+  const initialResult = await supabase
+    .from("salary_records")
+    .select("id,batch_id,employee_code,hr_id,full_name,line,area,job_title,gross_salary,total_additions,total_deductions,net_salary")
+    .ilike(column, `%${query}%`)
+    .limit(120);
+  let data: unknown[] | null = initialResult.data;
+  let error: unknown = initialResult.error;
+
+  if (error && isMissingColumn(error, "employee_code")) {
+    if (column === "employee_code") return [];
+
+    const fallbackResult = await supabase
+      .from("salary_records")
+      .select("id,batch_id,hr_id,full_name,line,area,job_title,gross_salary,total_additions,total_deductions,net_salary")
+      .ilike(column, `%${query}%`)
+      .limit(120);
+    data = fallbackResult.data;
+    error = fallbackResult.error;
+  }
+
+  if (error) throw error;
+  return (data ?? []) as SalaryRecordLookupRow[];
+}
+
+export async function searchPayslipCenter(search: string | string[] | undefined) {
+  const query = cleanSearch(search);
+  if (!query) {
+    return {
+      employees: [] as PayslipCenterEmployee[],
+      query,
+      rows: [] as PayslipCenterRow[],
+    };
+  }
+
+  const recordResults = await Promise.all([
+    querySalaryRecords("full_name", query),
+    querySalaryRecords("hr_id", query),
+    querySalaryRecords("employee_code", query),
+  ]);
+  const records = uniqueRows(recordResults.flat());
+  const batchIds = [...new Set(records.map((record) => record.batch_id).filter(Boolean))];
+  const batchesById = new Map<string, SalaryBatchLookupRow>();
+
+  if (batchIds.length > 0) {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("salary_batches")
+      .select("id,month,year,status,created_at")
+      .in("id", batchIds);
+
+    if (error) throw error;
+    ((data ?? []) as SalaryBatchLookupRow[]).forEach((batch) => {
+      batchesById.set(batch.id, batch);
+    });
+  }
+
+  const rows = records
+    .map((record): PayslipCenterRow | null => {
+      const batch = batchesById.get(record.batch_id);
+      if (!batch) return null;
+
+      return {
+        area: record.area ?? "Unassigned",
+        batchId: record.batch_id,
+        employeeCode: record.employee_code ?? record.hr_id ?? "",
+        fullName: record.full_name ?? "Unknown employee",
+        grossSalary: Number(record.gross_salary ?? 0),
+        hrId: record.hr_id ?? record.employee_code ?? "",
+        jobTitle: record.job_title ?? "Unassigned",
+        line: record.line ?? "Unassigned",
+        month: Number(batch.month),
+        netSalary: Number(record.net_salary ?? 0),
+        recordId: String(record.id),
+        status: batch.status,
+        totalAdditions: Number(record.total_additions ?? 0),
+        totalDeductions: Number(record.total_deductions ?? 0),
+        uploadedAt: batch.created_at,
+        year: Number(batch.year),
+      };
+    })
+    .filter((row): row is PayslipCenterRow => Boolean(row))
+    .sort((left, right) => {
+      if (right.year !== left.year) return right.year - left.year;
+      if (right.month !== left.month) return right.month - left.month;
+      return right.uploadedAt.localeCompare(left.uploadedAt);
+    });
+
+  const employeeMap = new Map<string, PayslipCenterEmployee>();
+  rows.forEach((row) => {
+    const key = normalizeKey(row.hrId || row.employeeCode || row.fullName);
+    const current = employeeMap.get(key);
+    if (current) {
+      current.payslips.push(row);
+      return;
+    }
+
+    employeeMap.set(key, {
+      area: row.area,
+      employeeCode: row.employeeCode,
+      fullName: row.fullName,
+      hrId: row.hrId,
+      jobTitle: row.jobTitle,
+      line: row.line,
+      payslips: [row],
+    });
+  });
+
+  return {
+    employees: [...employeeMap.values()],
+    query,
+    rows,
+  };
+}

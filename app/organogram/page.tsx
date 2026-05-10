@@ -1,6 +1,8 @@
 ﻿import { AppShell } from "@/components/layout/app-shell";
 import { OrganogramReport } from "@/components/reports/organogram-report";
-import { assertPermission } from "@/lib/auth/permissions";
+import { redirect } from "next/navigation";
+
+import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   errorMessage,
@@ -30,7 +32,9 @@ function organogramPageError(error: unknown) {
 
 export default async function OrganogramPage() {
   const access = await resolveAccessContextFromPage();
-  await assertPermission(access, "organogram", "read");
+  if (!await canAccess(access, "organogram", "read")) {
+    redirect("/employee-portals");
+  }
   let initialError: string | null = null;
   let initialReport = null;
 
@@ -41,7 +45,7 @@ export default async function OrganogramPage() {
   }
 
   return (
-    <AppShell>
+    <AppShell contentWidth="full" navigationMode="admin">
       <OrganogramReport
         initialError={initialError}
         initialReport={initialReport}

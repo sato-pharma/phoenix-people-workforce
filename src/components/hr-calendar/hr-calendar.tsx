@@ -17,7 +17,6 @@ import {
   AdminSectionHeader,
   AdminStatCard,
   AdminTableShell,
-  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { HrCalendarEmployee } from "@/lib/hr-calendar/types";
 import { cn } from "@/lib/utils";
+import type { ReactNode } from "react";
 
 type Props = {
   initialData: HrCalendarEmployee[] | null;
@@ -42,6 +42,10 @@ type CalendarEvent = {
 
 const allValue = "__all__";
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const selectClassName =
+  "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+const panelClassName =
+  "rounded-[28px] border border-white/75 bg-white/94 shadow-[0_28px_90px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/5";
 const months = [
   { label: "January", value: 1 },
   { label: "February", value: 2 },
@@ -56,6 +60,15 @@ const months = [
   { label: "November", value: 11 },
   { label: "December", value: 12 },
 ];
+
+function HrCalendarPageShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative overflow-hidden rounded-[34px] border border-[#FED7AA]/80 bg-[radial-gradient(circle_at_10%_0%,rgba(249,115,22,0.13),transparent_34%),linear-gradient(135deg,#FFF7ED_0%,#F8FAFC_44%,#FFFFFF_100%)] p-4 shadow-[0_30px_110px_rgba(15,23,42,0.11)] sm:p-5">
+      <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[#F97316]/45 to-transparent" />
+      <div className="relative space-y-6">{children}</div>
+    </div>
+  );
+}
 
 function parseDate(value: string | null) {
   if (!value) {
@@ -230,8 +243,6 @@ export function HrCalendar({ initialData, initialError }: Props) {
   const today = new Date();
   const currentMonth = today.getMonth() + 1;
   const currentYear = today.getFullYear();
-  const selectClassName =
-    "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12";
 
   const [areaFilter, setAreaFilter] = useState(allValue);
   const [eventTypeFilter, setEventTypeFilter] = useState<
@@ -331,7 +342,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
 
   if (initialError) {
     return (
-      <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+      <Card className={`${panelClassName} overflow-hidden p-0`}>
         <AdminPageHero
           badges={
             <div className="flex flex-wrap gap-2">
@@ -359,11 +370,11 @@ export function HrCalendar({ initialData, initialError }: Props) {
   }
 
   return (
-    <div className="space-y-6">
+    <HrCalendarPageShell>
       <AdminPageHero
         actions={
           <Button
-            className="h-10 gap-2 rounded-xl"
+            className="h-11 gap-2 rounded-2xl"
             disabled={!hasActiveFilters}
             onClick={resetFilters}
             variant="secondary"
@@ -419,7 +430,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
       <AdminTableShell
         action={
           <Button
-            className="h-10 gap-2 rounded-xl"
+            className="h-11 gap-2 rounded-2xl"
             disabled={!hasActiveFilters}
             onClick={resetFilters}
             variant="secondary"
@@ -469,7 +480,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
             <span className="sr-only">Search events</span>
             <Search className="pointer-events-none absolute left-3 top-9 h-4 w-4 text-[#64748B]" />
             <Input
-              className="h-10 bg-white pl-9"
+              className="h-11 rounded-2xl border-[#D8E0EA] bg-white/95 pl-9 shadow-[0_14px_35px_rgba(15,23,42,0.06)]"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, HR ID, manager"
               value={query}
@@ -528,14 +539,14 @@ export function HrCalendar({ initialData, initialError }: Props) {
         </div>
       </AdminTableShell>
 
-      <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+      <Card className={`${panelClassName} overflow-hidden p-0`}>
         <AdminSectionHeader
           title={`${selectedMonthLabel} ${selectedYear}`}
           description="Events are grouped by calendar day. Birthdays are shown only when a birth date exists."
         />
         <div className="overflow-x-auto">
-          <div className="min-w-[980px]">
-            <div className="grid grid-cols-7 border-b border-[#E2E8F0] bg-[#F8FAFC]">
+          <div className="min-w-[980px] bg-white/80">
+            <div className="grid grid-cols-7 border-b border-[#FED7AA] bg-[#FFF7ED]/80 backdrop-blur">
               {weekdays.map((weekday) => (
                 <div
                   className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]"
@@ -558,7 +569,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
                 return (
                   <div
                     className={cn(
-                      "min-h-36 border-b border-r border-[#E2E8F0] bg-white p-2",
+                      "min-h-36 border-b border-r border-[#E2E8F0] bg-white/95 p-2 transition-colors hover:bg-[#FFF7ED]/55",
                       !date && "bg-[#F8FAFC]",
                       isToday && "bg-[#FFF7ED]",
                     )}
@@ -578,7 +589,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
                           {dayEvents.slice(0, 4).map((event) => (
                             <div
                               className={cn(
-                                "rounded-lg border px-2 py-1.5 text-xs",
+                                "rounded-xl border px-2 py-1.5 text-xs shadow-[0_8px_18px_rgba(15,23,42,0.04)]",
                                 eventClass(event.eventType),
                               )}
                               key={`${event.eventType}-${event.employee.hrId}-${event.date}`}
@@ -593,7 +604,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
                             </div>
                           ))}
                           {dayEvents.length > 4 ? (
-                            <div className="rounded-lg border border-[#CBD5E1] bg-[#F8FAFC] px-2 py-1 text-xs font-medium text-[#64748B]">
+                            <div className="rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] px-2 py-1 text-xs font-medium text-[#64748B]">
                               +{dayEvents.length - 4} more
                             </div>
                           ) : null}
@@ -608,7 +619,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
         </div>
       </Card>
 
-      <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+      <Card className={`${panelClassName} overflow-hidden p-0`}>
         <AdminSectionHeader
           action={
             <Badge variant="neutral">
@@ -618,10 +629,10 @@ export function HrCalendar({ initialData, initialError }: Props) {
           description="Compact list for review and filtering."
           title={`Event Details (${filteredEvents.length})`}
         />
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto bg-white/80">
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead>
-              <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+              <tr className="border-b border-[#FED7AA] bg-[#FFF7ED]/80 text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
                 {["Date", "Event", "Employee", "HR ID", "Job Title", "Line", "Area", "Manager"].map((column) => (
                   <th className="px-3 py-3" key={column}>
                     {column}
@@ -644,7 +655,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
               ) : (
                 filteredEvents.map((event) => (
                   <tr
-                    className="transition-colors hover:bg-[#FCFDFE]"
+                    className="transition-colors hover:bg-[#FFF7ED]/55"
                     key={`${event.eventType}-${event.employee.hrId}-${event.date}-row`}
                   >
                     <td className="whitespace-nowrap px-3 py-3 font-medium text-[#0F172A]">
@@ -687,6 +698,6 @@ export function HrCalendar({ initialData, initialError }: Props) {
           </table>
         </div>
       </Card>
-    </div>
+    </HrCalendarPageShell>
   );
 }

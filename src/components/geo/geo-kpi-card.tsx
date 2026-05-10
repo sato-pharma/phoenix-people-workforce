@@ -2,8 +2,10 @@
 
 import type { LucideIcon } from "lucide-react";
 
-import { adminPanelClassName } from "@/components/admin/admin-design-system";
 import { Card } from "@/components/ui/card";
+
+const panelClassName =
+  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 
 export function GeoKpiCard({
   helper,
@@ -26,9 +28,9 @@ export function GeoKpiCard({
   }[tone];
 
   return (
-    <Card className={`${adminPanelClassName} p-4`}>
+    <Card className={`${panelClassName} p-4 transition-transform duration-200 hover:-translate-y-0.5`}>
       <div className="flex items-start gap-3">
-        <span className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${toneClass}`}>
+        <span className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ring-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] ${toneClass}`}>
           <Icon className="h-5 w-5" />
         </span>
         <div className="min-w-0">

@@ -28,7 +28,6 @@ import {
   AdminStatCard,
   AdminTableShell,
   AdminSectionHeader,
-  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -118,9 +117,10 @@ const scopes: BusinessScope[] = [
   "NONE",
 ];
 
-const panelClassName = adminPanelClassName;
+const panelClassName =
+  "rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
 const selectClassName =
-  "h-11 w-full rounded-2xl border border-[#D7E0EA] bg-white px-4 text-sm text-[#0F172A] transition outline-none focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10";
+  "h-11 w-full rounded-2xl border border-[#D7E0EA] bg-[#F8FAFC] px-4 text-sm font-semibold text-[#0F172A] transition outline-none focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10";
 
 function roleBadge(role: PhoenixRole) {
   if (role === "Super Admin" || role === "CEO") return "danger" as const;
@@ -164,8 +164,6 @@ export function AccessControlManager({
   const [setupLinkSending, setSetupLinkSending] = React.useState<string | null>(null);
   const [showPermissions, setShowPermissions] = React.useState(false);
   const [showAudit, setShowAudit] = React.useState(false);
-  const [selectedLoginIds, setSelectedLoginIds] = React.useState<Set<string>>(new Set());
-  const [isBulkActing, setIsBulkActing] = React.useState(false);
 
   async function updatePermission(
     role: PhoenixRole,
@@ -348,30 +346,6 @@ export function AccessControlManager({
     });
   }
 
-  async function bulkAction(action: "enable" | "disable") {
-    if (selectedLoginIds.size === 0) return;
-    setIsBulkActing(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/admin/users/bulk-action", {
-        body: JSON.stringify({ action, loginIds: Array.from(selectedLoginIds) }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.message ?? "Bulk action failed.");
-      if (payload.dashboard) setData(payload.dashboard);
-      setSelectedLoginIds(new Set());
-      if (payload.failed?.length > 0) {
-        setError(`${payload.failed.length} user(s) could not be updated.`);
-      }
-    } catch (bulkError) {
-      setError(bulkError instanceof Error ? bulkError.message : "Bulk action failed.");
-    } finally {
-      setIsBulkActing(false);
-    }
-  }
-
   const users = data?.users ?? [];
   const filteredUsers = users.filter((user) => {
     const haystack = [user.name, user.hrId, user.role, user.line, user.loginId, user.email]
@@ -420,13 +394,32 @@ export function AccessControlManager({
   ] as const;
 
   return (
-    <div className="space-y-6">
-      <Card className={`${adminPanelClassName} space-y-3 p-0`}>
-        <AdminSectionHeader
-          action={
-            <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:min-w-[460px] sm:grid-cols-3">
+    <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
+      <div className="space-y-7">
+      <Card className="relative overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 p-0 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-orange-200/35 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 left-12 h-28 w-28 rounded-full bg-slate-200/45 blur-2xl" />
+        <div className="relative flex flex-col gap-5 p-7 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">Identity command</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0B0B0B] text-orange-400 shadow-[0_14px_30px_rgba(15,23,42,0.22)]">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-black tracking-tight text-slate-950">Users & Access</h1>
+                <p className="mt-1 max-w-3xl text-sm text-slate-500">
+                  Manage identities, role scopes, permission overrides, and onboarding links in one control surface.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:min-w-[520px] sm:grid-cols-3">
               <a
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#D7E0EA] bg-white px-3 text-xs font-semibold text-[#0F172A] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#D7E0EA] bg-white px-3 text-xs font-black text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
                 download
                 href="/api/admin/users/bulk"
                 rel="noopener noreferrer"
@@ -435,7 +428,7 @@ export function AccessControlManager({
                 <Download className="h-3.5 w-3.5 text-[#F97316]" />
                 Download template
               </a>
-              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#D7E0EA] bg-white px-3 text-xs font-semibold text-[#0F172A] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]">
+              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#D7E0EA] bg-white px-3 text-xs font-black text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]">
                 <Upload className="h-3.5 w-3.5 text-[#F97316]" />
                 Bulk upload
                 <input accept=".xlsx,.xls" className="sr-only" onChange={uploadBulkUsers} type="file" />
@@ -450,11 +443,8 @@ export function AccessControlManager({
                 Refresh
               </Button>
             </div>
-          }
-          description="Manage identities, role scopes, and access controls in one place."
-          title="Access control"
-        />
-        <div className="flex flex-wrap gap-2 border-t border-[#E2E8F0] px-5 pb-3 pt-1 text-xs text-[#475569]">
+        </div>
+        <div className="relative flex flex-wrap gap-2 border-t border-[#E2E8F0] px-7 pb-5 pt-4 text-xs text-[#475569]">
           <AdminInsightChip>Roles inherit default sales and payroll scopes.</AdminInsightChip>
           <AdminInsightChip tone="orange">Setup and reset links are generated on demand.</AdminInsightChip>
           <AdminInsightChip tone="slate">Use refresh to pull fresh data after role changes.</AdminInsightChip>
@@ -547,7 +537,7 @@ export function AccessControlManager({
             })}
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+          <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
             <Card className={`${panelClassName} h-fit p-0 xl:sticky xl:top-6`}>
               <AdminSectionHeader
                 action={<div className="text-xs font-semibold text-[#0F172A]">Active</div>}
@@ -557,13 +547,13 @@ export function AccessControlManager({
 
               <form className="grid gap-4 px-5 py-5" onSubmit={saveUser}>
                 <Input
-                  className="h-11 rounded-2xl border-[#D7E0EA] px-4"
+                  className="h-11 rounded-2xl border-[#D7E0EA] bg-[#F8FAFC] px-4 font-semibold"
                   onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
                   placeholder="Full name"
                   value={form.name}
                 />
                 <Input
-                  className="h-11 rounded-2xl border-[#D7E0EA] px-4"
+                  className="h-11 rounded-2xl border-[#D7E0EA] bg-[#F8FAFC] px-4 font-semibold"
                   onChange={(e) => {
                     const hrId = e.target.value;
                     setForm((p) => ({
@@ -576,7 +566,7 @@ export function AccessControlManager({
                   value={form.hrId}
                 />
                 <Input
-                  className="h-11 rounded-2xl border-[#D7E0EA] px-4"
+                  className="h-11 rounded-2xl border-[#D7E0EA] bg-[#F8FAFC] px-4 font-semibold"
                   onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
                   placeholder="Email"
                   type="email"
@@ -606,7 +596,7 @@ export function AccessControlManager({
                     ))}
                   </select>
                   <Input
-                    className="h-11 rounded-2xl border-[#D7E0EA] px-4"
+                    className="h-11 rounded-2xl border-[#D7E0EA] bg-[#F8FAFC] px-4 font-semibold"
                     onChange={(e) => setForm((p) => ({ ...p, managerHrId: e.target.value }))}
                     placeholder="Manager HR_ID"
                     value={form.managerHrId}
@@ -674,7 +664,7 @@ export function AccessControlManager({
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-4 top-3.5 h-4 w-4 text-[#64748B]" />
                   <Input
-                    className="h-11 rounded-2xl border-[#D7E0EA] pl-11"
+                    className="h-11 rounded-2xl border-[#D7E0EA] bg-[#F8FAFC] pl-11 font-semibold"
                     onChange={(e) => {
                       setQuery(e.target.value);
                       setPage(1);
@@ -717,32 +707,32 @@ export function AccessControlManager({
 
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-sm">
-                  <thead className="bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+                  <thead className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
                     <tr>
-                      <th className="px-4 py-3">User</th>
-                      <th className="px-4 py-3">Role / Line</th>
-                      <th className="px-4 py-3">Access</th>
-                      <th className="px-4 py-3">Password</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Action</th>
+                      <th className="px-5 py-4">User</th>
+                      <th className="px-5 py-4">Role / Line</th>
+                      <th className="px-5 py-4">Access</th>
+                      <th className="px-5 py-4">Password</th>
+                      <th className="px-5 py-4">Status</th>
+                      <th className="px-5 py-4">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {hasUsers ? (
                       visibleUsers.map((user) => (
-                        <tr className="border-b border-[#E2E8F0] align-top transition hover:bg-[#FCFDFE]" key={user.loginId}>
-                          <td className="px-4 py-4">
-                            <p className="font-bold text-[#0F172A]">{user.name}</p>
+                        <tr className="border-b border-[#E2E8F0] align-top transition hover:bg-orange-50/35" key={user.loginId}>
+                          <td className="px-5 py-4">
+                            <p className="text-sm font-black text-[#0F172A]">{user.name}</p>
                             <p className="mt-1 text-xs text-[#64748B]">
                               {user.hrId ?? "-"} / {user.loginId}
                             </p>
                             <p className="mt-1 text-xs text-[#64748B]">{user.email ?? "-"}</p>
                           </td>
-                          <td className="px-4 py-4">
+                          <td className="px-5 py-4">
                             <Badge variant={roleBadge(user.role)}>{user.role}</Badge>
                             <p className="mt-2 text-xs font-medium text-[#64748B]">{user.line}</p>
                           </td>
-                          <td className="px-4 py-4">
+                          <td className="px-5 py-4">
                             <div className="flex flex-col gap-2">
                               <div className="flex items-center gap-2">
                                 <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#64748B]">Sales</span>
@@ -754,17 +744,17 @@ export function AccessControlManager({
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-4">
+                          <td className="px-5 py-4">
                             <Badge variant={user.forcePasswordReset ? "warning" : "success"}>
                               {user.forcePasswordReset ? "setup required" : "ready"}
                             </Badge>
                           </td>
-                          <td className="px-4 py-4">
+                          <td className="px-5 py-4">
                             <Badge variant={user.isActive ? "success" : "danger"}>
                               {user.isActive ? "active" : "inactive"}
                             </Badge>
                           </td>
-                          <td className="px-4 py-4">
+                          <td className="px-5 py-4">
                             <div className="flex flex-wrap gap-2">
                               <Button className="h-9 rounded-xl px-3 text-xs" onClick={() => editUser(user)} variant="secondary">
                                 <UserCog className="mr-1 h-3.5 w-3.5" />
@@ -837,8 +827,8 @@ export function AccessControlManager({
                 </table>
               </div>
 
-              <div className="flex items-center justify-between border-t border-[#E2E8F0] px-4 py-3 text-sm text-[#64748B]">
-                <span>{filteredUsers.length} users</span>
+              <div className="flex items-center justify-between border-t border-[#E2E8F0] bg-[#F8FAFC]/80 px-5 py-3 text-sm text-[#64748B]">
+                <span className="font-semibold">{filteredUsers.length} users</span>
                 <div className="flex items-center gap-2">
                   <Button
                     className="h-8 rounded-xl px-2"
@@ -1007,6 +997,7 @@ export function AccessControlManager({
           </div>
         </Card>
       )}
+      </div>
     </div>
   );
 }

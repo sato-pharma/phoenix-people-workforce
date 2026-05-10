@@ -1,5 +1,6 @@
 ﻿import { EmployeeManagement } from "@/components/employees/employee-management";
 import { AppShell } from "@/components/layout/app-shell";
+import { redirect } from "next/navigation";
 import {
   employeeDirectoryErrorMessage,
   getEmployeeDirectory,
@@ -7,7 +8,7 @@ import {
   isEmployeeDirectorySchemaMissing,
   isEmployeeDirectoryTimeout,
 } from "@/lib/employees/employee-directory";
-import { assertPermission } from "@/lib/auth/permissions";
+import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +31,9 @@ function employeePageError(error: unknown) {
 
 export default async function EmployeesPage() {
   const access = await resolveAccessContextFromPage();
-  await assertPermission(access, "employees", "read");
+  if (!await canAccess(access, "employees", "read")) {
+    redirect("/employee-portals");
+  }
   let initialData = null;
   let initialError: string | null = null;
 
@@ -41,7 +44,7 @@ export default async function EmployeesPage() {
   }
 
   return (
-    <AppShell>
+    <AppShell navigationMode="admin">
       <EmployeeManagement
         initialData={initialData}
         initialError={initialError}

@@ -21,15 +21,18 @@ export type SalaryValidationRow = {
   fuelAllowance: number;
   fullName: string;
   grossSalary: number;
+  hireDate: string | null;
   incentive: number;
   jobTitle: string;
   line: string;
   loans: number;
   medicalInsurance: number;
+  nameAr: string | null;
   netSalary: number;
   otherAdditions: number;
   otherDeductions: number;
   overtime: number;
+  payrollComment: string | null;
   row: number;
   secondPart: number;
   socialInsurance: number;
@@ -58,10 +61,12 @@ export type SalaryValidationResult = {
 const columnAliases = {
   hrId: ["HR_ID", "HR ID", "Employee Code", "employee_code", "Code"],
   fullName: ["Full Name", "Employee Name", "full_name", "Name"],
+  nameAr: ["Arabic Name", "Arabic Employee Name", "Name AR", "name_ar"],
   line: ["Line", "line"],
   area: ["Area", "area", "Region"],
   jobTitle: ["Job Title", "job_title", "Title"],
-  grossSalary: ["Gross Salary", "gross_salary", "Total Gross Salary"],
+  grossSalary: ["Gross Salary", "gross_salary", "Total Gross Salary", "Net Salary"],
+  hireDate: ["Hire Date", "Hiring Date", "Start Date", "hire_date"],
   expenses: ["Expenses", "Expenses Prev Month", "Expenses (Prev Month)", "expenses"],
   incentive: ["Incentive", "incentive"],
   overtime: ["Overtime", "overtime"],
@@ -71,17 +76,41 @@ const columnAliases = {
   otherAdditions: ["Other Additions", "Other Add.", "other_additions"],
   totalAdditions: ["Total Additions", "total_additions", "Additions"],
   socialInsurance: ["Social Insurance", "Social Ins.", "social_insurance"],
-  employmentIncomeTax: ["Employment Income Tax", "employment_income_tax", "Income Tax"],
-  crm: ["CRM", "No CRM", "crm"],
+  employmentIncomeTax: [
+    "Employment Income Tax",
+    "employment_income_tax",
+    "employment_income_taxes",
+    "Income Tax",
+  ],
+  crm: [
+    "CRM",
+    "No CRM",
+    "No. CRM",
+    "No-CRM",
+    "No CRM Deduction",
+    "CRM Deduction",
+    "no_crm_entery",
+    "no_crm_entry",
+    "crm",
+  ],
   fingerPrint: ["Finger Print", "finger_print", "Fingerprint"],
-  unpaidVacations: ["Unpaid Vacations", "Unpaid Vac.", "unpaid_vacations"],
+  unpaidVacations: ["Unpaid Vacations", "Unpaid Vac.", "unpaid_vacations", "unpaid_vacation"],
   medicalInsurance: ["Medical Insurance", "Medical Ins.", "medical_insurance"],
   loans: ["Loans", "loans"],
   otherDeductions: ["Other Deductions", "Other Ded.", "other_deductions"],
   totalDeductions: ["Total Deductions", "total_deductions", "Deductions"],
-  netSalary: ["Net Salary", "Month Salary", "Month Salary المرتب الشهري", "net_salary", "Net Pay"],
+  netSalary: [
+    "Month Salary",
+    "Month Salary المرتب الشهري",
+    "Monthly Salary",
+    "المرتب الشهري",
+    "Net Pay",
+    "Net Salary",
+    "net_salary",
+  ],
   firstPart: ["First Part", "1st Part", "1st Part Day 1 FIXED No Ded No Add", "first_part"],
   secondPart: ["Second Part", "2nd Part", "2nd Part Day 10 30 CoL Fuel All Adj", "second_part"],
+  payrollComment: ["Comment", "Comments", "Notes", "Payroll Comment", "comment"],
   month: ["Month", "month"],
   year: ["Year", "year"],
 } as const;
@@ -90,10 +119,19 @@ const requiredColumns = ["hrId", "fullName", "grossSalary", "netSalary"] as cons
 
 function cellText(cell: ExcelJS.Cell) {
   const value = cell.value;
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return toDateOnly(value) ?? "";
   if (value && typeof value === "object" && "result" in value) {
-    return String((value as { result?: unknown }).result ?? cell.text ?? "").trim();
+    return String((value as { result?: unknown }).result ?? "").trim();
   }
-  return String(value ?? cell.text ?? "").trim();
+  if (value && typeof value === "object" && "text" in value) {
+    return String((value as { text?: unknown }).text ?? "").trim();
+  }
+  if (value && typeof value === "object" && "richText" in value) {
+    const richText = (value as { richText?: Array<{ text?: unknown }> }).richText ?? [];
+    return richText.map((part) => String(part.text ?? "")).join("").trim();
+  }
+  return String(value).trim();
 }
 
 function normalizeHeader(value: string) {
@@ -135,6 +173,18 @@ function toNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return 0;
   const parsed = Number(String(value).replace(/,/g, "").trim());
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toDateOnly(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value).trim() || null;
+
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function rowValue(row: Record<string, unknown>, aliases: readonly string[]) {
@@ -258,15 +308,18 @@ export async function validateSalaryWorkbook(file: File): Promise<SalaryValidati
       fuelAllowance: toNumber(rowValue(raw, columnAliases.fuelAllowance)),
       fullName,
       grossSalary,
+      hireDate: toDateOnly(rowValue(raw, columnAliases.hireDate)),
       incentive: toNumber(rowValue(raw, columnAliases.incentive)),
       jobTitle: String(rowValue(raw, columnAliases.jobTitle)).trim() || "Unassigned",
       line: String(rowValue(raw, columnAliases.line)).trim() || "Unassigned",
       loans: toNumber(rowValue(raw, columnAliases.loans)),
       medicalInsurance: toNumber(rowValue(raw, columnAliases.medicalInsurance)),
+      nameAr: String(rowValue(raw, columnAliases.nameAr)).trim() || null,
       netSalary,
       otherAdditions: toNumber(rowValue(raw, columnAliases.otherAdditions)),
       otherDeductions: toNumber(rowValue(raw, columnAliases.otherDeductions)),
       overtime: toNumber(rowValue(raw, columnAliases.overtime)),
+      payrollComment: String(rowValue(raw, columnAliases.payrollComment)).trim() || null,
       row: rowNumber,
       secondPart: toNumber(rowValue(raw, columnAliases.secondPart)),
       socialInsurance: toNumber(rowValue(raw, columnAliases.socialInsurance)),

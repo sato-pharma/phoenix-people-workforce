@@ -5,7 +5,6 @@ import {
   ArrowRight,
   CheckCircle2,
   FolderUp,
-  Sparkles,
 } from "lucide-react";
 import * as React from "react";
 
@@ -18,8 +17,6 @@ import type { EmployeeImportValidationResult } from "@/lib/imports/employee-impo
 
 import {
   AdminCallout,
-  AdminSectionHeader,
-  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 
 type DryRunResult = Pick<
@@ -74,7 +71,8 @@ const entityLabels = {
   teams: "Teams",
 };
 
-const panelClassName = adminPanelClassName;
+const panelClassName =
+  "rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
 
 function SummaryCard({
   label,
@@ -86,7 +84,8 @@ function SummaryCard({
   variant?: "neutral" | "success" | "warning" | "danger";
 }) {
   return (
-    <Card className={`${panelClassName} p-5`}>
+    <Card className={`${panelClassName} relative overflow-hidden p-5 transition hover:-translate-y-0.5 hover:border-[#FDBA74] hover:bg-white hover:shadow-[0_22px_48px_rgba(15,23,42,0.10)]`}>
+      <div className="pointer-events-none absolute -right-8 -top-10 h-24 w-24 rounded-full bg-orange-200/20 blur-2xl" />
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#64748B]">
@@ -354,13 +353,32 @@ export function EmployeeImportUpload() {
   const importActionLabel = isConfirming ? "Importing..." : "Confirm import";
 
   return (
-    <div className="space-y-6">
-      <Card className={`${panelClassName} space-y-3 p-0`}>
-        <AdminSectionHeader
-          action={
-            <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:min-w-[380px] sm:grid-cols-2">
+    <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
+      <div className="space-y-7">
+      <Card className="relative overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 p-0 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-orange-200/35 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 left-12 h-28 w-28 rounded-full bg-slate-200/45 blur-2xl" />
+        <div className="relative flex flex-col gap-5 p-7 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">Bulk workforce import</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0B0B0B] text-orange-400 shadow-[0_14px_30px_rgba(15,23,42,0.22)]">
+                <FolderUp className="h-5 w-5" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-black tracking-tight text-slate-950">Employee Import</h1>
+                <p className="mt-1 max-w-3xl text-sm text-slate-500">
+                  Upload an HR workbook, validate it in dry-run, then confirm only when checks pass.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:min-w-[430px] sm:grid-cols-2">
               <Button
-                className="h-10 gap-2 rounded-xl px-3"
+                className="h-10 gap-2 rounded-xl bg-[#0B0B0B] px-3 text-xs font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-[#F97316]"
                 disabled={!canConfirm}
                 onClick={handleConfirmImport}
               >
@@ -384,11 +402,8 @@ export function EmployeeImportUpload() {
                 </span>
               </AdminCallout>
             </div>
-          }
-          description="Upload an HR workbook, validate in dry-run, then confirm only when checks pass."
-          title="Employee import"
-        />
-        <div className="flex flex-wrap items-center gap-3 border-t border-[#E2E8F0] px-5 pb-3 pt-1 text-xs text-[#64748B]">
+        </div>
+        <div className="relative flex flex-wrap items-center gap-3 border-t border-[#E2E8F0] px-7 pb-5 pt-4 text-xs text-[#64748B]">
           <Badge variant={previewStatusTone}>{previewStatusLabel}</Badge>
           <span>{selectedFile?.name ?? "No file selected"}</span>
         </div>
@@ -418,14 +433,14 @@ export function EmployeeImportUpload() {
         />
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         <Card className={`${panelClassName} p-0`}>
-          <div className="grid gap-5 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-center">
-            <label className="flex min-h-[260px] cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed border-[#CBD5E1] bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-6 py-10 text-center transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]/40">
-              <div className="rounded-3xl border border-[#FED7AA] bg-[#FFF7ED] p-4 text-[#F97316]">
+          <div className="grid gap-5 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
+            <label className="flex min-h-[300px] cursor-pointer flex-col items-center justify-center rounded-[28px] border border-dashed border-[#CBD5E1] bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-6 py-10 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]/50">
+              <div className="rounded-3xl border border-[#FED7AA] bg-[#FFF7ED] p-5 text-[#F97316] shadow-[0_14px_30px_rgba(249,115,22,0.12)]">
                 <FolderUp className="h-8 w-8" />
               </div>
-              <span className="mt-5 text-xl font-bold tracking-[-0.03em] text-[#0F172A]">
+              <span className="mt-5 text-2xl font-black tracking-[-0.04em] text-[#0F172A]">
                 Upload employee Excel file
               </span>
               <span className="mt-2 max-w-md text-sm leading-6 text-[#64748B]">
@@ -433,7 +448,7 @@ export function EmployeeImportUpload() {
                 <span className="font-semibold text-[#0F172A]">.xls</span>. Selecting a new file resets the previous
                 preview and confirm state.
               </span>
-              <div className="mt-5 inline-flex items-center rounded-full border border-[#E2E8F0] bg-white px-4 py-2 text-sm font-semibold text-[#0F172A]">
+              <div className="mt-5 inline-flex items-center rounded-full border border-[#E2E8F0] bg-white px-4 py-2 text-sm font-black text-[#0F172A] shadow-sm">
                 Choose workbook
               </div>
               <Input
@@ -444,14 +459,14 @@ export function EmployeeImportUpload() {
               />
             </label>
 
-            <div className="space-y-4 rounded-[18px] border border-[#E2E8F0] bg-[#FCFDFE] p-5">
+            <div className="space-y-4 rounded-[24px] border border-[#E2E8F0] bg-[#FCFDFE] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#64748B]">Selected file</p>
                 <p className="mt-2 break-words text-base font-semibold text-[#0F172A]">
                   {selectedFile?.name ?? "No file selected"}
                 </p>
               </div>
-              <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4">
+              <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[#0F172A]">
                   {isLoading ? (
                     <>
@@ -481,7 +496,7 @@ export function EmployeeImportUpload() {
                     : "The system will inspect detected columns, duplicates, warnings, and planned inserts or updates."}
                 </p>
               </div>
-              <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4">
+              <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#64748B]">Import policy</p>
                 <p className="mt-2 text-sm leading-6 text-[#64748B]">
                   Valid rows can be written only after a clean dry run. Rows without HR_ID are treated as vacancy
@@ -493,7 +508,10 @@ export function EmployeeImportUpload() {
         </Card>
 
         <Card className={`${panelClassName} h-fit p-5`}>
-          <h2 className="text-base font-bold text-[#0F172A]">What the dry run checks</h2>
+          <h2 className="flex items-center gap-2 text-base font-black text-[#0F172A]">
+            <span className="h-2 w-2 rounded-full bg-[#F97316]" />
+            What the dry run checks
+          </h2>
           <div className="mt-4 space-y-4">
             <div className="rounded-2xl border border-[#E2E8F0] bg-[#FCFDFE] p-4">
               <p className="text-sm font-semibold text-[#0F172A]">Workbook structure</p>
@@ -650,6 +668,7 @@ export function EmployeeImportUpload() {
           </div>
         </>
       ) : null}
+      </div>
     </div>
   );
 }

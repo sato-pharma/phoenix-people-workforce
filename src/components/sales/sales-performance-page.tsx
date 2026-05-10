@@ -5,7 +5,6 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   TrendingUp,
-  TrendingDown,
   RefreshCw,
   ArrowDown,
   ArrowUp,
@@ -248,7 +247,7 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
   const topProducts = salesAnalytics?.topProducts ?? [];
   const bottomProducts = salesAnalytics?.bottomProducts ?? [];
   const productMix = salesAnalytics?.productMix ?? [];
-  const baseInsights = salesAnalytics?.insights ?? [];
+  const baseInsights = useMemo(() => salesAnalytics?.insights ?? [], [salesAnalytics?.insights]);
 
   // Calculate comparison data
   const comparisonData = useMemo(() => {
@@ -361,8 +360,8 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC]">
-      <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="rounded-[30px] border border-white/75 bg-white/88 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.10)] ring-1 ring-slate-900/5 sm:p-5">
+      <div className="mx-auto max-w-none">
         {/* Header */}
         <Header
           onResetFilters={handleResetFilters}
@@ -394,18 +393,11 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
           <KPICards
             kpis={kpis}
             comparisonData={comparisonData}
-            selectedProducts={selectedProducts}
-            onProductRemove={(product) =>
-              {
-                const nextProducts = selectedProducts.filter((p) => p !== product);
-                updateFilters(selectedPeriod, selectedFamily, nextProducts);
-              }
-            }
           />
         )}
 
         {/* Monthly Trend Chart */}
-        <TrendChart trend={filteredData?.trend || data.trend} comparisonPeriod={comparisonPeriod} />
+        <TrendChart trend={filteredData?.trend || data.trend} />
 
         {/* Product Performance Table */}
         <ProductTable
@@ -459,13 +451,14 @@ function Header({
   onClearContext: () => void;
 }) {
   return (
-    <div className="mb-8 flex items-center justify-between">
+    <div className="mb-6 flex flex-wrap items-start justify-between gap-4 rounded-[28px] border border-[#FED7AA]/80 bg-[linear-gradient(135deg,#FFF7ED_0%,#FFFFFF_58%,#F8FAFC_100%)] p-5 shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
       <div>
-        <h1 className="text-2xl font-semibold text-[#0F172A]">Sales Performance</h1>
-        <p className="mt-1 text-sm text-[#64748B]">Track your product performance and sales trends over time.</p>
+        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#F97316]">Sales Workspace</p>
+        <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-[#0F172A]">Performance Controls</h2>
+        <p className="mt-1 max-w-2xl text-sm leading-6 text-[#64748B]">Track your product performance and sales trends over time.</p>
         {(contextSource || contextMonth) && (
           <div className="mt-2 flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-1 text-xs font-medium text-[#64748B]">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#FED7AA] bg-white px-3 py-1 text-xs font-black text-[#C2410C] shadow-[0_10px_24px_rgba(249,115,22,0.08)]">
               {contextSource && <span>Opened from {contextSource}</span>}
               {contextSource && contextMonth && <span>·</span>}
               {contextMonth && <span>{contextMonth}</span>}
@@ -483,7 +476,7 @@ function Header({
         {hasActiveFilters && (
           <button
             onClick={onResetFilters}
-            className="flex items-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-4 py-2 text-sm font-medium text-[#0F172A] transition hover:bg-[#F8FAFC] hover:shadow-sm"
+            className="flex items-center gap-2 rounded-2xl border border-[#FED7AA] bg-white px-4 py-2.5 text-sm font-black text-[#0F172A] shadow-[0_12px_28px_rgba(15,23,42,0.08)] transition hover:-translate-y-0.5 hover:bg-[#FFF7ED]"
           >
             <RefreshCw className="h-4 w-4" />
             Reset Filters
@@ -525,16 +518,16 @@ function FilterBar({
   onToggleMoreFilters: () => void;
 }) {
   return (
-    <div className="mb-8 rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-sm">
+    <div className="mb-8 rounded-[28px] border border-white/75 bg-white/94 p-5 shadow-[0_22px_60px_rgba(15,23,42,0.09)] ring-1 ring-slate-900/5">
       <div className="flex flex-wrap items-center gap-4">
         {/* Period Filter */}
         <div className="flex-1 min-w-[200px]">
-          <label className="mb-2 block text-xs font-medium text-[#64748B] uppercase tracking-wide">Period</label>
+          <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Period</label>
           <div className="relative">
             <select
               value={selectedPeriod}
               onChange={(e) => onPeriodChange(e.target.value)}
-              className="w-full appearance-none rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316]"
+              className="h-11 w-full appearance-none rounded-2xl border border-[#D8E0EA] bg-white/95 px-4 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#F97316]/15"
             >
               <option value="">All Periods</option>
               {availablePeriods.map((period) => (
@@ -549,12 +542,12 @@ function FilterBar({
 
         {/* Comparison Filter */}
         <div className="flex-1 min-w-[200px]">
-          <label className="mb-2 block text-xs font-medium text-[#64748B] uppercase tracking-wide">Compare With</label>
+          <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Compare With</label>
           <div className="relative">
             <select
               value={comparisonPeriod}
               onChange={(e) => onComparisonChange(e.target.value as ComparisonPeriod)}
-              className="w-full appearance-none rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316]"
+              className="h-11 w-full appearance-none rounded-2xl border border-[#D8E0EA] bg-white/95 px-4 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#F97316]/15"
             >
               <option value="none">None</option>
               <option value="previous_month">Previous Month</option>
@@ -566,12 +559,12 @@ function FilterBar({
 
         {/* Family Filter */}
         <div className="flex-1 min-w-[200px]">
-          <label className="mb-2 block text-xs font-medium text-[#64748B] uppercase tracking-wide">Family</label>
+          <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Family</label>
           <div className="relative">
             <select
               value={selectedFamily}
               onChange={(e) => onFamilyChange(e.target.value)}
-              className="w-full appearance-none rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316]"
+              className="h-11 w-full appearance-none rounded-2xl border border-[#D8E0EA] bg-white/95 px-4 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#F97316]/15"
             >
               <option value="">All Families</option>
               {availableFamilies.map((family) => (
@@ -587,7 +580,7 @@ function FilterBar({
         {/* More Filters Toggle */}
         <button
           onClick={onToggleMoreFilters}
-          className="mt-6 flex items-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm font-medium text-[#0F172A] transition hover:bg-[#F8FAFC]"
+          className="mt-6 flex h-11 items-center gap-2 rounded-2xl border border-[#FED7AA] bg-white px-4 text-sm font-black text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:bg-[#FFF7ED]"
         >
           <Filter className="h-4 w-4" />
           More Filters
@@ -596,8 +589,8 @@ function FilterBar({
 
       {/* Expanded Filters */}
       {showMoreFilters && (
-        <div className="mt-4 pt-4 border-t border-[#E2E8F0]">
-          <label className="mb-2 block text-xs font-medium text-[#64748B] uppercase tracking-wide">Products</label>
+        <div className="mt-4 border-t border-[#FED7AA] pt-4">
+          <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Products</label>
           <div className="flex flex-wrap gap-2">
             {availableProducts.slice(0, 10).map((product) => (
               <button
@@ -611,8 +604,8 @@ function FilterBar({
                 }}
                 className={`px-3 py-1.5 rounded-lg text-sm transition ${
                   selectedProducts.includes(product)
-                    ? "bg-[#F97316] text-white"
-                    : "bg-[#F8FAFC] text-[#0F172A] border border-[#E2E8F0] hover:border-[#F97316]"
+                    ? "bg-[#F97316] text-white shadow-[0_12px_24px_rgba(249,115,22,0.22)]"
+                    : "border border-[#E2E8F0] bg-white text-[#0F172A] hover:border-[#F97316] hover:bg-[#FFF7ED]"
                 }`}
               >
                 {product}
@@ -628,7 +621,7 @@ function FilterBar({
           {selectedProducts.map((product) => (
             <div
               key={product}
-              className="flex items-center gap-1 rounded-full bg-[#F97316]/10 px-3 py-1 text-sm text-[#F97316]"
+              className="flex items-center gap-1 rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1 text-sm font-black text-[#C2410C]"
             >
               {product}
               <button
@@ -649,8 +642,6 @@ function FilterBar({
 function KPICards({
   kpis,
   comparisonData,
-  selectedProducts,
-  onProductRemove,
 }: {
   kpis: { totalSales: number; totalTarget: number; achievementRate: number; remainingGap: number };
   comparisonData: {
@@ -659,8 +650,6 @@ function KPICards({
     targetDelta: number;
     achievementDelta: number;
   } | null;
-  selectedProducts: string[];
-  onProductRemove: (product: string) => void;
 }) {
   const cards = [
     {
@@ -702,11 +691,11 @@ function KPICards({
       {cards.map((card, index) => (
         <div
           key={card.title}
-          className="rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-sm transition hover:translate-y-[-2px] hover:shadow-md"
+          className="rounded-[24px] border border-white/75 bg-white/94 p-6 shadow-[0_18px_45px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/5 transition hover:-translate-y-1 hover:border-[#FDBA74] hover:bg-white hover:shadow-[0_24px_58px_rgba(15,23,42,0.12)]"
           style={{ animationDelay: `${index * 100}ms` }}
         >
           <div className="flex items-start justify-between">
-            <div className="rounded-lg bg-[#F8FAFC] p-2.5">
+            <div className="rounded-2xl bg-[#FFF7ED] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
               <card.icon className="h-5 w-5" style={{ color: card.color }} />
             </div>
             {card.delta !== null && (
@@ -750,10 +739,8 @@ function KPICards({
 // Trend Chart Component
 function TrendChart({
   trend,
-  comparisonPeriod,
 }: {
   trend: Array<{ period: string; sales: number; target: number; achievementRate: number }>;
-  comparisonPeriod: ComparisonPeriod;
 }) {
   const chartData = trend.map((t) => ({
     period: t.period,
@@ -765,7 +752,7 @@ function TrendChart({
   return (
     <motion.div
       layoutId="sales-performance-chart"
-      className="mb-8 rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-sm"
+      className="mb-8 rounded-[28px] border border-white/75 bg-white/94 p-6 shadow-[0_22px_60px_rgba(15,23,42,0.09)] ring-1 ring-slate-900/5"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
@@ -845,8 +832,8 @@ function ProductTable({
   ];
 
   return (
-    <div className="mb-8 rounded-xl border border-[#E2E8F0] bg-white shadow-sm overflow-hidden">
-      <div className="p-6 border-b border-[#E2E8F0]">
+    <div className="mb-8 overflow-hidden rounded-[28px] border border-white/75 bg-white/94 shadow-[0_22px_60px_rgba(15,23,42,0.09)] ring-1 ring-slate-900/5">
+      <div className="border-b border-[#FED7AA] bg-[#FFF7ED]/80 p-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-[#0F172A]">Product Performance</h2>
@@ -859,20 +846,20 @@ function ProductTable({
               placeholder="Search products..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="pl-10 pr-4 py-2 rounded-lg border border-[#E2E8F0] text-sm focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316]"
+              className="h-10 rounded-2xl border border-[#D8E0EA] bg-white/95 py-2 pl-10 pr-4 text-sm shadow-[0_10px_24px_rgba(15,23,42,0.06)] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#F97316]/15"
             />
           </div>
         </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-[#F8FAFC]">
+          <thead className="bg-[#FFF7ED]/80">
             <tr>
               {columns.map((column) => (
                 <th
                   key={column.key}
                   onClick={() => onSort(column.key)}
-                  className="px-6 py-3 text-left text-xs font-semibold text-[#64748B] uppercase tracking-wider cursor-pointer hover:bg-[#F1F5F9] transition"
+                  className="cursor-pointer px-6 py-3 text-left text-xs font-black uppercase tracking-[0.16em] text-[#64748B] transition hover:bg-[#FFEDD5]"
                 >
                   <div className="flex items-center gap-2">
                     {column.label}
@@ -900,13 +887,13 @@ function ProductTable({
                 <tr
                   key={product.product}
                   onClick={() => onProductClick(product.product)}
-                  className={`transition hover:bg-[#F8FAFC] cursor-pointer ${
+                  className={`cursor-pointer transition hover:bg-[#FFF7ED]/55 ${
                     selectedProducts.includes(product.product) ? "bg-[#F97316]/5" : ""
                   }`}
                 >
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="rounded-lg bg-[#F8FAFC] p-2">
+                      <div className="rounded-xl bg-[#FFF7ED] p-2">
                         <Package className="h-4 w-4 text-[#64748B]" />
                       </div>
                       <div>
@@ -980,7 +967,7 @@ function TopBottomProducts({
   const maxSales = products.length > 0 ? Math.max(...products.map((p) => p.sales)) : 0;
 
   return (
-    <div className={`rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-sm ${type === "bottom" ? "border-l-4 border-l-[#EF4444]" : ""}`}>
+    <div className={`rounded-[28px] border border-white/75 bg-white/94 p-6 shadow-[0_22px_60px_rgba(15,23,42,0.09)] ring-1 ring-slate-900/5 ${type === "bottom" ? "border-l-4 border-l-[#EF4444]" : ""}`}>
       <h2 className="text-lg font-semibold text-[#0F172A]">{title}</h2>
       <p className="mt-1 text-sm text-[#64748B]">
         {type === "top" ? "Best performing products by sales" : "Products needing attention"}
@@ -993,7 +980,7 @@ function TopBottomProducts({
             <div
               key={product.product}
               onClick={() => onProductClick(product.product)}
-              className="group cursor-pointer rounded-lg p-3 transition hover:bg-[#F8FAFC]"
+              className="group cursor-pointer rounded-2xl border border-transparent p-3 transition hover:border-[#FED7AA] hover:bg-[#FFF7ED]/70"
             >
               <div className="flex items-center justify-between mb-2">
                 <div>
@@ -1045,7 +1032,7 @@ function ProductMixChart({
   return (
     <motion.div
       layoutId="sales-performance-family"
-      className="mb-8 rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-sm"
+      className="mb-8 rounded-[28px] border border-white/75 bg-white/94 p-6 shadow-[0_22px_60px_rgba(15,23,42,0.09)] ring-1 ring-slate-900/5"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
@@ -1101,7 +1088,7 @@ function ProductMixChart({
             <div
               key={entry.name}
               onClick={() => entry.name !== "Others" && onSegmentClick(entry.name)}
-              className="flex items-center justify-between p-2 rounded-lg cursor-pointer hover:bg-[#F8FAFC] transition"
+              className="flex cursor-pointer items-center justify-between rounded-2xl border border-transparent p-2 transition hover:border-[#FED7AA] hover:bg-[#FFF7ED]/70"
             >
               <div className="flex items-center gap-2">
                 <div
@@ -1175,7 +1162,7 @@ function PerformanceInsights({
   };
 
   return (
-    <div className="rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-sm">
+    <div className="rounded-[28px] border border-white/75 bg-white/94 p-6 shadow-[0_22px_60px_rgba(15,23,42,0.09)] ring-1 ring-slate-900/5">
       <h2 className="text-lg font-semibold text-[#0F172A]">Performance Insights</h2>
       <p className="mt-1 text-sm text-[#64748B]">AI-powered analysis of your sales performance</p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -1184,7 +1171,7 @@ function PerformanceInsights({
           return (
             <div
               key={index}
-              className={`border-l-4 ${getBorderColor(insight.type)} rounded-lg border border-[#E2E8F0] bg-white p-4 shadow-sm transition hover:shadow-md`}
+              className={`border-l-4 ${getBorderColor(insight.type)} rounded-2xl border border-[#E2E8F0] bg-white/95 p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(15,23,42,0.10)]`}
             >
               <div className="flex items-start gap-3">
                 <Icon className={`h-5 w-5 mt-0.5 ${getIconColor(insight.type)}`} />

@@ -10,16 +10,15 @@ import {
   AdminStatCard,
   AdminTableShell,
   AdminSectionHeader,
-  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { ContractRow } from "@/lib/contracts/types";
+import type { ContractRenewalDashboardData } from "@/lib/contracts/types";
 
 type Props = {
-  initialData: ContractRow[] | null;
+  initialData: ContractRenewalDashboardData | null;
   initialError: string | null;
 };
 
@@ -32,6 +31,21 @@ const MONTHS = [
 
 const ALL = "__all__";
 const today = new Date();
+
+const selectClassName =
+  "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+
+const panelClassName =
+  "rounded-[28px] border border-white/75 bg-white/94 shadow-[0_28px_90px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/5";
+
+function ContractsPageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative overflow-hidden rounded-[34px] border border-[#FED7AA]/80 bg-[radial-gradient(circle_at_10%_0%,rgba(249,115,22,0.13),transparent_34%),linear-gradient(135deg,#FFF7ED_0%,#F8FAFC_44%,#FFFFFF_100%)] p-4 shadow-[0_30px_110px_rgba(15,23,42,0.11)] sm:p-5">
+      <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[#F97316]/45 to-transparent" />
+      <div className="relative space-y-6">{children}</div>
+    </div>
+  );
+}
 
 function daysUntilDate(value: string) {
   const date = new Date(value);
@@ -74,10 +88,8 @@ export function ContractRenewal({ initialData, initialError }: Props) {
   const [search, setSearch] = useState("");
   const [lineFilter, setLineFilter] = useState(ALL);
   const [areaFilter, setAreaFilter] = useState(ALL);
-  const selectClassName =
-    "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12";
 
-  const rows = useMemo(() => initialData ?? [], [initialData]);
+  const rows = useMemo(() => initialData?.rows ?? [], [initialData]);
 
   const filterOptions = useMemo(() => ({
     lines: [...new Set(rows.map((r) => r.line).filter(Boolean))].sort(),
@@ -146,7 +158,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
 
   if (initialError) {
     return (
-      <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+      <Card className={`${panelClassName} overflow-hidden p-0`}>
         <AdminPageHero
           badges={
             <div className="flex flex-wrap gap-2">
@@ -172,11 +184,11 @@ export function ContractRenewal({ initialData, initialError }: Props) {
   }
 
   return (
-    <div className="space-y-6">
+    <ContractsPageShell>
       <AdminPageHero
         actions={
           <Button
-            className="h-10 gap-2 rounded-xl"
+            className="h-11 gap-2 rounded-2xl"
             disabled={!hasActiveFilters}
             onClick={resetFilters}
             variant="secondary"
@@ -219,7 +231,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
         />
       </div>
 
-      <Card className={`${adminPanelClassName} p-5`}>
+      <Card className={`${panelClassName} p-5`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-black tracking-[-0.03em] text-[#0F172A]">Renewal Calendar</h2>
@@ -239,7 +251,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
               <div
                 key={day}
                 title={`Day ${day}: ${count} renewal${count !== 1 ? "s" : ""}`}
-                className="flex flex-col items-center justify-center rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] py-2"
+                className="flex flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] py-2 shadow-[0_10px_26px_rgba(15,23,42,0.04)]"
                 style={{ backgroundColor: count > 0 ? `rgba(249, 115, 22, ${intensity * 0.35})` : undefined }}
               >
                 <span className="text-xs font-mono text-[#64748B]">{day}</span>
@@ -253,7 +265,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
       <AdminTableShell
         action={
           <Button
-            className="h-10 gap-2 rounded-xl"
+            className="h-11 gap-2 rounded-2xl"
             disabled={!hasActiveFilters}
             onClick={resetFilters}
             variant="secondary"
@@ -298,7 +310,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             <span className="sr-only">Search renewals</span>
             <Search className="pointer-events-none absolute left-3 top-9 h-4 w-4 text-[#64748B]" />
             <Input
-              className="h-10 bg-white pl-9"
+              className="h-11 rounded-2xl border-[#D8E0EA] bg-white/95 pl-9 shadow-[0_14px_35px_rgba(15,23,42,0.06)]"
               placeholder="Search name or HR ID"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -337,7 +349,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
         </div>
       </AdminTableShell>
 
-      <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+      <Card className={`${panelClassName} overflow-hidden p-0`}>
         <AdminSectionHeader
           description="Renewal date is calculated from hire date + one year for the selected period."
           title={`Renewals (${filtered.length})`}
@@ -348,10 +360,10 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             </div>
           }
         />
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto bg-white/80">
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead>
-              <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+              <tr className="border-b border-[#FED7AA] bg-[#FFF7ED]/80 text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
                 {["HR ID", "CRM ID", "Full Name", "Job Title", "Line", "Area", "Hire Date", "Renewal Date", "Status"].map((col) => (
                   <th className="px-3 py-3" key={col}>{col}</th>
                 ))}
@@ -379,7 +391,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                   const isUrgent = days >= 0 && days <= 7;
                   const isWarning = days >= 0 && days <= 30;
                   return (
-                    <tr className="transition-colors hover:bg-[#FCFDFE]" key={`${row.hr_id}-${index}`}>
+                    <tr className="transition-colors hover:bg-[#FFF7ED]/55" key={`${row.hr_id}-${index}`}>
                       <td className="px-3 py-3 font-mono text-xs text-[#64748B]">{row.hr_id || "-"}</td>
                       <td className="px-3 py-3 font-mono text-xs text-[#64748B]">{row.crm_id || "-"}</td>
                       <td className="px-3 py-3 font-semibold text-[#0F172A]">{row.full_name}</td>
@@ -406,6 +418,6 @@ export function ContractRenewal({ initialData, initialError }: Props) {
           </table>
         </div>
       </Card>
-    </div>
+    </ContractsPageShell>
   );
 }

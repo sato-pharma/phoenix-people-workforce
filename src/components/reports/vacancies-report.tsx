@@ -20,7 +20,6 @@ import {
   AdminSectionHeader,
   AdminStatCard,
   AdminTableShell,
-  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +33,25 @@ type VacanciesReportProps = {
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
 };
+
+const panelClassName =
+  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
+
+function VacanciesReportShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+      />
+      <div className="relative z-10 space-y-6">{children}</div>
+    </div>
+  );
+}
 
 function emptyText(value: string | number | null | undefined) {
   return value === null || value === undefined || value === "" ? "-" : String(value);
@@ -97,7 +115,7 @@ function BreakdownPanel({
   const total = items.reduce((sum, item) => sum + item.count, 0);
 
   return (
-    <Card className={`${adminPanelClassName} p-5`}>
+    <Card className={`${panelClassName} p-5 transition-transform duration-200 hover:-translate-y-0.5`}>
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">
@@ -105,7 +123,7 @@ function BreakdownPanel({
           </p>
           <p className="mt-1 text-sm text-[#64748B]">Top groups by visible vacancies.</p>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFF7ED] text-[#F97316]">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#FFF7ED] text-[#F97316] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
           {icon}
         </div>
       </div>
@@ -123,9 +141,9 @@ function BreakdownPanel({
                   <span className="truncate font-medium text-[#0F172A]">{item.name}</span>
                   <span className="text-[#64748B]">{item.count}</span>
                 </div>
-                <div className="mt-2 h-2 rounded-full bg-[#E2E8F0]">
+                <div className="mt-2 h-2 rounded-full bg-[#E2E8F0] shadow-inner">
                   <div
-                    className="h-2 rounded-full bg-[#F97316]"
+                    className="h-2 rounded-full bg-gradient-to-r from-[#F97316] to-[#FDBA74]"
                     style={{ width }}
                   />
                 </div>
@@ -157,7 +175,7 @@ function SelectFilter({
         {label}
       </span>
       <select
-        className="h-10 w-full rounded-xl border border-[#D7E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12"
+        className="h-11 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -377,12 +395,13 @@ export function VacanciesReport({
   }
 
   return (
+    <VacanciesReportShell>
     <div className="space-y-6">
       <AdminPageHero
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
-              className="rounded-xl bg-[#0F172A] px-3 py-2 text-xs text-white hover:bg-[#111827]"
+              className="rounded-2xl bg-[#0F172A] px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)] hover:bg-[#111827]"
               disabled={!report || filteredRows.length === 0}
               onClick={exportCsv}
               variant="secondary"
@@ -391,7 +410,7 @@ export function VacanciesReport({
               Export CSV
             </Button>
             <Button
-              className="rounded-xl px-3 py-2 text-xs"
+              className="rounded-2xl px-3 py-2 text-xs shadow-sm"
               disabled={isLoading}
               onClick={() => void loadReport()}
               variant="secondary"
@@ -424,7 +443,7 @@ export function VacanciesReport({
             <span className="sr-only">Search vacancies</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#64748B]" />
             <Input
-              className="h-10 bg-white pl-9"
+              className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 pl-9 shadow-sm"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search vacancy, area, line, position..."
               value={query}
@@ -474,7 +493,7 @@ export function VacanciesReport({
           />
           <div className="flex items-end">
             <Button
-              className="h-10 gap-2 whitespace-nowrap"
+              className="h-11 gap-2 whitespace-nowrap rounded-2xl shadow-sm"
               disabled={!hasActiveFilters}
               onClick={clearFilters}
               variant="secondary"
@@ -497,7 +516,7 @@ export function VacanciesReport({
       ) : null}
 
       {isLoading && !report ? (
-        <Card className={`${adminPanelClassName} p-4`}>
+        <Card className={`${panelClassName} p-4`}>
           <div className="flex items-center gap-3 text-sm text-[#64748B]">
             <LoadingSpinner />
             Loading vacancies...
@@ -557,7 +576,7 @@ export function VacanciesReport({
             />
           </section>
 
-          <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+          <Card className={`${panelClassName} overflow-hidden p-0`}>
             <AdminSectionHeader
               action={
                 <Badge variant="neutral" className="px-3 py-1 text-xs">
@@ -594,7 +613,7 @@ export function VacanciesReport({
                     </tr>
                   ) : (
                     filteredRows.map((row) => (
-                      <tr className="transition-colors hover:bg-[#FCFDFE]" key={row.id}>
+                      <tr className="transition-colors hover:bg-[#FFF7ED]/65" key={row.id}>
                         <td className="px-4 py-4">
                           <p className="font-mono text-xs font-bold text-[#0F172A]">
                             {vacancyLabel(row.vacancyCode)}
@@ -646,12 +665,13 @@ export function VacanciesReport({
       ) : (
         !isLoading &&
         !error &&
-        <Card className={`${adminPanelClassName} p-4`}>
-          <div className="rounded-xl border border-[#E2E8F0] bg-[#FCFDFE] p-4 text-sm text-[#64748B]">
+        <Card className={`${panelClassName} p-4`}>
+          <div className="rounded-2xl border border-[#E2E8F0] bg-[#FCFDFE] p-4 text-sm text-[#64748B]">
             No vacancy report data loaded yet. Use Refresh to request the latest snapshot.
           </div>
         </Card>
       )}
     </div>
+    </VacanciesReportShell>
   );
 }

@@ -2,13 +2,18 @@
 
 import {
   AlertTriangle,
+  CheckCircle2,
   Download,
+  FileText,
   RefreshCw,
   Search,
   Shield,
   ShieldAlert,
   ShieldCheck,
+  Upload,
+  UserCheck,
   X,
+  XCircle,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -25,12 +30,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { ProbationRow, TrafficStatus } from "@/lib/probation/types";
+import type { ProbationRow, ProbationWorkflowAction, TrafficStatus } from "@/lib/probation/types";
 import { cn } from "@/lib/utils";
 
 type Props = {
   initialData: ProbationRow[] | null;
   initialError: string | null;
+  presentation?: "default" | "premium";
 };
 
 type SortKey =
@@ -44,10 +50,19 @@ type SortKey =
 const allValue = "__all__";
 
 const selectClassName =
-  "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12";
+  "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
 
 const adminTableHeaderClassName =
-  "px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+  "px-3 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]";
+
+const premiumPageClassName =
+  "relative overflow-hidden rounded-[34px] border border-[#FED7AA]/80 bg-[radial-gradient(circle_at_10%_0%,rgba(249,115,22,0.13),transparent_34%),linear-gradient(135deg,#FFF7ED_0%,#F8FAFC_46%,#FFFFFF_100%)] p-4 shadow-[0_30px_110px_rgba(15,23,42,0.11)] sm:p-5";
+
+const premiumPanelClassName =
+  "rounded-[28px] border border-white/75 bg-white/94 shadow-[0_28px_90px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/5";
+
+const premiumInputClassName =
+  "h-11 rounded-2xl border-[#D8E0EA] bg-white/95 shadow-[0_14px_35px_rgba(15,23,42,0.06)] focus:border-[#FDBA74] focus:ring-[#F97316]/15";
 
 function getTrafficStatus(daysRemaining: number): TrafficStatus {
   if (daysRemaining > 60) {
@@ -77,6 +92,17 @@ function statusLabel(status: TrafficStatus) {
   }
 
   return "Critical";
+}
+
+function workflowBadgeVariant(status: string | null | undefined) {
+  if (status === "approved" || status === "completed") return "success";
+  if (status === "cancelled") return "danger";
+  if (status === "manager_feedback" || status === "hr_recommendation") return "warning";
+  return "neutral";
+}
+
+function workflowLabel(status: string | null | undefined) {
+  return status ? status.replace(/_/g, " ") : "not requested";
 }
 
 function formatDate(value: string) {
@@ -183,7 +209,10 @@ function SortSelect({
   );
 }
 
-export function ProbationTracker({ initialData, initialError }: Props) {
+export function ProbationTracker({ initialData, initialError, presentation = "default" }: Props) {
+  const isPremium = presentation === "premium";
+  const panelClassName = isPremium ? premiumPanelClassName : adminPanelClassName;
+  const inputClassName = isPremium ? premiumInputClassName : "h-10 bg-white";
   const [areaFilter, setAreaFilter] = useState(allValue);
   const [jobFilter, setJobFilter] = useState(allValue);
   const [lineFilter, setLineFilter] = useState(allValue);
@@ -191,7 +220,17 @@ export function ProbationTracker({ initialData, initialError }: Props) {
   const [sortBy, setSortBy] = useState<SortKey>("days-asc");
   const [trafficFilter, setTrafficFilter] = useState<TrafficStatus | "all">("all");
   const [employmentFilter, setEmploymentFilter] = useState<string>(allValue);
-  const rows = useMemo(() => initialData ?? [], [initialData]);
+  const [rows, setRows] = useState<ProbationRow[]>(initialData ?? []);
+  const [selectedHrId, setSelectedHrId] = useState("");
+  const [managerFeedback, setManagerFeedback] = useState("");
+  const [hrRecommendation, setHrRecommendation] = useState("");
+  const [decisionReason, setDecisionReason] = useState("");
+  const [extensionEndDate, setExtensionEndDate] = useState("");
+  const [letterUrl, setLetterUrl] = useState("");
+  const [letterName, setLetterName] = useState("");
+  const [workflowNotes, setWorkflowNotes] = useState("");
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ tone: "danger" | "success"; text: string } | null>(null);
 
   const filterOptions = useMemo(
     () => ({
@@ -284,13 +323,90 @@ export function ProbationTracker({ initialData, initialError }: Props) {
     setTrafficFilter("all");
   }
 
+  async function createEvaluation() {
+    if (!selectedHrId) {
+      setMessage({ tone: "danger", text: "Select an employee before creating a probation evaluation." });
+      return;
+    }
+
+    setPendingAction("create");
+    setMessage(null);
+    try {
+      const row = rows.find((item) => item.hr_id === selectedHrId);
+      const response = await fetch("/api/probation", {
+        body: JSON.stringify({
+          employeeHrId: selectedHrId,
+          managerFeedback,
+          probationEndDate: row?.probation_end_date,
+          workflowNotes,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error ?? "Unable to create probation evaluation.");
+      setRows(payload.rows);
+      setSelectedHrId("");
+      setManagerFeedback("");
+      setWorkflowNotes("");
+      setMessage({ tone: "success", text: "Probation evaluation created." });
+    } catch (error) {
+      setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Unable to create probation evaluation." });
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function runWorkflow(row: ProbationRow, action: ProbationWorkflowAction) {
+    if (!row.workflow) return;
+    const actionKey = `${row.workflow.id}:${action}`;
+    setPendingAction(actionKey);
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/probation/${row.workflow.id}/workflow`, {
+        body: JSON.stringify({
+          action,
+          decisionReason,
+          extensionEndDate,
+          hrRecommendation,
+          managerFeedback,
+          note: workflowNotes,
+          probationLetterName: letterName,
+          probationLetterUrl: letterUrl,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error ?? "Workflow action failed.");
+      setRows(payload.rows);
+      setDecisionReason("");
+      setExtensionEndDate("");
+      setHrRecommendation("");
+      setManagerFeedback("");
+      setLetterName("");
+      setLetterUrl("");
+      setWorkflowNotes("");
+      setMessage({ tone: "success", text: "Probation workflow updated." });
+    } catch (error) {
+      setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Workflow action failed." });
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   return (
-    <div className="space-y-6">
+    <div className={isPremium ? premiumPageClassName : "space-y-6"}>
+      {isPremium ? (
+        <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[#F97316]/45 to-transparent" />
+      ) : null}
+      <div className="relative space-y-6">
       <AdminPageHero
         actions={
           <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             <Button
-              className="h-10 gap-2 rounded-xl"
+              className="h-11 gap-2 rounded-2xl"
               disabled={!hasActiveFilters}
               onClick={resetFilters}
               variant="secondary"
@@ -299,14 +415,14 @@ export function ProbationTracker({ initialData, initialError }: Props) {
               Reset Filters
             </Button>
             <a
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#D7E0EA] bg-white px-3 py-2 text-xs font-semibold text-[#0F172A] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white/95 px-4 py-2 text-xs font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
               href="/api/exports?report=probation&format=pdf"
             >
               <Download className="h-4 w-4 text-[#EA580C]" />
               Export PDF
             </a>
             <a
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#D7E0EA] bg-white px-3 py-2 text-xs font-semibold text-[#0F172A] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white/95 px-4 py-2 text-xs font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
               href="/api/exports?report=probation&format=xlsx"
             >
               <Download className="h-4 w-4 text-[#EA580C]" />
@@ -318,7 +434,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
           <div className="flex flex-wrap gap-2">
             <AdminInsightChip>Employees in probation: {summary.total}</AdminInsightChip>
             <AdminInsightChip tone="orange">
-              {rows.length > 0 ? `${((summary.critical / summary.total) * 100).toFixed(0)}% critical` : "0% critical"}
+              {summary.total > 0 ? `${((summary.critical / summary.total) * 100).toFixed(0)}% critical` : "0% critical"}
             </AdminInsightChip>
             <AdminInsightChip tone="slate">
               {summary.warning} warning, {summary.safe} safe
@@ -368,10 +484,53 @@ export function ProbationTracker({ initialData, initialError }: Props) {
         />
       </div>
 
+      {message ? (
+        <AdminCallout tone={message.tone}>
+          {message.tone === "success" ? <CheckCircle2 className="mt-0.5 h-4 w-4" /> : <AlertTriangle className="mt-0.5 h-4 w-4" />}
+          <div>
+            <h2 className="text-sm font-semibold">{message.tone === "success" ? "Workflow update" : "Workflow action failed"}</h2>
+            <p className="mt-1 text-sm">{message.text}</p>
+          </div>
+        </AdminCallout>
+      ) : null}
+
+      <AdminTableShell
+        title="Create Probation Evaluation"
+        description="Start the evaluation form, capture manager feedback, and route the case to HR recommendation and approval."
+        action={
+          <Button className="h-11 gap-2 rounded-2xl" disabled={pendingAction === "create"} onClick={createEvaluation}>
+            <FileText className="h-4 w-4" />
+            {pendingAction === "create" ? "Creating..." : "Create Evaluation"}
+          </Button>
+        }
+      >
+        <div className="grid gap-3 p-4 lg:grid-cols-4">
+          <label className="block lg:col-span-2">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Employee</span>
+            <select className={selectClassName} value={selectedHrId} onChange={(event) => setSelectedHrId(event.target.value)}>
+              <option value="">Select employee</option>
+              {rows.map((row) => (
+                <option key={row.hr_id} value={row.hr_id}>
+                  {row.full_name} ({row.hr_id})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block lg:col-span-2">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Manager Feedback</span>
+            <Input className={inputClassName} onChange={(event) => setManagerFeedback(event.target.value)} placeholder="Initial manager feedback" value={managerFeedback} />
+          </label>
+          <label className="block lg:col-span-4">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Workflow Note</span>
+            <Input className={inputClassName} onChange={(event) => setWorkflowNotes(event.target.value)} placeholder="Context for HR review" value={workflowNotes} />
+          </label>
+        </div>
+      </AdminTableShell>
+
       <AdminTableShell
         action={
           <Button
-            className="h-10 gap-2 rounded-xl"
+            className="h-11 gap-2 rounded-2xl"
             disabled={!hasActiveFilters}
             onClick={resetFilters}
             variant="secondary"
@@ -390,7 +549,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
             </span>
             <Search className="pointer-events-none absolute left-3 top-10 h-4 w-4 text-text-secondary" />
             <Input
-              className="h-10 rounded-xl border-[#D8E0EA] bg-white pl-9"
+              className="h-11 rounded-2xl border-[#D8E0EA] bg-white/95 pl-9 shadow-[0_14px_35px_rgba(15,23,42,0.06)]"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, HR ID, CRM ID"
               value={query}
@@ -425,7 +584,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
         </div>
       </AdminTableShell>
 
-      <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+      <Card className={`${panelClassName} overflow-hidden p-0`}>
         <AdminSectionHeader
           action={
             <div className="flex flex-wrap gap-2">
@@ -436,10 +595,10 @@ export function ProbationTracker({ initialData, initialError }: Props) {
           description={`Showing ${filteredRows.length} of ${rows.length} employees in the active probation window.`}
           title="Current Probation Employees"
         />
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto bg-white/80">
           <table className="w-full min-w-[1120px] text-left text-sm">
-            <thead className="sticky top-0 bg-[#F8FAFC]">
-              <tr className="border-b border-[#E2E8F0] text-xs uppercase tracking-[0.12em] text-text-secondary">
+            <thead className="sticky top-0 bg-[#FFF7ED]/80 backdrop-blur">
+              <tr className="border-b border-[#FED7AA] text-xs uppercase tracking-[0.12em] text-text-secondary">
                 {[
                   "HR ID",
                   "CRM ID",
@@ -452,6 +611,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
                   "Days",
                   "Progress",
                   "Status",
+                  "Workflow",
                   "Actions",
                 ].map((column) => (
                   <th className={adminTableHeaderClassName} key={column}>
@@ -463,7 +623,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
             <tbody className="divide-y divide-[#E2E8F0]">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-12 text-center text-sm text-text-secondary" colSpan={12}>
+                  <td className="px-4 py-12 text-center text-sm text-text-secondary" colSpan={13}>
                     No probation records match the current filters.
                   </td>
                 </tr>
@@ -473,7 +633,7 @@ export function ProbationTracker({ initialData, initialError }: Props) {
                   const progress = getProbationProgress(row.days_remaining);
 
                   return (
-                    <tr className="transition-colors hover:bg-[#F8FAFC]" key={row.hr_id}>
+                    <tr className="transition-colors hover:bg-[#FFF7ED]/55" key={row.hr_id}>
                       <td className="px-3 py-4 font-mono text-xs text-text-secondary">{row.hr_id || "-"}</td>
                       <td className="px-3 py-4 font-mono text-xs text-text-secondary">{row.crm_id || "-"}</td>
                       <td className="px-3 py-4 font-semibold text-text">{row.full_name}</td>
@@ -507,14 +667,51 @@ export function ProbationTracker({ initialData, initialError }: Props) {
                         </Badge>
                       </td>
                       <td className="px-3 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          <Button className="h-9 rounded-xl px-2.5 text-xs" variant="secondary">
-                            Review
-                          </Button>
-                          <Button className="h-9 rounded-xl px-2.5 text-xs" variant="ghost">
-                            Reminder
-                          </Button>
+                        <div className="space-y-2">
+                          <Badge variant={workflowBadgeVariant(row.workflow?.status)}>{workflowLabel(row.workflow?.status)}</Badge>
+                          {row.workflow?.decision ? (
+                            <div className="text-xs font-semibold text-[#0F172A]">Decision: {row.workflow.decision}</div>
+                          ) : null}
+                          {row.workflow?.probationLetterUrl ? (
+                            <a className="block text-xs font-semibold text-[#C2410C] hover:underline" href={row.workflow.probationLetterUrl} rel="noreferrer" target="_blank">
+                              Probation letter
+                            </a>
+                          ) : null}
                         </div>
+                      </td>
+                      <td className="px-3 py-4">
+                        {row.workflow ? (
+                          <div className="flex min-w-[360px] flex-wrap gap-2">
+                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction)} onClick={() => runWorkflow(row, "manager_feedback")} variant="secondary">
+                              <UserCheck className="mr-1 h-3.5 w-3.5" />
+                              Manager
+                            </Button>
+                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction)} onClick={() => runWorkflow(row, "hr_recommendation")} variant="secondary">
+                              HR Rec.
+                            </Button>
+                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction)} onClick={() => runWorkflow(row, "approve_pass")}>
+                              Pass
+                            </Button>
+                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction)} onClick={() => runWorkflow(row, "approve_extend")} variant="secondary">
+                              Extend
+                            </Button>
+                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction)} onClick={() => runWorkflow(row, "approve_terminate")} variant="destructive">
+                              <XCircle className="mr-1 h-3.5 w-3.5" />
+                              Terminate
+                            </Button>
+                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction) || !letterUrl.trim()} onClick={() => runWorkflow(row, "upload_letter")} variant="secondary">
+                              <Upload className="mr-1 h-3.5 w-3.5" />
+                              Letter
+                            </Button>
+                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction)} onClick={() => runWorkflow(row, "complete")} variant="ghost">
+                              Complete
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button className="h-9 rounded-xl px-2.5 text-xs" onClick={() => setSelectedHrId(row.hr_id)} variant="secondary">
+                            Start evaluation
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -524,6 +721,43 @@ export function ProbationTracker({ initialData, initialError }: Props) {
           </table>
         </div>
       </Card>
+
+      <AdminTableShell
+        title="Recommendation, Decision & Letter Inputs"
+        description="These values apply to the next row action: manager feedback, HR recommendation, pass/extend/terminate decision, or probation letter upload."
+      >
+        <div className="grid gap-3 p-4 lg:grid-cols-3">
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Manager Feedback</span>
+            <Input className={inputClassName} onChange={(event) => setManagerFeedback(event.target.value)} placeholder="Manager evaluation feedback" value={managerFeedback} />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">HR Recommendation</span>
+            <Input className={inputClassName} onChange={(event) => setHrRecommendation(event.target.value)} placeholder="HR recommendation" value={hrRecommendation} />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Decision Reason</span>
+            <Input className={inputClassName} onChange={(event) => setDecisionReason(event.target.value)} placeholder="Reason for decision" value={decisionReason} />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Extension End Date</span>
+            <Input className={inputClassName} onChange={(event) => setExtensionEndDate(event.target.value)} type="date" value={extensionEndDate} />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Probation Letter URL</span>
+            <Input className={inputClassName} onChange={(event) => setLetterUrl(event.target.value)} placeholder="https://..." value={letterUrl} />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Letter Name</span>
+            <Input className={inputClassName} onChange={(event) => setLetterName(event.target.value)} placeholder="Probation decision letter" value={letterName} />
+          </label>
+          <label className="block lg:col-span-3">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Workflow Note</span>
+            <Input className={inputClassName} onChange={(event) => setWorkflowNotes(event.target.value)} placeholder="Optional note for next action" value={workflowNotes} />
+          </label>
+        </div>
+      </AdminTableShell>
+      </div>
     </div>
   );
 }

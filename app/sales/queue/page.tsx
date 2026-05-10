@@ -23,7 +23,7 @@ export default async function SalesQueuePage() {
   }
 
   return (
-    <AppShell>
+    <AppShell navigationMode="admin">
       <SalesQueue
         initialData={initialData}
         initialError={initialError}

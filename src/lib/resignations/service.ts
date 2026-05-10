@@ -1,4 +1,5 @@
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type {
@@ -100,6 +101,33 @@ function mapResignation(row: ResignationRow): ResignationRecord {
     cancelledAt: asIso(row.cancelled_at),
     cancelledBy: row.cancelled_by,
   };
+}
+
+async function notifyResignationWorkflow(
+  record: {
+    effectiveDate: string;
+    employeeHrId: string;
+    employeeName: string;
+    status: string;
+  },
+  title: string,
+  tone: "success" | "warning" | "danger" | "neutral" = "warning",
+) {
+  await safeSendNotificationEmail({
+    ctaHref: "/resignations",
+    ctaLabel: "Open resignations",
+    employeeHrId: record.employeeHrId,
+    metrics: [
+      { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },
+      { label: "Status", value: record.status },
+      { label: "Effective date", value: record.effectiveDate },
+    ],
+    notificationType: "resignation",
+    subject: `Phoenix ${title} - ${record.employeeName}`,
+    summary: `Resignation workflow for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+    title,
+    tone,
+  });
 }
 
 export function resignationErrorMessage(error: unknown) {
@@ -211,6 +239,16 @@ async function createResignationForEmployee(
     .select("id")
     .single();
   if (error) throw error;
+  await notifyResignationWorkflow(
+    {
+      effectiveDate,
+      employeeHrId: employee.hrId,
+      employeeName: employee.fullName,
+      status: "submitted",
+    },
+    "Resignation Submitted",
+    "warning",
+  );
   return String((data as { id: string }).id);
 }
 
@@ -413,5 +451,17 @@ export async function runResignationWorkflow(
     .single();
 
   if (updateError) throw updateError;
-  return mapResignation(updated as ResignationRow);
+  const record = mapResignation(updated as ResignationRow);
+  await notifyResignationWorkflow(
+    record,
+    action === "approve"
+      ? "Resignation Approved"
+      : action === "reject"
+        ? "Resignation Rejected"
+        : action === "complete"
+          ? "Resignation Completed"
+          : "Resignation Workflow Updated",
+    action === "reject" || action === "cancel" ? "danger" : action === "approve" || action === "complete" ? "success" : "warning",
+  );
+  return record;
 }

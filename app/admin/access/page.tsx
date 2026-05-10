@@ -37,7 +37,7 @@ export default async function AccessControlPage() {
   }
 
   return (
-    <AppShell>
+    <AppShell navigationMode="admin">
       <AccessControlManager
         initialData={initialData}
         initialError={initialError}

@@ -1,4 +1,4 @@
-import { emailNotificationsEnabled } from "@/lib/notifications/email";
+import { emailNotificationsEnabled, resolveNotificationDelivery } from "@/lib/notifications/email";
 import type { OfferTemplate } from "@/lib/offers/templates";
 
 type SendEmailResult =
@@ -347,31 +347,46 @@ export async function sendJobOfferEmail(input: JobOfferEmailInput): Promise<Send
 
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.JOB_OFFER_EMAIL_FROM || process.env.NOTIFICATION_EMAIL_FROM;
+  const delivery = await resolveNotificationDelivery({
+    candidateEmail: input.candidateEmail,
+    notificationType: "offer",
+    recipientMode: "candidate",
+    subject: `${input.jobTitle} Job Offer`,
+    summary: `Offer prepared for ${input.candidateName}.`,
+    title: `${input.jobTitle} Job Offer`,
+  });
 
   if (!apiKey) return { reason: "RESEND_API_KEY is missing.", skipped: true };
   if (!from) return { reason: "JOB_OFFER_EMAIL_FROM or NOTIFICATION_EMAIL_FROM is missing.", skipped: true };
+  if (delivery.skipped) return delivery;
 
+  const requestId = `offer-${input.offerCode}-${input.candidateEmail}`.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
   const response = await fetch(resendEndpoint, {
     body: JSON.stringify({
       from,
       html: buildOfferEmailHtml(input),
-      reply_to: process.env.NOTIFICATION_REPLY_TO || undefined,
+      replyTo: process.env.NOTIFICATION_REPLY_TO || undefined,
       subject: `${input.jobTitle} Job Offer`,
       text: buildOfferEmailText(input),
-      to: [input.candidateEmail],
+      to: delivery.recipients,
     }),
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      "Idempotency-Key": requestId,
     },
     method: "POST",
   });
 
-  const payload = (await response.json().catch(() => null)) as { id?: string; message?: string } | null;
+  const payload = (await response.json().catch(() => null)) as { error?: string; id?: string; message?: string } | null;
 
   if (!response.ok) {
-    throw new Error(payload?.message ?? `Resend request failed with ${response.status}.`);
+    throw new Error(payload?.message ?? payload?.error ?? `Resend request failed with ${response.status}.`);
   }
 
-  return { id: payload?.id, skipped: false };
+  if (!payload?.id) {
+    throw new Error("Resend accepted the request without returning a message id.");
+  }
+
+  return { id: payload.id, skipped: false };
 }

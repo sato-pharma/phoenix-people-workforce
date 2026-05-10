@@ -23,7 +23,7 @@ export default async function SalesPage() {
   }
 
   return (
-    <AppShell>
+    <AppShell navigationMode="admin">
       <SalesDashboard
         initialData={initialData}
         initialError={initialError}

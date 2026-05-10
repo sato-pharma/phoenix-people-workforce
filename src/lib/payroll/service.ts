@@ -49,7 +49,12 @@ function isLikelyUuid(value: string) {
 
 function isMissingColumnError(error: unknown, columnName: string) {
   const message = payrollErrorMessage(error).toLowerCase();
-  return message.includes(`column \"${columnName}\"`) || message.includes(`column ${columnName}`);
+  return (
+    message.includes(`column \"${columnName}\"`) ||
+    message.includes(`column ${columnName}`) ||
+    message.includes(`.${columnName}`) ||
+    message.includes(`${columnName} does not exist`)
+  );
 }
 
 export function isPayrollSchemaMissing(error: unknown) {
@@ -140,12 +145,23 @@ function mapBatch(row: Record<string, unknown>): SalaryBatch {
 }
 
 function mapRecord(row: Record<string, unknown>): SalaryRecord {
+  const socialInsurance = Number(row.social_insurance ?? 0);
+  const employmentIncomeTax = Number(row.employment_income_tax ?? 0);
+  const crm = Number(row.crm ?? 0);
+  const fingerPrint = Number(row.finger_print ?? 0);
+  const unpaidVacations = Number(row.unpaid_vacations ?? 0);
+  const medicalInsurance = Number(row.medical_insurance ?? 0);
+  const loans = Number(row.loans ?? 0);
+  const otherDeductions = Number(row.other_deductions ?? 0);
+  const totalDeductions = Number(row.total_deductions ?? 0);
+
   return {
     id: String(row.id),
     batchId: String(row.batch_id),
     employeeCode: String(row.employee_code ?? row.hr_id ?? ""),
     hrId: String(row.hr_id ?? ""),
     fullName: String(row.full_name ?? ""),
+    nameAr: row.name_ar ? String(row.name_ar) : null,
     line: String(row.line ?? ""),
     area: String(row.area ?? ""),
     jobTitle: String(row.job_title ?? ""),
@@ -158,16 +174,17 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     fuelAllowance: Number(row.fuel_allowance ?? 0),
     otherAdditions: Number(row.other_additions ?? 0),
     totalAdditions: Number(row.total_additions ?? 0),
-    socialInsurance: Number(row.social_insurance ?? 0),
-    employmentIncomeTax: Number(row.employment_income_tax ?? 0),
-    crm: Number(row.crm ?? 0),
-    fingerPrint: Number(row.finger_print ?? 0),
-    unpaidVacations: Number(row.unpaid_vacations ?? 0),
-    medicalInsurance: Number(row.medical_insurance ?? 0),
-    loans: Number(row.loans ?? 0),
-    otherDeductions: Number(row.other_deductions ?? 0),
-    totalDeductions: Number(row.total_deductions ?? 0),
+    socialInsurance,
+    employmentIncomeTax,
+    crm,
+    fingerPrint,
+    unpaidVacations,
+    medicalInsurance,
+    loans,
+    otherDeductions,
+    totalDeductions,
     netSalary: Number(row.net_salary ?? 0),
+    payrollComment: row.comment ? String(row.comment) : null,
     firstPart: Number(row.first_part ?? 0),
     secondPart: Number(row.second_part ?? 0),
     hireDate: row.hire_date ? String(row.hire_date) : null,
@@ -422,6 +439,11 @@ function filterPayrollFlagsByAccess(
   if (accessFilter.allowedHrIds.size === 0) return [];
   return rows.filter((row) => isPayrollFlagInScope(row, accessFilter.allowedHrIds));
 }
+
+function isNonEmptyString(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
 async function withHireDates(records: SalaryRecord[]) {
   if (records.length === 0) {
     return records;
@@ -429,13 +451,43 @@ async function withHireDates(records: SalaryRecord[]) {
 
   try {
     const directory = await getEmployeeDirectory();
-    const hireDateByHrId = new Map(
-      directory.employees.map((employee) => [employee.hrId, employee.hireDate]),
-    );
+    const hireDateByHrId = new Map<string, string | null>();
+
+    directory.employees.forEach((employee) => {
+      const keys = [
+        employee.hrId,
+        normalizeHrId(employee.hrId),
+        normalizeHrIdForAccess(employee.hrId),
+      ].filter(isNonEmptyString);
+
+      keys.forEach((key) => {
+        hireDateByHrId.set(key, employee.hireDate);
+      });
+    });
+
+    const getDirectoryHireDate = (record: SalaryRecord) => {
+      const keys = [
+        record.hrId,
+        record.employeeCode,
+        normalizeHrId(record.hrId),
+        normalizeHrId(record.employeeCode),
+        normalizeHrIdForAccess(record.hrId),
+        normalizeHrIdForAccess(record.employeeCode),
+      ].filter(isNonEmptyString);
+
+      for (const key of keys) {
+        const hireDate = hireDateByHrId.get(key);
+        if (hireDate) {
+          return hireDate;
+        }
+      }
+
+      return null;
+    };
 
     return records.map((record) => ({
       ...record,
-      hireDate: record.hireDate ?? hireDateByHrId.get(record.hrId) ?? null,
+      hireDate: record.hireDate ?? getDirectoryHireDate(record) ?? null,
     }));
   } catch {
     return records;
@@ -754,6 +806,7 @@ function salaryRecordPayload(batchId: string, row: SalaryValidationRow) {
     area: row.area,
     batch_id: batchId,
     bonus: row.bonus,
+    crm: row.crm,
     hr_id: row.hrId,
     employment_income_tax: row.employmentIncomeTax,
     expenses: row.expenses,
@@ -763,21 +816,140 @@ function salaryRecordPayload(batchId: string, row: SalaryValidationRow) {
     fuel_allowance: row.fuelAllowance,
     full_name: row.fullName,
     gross_salary: row.grossSalary,
+    hire_date: row.hireDate,
     incentive: row.incentive,
     job_title: row.jobTitle,
     line: row.line,
     loans: row.loans,
     medical_insurance: row.medicalInsurance,
+    name_ar: row.nameAr,
     net_salary: row.netSalary,
     other_additions: row.otherAdditions,
     other_deductions: row.otherDeductions,
     overtime: row.overtime,
+    comment: row.payrollComment,
     second_part: row.secondPart,
     social_insurance: row.socialInsurance,
     total_additions: row.totalAdditions,
     total_deductions: row.totalDeductions,
     unpaid_vacations: row.unpaidVacations,
   };
+}
+
+type SalaryRecordPayload = ReturnType<typeof salaryRecordPayload>;
+
+async function writeSalaryRecordPayloads(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  recordPayloads: SalaryRecordPayload[],
+) {
+  if (recordPayloads.length === 0) {
+    return;
+  }
+
+  const { error } = await supabase.from("salary_records").insert(recordPayloads);
+
+  if (!error) {
+    return;
+  }
+
+  if (
+    isMissingColumnError(error, "hire_date") ||
+    isMissingColumnError(error, "name_ar") ||
+    isMissingColumnError(error, "comment")
+  ) {
+    throw new Error(
+      "Payroll schema is missing salary_records sheet-mapping columns. Run the salary_records SQL migration before uploading payroll.",
+    );
+  }
+
+  throw error;
+}
+
+const salaryRecordNumericColumns = new Set([
+  "bonus",
+  "crm",
+  "employment_income_tax",
+  "expenses",
+  "extra_cost_of_living",
+  "finger_print",
+  "first_part",
+  "fuel_allowance",
+  "gross_salary",
+  "incentive",
+  "loans",
+  "medical_insurance",
+  "net_salary",
+  "other_additions",
+  "other_deductions",
+  "overtime",
+  "second_part",
+  "social_insurance",
+  "total_additions",
+  "total_deductions",
+  "unpaid_vacations",
+]);
+
+function normalizePersistedValue(column: string, value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  if (column === "hire_date") return String(value).slice(0, 10);
+  if (salaryRecordNumericColumns.has(column)) {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? Math.round(numberValue * 100) / 100 : value;
+  }
+  return String(value);
+}
+
+async function verifySalaryRecordPayloads(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  batchId: string,
+  recordPayloads: SalaryRecordPayload[],
+) {
+  if (recordPayloads.length === 0) {
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("salary_records")
+    .select("*")
+    .eq("batch_id", batchId);
+
+  if (error) {
+    throw error;
+  }
+
+  const savedByHrId = new Map(
+    ((data ?? []) as Array<Record<string, unknown>>).map((row) => [
+      String(row.hr_id ?? "").trim().toLowerCase(),
+      row,
+    ]),
+  );
+  const mismatches: string[] = [];
+
+  for (const payload of recordPayloads) {
+    const hrId = payload.hr_id.trim();
+    const saved = savedByHrId.get(hrId.toLowerCase());
+
+    if (!saved) {
+      mismatches.push(`${hrId}: row was not saved`);
+      continue;
+    }
+
+    for (const [column, expectedValue] of Object.entries(payload)) {
+      if (column === "batch_id") continue;
+      const expected = normalizePersistedValue(column, expectedValue);
+      const actual = normalizePersistedValue(column, saved[column]);
+
+      if (expected !== actual) {
+        mismatches.push(`${hrId}.${column}: expected ${String(expected)}, saved ${String(actual)}`);
+      }
+    }
+  }
+
+  if (mismatches.length > 0) {
+    throw new Error(
+      `Payroll upload did not persist all sheet columns correctly. ${mismatches.slice(0, 8).join("; ")}`,
+    );
+  }
 }
 
 function salaryFlagPayload(batchId: string, warning: SalaryValidationIssue) {
@@ -823,13 +995,8 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
       salaryRecordPayload(batch.id, row),
     );
 
-    if (recordPayloads.length > 0) {
-      const { error } = await supabase.from("salary_records").insert(recordPayloads);
-
-      if (error) {
-        throw error;
-      }
-    }
+    await writeSalaryRecordPayloads(supabase, recordPayloads);
+    await verifySalaryRecordPayloads(supabase, batch.id, recordPayloads);
 
     const flagPayloads = input.validationWarnings.map((warning) =>
       salaryFlagPayload(batch.id, warning),
@@ -882,21 +1049,69 @@ export async function replaceSalaryBatch(
   }
 
   const existing = mapBatch(existingBatchData as Record<string, unknown>);
+  const now = new Date().toISOString();
+  const recordPayloads = input.records.map((row) =>
+    salaryRecordPayload(existing.id, row),
+  );
 
-  const replacement = await createSalaryBatch({
-    ...input,
-    month: existing.month,
-    year: existing.year,
-  });
+  const { error: deleteRecordsError } = await supabase
+    .from("salary_records")
+    .delete()
+    .eq("batch_id", existing.id);
 
-  try {
-    await deleteSalaryBatch(batchId);
-  } catch (error) {
-    await cleanupSalaryBatch(replacement.batch.id);
-    throw error;
+  if (deleteRecordsError) {
+    throw deleteRecordsError;
   }
 
-  return replacement;
+  await writeSalaryRecordPayloads(supabase, recordPayloads);
+  await verifySalaryRecordPayloads(supabase, existing.id, recordPayloads);
+
+  const { error: deleteFlagsError } = await supabase
+    .from("salary_flags")
+    .delete()
+    .eq("batch_id", existing.id);
+
+  if (deleteFlagsError) {
+    throw deleteFlagsError;
+  }
+
+  const flagPayloads = input.validationWarnings.map((warning) =>
+    salaryFlagPayload(existing.id, warning),
+  );
+
+  if (flagPayloads.length > 0) {
+    const { error: insertFlagsError } = await supabase.from("salary_flags").insert(flagPayloads);
+
+    if (insertFlagsError) {
+      throw insertFlagsError;
+    }
+  }
+
+  const { data: updatedBatchData, error: updateBatchError } = await supabase
+    .from("salary_batches")
+    .update({
+      approved_at: null,
+      approved_by: null,
+      file_name: input.fileName,
+      locked_at: null,
+      rejected_reason: null,
+      status: "uploaded",
+      updated_at: now,
+      uploaded_by: input.uploadedBy,
+    })
+    .eq("id", existing.id)
+    .select()
+    .single();
+
+  if (updateBatchError || !updatedBatchData) {
+    throw updateBatchError ?? new Error("Payroll upload could not be updated.");
+  }
+
+  return {
+    batch: mapBatch(updatedBatchData as Record<string, unknown>),
+    importedRecords: recordPayloads.length,
+    governanceWarnings: flagPayloads.length,
+  };
 }
 
 export async function runPayrollWorkflow(

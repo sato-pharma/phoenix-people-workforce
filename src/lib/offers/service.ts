@@ -785,13 +785,15 @@ export async function decideOffer(token: string, decision: "accepted" | "rejecte
   if (decision === "accepted") {
     await Promise.all([
       safeSendNotificationEmail({
+        candidateEmail: offer.candidate_email,
         metrics: [
           { label: "Role", value: offer.job_title },
           { label: "Area", value: offer.area_scope ?? "To be assigned" },
           { label: "Offer ID", value: offer.offer_code },
           { label: "Status", value: "Accepted" },
         ],
-        recipients: [offer.candidate_email],
+        notificationType: "offer",
+        recipientMode: "candidate",
         subject: `Offer accepted: ${offer.job_title}`,
         summary: `Thank you ${offer.candidate_name}. Your acceptance has been confirmed and HR will contact you shortly.`,
         title: "Offer accepted successfully",
@@ -807,6 +809,8 @@ export async function decideOffer(token: string, decision: "accepted" | "rejecte
           { label: "Offer ID", value: offer.offer_code },
           { label: "Approval", value: "Pending HR approval" },
         ],
+        notificationType: "offer",
+        recipientMode: "hr_notifications",
         subject: `${offer.candidate_name} accepted ${offer.job_title}`,
         summary: "The candidate accepted the offer. Phoenix moved the record into the hired pipeline and prepared onboarding.",
         title: "Offer accepted",
@@ -823,6 +827,8 @@ export async function decideOffer(token: string, decision: "accepted" | "rejecte
         { label: "Area", value: offer.area_scope ?? "To be assigned" },
         { label: "Offer ID", value: offer.offer_code },
       ],
+      notificationType: "offer",
+      recipientMode: "hr_notifications",
       subject: `${offer.candidate_name} rejected ${offer.job_title}`,
       summary: "The candidate rejected the offer. The offer lifecycle record has been closed for reporting.",
       title: "Offer rejected",
@@ -886,12 +892,15 @@ export async function approveAcceptedOffer(
   await safeSendNotificationEmail({
     ctaHref: "/employees",
     ctaLabel: "Open employee record",
+    employeeHrId,
     metrics: [
       { label: "Candidate", value: offer.candidate_name },
       { label: "Role", value: offer.job_title },
       { label: "Employee HR ID", value: employeeHrId },
       { label: "Start date", value: offer.start_date ?? "Not set" },
     ],
+    notificationType: "offer",
+    recipientMode: "hr_notifications",
     subject: `${offer.candidate_name} approved as hired`,
     summary: "The accepted offer has been approved. Employee, organogram, compensation, and probation views are now fed from the approved record.",
     title: "Hire approved",

@@ -3,7 +3,9 @@ import { GeoFilters } from "@/components/geo/geo-filters";
 import { TerritoryMap } from "@/components/geo/territory-map";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
-import { assertPermission } from "@/lib/auth/permissions";
+import { redirect } from "next/navigation";
+
+import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getGeoDashboardData } from "@/lib/geo-intelligence/service";
 
@@ -13,7 +15,9 @@ export default async function GeoTerritoryMapPage(
   props: PageProps<"/admin/geo-intelligence/territory-map">,
 ) {
   const access = await resolveAccessContextFromPage();
-  await assertPermission(access, "geo_intelligence", "read");
+  if (!await canAccess(access, "geo_intelligence", "read")) {
+    redirect("/employee-portals");
+  }
   const searchParams = await props.searchParams;
   const data = await getGeoDashboardData(access, {
     area: typeof searchParams.area === "string" ? searchParams.area : null,

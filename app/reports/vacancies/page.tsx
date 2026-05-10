@@ -1,6 +1,8 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { VacanciesReport } from "@/components/reports/vacancies-report";
-import { assertPermission } from "@/lib/auth/permissions";
+import { redirect } from "next/navigation";
+
+import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   errorMessage,
@@ -30,7 +32,9 @@ function vacanciesPageError(error: unknown) {
 
 export default async function VacanciesPage() {
   const access = await resolveAccessContextFromPage();
-  await assertPermission(access, "vacancies", "read");
+  if (!await canAccess(access, "vacancies", "read")) {
+    redirect("/employee-portals");
+  }
   let initialError: string | null = null;
   let initialReport = null;
 
@@ -41,7 +45,7 @@ export default async function VacanciesPage() {
   }
 
   return (
-    <AppShell>
+    <AppShell navigationMode="admin">
       <VacanciesReport
         initialError={initialError}
         initialReport={initialReport}

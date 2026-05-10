@@ -24,7 +24,6 @@ import {
   AdminPageHero,
   AdminStatCard,
   AdminTableShell,
-  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 import type {
   OfferDashboardData,
@@ -38,6 +37,25 @@ type Props = {
   initialError?: string | null;
   lookups?: OfferLookupData | null;
 };
+
+const panelClassName =
+  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
+
+function OffersShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+      />
+      <div className="relative z-10 space-y-6">{children}</div>
+    </div>
+  );
+}
 
 type OfferForm = {
   candidateEmail: string;
@@ -121,7 +139,7 @@ function Field({
     <label className="block">
       <span className="mb-1.5 block text-xs font-medium text-text-secondary">{label}</span>
       <Input
-        className="bg-white"
+        className="h-11 rounded-2xl border-[#DDE6F1] bg-white/95 shadow-sm"
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         required={required}
@@ -151,7 +169,7 @@ function SelectField({
     <label className="block">
       <span className="mb-1.5 block text-xs font-medium text-text-secondary">{label}</span>
       <select
-        className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:bg-slate-50 disabled:text-slate-400"
+        className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm text-text shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:bg-slate-50 disabled:text-slate-400"
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -179,7 +197,7 @@ function OfferRow({
   const canApprove = offer.status === "accepted" && offer.onboardingStatus !== "approved_hired";
 
   return (
-    <tr className="border-b border-[#E2E8F0] last:border-0">
+    <tr className="border-b border-[#E2E8F0] transition-colors last:border-0 hover:bg-[#FFF7ED]/65">
       <td className="px-4 py-3">
         <div className="font-semibold text-text">{offer.candidateName}</div>
         <div className="mt-1 text-xs text-text-secondary">{offer.candidateEmail}</div>
@@ -198,7 +216,7 @@ function OfferRow({
       </td>
       <td className="px-4 py-3">
         {canApprove ? (
-          <Button className="h-8 gap-2 px-3 text-xs" disabled={approving} onClick={() => onApprove(offer)}>
+          <Button className="h-8 gap-2 rounded-xl px-3 text-xs" disabled={approving} onClick={() => onApprove(offer)}>
             {approving ? <LoadingSpinner /> : <CheckCircle2 className="h-3.5 w-3.5" />}
             Approve hire
           </Button>
@@ -335,15 +353,16 @@ export function OfferLifecycleDashboard({
   }
 
   return (
+    <OffersShell>
     <div className="space-y-6">
       <AdminPageHero
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button className="gap-2 rounded-xl bg-[#0F172A] px-3 py-2 text-xs text-white hover:bg-[#111827]" onClick={() => setIsModalOpen(true)}>
+            <Button className="gap-2 rounded-2xl bg-[#0F172A] px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)] hover:bg-[#111827]" onClick={() => setIsModalOpen(true)}>
               <Send className="h-4 w-4" />
               Create offer
             </Button>
-            <Button className="gap-2 rounded-xl px-3 py-2 text-xs" disabled={isLoading} onClick={loadOffers} variant="secondary">
+            <Button className="gap-2 rounded-2xl px-3 py-2 text-xs shadow-sm" disabled={isLoading} onClick={loadOffers} variant="secondary">
               {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-4 w-4" />}
               Refresh
             </Button>
@@ -442,9 +461,11 @@ export function OfferLifecycleDashboard({
       </AdminTableShell>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/55 px-3 py-6 backdrop-blur-sm">
-          <div className={`max-h-[92vh] max-w-4xl w-full overflow-hidden ${adminPanelClassName}`}>
-            <div className="flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-[#0F172A] px-5 py-4 text-white sm:px-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/60 px-3 py-6 backdrop-blur-md">
+          <div className={`max-h-[92vh] max-w-4xl w-full overflow-hidden ${panelClassName}`}>
+            <div className="relative overflow-hidden border-b border-[#1F2937] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_34%),linear-gradient(135deg,#080B10_0%,#111827_58%,#24150D_100%)] px-5 py-5 text-white sm:px-6">
+              <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#F97316]/20 blur-3xl" />
+              <div className="relative z-10 flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-orange-300">Phoenix Workforce</p>
                 <h2 className="mt-2 text-xl font-black tracking-tight">New job offer</h2>
@@ -456,8 +477,9 @@ export function OfferLifecycleDashboard({
                 onClick={() => setIsModalOpen(false)}
                 type="button"
               >
-                <XCircle className="h-5 w-5" />
-              </button>
+                  <XCircle className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <form className="grid max-h-[calc(92vh-88px)] gap-0 overflow-y-auto lg:grid-cols-[1fr_330px]" onSubmit={submitOffer}>
@@ -465,7 +487,7 @@ export function OfferLifecycleDashboard({
             <label className="block">
               <span className="mb-1.5 block text-xs font-medium text-text-secondary">Position template</span>
               <select
-                className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-text transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm text-text shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                 onChange={(event) => {
                   setForm((prev) => ({
                     ...prev,
@@ -567,8 +589,8 @@ export function OfferLifecycleDashboard({
             </div>
               </div>
 
-              <aside className="border-t border-[#E2E8F0] bg-[#F8FAFC] p-5 lg:border-l lg:border-t-0 sm:p-6">
-                <div className="rounded-xl border border-orange-100 bg-white p-4 shadow-sm">
+              <aside className="border-t border-[#E2E8F0] bg-[#F8FAFC]/85 p-5 lg:border-l lg:border-t-0 sm:p-6">
+                <div className="rounded-2xl border border-orange-100 bg-white p-4 shadow-sm">
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Compensation</p>
                   <h3 className="mt-2 text-base font-black text-[#0F172A]">{selectedTemplate?.label ?? "Selected position"}</h3>
                   {selectedTemplate && (
@@ -603,7 +625,7 @@ export function OfferLifecycleDashboard({
                   )}
                 </div>
 
-                <div className="mt-4 rounded-xl border border-[#E2E8F0] bg-white p-4 text-sm text-[#64748B]">
+                <div className="mt-4 rounded-2xl border border-[#E2E8F0] bg-white p-4 text-sm text-[#64748B] shadow-sm">
                   <div className="font-bold text-[#0F172A]">Offer preview</div>
                   <p className="mt-2 leading-6">
                     {form.candidateName || "Candidate"} - {selectedTemplate?.label ?? "Position"}
@@ -615,7 +637,7 @@ export function OfferLifecycleDashboard({
                 </div>
 
                 <div className="mt-5 flex gap-2">
-                  <Button className="flex-1 gap-2" disabled={isSubmitting} type="submit">
+                  <Button className="flex-1 gap-2 rounded-2xl" disabled={isSubmitting} type="submit">
                     {isSubmitting ? <LoadingSpinner /> : <UserCheck className="h-4 w-4" />}
                     Send offer
                   </Button>
@@ -630,7 +652,7 @@ export function OfferLifecycleDashboard({
       )}
 
       {createdLinks && (
-        <div className="fixed bottom-4 right-4 z-40 w-[min(92vw,380px)] rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 shadow-xl">
+        <div className="fixed bottom-4 right-4 z-40 w-[min(92vw,380px)] rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 shadow-xl">
           <div className="font-bold">Offer created</div>
           {emailStatus && (
             <div className="mt-1 text-xs font-semibold text-emerald-800">{emailStatus}</div>
@@ -646,5 +668,6 @@ export function OfferLifecycleDashboard({
         </div>
       )}
     </div>
+    </OffersShell>
   );
 }

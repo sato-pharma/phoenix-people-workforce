@@ -23,7 +23,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   }
 
   return (
-    <AppShell showTopbar={false}>
+    <AppShell navigationMode="admin">
       <PayrollDashboard
         initialData={data}
         initialError={error}

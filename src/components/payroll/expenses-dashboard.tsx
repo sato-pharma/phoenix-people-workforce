@@ -12,10 +12,10 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { useMemo, useState } from "react";
 
-import { AdminCallout, AdminPageHero, AdminTableShell, adminPanelClassName } from "@/components/admin/admin-design-system";
+import { AdminCallout, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatCurrencyValue, formatNumberValue } from "@/lib/i18n/format";
@@ -26,8 +26,25 @@ import type {
 } from "@/lib/payroll/types";
 import { cn } from "@/lib/utils";
 
-const panelClassName = adminPanelClassName;
+const panelClassName =
+  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 const adminTableHeaderClassName = "px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+
+function ExpensesDashboardShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-8 left-1/3 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+      />
+      <div className="relative z-10 space-y-6">{children}</div>
+    </div>
+  );
+}
 
 type ExpenseFilters = {
   manager: string;
@@ -188,9 +205,9 @@ function StatCard({
   };
 
   return (
-    <Card className={cn(panelClassName, "p-5")}>
+    <Card className={cn(panelClassName, "group p-5 transition-transform duration-200 hover:-translate-y-0.5")}>
       <div className="flex items-center gap-4">
-        <span className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ring-1", tones[tone])}>
+        <span className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ring-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]", tones[tone])}>
           <Icon className="h-5 w-5" />
         </span>
         <div className="min-w-0">
@@ -218,7 +235,7 @@ function SelectFilter({
     <label className="block">
       <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.14em] text-[#64748B]">{label}</span>
       <select
-        className="h-10 w-full rounded-lg border border-[#DDE6F1] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#F97316] focus:ring-2 focus:ring-[#FED7AA]"
+        className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm outline-none transition focus:border-[#F97316] focus:ring-2 focus:ring-[#FED7AA]"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -250,8 +267,8 @@ function BarRows({ rows, title }: { rows: GroupRow[]; title: string }) {
                 <p className="truncate text-sm font-bold text-[#0F172A]">{row.key}</p>
                 <p className="shrink-0 text-[11px] font-semibold text-[#64748B]">{formatNumber(row.count)} rows</p>
               </div>
-              <div className="mt-1.5 h-2 rounded-full bg-[#F1F5F9]">
-                <div className="h-full rounded-full bg-orange-500" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
+              <div className="mt-1.5 h-2 rounded-full bg-[#F1F5F9] shadow-inner">
+                <div className="h-full rounded-full bg-gradient-to-r from-[#F97316] to-[#FDBA74]" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
               </div>
             </div>
             <p className="text-right text-xs font-black text-[#0F172A]">{formatEGP(row.total).replace("EGP", "")}</p>
@@ -273,7 +290,7 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
           <p className="mt-1 text-xs text-[#64748B]">Trip month comparison by travel, meetings, allowance, total, and KM.</p>
         </div>
       </div>
-      <div className="mt-4 overflow-hidden rounded-lg border border-[#E2E8F0]">
+      <div className="mt-4 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
         <div className="overflow-x-auto">
           <table className="min-w-[760px] w-full text-left text-sm">
             <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
@@ -290,7 +307,7 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
             </thead>
             <tbody className="divide-y divide-[#E2E8F0] bg-white">
               {rows.map((row) => (
-                <tr className="transition-colors hover:bg-[#F8FAFC]/80" key={row.key}>
+                <tr className="transition-colors hover:bg-[#FFF7ED]/70" key={row.key}>
                   <td className="px-3 py-2 font-bold text-[#0F172A]">{compactMonth(row.key)}</td>
                   <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.count)}</td>
                   <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.travel)}</td>
@@ -299,8 +316,8 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
                   <td className="px-3 py-2 font-black text-[#EA580C]">{formatEGP(row.total)}</td>
                   <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.km)}</td>
                   <td className="px-3 py-2">
-                    <div className="h-2 w-28 rounded-full bg-[#F1F5F9]">
-                      <div className="h-full rounded-full bg-orange-500" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
+                    <div className="h-2 w-28 rounded-full bg-[#F1F5F9] shadow-inner">
+                      <div className="h-full rounded-full bg-gradient-to-r from-[#F97316] to-[#FDBA74]" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
                     </div>
                   </td>
                 </tr>
@@ -318,7 +335,7 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
     <Card className={`${panelClassName} p-5`}>
       <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Specialist Detailed Comparison</h2>
       <p className="mt-1 text-xs text-[#64748B]">Compare specialists by trips, total, KM, cost per trip, and cost per KM.</p>
-      <div className="mt-4 overflow-hidden rounded-lg border border-[#E2E8F0]">
+      <div className="mt-4 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
         <div className="overflow-x-auto">
           <table className="min-w-[860px] w-full text-left text-sm">
             <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
@@ -336,7 +353,7 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
             </thead>
             <tbody className="divide-y divide-[#E2E8F0] bg-white">
               {rows.slice(0, 50).map((row) => (
-                <tr className="transition-colors hover:bg-[#F8FAFC]/80" key={row.key}>
+                <tr className="transition-colors hover:bg-[#FFF7ED]/70" key={row.key}>
                   <td className="max-w-[220px] truncate px-3 py-2 font-bold text-[#0F172A]">{row.key}</td>
                   <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.count)}</td>
                   <td className="px-3 py-2 font-black text-[#EA580C]">{formatEGP(row.total)}</td>
@@ -373,14 +390,14 @@ function DestinationChart({ rows }: { rows: GroupRow[] }) {
       </div>
       <div className="mt-5 space-y-4">
         {topRows.length === 0 ? (
-          <p className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-4 text-sm text-[#64748B]">No destination data for the current filters.</p>
+          <p className="rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-4 text-sm text-[#64748B]">No destination data for the current filters.</p>
         ) : (
           topRows.map((row, index) => {
             const costPerVisit = row.count ? row.total / row.count : 0;
             return (
               <div className="grid gap-2" key={row.key}>
                 <div className="grid grid-cols-[28px_minmax(0,1fr)_120px] items-center gap-3">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#F8FAFC] text-xs font-black text-[#64748B]">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-[#FFF7ED] text-xs font-black text-[#EA580C]">
                     {index + 1}
                   </span>
                   <div className="min-w-0">
@@ -394,7 +411,7 @@ function DestinationChart({ rows }: { rows: GroupRow[] }) {
                     <p className="text-[11px] font-semibold text-[#64748B]">{formatEGP(costPerVisit)} / visit</p>
                   </div>
                 </div>
-                <div className="ml-10 h-2.5 rounded-full bg-[#F1F5F9]">
+                <div className="ml-10 h-2.5 rounded-full bg-[#F1F5F9] shadow-inner">
                   <div className="h-full rounded-full bg-gradient-to-r from-[#FB923C] to-[#FDBA74]" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
                 </div>
               </div>
@@ -545,7 +562,7 @@ export function ExpensesDashboard({
 
   if (initialError) {
     return (
-      <div className="space-y-5">
+      <ExpensesDashboardShell>
         <AdminPageHero
           description="The expenses dashboard failed to load and cannot render analytics."
           eyebrow="Expenses dashboard"
@@ -556,11 +573,12 @@ export function ExpensesDashboard({
           <AlertTriangle className="mt-0.5 h-5 w-5 text-[#B91C1C]" />
           <p className="font-semibold text-[#B91C1C]">{initialError}</p>
         </AdminCallout>
-      </div>
+      </ExpensesDashboardShell>
     );
   }
 
   return (
+    <ExpensesDashboardShell>
     <div className="space-y-5">
       <AdminPageHero
         actions={
@@ -700,6 +718,7 @@ export function ExpensesDashboard({
         </div>
       </Card>
     </div>
+    </ExpensesDashboardShell>
   );
 }
 

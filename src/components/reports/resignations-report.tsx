@@ -19,7 +19,6 @@ import {
   AdminStatCard,
   AdminTableShell,
   AdminSectionHeader,
-  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,10 +58,25 @@ const statusOptions: Array<ResignationStatus> = [
 ];
 
 const adminSelectClassName =
-  "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12";
+  "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
 
 const adminTableHeaderClassName =
-  "px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+  "px-3 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]";
+
+const panelClassName =
+  "rounded-[28px] border border-white/75 bg-white/94 shadow-[0_28px_90px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/5";
+
+const inputClassName =
+  "h-11 rounded-2xl border-[#D8E0EA] bg-white/95 shadow-[0_14px_35px_rgba(15,23,42,0.06)] focus:border-[#FDBA74] focus:ring-[#F97316]/15";
+
+function ResignationsPageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative overflow-hidden rounded-[34px] border border-[#FED7AA]/80 bg-[radial-gradient(circle_at_12%_0%,rgba(249,115,22,0.13),transparent_34%),linear-gradient(135deg,#FFF7ED_0%,#F8FAFC_44%,#FFFFFF_100%)] p-4 shadow-[0_30px_110px_rgba(15,23,42,0.11)] sm:p-5">
+      <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[#F97316]/45 to-transparent" />
+      <div className="relative space-y-6">{children}</div>
+    </div>
+  );
+}
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "-";
@@ -388,12 +402,12 @@ export function ResignationsReport({ initialData, initialError }: Props) {
   }
 
   return (
-    <div className="space-y-6">
+    <ResignationsPageShell>
       <AdminPageHero
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
-              className="h-10 gap-2 rounded-xl"
+              className="h-11 gap-2 rounded-2xl"
               disabled={isRefreshing || !data}
               onClick={exportCsv}
               variant="secondary"
@@ -402,7 +416,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
               Export CSV
             </Button>
             <Button
-              className="h-10 gap-2 rounded-xl"
+              className="h-11 gap-2 rounded-2xl"
               disabled={isRefreshing}
               onClick={() => void loadDashboard()}
               variant="secondary"
@@ -503,7 +517,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
               Submitted Date
             </span>
             <Input
-              className="h-10 bg-white"
+              className={inputClassName}
               onChange={(event) => updateForm("submittedDate", event.target.value)}
               type="date"
               value={form.submittedDate}
@@ -514,7 +528,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
               Effective Date
             </span>
             <Input
-              className="h-10 bg-white"
+              className={inputClassName}
               onChange={(event) => updateForm("effectiveDate", event.target.value)}
               type="date"
               value={form.effectiveDate}
@@ -525,7 +539,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
               Reason
             </span>
             <Input
-              className="bg-white"
+              className={inputClassName}
               onChange={(event) => updateForm("reason", event.target.value)}
               placeholder="Personal, career move, misconduct, redundancy..."
               value={form.reason ?? ""}
@@ -536,14 +550,14 @@ export function ResignationsReport({ initialData, initialError }: Props) {
               Workflow Note
             </span>
             <textarea
-              className="min-h-24 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12"
+              className="min-h-24 w-full rounded-2xl border border-[#D8E0EA] bg-white/95 px-3 py-2 text-sm text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
               onChange={(event) => updateForm("workflowNotes", event.target.value)}
               placeholder="Optional admin context for the initial submission."
               value={form.workflowNotes ?? ""}
             />
           </label>
           <div className="xl:col-span-5">
-            <Button className="h-10 w-full gap-2 rounded-xl" disabled={isSaving} onClick={() => void submitResignation()}>
+            <Button className="h-11 w-full gap-2 rounded-2xl" disabled={isSaving} onClick={() => void submitResignation()}>
               <Plus className="h-4 w-4" />
               Create Workflow
             </Button>
@@ -553,8 +567,8 @@ export function ResignationsReport({ initialData, initialError }: Props) {
 
       <AdminTableShell
         action={
-          <Button
-            className="h-10 gap-2 rounded-xl"
+            <Button
+            className="h-11 gap-2 rounded-2xl"
             disabled={!hasActiveFilters}
             onClick={clearFilters}
             variant="secondary"
@@ -571,7 +585,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
             <span className="sr-only">Search resignations</span>
             <Search className="pointer-events-none absolute left-3 top-10 h-4 w-4 text-[#64748B]" />
             <Input
-              className="h-10 bg-white pl-9"
+              className="h-11 rounded-2xl border-[#D8E0EA] bg-white/95 pl-9 shadow-[0_14px_35px_rgba(15,23,42,0.06)]"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search employee, HR ID, reason..."
               value={query}
@@ -593,7 +607,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
         </div>
       </AdminTableShell>
 
-      <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+      <Card className={`${panelClassName} overflow-hidden p-0`}>
         <AdminSectionHeader
           action={
             <div className="flex flex-wrap gap-2">
@@ -609,10 +623,10 @@ export function ResignationsReport({ initialData, initialError }: Props) {
           title="Workflow Queue"
         />
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto bg-white/80">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-[#F8FAFC] text-xs uppercase tracking-[0.12em] text-[#64748B]">
-              <tr>
+            <thead className="bg-[#FFF7ED]/80 text-xs uppercase tracking-[0.12em] text-[#64748B] backdrop-blur">
+              <tr className="border-b border-[#FED7AA]">
                 <th className={adminTableHeaderClassName}>Employee</th>
                 <th className={adminTableHeaderClassName}>Line</th>
                 <th className={adminTableHeaderClassName}>Submitted</th>
@@ -637,7 +651,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
                   const isBusy = busyAction?.startsWith(`${record.id}:`);
 
                   return (
-                    <tr className="align-top transition-colors hover:bg-[#FCFDFE]" key={record.id}>
+                    <tr className="align-top transition-colors hover:bg-[#FFF7ED]/55" key={record.id}>
                       <td className="px-3 py-4">
                         <p className="font-medium text-[#0F172A]">{record.employeeName}</p>
                         <p className="mt-1 font-mono text-xs text-[#64748B]">{record.employeeHrId}</p>
@@ -671,7 +685,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
                         {record.workflowNotes ? (
                           <details className="mt-2">
                             <summary className="cursor-pointer text-[#C2410C]">View notes</summary>
-                            <pre className="mt-2 whitespace-pre-wrap rounded-md bg-[#F8FAFC] p-2 text-[11px] text-[#0F172A]">
+                            <pre className="mt-2 whitespace-pre-wrap rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-2 text-[11px] text-[#0F172A]">
                               {record.workflowNotes}
                             </pre>
                           </details>
@@ -764,6 +778,6 @@ export function ResignationsReport({ initialData, initialError }: Props) {
           </table>
         </div>
       </Card>
-    </div>
+    </ResignationsPageShell>
   );
 }

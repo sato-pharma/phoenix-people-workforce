@@ -9,43 +9,50 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const headers = [
-  "HR_ID",
-  "Full Name",
+  "#",
+  "HR ID",
+  "Employee Name",
+  "Arabic Name",
+  "Job Title",
   "Line",
   "Area",
-  "Job Title",
-  "Gross Salary",
-  "Expenses",
+  "Hire Date",
+  "Net Salary",
+  "Expenses (Prev Month)",
   "Incentive",
   "Overtime",
   "Bonus",
-  "Extra Cost of Living",
-  "Fuel Allowance",
-  "Other Additions",
+  "Extra CoL",
+  "Fuel Allow.",
+  "Other Add.",
   "Total Additions",
-  "Social Insurance",
-  "Employment Income Tax",
-  "CRM",
-  "Finger Print",
-  "Unpaid Vacations",
-  "Medical Insurance",
+  "Social Ins.",
+  "Income Tax",
+  "No CRM",
+  "Fingerprint",
+  "Unpaid Vac.",
+  "Medical Ins.",
   "Loans",
-  "Other Deductions",
+  "Other Ded.",
   "Total Deductions",
-  "Net Salary",
-  "First Part",
-  "Second Part",
+  "Month Salary",
+  "1st Part",
+  "2nd Part",
+  "Comment",
   "Month",
   "Year",
 ];
 
-function rowValues(record: SalaryRecord, month: number, year: number) {
+function rowValues(record: SalaryRecord, month: number, year: number, index: number) {
   return [
+    index,
     record.employeeCode,
     record.fullName,
+    record.nameAr ?? "",
+    record.jobTitle,
     record.line,
     record.area,
-    record.jobTitle,
+    record.hireDate ?? "",
     record.grossSalary,
     record.expenses,
     record.incentive,
@@ -67,6 +74,7 @@ function rowValues(record: SalaryRecord, month: number, year: number) {
     record.netSalary,
     record.firstPart,
     record.secondPart,
+    record.payrollComment ?? "",
     month,
     year,
   ];
@@ -105,9 +113,9 @@ export async function GET(
       width: Math.max(header.length + 4, 14),
     }));
 
-    for (const record of exportData.records) {
-      sheet.addRow(rowValues(record, exportData.batch.month, exportData.batch.year));
-    }
+    exportData.records.forEach((record, index) => {
+      sheet.addRow(rowValues(record, exportData.batch.month, exportData.batch.year, index + 1));
+    });
 
     const buffer = await workbook.xlsx.writeBuffer();
     const period = `${exportData.batch.year}-${String(exportData.batch.month).padStart(2, "0")}`;

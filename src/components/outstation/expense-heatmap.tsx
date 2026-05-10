@@ -3,8 +3,10 @@
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
-import { adminPanelClassName } from "@/components/admin/admin-design-system";
 import type { OutstationHeatmapData } from "@/lib/outstation/types";
+
+const panelClassName =
+  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 
 type GoogleMapHandle = {
   fitBounds(bounds: { extend: (point: { lat: number; lng: number }) => void }): void;
@@ -40,8 +42,14 @@ type GoogleMapsApi = {
   ) => Promise<{
     Map: GoogleMapConstructor;
     LatLngBounds: GoogleLatLngBoundsConstructor;
-    Marker?: GoogleMarkerConstructor;
+      Marker?: GoogleMarkerConstructor;
   }>;
+  LatLngBounds?: GoogleLatLngBoundsConstructor;
+  Map?: GoogleMapConstructor;
+  Marker?: GoogleMarkerConstructor;
+};
+
+type GoogleMapsLibrary = {
   LatLngBounds?: GoogleLatLngBoundsConstructor;
   Map?: GoogleMapConstructor;
   Marker?: GoogleMarkerConstructor;
@@ -66,13 +74,13 @@ export function ExpenseHeatmap({
     let cancelled = false;
 
     const run = async () => {
-      const mapsLibrary: any = googleMaps.importLibrary
+      const mapsLibrary: GoogleMapsLibrary = googleMaps.importLibrary
         ? await googleMaps.importLibrary("maps")
         : {
             LatLngBounds: googleMaps.LatLngBounds,
             Map: googleMaps.Map,
           };
-      const markerLibrary: any = googleMaps.importLibrary
+      const markerLibrary: GoogleMapsLibrary = googleMaps.importLibrary
         ? await googleMaps.importLibrary("marker")
         : {
             Marker: googleMaps.Marker,
@@ -81,8 +89,8 @@ export function ExpenseHeatmap({
 
       const mapCtor = mapsLibrary.Map;
       const markerCtor = markerLibrary.Marker ?? mapsLibrary.Marker;
-      if (!markerCtor) return;
       const latLngBoundsCtor = mapsLibrary.LatLngBounds;
+      if (!mapCtor || !markerCtor || !latLngBoundsCtor) return;
 
       const map =
         mapInstanceRef.current ??
@@ -120,15 +128,26 @@ export function ExpenseHeatmap({
   }, [data.markers, ready]);
 
   return (
-    <div className={`${adminPanelClassName} p-5`}>
+    <div className={`${panelClassName} overflow-hidden p-0`}>
       <Script
         onLoad={() => setReady(true)}
         src={`https://maps.googleapis.com/maps/api/js?key=${browserKey}&loading=async`}
         strategy="afterInteractive"
       />
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748B]">Expense Heatmap</p>
-      <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-[#0F172A]">Outstation destination activity</h2>
-      <div className="mt-4 h-[420px] rounded-[14px] border border-[#DDE6F1] bg-[#F8FAFC]" ref={mapRef} />
+      <div className="relative overflow-hidden border-b border-[#1F2937] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_34%),linear-gradient(135deg,#080B10_0%,#111827_58%,#24150D_100%)] px-5 py-5 text-white">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#F97316]/20 blur-3xl"
+        />
+        <div className="relative z-10">
+          <p className="inline-flex rounded-full border border-[#F97316]/35 bg-[#F97316]/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-[#FDBA74]">Expense Heatmap</p>
+          <h2 className="mt-3 text-xl font-black tracking-[-0.03em] text-white">Outstation destination activity</h2>
+          <p className="mt-1 text-sm text-[#CBD5E1]">Map request clusters against residence validation and territory variance.</p>
+        </div>
+      </div>
+      <div className="p-5">
+        <div className="h-[420px] rounded-[28px] border border-[#DDE6F1] bg-[#F8FAFC] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]" ref={mapRef} />
+      </div>
     </div>
   );
 }

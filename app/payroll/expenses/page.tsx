@@ -22,7 +22,7 @@ export default async function PayrollExpensesPage() {
   }
 
   return (
-    <AppShell showTopbar={false}>
+    <AppShell navigationMode="admin">
       <PayrollDashboard
         initialData={data}
         initialError={error}

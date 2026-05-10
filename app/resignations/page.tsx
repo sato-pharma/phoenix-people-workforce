@@ -1,6 +1,8 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { ResignationsReport } from "@/components/reports/resignations-report";
-import { assertPermission } from "@/lib/auth/permissions";
+import { redirect } from "next/navigation";
+
+import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   getResignationsDashboardData,
@@ -20,7 +22,9 @@ function resignationsPageError(error: unknown) {
 
 export default async function ResignationsPage() {
   const access = await resolveAccessContextFromPage();
-  await assertPermission(access, "resignations", "read");
+  if (!await canAccess(access, "resignations", "read")) {
+    redirect("/employee-portals");
+  }
 
   let initialData: ResignationDashboardData | null = null;
   let initialError: string | null = null;
@@ -32,7 +36,7 @@ export default async function ResignationsPage() {
   }
 
   return (
-    <AppShell>
+    <AppShell navigationMode="admin">
       <ResignationsReport initialData={initialData} initialError={initialError} />
     </AppShell>
   );

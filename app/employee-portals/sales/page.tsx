@@ -97,7 +97,7 @@ export default async function EmployeePortalSalesPage({
       <EmployeePortalActionBar
         actions={
           <>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
+            <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black text-orange-700 shadow-[0_10px_24px_rgba(249,115,22,0.08)]">
               {filtersLabel}
             </span>
             <EmployeePortalActionLink href="/employee-portals" label="Back to Command Center" />

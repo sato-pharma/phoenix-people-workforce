@@ -12,7 +12,7 @@ export default async function AdminOutstationPolicyPage() {
   const policies = await getOutstationPolicies();
 
   return (
-    <AppShell showTopbar={false}>
+    <AppShell navigationMode="admin">
       <OutstationPolicyAdmin initialPolicies={policies} />
     </AppShell>
   );

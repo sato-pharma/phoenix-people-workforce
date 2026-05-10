@@ -22,7 +22,6 @@ import {
   AdminPageHero,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
-import { adminPanelClassName } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -62,8 +61,9 @@ type DashboardView = {
   trendRows: AnyRow[];
 };
 
-const panelClassName = adminPanelClassName;
-const adminTableHeaderClassName = "px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+const panelClassName =
+  "rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
+const adminTableHeaderClassName = "px-5 py-4 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
 
 function valueAsNumber(value: unknown) {
   const parsed = Number(value ?? 0);
@@ -259,7 +259,8 @@ function MetricCard({
   };
 
   return (
-    <Card className={`${panelClassName} group min-h-[138px] p-5 transition hover:-translate-y-0.5`}>
+    <Card className={`${panelClassName} group relative min-h-[138px] overflow-hidden p-5 transition hover:-translate-y-0.5 hover:border-[#FDBA74] hover:bg-white hover:shadow-[0_22px_48px_rgba(15,23,42,0.10)]`}>
+      <div className="pointer-events-none absolute -right-8 -top-10 h-24 w-24 rounded-full bg-orange-200/20 blur-2xl" />
       <div className="flex items-center gap-4">
         <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ring-1", toneClasses[tone])}>
           <Icon className="h-5 w-5" />
@@ -302,14 +303,15 @@ function SectionHeader({ title, subtitle }: { subtitle?: string; title: string }
 
 function ChartCard({ children, subtitle, title }: { children: React.ReactNode; subtitle?: string; title: string }) {
   return (
-    <Card className={`${panelClassName} p-5`}>
+    <Card className={`${panelClassName} relative overflow-hidden p-5`}>
+      <div className="pointer-events-none absolute -right-12 -top-14 h-40 w-40 rounded-full bg-orange-200/20 blur-3xl" />
       <div className="flex items-start justify-between gap-3">
         <SectionHeader title={title} subtitle={subtitle} />
         <span className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#EA580C]">
           Live
         </span>
       </div>
-      <div className="mt-5">{children}</div>
+      <div className="relative mt-5 rounded-[24px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">{children}</div>
     </Card>
   );
 }
@@ -331,21 +333,29 @@ function TrendLineChart({ rows }: { rows: AnyRow[] }) {
 
   return (
     <div className="relative">
-      <svg className="h-[290px] w-full overflow-visible" viewBox={`0 0 ${width} ${height}`} role="img">
+      <svg className="h-[300px] w-full overflow-visible" viewBox={`0 0 ${width} ${height}`} role="img">
         {[0, 0.25, 0.5, 0.75, 1].map((tick) => {
           const y = padTop + tick * (height - padTop - padBottom);
-          return <line key={tick} x1={padX} x2={width - padX} y1={y} y2={y} stroke="#e2e8f0" strokeDasharray="4 6" />;
+          return <line key={tick} x1={padX} x2={width - padX} y1={y} y2={y} stroke="#dbe3ee" strokeDasharray="4 8" />;
         })}
         <defs>
-          <linearGradient id="salesFill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#f97316" stopOpacity="0.24" />
-            <stop offset="100%" stopColor="#f97316" stopOpacity="0" />
+          <linearGradient id="salesLineGradient" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0%" stopColor="#F59E0B" />
+            <stop offset="52%" stopColor="#F97316" />
+            <stop offset="100%" stopColor="#EA580C" />
+          </linearGradient>
+          <filter id="salesLineGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="8" stdDeviation="7" floodColor="#F97316" floodOpacity="0.28" />
+          </filter>
+          <linearGradient id="targetLineGradient" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0%" stopColor="#94A3B8" />
+            <stop offset="100%" stopColor="#0F172A" />
           </linearGradient>
         </defs>
         {rows.length > 1 && (
           <>
-            <polyline fill="none" points={targetPoints} stroke="#94a3b8" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
-            <polyline fill="none" points={salesPoints} stroke="#f97316" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" />
+            <polyline fill="none" points={targetPoints} stroke="url(#targetLineGradient)" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.55" strokeWidth="3" />
+            <polyline fill="none" filter="url(#salesLineGlow)" points={salesPoints} stroke="url(#salesLineGradient)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="5" />
           </>
         )}
         {rows.map((row, index) => {
@@ -356,8 +366,8 @@ function TrendLineChart({ rows }: { rows: AnyRow[] }) {
           return (
             <g key={period} onMouseEnter={() => setActivePeriod(period)} onMouseLeave={() => setActivePeriod(null)}>
               <line x1={x} x2={x} y1={padTop} y2={height - padBottom} stroke="transparent" strokeWidth="42" />
-              <circle cx={x} cy={targetY} fill="#94a3b8" r="5" />
-              <circle cx={x} cy={salesY} fill="#f97316" r="6" stroke="#fff" strokeWidth="3" />
+              <circle cx={x} cy={targetY} fill="#0F172A" opacity="0.55" r="5" />
+              <circle cx={x} cy={salesY} fill="#f97316" r="7" stroke="#fff" strokeWidth="4" />
               <text fill="#64748b" fontSize="12" fontWeight="700" textAnchor="middle" x={x} y={height - 12}>
                 {compactPeriod(period).replace(" 2026", "")}
               </text>
@@ -369,16 +379,16 @@ function TrendLineChart({ rows }: { rows: AnyRow[] }) {
         })}
       </svg>
       {activeRow && (
-        <div className="absolute right-4 top-4 rounded-xl border border-[#E2E8F0] bg-white p-3 text-xs shadow-xl">
+        <div className="absolute right-4 top-4 rounded-2xl border border-[#E2E8F0] bg-white/95 p-3 text-xs shadow-[0_18px_40px_rgba(15,23,42,0.18)] backdrop-blur">
           <p className="font-black text-[#0F172A]">{compactPeriod(valueAsText(activeRow.period))}</p>
           <p className="mt-1 text-[#64748B]">Sales: {formatCurrency(valueAsNumber(activeRow.sales))}</p>
           <p className="text-[#64748B]">Target: {formatCurrency(valueAsNumber(activeRow.target))}</p>
           <p className="text-[#64748B]">Achievement: {formatPercent(valueAsNumber(activeRow.achievementRate))}</p>
         </div>
       )}
-      <div className="mt-2 flex gap-5 text-xs font-semibold text-[#64748B]">
-        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-orange-500" /> Sales</span>
-        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#CBD5E1]" /> Target</span>
+      <div className="mt-3 flex gap-5 rounded-2xl border border-[#E2E8F0] bg-white/80 px-3 py-2 text-xs font-semibold text-[#64748B]">
+        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-orange-500 shadow-[0_0_12px_rgba(249,115,22,0.7)]" /> Sales</span>
+        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#0F172A]/70" /> Target</span>
       </div>
     </div>
   );
@@ -390,9 +400,9 @@ function DonutChart({ rows, total }: { rows: AnyRow[]; total: number }) {
   const gradient = rows.length <= 1 ? "#f97316 0 100%" : `#f97316 0 ${firstPct}%, #0f172a ${firstPct}% 100%`;
 
   return (
-    <div className="grid gap-5 sm:grid-cols-[170px_minmax(0,1fr)]">
-      <div className="relative mx-auto h-40 w-40 rounded-full" style={{ background: `conic-gradient(${gradient})` }}>
-        <div className="absolute inset-6 flex flex-col items-center justify-center rounded-full bg-white">
+    <div className="grid gap-5 sm:grid-cols-[190px_minmax(0,1fr)]">
+      <div className="relative mx-auto h-44 w-44 rounded-full p-2 shadow-[0_20px_45px_rgba(15,23,42,0.12)]" style={{ background: `conic-gradient(${gradient})` }}>
+        <div className="absolute inset-7 flex flex-col items-center justify-center rounded-full border border-[#E2E8F0] bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
           <p className="text-2xl font-black text-[#0F172A]">{shortCurrency(total).replace("EGP ", "")}</p>
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#64748B]">EGP</p>
         </div>
@@ -402,14 +412,19 @@ function DonutChart({ rows, total }: { rows: AnyRow[]; total: number }) {
           const value = valueAsNumber(row.value);
           const rate = total > 0 ? value / total : 0;
           return (
-            <div className="flex items-center justify-between gap-3 text-sm" key={valueAsText(row.name)}>
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white/80 px-3 py-2 text-sm shadow-sm" key={valueAsText(row.name)}>
+              <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2 font-bold text-[#0F172A]">
-                <span className={cn("h-2.5 w-2.5 rounded-full", index === 0 ? "bg-orange-500" : "bg-[#0F172A]")} />
+                <span className={cn("h-2.5 w-2.5 rounded-full", index === 0 ? "bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.7)]" : "bg-[#0F172A]")} />
                 {valueAsText(row.name)}
               </span>
               <span className="text-right text-xs font-semibold text-[#64748B]">
                 {shortCurrency(value).replace("EGP ", "")} / {formatPercent(rate)}
               </span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#F1F5F9]">
+                <div className={cn("h-full rounded-full", index === 0 ? "bg-orange-500" : "bg-[#0F172A]")} style={{ width: `${Math.min(rate * 100, 100)}%` }} />
+              </div>
             </div>
           );
         })}
@@ -424,7 +439,7 @@ function TopList({ labelKey, rows, title }: { labelKey: string; rows: AnyRow[]; 
   const total = topRows.reduce((acc, row) => acc + valueAsNumber(row.sales), 0);
 
   return (
-    <Card className="rounded-2xl border-[#E2E8F0] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+    <Card className="rounded-3xl border-[#E2E8F0] bg-white/95 p-5 shadow-[0_16px_36px_rgba(15,23,42,0.07)]">
       <h3 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">{title}</h3>
       <div className="mt-4 space-y-3">
         {topRows.map((row, index) => {
@@ -438,8 +453,8 @@ function TopList({ labelKey, rows, title }: { labelKey: string; rows: AnyRow[]; 
                   <p className="shrink-0 text-xs font-bold text-[#64748B]">{shortCurrency(sales).replace("EGP ", "")}</p>
                 </div>
                 {valueAsText(row.area) && <p className="mt-0.5 truncate text-[11px] font-semibold text-[#64748B]">{valueAsText(row.area)}</p>}
-                <div className="mt-1.5 h-1.5 rounded-full bg-[#F8FAFC]">
-                  <div className="h-full rounded-full bg-orange-500" style={{ width: `${Math.min((sales / max) * 100, 100)}%` }} />
+                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#F1F5F9]">
+                  <div className="h-full rounded-full bg-[linear-gradient(90deg,#F59E0B_0%,#F97316_100%)]" style={{ width: `${Math.min((sales / max) * 100, 100)}%` }} />
                 </div>
               </div>
               <p className="text-right text-xs font-semibold text-[#64748B]">{formatPercent(total > 0 ? sales / total : 0)}</p>
@@ -633,7 +648,7 @@ function ComparativeLineSales({ rows }: { rows: AnyRow[] }) {
             const target = valueAsNumber(row.target);
             const rate = valueAsNumber(row.achievementRate);
             return (
-              <div className="rounded-lg border border-[#E2E8F0] p-3" key={valueAsText(row.line)}>
+              <div className="rounded-2xl border border-[#E2E8F0] bg-white/80 p-4 shadow-sm transition hover:border-[#FDBA74] hover:bg-white" key={valueAsText(row.line)}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-black text-[#0F172A]">{valueAsText(row.line)}</p>
@@ -645,8 +660,8 @@ function ComparativeLineSales({ rows }: { rows: AnyRow[] }) {
                   </div>
                 </div>
                 <div className="mt-3 grid gap-1.5">
-                  <div className="h-2 rounded-full bg-[#F8FAFC]">
-                    <div className="h-full rounded-full bg-orange-500" style={{ width: `${Math.min((sales / maxSales) * 100, 100)}%` }} />
+                  <div className="h-2.5 overflow-hidden rounded-full bg-[#F1F5F9] shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)]">
+                    <div className="h-full rounded-full bg-[linear-gradient(90deg,#F59E0B_0%,#F97316_55%,#EA580C_100%)] shadow-[0_0_14px_rgba(249,115,22,0.35)]" style={{ width: `${Math.min((sales / maxSales) * 100, 100)}%` }} />
                   </div>
                   <div className="flex justify-between text-[11px] font-semibold text-[#64748B]">
                     <span>Target {shortCurrency(target)}</span>
@@ -666,7 +681,7 @@ function AchievementBars({ rows }: { rows: AnyRow[] }) {
   const [activePeriod, setActivePeriod] = useState<string | null>(null);
 
   return (
-    <div className="flex h-64 items-end gap-3 border-b border-[#E2E8F0] px-2">
+    <div className="flex h-72 items-end gap-3 rounded-[22px] border border-[#E2E8F0] bg-white/70 px-3 pb-3 pt-6">
       {rows.map((row) => {
         const achievement = valueAsNumber(row.achievement);
         const period = valueAsText(row.period);
@@ -677,18 +692,25 @@ function AchievementBars({ rows }: { rows: AnyRow[] }) {
             onMouseEnter={() => setActivePeriod(period)}
             onMouseLeave={() => setActivePeriod(null)}
           >
-            <div className="flex h-48 w-full items-end justify-center rounded-t-lg bg-[#F8FAFC] px-2">
+            <div className="flex h-52 w-full items-end justify-center rounded-t-2xl bg-[linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] px-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
               <div
-                className={cn("w-full rounded-t-md", achievement >= 100 ? "bg-emerald-500" : achievement >= 80 ? "bg-amber-500" : "bg-red-500")}
+                className={cn(
+                  "w-full rounded-t-xl shadow-[0_10px_20px_rgba(15,23,42,0.12)]",
+                  achievement >= 100
+                    ? "bg-[linear-gradient(180deg,#34D399_0%,#059669_100%)]"
+                    : achievement >= 80
+                      ? "bg-[linear-gradient(180deg,#FBBF24_0%,#F97316_100%)]"
+                      : "bg-[linear-gradient(180deg,#FB7185_0%,#E11D48_100%)]",
+                )}
                 style={{ height: `${Math.min(Math.max(achievement, 4), 120) / 120 * 100}%` }}
               />
             </div>
-            <p className="text-xs font-semibold text-text">{achievement.toFixed(0)}%</p>
-            <p className="truncate text-[11px] text-text-secondary">{period}</p>
+            <p className="text-xs font-black text-[#0F172A]">{achievement.toFixed(0)}%</p>
+            <p className="truncate text-[11px] font-semibold text-[#64748B]">{compactPeriod(period).replace(" 2026", "")}</p>
             {activePeriod === period && (
-              <div className="absolute bottom-20 z-10 w-44 rounded-lg border border-border bg-white p-3 text-center text-xs shadow-lg">
-                <p className="font-bold text-text">{period}</p>
-                <p className="mt-1 text-text-secondary">Achievement {achievement.toFixed(1)}%</p>
+              <div className="absolute bottom-24 z-10 w-44 rounded-2xl border border-[#E2E8F0] bg-white/95 p-3 text-center text-xs shadow-[0_18px_40px_rgba(15,23,42,0.18)] backdrop-blur">
+                <p className="font-bold text-[#0F172A]">{compactPeriod(period)}</p>
+                <p className="mt-1 text-[#64748B]">Achievement {achievement.toFixed(1)}%</p>
               </div>
             )}
           </div>
@@ -1004,14 +1026,40 @@ function SalesDashboardContent({
   const repRankingRows = normalizeRankingRows(view.repRows, "rep");
 
   return (
-    <div className="space-y-5">
-      <AdminPageHero
-        actions={(
+    <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
+      <div className="space-y-7">
+      <div className="relative overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 p-7 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-orange-200/35 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 left-12 h-28 w-28 rounded-full bg-slate-200/45 blur-2xl" />
+        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">
+                {portalMode ? "Employee sales" : "Sales intelligence"}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0B0B0B] text-orange-400 shadow-[0_14px_30px_rgba(15,23,42,0.22)]">
+                <BarChart3 className="h-5 w-5" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-black tracking-tight text-slate-950">
+                  {portalMode ? "My Sales Dashboard" : "Sales Dashboard"}
+                </h1>
+                <p className="mt-1 max-w-3xl text-sm text-slate-500">
+                  {portalMode
+                    ? "Sales performance across the periods, territories, products, and scope assigned to your employee account."
+                    : "Track approved sales, target progress, channel mix, line performance, and leadership rankings from one compact command surface."}
+                </p>
+              </div>
+            </div>
+          </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {!portalMode && (
               <>
                 <Link href="/sales/queue">
-                  <Button className="gap-2 rounded-xl">
+                  <Button className="gap-2 rounded-xl bg-[#0B0B0B] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-[#F97316]">
                     <FileSpreadsheet className="h-4 w-4" />
                     Uploaded Sheets
                   </Button>
@@ -1025,22 +1073,13 @@ function SalesDashboardContent({
               </>
             )}
           </div>
-        )}
-        badges={(
-          <div className="flex flex-wrap gap-2 text-xs">
+        </div>
+        <div className="relative mt-5 flex flex-wrap gap-2 border-t border-[#E2E8F0] pt-4 text-xs">
             <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">Period: {periodRangeLabel(selectedPeriods)}</span>
             <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">{formatNumber(summary.approvedRecords)} approved rows</span>
             <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">Achievement {formatPercent(summary.achievementRate)}</span>
-          </div>
-        )}
-        description={portalMode
-          ? "Sales performance across the periods, territories, products, and scope assigned to your employee account."
-          : "Track approved sales, target progress, channel mix, line performance, and leadership rankings from one compact command surface."
-        }
-        eyebrow={portalMode ? "Employee sales" : "Sales intelligence"}
-        icon={<BarChart3 className="h-3.5 w-3.5" />}
-        title={portalMode ? "My Sales Dashboard" : "Sales dashboard"}
-      />
+        </div>
+      </div>
 
       <AdminTableShell
         action={activeFilterCount > 0 ? (
@@ -1233,6 +1272,7 @@ function SalesDashboardContent({
           </div>
         </div>
       </Card>
+      </div>
     </div>
   );
 }

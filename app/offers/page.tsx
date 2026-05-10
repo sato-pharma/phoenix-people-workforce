@@ -1,6 +1,8 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { OfferLifecycleDashboard } from "@/components/offers/offer-lifecycle-dashboard";
-import { assertPermission } from "@/lib/auth/permissions";
+import { redirect } from "next/navigation";
+
+import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   getOfferDashboard,
@@ -24,7 +26,9 @@ function pageError(error: unknown) {
 
 export default async function OffersPage() {
   const access = await resolveAccessContextFromPage();
-  await assertPermission(access, "offers", "read");
+  if (!await canAccess(access, "offers", "read")) {
+    redirect("/employee-portals");
+  }
   let initialData = null;
   let initialError: string | null = null;
   let lookups = null;
@@ -39,7 +43,7 @@ export default async function OffersPage() {
   }
 
   return (
-    <AppShell>
+    <AppShell navigationMode="admin">
       <OfferLifecycleDashboard
         initialData={initialData}
         initialError={initialError}

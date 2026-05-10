@@ -4,9 +4,11 @@ import type { GeoTripRouteRecord } from "@/lib/geo-intelligence/types";
 
 import {
   AdminSectionHeader,
-  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { Card } from "@/components/ui/card";
+
+const panelClassName =
+  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 
 function egp(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -30,7 +32,7 @@ export function TripAnomalyTable({
   title?: string;
 }) {
   return (
-    <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+    <Card className={`${panelClassName} overflow-hidden p-0`}>
       <AdminSectionHeader
         description="Investigate route-level differences between claimed and expected metrics."
         title={title}
@@ -56,7 +58,7 @@ export function TripAnomalyTable({
               </tr>
             ) : (
               routes.map((route) => (
-                <tr className="border-b border-[#E2E8F0] transition hover:bg-[#FCFDFE]" key={route.id}>
+                <tr className="border-b border-[#E2E8F0] transition hover:bg-[#FFF7ED]/65" key={route.id}>
                   <td className="px-4 py-3">
                     <p className="font-semibold text-slate-900">{route.employeeName ?? "Unknown"}</p>
                     <p className="text-xs text-slate-500">{route.employeeHrId ?? "No HR ID"}</p>
