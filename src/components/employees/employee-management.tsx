@@ -16,6 +16,7 @@ import {
   UserX,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import * as React from "react";
 
 import {
@@ -74,6 +75,16 @@ type EmployeeFormState = {
   residenceCity: string;
   salaryPaymentMode: string;
   workEmail: string;
+  // Phase 1: New employee data fields
+  birthDate: string;
+  nationalIdNumber: string;
+  addressFromIdCard: string;
+  personalEmail: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  employeeType: string;
+  bankAccountNumber: string;
+  bankName: string;
 };
 
 const emptyForm: EmployeeFormState = {
@@ -97,6 +108,16 @@ const emptyForm: EmployeeFormState = {
   residenceCity: "",
   salaryPaymentMode: "one_part",
   workEmail: "",
+  // Phase 1: New fields
+  birthDate: "",
+  nationalIdNumber: "",
+  addressFromIdCard: "",
+  personalEmail: "",
+  emergencyContactName: "",
+  emergencyContactPhone: "",
+  employeeType: "",
+  bankAccountNumber: "",
+  bankName: "",
 };
 
 const salaryPaymentModeOptions = [
@@ -264,6 +285,16 @@ function employeeToForm(employee: EmployeeDirectoryRow): EmployeeFormState {
     residenceCity: employee.residenceCity ?? "",
     salaryPaymentMode: employee.salaryPaymentMode,
     workEmail: employee.workEmail ?? "",
+    // Phase 1: New fields
+    birthDate: employee.birthDate ?? "",
+    nationalIdNumber: employee.nationalIdNumber ?? "",
+    addressFromIdCard: employee.addressFromIdCard ?? "",
+    personalEmail: employee.personalEmail ?? "",
+    emergencyContactName: employee.emergencyContactName ?? "",
+    emergencyContactPhone: employee.emergencyContactPhone ?? "",
+    employeeType: employee.employeeType ?? "",
+    bankAccountNumber: employee.bankAccountNumber ?? "",
+    bankName: employee.bankName ?? "",
   };
 }
 
@@ -302,6 +333,16 @@ function formToPayload(form: EmployeeFormState): EmployeeMutationInput {
     residenceCity: optionalText(form.residenceCity),
     salaryPaymentMode: optionalText(form.salaryPaymentMode),
     workEmail: optionalText(form.workEmail),
+    // Phase 1: New fields
+    birthDate: optionalText(form.birthDate),
+    nationalIdNumber: optionalText(form.nationalIdNumber),
+    addressFromIdCard: optionalText(form.addressFromIdCard),
+    personalEmail: optionalText(form.personalEmail),
+    emergencyContactName: optionalText(form.emergencyContactName),
+    emergencyContactPhone: optionalText(form.emergencyContactPhone),
+    employeeType: optionalText(form.employeeType),
+    bankAccountNumber: optionalText(form.bankAccountNumber),
+    bankName: optionalText(form.bankName),
   };
 }
 
@@ -849,10 +890,9 @@ export function EmployeeManagement({
                         key={employeeRowKey(employee, index)}
                       >
                         <td className="px-4 py-4">
-                          <button
-                            className="text-left"
-                            onClick={() => startEdit(employee)}
-                            type="button"
+                          <Link
+                            className="text-left hover:opacity-80"
+                            href={`/employees/${employee.hrId}`}
                           >
                             <p className="font-medium text-text">
                               {employee.fullName}
@@ -860,7 +900,7 @@ export function EmployeeManagement({
                             <p className="mt-1 font-mono text-xs text-text-secondary">
                               {employee.hrId}
                             </p>
-                          </button>
+                          </Link>
                         </td>
                         <td className="px-4 py-4 text-text-secondary">
                           {emptyText(employee.positionTitle ?? employee.jobTitle)}
@@ -1162,6 +1202,75 @@ export function EmployeeManagement({
                 onChange={(value) => updateForm("salaryPaymentMode", value)}
                 options={salaryPaymentModeOptions}
                 value={form.salaryPaymentMode}
+              />
+
+              {/* Phase 1: New employee data fields */}
+              <div className="col-span-full border-t border-slate-200 pt-6">
+                <h3 className="mb-4 text-sm font-bold text-slate-700">Personal Information</h3>
+              </div>
+              <TextField
+                label="birth_date"
+                onChange={(value) => updateForm("birthDate", value)}
+                placeholder="YYYY-MM-DD"
+                type="date"
+                value={form.birthDate}
+              />
+              <TextField
+                label="national_id_number"
+                onChange={(value) => updateForm("nationalIdNumber", value)}
+                placeholder="e.g., Aadhar, Emirates ID, Passport"
+                value={form.nationalIdNumber}
+              />
+              <TextField
+                label="personal_email"
+                onChange={(value) => updateForm("personalEmail", value)}
+                placeholder="personal@example.com"
+                type="email"
+                value={form.personalEmail}
+              />
+              <TextField
+                label="emergency_contact_name"
+                onChange={(value) => updateForm("emergencyContactName", value)}
+                placeholder="Full name of emergency contact"
+                value={form.emergencyContactName}
+              />
+              <TextField
+                label="emergency_contact_phone"
+                onChange={(value) => updateForm("emergencyContactPhone", value)}
+                placeholder="Emergency contact phone"
+                value={form.emergencyContactPhone}
+              />
+              <TextField
+                label="address_from_id_card"
+                onChange={(value) => updateForm("addressFromIdCard", value)}
+                placeholder="Address shown on ID card (for expense tracking)"
+                value={form.addressFromIdCard}
+              />
+
+              <div className="col-span-full border-t border-slate-200 pt-6">
+                <h3 className="mb-4 text-sm font-bold text-slate-700">Employment Details</h3>
+              </div>
+              <TextField
+                label="employee_type"
+                onChange={(value) => updateForm("employeeType", value)}
+                placeholder="e.g., Full-time, Contract, Freelance"
+                value={form.employeeType}
+              />
+
+              <div className="col-span-full border-t border-slate-200 pt-6">
+                <h3 className="mb-4 text-sm font-bold text-slate-700">Bank Information</h3>
+              </div>
+              <TextField
+                label="bank_account_number"
+                onChange={(value) => updateForm("bankAccountNumber", value)}
+                placeholder="IBAN or account number"
+                value={form.bankAccountNumber}
+              />
+              <TextField
+                label="bank_name"
+                onChange={(value) => updateForm("bankName", value)}
+                placeholder="Bank name for salary transfer"
+                value={form.bankName}
               />
             </div>
 

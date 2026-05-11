@@ -48,6 +48,15 @@ export type EmployeeDirectoryRow = {
   taxes: number | null;
   updatedAt: string;
   workEmail: string | null;
+  // Phase 1: New employee data fields
+  nationalIdNumber: string | null;
+  addressFromIdCard: string | null;
+  personalEmail: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+  employeeType: string | null;
+  bankAccountNumber: string | null;
+  bankName: string | null;
 };
 
 import { closeVacancyForOffer, getOpenMedicalRepVacancies, type VacancyLookupRow } from "@/lib/offers/service";
@@ -103,6 +112,17 @@ export type EmployeeMutationInput = {
   residenceCity?: string | null;
   salaryPaymentMode?: string | null;
   workEmail?: string | null;
+  // Phase 1: New employee data fields
+  birthDate?: string | null;
+  nationalIdNumber?: string | null;
+  idCardExpiryDate?: string | null;
+  addressFromIdCard?: string | null;
+  personalEmail?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  employeeType?: string | null;
+  bankAccountNumber?: string | null;
+  bankName?: string | null;
 };
 
 type EmployeeDbRow = {
@@ -127,6 +147,13 @@ type EmployeeDbRow = {
   team_id: number | null;
   updated_at: string;
   work_email: string | null;
+  // Phase 1: New employee data fields
+  national_id_number?: string | null;
+  address_from_id_card?: string | null;
+  personal_email?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  employee_type?: string | null;
 };
 
 type LookupRow = {
@@ -151,6 +178,10 @@ type EmployeeCompensationDbRow = {
   social_insurance: number | null;
   subscription_wage: number | null;
   taxes: number | null;
+  // Phase 1: New compensation fields
+  bank_account_number?: string | null;
+  bank_name?: string | null;
+  account_holder_name?: string | null;
 };
 
 type EmployeeResidenceDbRow = {
@@ -600,6 +631,15 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         teamId: row.team_id,
         updatedAt: row.updated_at,
         workEmail: row.work_email,
+        // Phase 1: New employee data fields
+        nationalIdNumber: row.national_id_number ?? null,
+        addressFromIdCard: row.address_from_id_card ?? null,
+        personalEmail: row.personal_email ?? null,
+        emergencyContactName: row.emergency_contact_name ?? null,
+        emergencyContactPhone: row.emergency_contact_phone ?? null,
+        employeeType: row.employee_type ?? null,
+        bankAccountNumber: compensation?.bank_account_number ?? null,
+        bankName: compensation?.bank_name ?? null,
       };
     });
 
@@ -717,6 +757,15 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         teamId: row.team_id,
         updatedAt: row.updated_at,
         workEmail: row.work_email,
+        // Phase 1: New employee data fields
+        nationalIdNumber: row.national_id_number ?? null,
+        addressFromIdCard: row.address_from_id_card ?? null,
+        personalEmail: row.personal_email ?? null,
+        emergencyContactName: row.emergency_contact_name ?? null,
+        emergencyContactPhone: row.emergency_contact_phone ?? null,
+        employeeType: row.employee_type ?? null,
+        bankAccountNumber: comp?.bank_account_number ?? null,
+        bankName: comp?.bank_name ?? null,
       };
     });
 
@@ -804,6 +853,15 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       teamId: row.team_id,
       updatedAt: row.updated_at,
       workEmail: row.work_email,
+      // Phase 1: New employee data fields
+      nationalIdNumber: row.national_id_number ?? null,
+      addressFromIdCard: row.address_from_id_card ?? null,
+      personalEmail: row.personal_email ?? null,
+      emergencyContactName: row.emergency_contact_name ?? null,
+      emergencyContactPhone: row.emergency_contact_phone ?? null,
+      employeeType: row.employee_type ?? null,
+      bankAccountNumber: compensation?.bank_account_number ?? null,
+      bankName: compensation?.bank_name ?? null,
     };
   });
   const activeEmployees = employees.filter(
@@ -931,6 +989,15 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       teamId: row.team_id,
       updatedAt: row.updated_at,
       workEmail: row.work_email,
+      // Phase 1: New employee data fields
+      nationalIdNumber: row.national_id_number ?? null,
+      addressFromIdCard: row.address_from_id_card ?? null,
+      personalEmail: row.personal_email ?? null,
+      emergencyContactName: row.emergency_contact_name ?? null,
+      emergencyContactPhone: row.emergency_contact_phone ?? null,
+      employeeType: row.employee_type ?? null,
+      bankAccountNumber: null,
+      bankName: null,
     };
   });
 }

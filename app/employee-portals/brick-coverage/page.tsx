@@ -15,7 +15,7 @@ import { getNsmBrickCoverage } from "@/lib/employee-portal/service";
 export const dynamic = "force-dynamic";
 
 export default async function BrickCoveragePage(
-  props: PageProps<"/employee-portals/brick-coverage">,
+  props: { searchParams: Promise<Record<string, string | string[] | undefined>> },
 ) {
   const access = await resolveAccessContextFromPage();
 
@@ -31,9 +31,9 @@ export default async function BrickCoveragePage(
 
   const searchParams = await props.searchParams;
   const requestedPeriods = Array.isArray(searchParams.period)
-    ? searchParams.period.map((period) => period.trim()).filter(Boolean)
+    ? searchParams.period.map((period: string) => period.trim()).filter(Boolean)
     : typeof searchParams.period === "string"
-      ? searchParams.period.split(",").map((period) => period.trim()).filter(Boolean)
+      ? searchParams.period.split(",").map((period: string) => period.trim()).filter(Boolean)
       : [];
   const requestedDsm =
     typeof searchParams.dsm === "string" ? searchParams.dsm.trim() : null;

@@ -11,7 +11,21 @@
       "Bash(npx next *)",
       "Bash(npx eslint *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(npm run *)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(git status *)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(awk '{print $2}')",
+      "Bash(xargs -r kill -9)",
+      "Bash(pkill -f \"next\")",
+      "Bash(pkill -f \"node.*dev\")",
+      "Bash(taskkill /PID 6604 /F)",
+      "PowerShell(Stop-Process -Id 6604 -Force -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Id \\(Get-Process -Name \"node\" -ErrorAction SilentlyContinue | Where-Object {$_.CommandLine -match \"next dev\"} | Select-Object -First 1\\).Id -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Write-Host \"Stopped dev server\")",
+      "Bash(curl -s -I http://localhost:3000/employee-portals)",
+      "Bash(curl -s \"http://localhost:3000/employee-portals\")",
+      "Bash(git commit -m 'Phase 1 & 2: Employee data fields + master detail pages with premium design *)"
     ]
   }
 }

@@ -35,7 +35,7 @@ function periodLabel(month: number, year: number) {
 }
 
 export default async function AdminPayslipsCenterPage(
-  props: PageProps<"/admin/payslips-center">,
+  props: { searchParams: Promise<Record<string, string | string[] | undefined>> },
 ) {
   const access = await resolveAccessContextFromPage();
   if (getPayrollScope(access) !== "COMPANY") {

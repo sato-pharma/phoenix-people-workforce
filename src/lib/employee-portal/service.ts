@@ -1482,6 +1482,15 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     teamId: null,
     updatedAt: new Date(0).toISOString(),
     workEmail: null,
+    // Phase 1: New employee data fields
+    nationalIdNumber: null,
+    addressFromIdCard: null,
+    personalEmail: null,
+    emergencyContactName: null,
+    emergencyContactPhone: null,
+    employeeType: null,
+    bankAccountNumber: null,
+    bankName: null,
   };
 }
 

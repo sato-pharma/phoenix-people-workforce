@@ -11,7 +11,7 @@ import { getGeoDashboardData } from "@/lib/geo-intelligence/service";
 export const dynamic = "force-dynamic";
 
 export default async function GeoAnomaliesPage(
-  props: PageProps<"/admin/geo-intelligence/anomalies">,
+  props: { searchParams: Promise<Record<string, string | string[] | undefined>> },
 ) {
   const access = await resolveAccessContextFromPage();
   if (!await canAccess(access, "geo_intelligence", "read")) {

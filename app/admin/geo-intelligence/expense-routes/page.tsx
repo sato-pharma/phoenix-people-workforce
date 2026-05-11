@@ -12,7 +12,7 @@ import { getGeoDashboardData } from "@/lib/geo-intelligence/service";
 export const dynamic = "force-dynamic";
 
 export default async function GeoExpenseRoutesPage(
-  props: PageProps<"/admin/geo-intelligence/expense-routes">,
+  props: { searchParams: Promise<Record<string, string | string[] | undefined>> },
 ) {
   const access = await resolveAccessContextFromPage();
   if (!await canAccess(access, "geo_intelligence", "read")) {
