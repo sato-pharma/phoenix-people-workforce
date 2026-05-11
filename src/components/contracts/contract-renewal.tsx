@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import type { ContractRenewalDashboardData } from "@/lib/contracts/types";
 
 type Props = {
@@ -48,15 +49,16 @@ function ContractsPageShell({ children }: { children: React.ReactNode }) {
 }
 
 function daysUntilDate(value: string) {
-  const date = new Date(value);
+  const date = parseDateOnly(value);
+  if (!date) return 0;
 
   return Math.ceil((date.getTime() - today.getTime()) / 86400000);
 }
 
 function datePart(value: string, part: "month" | "year") {
-  const date = new Date(value);
+  const date = parseDateOnly(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (!date || Number.isNaN(date.getTime())) {
     return null;
   }
 
@@ -64,19 +66,11 @@ function datePart(value: string, part: "month" | "year") {
 }
 
 function formatStoredDate(value: string | null) {
-  if (!value) return "-";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en", {
+  return formatDateOnly(value, "en", {
     year: "numeric",
     month: "short",
     day: "2-digit",
-  }).format(date);
+  });
 }
 
 export function ContractRenewal({ initialData, initialError }: Props) {

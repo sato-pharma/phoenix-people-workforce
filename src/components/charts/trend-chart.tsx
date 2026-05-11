@@ -33,7 +33,7 @@ function formatPercent(value: number) {
   return `${((Number.isFinite(value) ? value : 0) * 100).toFixed(1)}%`;
 }
 
-export function TrendChart({ data, hoveredElement, onHover, filter, loading = false }: TrendChartProps) {
+export function TrendChart({ data, hoveredElement, onHover, loading = false }: TrendChartProps) {
   const salesRows = useMemo(() => data.sales.trend.map((row) => {
     const source = row as TrendDataPoint & { period?: string; targetValue?: number };
     return {

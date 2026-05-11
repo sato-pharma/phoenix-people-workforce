@@ -1,12 +1,13 @@
 "use client";
 
-import { Bell, ChevronDown, LogOut, Mail, Menu, Search, UserCog } from "lucide-react";
+import { ChevronDown, LogOut, Mail, Menu, Search, UserCog } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
+import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { MobileSidebar } from "@/components/layout/sidebar";
-import { type NavigationMode } from "@/lib/auth/permissions";
+import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import type { ViewerIdentity } from "@/lib/auth/server";
 import { Input } from "@/components/ui/input";
@@ -15,7 +16,9 @@ export function Topbar({
   navigationMode = "admin",
   permissionLookup = {},
   viewer,
+  currentRole,
 }: {
+  currentRole?: PhoenixRole;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
   viewer: ViewerIdentity;
@@ -36,6 +39,7 @@ export function Topbar({
     <>
       <MobileSidebar
         navigationMode={navigationMode}
+        currentRole={currentRole}
         onClose={() => setMenuOpen(false)}
         open={menuOpen}
         permissionLookup={permissionLookup}
@@ -82,11 +86,7 @@ export function Topbar({
           }`}>
             <Search className="h-5 w-5" />
           </button>
-          <button aria-label="Notifications" className={`hidden h-10 w-10 items-center justify-center rounded-lg sm:inline-flex ${
-            isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
-          }`} type="button">
-            <Bell className="h-5 w-5" />
-          </button>
+          <InAppNotificationsBell isAdminMode={isAdminMode} />
           <button aria-label="Messages" className={`hidden h-10 w-10 items-center justify-center rounded-lg xl:inline-flex ${
             isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
           }`} type="button">

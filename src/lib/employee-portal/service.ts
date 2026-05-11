@@ -1,5 +1,4 @@
 import { isDevelopment } from "@/lib/env";
-import type { PostgrestFilterBuilder } from "@supabase/postgrest-js";
 import {
   canSeeEmployee,
   resolveEmployeeIdentityId,
@@ -13,8 +12,10 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { listBrickReferenceRows, normalizeBrickText } from "@/lib/bricks/service";
+import { addDaysToDateOnly, addYearsToDateOnly, daysBetweenDateOnly, parseDateOnly } from "@/lib/date-only";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
+import { calculateGrossSalary, calculateNetSalary, calculatePayrollParts } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   PayrollExpenseApproval,
@@ -61,7 +62,9 @@ export type EmploymentJourney = {
 
 export type PortalNotification = {
   category: string;
+  href: string | null;
   id: string;
+  message: string;
   scheduledFor: string | null;
   sentAt: string | null;
   status: string;
@@ -321,7 +324,7 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
   const month = parseIntValue(row, ["month", "payroll_month"]);
   const fullName = pickText(row, ["full_name", "employee_name", "name", "employee"]);
 
-  return {
+  const mapped = {
     area: pickText(row, ["area", "line", "employee_line"]),
     batchId: pickText(row, ["batch_id", "batchId", "payroll_batch_id"]),
     bonus: pickNumber(row, ["bonus", "incentive_bonus", "extra_bonus"]),
@@ -361,6 +364,55 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
     unpaidVacations: pickNumber(row, ["unpaid_vacations", "unpaidVacations"]),
   };
 
+  const totalAdditions =
+    mapped.expenses +
+    mapped.incentive +
+    mapped.overtime +
+    mapped.bonus +
+    mapped.extraCostOfLiving +
+    mapped.fuelAllowance +
+    mapped.otherAdditions;
+  const totalDeductions =
+    mapped.socialInsurance +
+    mapped.employmentIncomeTax +
+    mapped.crm +
+    mapped.fingerPrint +
+    mapped.unpaidVacations +
+    mapped.medicalInsurance +
+    mapped.loans +
+    mapped.otherDeductions;
+  const paymentMode = mapped.firstPart > 0 && mapped.firstPart < mapped.netSalary - 1 ? "two_parts" : "one_part";
+  const parts = calculatePayrollParts({
+    additions: mapped.expenses + mapped.incentive + mapped.overtime + mapped.bonus + mapped.otherAdditions,
+    deductions:
+      mapped.crm +
+      mapped.fingerPrint +
+      mapped.unpaidVacations +
+      mapped.medicalInsurance +
+      mapped.loans +
+      mapped.otherDeductions,
+    extraCostOfLiving: mapped.extraCostOfLiving,
+    fuelAllowance: mapped.fuelAllowance,
+    netSalary: mapped.netSalary,
+    paymentMode,
+    previousExpenses: 0,
+  });
+
+  return {
+    ...mapped,
+    firstPart: parts.firstPart,
+    grossSalary: calculateGrossSalary({
+      employmentIncomeTax: mapped.employmentIncomeTax,
+      extraCostOfLiving: mapped.extraCostOfLiving,
+      fuelAllowance: mapped.fuelAllowance,
+      grossSalary: mapped.grossSalary,
+      netSalary: mapped.netSalary,
+      socialInsurance: mapped.socialInsurance,
+    }),
+    secondPart: parts.secondPart,
+    totalAdditions,
+    totalDeductions,
+  };
 }
 
 function isPayrollRowForCurrentEmployee(row: PortalPayrollSourceRow, normalizedHrId: string | null) {
@@ -591,25 +643,16 @@ async function listEmployeeDocuments(hrId: string): Promise<EmployeePortalDocume
 }
 
 function addDays(dateStr: string | null, days: number): string | null {
-  if (!dateStr) return null;
-  const d = new Date(`${dateStr}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return addDaysToDateOnly(dateStr, days);
 }
 
 function addYears(dateStr: string | null, years: number): string | null {
-  if (!dateStr) return null;
-  const d = new Date(`${dateStr}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setFullYear(d.getFullYear() + years);
-  return d.toISOString().slice(0, 10);
+  return addYearsToDateOnly(dateStr, years);
 }
 
 function daysFromToday(dateStr: string | null): number | null {
-  if (!dateStr) return null;
-  const target = new Date(`${dateStr}T00:00:00`);
-  if (Number.isNaN(target.getTime())) return null;
+  const target = parseDateOnly(dateStr);
+  if (!target || Number.isNaN(target.getTime())) return null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
@@ -621,9 +664,7 @@ function computeEmploymentJourney(employee: EmployeeDirectoryRow): EmploymentJou
   const contractRenewalDate = addYears(hireDate, 1);
   const contractSignedDate = hireDate;
 
-  const serviceDurationDays = hireDate
-    ? Math.max(0, Math.round((Date.now() - new Date(`${hireDate}T00:00:00`).getTime()) / (1000 * 60 * 60 * 24)))
-    : 0;
+  const serviceDurationDays = Math.max(0, daysBetweenDateOnly(hireDate) ?? 0);
 
   const daysUntilRenewal = daysFromToday(contractRenewalDate);
   const daysUntilProbationEnd = daysFromToday(probationEndDate);
@@ -718,16 +759,21 @@ async function fetchPortalNotifications(hrId: string): Promise<PortalNotificatio
   try {
     const { data } = await supabase
       .from("notification_events")
-      .select("id,category,subject,scheduled_for,sent_at,status")
+      .select("id,category,subject,scheduled_for,sent_at,status,metadata")
       .ilike("employee_hr_id", hrId)
       .order("scheduled_for", { ascending: false })
       .limit(5);
 
     return (data ?? []).map((row) => {
       const r = row as Record<string, unknown>;
+      const metadata = r.metadata && typeof r.metadata === "object" && !Array.isArray(r.metadata)
+        ? r.metadata as Record<string, unknown>
+        : {};
       return {
         category: String(r.category ?? "General"),
+        href: typeof metadata.href === "string" ? metadata.href : null,
         id: String(r.id ?? ""),
+        message: typeof metadata.message === "string" ? metadata.message : String(r.subject ?? "Notification"),
         scheduledFor: r.scheduled_for ? new Date(String(r.scheduled_for)).toISOString() : null,
         sentAt: r.sent_at ? new Date(String(r.sent_at)).toISOString() : null,
         status: String(r.status ?? "pending"),
@@ -737,14 +783,6 @@ async function fetchPortalNotifications(hrId: string): Promise<PortalNotificatio
   } catch {
     return [];
   }
-}
-
-function isPortalQueryError(error: unknown) {
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  return (
-    message.includes("relation") &&
-    message.includes("does not exist")
-  );
 }
 
 function resolveSalesFilterValues(filters: PortalSalesFilters) {
@@ -1014,7 +1052,6 @@ async function fetchAllRows<T = Record<string, unknown>>(
 ): Promise<T[]> {
   const results: T[] = [];
   let offset = 0;
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
     if (error) throw error;
@@ -1653,6 +1690,16 @@ export async function getEmployeePortalData(
     },
   };
   const insights = computeInsights(insightInput);
+  const sourceNetSalary = calculateNetSalary({
+    baseSalary: employee.netSalary,
+    extraCostOfLiving: employee.extraCostOfLiving,
+    fuelAllowance: employee.fuelAllowance,
+  });
+  const sourceGrossSalary = calculateGrossSalary({
+    baseSalary: employee.netSalary,
+    socialInsurance: employee.socialInsurance,
+    taxes: employee.taxes,
+  });
 
   return {
     access: {
@@ -1681,10 +1728,10 @@ export async function getEmployeePortalData(
     payroll: {
       batchId: latestBatch?.id ?? null,
       batchLabel: formatBatchLabel(latestBatch?.month, latestBatch?.year),
-      grossSalary: latestRecord?.grossSalary ?? employee.grossSalary ?? 0,
+      grossSalary: latestRecord?.grossSalary ?? sourceGrossSalary,
       latestHireDate: latestRecord?.hireDate ?? employee.hireDate ?? null,
       line: latestRecord?.line ?? employee.lineName ?? null,
-      netSalary: latestRecord?.netSalary ?? employee.netSalary ?? 0,
+      netSalary: latestRecord?.netSalary ?? sourceNetSalary,
       totalAdditions: latestRecord?.totalAdditions ?? 0,
       totalDeductions: latestRecord?.totalDeductions ?? 0,
       salaryTrend: salaryTrend,
@@ -1738,6 +1785,25 @@ export type MedicalRepPortalData = {
     roleLabel: string;
     status: string;
     territory: string | null;
+  };
+  orgStructure: {
+    actualNow: number;
+    districtManagerVacancies: number;
+    scope: "line" | "team";
+    scopeLabel: string;
+    totalStructure: number;
+    vacancies: number;
+  } | null;
+  workforce: {
+    activeHeadcount: number;
+    contractRenewalsDue: number;
+    dataCoveragePercent: number;
+    missingEmployeeData: number;
+    newHires: number;
+    openVacancies: number;
+    pendingApprovals: number;
+    probationDue: number;
+    scopeLabel: string;
   };
   empty: {
     payroll: boolean;
@@ -1802,6 +1868,8 @@ export type MedicalRepPortalData = {
     growthVsLastMonthPercent: number | null;
     familyContribution: Array<{ name: string; sales: number; units: number; salesPercentage?: number; unitsPercentage?: number }>;
     productContribution: Array<{ name: string; sales: number; units: number; salesPercentage?: number; unitsPercentage?: number }>;
+    territories: Array<{ name: string; sales: number; target: number; achievementPercent: number }>;
+    linePerformance: Array<{ name: string; sales: number; target: number; achievementPercent: number }>;
     teamComparisonPeriod: string | null;
     rankInTeam: { position: number; total: number } | null;
     teamComparison: Array<{
@@ -1812,6 +1880,7 @@ export type MedicalRepPortalData = {
       target: number;
     }>;
     topProduct: string | null;
+    topProductSalesValue: number;
       trend: Array<{
       period: string;
       sales: number;
@@ -2028,6 +2097,266 @@ function serviceDurationText(days: number) {
   if (years > 0 && months > 0) return `${years} Yrs ${months} Mos`;
   if (years > 0) return `${years} Yrs`;
   return `${months} Mos`;
+}
+
+function isActiveDirectoryEmployee(employee: Pick<EmployeeDirectoryRow, "employmentStatus">) {
+  const normalized = String(employee.employmentStatus ?? "active").trim().toLowerCase();
+  if (!normalized) return true;
+
+  return !["inactive", "resigned", "terminated", "left", "suspended", "vacant"].some((token) =>
+    normalized.includes(token)
+  );
+}
+
+function isMedicalRepDirectoryEmployee(
+  employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
+) {
+  return normalizeRole(employee.jobTitle) === "Medical Rep" || normalizeRole(employee.positionTitle) === "Medical Rep";
+}
+
+function isCompanyWorkforceRole(role: PhoenixRole) {
+  return role === "Super Admin" || role === "CEO" || role === "HR Specialist" || role === "Finance Manager";
+}
+
+function isLineWorkforceRole(role: PhoenixRole) {
+  return (
+    role === "National Sales Manager" ||
+    role === "Regional Manager" ||
+    role === "Product Manager" ||
+    role === "Group Product Manager" ||
+    role === "SFE Manager" ||
+    role === "Training Manager" ||
+    role === "Marketing Manager"
+  );
+}
+
+function isTeamWorkforceRole(role: PhoenixRole) {
+  return role === "District Manager" || role === "Manager";
+}
+
+function resolvePortalWorkforceRows({
+  currentUser,
+  directory,
+  employee,
+}: {
+  currentUser: PortalCurrentUser;
+  directory: EmployeeDirectoryData;
+  employee: EmployeeDirectoryRow;
+}) {
+  const role = normalizeRole(currentUser.role);
+  const currentCanonicalHrId = normalizeHrIdForAccess(currentUser.hrId);
+  const currentLine = normalizeLineName(currentUser.line ?? employee.lineName);
+  const activeRows = directory.employees.filter(isActiveDirectoryEmployee);
+
+  if (isCompanyWorkforceRole(role)) return activeRows;
+
+  if (isLineWorkforceRole(role)) {
+    return activeRows.filter((row) => {
+      if (typeof employee.lineId === "number" && typeof row.lineId === "number") {
+        return row.lineId === employee.lineId;
+      }
+      return normalizeLineName(row.lineName) === currentLine;
+    });
+  }
+
+  if (isTeamWorkforceRole(role)) {
+    return activeRows.filter((row) => {
+      const rowCanonicalHrId = normalizeHrIdForAccess(row.hrId);
+      const managerCanonicalHrId = normalizeHrIdForAccess(row.managerHrId);
+      return Boolean(
+        (rowCanonicalHrId && currentCanonicalHrId && rowCanonicalHrId === currentCanonicalHrId) ||
+          (managerCanonicalHrId && currentCanonicalHrId && managerCanonicalHrId === currentCanonicalHrId),
+      );
+    });
+  }
+
+  return activeRows.filter((row) => normalizeHrIdForAccess(row.hrId) === currentCanonicalHrId);
+}
+
+function resolvePortalWorkforceScopeLabel({
+  currentUser,
+  employee,
+}: {
+  currentUser: PortalCurrentUser;
+  employee: EmployeeDirectoryRow;
+}) {
+  const role = normalizeRole(currentUser.role);
+  if (isCompanyWorkforceRole(role)) return "Company";
+  if (isLineWorkforceRole(role)) return employee.lineName ?? currentUser.line ?? "Your line";
+  if (isTeamWorkforceRole(role)) return "Your team";
+  return employee.fullName;
+}
+
+function countRowsWithUpcomingDate(
+  rows: EmployeeDirectoryRow[],
+  resolveDate: (row: EmployeeDirectoryRow) => string | null,
+) {
+  return rows.filter((row) => {
+    const days = daysFromToday(resolveDate(row));
+    return days !== null && days >= 0 && days <= 30;
+  }).length;
+}
+
+function buildPortalWorkforceSummary({
+  pendingApprovals,
+  rows,
+  scopeLabel,
+  vacancySummary,
+}: {
+  pendingApprovals: number;
+  rows: EmployeeDirectoryRow[];
+  scopeLabel: string;
+  vacancySummary: PortalVacancySummary;
+}): MedicalRepPortalData["workforce"] {
+  const today = new Date();
+  const missingEmployeeData = rows.filter((row) => {
+    return !row.hireDate || !row.lineName || !row.managerHrId || !row.jobTitle;
+  }).length;
+  const newHires = rows.filter((row) => {
+    const days = daysBetweenDateOnly(row.hireDate, today);
+    return days !== null && days >= 0 && days <= 30;
+  }).length;
+  const probationDue = countRowsWithUpcomingDate(rows, (row) => addDays(row.hireDate, 90));
+  const contractRenewalsDue = countRowsWithUpcomingDate(rows, (row) => addYears(row.hireDate, 1));
+  const dataCoveragePercent = rows.length > 0
+    ? ((rows.length - missingEmployeeData) / rows.length) * 100
+    : 0;
+
+  return {
+    activeHeadcount: rows.length,
+    contractRenewalsDue,
+    dataCoveragePercent,
+    missingEmployeeData,
+    newHires,
+    openVacancies: vacancySummary.openVacancies,
+    pendingApprovals,
+    probationDue,
+    scopeLabel,
+  };
+}
+
+type PortalVacancySummary = {
+  districtManagerVacancies: number;
+  openVacancies: number;
+};
+
+async function fetchOpenVacancySummaryForScope({
+  currentUser,
+  employee,
+}: {
+  currentUser: PortalCurrentUser;
+  employee: EmployeeDirectoryRow;
+}): Promise<PortalVacancySummary> {
+  const role = normalizeRole(currentUser.role);
+  const currentLine = normalizeLineName(currentUser.line ?? employee.lineName);
+  const currentCanonicalHrId = normalizeHrIdForAccess(currentUser.hrId);
+  const supabase = getSupabaseAdmin();
+
+  try {
+    const rows = await fetchAllRows<{
+      job_title: string | null;
+      line_id: number | null;
+      lines?: { name: string | null } | null;
+      manager_hr_id: string | null;
+      positions?: { title: string | null } | null;
+    }>(() => {
+      let query = supabase
+        .from("position_vacancies")
+        .select("job_title,line_id,manager_hr_id,lines(name),positions(title)")
+        .eq("status", "open");
+
+      if (isTeamWorkforceRole(role) && currentUser.hrId) {
+        query = query.ilike("manager_hr_id", currentUser.hrId);
+      } else if (isLineWorkforceRole(role) && typeof employee.lineId === "number") {
+        query = query.eq("line_id", employee.lineId);
+      }
+
+      return query;
+    });
+
+    const scopedRows = rows.filter((row) => {
+      if (isCompanyWorkforceRole(role)) return true;
+      if (isLineWorkforceRole(role)) {
+        if (typeof employee.lineId === "number" && typeof row.line_id === "number") {
+          return row.line_id === employee.lineId;
+        }
+        return normalizeLineName(row.lines?.name ?? null) === currentLine;
+      }
+      if (isTeamWorkforceRole(role)) {
+        const managerCanonicalHrId = normalizeHrIdForAccess(row.manager_hr_id);
+        return Boolean(
+          managerCanonicalHrId &&
+            currentCanonicalHrId &&
+            managerCanonicalHrId === currentCanonicalHrId,
+        );
+      }
+      return false;
+    });
+
+    return {
+      districtManagerVacancies: scopedRows.filter((row) =>
+        isDistrictManagerVacancyTitle(row.job_title, row.positions?.title),
+      ).length,
+      openVacancies: scopedRows.length,
+    };
+  } catch (error) {
+    logPortalDebug("open vacancy summary query failed", error);
+    return { districtManagerVacancies: 0, openVacancies: 0 };
+  }
+}
+
+async function resolvePortalStructureSummary({
+  access,
+  currentUser,
+  directory,
+  employee,
+  vacancySummary,
+}: {
+  access: AccessContext;
+  currentUser: PortalCurrentUser;
+  directory: EmployeeDirectoryData;
+  employee: EmployeeDirectoryRow;
+  vacancySummary: PortalVacancySummary;
+}): Promise<MedicalRepPortalData["orgStructure"]> {
+  const currentRole = normalizeRole(currentUser.role);
+  const isDsm = currentRole === "District Manager";
+  const isNsm = currentRole === "National Sales Manager";
+  if (!isDsm && !isNsm) return null;
+
+  const currentCanonicalHrId = normalizeHrIdForAccess(currentUser.hrId);
+  const currentLine = normalizeLineName(currentUser.line ?? employee.lineName);
+  const activeMedicalReps = directory.employees.filter((row) => {
+    if (!isActiveDirectoryEmployee(row) || !isMedicalRepDirectoryEmployee(row)) return false;
+
+    if (isNsm) {
+      if (typeof employee.lineId === "number" && typeof row.lineId === "number") {
+        return row.lineId === employee.lineId;
+      }
+      return normalizeLineName(row.lineName) === currentLine;
+    }
+
+    const managerCanonicalHrId = normalizeHrIdForAccess(row.managerHrId);
+    return Boolean(
+      managerCanonicalHrId &&
+        currentCanonicalHrId &&
+        managerCanonicalHrId === currentCanonicalHrId,
+    );
+  });
+
+  void access;
+  const vacancyCount = vacancySummary.openVacancies;
+  const actualNow = activeMedicalReps.length;
+
+  return {
+    actualNow,
+    districtManagerVacancies: vacancySummary.districtManagerVacancies,
+    scope: isNsm ? "line" : "team",
+    scopeLabel: isNsm
+      ? employee.lineName ?? currentUser.line ?? "Your line"
+      : employee.fullName,
+    totalStructure: actualNow + vacancyCount,
+    vacancies: vacancyCount,
+  };
 }
 
 function egp(value: number) {
@@ -2446,11 +2775,27 @@ export async function getMedicalRepPortalData(
       directory: directory,
     });
 
-    const employee = base.employee;
-    if (!employee) {
-      throw new Error("Employee profile not found for the current user.");
-    }
-    const profileLinked = currentHrId !== null && normalizeHrId(employee.hrId) === currentHrId;
+  const employee = base.employee;
+  if (!employee) {
+    throw new Error("Employee profile not found for the current user.");
+  }
+  const profileLinked = currentHrId !== null && normalizeHrId(employee.hrId) === currentHrId;
+  const workforceRows = resolvePortalWorkforceRows({
+    currentUser,
+    directory,
+    employee,
+  });
+  const vacancySummary = await fetchOpenVacancySummaryForScope({
+    currentUser,
+    employee,
+  });
+  const pendingApprovalCount = expenses.filter((expense) => !expense.hrApproved).length;
+  const workforce = buildPortalWorkforceSummary({
+    pendingApprovals: pendingApprovalCount,
+    rows: workforceRows,
+    scopeLabel: resolvePortalWorkforceScopeLabel({ currentUser, employee }),
+    vacancySummary,
+  });
 
   const allTimeTrend = (salesDashboard && Array.isArray(salesDashboard.trend))
     ? salesDashboard.trend
@@ -2530,8 +2875,38 @@ export async function getMedicalRepPortalData(
     salesPercentage: totalFamilySales > 0 ? (f.sales / totalFamilySales) * 100 : 0,
     unitsPercentage: totalFamilyUnits > 0 ? (f.units / totalFamilyUnits) * 100 : 0,
   }));
+  const territories = (salesDashboard && Array.isArray(salesDashboard.territories))
+    ? salesDashboard.territories
+        .map((item) => ({
+          achievementPercent: Number((item as Record<string, unknown>).achievementRate ?? 0) * 100,
+          name: String((item as Record<string, unknown>).name ?? "Unknown"),
+          sales: Number((item as Record<string, unknown>).sales ?? 0),
+          target: Number((item as Record<string, unknown>).target ?? 0),
+        }))
+        .filter((item) => item.sales > 0 || item.target > 0)
+        .sort((left, right) => right.sales - left.sales)
+    : [];
+  const linePerformance = (salesDashboard && Array.isArray(salesDashboard.linePerformance))
+    ? salesDashboard.linePerformance
+        .map((item) => ({
+          achievementPercent: Number((item as Record<string, unknown>).achievementRate ?? 0) * 100,
+          name: String((item as Record<string, unknown>).line ?? "Unknown"),
+          sales: Number((item as Record<string, unknown>).sales ?? 0),
+          target: Number((item as Record<string, unknown>).target ?? 0),
+        }))
+        .filter((item) => item.sales > 0 || item.target > 0)
+        .sort((left, right) => right.sales - left.sales)
+    : [];
 
   const topProduct = productContribution[0]?.name ?? null;
+  const topProductSalesValue = productContribution[0]?.sales ?? 0;
+  const orgStructure = await resolvePortalStructureSummary({
+    access,
+    currentUser,
+    directory,
+    employee,
+    vacancySummary,
+  });
   
   let teamRankResult: { 
     comparison: Array<{ position: number; name: string; achievementPercent: number; sales: number; target: number }>; 
@@ -2653,21 +3028,23 @@ export async function getMedicalRepPortalData(
   const insights: string[] = portalInsights.map((i) => i.message);
   
   if (!salesTrend.length) insights.push("Sales data has not been uploaded yet.");
-  if (payrollDashboard && !payrollDashboard.records.length) insights.push("Payslip data has not been uploaded yet.");
   
-  const incentiveCalc = calculateIncentive2026({
+  const fixedIncentiveSalary = {
+    baseSalary: employee.netSalary ?? undefined,
+    extraCostOfLiving: employee.extraCostOfLiving ?? latestRecord?.extraCostOfLiving ?? 0,
+    fuelAllowance: employee.fuelAllowance ?? latestRecord?.fuelAllowance ?? 0,
+    grossSalary: employee.grossSalary ?? latestRecord?.grossSalary ?? 0,
     netSalary: latestRecord?.netSalary ?? 0,
-    grossSalary: latestRecord?.grossSalary ?? 0,
-    socialInsurance: latestRecord?.socialInsurance ?? 0,
-    taxes: latestRecord?.employmentIncomeTax ?? 0,
+    socialInsurance: employee.socialInsurance ?? latestRecord?.socialInsurance ?? 0,
+    taxes: employee.taxes ?? latestRecord?.employmentIncomeTax ?? 0,
+  };
+  const incentiveCalc = calculateIncentive2026({
+    ...fixedIncentiveSalary,
     achievementPercent: achievementPercent,
   });
   const allPeriodsAchievementPercent = Number.isFinite(overviewAchievementPercent) ? overviewAchievementPercent : achievementPercent;
   const allPeriodsIncentiveCalc = calculateIncentive2026({
-    netSalary: latestRecord?.netSalary ?? 0,
-    grossSalary: latestRecord?.grossSalary ?? 0,
-    socialInsurance: latestRecord?.socialInsurance ?? 0,
-    taxes: latestRecord?.employmentIncomeTax ?? 0,
+    ...fixedIncentiveSalary,
     achievementPercent: allPeriodsAchievementPercent,
   });
 
@@ -2682,6 +3059,8 @@ export async function getMedicalRepPortalData(
       status: employee.employmentStatus ?? "active",
       territory: employee.regionName ?? employee.areaName,
     },
+    orgStructure,
+    workforce,
     empty: {
       payroll: (payrollDashboard ? payrollDashboard.records.length : 0) === 0,
       profile: !profileLinked,
@@ -2745,10 +3124,13 @@ export async function getMedicalRepPortalData(
       growthVsLastMonthPercent,
       familyContribution: familyContributionWithPercent,
       productContribution: productContributionWithPercent,
+      territories,
+      linePerformance,
       teamComparisonPeriod,
       rankInTeam,
       teamComparison,
       topProduct,
+      topProductSalesValue,
       trend: salesTrend,
       units: Number(salesDashboard?.summary?.unitsSold ?? 0),
     },

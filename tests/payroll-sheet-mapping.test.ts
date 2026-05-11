@@ -67,7 +67,7 @@ export async function runPayrollSheetMappingTests() {
     30,
     40,
     5840,
-    18791,
+    19000,
     11550,
     7241,
     "Manual adjustment",
@@ -83,7 +83,7 @@ export async function runPayrollSheetMappingTests() {
   assert.equal(row.nameAr, "محمود محمد حسن الطنانى");
   assert.equal(row.hireDate, "2026-03-14");
   assert.equal(row.grossSalary, 21506);
-  assert.equal(row.netSalary, 18791);
+  assert.equal(row.netSalary, 19000);
   assert.equal(row.expenses, 0);
   assert.equal(row.incentive, 100);
   assert.equal(row.overtime, 200);
@@ -103,5 +103,12 @@ export async function runPayrollSheetMappingTests() {
   assert.equal(row.totalDeductions, 5840);
   assert.equal(row.firstPart, 11550);
   assert.equal(row.secondPart, 7241);
+  assert.equal(row.paymentMode, "two_parts");
   assert.equal(row.payrollComment, "Manual adjustment");
+  assert.equal(
+    result.validationWarnings.some(
+      (warning) => warning.code === "first_part_formula_mismatch",
+    ),
+    false,
+  );
 }

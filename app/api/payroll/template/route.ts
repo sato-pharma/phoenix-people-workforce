@@ -3,10 +3,11 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { assertPermission, getPayrollScope, type AccessContext } from "@/lib/auth/permissions";
+import { parseDateOnly } from "@/lib/date-only";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getApprovedExpenseTotalsForPayroll } from "@/lib/payroll/expenses";
-import { calculatePayrollParts, payrollPaymentModeLabel } from "@/lib/payroll/policy";
+import { calculateNetSalary, calculatePayrollParts, payrollPaymentModeLabel } from "@/lib/payroll/policy";
 import { getLatestSalaryRecordsBefore } from "@/lib/payroll/service";
 
 export const runtime = "nodejs";
@@ -283,7 +284,7 @@ function rowValues(row: PayrollTemplateRow, index: number) {
     row.jobTitle ?? "",
     row.line ?? "",
     row.area ?? "",
-    row.hireDate ? new Date(row.hireDate) : "",
+    parseDateOnly(row.hireDate) ?? "",
     row.netSalary,
     row.expenses,
     row.incentive,
@@ -636,10 +637,10 @@ async function buildReadyRows(
       );
       const parts = calculatePayrollParts({
         additions: 0,
+        baseSalary: employee.netSalary,
         deductions: 0,
         extraCostOfLiving: employee.extraCostOfLiving,
         fuelAllowance: employee.fuelAllowance,
-        netSalary: employee.netSalary,
         paymentMode: employee.salaryPaymentMode,
         previousExpenses: expenses,
       });
@@ -671,6 +672,11 @@ async function buildReadyRows(
           otherDeductions,
       );
       const paymentMode = payrollPaymentModeLabel(parts.paymentMode);
+      const netSalary = calculateNetSalary({
+        baseSalary: employee.netSalary,
+        extraCostOfLiving,
+        fuelAllowance,
+      });
 
       return {
         arabicName: employee.nameAr,
@@ -696,7 +702,7 @@ async function buildReadyRows(
         loans,
         medicalInsurance,
         monthSalary: parts.totalPayable,
-        netSalary: money(employee.netSalary),
+        netSalary,
         otherAdditions,
         otherDeductions,
         overtime,

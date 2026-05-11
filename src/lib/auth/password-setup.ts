@@ -190,7 +190,10 @@ export async function sendPasswordSetupLink(input: {
             { label: "HR_ID", value: user.hr_id ?? loginId },
             { label: "Expires", value: new Date(expiresAt).toLocaleString("en-US") },
           ],
+          candidateEmail: user.email,
+          notificationType: purpose === "setup" ? "user_created" : "password_reset",
           recipients: user.email ? [user.email] : [],
+          recipientMode: "candidate",
           subject: purpose === "setup" ? "Phoenix Workforce account setup" : "Phoenix Workforce password reset",
           summary:
             purpose === "setup"

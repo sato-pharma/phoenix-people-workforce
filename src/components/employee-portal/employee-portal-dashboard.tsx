@@ -3,7 +3,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import {
   Area,
@@ -23,7 +22,6 @@ import {
 import {
   Activity,
   BadgeCheck,
-  Bell,
   BriefcaseBusiness,
   CalendarDays,
   CalendarClock,
@@ -31,21 +29,14 @@ import {
   CircleDashed,
   CircleHelp,
   Crown,
-  Download,
   FileText,
-  HeadphonesIcon,
   HelpCircle,
   IdCard,
   Info,
   LineChart as LineChartIcon,
-  LogOut,
   MapPin,
-  Menu,
   MinusCircle,
-  Paperclip,
-  Phone,
   RefreshCw,
-  Search,
   Send,
   Sparkles,
   Target,
@@ -56,17 +47,16 @@ import {
   Users,
   UserRound,
   Wallet,
-  Zap,
   Car,
   ReceiptText,
-  Filter,
   Calculator,
+  Zap,
 } from "lucide-react";
 
-import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { daysBetweenDateOnly, formatDateOnly } from "@/lib/date-only";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
@@ -89,10 +79,7 @@ function egp(value: number) {
 }
 
 function prettyDate(value: string | null) {
-  if (!value) return "Not available";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+  return formatDateOnly(value, "en-GB", { day: "2-digit", month: "short", year: "numeric" }, "Not available");
 }
 
 function periodLabel(value: string) {
@@ -112,6 +99,34 @@ function tooltipCurrency(value: unknown) {
 
 function formatUnits(value: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Number.isFinite(value) ? value : 0);
+}
+
+function serviceDurationTextFromHireDate(hireDate: string | null, fallback: string) {
+  const days = daysBetweenDateOnly(hireDate);
+  if (days === null) return fallback;
+  if (!Number.isFinite(days) || days <= 0) return "0 Months";
+
+  const years = Math.floor(days / 365);
+  const months = Math.floor((days % 365) / 30);
+  if (years > 0 && months > 0) return `${years} Yrs ${months} Mos`;
+  if (years > 0) return `${years} Yrs`;
+  return `${months} Mos`;
+}
+
+function useServiceDurationText(hireDate: string | null, fallback: string) {
+  const [durationText, setDurationText] = useState(fallback);
+
+  useEffect(() => {
+    const updateDuration = () => {
+      setDurationText(serviceDurationTextFromHireDate(hireDate, fallback));
+    };
+
+    updateDuration();
+    const interval = window.setInterval(updateDuration, 60 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [fallback, hireDate]);
+
+  return durationText;
 }
 
 function formatContributionValue(metric: ContributionMetric, value: number) {
@@ -194,17 +209,11 @@ function PayrollStat({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50/50 px-4 py-3">
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-slate-900">{value}</p>
+    <div className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
+      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mt-1.5 text-xl font-semibold text-slate-900">{value}</p>
     </div>
   );
-}
-
-function navItemClass(active: boolean) {
-  return active
-    ? "border-l-2 border-orange-500 bg-orange-50 text-orange-600"
-    : "border-l-2 border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900";
 }
 
 function chartTooltipStyle() {
@@ -261,8 +270,8 @@ function insightMeta(text: string) {
 
 function sectionTitle(kicker: string, title: string) {
   return (
-    <div>
-      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">{kicker}</p>
+    <div className="mb-2">
+      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{kicker}</p>
       <h2 className="mt-2 text-2xl font-semibold text-slate-900">{title}</h2>
     </div>
   );
@@ -286,11 +295,11 @@ export function EmptyStateCard({
   title: string;
 }) {
   return (
-    <Card className="rounded-3xl border border-slate-100 bg-white p-10 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
-      <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-50 text-slate-500">
+    <Card className="rounded-3xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-10 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
+      <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
         <CircleDashed className="h-5 w-5" />
       </div>
-      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{title}</p>
+      <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
       <p className="mt-2 text-sm text-slate-600">{message}</p>
     </Card>
   );
@@ -306,16 +315,16 @@ export function MetricCard({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(15,23,42,0.08)]">
-      <div className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.1em] text-slate-500">
+    <div className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
+      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
         <span>{label}</span>
         {tooltip ? (
           <span title={tooltip}>
-            <CircleHelp className="h-3.5 w-3.5 text-slate-400" />
+            <CircleHelp className="h-3 w-3 text-slate-400" />
           </span>
         ) : null}
       </div>
-      <p className="mt-1 text-base font-semibold text-slate-900">{value}</p>
+      <p className="mt-2 text-base font-semibold text-slate-900">{value}</p>
     </div>
   );
 }
@@ -330,12 +339,14 @@ export function SmartInsightCard({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(15,23,42,0.08)]">
+    <div className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
       <div className="flex items-center gap-2 text-slate-700">
-        <Icon className="h-4 w-4 text-slate-500" />
-        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">{label}</p>
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 text-orange-600 ring-1 ring-orange-100 transition-colors group-hover:bg-orange-100">
+          <Icon className="h-4 w-4" />
+        </div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
       </div>
-      <p className="mt-2 text-sm font-semibold text-slate-900">{value}</p>
+      <p className="mt-2.5 text-sm font-semibold text-slate-900">{value}</p>
     </div>
   );
 }
@@ -669,15 +680,17 @@ function SmartInsightsStrip({ data }: { data: MedicalRepPortalData }) {
           const meta = insightMeta(insight);
           const Icon = meta.icon;
           return (
-            <div key={insight} className="rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_20px_rgba(15,23,42,0.08)]">
+            <div key={insight} className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-slate-700">
-                  <Icon className="h-4 w-4" />
-                  <span className="text-xs font-medium">Insight</span>
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-50 text-orange-600 ring-1 ring-orange-100 transition-colors group-hover:bg-orange-100">
+                    <Icon className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Insight</span>
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.classes}`}>{meta.badge}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${meta.classes}`}>{meta.badge}</span>
               </div>
-              <p className="mt-2 text-sm text-slate-700">{shortInsight(insight)}</p>
+              <p className="mt-2.5 text-sm font-medium text-slate-700">{shortInsight(insight)}</p>
             </div>
           );
         })}
@@ -701,43 +714,555 @@ function OverviewStatCard({
   progress?: number | null;
   value: string;
 }) {
-  const tone =
-    accent === "green"
-      ? "text-emerald-600 bg-emerald-50"
-      : accent === "purple"
-        ? "text-violet-600 bg-violet-50"
-        : accent === "blue"
-          ? "text-blue-600 bg-blue-50"
-          : "text-orange-600 bg-orange-50";
+  const tone = {
+    bar: "bg-orange-500",
+    border: "hover:border-orange-200",
+    icon: "bg-orange-50 text-orange-600 ring-orange-100",
+    progress: "bg-orange-500",
+    tint: "bg-orange-50/55",
+  };
+
+  if (accent === "green") {
+    tone.bar = "bg-emerald-500";
+    tone.border = "hover:border-emerald-200";
+    tone.icon = "bg-emerald-50 text-emerald-600 ring-emerald-100";
+    tone.progress = "bg-emerald-500";
+    tone.tint = "bg-emerald-50/55";
+  } else if (accent === "purple") {
+    tone.bar = "bg-violet-500";
+    tone.border = "hover:border-violet-200";
+    tone.icon = "bg-violet-50 text-violet-600 ring-violet-100";
+    tone.progress = "bg-violet-500";
+    tone.tint = "bg-violet-50/55";
+  } else if (accent === "blue") {
+    tone.bar = "bg-sky-500";
+    tone.border = "hover:border-sky-200";
+    tone.icon = "bg-sky-50 text-sky-600 ring-sky-100";
+    tone.progress = "bg-sky-500";
+    tone.tint = "bg-sky-50/55";
+  }
+
+  const clampedProgress =
+    typeof progress === "number" ? Math.max(0, Math.min(100, Math.round(progress))) : null;
+
   return (
-    <Card className="group rounded-2xl border border-slate-200 bg-white/95 px-5 py-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
-       <div className="mb-4 h-0.5 w-8 rounded-full bg-slate-200 transition group-hover:w-12 group-hover:bg-orange-500" />
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-       <p className="text-[clamp(1.4rem,2.4vw,2rem)] leading-tight font-semibold tracking-tight text-slate-900">{value}</p>
-          <p className="mt-1.5 text-xs font-medium text-slate-500">{label}</p>
-          {note ? <p className="mt-1 text-xs text-slate-500">{note}</p> : null}
-          {typeof progress === "number" ? (
-            <div className="mt-3 h-1.5 rounded-full bg-slate-100">
+    <Card className={`group relative min-h-[172px] overflow-hidden rounded-[26px] border border-slate-200/90 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-5 py-5 shadow-[0_18px_42px_rgba(15,23,42,0.075)] transition duration-200 hover:-translate-y-0.5 ${tone.border} hover:shadow-[0_24px_54px_rgba(15,23,42,0.11)]`}>
+      <div className={`absolute right-0 top-0 h-[76px] w-[76px] rounded-bl-[38px] ${tone.tint}`} />
+      <div className={`mb-5 h-[3px] w-10 rounded-full ${tone.bar} transition group-hover:w-16`} />
+      <div className="relative flex h-full flex-col justify-between gap-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="break-words text-[1.65rem] font-black leading-[1.05] text-slate-950 [overflow-wrap:anywhere] lg:text-[1.85rem] 2xl:text-[2rem]">
+              {value}
+            </p>
+            <p className="mt-2.5 text-[11px] font-black uppercase text-slate-500">{label}</p>
+          </div>
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1 ${tone.icon}`}>
+            <Icon className="h-5 w-5" />
+          </div>
+        </div>
+
+        <div>
+          {note ? <p className="line-clamp-2 min-h-[34px] text-[13px] font-medium leading-5 text-slate-500">{note}</p> : null}
+          {clampedProgress !== null ? (
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
               <div
-                className="h-1.5 rounded-full bg-emerald-500"
-                style={{ width: `${Math.max(0, Math.min(100, Math.round(progress)))}%` }}
+                className={`h-2 rounded-full ${tone.progress}`}
+                style={{ width: `${clampedProgress}%` }}
               />
             </div>
           ) : null}
-        </div>
-        <div className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl ${tone}`}>
-          <Icon className="h-4.5 w-4.5" />
         </div>
       </div>
     </Card>
   );
 }
 
+type OverviewKeyCard = {
+  accent?: "orange" | "green" | "purple" | "blue";
+  icon: typeof Target;
+  label: string;
+  note?: string;
+  progress?: number | null;
+  value: string;
+};
+
+function normalizedRoleLabel(data: MedicalRepPortalData) {
+  return String(data.employee.roleLabel ?? "").trim().toLowerCase();
+}
+
+function isRole(data: MedicalRepPortalData, ...tokens: string[]) {
+  const role = normalizedRoleLabel(data);
+  return tokens.some((token) => role.includes(token));
+}
+
+function pct(value: number) {
+  return `${Number.isFinite(value) ? value.toFixed(1) : "0.0"}%`;
+}
+
+function achievementCards(data: MedicalRepPortalData, labelPrefix: string): OverviewKeyCard[] {
+  return [
+    {
+      accent: "green",
+      icon: TrendingUp,
+      label: `${labelPrefix} Sales`,
+      note: `${pct(data.sales.overviewAchievementPercent)} achievement`,
+      progress: data.sales.overviewAchievementPercent,
+      value: egp(data.sales.overviewSales),
+    },
+    {
+      accent: "orange",
+      icon: Target,
+      label: `${labelPrefix} Target`,
+      note: "Approved sales target",
+      value: egp(data.sales.overviewTarget),
+    },
+    {
+      accent: "blue",
+      icon: Activity,
+      label: `${labelPrefix} Achievement`,
+      note: "All-time sales versus target",
+      progress: data.sales.overviewAchievementPercent,
+      value: pct(data.sales.overviewAchievementPercent),
+    },
+  ];
+}
+
+function comparisonRows(data: MedicalRepPortalData) {
+  return [...(data.sales.teamComparison ?? [])].sort((left, right) => left.position - right.position);
+}
+
+function topComparisonName(data: MedicalRepPortalData, fallback = "Not available") {
+  return comparisonRows(data)[0]?.name ?? fallback;
+}
+
+function weakComparisonName(data: MedicalRepPortalData, fallback = "Not available") {
+  const rows = comparisonRows(data).filter((row) => Number.isFinite(row.achievementPercent));
+  return rows.sort((left, right) => left.achievementPercent - right.achievementPercent)[0]?.name ?? fallback;
+}
+
+function underperformingCount(data: MedicalRepPortalData) {
+  return comparisonRows(data).filter((row) => row.achievementPercent < 90).length;
+}
+
+function pendingExpenseCount(data: MedicalRepPortalData) {
+  return data.workload?.expenseRows.filter((row) => !row.hrApproved).length ?? data.workforce.pendingApprovals;
+}
+
+function topTerritory(data: MedicalRepPortalData) {
+  return [...data.sales.territories].sort((left, right) => right.sales - left.sales)[0] ?? null;
+}
+
+function weakTerritory(data: MedicalRepPortalData) {
+  return [...data.sales.territories]
+    .filter((row) => row.target > 0)
+    .sort((left, right) => left.achievementPercent - right.achievementPercent)[0] ?? null;
+}
+
+function topLine(data: MedicalRepPortalData) {
+  return [...data.sales.linePerformance].sort((left, right) => right.sales - left.sales)[0] ?? null;
+}
+
+function weakLine(data: MedicalRepPortalData) {
+  return [...data.sales.linePerformance]
+    .filter((row) => row.target > 0)
+    .sort((left, right) => left.achievementPercent - right.achievementPercent)[0] ?? null;
+}
+
+function topProductMixShare(data: MedicalRepPortalData) {
+  const topProduct = data.sales.productContribution[0];
+  const totalProductSales = data.sales.productContribution.reduce((sum, row) => sum + row.sales, 0);
+  return topProduct && totalProductSales > 0 ? (topProduct.sales / totalProductSales) * 100 : 0;
+}
+
+function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: string): OverviewKeyCard[] {
+  const gapToTarget = Math.max(0, data.sales.overviewTarget - data.sales.overviewSales);
+  const org = data.orgStructure;
+  const productMixShare = topProductMixShare(data);
+  const territoryGaps = data.sales.territories.filter((row) => row.target > 0 && row.achievementPercent < 90).length;
+  const highestProductCard: OverviewKeyCard = {
+    accent: "purple",
+    icon: Trophy,
+    label: "Highest Product Sales",
+    note: data.sales.topProduct ?? "No product data",
+    value: egp(data.sales.topProductSalesValue),
+  };
+  const employmentCard: OverviewKeyCard = {
+    accent: "blue",
+    icon: CalendarDays,
+    label: "Employment Duration",
+    note: `Hired ${prettyDate(data.hrContract.hireDate)}`,
+    value: serviceDurationText,
+  };
+
+  if (isRole(data, "district")) {
+    return [
+      ...achievementCards(data, "Team"),
+      {
+        accent: "blue",
+        icon: Users,
+        label: "Team Structure",
+        note: `${formatUnits(org?.actualNow ?? data.workforce.activeHeadcount)} actual now - ${formatUnits(org?.vacancies ?? data.workforce.openVacancies)} vacant`,
+        value: formatUnits(org?.totalStructure ?? data.workforce.activeHeadcount + data.workforce.openVacancies),
+      },
+      {
+        accent: "orange",
+        icon: TrendingDown,
+        label: "Reps Below 90%",
+        note: "All-period achievement",
+        value: formatUnits(underperformingCount(data)),
+      },
+      highestProductCard,
+      {
+        accent: "green",
+        icon: Crown,
+        label: "Top Rep",
+        note: "Best current comparison rank",
+        value: topComparisonName(data),
+      },
+      {
+        accent: "purple",
+        icon: ReceiptText,
+        label: "Pending Team Expenses",
+        note: "Awaiting approval",
+        value: formatUnits(pendingExpenseCount(data)),
+      },
+    ];
+  }
+
+  if (isRole(data, "national sales manager")) {
+    return [
+      ...achievementCards(data, "Line"),
+      {
+        accent: "blue",
+        icon: Users,
+        label: "Line Structure",
+        note: `${formatUnits(org?.actualNow ?? data.workforce.activeHeadcount)} actual now - ${formatUnits(org?.vacancies ?? data.workforce.openVacancies)} vacant`,
+        value: formatUnits(org?.totalStructure ?? data.workforce.activeHeadcount + data.workforce.openVacancies),
+      },
+      {
+        accent: "orange",
+        icon: BriefcaseBusiness,
+        label: "DSM Vacancies",
+        note: "Open district manager seats",
+        value: formatUnits(org?.districtManagerVacancies ?? 0),
+      },
+      {
+        accent: "green",
+        icon: Crown,
+        label: "Top DSM",
+        note: "Best current comparison rank",
+        value: topComparisonName(data),
+      },
+      {
+        accent: "orange",
+        icon: TrendingDown,
+        label: "Underperforming Districts",
+        note: "Below 90% achievement",
+        value: formatUnits(underperformingCount(data)),
+      },
+      highestProductCard,
+    ];
+  }
+
+  if (isRole(data, "regional", "manager") && !isRole(data, "product", "finance", "training", "marketing", "sfe", "national", "district")) {
+    return [
+      ...achievementCards(data, "Region"),
+      {
+        accent: "blue",
+        icon: Users,
+        label: "Active Headcount",
+        note: data.workforce.scopeLabel,
+        value: formatUnits(data.workforce.activeHeadcount),
+      },
+      {
+        accent: "orange",
+        icon: BriefcaseBusiness,
+        label: "Vacancies",
+        note: "Open positions",
+        value: formatUnits(data.workforce.openVacancies),
+      },
+      {
+        accent: "green",
+        icon: Crown,
+        label: "Top District",
+        note: "Best current comparison rank",
+        value: topComparisonName(data),
+      },
+      {
+        accent: "orange",
+        icon: TrendingDown,
+        label: "Lowest District",
+        note: "Lowest achievement in scope",
+        value: weakComparisonName(data),
+      },
+      {
+        accent: "purple",
+        icon: ReceiptText,
+        label: "Expense Load",
+        note: "Visible submitted expenses",
+        value: egp(data.workload?.totalExpenses ?? 0),
+      },
+    ];
+  }
+
+  if (isRole(data, "product manager", "group product manager")) {
+    const bestTerritory = topTerritory(data);
+    const weakestTerritory = weakTerritory(data);
+    return [
+      ...achievementCards(data, "Product"),
+      {
+        accent: "green",
+        icon: MapPin,
+        label: "Top Territory",
+        note: bestTerritory ? egp(bestTerritory.sales) : "No territory data",
+        value: bestTerritory?.name ?? "Not available",
+      },
+      {
+        accent: "orange",
+        icon: TrendingDown,
+        label: "Weak Territory",
+        note: weakestTerritory ? `${pct(weakestTerritory.achievementPercent)} achievement` : "No territory data",
+        value: weakestTerritory?.name ?? "Not available",
+      },
+      {
+        accent: "blue",
+        icon: Crown,
+        label: "Top DSM Contribution",
+        note: "Best current comparison rank",
+        value: topComparisonName(data),
+      },
+      {
+        accent: "purple",
+        icon: Calculator,
+        label: "Product Mix Share",
+        note: data.sales.topProduct ?? "No product data",
+        value: pct(productMixShare),
+      },
+      highestProductCard,
+    ];
+  }
+
+  if (isRole(data, "sfe", "training")) {
+    return [
+      {
+        accent: "green",
+        icon: BadgeCheck,
+        label: "Field Coaching Completion",
+        note: "Coaching records in scope",
+        value: "Pending",
+      },
+      {
+        accent: "orange",
+        icon: TrendingDown,
+        label: "Low Performers",
+        note: "Below 90% achievement",
+        value: formatUnits(underperformingCount(data)),
+      },
+      {
+        accent: "blue",
+        icon: Activity,
+        label: "Data Coverage",
+        note: data.workforce.scopeLabel,
+        progress: data.workforce.dataCoveragePercent,
+        value: pct(data.workforce.dataCoveragePercent),
+      },
+      {
+        accent: "blue",
+        icon: Users,
+        label: "Active Reps",
+        note: "Visible active headcount",
+        value: formatUnits(data.workforce.activeHeadcount),
+      },
+      {
+        accent: "purple",
+        icon: CalendarClock,
+        label: "Training Pending",
+        note: "Training workflow integration",
+        value: "Pending",
+      },
+      {
+        accent: "orange",
+        icon: MapPin,
+        label: "Territory Coverage Gaps",
+        note: "Territories below 90%",
+        value: formatUnits(territoryGaps),
+      },
+    ];
+  }
+
+  if (isRole(data, "finance")) {
+    return [
+      {
+        accent: "orange",
+        icon: ReceiptText,
+        label: "Expense Claims Pending",
+        note: "Awaiting approval",
+        value: formatUnits(pendingExpenseCount(data)),
+      },
+      {
+        accent: "purple",
+        icon: Activity,
+        label: "Expense Load",
+        note: "Visible submitted expenses",
+        value: egp(data.workload?.totalExpenses ?? 0),
+      },
+      {
+        accent: "blue",
+        icon: Users,
+        label: "Active Headcount",
+        note: data.workforce.scopeLabel,
+        value: formatUnits(data.workforce.activeHeadcount),
+      },
+      {
+        accent: "orange",
+        icon: BriefcaseBusiness,
+        label: "Open Vacancies",
+        note: "Visible open positions",
+        value: formatUnits(data.workforce.openVacancies),
+      },
+      {
+        accent: "green",
+        icon: BadgeCheck,
+        label: "Pending Approvals",
+        note: "Operational approval queue",
+        value: formatUnits(data.workforce.pendingApprovals),
+      },
+      {
+        accent: "blue",
+        icon: Activity,
+        label: "Data Coverage",
+        note: "Employee records completeness",
+        progress: data.workforce.dataCoveragePercent,
+        value: pct(data.workforce.dataCoveragePercent),
+      },
+    ];
+  }
+
+  if (isRole(data, "hr")) {
+    return [
+      {
+        accent: "blue",
+        icon: Users,
+        label: "Active Headcount",
+        note: data.workforce.scopeLabel,
+        value: formatUnits(data.workforce.activeHeadcount),
+      },
+      {
+        accent: "orange",
+        icon: BriefcaseBusiness,
+        label: "Open Vacancies",
+        note: "Visible open positions",
+        value: formatUnits(data.workforce.openVacancies),
+      },
+      {
+        accent: "green",
+        icon: UserRound,
+        label: "New Hires",
+        note: "Last 30 days",
+        value: formatUnits(data.workforce.newHires),
+      },
+      {
+        accent: "orange",
+        icon: CalendarClock,
+        label: "Probation Due",
+        note: "Next 30 days",
+        value: formatUnits(data.workforce.probationDue),
+      },
+      {
+        accent: "purple",
+        icon: FileText,
+        label: "Contract Renewals Due",
+        note: "Next 30 days",
+        value: formatUnits(data.workforce.contractRenewalsDue),
+      },
+      {
+        accent: "orange",
+        icon: CircleHelp,
+        label: "Missing Employee Data",
+        note: "Needs HR cleanup",
+        value: formatUnits(data.workforce.missingEmployeeData),
+      },
+    ];
+  }
+
+  if (isRole(data, "ceo", "super admin")) {
+    const bestLine = topLine(data);
+    const weakestLine = weakLine(data);
+    return [
+      ...achievementCards(data, "Company"),
+      {
+        accent: "blue",
+        icon: Users,
+        label: "Total Headcount",
+        note: "Visible active employees",
+        value: formatUnits(data.workforce.activeHeadcount),
+      },
+      {
+        accent: "orange",
+        icon: BriefcaseBusiness,
+        label: "Vacancies",
+        note: "Visible open positions",
+        value: formatUnits(data.workforce.openVacancies),
+      },
+      {
+        accent: "green",
+        icon: Crown,
+        label: "Top Line",
+        note: bestLine ? egp(bestLine.sales) : "No line data",
+        value: bestLine?.name ?? "Not available",
+      },
+      {
+        accent: "orange",
+        icon: TrendingDown,
+        label: "Weak Line",
+        note: weakestLine ? `${pct(weakestLine.achievementPercent)} achievement` : "No line data",
+        value: weakestLine?.name ?? "Not available",
+      },
+      {
+        accent: "purple",
+        icon: BadgeCheck,
+        label: "Pending Approvals",
+        note: "Operational approval queue",
+        value: formatUnits(data.workforce.pendingApprovals),
+      },
+    ];
+  }
+
+  return [
+    ...achievementCards(data, "All Time"),
+    {
+      accent: "orange",
+      icon: Calculator,
+      label: "Gap to Target",
+      note: "Remaining all-time gap",
+      value: egp(gapToTarget),
+    },
+    {
+      accent: "purple",
+      icon: Zap,
+      label: "Expected Incentive",
+      note: `${pct(data.payroll.allPeriodsAchievementPercent)} all-time achievement`,
+      value: egp(data.payroll.allPeriodsIncentive),
+    },
+    {
+      accent: "blue",
+      icon: Crown,
+      label: "Rank in Team",
+      note: data.sales.rankInTeam ? "All-time comparison" : "Not available",
+      value: data.sales.rankInTeam ? `${data.sales.rankInTeam.position} / ${data.sales.rankInTeam.total}` : "N/A",
+    },
+    employmentCard,
+  ];
+}
+
 function IncentiveStatusCard({ data }: { data: MedicalRepPortalData }) {
   const achievementPercent = data.sales.overviewAchievementPercent;
   const shortfallPercent = Math.max(0, 90 - achievementPercent);
   const calculation = calculateIncentive2026({
+    basicSalary: data.payroll.basicSalary,
+    extraCostOfLiving: data.payroll.extraCostOfLiving,
+    fuelAllowance: data.payroll.fuelAllowance,
     netSalary: data.payroll.netSalary,
     grossSalary: data.payroll.grossSalary,
     socialInsurance: data.payroll.socialInsurance,
@@ -782,15 +1307,25 @@ function IncentiveStatusCard({ data }: { data: MedicalRepPortalData }) {
 }
 
 function IncentiveCalculatorWidget({ data }: { data: MedicalRepPortalData }) {
-  const calculatedNetSalary = Math.max(
-    0,
-    (data.payroll.grossSalary || 0) - (data.payroll.socialInsurance || 0) - (data.payroll.incomeTax || 0),
-  );
-  const calculatedBasicSalary = Math.max(0, calculatedNetSalary * 0.7);
+  const salaryReference = calculateIncentive2026({
+    achievementPercent: 100,
+    basicSalary: data.payroll.basicSalary,
+    extraCostOfLiving: data.payroll.extraCostOfLiving,
+    fuelAllowance: data.payroll.fuelAllowance,
+    grossSalary: data.payroll.grossSalary,
+    netSalary: data.payroll.netSalary,
+    socialInsurance: data.payroll.socialInsurance,
+    taxes: data.payroll.incomeTax,
+  });
+  const calculatedNetSalary = salaryReference.netSalary;
+  const calculatedBasicSalary = salaryReference.basicSalary;
   const simNetSalary = calculatedNetSalary;
   const [simAchievement, setSimAchievement] = useState(data.sales.overviewAchievementPercent || 100);
 
   const calc = calculateIncentive2026({
+    basicSalary: calculatedBasicSalary,
+    extraCostOfLiving: data.payroll.extraCostOfLiving,
+    fuelAllowance: data.payroll.fuelAllowance,
     netSalary: simNetSalary,
     grossSalary: data.payroll.grossSalary,
     socialInsurance: data.payroll.socialInsurance,
@@ -1036,10 +1571,10 @@ function OverviewPagePanel({
   action?: ReactNode;
 }) {
   return (
-    <Card className="flex h-full flex-col rounded-3xl border border-slate-100 bg-white p-4 lg:p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
+    <Card className="group flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-4 lg:p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)] transition-all duration-160 ease-out hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)]">
       <div className="mb-4 lg:mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-orange-500/80" />
+        <div className="flex items-center gap-2.5">
+          <span className="h-2 w-2 rounded-full bg-orange-500 ring-2 ring-orange-100" />
           <p className="text-base lg:text-lg font-semibold text-slate-900">{title}</p>
         </div>
         {action}
@@ -1153,11 +1688,8 @@ function OverviewAchievementByLine({ data }: { data: MedicalRepPortalData }) {
   const total = Math.max(1, source.reduce((sum, row) => sum + row.value, 0));
   
   return (
-    <motion.div
-      layoutId="sales-performance-family"
+    <div
       className="flex h-full flex-col"
-      whileHover={{ scale: 1.01 }}
-      transition={{ duration: 0.2 }}
     >
       <OverviewPagePanel
         title="Achievement by Product Family"
@@ -1201,17 +1733,14 @@ function OverviewAchievementByLine({ data }: { data: MedicalRepPortalData }) {
           </div>
         </div>
       </OverviewPagePanel>
-    </motion.div>
+    </div>
   );
 }
 
 function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
   return (
-    <motion.div
-      layoutId="sales-performance-chart"
+    <div
       className="flex h-full flex-col"
-      whileHover={{ scale: 1.01 }}
-      transition={{ duration: 0.2 }}
     >
       <OverviewPagePanel
         title="Performance Overview"
@@ -1241,7 +1770,7 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
           </ResponsiveContainer>
         </div>
       </OverviewPagePanel>
-    </motion.div>
+    </div>
   );
 }
 
@@ -1595,7 +2124,6 @@ export function EarningsPage({ data }: { data: MedicalRepPortalData }) {
   const netEarnings = latestRecord.netSalary;
   const basicSalary = latestRecord.basicSalary;
   const currentIncentive = latestRecord.allPeriodsIncentive;
-  const incentiveTarget = latestRecord.allPeriodsIncentiveTarget;
   const grossSalary = latestRecord.grossSalary;
   const totalAdditions = latestRecord.totalAdditions;
   const payrollTaxes = latestRecord.incomeTax > 0
@@ -1670,7 +2198,6 @@ export function EarningsPage({ data }: { data: MedicalRepPortalData }) {
         <IncentiveBlock
           achievementPercent={achievementPercent}
           currentIncentive={currentIncentive}
-          incentiveTarget={incentiveTarget}
           salesGap={salesGap}
         />
         <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
@@ -1795,12 +2322,10 @@ function EarningsTrendCard({ data }: { data: Array<{ month: string; totalPaid: n
 function IncentiveBlock({
   achievementPercent,
   currentIncentive,
-  incentiveTarget,
   salesGap,
 }: {
   achievementPercent: number;
   currentIncentive: number;
-  incentiveTarget: number;
   salesGap: number;
 }) {
   const clamped = Math.max(0, Math.min(100, Math.round(achievementPercent)));
@@ -1857,54 +2382,6 @@ function IncentiveBlock({
   );
 }
 
-function PayslipPreviewCard({
-  bankAccount,
-  month,
-  netEarnings,
-  payPeriod,
-  paymentDate,
-}: {
-  bankAccount: string;
-  month: string;
-  netEarnings: number;
-  payPeriod: string;
-  paymentDate: string;
-}) {
-  return (
-    <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-      <div className="mb-4 flex items-center gap-2">
-        <span className="h-2 w-2 rounded-full bg-orange-500/80" />
-        <p className="text-lg font-semibold text-slate-900">Payslip Preview</p>
-      </div>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3">
-          <span className="text-sm text-slate-500">Month</span>
-          <span className="text-sm font-semibold text-slate-900">{month}</span>
-        </div>
-        <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3">
-          <span className="text-sm text-slate-500">Net Earnings</span>
-          <span className="text-sm font-semibold text-orange-600">{egp(netEarnings)}</span>
-        </div>
-        <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3">
-          <span className="text-sm text-slate-500">Pay Period</span>
-          <span className="text-sm font-semibold text-slate-900">{payPeriod}</span>
-        </div>
-        <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3">
-          <span className="text-sm text-slate-500">Payment Date</span>
-          <span className="text-sm font-semibold text-slate-900">{paymentDate}</span>
-        </div>
-        <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3">
-          <span className="text-sm text-slate-500">Bank Account</span>
-          <span className="text-sm font-semibold text-slate-900">{bankAccount}</span>
-        </div>
-      </div>
-      <Button className="mt-4 w-full rounded-xl" variant="secondary">
-        View Full Payslip
-      </Button>
-    </Card>
-  );
-}
-
 function NotificationsSection() {
   const notifications = [
     {
@@ -1955,6 +2432,7 @@ function NotificationsSection() {
 }
 
 export function ContactHRSupportPage({ data }: { data: MedicalRepPortalData }) {
+  const employeeName = data.employee.fullName || data.employee.hrId || "your profile";
   const [category, setCategory] = useState("");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
@@ -2019,7 +2497,7 @@ export function ContactHRSupportPage({ data }: { data: MedicalRepPortalData }) {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold text-slate-900">Request Support</h1>
-        <p className="mt-1 text-sm text-slate-500">Submit a support request or contact HR for assistance</p>
+        <p className="mt-1 text-sm text-slate-500">Submit a support request for {employeeName} or contact HR for assistance</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -2825,21 +3303,31 @@ export function IdentityCard({ data }: { data: MedicalRepPortalData }) {
 }
 
 export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData }) {
+  const serviceDurationText = useServiceDurationText(
+    data.hrContract.hireDate,
+    data.hrContract.serviceDurationText,
+  );
+
   if (data.empty.profile) {
     return <EmptyStateCard message="Your employee profile is not linked yet. Please contact HR." title="Profile Not Linked" />;
   }
 
-  const isNationalSalesManager = data.employee.roleLabel === "National Sales Manager";
+  const overviewCards = buildOverviewKeyCards(data, serviceDurationText);
 
   return (
     <div className="space-y-6 lg:space-y-7">
-      <div className={`grid gap-4 md:grid-cols-2 lg:gap-5 ${isNationalSalesManager ? "xl:grid-cols-3" : "xl:grid-cols-4"}`}>
-        <OverviewStatCard accent="orange" icon={Target} label="Monthly Target" note={data.sales.currentMonthLabel} value={egp(data.sales.currentMonthTarget)} />
-        <OverviewStatCard accent="green" icon={TrendingUp} label="Achievement" note={`${data.sales.achievementPercent.toFixed(1)}% of target`} progress={data.sales.achievementPercent} value={egp(data.sales.currentMonthSales)} />
-        <OverviewStatCard accent="purple" icon={Wallet} label="Net Salary" note={data.payroll.latestBatchLabel ?? "Latest payroll"} value={egp(data.payroll.netSalary)} />
-        {!isNationalSalesManager && (
-          <OverviewStatCard accent="blue" icon={Trophy} label="Rank in Team" note={data.sales.rankInTeam ? "Great job!" : "Not available"} value={data.sales.rankInTeam ? `${data.sales.rankInTeam.position} / ${data.sales.rankInTeam.total}` : "N/A"} />
-        )}
+      <div className="grid gap-4 md:grid-cols-2 lg:gap-5 xl:grid-cols-3">
+        {overviewCards.map((card) => (
+          <OverviewStatCard
+            key={card.label}
+            accent={card.accent}
+            icon={card.icon}
+            label={card.label}
+            note={card.note}
+            progress={card.progress}
+            value={card.value}
+          />
+        ))}
       </div>
       <div className="grid gap-4 lg:gap-5 xl:grid-cols-1">
         <OverviewPerformanceChart data={data} />
@@ -2863,7 +3351,6 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
       <section className="sr-only">
         <div className="grid gap-3 md:grid-cols-2">
           <MetricCard label="Employment Status" value={data.hrContract.employmentStatus} />
-          <MetricCard label="Payroll Eligibility" value={data.hrContract.payrollEligibility} />
         </div>
       </section>
     </div>

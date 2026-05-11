@@ -31,8 +31,10 @@ import {
   type OrgMappingSample,
   type OrgMappingWarning,
 } from "@/lib/imports/org-rule-engine";
+import { calculateGrossSalary } from "@/lib/payroll/policy";
 
 type HeaderMapping = Map<EmployeeImportField, string>;
+const salaryFormulaTolerance = 1;
 
 const fieldPriority: EmployeeImportField[] = [
   "hrId",
@@ -385,6 +387,21 @@ function sortFields(fields: EmployeeImportField[]) {
   );
 }
 
+function money(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function differs(left: number, right: number, tolerance = salaryFormulaTolerance) {
+  return Math.abs(money(left) - money(right)) > tolerance;
+}
+
+function moneyText(value: number) {
+  return money(value).toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  });
+}
+
 export function validateEmployeeImportRows(
   rows: RawEmployeeImportRow[],
   options: EmployeeImportPlanOptions = {},
@@ -445,6 +462,33 @@ export function validateEmployeeImportRows(
         code: "missing_full_name",
         message: "Employee row is missing full name.",
       });
+    }
+
+    if (record.rowType === "employee") {
+      const expectedGrossSalary = calculateGrossSalary({
+        baseSalary: record.compensation.netSalary,
+        employmentIncomeTax: record.compensation.taxes,
+        extraCostOfLiving: record.compensation.extraCostOfLiving,
+        fuelAllowance: record.compensation.fuelAllowance,
+        grossSalary: record.compensation.grossSalary,
+        socialInsurance: record.compensation.socialInsurance,
+      });
+
+      if (expectedGrossSalary > 0) {
+        if (
+          record.compensation.grossSalary !== null &&
+          differs(record.compensation.grossSalary, expectedGrossSalary)
+        ) {
+          validationWarnings.push({
+            rowNumber: record.rowNumber,
+            field: "grossSalary",
+            code: "gross_salary_formula_mismatch",
+            message: `Gross salary was normalized to ${moneyText(expectedGrossSalary)} based on base salary plus social insurance and income tax.`,
+          });
+        }
+
+        record.compensation.grossSalary = expectedGrossSalary;
+      }
     }
   }
 

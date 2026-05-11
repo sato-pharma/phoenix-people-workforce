@@ -10,7 +10,11 @@ import {
   writeAuthAudit,
 } from "@/lib/auth/audit";
 import { authenticateLoginId, normalizeLoginId } from "@/lib/auth/credentials";
-import { createSessionToken, phoenixSessionCookieName } from "@/lib/auth/session";
+import {
+  createSessionToken,
+  phoenixSessionCookieName,
+  sessionIdleTimeoutSecondsForRole,
+} from "@/lib/auth/session";
 import {
   createSupabaseAuthSession,
   phoenixSupabaseAccessTokenCookieName,
@@ -20,9 +24,6 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const oneDaySeconds = 60 * 60 * 24;
-const thirtyDaysSeconds = oneDaySeconds * 30;
 
 export async function POST(request: Request) {
   try {
@@ -84,7 +85,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const maxAgeSeconds = payload.remember ? thirtyDaysSeconds : oneDaySeconds;
+    const maxAgeSeconds = sessionIdleTimeoutSecondsForRole(user.role);
     const password = payload.password ?? "";
     let supabaseSession:
       | {
@@ -182,7 +183,6 @@ export async function POST(request: Request) {
     if (supabaseSession) {
       response.cookies.set({
         httpOnly: true,
-        maxAge: maxAgeSeconds,
         name: phoenixSupabaseAccessTokenCookieName,
         path: "/",
         sameSite: "lax",
@@ -192,7 +192,6 @@ export async function POST(request: Request) {
 
       response.cookies.set({
         httpOnly: true,
-        maxAge: maxAgeSeconds,
         name: phoenixSupabaseRefreshTokenCookieName,
         path: "/",
         sameSite: "lax",
@@ -223,7 +222,6 @@ export async function POST(request: Request) {
 
     response.cookies.set({
       httpOnly: true,
-      maxAge: maxAgeSeconds,
       name: phoenixSessionCookieName,
       path: "/",
       sameSite: "lax",

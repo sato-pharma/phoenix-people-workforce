@@ -47,6 +47,7 @@ export type PermissionResource =
   | "probation"
   | "resignations"
   | "contracts"
+  | "coaching"
   | "hr_calendar"
   | "geo_intelligence"
   | "outstation"
@@ -68,6 +69,7 @@ export const permissionResources: PermissionResource[] = [
   "probation",
   "resignations",
   "contracts",
+  "coaching",
   "user_admin",
   "permission_admin",
   "employee_documents",
@@ -134,6 +136,7 @@ const defaultPermissionMatrix: PermissionMap = {
     admin_access: ["read"],
     imports: allActions,
     contracts: allActions,
+    coaching: allActions,
     employee_documents: allActions,
     employee_profile: allActions,
     employees: allActions,
@@ -159,6 +162,7 @@ const defaultPermissionMatrix: PermissionMap = {
     admin_access: ["read"],
     imports: ["read", "import"],
     contracts: ["read", "approve", "export"],
+    coaching: ["read"],
     employee_profile: ["read", "export"],
     employees: ["read", "export"],
     expenses: ["read", "approve", "export"],
@@ -180,6 +184,7 @@ const defaultPermissionMatrix: PermissionMap = {
     admin_access: ["read"],
     imports: ["read", "import"],
     contracts: allActions,
+    coaching: ["read"],
     employee_documents: allActions,
     employee_profile: allActions,
     employees: allActions,
@@ -210,6 +215,7 @@ const defaultPermissionMatrix: PermissionMap = {
   },
   Employee: {
     overview: [],
+    coaching: ["read"],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
@@ -220,6 +226,7 @@ const defaultPermissionMatrix: PermissionMap = {
   },
   "Medical Rep": {
     overview: [],
+    coaching: ["read"],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
@@ -234,6 +241,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
     outstation: ["read", "create", "approve", "export"],
+    coaching: ["read"],
     organogram: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -248,6 +256,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
     outstation: ["read", "create", "approve", "export"],
+    coaching: ["read"],
     organogram: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -260,6 +269,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
     outstation: ["read", "create", "approve", "export"],
+    coaching: ["read"],
     probation: ["read", "export"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -274,6 +284,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -284,6 +295,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -294,6 +306,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: allActions,
@@ -305,6 +318,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employees: ["read", "export"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    coaching: ["read", "create", "update"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     probation: ["read", "export"],
@@ -328,6 +342,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employees: ["read", "export"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -462,6 +477,10 @@ export function resolveEmployeeIdentityId(context: Partial<Pick<AccessContext, "
 
 export function resolveNavigationMode(context: AccessContext): NavigationMode {
   return portalNavigationRoles.has(context.role) ? "employee-portal" : "admin";
+}
+
+export function canManageCoachingReports(context: Pick<AccessContext, "role" | "scope">) {
+  return context.scope === "system" || context.role === "Super Admin" || context.role === "Training Manager";
 }
 
 export function scopeForRole(role: PhoenixRole): AccessScope {

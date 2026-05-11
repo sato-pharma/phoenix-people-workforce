@@ -14,16 +14,16 @@ export function Badge({
   ...props
 }: BadgeProps) {
   const variants: Record<BadgeVariant, string> = {
-    neutral: "bg-bg-muted text-text-secondary",
-    success: "bg-green-50 text-success dark:bg-green-950/30",
-    warning: "bg-orange-50 text-warning dark:bg-orange-950/30",
-    danger: "bg-red-50 text-danger dark:bg-red-950/30",
+    neutral: "bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 ring-1 ring-slate-300 shadow-sm",
+    success: "bg-gradient-to-r from-emerald-50 to-emerald-100 text-emerald-700 ring-1 ring-emerald-200 shadow-[0_2px_8px_rgba(16,185,129,0.15)]",
+    warning: "bg-gradient-to-r from-orange-50 to-orange-100 text-orange-700 ring-1 ring-orange-200 shadow-[0_2px_8px_rgba(249,115,22,0.15)]",
+    danger: "bg-gradient-to-r from-rose-50 to-rose-100 text-rose-700 ring-1 ring-rose-200 shadow-[0_2px_8px_rgba(244,63,94,0.15)]",
   };
 
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium",
+        "inline-flex items-center rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.15em] transition-all duration-200 hover:shadow-md",
         variants[variant],
         className,
       )}

@@ -1,5 +1,10 @@
 import crypto from "crypto";
 
+import {
+  renderGeneralNotificationEmailHtml,
+  renderGeneralNotificationEmailText,
+} from "@/emails/general-notification";
+import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const emailNotificationTypes = [
@@ -8,6 +13,9 @@ export const emailNotificationTypes = [
   "birthday",
   "offer",
   "resignation",
+  "password_reset",
+  "user_created",
+  "general",
 ] as const;
 
 export const emailRecipientModes = [
@@ -18,6 +26,9 @@ export const emailRecipientModes = [
   "manager_chain",
   "employee_and_direct_manager",
   "candidate",
+  "same_line_selected_titles",
+  "selected_titles_all_lines",
+  "selected_titles_selected_lines",
 ] as const;
 
 export type EmailNotificationType = (typeof emailNotificationTypes)[number];
@@ -42,6 +53,15 @@ export type NotificationEmailInput = {
   summary: string;
   title: string;
   tone?: "success" | "warning" | "danger" | "neutral";
+};
+
+type EmailTemplateContent = {
+  bodyText: string;
+  closingText: string;
+  greeting: string;
+  previewText: string;
+  subject: string;
+  title: string;
 };
 
 type SendEmailResult =
@@ -71,7 +91,6 @@ type NotificationOutboxProcessResult = {
   sent: number;
 };
 
-const resendEndpoint = "https://api.resend.com/emails";
 const emailNotificationPolicyTable = "email_notification_policies";
 const notificationOutboxTable = "notification_outbox";
 const notificationOutboxMaxAttempts = 5;
@@ -82,7 +101,11 @@ export type EmailNotificationPolicy = {
   enabled: boolean;
   includeHrInbox: boolean;
   label: string;
+  recipientModes: EmailRecipientMode[];
   recipientMode: EmailRecipientMode;
+  targetLines: string[];
+  targetTitles: string[];
+  template: EmailTemplateContent;
   type: EmailNotificationType;
 };
 
@@ -94,13 +117,25 @@ type EmailNotificationPolicyRow = {
   label: string | null;
   notification_type: EmailNotificationType;
   recipient_mode: EmailRecipientMode | null;
+  recipient_modes?: EmailRecipientMode[] | null;
+  target_lines?: string[] | null;
+  target_titles?: string[] | null;
+  template_body_text?: string | null;
+  template_closing_text?: string | null;
+  template_greeting?: string | null;
+  template_preview_text?: string | null;
+  template_subject?: string | null;
+  template_title?: string | null;
 };
 
 type EmailContactRow = {
-  full_name: string | null;
-  hr_id: string;
-  manager_hr_id: string | null;
-  work_email: string | null;
+  full_name?: string | null;
+  hr_id?: string;
+  job_title?: string | null;
+  line?: string | null;
+  lines?: { name: string | null } | Array<{ name: string | null }> | null;
+  manager_hr_id?: string | null;
+  work_email?: string | null;
 };
 
 type NotificationDelivery =
@@ -113,7 +148,18 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     enabled: true,
     includeHrInbox: true,
     label: "Probation",
+    recipientModes: ["direct_manager"],
     recipientMode: "direct_manager",
+    targetLines: [],
+    targetTitles: [],
+    template: {
+      bodyText: "{summary}",
+      closingText: "Please review and take the required action.",
+      greeting: "Dear Phoenix Team,",
+      previewText: "Probation workflow update from Phoenix Workforce.",
+      subject: "{subject}",
+      title: "{title}",
+    },
     type: "probation",
   },
   {
@@ -121,7 +167,18 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     enabled: true,
     includeHrInbox: true,
     label: "Contract renewal",
+    recipientModes: ["manager_chain"],
     recipientMode: "manager_chain",
+    targetLines: [],
+    targetTitles: [],
+    template: {
+      bodyText: "{summary}",
+      closingText: "Please review the renewal status and proceed with the required action.",
+      greeting: "Dear Phoenix Team,",
+      previewText: "Contract renewal workflow update from Phoenix Workforce.",
+      subject: "{subject}",
+      title: "{title}",
+    },
     type: "contract_renewal",
   },
   {
@@ -129,15 +186,37 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     enabled: true,
     includeHrInbox: false,
     label: "Birthdays",
+    recipientModes: ["direct_manager"],
     recipientMode: "direct_manager",
+    targetLines: [],
+    targetTitles: [],
+    template: {
+      bodyText: "{summary}",
+      closingText: "Please prepare a timely people-care follow-up.",
+      greeting: "Dear Phoenix Team,",
+      previewText: "Birthday reminder from Phoenix Workforce.",
+      subject: "{subject}",
+      title: "{title}",
+    },
     type: "birthday",
   },
   {
-    description: "Offer lifecycle communication for candidates and HR follow-up.",
+    description: "Offer communication for candidates and HR follow-up.",
     enabled: true,
     includeHrInbox: false,
     label: "Offers",
+    recipientModes: ["candidate"],
     recipientMode: "candidate",
+    targetLines: [],
+    targetTitles: [],
+    template: {
+      bodyText: "{summary}",
+      closingText: "Phoenix HR will continue the next steps according to the offer workflow.",
+      greeting: "Dear Phoenix Team,",
+      previewText: "Offer update from Phoenix Workforce.",
+      subject: "{subject}",
+      title: "{title}",
+    },
     type: "offer",
   },
   {
@@ -145,8 +224,76 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     enabled: true,
     includeHrInbox: true,
     label: "Resignations",
+    recipientModes: ["manager_chain"],
     recipientMode: "manager_chain",
+    targetLines: [],
+    targetTitles: [],
+    template: {
+      bodyText: "{summary}",
+      closingText: "Please review the resignation workflow and complete the required action.",
+      greeting: "Dear Phoenix Team,",
+      previewText: "Resignation workflow update from Phoenix Workforce.",
+      subject: "{subject}",
+      title: "{title}",
+    },
     type: "resignation",
+  },
+  {
+    description: "Password reset links routed directly to the target account email.",
+    enabled: true,
+    includeHrInbox: false,
+    label: "Password reset",
+    recipientModes: ["candidate"],
+    recipientMode: "candidate",
+    targetLines: [],
+    targetTitles: [],
+    template: {
+      bodyText: "{summary}",
+      closingText: "If you did not request this action, please contact HR immediately.",
+      greeting: "Dear Phoenix User,",
+      previewText: "Phoenix Workforce password reset link.",
+      subject: "{subject}",
+      title: "{title}",
+    },
+    type: "password_reset",
+  },
+  {
+    description: "New account setup links routed directly to the target account email.",
+    enabled: true,
+    includeHrInbox: false,
+    label: "User created",
+    recipientModes: ["candidate"],
+    recipientMode: "candidate",
+    targetLines: [],
+    targetTitles: [],
+    template: {
+      bodyText: "{summary}",
+      closingText: "Please complete setup before the link expires.",
+      greeting: "Dear Phoenix User,",
+      previewText: "Phoenix Workforce account setup link.",
+      subject: "{subject}",
+      title: "{title}",
+    },
+    type: "user_created",
+  },
+  {
+    description: "General Phoenix Workforce notifications routed to configured recipients.",
+    enabled: true,
+    includeHrInbox: false,
+    label: "General",
+    recipientModes: ["hr_notifications"],
+    recipientMode: "hr_notifications",
+    targetLines: [],
+    targetTitles: [],
+    template: {
+      bodyText: "{summary}",
+      closingText: "Please review this update when available.",
+      greeting: "Dear Phoenix Team,",
+      previewText: "General Phoenix Workforce notification.",
+      subject: "{subject}",
+      title: "{title}",
+    },
+    type: "general",
   },
 ];
 
@@ -188,24 +335,63 @@ function isEmailRecipientMode(value: unknown): value is EmailRecipientMode {
   return emailRecipientModes.includes(value as EmailRecipientMode);
 }
 
+function cleanRecipientModes(value: unknown, fallback: EmailRecipientMode): EmailRecipientMode[] {
+  const values = Array.isArray(value) ? value : [];
+  const modes = values.filter(isEmailRecipientMode);
+  if (modes.length > 0) return Array.from(new Set(modes));
+  return [fallback];
+}
+
+function cleanTextArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => String(item ?? "").trim()).filter(Boolean)));
+}
+
+function templateWithFallback(row: EmailNotificationPolicyRow, fallback: EmailNotificationPolicy): EmailTemplateContent {
+  return {
+    bodyText: row.template_body_text?.trim() || fallback.template.bodyText,
+    closingText: row.template_closing_text?.trim() || fallback.template.closingText,
+    greeting: row.template_greeting?.trim() || fallback.template.greeting,
+    previewText: row.template_preview_text?.trim() || fallback.template.previewText,
+    subject: row.template_subject?.trim() || fallback.template.subject,
+    title: row.template_title?.trim() || fallback.template.title,
+  };
+}
+
 function mapPolicyRow(row: EmailNotificationPolicyRow): EmailNotificationPolicy {
   const fallback = defaultPolicyForType(row.notification_type);
+  const fallbackMode = fallback?.recipientMode ?? "hr_notifications";
 
   return {
     description: row.description ?? fallback?.description ?? "",
     enabled: row.enabled ?? fallback?.enabled ?? true,
     includeHrInbox: row.include_hr_inbox ?? row.include_hr_notifications ?? fallback?.includeHrInbox ?? false,
     label: row.label ?? fallback?.label ?? row.notification_type.replace(/_/g, " "),
-    recipientMode: isEmailRecipientMode(row.recipient_mode) ? row.recipient_mode : fallback?.recipientMode ?? "hr_notifications",
+    recipientMode: isEmailRecipientMode(row.recipient_mode) ? row.recipient_mode : fallbackMode,
+    recipientModes: cleanRecipientModes(row.recipient_modes, fallbackMode),
+    targetLines: cleanTextArray(row.target_lines),
+    targetTitles: cleanTextArray(row.target_titles),
+    template: fallback ? templateWithFallback(row, fallback) : {
+      bodyText: "{summary}",
+      closingText: "Please review this Phoenix Workforce update.",
+      greeting: "Dear Phoenix Team,",
+      previewText: "Phoenix Workforce notification.",
+      subject: "{subject}",
+      title: "{title}",
+    },
     type: row.notification_type,
   };
 }
 
 function notificationPolicySchemaMissing(error: unknown) {
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  const message = (
+    error instanceof Error ? error.message : `${String(error)} ${JSON.stringify(error)}`
+  ).toLowerCase();
   return (
     message.includes(emailNotificationPolicyTable) ||
     message.includes("could not find the table") ||
+    message.includes("column") && message.includes("does not exist") ||
+    message.includes("42703") ||
     message.includes("schema cache") ||
     (message.includes("relation") && message.includes("does not exist"))
   );
@@ -216,7 +402,7 @@ export async function getEmailNotificationPolicies(): Promise<EmailNotificationP
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from(emailNotificationPolicyTable)
-      .select("notification_type,label,description,enabled,recipient_mode,include_hr_inbox")
+      .select("notification_type,label,description,enabled,recipient_mode,recipient_modes,target_titles,target_lines,template_subject,template_title,template_greeting,template_body_text,template_closing_text,template_preview_text,include_hr_inbox")
       .order("notification_type", { ascending: true });
 
     if (error) throw error;
@@ -246,7 +432,11 @@ export async function saveEmailNotificationPolicy(
   input: {
     enabled: boolean;
     includeHrInbox: boolean;
-    recipientMode: EmailRecipientMode;
+    recipientMode?: EmailRecipientMode;
+    recipientModes?: EmailRecipientMode[];
+    targetLines?: string[];
+    targetTitles?: string[];
+    template?: Partial<EmailTemplateContent>;
   },
   actor?: string | null,
 ) {
@@ -257,7 +447,14 @@ export async function saveEmailNotificationPolicy(
     ...fallback,
     enabled: input.enabled,
     includeHrInbox: input.includeHrInbox,
-    recipientMode: input.recipientMode,
+    recipientMode: input.recipientMode ?? input.recipientModes?.[0] ?? fallback.recipientMode,
+    recipientModes: input.recipientModes?.length ? input.recipientModes : [input.recipientMode ?? fallback.recipientMode],
+    targetLines: input.targetLines ?? fallback.targetLines,
+    targetTitles: input.targetTitles ?? fallback.targetTitles,
+    template: {
+      ...fallback.template,
+      ...(input.template ?? {}),
+    },
   };
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
@@ -270,6 +467,15 @@ export async function saveEmailNotificationPolicy(
         label: policy.label,
         notification_type: policy.type,
         recipient_mode: policy.recipientMode,
+        recipient_modes: policy.recipientModes,
+        target_lines: policy.targetLines,
+        target_titles: policy.targetTitles,
+        template_body_text: policy.template.bodyText,
+        template_closing_text: policy.template.closingText,
+        template_greeting: policy.template.greeting,
+        template_preview_text: policy.template.previewText,
+        template_subject: policy.template.subject,
+        template_title: policy.template.title,
         updated_at: new Date().toISOString(),
         updated_by: actor ?? null,
       },
@@ -287,12 +493,42 @@ async function loadEmployeeContact(hrId: string | null | undefined) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employees")
-    .select("hr_id,full_name,work_email,manager_hr_id")
+    .select("hr_id,full_name,work_email,manager_hr_id,job_title,line,lines(name)")
     .eq("hr_id", cleanHrId)
     .maybeSingle();
 
   if (error) throw error;
   return (data as EmailContactRow | null) ?? null;
+}
+
+function normalizeCompare(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function employeeLine(contact: EmailContactRow | null | undefined) {
+  const relation = Array.isArray(contact?.lines) ? contact?.lines[0] : contact?.lines;
+  return contact?.line || relation?.name || null;
+}
+
+async function loadEmployeesByTitlesAndLines(titles: string[], lines: string[]) {
+  if (titles.length === 0) return [];
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("employees")
+    .select("hr_id,full_name,work_email,manager_hr_id,job_title,line,lines(name)")
+    .not("work_email", "is", null);
+
+  if (error) throw error;
+
+  const titleSet = new Set(titles.map(normalizeCompare));
+  const lineSet = new Set(lines.map(normalizeCompare));
+
+  return ((data ?? []) as EmailContactRow[]).filter((contact) => {
+    const titleMatches = titleSet.has(normalizeCompare(contact.job_title));
+    const lineMatches = lineSet.size === 0 || lineSet.has(normalizeCompare(employeeLine(contact)));
+    return titleMatches && lineMatches;
+  });
 }
 
 async function loadManagerChain(employeeHrId: string | null | undefined, maxDepth = 4) {
@@ -313,7 +549,7 @@ async function loadManagerChain(employeeHrId: string | null | undefined, maxDept
   return contacts;
 }
 
-async function resolveRecipientsForMode(mode: EmailRecipientMode, input: NotificationEmailInput) {
+async function resolveRecipientsForMode(mode: EmailRecipientMode, input: NotificationEmailInput, policy?: EmailNotificationPolicy) {
   if (mode === "hr_notifications") {
     return recipientsFromEnv();
   }
@@ -330,6 +566,20 @@ async function resolveRecipientsForMode(mode: EmailRecipientMode, input: Notific
   if (mode === "manager_manager") return cleanEmailList([managers[1]?.work_email]);
   if (mode === "manager_chain") return cleanEmailList(managers.map((manager) => manager.work_email));
   if (mode === "employee_and_direct_manager") return cleanEmailList([employee?.work_email, managers[0]?.work_email]);
+  if (mode === "same_line_selected_titles") {
+    const line = employeeLine(employee);
+    if (!line) return [];
+    const recipients = await loadEmployeesByTitlesAndLines(policy?.targetTitles ?? [], [line]);
+    return cleanEmailList(recipients.map((recipient) => recipient.work_email));
+  }
+  if (mode === "selected_titles_all_lines") {
+    const recipients = await loadEmployeesByTitlesAndLines(policy?.targetTitles ?? [], []);
+    return cleanEmailList(recipients.map((recipient) => recipient.work_email));
+  }
+  if (mode === "selected_titles_selected_lines") {
+    const recipients = await loadEmployeesByTitlesAndLines(policy?.targetTitles ?? [], policy?.targetLines ?? []);
+    return cleanEmailList(recipients.map((recipient) => recipient.work_email));
+  }
 
   return [];
 }
@@ -357,7 +607,12 @@ export async function resolveNotificationDelivery(input: NotificationEmailInput)
     return { reason: `Email skipped: ${policy.label} notifications are disabled.`, skipped: true };
   }
 
-  const policyRecipients = await resolveRecipientsForMode(policy.recipientMode, input);
+  const allPolicyRecipients = await Promise.all(
+    (policy.recipientModes.length > 0 ? policy.recipientModes : [policy.recipientMode]).map((mode) =>
+      resolveRecipientsForMode(mode, input, policy),
+    ),
+  );
+  const policyRecipients = cleanEmailList(allPolicyRecipients.flat());
   const hrRecipients = policy.includeHrInbox ? recipientsFromEnv() : [];
   const recipients = cleanEmailList([...policyRecipients, ...hrRecipients]);
 
@@ -375,77 +630,99 @@ function dashboardUrl(path = "/") {
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-function escapeHtml(value: string | number) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+function templateToken(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
-function toneColor(tone: NotificationEmailInput["tone"]) {
-  if (tone === "success") return "#16a34a";
-  if (tone === "warning") return "#f97316";
-  if (tone === "danger") return "#ef4444";
-  return "#0f172a";
+function templateValue(input: NotificationEmailInput, value: string) {
+  const metrics = Object.fromEntries(
+    (input.metrics ?? []).map((metric) => [templateToken(metric.label), String(metric.value)]),
+  );
+  const variables: Record<string, string> = {
+    candidateemail: input.candidateEmail ?? "",
+    ctalabel: input.ctaLabel ?? "Open dashboard",
+    ctaurl: input.ctaHref ? dashboardUrl(input.ctaHref) : "",
+    date: metrics.date ?? metrics.birthday ?? metrics.renewaldate ?? metrics.effectivedate ?? "",
+    employee: metrics.employee ?? input.employeeHrId ?? "",
+    employeehrid: input.employeeHrId ?? "",
+    status: metrics.status ?? "",
+    subject: input.subject,
+    summary: input.summary,
+    title: input.title,
+    ...metrics,
+  };
+
+  return value.replace(/\{([^}]+)\}/g, (_match, key: string) => variables[templateToken(key)] ?? "");
 }
 
-function renderText(input: NotificationEmailInput) {
-  const lines = [
-    input.title,
-    "",
-    input.summary,
-    "",
-    ...(input.metrics ?? []).map((metric) => `${metric.label}: ${metric.value}`),
-  ];
+function effectiveTemplate(input: NotificationEmailInput, policy?: EmailNotificationPolicy): EmailTemplateContent {
+  const template = policy?.template ?? defaultPolicyForType(input.notificationType ?? "general")?.template;
+  return {
+    bodyText: templateValue(input, template?.bodyText || "{summary}"),
+    closingText: templateValue(input, template?.closingText || "Please review this update."),
+    greeting: templateValue(input, template?.greeting || "Dear Phoenix Team,"),
+    previewText: templateValue(input, template?.previewText || input.summary),
+    subject: templateValue(input, template?.subject || "{subject}"),
+    title: templateValue(input, template?.title || "{title}"),
+  };
+}
 
-  if (input.ctaHref) {
-    lines.push("", `${input.ctaLabel ?? "Open dashboard"}: ${dashboardUrl(input.ctaHref)}`);
+function renderText(input: NotificationEmailInput, policy?: EmailNotificationPolicy) {
+  const template = effectiveTemplate(input, policy);
+  return renderGeneralNotificationEmailText({
+    action: input.ctaHref ? { href: dashboardUrl(input.ctaHref), label: input.ctaLabel ?? "Open dashboard" } : undefined,
+    bodyText: template.bodyText,
+    closingText: template.closingText,
+    greeting: template.greeting,
+    signatureName: "Phoenix HR Team",
+    metadataRows: input.metrics,
+    subject: template.subject,
+    summary: template.bodyText,
+    title: template.title,
+  });
+}
+
+function renderHtml(input: NotificationEmailInput, policy?: EmailNotificationPolicy) {
+  const template = effectiveTemplate(input, policy);
+  return renderGeneralNotificationEmailHtml({
+    action: input.ctaHref ? { href: dashboardUrl(input.ctaHref), label: input.ctaLabel ?? "Open dashboard" } : undefined,
+    bodyText: template.bodyText,
+    closingText: template.closingText,
+    greeting: template.greeting,
+    metadataRows: input.metrics,
+    previewText: template.previewText,
+    signatureName: "Phoenix HR Team",
+    subject: template.subject,
+    summary: template.bodyText,
+    title: template.title,
+  });
+}
+
+function notificationSubject(input: NotificationEmailInput, policy?: EmailNotificationPolicy) {
+  return effectiveTemplate(input, policy).subject;
+}
+
+export async function getEmailRoutingOptions() {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("employees")
+      .select("job_title,line,lines(name)")
+      .not("work_email", "is", null);
+
+    if (error) throw error;
+
+    const rows = (data ?? []) as EmailContactRow[];
+    return {
+      lines: Array.from(new Set(rows.map((row) => employeeLine(row)).filter(Boolean) as string[])).sort(),
+      titles: Array.from(new Set(rows.map((row) => row.job_title).filter(Boolean) as string[])).sort(),
+    };
+  } catch {
+    return { lines: [], titles: [] };
   }
-
-  return lines.join("\n");
 }
 
-function renderHtml(input: NotificationEmailInput) {
-  const color = toneColor(input.tone);
-  const metrics = (input.metrics ?? [])
-    .map(
-      (metric) => `
-        <tr>
-          <td style="padding:10px 0;color:#64748b;font-size:13px">${escapeHtml(metric.label)}</td>
-          <td style="padding:10px 0;color:#0f172a;font-size:14px;font-weight:700;text-align:right">${escapeHtml(metric.value)}</td>
-        </tr>`,
-    )
-    .join("");
-  const cta = input.ctaHref
-    ? `<a href="${escapeHtml(dashboardUrl(input.ctaHref))}" style="display:inline-block;margin-top:22px;border:1px solid #fed7aa;border-radius:12px;background:#fff7ed;color:#ea580c;font-weight:700;text-decoration:none;padding:12px 18px">${escapeHtml(input.ctaLabel ?? "Open dashboard")}</a>`
-    : "";
-
-  return `
-    <div style="margin:0;background:#f8fafc;padding:28px;font-family:Inter,Arial,sans-serif;color:#0f172a">
-      <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:20px;box-shadow:0 18px 46px rgba(15,23,42,0.08);overflow:hidden">
-        <div style="padding:24px 28px;border-bottom:1px solid #f1f5f9">
-          <div style="font-size:11px;letter-spacing:0.24em;font-weight:800;color:#ea580c;text-transform:uppercase">Phoenix Workforce</div>
-          <h1 style="margin:12px 0 0;font-size:22px;line-height:1.25;color:#0f172a">${escapeHtml(input.title)}</h1>
-        </div>
-        <div style="padding:24px 28px">
-          <div style="height:4px;width:72px;border-radius:999px;background:${color};box-shadow:0 0 18px ${color}66"></div>
-          <p style="margin:18px 0 18px;color:#334155;font-size:15px;line-height:1.7">${escapeHtml(input.summary)}</p>
-          ${
-            metrics
-              ? `<table style="width:100%;border-collapse:collapse;border-top:1px solid #f1f5f9;border-bottom:1px solid #f1f5f9">${metrics}</table>`
-              : ""
-          }
-          ${cta}
-        </div>
-        <div style="padding:16px 28px;background:#f8fafc;color:#94a3b8;font-size:12px">
-          Automated notification from Phoenix Workforce.
-        </div>
-      </div>
-    </div>`;
-}
-
-export function buildEmailNotificationPreview(type: EmailNotificationType) {
+export function buildEmailNotificationPreview(type: EmailNotificationType, policy?: EmailNotificationPolicy) {
   const samples: Record<EmailNotificationType, NotificationEmailInput> = {
     birthday: {
       ctaHref: "/hr-calendar",
@@ -487,9 +764,9 @@ export function buildEmailNotificationPreview(type: EmailNotificationType) {
         { label: "Offer ID", value: "OFF-2026-001" },
       ],
       notificationType: "offer",
-      subject: "Phoenix Offer Lifecycle Updated - Youssef Ahmed",
+      subject: "Phoenix Offer Updated - Youssef Ahmed",
       summary: "Offer workflow for Youssef Ahmed requires HR follow-up.",
-      title: "Offer Lifecycle Updated",
+      title: "Offer Updated",
       tone: "success",
     },
     probation: {
@@ -522,13 +799,53 @@ export function buildEmailNotificationPreview(type: EmailNotificationType) {
       title: "Resignation Workflow Updated",
       tone: "danger",
     },
+    password_reset: {
+      candidateEmail: "employee@example.com",
+      ctaHref: "/password-setup/example",
+      ctaLabel: "Reset password",
+      metrics: [
+        { label: "Login ID", value: "B-001" },
+        { label: "Expires", value: "15 minutes" },
+      ],
+      notificationType: "password_reset",
+      recipientMode: "candidate",
+      subject: "Phoenix Workforce password reset",
+      summary: "Use this one-time link to reset your Phoenix Workforce password.",
+      title: "Reset your Phoenix Workforce password",
+      tone: "warning",
+    },
+    user_created: {
+      candidateEmail: "employee@example.com",
+      ctaHref: "/password-setup/example",
+      ctaLabel: "Set password",
+      metrics: [
+        { label: "Login ID", value: "B-001" },
+        { label: "Expires", value: "15 minutes" },
+      ],
+      notificationType: "user_created",
+      recipientMode: "candidate",
+      subject: "Phoenix Workforce account setup",
+      summary: "Use this one-time link to create your Phoenix Workforce password.",
+      title: "Create your Phoenix Workforce password",
+      tone: "warning",
+    },
+    general: {
+      ctaHref: "/overview",
+      ctaLabel: "Open Phoenix Workforce",
+      metrics: [{ label: "Source", value: "Phoenix Workforce" }],
+      notificationType: "general",
+      subject: "Phoenix Workforce notification",
+      summary: "General Phoenix Workforce notification requiring your attention.",
+      title: "Phoenix Workforce Notification",
+      tone: "neutral",
+    },
   };
   const input = samples[type];
 
   return {
-    html: renderHtml(input),
-    plainText: renderText(input),
-    subject: input.subject,
+    html: renderHtml(input, policy),
+    plainText: renderText(input, policy),
+    subject: notificationSubject(input, policy),
   };
 }
 
@@ -578,7 +895,9 @@ export function emailNotificationsEnabled() {
 }
 
 function notificationSchemaMissing(error: unknown) {
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  const message = (
+    error instanceof Error ? error.message : `${String(error)} ${JSON.stringify(error)}`
+  ).toLowerCase();
   return (
     message.includes(notificationOutboxTable) ||
     message.includes("could not find the table") ||
@@ -631,43 +950,22 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
     return { reason: "EMAIL_NOTIFICATIONS_ENABLED is not true.", skipped: true };
   }
 
-  const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.NOTIFICATION_EMAIL_FROM;
   const delivery = await resolveNotificationDelivery(input);
 
-  if (!apiKey) return { reason: "RESEND_API_KEY is missing.", skipped: true };
   if (!from) return { reason: "NOTIFICATION_EMAIL_FROM is missing.", skipped: true };
   if (delivery.skipped) return delivery;
 
   const requestId = notificationDedupeKey(input);
-  const response = await fetch(resendEndpoint, {
-    body: JSON.stringify({
-      from,
-      html: renderHtml(input),
-      replyTo: process.env.NOTIFICATION_REPLY_TO || undefined,
-      subject: input.subject,
-      text: renderText(input),
-      to: delivery.recipients,
-    }),
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "Idempotency-Key": requestId,
-    },
-    method: "POST",
+
+  return sendPhoenixEmail({
+    from,
+    html: renderHtml(input, delivery.policy),
+    idempotencyKey: requestId,
+    subject: notificationSubject(input, delivery.policy),
+    text: renderText(input, delivery.policy),
+    to: delivery.recipients,
   });
-
-  const payload = (await response.json().catch(() => null)) as { error?: string; id?: string; message?: string } | null;
-
-  if (!response.ok) {
-    throw new Error(payload?.message ?? payload?.error ?? `Resend request failed with ${response.status}.`);
-  }
-
-  if (!payload?.id) {
-    throw new Error("Resend accepted the request without returning a message id.");
-  }
-
-  return { id: payload.id, skipped: false };
 }
 
 export async function sendNotificationEmail(input: NotificationEmailInput): Promise<SendEmailResult> {

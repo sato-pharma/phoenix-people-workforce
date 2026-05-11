@@ -67,12 +67,12 @@ export function AdminInsightChip({
   tone?: "neutral" | "orange" | "slate";
 }) {
   const toneClassName = {
-    neutral: "border-[#E2E8F0] bg-[#F8FAFC] text-[#475569]",
-    orange: "border-[#FED7AA] bg-[#FFF7ED] text-[#C2410C]",
-    slate: "border-[#CBD5E1] bg-[#F8FAFC] text-[#334155]",
+    neutral: "border-slate-200/80 bg-gradient-to-r from-slate-50 to-slate-100 text-slate-600 shadow-sm",
+    orange: "border-orange-200/90 bg-gradient-to-r from-orange-50/95 to-orange-100 text-orange-700 shadow-sm",
+    slate: "border-slate-300/80 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 shadow-sm",
   }[tone];
 
-  return <div className={cn("rounded-full border px-3 py-2 font-semibold", toneClassName)}>{children}</div>;
+  return <div className={cn("rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all duration-200 hover:shadow-md", toneClassName)}>{children}</div>;
 }
 
 export function AdminStatCard({
@@ -87,15 +87,16 @@ export function AdminStatCard({
   value: ReactNode;
 }) {
   return (
-    <Card className={cn(adminPanelClassName, "p-5")}>
+    <Card className="relative overflow-hidden rounded-[24px] border border-slate-200/90 bg-white/95 p-6 shadow-[0_16px_40px_rgba(15,23,42,0.06)] transition-all duration-300 ease-out hover:-translate-y-1 hover:border-orange-300/80 hover:bg-white hover:shadow-[0_24px_52px_rgba(15,23,42,0.14)] hover:scale-[1.02]">
+      <div className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-orange-200/15 blur-3xl" />
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-3">
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#64748B]">{label}</p>
-          <div className="text-3xl font-black tracking-[-0.03em] text-[#0F172A]">{value}</div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">{label}</p>
+          <div className="text-3xl font-black tracking-tight text-slate-900">{value}</div>
         </div>
-        <div className="rounded-xl bg-[#FFF7ED] p-3 text-[#F97316]">{icon}</div>
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-50 to-orange-100 p-3 text-orange-600 shadow-[0_8px_20px_rgba(249,115,22,0.15)] ring-1 ring-orange-200 transition-all duration-300 hover:scale-110">{icon}</div>
       </div>
-      <p className="mt-4 text-sm leading-6 text-[#64748B]">{description}</p>
+      <p className="mt-4 text-sm leading-6 text-slate-500">{description}</p>
     </Card>
   );
 }
@@ -108,12 +109,12 @@ export function AdminCallout({
   tone?: "danger" | "neutral" | "success";
 }) {
   const toneClassName = {
-    danger: "border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C]",
-    neutral: "border-[#E2E8F0] bg-[#F8FAFC] text-[#475569]",
-    success: "border-[#86EFAC] bg-[#F0FDF4] text-[#166534]",
+    danger: "border-rose-200/90 bg-gradient-to-r from-rose-50/95 to-white text-rose-800 shadow-[0_8px_20px_rgba(244,63,94,0.12)]",
+    neutral: "border-slate-200/90 bg-gradient-to-r from-slate-50/95 to-white text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.08)]",
+    success: "border-emerald-200/90 bg-gradient-to-r from-emerald-50/95 to-white text-emerald-800 shadow-[0_8px_20px_rgba(16,185,129,0.12)]",
   }[tone];
 
-  return <div className={cn("flex items-start gap-3 rounded-[16px] border px-4 py-3.5 text-sm", toneClassName)}>{children}</div>;
+  return <div className={cn("flex items-start gap-3 rounded-xl border px-5 py-4 text-sm transition-all duration-200 hover:shadow-md", toneClassName)}>{children}</div>;
 }
 
 export function AdminSectionHeader({
@@ -126,10 +127,13 @@ export function AdminSectionHeader({
   title: string;
 }) {
   return (
-    <div className="flex flex-col gap-3 border-b border-[#E2E8F0] px-4 py-4 sm:px-5 sm:flex-row sm:items-start sm:justify-between">
+    <div className="flex flex-col gap-4 border-b border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 px-5 py-5 sm:px-6 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <h2 className="text-lg font-black tracking-[-0.03em] text-[#0F172A]">{title}</h2>
-        <p className="mt-1 text-sm leading-6 text-[#64748B]">{description}</p>
+        <div className="flex items-center gap-2.5">
+          <span className="h-2 w-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_8px_rgba(249,115,22,0.5)]" />
+          <h2 className="text-lg font-black tracking-tight text-slate-900">{title}</h2>
+        </div>
+        <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
       </div>
       {action ? <div className="w-full shrink-0 sm:w-auto">{action}</div> : null}
     </div>
@@ -148,7 +152,7 @@ export function AdminTableShell({
   title: string;
 }) {
   return (
-    <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
+    <Card className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_20px_48px_rgba(15,23,42,0.10)] p-0">
       <AdminSectionHeader action={action} description={description} title={title} />
       {children}
     </Card>

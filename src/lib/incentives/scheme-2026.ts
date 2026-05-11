@@ -1,15 +1,20 @@
+import {
+  calculateBasicSalary,
+  calculateNetSalary,
+} from "../payroll/policy.ts";
+
 /**
  * 2026 Incentive Scheme Logic
  *
  * 1) Incentive Frequency: Per semester (2 payouts per year).
  * 2) Incentive Value per Semester: 2 months of Basic Salary.
- *    Net Salary   = Gross - Social Insurance - Taxes
- *    Basic Salary = Net Salary × 70%
+ *    Base Salary  = fixed salary from employee compensation
+ *    Net Salary   = Base Salary + Extra Cost of Living + Fuel Allowance
+ *    Basic Salary = Base Salary x 70%
+ *    Gross Salary = Base Salary + Social Insurance + Income Tax
  *
- *    NOTE: gross_salary in salary_records is the BASE salary BEFORE additions
- *    (fuel allowance, extra cost of living, etc. are stored separately in
- *    total_additions). Therefore net = gross - SI - taxes already excludes
- *    those allowances — do NOT subtract them again.
+ *    Basic Salary is the fixed salary basis for incentives; monthly variable
+ *    payroll additions/deductions must not change the incentive basis.
  *
  * 3) Achievement-to-Payout Logic (Performance Curve):
  *    - < 90% achievement: 0% payout
@@ -35,52 +40,51 @@ function roundMoney(value: number) {
 }
 
 export function calculateIncentive2026(params: {
-  netSalary?: number;
+  achievementPercent: number;
+  basicSalary?: number;
+  baseSalary?: number;
+  employmentIncomeTax?: number;
+  extraCostOfLiving?: number;
+  fuelAllowance?: number;
   grossSalary?: number;
+  netSalary?: number;
   socialInsurance?: number;
   taxes?: number;
-  achievementPercent: number;
 }): IncentiveCalculation {
-  // gross_salary in salary_records is the BASE salary (before additions).
-  // Compute net = gross - SI - taxes; this already excludes allowances.
-  const hasGrossBasis =
-    params.grossSalary !== undefined && (params.grossSalary ?? 0) > 0;
-  const grossSalary = params.grossSalary ?? 0;
-  const socialInsurance = params.socialInsurance ?? 0;
-  const taxes = params.taxes ?? 0;
-  const netSalary = roundMoney(Math.max(
-    0,
-    hasGrossBasis ? grossSalary - socialInsurance - taxes : params.netSalary ?? 0,
-  ));
-  const basicSalary = roundMoney(netSalary * 0.7);
+  const salaryBasis = {
+    basicSalary: params.basicSalary,
+    baseSalary: params.baseSalary,
+    employmentIncomeTax: params.employmentIncomeTax ?? params.taxes,
+    extraCostOfLiving: params.extraCostOfLiving,
+    fuelAllowance: params.fuelAllowance,
+    grossSalary: params.grossSalary,
+    netSalary: params.netSalary,
+    socialInsurance: params.socialInsurance,
+  };
+  const netSalary = roundMoney(calculateNetSalary(salaryBasis));
+  const basicSalary = roundMoney(calculateBasicSalary(salaryBasis));
   const semesterTargetIncentive = roundMoney(basicSalary * 2);
-  
-  // Cap achievement at 150%
+
   const achievement = Math.min(150, Math.max(0, params.achievementPercent));
-  
+
   let payoutPercentage = 0;
-  
+
   if (achievement < 90) {
     payoutPercentage = 0;
   } else if (achievement === 90) {
     payoutPercentage = 50;
   } else if (achievement <= 100) {
-    // 91% -> 55%, 92% -> 60%, ..., 100% -> 100%
     payoutPercentage = 50 + (achievement - 90) * 5;
   } else if (achievement <= 120) {
-    // 101% -> 101.5%, ..., 120% -> 130%
     payoutPercentage = 100 + (achievement - 100) * 1.5;
   } else {
-    // Above 120%
-    // 121% -> 133%, ..., 150% -> 220%
     payoutPercentage = 130 + (achievement - 120) * 3;
   }
 
-  // Achievement is capped at 150%, which produces a maximum payout of 220%.
   payoutPercentage = Math.min(220, payoutPercentage);
-  
+
   const payoutAmount = roundMoney((semesterTargetIncentive * payoutPercentage) / 100);
-  
+
   return {
     netSalary,
     basicSalary,

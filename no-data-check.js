@@ -21,9 +21,18 @@ const env = Object.fromEntries(text.split('\n').map((line) => line.trim()).filte
     const payrollCount = await sb.from('salary_records').select('id', { count: 'exact', head: true }).ilike('hr_id', String(u.hr_id).trim()).then((r)=>r.count ?? 0);
     const salesCount = await sb.from('sales_records').select('id', { count: 'exact', head: true }).eq('employee_hr_id', String(u.hr_id).trim()).then((r)=>r.count ?? 0);
     const issues = [];
-    if (!payrollCount) noPayroll += 1, issues.push('payroll');
-    if (!salesCount) noSales += 1, issues.push('sales');
-    if (!payrollCount && !salesCount) noAny += 1, (noAnyUsers.push({login_id:u.login_id, role:u.role, hr_id:u.hr_id, issue:issues.join('+')}));
+    if (!payrollCount) {
+      noPayroll += 1;
+      issues.push('payroll');
+    }
+    if (!salesCount) {
+      noSales += 1;
+      issues.push('sales');
+    }
+    if (!payrollCount && !salesCount) {
+      noAny += 1;
+      noAnyUsers.push({login_id:u.login_id, role:u.role, hr_id:u.hr_id, issue:issues.join('+')});
+    }
     if (!payrollCount) noPayrollUsers.push({login_id:u.login_id, role:u.role, hr_id:u.hr_id, payrollCount, salesCount});
     if (!salesCount) noSalesUsers.push({login_id:u.login_id, role:u.role, hr_id:u.hr_id, payrollCount, salesCount});
   }

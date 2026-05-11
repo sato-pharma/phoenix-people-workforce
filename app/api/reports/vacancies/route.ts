@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   errorMessage,
   getVacancyReport,
@@ -39,10 +41,17 @@ function reportError(error: unknown) {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "vacancies", "read");
+
     return NextResponse.json(await getVacancyReport());
   } catch (error) {
+    if (isForbiddenError(error)) {
+      return NextResponse.json({ error: "forbidden", message: "You do not have access to vacancy reports." }, { status: 403 });
+    }
+
     const { message, status } = reportError(error);
     return NextResponse.json({ error: "vacancy_report_failed", message }, { status });
   }

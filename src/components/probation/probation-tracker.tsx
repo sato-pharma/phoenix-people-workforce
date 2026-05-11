@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import type { ProbationRow, ProbationWorkflowAction, TrafficStatus } from "@/lib/probation/types";
 import { cn } from "@/lib/utils";
 
@@ -106,17 +107,11 @@ function workflowLabel(status: string | null | undefined) {
 }
 
 function formatDate(value: string) {
-  const date = new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en", {
+  return formatDateOnly(value, "en", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(date);
+  });
 }
 
 function uniqueOptions(values: string[]) {
@@ -265,11 +260,11 @@ export function ProbationTracker({ initialData, initialError, presentation = "de
         }
 
         if (sortBy === "hire-asc") {
-          return new Date(left.hire_date).getTime() - new Date(right.hire_date).getTime();
+          return (parseDateOnly(left.hire_date)?.getTime() ?? 0) - (parseDateOnly(right.hire_date)?.getTime() ?? 0);
         }
 
         if (sortBy === "hire-desc") {
-          return new Date(right.hire_date).getTime() - new Date(left.hire_date).getTime();
+          return (parseDateOnly(right.hire_date)?.getTime() ?? 0) - (parseDateOnly(left.hire_date)?.getTime() ?? 0);
         }
 
         if (sortBy === "name-asc") {

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { validateSalaryWorkbook } from "@/lib/payroll/salary-import";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 
@@ -8,6 +10,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "payroll", "import");
+
     const formData = await request.formData();
     const file = formData.get("file");
     const month = Number(formData.get("month"));
@@ -46,6 +51,10 @@ export async function POST(request: Request) {
       payrollPeriod: { month, year },
     });
   } catch (error) {
+    if (isForbiddenError(error)) {
+      return NextResponse.json({ error: "forbidden", message: "You do not have access to validate payroll uploads." }, { status: 403 });
+    }
+
     const message = error instanceof Error ? error.message : "Salary validation failed.";
     return NextResponse.json({ error: "salary_validation_failed", message }, { status: 500 });
   }

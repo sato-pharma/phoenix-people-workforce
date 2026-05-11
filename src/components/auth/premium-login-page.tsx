@@ -334,7 +334,7 @@ function AccessPanel({
             >
               {remember ? <span className="h-2.5 w-2.5 rounded-sm bg-white" /> : null}
             </span>
-            Remember me
+            Remember login ID
           </label>
           <a
             className="font-semibold text-[#ff7900] transition hover:text-[#ff9a2f]"

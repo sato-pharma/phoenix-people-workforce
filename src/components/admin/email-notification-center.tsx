@@ -14,7 +14,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-type EmailNotificationType = "probation" | "contract_renewal" | "birthday" | "offer" | "resignation";
+type EmailNotificationType =
+  | "probation"
+  | "contract_renewal"
+  | "birthday"
+  | "offer"
+  | "resignation"
+  | "password_reset"
+  | "user_created"
+  | "general";
 type EmailRecipientMode =
   | "hr_notifications"
   | "employee"
@@ -22,7 +30,19 @@ type EmailRecipientMode =
   | "manager_manager"
   | "manager_chain"
   | "employee_and_direct_manager"
-  | "candidate";
+  | "candidate"
+  | "same_line_selected_titles"
+  | "selected_titles_all_lines"
+  | "selected_titles_selected_lines";
+
+type EmailTemplateContent = {
+  bodyText: string;
+  closingText: string;
+  greeting: string;
+  previewText: string;
+  subject: string;
+  title: string;
+};
 
 type EmailPolicyView = {
   description: string;
@@ -30,6 +50,10 @@ type EmailPolicyView = {
   includeHrInbox: boolean;
   label: string;
   recipientMode: EmailRecipientMode;
+  recipientModes: EmailRecipientMode[];
+  targetLines: string[];
+  targetTitles: string[];
+  template: EmailTemplateContent;
   type: EmailNotificationType;
 };
 
@@ -52,6 +76,10 @@ type EmailNotificationCenterProps = {
   initialPolicies: EmailPolicyView[];
   outboxStats: EmailOutboxStats;
   previews: Record<EmailNotificationType, EmailPreviewView>;
+  routingOptions: {
+    lines: string[];
+    titles: string[];
+  };
 };
 
 const recipientModeOptions: Array<{
@@ -94,6 +122,21 @@ const recipientModeOptions: Array<{
     label: "Candidate",
     value: "candidate",
   },
+  {
+    description: "Resolve selected job titles in the same line as the target employee.",
+    label: "Same-line titles",
+    value: "same_line_selected_titles",
+  },
+  {
+    description: "Resolve selected job titles across all company lines.",
+    label: "Selected titles, all lines",
+    value: "selected_titles_all_lines",
+  },
+  {
+    description: "Resolve selected job titles only inside selected lines.",
+    label: "Selected titles + lines",
+    value: "selected_titles_selected_lines",
+  },
 ];
 
 function modeLabel(mode: EmailRecipientMode) {
@@ -112,8 +155,10 @@ export function EmailNotificationCenter({
   initialPolicies,
   outboxStats,
   previews,
+  routingOptions,
 }: EmailNotificationCenterProps) {
   const [policies, setPolicies] = useState(initialPolicies);
+  const [emailPreviews, setEmailPreviews] = useState(previews);
   const [activeType, setActiveType] = useState<EmailNotificationType>(initialPolicies[0]?.type ?? "probation");
   const [savingType, setSavingType] = useState<EmailNotificationType | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -122,6 +167,39 @@ export function EmailNotificationCenter({
   function updatePolicy(type: EmailNotificationType, patch: Partial<EmailPolicyView>) {
     setPolicies((current) =>
       current.map((policy) => (policy.type === type ? { ...policy, ...patch } : policy)),
+    );
+  }
+
+  function toggleMode(policy: EmailPolicyView, mode: EmailRecipientMode, checked: boolean) {
+    const nextModes = checked
+      ? Array.from(new Set([...policy.recipientModes, mode]))
+      : policy.recipientModes.filter((item) => item !== mode);
+    const recipientModes = nextModes.length ? nextModes : [policy.recipientMode];
+    updatePolicy(policy.type, {
+      recipientMode: recipientModes[0],
+      recipientModes,
+    });
+  }
+
+  function toggleTextValue(
+    policy: EmailPolicyView,
+    key: "targetLines" | "targetTitles",
+    value: string,
+    checked: boolean,
+  ) {
+    const current = policy[key];
+    updatePolicy(policy.type, {
+      [key]: checked
+        ? Array.from(new Set([...current, value]))
+        : current.filter((item) => item !== value),
+    } as Partial<EmailPolicyView>);
+  }
+
+  function updateTemplate(type: EmailNotificationType, patch: Partial<EmailTemplateContent>) {
+    setPolicies((current) =>
+      current.map((policy) =>
+        policy.type === type ? { ...policy, template: { ...policy.template, ...patch } } : policy,
+      ),
     );
   }
 
@@ -136,6 +214,10 @@ export function EmailNotificationCenter({
           includeHrInbox: policy.includeHrInbox,
           notificationType: policy.type,
           recipientMode: policy.recipientMode,
+          recipientModes: policy.recipientModes,
+          targetLines: policy.targetLines,
+          targetTitles: policy.targetTitles,
+          template: policy.template,
         }),
         headers: {
           "Content-Type": "application/json",
@@ -145,6 +227,7 @@ export function EmailNotificationCenter({
       const payload = (await response.json().catch(() => null)) as {
         message?: string;
         policy?: EmailPolicyView;
+        preview?: EmailPreviewView;
       } | null;
 
       if (!response.ok) {
@@ -152,6 +235,9 @@ export function EmailNotificationCenter({
       }
 
       if (payload?.policy) updatePolicy(policy.type, payload.policy);
+      if (payload?.preview) {
+        setEmailPreviews((current) => ({ ...current, [policy.type]: payload.preview as EmailPreviewView }));
+      }
       setMessage(`${policy.label} routing saved.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to save notification policy.");
@@ -248,29 +334,38 @@ export function EmailNotificationCenter({
                   <Eye className="mt-1 h-4 w-4 text-[#F97316]" />
                 </button>
 
-                <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
-                  <label className="block">
-                    <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
+                  <div>
+                    <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
                       Recipient logic
                     </span>
-                    <select
-                      className="h-11 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
-                      onChange={(event) =>
-                        updatePolicy(policy.type, { recipientMode: event.target.value as EmailRecipientMode })
-                      }
-                      value={policy.recipientMode}
-                    >
+                    <div className="grid gap-2 sm:grid-cols-2">
                       {recipientModeOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
+                        <label
+                          className={cn(
+                            "flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 text-sm transition",
+                            policy.recipientModes.includes(option.value)
+                              ? "border-[#FDBA74] bg-[#FFF7ED] text-[#9A3412]"
+                              : "border-[#E2E8F0] bg-white text-[#0F172A]",
+                          )}
+                          key={option.value}
+                        >
+                          <input
+                            checked={policy.recipientModes.includes(option.value)}
+                            className="mt-1 h-4 w-4 accent-[#F97316]"
+                            onChange={(event) => toggleMode(policy, option.value, event.target.checked)}
+                            type="checkbox"
+                          />
+                          <span>
+                            <span className="block font-black">{option.label}</span>
+                            <span className="block text-xs font-semibold leading-5 text-[#64748B]">
+                              {option.description}
+                            </span>
+                          </span>
+                        </label>
                       ))}
-                    </select>
-                    <p className="mt-1 text-xs leading-5 text-[#64748B]">
-                      {recipientModeOptions.find((option) => option.value === policy.recipientMode)?.description}
-                    </p>
-                  </label>
-
+                    </div>
+                  </div>
                   <Button
                     className="h-11 rounded-xl bg-[#F97316] px-4 text-white hover:bg-[#EA580C]"
                     disabled={savingType === policy.type}
@@ -301,6 +396,97 @@ export function EmailNotificationCenter({
                     Copy HR inbox
                   </label>
                 </div>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-[16px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+                    <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                      Company titles
+                    </p>
+                    <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
+                      {routingOptions.titles.length ? routingOptions.titles.map((title) => (
+                        <label className="flex items-center gap-2 text-sm font-bold text-[#0F172A]" key={title}>
+                          <input
+                            checked={policy.targetTitles.includes(title)}
+                            className="h-4 w-4 accent-[#F97316]"
+                            onChange={(event) => toggleTextValue(policy, "targetTitles", title, event.target.checked)}
+                            type="checkbox"
+                          />
+                          {title}
+                        </label>
+                      )) : (
+                        <p className="text-xs font-bold text-[#64748B]">No employee titles found yet.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[16px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+                    <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                      Lines
+                    </p>
+                    <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
+                      {routingOptions.lines.length ? routingOptions.lines.map((line) => (
+                        <label className="flex items-center gap-2 text-sm font-bold text-[#0F172A]" key={line}>
+                          <input
+                            checked={policy.targetLines.includes(line)}
+                            className="h-4 w-4 accent-[#F97316]"
+                            onChange={(event) => toggleTextValue(policy, "targetLines", line, event.target.checked)}
+                            type="checkbox"
+                          />
+                          {line}
+                        </label>
+                      )) : (
+                        <p className="text-xs font-bold text-[#64748B]">No company lines found yet.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-[16px] border border-[#E2E8F0] bg-white p-3">
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                    Editable template
+                  </p>
+                  <div className="mt-3 grid gap-3">
+                    <input
+                      className="h-11 rounded-xl border border-[#D8E0EA] px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+                      onChange={(event) => updateTemplate(policy.type, { subject: event.target.value })}
+                      placeholder="Subject"
+                      value={policy.template.subject}
+                    />
+                    <input
+                      className="h-11 rounded-xl border border-[#D8E0EA] px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+                      onChange={(event) => updateTemplate(policy.type, { title: event.target.value })}
+                      placeholder="Email title"
+                      value={policy.template.title}
+                    />
+                    <input
+                      className="h-11 rounded-xl border border-[#D8E0EA] px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+                      onChange={(event) => updateTemplate(policy.type, { greeting: event.target.value })}
+                      placeholder="Greeting"
+                      value={policy.template.greeting}
+                    />
+                    <textarea
+                      className="min-h-28 rounded-xl border border-[#D8E0EA] px-3 py-2 text-sm font-semibold leading-6 text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+                      onChange={(event) => updateTemplate(policy.type, { bodyText: event.target.value })}
+                      placeholder="Body text"
+                      value={policy.template.bodyText}
+                    />
+                    <input
+                      className="h-11 rounded-xl border border-[#D8E0EA] px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+                      onChange={(event) => updateTemplate(policy.type, { closingText: event.target.value })}
+                      placeholder="Closing text"
+                      value={policy.template.closingText}
+                    />
+                    <input
+                      className="h-11 rounded-xl border border-[#D8E0EA] px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+                      onChange={(event) => updateTemplate(policy.type, { previewText: event.target.value })}
+                      placeholder="Inbox preview text"
+                      value={policy.template.previewText}
+                    />
+                    <p className="text-xs font-bold leading-5 text-[#64748B]">
+                      Supported variables: {"{subject}"}, {"{title}"}, {"{summary}"}, {"{employee}"}, {"{status}"}, {"{date}"}, {"{ctaLabel}"}, {"{ctaUrl}"}, and any metric label.
+                    </p>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -310,20 +496,20 @@ export function EmailNotificationCenter({
           <AdminSectionHeader
             description={
               activePolicy
-                ? `Previewing ${activePolicy.label}. Route: ${modeLabel(activePolicy.recipientMode)}.`
+                ? `Previewing ${activePolicy.label}. Routes: ${activePolicy.recipientModes.map(modeLabel).join(", ")}.`
                 : "Previewing Phoenix email output."
             }
             title="Live Email Preview"
           />
           <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-5 py-4">
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#64748B]">Subject</p>
-            <p className="mt-1 text-sm font-black text-[#0F172A]">{previews[activeType]?.subject}</p>
+            <p className="mt-1 text-sm font-black text-[#0F172A]">{emailPreviews[activeType]?.subject}</p>
           </div>
           <div className="bg-[#EEF2F7] p-4">
             <iframe
               className="h-[640px] w-full rounded-[18px] border border-[#CBD5E1] bg-white shadow-[0_18px_42px_rgba(15,23,42,0.10)]"
               sandbox="allow-same-origin"
-              srcDoc={previews[activeType]?.html ?? ""}
+              srcDoc={emailPreviews[activeType]?.html ?? ""}
               title={`${activeType} email preview`}
             />
           </div>

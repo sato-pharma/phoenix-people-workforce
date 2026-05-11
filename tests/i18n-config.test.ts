@@ -10,6 +10,7 @@ import {
   formatDateTimeValue,
   formatNumberValue,
 } from "../src/lib/i18n/format.ts";
+import { toDateOnlyString } from "../src/lib/date-only.ts";
 
 export function runI18nConfigTests() {
   assert.equal(resolveLocale("ar"), "ar");
@@ -27,6 +28,9 @@ export function runI18nConfigTests() {
   assert.match(formatCurrencyValue(1250), /EGP|ج\.م|E£/);
   assert.equal(formatNumberValue(1234), "1,234");
   assert.equal(formatDateValue("2026-05-09T00:00:00Z"), "May 09, 2026");
+  assert.equal(formatDateValue("2025-09-01"), "Sep 01, 2025");
+  assert.equal(formatDateValue("2025-09-01T00:00:00.000Z"), "Sep 01, 2025");
+  assert.equal(toDateOnlyString(new Date(2025, 8, 1)), "2025-09-01");
   assert.equal(formatDateValue(null), "-");
   assert.equal(formatDateTimeValue("not-a-date"), "not-a-date");
 }

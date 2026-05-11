@@ -10,6 +10,7 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { calculateGrossSalary, calculatePayrollParts } from "@/lib/payroll/policy";
 import type { SalaryValidationIssue, SalaryValidationRow } from "@/lib/payroll/salary-import";
 import type { PayrollDashboardData, SalaryBatch, SalaryFlag, SalaryRecord } from "@/lib/payroll/types";
 
@@ -145,6 +146,12 @@ function mapBatch(row: Record<string, unknown>): SalaryBatch {
 }
 
 function mapRecord(row: Record<string, unknown>): SalaryRecord {
+  const expenses = Number(row.expenses ?? 0);
+  const incentive = Number(row.incentive ?? 0);
+  const overtime = Number(row.overtime ?? 0);
+  const bonus = Number(row.bonus ?? 0);
+  const extraCostOfLiving = Number(row.extra_cost_of_living ?? 0);
+  const fuelAllowance = Number(row.fuel_allowance ?? 0);
   const socialInsurance = Number(row.social_insurance ?? 0);
   const employmentIncomeTax = Number(row.employment_income_tax ?? 0);
   const crm = Number(row.crm ?? 0);
@@ -153,7 +160,38 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
   const medicalInsurance = Number(row.medical_insurance ?? 0);
   const loans = Number(row.loans ?? 0);
   const otherDeductions = Number(row.other_deductions ?? 0);
-  const totalDeductions = Number(row.total_deductions ?? 0);
+  const otherAdditions = Number(row.other_additions ?? 0);
+  const totalAdditions =
+    expenses + incentive + overtime + bonus + extraCostOfLiving + fuelAllowance + otherAdditions;
+  const totalDeductions =
+    socialInsurance +
+    employmentIncomeTax +
+    crm +
+    fingerPrint +
+    unpaidVacations +
+    medicalInsurance +
+    loans +
+    otherDeductions;
+  const netSalary = Number(row.net_salary ?? 0);
+  const uploadedFirstPart = Number(row.first_part ?? 0);
+  const paymentMode = uploadedFirstPart > 0 && uploadedFirstPart < netSalary - 1 ? "two_parts" : "one_part";
+  const parts = calculatePayrollParts({
+    additions: expenses + incentive + overtime + bonus + otherAdditions,
+    deductions: crm + fingerPrint + unpaidVacations + medicalInsurance + loans + otherDeductions,
+    extraCostOfLiving,
+    fuelAllowance,
+    netSalary,
+    paymentMode,
+    previousExpenses: 0,
+  });
+  const grossSalary = calculateGrossSalary({
+    employmentIncomeTax,
+    extraCostOfLiving,
+    fuelAllowance,
+    grossSalary: Number(row.gross_salary ?? 0),
+    netSalary,
+    socialInsurance,
+  });
 
   return {
     id: String(row.id),
@@ -165,15 +203,15 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     line: String(row.line ?? ""),
     area: String(row.area ?? ""),
     jobTitle: String(row.job_title ?? ""),
-    grossSalary: Number(row.gross_salary ?? 0),
-    expenses: Number(row.expenses ?? 0),
-    incentive: Number(row.incentive ?? 0),
-    overtime: Number(row.overtime ?? 0),
-    bonus: Number(row.bonus ?? 0),
-    extraCostOfLiving: Number(row.extra_cost_of_living ?? 0),
-    fuelAllowance: Number(row.fuel_allowance ?? 0),
-    otherAdditions: Number(row.other_additions ?? 0),
-    totalAdditions: Number(row.total_additions ?? 0),
+    grossSalary,
+    expenses,
+    incentive,
+    overtime,
+    bonus,
+    extraCostOfLiving,
+    fuelAllowance,
+    otherAdditions,
+    totalAdditions,
     socialInsurance,
     employmentIncomeTax,
     crm,
@@ -183,10 +221,10 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     loans,
     otherDeductions,
     totalDeductions,
-    netSalary: Number(row.net_salary ?? 0),
+    netSalary,
     payrollComment: row.comment ? String(row.comment) : null,
-    firstPart: Number(row.first_part ?? 0),
-    secondPart: Number(row.second_part ?? 0),
+    firstPart: parts.firstPart,
+    secondPart: parts.secondPart,
     hireDate: row.hire_date ? String(row.hire_date) : null,
   };
 }

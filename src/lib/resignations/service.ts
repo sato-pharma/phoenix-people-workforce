@@ -204,7 +204,6 @@ async function createResignationForEmployee(
   actor: string,
   employee: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"][number],
 ) {
-  const employeeHrId = String(input.employeeHrId ?? "").trim();
   const submittedDate = normalizeDate(input.submittedDate) || todayDate();
   const effectiveDate = normalizeDate(input.effectiveDate);
   const directory = await getEmployeeDirectory();

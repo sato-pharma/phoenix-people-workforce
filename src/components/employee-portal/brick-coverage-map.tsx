@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import type { NsmBrickCoverageData } from "@/lib/employee-portal/service";
 import { Card } from "@/components/ui/card";
@@ -13,8 +13,32 @@ type BrickMapPoint = {
   visits: number;
 };
 
+type GoogleMapsNamespace = {
+  Geocoder?: new () => {
+    geocode: (request: { address: string }) => Promise<{
+      results: Array<{ geometry: { location: unknown } }>;
+    }>;
+  };
+  InfoWindow?: new () => {
+    open: (options: { anchor: unknown; map: unknown }) => void;
+    setContent: (content: string) => void;
+  };
+  LatLngBounds?: new () => {
+    extend: (location: unknown) => void;
+  };
+  Map?: new (element: HTMLElement, options: Record<string, unknown>) => {
+    fitBounds: (bounds: unknown, padding?: number) => void;
+  };
+  Marker?: new (options: Record<string, unknown>) => {
+    addListener: (eventName: string, handler: () => void) => void;
+    setMap?: (map: unknown | null) => void;
+  };
+  SymbolPath: { CIRCLE: unknown };
+  importLibrary?: (name: string) => Promise<Record<string, unknown>>;
+};
+
 type MarkerRecord = {
-  marker: any;
+  marker: { setMap?: (map: unknown | null) => void };
   point: BrickMapPoint;
 };
 
@@ -23,7 +47,7 @@ function buildQuery(point: BrickMapPoint, lineLabel: string) {
   return [point.brick, point.area, lineLabel, "Egypt"].filter(Boolean).join(", ");
 }
 
-function createMarkerIcon(googleMaps: any, color: string) {
+function createMarkerIcon(googleMaps: GoogleMapsNamespace, color: string) {
   return {
     fillColor: color,
     fillOpacity: 1,
@@ -42,39 +66,44 @@ export function BrickCoverageMap({
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY ?? "";
   const mapId = useId().replace(/:/g, "");
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const infoWindowRef = useRef<any>(null);
+  const mapInstanceRef = useRef<InstanceType<NonNullable<GoogleMapsNamespace["Map"]>> | null>(null);
+  const infoWindowRef = useRef<InstanceType<NonNullable<GoogleMapsNamespace["InfoWindow"]>> | null>(null);
   const markerRecordsRef = useRef<MarkerRecord[]>([]);
   const [scriptReady, setScriptReady] = useState(false);
   const [scriptFailed, setScriptFailed] = useState(false);
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
 
-  const points: BrickMapPoint[] = data.summary
-    ? [
-        ...data.summary.visitedBrickRows.map((row) => ({
-          area: row.area,
-          brick: row.brick,
-          status: "visited" as const,
-          visits: row.visits,
-        })),
-        ...data.summary.unvisitedBrickRows.map((row) => ({
-          area: row.area,
-          brick: row.brick,
-          status: "unvisited" as const,
-          visits: 0,
-        })),
-      ]
-    : [];
+  const points: BrickMapPoint[] = useMemo(
+    () =>
+      data.summary
+        ? [
+            ...data.summary.visitedBrickRows.map((row) => ({
+              area: row.area,
+              brick: row.brick,
+              status: "visited" as const,
+              visits: row.visits,
+            })),
+            ...data.summary.unvisitedBrickRows.map((row) => ({
+              area: row.area,
+              brick: row.brick,
+              status: "unvisited" as const,
+              visits: 0,
+            })),
+          ]
+        : [],
+    [data.summary],
+  );
 
   useEffect(() => {
     if (!scriptReady || !data.summary || !mapRef.current || !window.google?.maps) {
       return;
     }
 
+    const mapElement = mapRef.current;
     let cancelled = false;
 
     const run = async () => {
-      const googleMaps = window.google?.maps;
+      const googleMaps = window.google?.maps as GoogleMapsNamespace | undefined;
       if (!googleMaps?.importLibrary) {
         if (!googleMaps?.Map || !googleMaps?.Geocoder || !googleMaps?.LatLngBounds || !googleMaps?.Marker || !googleMaps?.InfoWindow) {
           setGeocodeError("Google Maps loaded in an unexpected format.");
@@ -82,18 +111,18 @@ export function BrickCoverageMap({
         }
       }
 
-      const mapsLibrary: any = googleMaps.importLibrary
+      const mapsLibrary = googleMaps.importLibrary
         ? await googleMaps.importLibrary("maps")
         : { Map: googleMaps.Map };
-      const markerLibrary: any = googleMaps.importLibrary
+      const markerLibrary = googleMaps.importLibrary
         ? await googleMaps.importLibrary("marker")
         : { Marker: googleMaps.Marker };
       if (cancelled) return;
 
-      const MapCtor = mapsLibrary?.Map;
+      const MapCtor = mapsLibrary?.Map as GoogleMapsNamespace["Map"] | undefined;
       const GeocoderCtor = googleMaps.Geocoder;
       const LatLngBoundsCtor = googleMaps.LatLngBounds;
-      const MarkerCtor = markerLibrary?.Marker ?? googleMaps.Marker;
+      const MarkerCtor = (markerLibrary?.Marker ?? googleMaps.Marker) as GoogleMapsNamespace["Marker"] | undefined;
       const InfoWindowCtor = googleMaps.InfoWindow;
 
       if (
@@ -109,7 +138,7 @@ export function BrickCoverageMap({
 
       const map =
         mapInstanceRef.current ??
-        new MapCtor(mapRef.current, {
+        new MapCtor(mapElement, {
           center: { lat: 26.8206, lng: 30.8025 },
           disableDefaultUI: false,
           mapTypeControl: false,

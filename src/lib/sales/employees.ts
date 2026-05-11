@@ -1,5 +1,6 @@
 ﻿import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { canonicalSalesLine, isSalesOthersBucket } from "@/lib/sales/others";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
 import type { EmployeeDirectoryRow, SalesLinkStatus, SalesRecordInput } from "@/lib/sales/types";
 
@@ -20,42 +21,6 @@ function normalize(value: unknown) {
 
 function compact(value: unknown) {
   return String(value ?? "").trim();
-}
-
-function canonicalLine(value: unknown) {
-  return normalize(value)
-    .replace(/\bline\b/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function otherBucketForLine(line: string | null | undefined) {
-  const normalizedLine = canonicalLine(line);
-  if (normalizedLine === "cns") return "O-3";
-  if (normalizedLine.includes("anti") && normalizedLine.includes("infective")) return "O-2";
-  if (normalizedLine.includes("pedia")) return "O-1";
-  return null;
-}
-
-function isOthersBucket(source: {
-  employeeHrId?: string | null;
-  employeeLookupKey?: string | null;
-  employeeName?: string | null;
-  line?: string | null;
-}) {
-  const expectedHrId = otherBucketForLine(source.line);
-  const hrId = normalize(source.employeeHrId);
-  const lookup = normalize(source.employeeLookupKey);
-  const name = normalize(source.employeeName);
-
-  return Boolean(
-    expectedHrId &&
-      (hrId === normalize(expectedHrId) ||
-        lookup === "others" ||
-        lookup === "other" ||
-        name === "others" ||
-        name === "other")
-  );
 }
 
 function isInactiveEmploymentStatus(status: string | null | undefined) {
@@ -105,7 +70,7 @@ function roleLabel(employee: EmployeeDirectoryRow | undefined) {
 
 function hasMrRole(employee: EmployeeDirectoryRow | undefined) {
   const override = salesRoleOverrideForHrId(employee?.hr_id);
-  if (override) return override === "MR";
+  if (override) return override === "MR" || override === "MR_DSM";
   const title = normalize(compact(employee?.job_title) || compact(employee?.position_title));
   if (!title) return false;
   if (/\b(dsm|nsm)\b/.test(title) || title.includes("manager")) return false;
@@ -114,7 +79,7 @@ function hasMrRole(employee: EmployeeDirectoryRow | undefined) {
 
 function hasDsmRole(employee: EmployeeDirectoryRow | undefined) {
   const override = salesRoleOverrideForHrId(employee?.hr_id);
-  if (override) return override === "DSM";
+  if (override) return override === "DSM" || override === "MR_DSM";
   const title = normalize(compact(employee?.job_title) || compact(employee?.position_title));
   if (!title || /\bnsm\b/.test(title) || title.includes("national")) return false;
   return /\bdsm\b/.test(title) || title.includes("district sales manager") || (title.includes("district") && title.includes("manager"));
@@ -129,8 +94,8 @@ function hasNsmRole(employee: EmployeeDirectoryRow | undefined) {
 
 function hasLineMatch(employee: EmployeeDirectoryRow | undefined, line: string | null | undefined) {
   if (salesRoleOverrideForHrId(employee?.hr_id)) return true;
-  const sourceLine = canonicalLine(line);
-  const employeeLine = canonicalLine(employee?.line);
+  const sourceLine = canonicalSalesLine(line);
+  const employeeLine = canonicalSalesLine(employee?.line);
   if (!sourceLine || !employeeLine) return true;
   return sourceLine === employeeLine;
 }
@@ -149,7 +114,7 @@ function lineMismatchMessage(sourceLine: string | null | undefined, employeeLine
   const source = compact(sourceLine);
   const employee = compact(employeeLine);
   if (!source || !employee) return null;
-  if (canonicalLine(source) === canonicalLine(employee)) return null;
+  if (canonicalSalesLine(source) === canonicalSalesLine(employee)) return null;
   return `Sheet line "${source}" does not match the employee line "${employee}".`;
 }
 
@@ -246,7 +211,7 @@ export function linkSalesRecordAgainstDirectory(
   const rawLookup = compact(source.employeeLookupKey);
   const diagnostics: string[] = [];
 
-  if (isOthersBucket(source)) {
+  if (isSalesOthersBucket(source)) {
     return {
       employeeHrId: null,
       employeeCrmId: source.employeeCrmId ?? null,
@@ -395,12 +360,17 @@ export async function summarizeSalesLinkage(records: SalesRecordInput[]) {
 
   importableRecords.forEach((record) => {
     const mrId = compact(record.employeeHrId);
-    if (mrId && !isOthersBucket(record)) {
+    if (mrId && !isSalesOthersBucket(record)) {
       mrCandidates.set(mrId, { label: labelByHrId(mrId, record.employeeName || record.employeeLookupKey), line: record.line });
     }
 
     const dsmId = compact(record.managerHrId);
-    if (dsmId && !isOthersBucket({ employeeHrId: dsmId, employeeLookupKey: record.employeeLookupKey, employeeName: record.employeeName, line: record.line })) {
+    const dsmCandidate = directoryByHrId.get(normalize(dsmId));
+    if (
+      dsmId &&
+      !hasNsmRole(dsmCandidate) &&
+      !isSalesOthersBucket({ employeeHrId: dsmId, employeeLookupKey: record.employeeLookupKey, employeeName: record.employeeName, line: record.line })
+    ) {
       dsmCandidates.set(dsmId, { label: labelByHrId(dsmId, record.employeeLookupKey || record.employeeName), line: record.line });
     }
   });
@@ -464,7 +434,13 @@ export async function filterClosingSheetRollupRecords(records: SalesRecordInput[
     const employee = directoryByHrId.get(normalize(employeeHrId));
     if (!employee) return true;
 
-    if (hasDsmRole(employee) || hasNsmRole(employee)) return false;
+    const managerHrId = compact(record.managerHrId);
+    const manager = directoryByHrId.get(normalize(managerHrId));
+    const override = salesRoleOverrideForHrId(employeeHrId);
+    if (override === "MR_DSM" && normalize(employeeHrId) === normalize(managerHrId)) return true;
+
+    if (hasNsmRole(employee)) return false;
+    if (hasDsmRole(employee) && (!managerHrId || hasNsmRole(manager))) return false;
     return true;
   });
 }

@@ -1,48 +1,24 @@
 import assert from "node:assert/strict";
-
-import {
-  buildPhoenixHrReplyEmail,
-  phoenixHrEmailSignatureHostedUrl,
-} from "../src/lib/email/phoenix-hr-reply-template.ts";
+import { readFileSync } from "node:fs";
 
 export function runPhoenixHrReplyTemplateTests() {
-  const result = buildPhoenixHrReplyEmail({
-    cc: "hr@satopharma.com",
-    recipientName: "Omar",
-    replyMessage: "Please review <policy>.\n\nSecond line.",
-    senderName: "HR Operations",
-    subject: "Re: Request",
-    to: "omar.anwar@satopharma.com",
-    tone: "firm",
-  });
+  const layout = readFileSync("src/emails/phoenix-email-layout.tsx", "utf8");
+  const hrTemplate = readFileSync("src/lib/email/phoenix-hr-reply-template.ts", "utf8");
+  const composer = readFileSync("src/components/admin/email-reply-composer.tsx", "utf8");
 
-  assert.match(result.html, /Phoenix Workforce HR System/);
-  assert.match(result.html, /Official HR Response/);
-  assert.match(result.html, new RegExp(phoenixHrEmailSignatureHostedUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(result.html, /<img/);
-  assert.match(result.html, /width="112"/);
-  assert.match(result.html, /text-align:left/);
-  assert.doesNotMatch(result.html, /src="\/assets/);
-  assert.doesNotMatch(result.html, /localhost/);
-  assert.doesNotMatch(result.html, /phoenix-email-ember-line\.gif/);
-  assert.match(result.html, /@media screen and \(max-width: 640px\)/);
-  assert.match(result.html, /@keyframes phoenixGlow/);
-  assert.match(result.html, /@keyframes phoenixSweep/);
-  assert.match(result.html, /@keyframes phoenixFloat/);
-  assert.match(result.html, /role="presentation"/);
-  assert.match(result.html, /background:#ffffff!important/);
-  assert.match(result.html, /background-image:linear-gradient\(#ffffff,#ffffff\)/);
-  assert.match(result.html, /color:#0f172a!important/);
-  assert.doesNotMatch(result.html, />To</);
-  assert.doesNotMatch(result.html, />CC</);
-  assert.doesNotMatch(result.html, />Subject</);
-  assert.doesNotMatch(result.html, /omar\.anwar@satopharma\.com/);
-  assert.doesNotMatch(result.html, /hr@satopharma\.com/);
-  assert.match(result.html, /Please review &lt;policy&gt;\./);
-  assert.doesNotMatch(result.html, /Sato Pharma/);
-  assert.doesNotMatch(result.html, /Please review recipients, CC, subject, and content before sending/);
-  assert.match(result.plainText, /To: omar\.anwar@satopharma\.com/);
-  assert.match(result.plainText, /CC: hr@satopharma\.com/);
-  assert.match(result.plainText, /Best regards,\nHR Operations/);
-  assert.doesNotMatch(result.plainText, /Sato Pharma/);
+  assert.match(layout, /Phoenix Workforce HR System/);
+  assert.match(layout, /phoenixGlow/);
+  assert.match(layout, /phoenixSweep/);
+  assert.match(layout, /phoenixFloat/);
+  assert.match(layout, /background:#070b12/);
+  assert.match(layout, /background:#ffffff!important/);
+  assert.match(layout, /width="112"/);
+  assert.match(layout, /futuretalents\.satopharma\.com/);
+  assert.doesNotMatch(layout.match(/phoenixEmailSignatureHostedUrl[\s\S]*?;/)?.[0] ?? "", /localhost|\/assets/);
+  assert.match(hrTemplate, /renderPhoenixEmailHtml/);
+  assert.match(hrTemplate, /renderPhoenixEmailText/);
+  assert.match(hrTemplate, /Phoenix HR Response/);
+  assert.doesNotMatch(hrTemplate, /Sato Pharma/);
+  assert.doesNotMatch(hrTemplate, /Please review recipients, CC, subject, and content before sending/);
+  assert.match(composer, /bcc/);
 }

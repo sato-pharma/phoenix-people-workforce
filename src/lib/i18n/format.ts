@@ -1,3 +1,5 @@
+import { parseDateOnly } from "../date-only.ts";
+
 import { defaultIntlLocale, type AppLocale, DEFAULT_LOCALE } from "./config.ts";
 
 function normalizeLocale(locale?: AppLocale | null): AppLocale {
@@ -45,6 +47,15 @@ function asValidDate(value: Date | string | null | undefined) {
     return null;
   }
 
+  const date = parseDateOnly(value);
+  return !date || Number.isNaN(date.getTime()) ? null : date;
+}
+
+function asValidDateTime(value: Date | string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
@@ -80,7 +91,7 @@ export function formatDateTimeValue(
     return "-";
   }
 
-  const date = asValidDate(value);
+  const date = asValidDateTime(value);
   if (!date) {
     return typeof value === "string" ? value : "-";
   }

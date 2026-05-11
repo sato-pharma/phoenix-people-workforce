@@ -9,6 +9,7 @@ export type EmployeePortalNavVisibility = {
   showVacanciesTab?: boolean;
   showProbationTab?: boolean;
   showOrganogramTab?: boolean;
+  showCoachingTab?: boolean;
 };
 
 export function resolveEmployeePortalNavVisibility(
@@ -28,9 +29,28 @@ export function resolveEmployeePortalNavVisibility(
     roleNormalized.includes("dsm");
   const showMedRepsPerformanceTab = roleNormalized.includes("national sales manager");
   const showExpenseActionTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
+  const coachingRoles = [
+    "employee",
+    "medical rep",
+    "district manager",
+    "district sales manager",
+    "regional manager",
+    "national sales manager",
+    "product manager",
+    "group product manager",
+    "sfe manager",
+    "training manager",
+    "manager",
+    "ceo",
+  ];
+  const showCoachingTab =
+    coachingRoles.includes(roleNormalized) ||
+    roleNormalized.includes("district manager") ||
+    roleNormalized === "dsm";
 
   return {
     showBrickCoverageTab: roleNormalized.includes("national sales manager"),
+    showCoachingTab,
     showDsmsPerformanceTab: roleNormalized.includes("national sales manager"),
     showExpenseActionTab,
     showManagementTab,

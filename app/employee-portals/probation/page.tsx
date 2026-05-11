@@ -12,6 +12,7 @@ import {
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
 import {
   employeeDirectoryErrorMessage,
   getEmployeeDirectoryRows,
@@ -33,17 +34,13 @@ function probationPageError(error: unknown) {
 }
 
 function addDays(value: string | null, days: number) {
-  if (!value) return "";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return "";
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
+  return addDaysToDateOnly(value, days) ?? "";
 }
 
 function daysRemaining(value: string) {
-  if (!value) return 0;
-  const end = new Date(`${value}T00:00:00`).getTime();
-  if (Number.isNaN(end)) return 0;
+  const endDate = parseDateOnly(value);
+  if (!endDate) return 0;
+  const end = endDate.getTime();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return Math.ceil((end - today.getTime()) / 86400000);

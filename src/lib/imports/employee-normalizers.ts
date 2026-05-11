@@ -222,6 +222,28 @@ export function normalizeHrId(value: unknown) {
   return normalizeTextValue(value)?.toUpperCase() ?? null;
 }
 
+function toImportDateOnlyString(value: Date | string) {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  const text = value.trim();
+  const datePrefix = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (datePrefix) return `${datePrefix[1]}-${datePrefix[2]}-${datePrefix[3]}`;
+
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return text;
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function isVacancyPlaceholderHrId(value: string | null) {
   if (!value) {
     return false;
@@ -235,8 +257,8 @@ export function isValidHrId(value: string) {
 }
 
 export function normalizeDateValue(value: unknown) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
+  if (value instanceof Date) {
+    return toImportDateOnlyString(value);
   }
 
   const text = normalizeTextValue(value);
@@ -245,13 +267,7 @@ export function normalizeDateValue(value: unknown) {
     return null;
   }
 
-  const parsed = new Date(text);
-
-  if (Number.isNaN(parsed.getTime())) {
-    return text;
-  }
-
-  return parsed.toISOString().slice(0, 10);
+  return toImportDateOnlyString(text);
 }
 
 export function normalizeNumberValue(value: unknown) {

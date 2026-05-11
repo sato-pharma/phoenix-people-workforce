@@ -8,6 +8,7 @@ import {
   ChartNoAxesColumnIncreasing,
   ChevronRight,
   ChartColumnBig,
+  ClipboardCheck,
   FileSpreadsheet,
   FileUp,
   Hourglass,
@@ -28,7 +29,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Fragment, useState } from "react";
 
-import { type NavigationMode, type PermissionAction, type PermissionResource } from "@/lib/auth/permissions";
+import { type NavigationMode, type PermissionAction, type PermissionResource, type PhoenixRole } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 
 type SidebarSection = {
@@ -46,6 +47,7 @@ type SidebarSectionItem = {
   href: string;
   icon: typeof ChartNoAxesColumnIncreasing;
   label: string;
+  roles?: PhoenixRole[];
   permissions?: SidebarPermission[];
 };
 
@@ -60,7 +62,12 @@ function permissionAllowed(permissionLookup: PermissionLookup | undefined, permi
   });
 }
 
-function getAdminSections(permissionLookup: PermissionLookup): SidebarSection[] {
+function roleAllowed(currentRole: PhoenixRole | undefined, roles?: PhoenixRole[]) {
+  if (!roles) return true;
+  return Boolean(currentRole && roles.includes(currentRole));
+}
+
+function getAdminSections(permissionLookup: PermissionLookup, currentRole?: PhoenixRole): SidebarSection[] {
   const sections: SidebarSection[] = [
     {
       items: [
@@ -100,6 +107,8 @@ function getAdminSections(permissionLookup: PermissionLookup): SidebarSection[] 
         { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
         { href: "/offers", icon: IdCard, label: "Offer Lifecycle", permissions: [{ resource: "offers" }] },
         { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }] },
+        { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
+        { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }] },
         { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       ],
       label: "People Ops",
@@ -118,7 +127,7 @@ function getAdminSections(permissionLookup: PermissionLookup): SidebarSection[] 
   return sections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => permissionAllowed(permissionLookup, item.permissions)),
+      items: section.items.filter((item) => permissionAllowed(permissionLookup, item.permissions) && roleAllowed(currentRole, item.roles)),
     }))
     .filter((section) => section.items.length > 0);
 }
@@ -129,6 +138,7 @@ function getEmployeePortalSections(permissionLookup: PermissionLookup): SidebarS
       items: [
         { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", permissions: [{ resource: "employee_profile" }] },
         { href: "/employee-portals/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales", permissions: [{ resource: "sales" }] },
+        { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "My Coaching Reports", permissions: [{ resource: "coaching" }] },
         { href: "/employee-portals/payroll", icon: ChartColumnBig, label: "Payroll & Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }] },
         { href: "/employee/outstation/new", icon: MapPinned, label: "Outstation", permissions: [{ resource: "outstation" }] },
       ],
@@ -144,10 +154,10 @@ function getEmployeePortalSections(permissionLookup: PermissionLookup): SidebarS
     .filter((section) => section.items.length > 0);
 }
 
-function getSections(mode: NavigationMode, permissionLookup: PermissionLookup): SidebarSection[] {
+function getSections(mode: NavigationMode, permissionLookup: PermissionLookup, currentRole?: PhoenixRole): SidebarSection[] {
   return mode === "employee-portal"
     ? getEmployeePortalSections(permissionLookup)
-    : getAdminSections(permissionLookup);
+    : getAdminSections(permissionLookup, currentRole);
 }
 
 function getHomePath(mode: NavigationMode) {
@@ -181,12 +191,14 @@ function SidebarNav({
   mode = "admin",
   onNavigate,
   permissionLookup = {},
+  currentRole,
 }: {
+  currentRole?: PhoenixRole;
   mode?: NavigationMode;
   onNavigate?: () => void;
   permissionLookup?: PermissionLookup;
 }) {
-  const sections = getSections(mode, permissionLookup);
+  const sections = getSections(mode, permissionLookup, currentRole);
   const pathname = usePathname();
   const [activeTab, setActiveTab] = useState<string | null>(pathname === "/payroll" ? "governance" : null);
   const activeHref = getActiveHref(pathname, sections, activeTab);
@@ -392,7 +404,9 @@ function SidebarFooter({ mode = "admin" }: { mode?: NavigationMode }) {
 export function Sidebar({
   navigationMode = "admin",
   permissionLookup = {},
+  currentRole,
 }: {
+  currentRole?: PhoenixRole;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
 }) {
@@ -400,7 +414,7 @@ export function Sidebar({
     <aside className="sticky top-0 hidden h-screen w-[276px] shrink-0 flex-col border-r border-[#1a1a1a] bg-[#000000] text-[#0F172A] lg:flex">
       <SidebarLogo mode={navigationMode} />
       <SidebarIntro mode={navigationMode} />
-      <SidebarNav mode={navigationMode} onNavigate={undefined} permissionLookup={permissionLookup} />
+      <SidebarNav currentRole={currentRole} mode={navigationMode} onNavigate={undefined} permissionLookup={permissionLookup} />
       <SidebarFooter mode={navigationMode} />
     </aside>
   );
@@ -411,7 +425,9 @@ export function MobileSidebar({
   open,
   navigationMode = "admin",
   permissionLookup = {},
+  currentRole,
 }: {
+  currentRole?: PhoenixRole;
   onClose: () => void;
   open: boolean;
   navigationMode?: NavigationMode;
@@ -453,6 +469,7 @@ export function MobileSidebar({
         </div>
         <SidebarIntro mode={navigationMode} />
         <SidebarNav
+          currentRole={currentRole}
           mode={navigationMode}
           onNavigate={onClose}
           permissionLookup={permissionLookup}

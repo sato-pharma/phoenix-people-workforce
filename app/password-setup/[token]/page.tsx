@@ -7,20 +7,10 @@ export default async function PasswordSetupPage(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  let preview: Awaited<ReturnType<typeof getPasswordSetupPreview>>;
 
   try {
-    const preview = await getPasswordSetupPreview(token);
-
-    return (
-      <PasswordSetupForm
-        expiresAt={preview.expiresAt}
-        hrId={preview.hrId}
-        loginId={preview.loginId}
-        name={preview.name}
-        purpose={preview.purpose}
-        token={token}
-      />
-    );
+    preview = await getPasswordSetupPreview(token);
   } catch (error) {
     const message = error instanceof Error ? error.message : "This password setup link is unavailable.";
 
@@ -35,4 +25,15 @@ export default async function PasswordSetupPage(
       </main>
     );
   }
+
+  return (
+    <PasswordSetupForm
+      expiresAt={preview.expiresAt}
+      hrId={preview.hrId}
+      loginId={preview.loginId}
+      name={preview.name}
+      purpose={preview.purpose}
+      token={token}
+    />
+  );
 }

@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import type { HrCalendarEmployee } from "@/lib/hr-calendar/types";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
@@ -71,13 +72,7 @@ function HrCalendarPageShell({ children }: { children: ReactNode }) {
 }
 
 function parseDate(value: string | null) {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(`${value}T00:00:00`);
-
-  return Number.isNaN(date.getTime()) ? null : date;
+  return parseDateOnly(value);
 }
 
 function toDateInputValue(date: Date) {
@@ -93,17 +88,11 @@ function monthDayDate(sourceDate: Date, selectedYear: number) {
 }
 
 function formatDate(value: string) {
-  const date = parseDate(value);
-
-  if (!date) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en", {
+  return formatDateOnly(value, "en", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(date);
+  });
 }
 
 function dayOfMonth(value: string) {

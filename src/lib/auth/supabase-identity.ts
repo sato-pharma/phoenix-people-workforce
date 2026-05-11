@@ -4,7 +4,8 @@ import { getSupabaseAdmin, getSupabaseUserClient } from "@/lib/supabase/server";
 export const phoenixSupabaseAccessTokenCookieName = "phoenix_supabase_access_token";
 export const phoenixSupabaseRefreshTokenCookieName = "phoenix_supabase_refresh_token";
 
-type CoarseAccessRole = "admin" | "employee" | "hr" | "manager";
+type CoarseAccessRole = "company_reader" | "employee" | "finance" | "hr" | "manager" | "super_admin";
+type AccessScopeType = "COMPANY_READ" | "FINANCE" | "HIERARCHY" | "HR" | "LINE" | "SELF" | "SUPER_ADMIN" | "TEAM";
 
 export type SupabaseAuthIdentity = {
   authEmail: string;
@@ -40,9 +41,12 @@ export function buildPhoenixAuthEmail(loginId: string) {
 export function mapPhoenixRoleToCoarseAccessRole(role: PhoenixRole): CoarseAccessRole {
   switch (role) {
     case "Super Admin":
+      return "super_admin";
     case "CEO":
+    case "SFE Manager":
+      return "company_reader";
     case "Finance Manager":
-      return "admin";
+      return "finance";
     case "HR Specialist":
       return "hr";
     case "District Manager":
@@ -50,7 +54,6 @@ export function mapPhoenixRoleToCoarseAccessRole(role: PhoenixRole): CoarseAcces
     case "National Sales Manager":
     case "Product Manager":
     case "Group Product Manager":
-    case "SFE Manager":
     case "Training Manager":
     case "Marketing Manager":
     case "Manager":
@@ -60,8 +63,36 @@ export function mapPhoenixRoleToCoarseAccessRole(role: PhoenixRole): CoarseAcces
   }
 }
 
+export function mapPhoenixRoleToAccessScopeType(role: PhoenixRole): AccessScopeType {
+  switch (role) {
+    case "Super Admin":
+      return "SUPER_ADMIN";
+    case "CEO":
+    case "SFE Manager":
+      return "COMPANY_READ";
+    case "Finance Manager":
+      return "FINANCE";
+    case "HR Specialist":
+      return "HR";
+    case "District Manager":
+    case "Manager":
+      return "TEAM";
+    case "Regional Manager":
+      return "HIERARCHY";
+    case "National Sales Manager":
+    case "Product Manager":
+    case "Group Product Manager":
+    case "Training Manager":
+    case "Marketing Manager":
+      return "LINE";
+    default:
+      return "SELF";
+  }
+}
+
 function userMetadata(input: SupabaseAuthProvisionInput) {
   return {
+    access_scope: mapPhoenixRoleToAccessScopeType(input.role),
     hr_id: input.hrId,
     line: input.line ?? null,
     login_id: input.loginId,
@@ -73,6 +104,7 @@ function userMetadata(input: SupabaseAuthProvisionInput) {
 
 function appMetadata(input: SupabaseAuthProvisionInput) {
   return {
+    access_scope: mapPhoenixRoleToAccessScopeType(input.role),
     coarse_access_role: mapPhoenixRoleToCoarseAccessRole(input.role),
     hr_id: input.hrId,
     is_active: input.isActive,

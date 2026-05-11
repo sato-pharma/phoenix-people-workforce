@@ -17,7 +17,6 @@ import type {
   GeoDashboardFilters,
   GeoExpenseImportRow,
   GeoImportSummary,
-  GeoLocationRecord,
   GeoMarker,
   GeoTripRouteRecord,
   GeoTripStatus,

@@ -14,20 +14,36 @@ function egp(value: number) {
   }).format(value);
 }
 
+type GoogleMapsNamespace = {
+  DirectionsRenderer?: new (options: Record<string, unknown>) => {
+    setDirections: (result: unknown) => void;
+    setMap?: (map: unknown | null) => void;
+  };
+  DirectionsService?: new () => {
+    route: (
+      request: Record<string, unknown>,
+      callback: (result: unknown, status: string) => void,
+    ) => void;
+  };
+  Map?: new (element: HTMLElement, options: Record<string, unknown>) => unknown;
+  TravelMode: { DRIVING: unknown };
+  importLibrary?: (name: string) => Promise<Record<string, unknown>>;
+};
+
 export function ExpenseRouteMap({ routes }: { routes: GeoTripRouteRecord[] }) {
   const browserKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY ?? "";
   const [ready, setReady] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(routes[0]?.id ?? null);
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const rendererRef = useRef<any>(null);
+  const mapInstanceRef = useRef<unknown>(null);
+  const rendererRef = useRef<InstanceType<NonNullable<GoogleMapsNamespace["DirectionsRenderer"]>> | null>(null);
   const selectedRoute = useMemo(
     () => routes.find((route) => route.id === selectedId) ?? routes[0] ?? null,
     [routes, selectedId],
   );
 
   useEffect(() => {
-    const googleMaps = (window as { google?: { maps?: any } }).google?.maps;
+    const googleMaps = (window as { google?: { maps?: GoogleMapsNamespace } }).google?.maps;
     const mapElement = mapRef.current;
     if (!ready || !mapElement || !googleMaps || !selectedRoute) return;
     if (
@@ -41,10 +57,10 @@ export function ExpenseRouteMap({ routes }: { routes: GeoTripRouteRecord[] }) {
 
     let cancelled = false;
     const run = async () => {
-      const mapsLibrary: any = googleMaps.importLibrary
+      const mapsLibrary = googleMaps.importLibrary
         ? await googleMaps.importLibrary("maps")
         : { Map: googleMaps.Map };
-      const routesLibrary: any = googleMaps.importLibrary
+      const routesLibrary = googleMaps.importLibrary
         ? await googleMaps.importLibrary("routes")
         : {
             DirectionsRenderer: googleMaps.DirectionsRenderer,
@@ -52,9 +68,14 @@ export function ExpenseRouteMap({ routes }: { routes: GeoTripRouteRecord[] }) {
           };
       if (cancelled) return;
 
-      const MapCtor = mapsLibrary.Map;
-      const DirectionsServiceCtor = routesLibrary.DirectionsService ?? googleMaps.DirectionsService;
-      const DirectionsRendererCtor = routesLibrary.DirectionsRenderer ?? googleMaps.DirectionsRenderer;
+      const MapCtor = mapsLibrary.Map as GoogleMapsNamespace["Map"] | undefined;
+      const DirectionsServiceCtor = (routesLibrary.DirectionsService ?? googleMaps.DirectionsService) as GoogleMapsNamespace["DirectionsService"] | undefined;
+      const DirectionsRendererCtor = (routesLibrary.DirectionsRenderer ?? googleMaps.DirectionsRenderer) as GoogleMapsNamespace["DirectionsRenderer"] | undefined;
+
+      if (!MapCtor || !DirectionsServiceCtor || !DirectionsRendererCtor) {
+        return;
+      }
+
       const map =
         mapInstanceRef.current ??
         new MapCtor(mapElement, {
@@ -84,7 +105,7 @@ export function ExpenseRouteMap({ routes }: { routes: GeoTripRouteRecord[] }) {
           origin: { lat: selectedRoute.fromLat, lng: selectedRoute.fromLng },
           travelMode: googleMaps.TravelMode.DRIVING,
         },
-        (result: any, status: string) => {
+        (result: unknown, status: string) => {
           if (cancelled || status !== "OK") return;
           renderer.setDirections(result);
         },

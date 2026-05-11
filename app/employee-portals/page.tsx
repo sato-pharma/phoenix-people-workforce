@@ -57,7 +57,7 @@ export default async function EmployeePortalsHomePage({
   return (
     <EmployeePortalPageShell
       badge="Employee Portal"
-      description="Performance, payroll, and team comparison in one command surface."
+      description="Performance, structure, and team comparison in one command surface."
       title="Dashboard Overview"
     >
       <EmployeePortalActionBar
@@ -67,7 +67,6 @@ export default async function EmployeePortalsHomePage({
               Team View: {formattedTeamPeriod}
             </span>
             <EmployeePortalActionLink href="/employee-portals/sales" label="Open Sales Workspace" />
-            <EmployeePortalActionLink href="/employee-portals/payroll" label="Open Payroll Center" />
           </>
         }
       />
