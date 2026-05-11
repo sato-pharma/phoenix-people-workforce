@@ -51,12 +51,13 @@ export async function AppShell({
 
   return (
     <div className={`min-h-screen text-[#0F172A] ${isAdminMode ? adminShellBackgroundClassName : "bg-[#F8FAFC]"}`}>
-      <SessionSecurityGuard idleTimeoutMs={45 * 60 * 1000} />
+      <SessionSecurityGuard />
       <div className="flex min-h-screen">
-        <Sidebar navigationMode={resolvedNavigationMode} permissionLookup={permissionLookup} />
+        <Sidebar currentRole={access.role} navigationMode={resolvedNavigationMode} permissionLookup={permissionLookup} />
         <div className="flex min-w-0 flex-1 flex-col">
           {showTopbar && (
             <Topbar
+              currentRole={access.role}
               navigationMode={resolvedNavigationMode}
               permissionLookup={permissionLookup}
               viewer={viewer}

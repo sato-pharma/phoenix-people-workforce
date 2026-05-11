@@ -5,7 +5,6 @@ import { ChartCard } from "@/components/cards/chart-card";
 import { SectionHeader } from "@/components/ui/section-header";
 import { PremiumTooltip } from "@/components/ui/premium-tooltip";
 import { ChartProps } from "./chart-types";
-import { cn } from "@/lib/utils";
 
 type FinancialMixProps = ChartProps & {
   data: {

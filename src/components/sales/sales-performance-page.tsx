@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import {
   TrendingUp,
   RefreshCw,
@@ -750,12 +749,8 @@ function TrendChart({
   }));
 
   return (
-    <motion.div
-      layoutId="sales-performance-chart"
+    <div
       className="mb-8 rounded-[28px] border border-white/75 bg-white/94 p-6 shadow-[0_22px_60px_rgba(15,23,42,0.09)] ring-1 ring-slate-900/5"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.22, ease: "easeOut" }}
     >
       <h2 className="text-lg font-semibold text-[#0F172A]">Monthly Sales vs Target</h2>
       <p className="mt-1 text-sm text-[#64748B]">Track your sales performance against target over time</p>
@@ -793,7 +788,7 @@ function TrendChart({
           </div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -1030,12 +1025,8 @@ function ProductMixChart({
   const COLORS = ["#F97316", "#FB923C", "#FDBA74", "#FED7AA", "#FFEDD5", "#E2E8F0"];
 
   return (
-    <motion.div
-      layoutId="sales-performance-family"
+    <div
       className="mb-8 rounded-[28px] border border-white/75 bg-white/94 p-6 shadow-[0_22px_60px_rgba(15,23,42,0.09)] ring-1 ring-slate-900/5"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.22, ease: "easeOut" }}
     >
       <h2 className="text-lg font-semibold text-[#0F172A]">Product Mix</h2>
       <p className="mt-1 text-sm text-[#64748B]">Contribution of top products to total sales</p>
@@ -1102,7 +1093,7 @@ function ProductMixChart({
           ))}
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 

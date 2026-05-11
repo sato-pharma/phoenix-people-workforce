@@ -20,4 +20,47 @@ export function runIncentiveSchemeTests() {
 
   assert.equal(hundredPercent.payoutPercentage, 100);
   assert.equal(hundredPercent.payoutAmount, 126000);
+
+  const withAllowances = calculateIncentive2026({
+    achievementPercent: 100,
+    baseSalary: 16000,
+    extraCostOfLiving: 2500,
+    fuelAllowance: 4050,
+  });
+
+  assert.equal(withAllowances.netSalary, 22550);
+  assert.equal(withAllowances.basicSalary, 11200);
+  assert.equal(withAllowances.semesterTargetIncentive, 22400);
+  assert.equal(withAllowances.payoutAmount, 22400);
+
+  const fixedBasic = calculateIncentive2026({
+    achievementPercent: 100,
+    basicSalary: 11200,
+    extraCostOfLiving: 2500,
+    fuelAllowance: 4050,
+    netSalary: 17000,
+  });
+
+  assert.equal(fixedBasic.basicSalary, 11200);
+  assert.equal(fixedBasic.payoutAmount, 22400);
+
+  const b12 = calculateIncentive2026({
+    achievementPercent: 120,
+    baseSalary: 30000,
+  });
+
+  assert.equal(b12.basicSalary, 21000);
+  assert.equal(b12.semesterTargetIncentive, 42000);
+  assert.equal(b12.payoutPercentage, 130);
+  assert.equal(b12.payoutAmount, 54600);
+
+  const b67 = calculateIncentive2026({
+    achievementPercent: 97,
+    baseSalary: 16500,
+  });
+
+  assert.equal(b67.basicSalary, 11550);
+  assert.equal(b67.semesterTargetIncentive, 23100);
+  assert.equal(b67.payoutPercentage, 85);
+  assert.equal(b67.payoutAmount, 19635);
 }

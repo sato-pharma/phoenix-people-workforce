@@ -1,4 +1,5 @@
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -64,19 +65,13 @@ function normalizeDate(value: string | null | undefined) {
 }
 
 function addDays(value: string | null | undefined, days: number) {
-  const clean = normalizeDate(value);
-  if (!clean) return null;
-  const date = new Date(`${clean}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return null;
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
+  return addDaysToDateOnly(normalizeDate(value), days);
 }
 
 function daysRemaining(value: string | null | undefined) {
-  const clean = normalizeDate(value);
-  if (!clean) return 0;
-  const end = new Date(`${clean}T00:00:00`).getTime();
-  if (Number.isNaN(end)) return 0;
+  const endDate = parseDateOnly(normalizeDate(value));
+  if (!endDate) return 0;
+  const end = endDate.getTime();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return Math.ceil((end - today.getTime()) / 86400000);

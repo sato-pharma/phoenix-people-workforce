@@ -1,8 +1,10 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSalesPeopleLabels, linkSalesRecords, summarizeSalesLinkage } from "@/lib/sales/employees";
 import { formatUnits } from "@/lib/sales/format";
+import { isSalesOthersBucket } from "@/lib/sales/others";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSalesScope, normalizeHrId, normalizeLineName, resolveEmployeeIdentityId, type AccessContext, type BusinessScope } from "@/lib/auth/permissions";
+import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
 import {
   type SalesBatch,
   type SalesBatchDetail,
@@ -162,6 +164,10 @@ async function filterSalesRecordsForAccess(
       if (normalizeLineName(record.line) === accessFilter.allowedLine) return true;
     }
 
+    // Others buckets are line/company totals only. They should not become visible
+    // just because the sheet carries a manager HR ID for reconciliation context.
+    if (isSalesOthersBucket(record)) return false;
+
     // 2. Check if the record is explicitly linked to an allowed employee
     const employeeHrId = normalizeHrId(record.employeeHrId);
     if (employeeHrId && accessFilter.allowedHrIds.has(employeeHrId)) return true;
@@ -258,7 +264,26 @@ function dmName(record: ScopedRecord) {
 }
 
 function managerKey(record: ScopedRecord) {
+  if (isSalesOthersBucket(record)) return "Unassigned DSM";
   return record.managerHrId ? `DSM [${record.managerHrId}]` : "Unassigned DSM";
+}
+
+function isNsmDirectoryEmployee(employee: { hrId?: string | null; jobTitle?: string | null; positionTitle?: string | null } | undefined) {
+  const override = salesRoleOverrideForHrId(employee?.hrId);
+  if (override) return override === "NSM";
+  const title = `${employee?.jobTitle ?? ""} ${employee?.positionTitle ?? ""}`.trim().toLowerCase();
+  return Boolean(title && (/\bnsm\b/.test(title) || title.includes("national sales manager")));
+}
+
+function shouldAttributeRecordToDsm(
+  record: ScopedRecord,
+  employeeByHrId: Map<string, { hrId: string; jobTitle: string | null; positionTitle: string | null }>,
+) {
+  const managerHrId = normalizeHrId(record.managerHrId);
+  if (!managerHrId) return false;
+  if (isSalesOthersBucket(record)) return false;
+  if (isNsmDirectoryEmployee(employeeByHrId.get(managerHrId))) return false;
+  return true;
 }
 
 function medicalRepKey(record: ScopedRecord) {
@@ -809,12 +834,25 @@ export async function getSalesDashboard(
     })
     .sort((left, right) => right.sales - left.sales);
 
+  const directory = await getEmployeeDirectory();
+  const employeeByHrId = new Map<string, { hrId: string; jobTitle: string | null; positionTitle: string | null }>();
+  directory.employees.forEach((employee) => {
+    const hrId = normalizeHrId(employee.hrId);
+    if (!hrId) return;
+    employeeByHrId.set(hrId, {
+      hrId: employee.hrId,
+      jobTitle: employee.jobTitle,
+      positionTitle: employee.positionTitle,
+    });
+  });
+  const dsmAttributableRecords = filteredRecords.filter((record) => shouldAttributeRecordToDsm(record, employeeByHrId));
+
   const peopleLabels = await getSalesPeopleLabels([
     ...filteredRecords.map((record) => record.managerHrId),
     ...filteredRecords.map((record) => record.employeeHrId),
   ]);
 
-  const managerGroupsMap = aggregate(filteredRecords, (record) => personLabel(peopleLabels, record.managerHrId, managerKey(record)));
+  const managerGroupsMap = aggregate(dsmAttributableRecords, (record) => personLabel(peopleLabels, record.managerHrId, managerKey(record)));
   const managerPerformance = [...managerGroupsMap.entries()]
     .filter(([name]) => name !== "Unassigned")
     .map(([manager, items]) => {
@@ -839,27 +877,30 @@ export async function getSalesDashboard(
     .sort((left, right) => right.sales - left.sales);
 
   const transactions = filteredRecords
-    .map((record) => ({
-      employeeHrId: record.employeeHrId ?? null,
-      employeeName: record.employeeHrId
-        ? personLabel(peopleLabels, record.employeeHrId, medicalRepKey(record))
-        : null,
-      employeeSourceName: dmName(record),
-      linkStatus: record.linkStatus,
-      managerHrId: record.managerHrId ?? null,
-      managerName: personLabel(peopleLabels, record.managerHrId, managerKey(record)),
-      line: record.line,
-      territory: record.territory,
-      salesType: record.salesType,
-      family: record.family,
-      factoryPrice: record.factoryPrice,
-      product: record.product,
-      period: record.period,
-      salesUnits: record.salesUnits,
-      salesValue: record.salesValue,
-      targetValue: record.targetValue,
-      achievementRate: performanceMetric(record.salesValue, record.targetValue),
-    }));
+    .map((record) => {
+      const hasDsmAttribution = shouldAttributeRecordToDsm(record, employeeByHrId);
+      return {
+        employeeHrId: record.employeeHrId ?? null,
+        employeeName: record.employeeHrId
+          ? personLabel(peopleLabels, record.employeeHrId, medicalRepKey(record))
+          : null,
+        employeeSourceName: dmName(record),
+        linkStatus: record.linkStatus,
+        managerHrId: hasDsmAttribution ? record.managerHrId ?? null : null,
+        managerName: hasDsmAttribution ? personLabel(peopleLabels, record.managerHrId, managerKey(record)) : null,
+        line: record.line,
+        territory: record.territory,
+        salesType: record.salesType,
+        family: record.family,
+        factoryPrice: record.factoryPrice,
+        product: record.product,
+        period: record.period,
+        salesUnits: record.salesUnits,
+        salesValue: record.salesValue,
+        targetValue: record.targetValue,
+        achievementRate: performanceMetric(record.salesValue, record.targetValue),
+      };
+    });
 
   const linkageStats = {
     linked: filteredRecords.filter((record) => record.linkStatus === "linked").length,

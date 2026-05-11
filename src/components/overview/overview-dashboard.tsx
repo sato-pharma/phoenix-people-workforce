@@ -3,22 +3,14 @@
 import {
   Activity,
   ArrowRight,
-  BarChart3,
-  Bell,
-  BriefcaseBusiness,
   Calendar,
-  ChevronDown,
   FileText,
   Landmark,
   Layers,
   LayoutDashboard,
-  MapPin,
-  Plus,
-  ReceiptText,
   RefreshCw,
   Settings,
   Users,
-  UserPlus,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -29,8 +21,6 @@ import { ChartCard } from "@/components/cards/chart-card";
 import { InsightCard } from "@/components/cards/insight-card";
 import { StackedChart } from "@/components/charts/stacked-chart";
 import { MultiLayerChart } from "@/components/charts/multi-layer-chart";
-import { RadarChart } from "@/components/charts/radar-chart";
-import { WaterfallChart } from "@/components/charts/waterfall-chart";
 import { FilterChip } from "@/components/ui/filter-chip";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { OverviewDashboardData } from "@/lib/overview/service";
@@ -52,8 +42,6 @@ const compactEGP = (val: number) => {
 // ---------------------------------------------------------------------------
 
 export function OverviewDashboard({ data: initialData }: { data: OverviewDashboardData }) {
-  const [activeFilter, setActiveFilter] = useState<{ type: string; value: string } | null>(null);
-  const [hoveredValue, setHoveredValue] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [data] = useState(initialData);
 
@@ -62,14 +50,6 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
     setTimeout(() => {
       setIsRefreshing(false);
     }, 1500);
-  };
-
-  const handleFilter = (type: string, value: string) => {
-    if (activeFilter?.type === type && activeFilter?.value === value) {
-      setActiveFilter(null);
-    } else {
-      setActiveFilter({ type, value });
-    }
   };
 
   const sparklineData = useMemo(() => 

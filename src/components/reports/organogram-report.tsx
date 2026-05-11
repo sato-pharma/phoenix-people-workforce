@@ -24,12 +24,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { formatDateOnly } from "@/lib/date-only";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { cn } from "@/lib/utils";
 
 type OrganogramRow = VacancyReportData["organogramRows"][number];
 type MemberNode = {
   children: MemberNode[];
+  key: string;
   row: OrganogramRow;
 };
 
@@ -125,8 +127,19 @@ function normalizeNameKey(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
 }
 
+function normalizeHrIdKey(value: string | null | undefined) {
+  return value?.trim().toUpperCase() ?? "";
+}
+
 function rowKey(row: OrganogramRow) {
   return `${row.type}-${row.hrId}-${row.sourceRowNumber ?? ""}`;
+}
+
+function managerIdentityKey(row: OrganogramRow) {
+  const hrId = normalizeHrIdKey(row.hrId);
+  if (hrId) return `hr:${hrId}`;
+
+  return `name:${normalizeNameKey(row.fullName)}`;
 }
 
 function isNationalSalesManager(row: OrganogramRow) {
@@ -175,10 +188,11 @@ function reportsUpTo(
   rows: OrganogramRow[],
 ) {
   const visited = new Set<string>();
-  let managerHrId = row.managerHrId;
+  const managerHrIdKey = normalizeHrIdKey(manager.hrId);
+  let managerHrId = normalizeHrIdKey(row.managerHrId);
 
   while (managerHrId) {
-    if (managerHrId === manager.hrId) {
+    if (managerHrId === managerHrIdKey) {
       return true;
     }
 
@@ -187,28 +201,20 @@ function reportsUpTo(
     }
 
     visited.add(managerHrId);
-    managerHrId = rows.find((candidate) => candidate.hrId === managerHrId)?.managerHrId ?? null;
+    managerHrId = normalizeHrIdKey(
+      rows.find((candidate) => normalizeHrIdKey(candidate.hrId) === managerHrId)?.managerHrId,
+    );
   }
 
   return false;
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en", {
+  return formatDateOnly(value, "en", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(date);
+  });
 }
 
 function HierarchyNode({
@@ -227,16 +233,16 @@ function HierarchyNode({
   return (
     <div
       className={cn(
-        "w-full max-w-[220px] rounded-2xl border px-3 py-2.5 text-center shadow-sm",
+        "group relative overflow-hidden w-full max-w-[220px] rounded-xl border px-3 py-2.5 text-center shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md",
         tone === "dark"
-          ? "border-[#0F172A] bg-[#0F172A] text-white shadow-lg"
+          ? "border-[#0F172A] bg-gradient-to-br from-[#0F172A] to-[#1E293B] text-white shadow-lg hover:shadow-[0_8px_20px_rgba(15,23,42,0.12)]"
           : tone === "primary"
-            ? "border-orange-200 bg-orange-50 text-text shadow-md"
-            : "border-[#E2E8F0] bg-white text-[#0F172A]",
+            ? "border-orange-200/90 bg-gradient-to-br from-orange-50 to-orange-100/50 text-text shadow-md hover:shadow-lg hover:border-orange-300"
+            : "border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 text-[#0F172A] hover:border-slate-300",
         className,
       )}
     >
-      <div className="mb-1.5 flex items-center justify-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#F97316]">
+      <div className="mb-1.5 flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#F97316]">
         {icon}
         {label}
       </div>
@@ -260,16 +266,16 @@ function TeamMemberCard({ row }: { row: OrganogramRow }) {
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-xl border px-2.5 py-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
+        "group relative overflow-hidden rounded-xl border px-2.5 py-2 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md",
         isVacancy
-          ? "border-orange-200 bg-orange-50"
-          : "border-[#E2E8F0] bg-white",
+          ? "border-orange-200/90 bg-gradient-to-br from-orange-50 to-orange-100/50 hover:border-orange-300"
+          : "border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 hover:border-slate-300",
       )}
     >
       <span
         className={cn(
           "absolute inset-y-0 left-0 w-1",
-          isVacancy ? "bg-[#F97316]" : "bg-[#E2E8F0]",
+          isVacancy ? "bg-[#F97316]" : "bg-slate-300",
         )}
       />
       <div className="flex items-start justify-between gap-2">
@@ -304,27 +310,30 @@ function TeamMemberCard({ row }: { row: OrganogramRow }) {
 }
 
 function buildMemberTree(members: OrganogramRow[]) {
-  const memberIds = new Set(members.map((member) => member.hrId));
-  const nodeById = new Map<string, MemberNode>();
+  const memberIds = new Set(members.map((member) => member.hrId).filter(Boolean));
+  const nodesByHrId = new Map<string, MemberNode[]>();
+  const nodes = members.map((member, index) => ({
+    children: [],
+    key: `${rowKey(member)}-${index}`,
+    row: member,
+  }) satisfies MemberNode);
 
-  for (const member of members) {
-    nodeById.set(member.hrId, {
-      children: [],
-      row: member,
-    });
+  for (const node of nodes) {
+    nodesByHrId.set(node.row.hrId, [...(nodesByHrId.get(node.row.hrId) ?? []), node]);
   }
 
   const roots: MemberNode[] = [];
 
-  for (const member of members) {
-    const node = nodeById.get(member.hrId);
-
-    if (!node) {
-      continue;
-    }
+  for (const node of nodes) {
+    const member = node.row;
 
     if (member.managerHrId && memberIds.has(member.managerHrId)) {
-      nodeById.get(member.managerHrId)?.children.push(node);
+      const managerNode = nodesByHrId.get(member.managerHrId)?.[0];
+      if (managerNode) {
+        managerNode.children.push(node);
+      } else {
+        roots.push(node);
+      }
     } else {
       roots.push(node);
     }
@@ -353,7 +362,7 @@ function TeamMemberNode({ node }: { node: MemberNode }) {
           <div className="-ml-[13px] mb-1.5 h-2.5 w-2.5 rounded-bl-lg border-b border-l border-[#F97316]/35" />
           <div className="space-y-1.5">
             {node.children.map((child) => (
-              <TeamMemberNode key={rowKey(child.row)} node={child} />
+              <TeamMemberNode key={child.key} node={child} />
             ))}
           </div>
         </div>
@@ -380,7 +389,7 @@ function OrganogramView({
   const dsmRows = rows
     .filter((row) => isDistrictSalesManager(row))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
-  const dsmHrIds = new Set(dsmRows.map((row) => row.hrId));
+  const dsmHrIds = new Set(dsmRows.map((row) => normalizeHrIdKey(row.hrId)));
   const dsmNameKeys = new Set(
     dsmRows.map((row) => normalizeNameKey(row.fullName)),
   );
@@ -391,14 +400,19 @@ function OrganogramView({
       !isDistrictSalesManager(row),
   );
   const assignedToDsm = new Set<string>();
-  const dsmGroups = dsmRows.map((dsm) => {
-    const dsmNameKey = normalizeNameKey(dsm.fullName);
+  const dsmGroups = groupBy(dsmRows, managerIdentityKey).map(([, dsms]) => {
+    const primaryDsm = [...dsms].sort((left, right) =>
+      left.fullName.localeCompare(right.fullName),
+    )[0];
+    const dsmHrIdsForGroup = new Set(dsms.map((row) => normalizeHrIdKey(row.hrId)));
+    const dsmNameKeysForGroup = new Set(dsms.map((row) => normalizeNameKey(row.fullName)));
     const members = teamRows
-      .filter((row) =>
-        row.managerHrId
-          ? row.managerHrId === dsm.hrId
-          : normalizeNameKey(row.managerName) === dsmNameKey,
-      )
+      .filter((row) => {
+        const managerHrId = normalizeHrIdKey(row.managerHrId);
+        return managerHrId
+          ? dsmHrIdsForGroup.has(managerHrId)
+          : dsmNameKeysForGroup.has(normalizeNameKey(row.managerName));
+      })
       .sort((left, right) =>
         left.type === right.type
           ? left.fullName.localeCompare(right.fullName)
@@ -412,21 +426,30 @@ function OrganogramView({
     }
 
     return {
-      dsm,
+      dsm: primaryDsm,
       members,
-      name: dsm.fullName,
-      title: dsm.positionTitle ?? dsm.jobTitle ?? "District Sales Manager",
+      name: primaryDsm.fullName,
+      title: primaryDsm.positionTitle ?? primaryDsm.jobTitle ?? "District Sales Manager",
     };
   });
   const marketingManagers = teamRows
     .filter((row) => isMarketingManager(row))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
-  const marketingGroups = marketingManagers.map((manager) => {
+  const marketingGroups = groupBy(marketingManagers, managerIdentityKey).map(([, managers]) => {
+    const primaryManager = [...managers].sort((left, right) =>
+      left.fullName.localeCompare(right.fullName),
+    )[0];
+    const managerHrIds = new Set(managers.map((manager) => normalizeHrIdKey(manager.hrId)));
     const members = teamRows
-      .filter((row) => row.hrId !== manager.hrId && reportsUpTo(row, manager, rows))
+      .filter((row) =>
+        !managerHrIds.has(normalizeHrIdKey(row.hrId)) &&
+        managers.some((manager) => reportsUpTo(row, manager, rows)),
+      )
       .sort((left, right) => left.fullName.localeCompare(right.fullName));
 
-    assignedToDsm.add(rowKey(manager));
+    for (const manager of managers) {
+      assignedToDsm.add(rowKey(manager));
+    }
 
     for (const member of members) {
       assignedToDsm.add(rowKey(member));
@@ -435,39 +458,56 @@ function OrganogramView({
     return {
       dsm: null,
       members,
-      name: manager.fullName,
-      title: manager.positionTitle ?? manager.jobTitle ?? "Marketing Manager",
+      name: primaryManager.fullName,
+      title: primaryManager.positionTitle ?? primaryManager.jobTitle ?? "Marketing Manager",
     };
   });
   const fallbackManagerGroups = groupBy(
     teamRows.filter((row) => {
       const key = rowKey(row);
       const managerNameKey = normalizeNameKey(row.managerName);
+      const managerHrId = normalizeHrIdKey(row.managerHrId);
       const reportsToLineLeader =
         Boolean(lineLeader) &&
-        (row.managerHrId === lineLeader?.hrId ||
+        (managerHrId === normalizeHrIdKey(lineLeader?.hrId) ||
           managerNameKey === normalizeNameKey(lineLeader?.fullName));
 
       return (
         !assignedToDsm.has(key) &&
         !reportsToLineLeader &&
-        (row.managerHrId || row.managerName) &&
-        (!row.managerHrId || !dsmHrIds.has(row.managerHrId)) &&
+        (managerHrId || row.managerName) &&
+        (!managerHrId || !dsmHrIds.has(managerHrId)) &&
         (!managerNameKey || !dsmNameKeys.has(managerNameKey))
       );
     }),
-    (row) =>
-      chiefExecutive &&
-      (row.managerHrId === chiefExecutive.hrId ||
-        normalizeNameKey(row.managerName) === normalizeNameKey(chiefExecutive.fullName))
-        ? "CEO Direct Reports"
-        : row.managerName ?? `Manager ${row.managerHrId}`,
-  ).map(([managerName, members]) => ({
-    dsm: null,
-    members,
-    name: managerName,
-    title: "Manager",
-  }));
+    (row) => {
+      const managerHrId = normalizeHrIdKey(row.managerHrId);
+      const managerNameKey = normalizeNameKey(row.managerName);
+
+      if (
+        chiefExecutive &&
+        (managerHrId === normalizeHrIdKey(chiefExecutive.hrId) ||
+          managerNameKey === normalizeNameKey(chiefExecutive.fullName))
+      ) {
+        return "ceo-direct-reports";
+      }
+
+      if (managerHrId) return `hr:${managerHrId}`;
+      return `name:${managerNameKey}`;
+    },
+  ).map(([managerKey, members]) => {
+    const firstMember = members[0];
+    const name = managerKey === "ceo-direct-reports"
+      ? "CEO Direct Reports"
+      : firstMember?.managerName ?? `Manager ${firstMember?.managerHrId ?? "Unknown"}`;
+
+    return {
+      dsm: null,
+      members,
+      name,
+      title: "Manager",
+    };
+  });
   const unassignedMembers = teamRows.filter((row) => {
     const key = rowKey(row);
 
@@ -587,44 +627,47 @@ function OrganogramView({
                     gridTemplateColumns: `repeat(${laneCount}, minmax(0, 1fr))`,
                   }}
                 >
-                  {groups.map((group) => {
+                  {groups.map((group, groupIndex) => {
                     const groupVacancies = group.members.filter(
                       (member) => member.type === "vacancy",
                     ).length;
+                    const groupKey = group.dsm
+                      ? `manager-${rowKey(group.dsm)}-${groupIndex}`
+                      : `manager-${group.name}-${group.title}-${groupIndex}`;
 
                     return (
                       <div
                         className={cn(
-                          "relative min-w-0 rounded-2xl border border-[#E2E8F0] bg-white/95 p-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
+                          "group relative min-w-0 overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-2 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300",
                         )}
-                        key={group.dsm?.hrId ?? group.name}
+                        key={groupKey}
                       >
                         <div className="absolute -top-5 left-1/2 h-5 w-px -translate-x-1/2 bg-[#CBD5E1]" />
-                        <div className="absolute left-3 right-3 top-0 h-1 rounded-b-full bg-[#F97316]" />
-                        <div className="rounded-xl bg-[#0F172A] px-2 py-2 text-white">
+                        <div className="absolute left-3 right-3 top-0 h-1 rounded-b-full bg-[#F97316] ring-1 ring-orange-100" />
+                        <div className="rounded-xl bg-gradient-to-br from-[#0F172A] to-[#1E293B] px-2 py-2 text-white shadow-[0_4px_12px_rgba(15,23,42,0.15)]">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 text-left">
-                              <div className="mb-1 flex h-5 w-5 items-center justify-center rounded-md bg-white/10">
+                              <div className="mb-1 flex h-5 w-5 items-center justify-center rounded-md bg-white/10 ring-1 ring-white/20">
                                 <BriefcaseBusiness className="h-3 w-3" />
                               </div>
-                              <p className="break-words text-[10px] font-semibold leading-3">
+                              <p className="break-words text-[10px] font-bold uppercase tracking-[0.08em] leading-3">
                                 {group.name}
                               </p>
-                              <p className="mt-1 break-words text-[9px] font-medium leading-3 opacity-70">
+                              <p className="mt-1 break-words text-[9px] font-medium leading-3 opacity-80">
                                 {group.title}
                               </p>
                             </div>
-                            <div className="shrink-0 rounded-md bg-white/10 px-1.5 py-1 text-center text-[9px] font-semibold">
+                            <div className="shrink-0 rounded-md bg-white/10 ring-1 ring-white/20 px-1.5 py-1 text-center text-[9px] font-bold uppercase tracking-[0.06em]">
                               <p className="text-[10px] leading-none">{group.members.length}</p>
                               <p className="mt-0.5 opacity-70">rows</p>
                             </div>
                           </div>
                         </div>
 
-                        <div className="mt-2 flex items-center justify-between gap-1.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-1.5 text-[9px] text-[#64748B]">
-                          <span className="truncate">{group.members.length} team rows</span>
+                        <div className="mt-2 flex items-center justify-between gap-1.5 rounded-lg border border-slate-200/90 bg-gradient-to-br from-slate-50 to-slate-100/50 px-2 py-1.5 text-[9px] text-[#64748B]">
+                          <span className="truncate font-medium">{group.members.length} team rows</span>
                           {groupVacancies > 0 ? (
-                            <span className="shrink-0 font-medium text-primary">
+                            <span className="shrink-0 font-bold uppercase tracking-[0.06em] text-primary">
                               {groupVacancies} vacant
                             </span>
                           ) : (
@@ -639,7 +682,7 @@ function OrganogramView({
                             </div>
                           ) : (
                             buildMemberTree(group.members).map((node) => (
-                              <TeamMemberNode key={rowKey(node.row)} node={node} />
+                              <TeamMemberNode key={node.key} node={node} />
                             ))
                           )}
                         </div>

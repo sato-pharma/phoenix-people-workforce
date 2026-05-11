@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import {
   buildPhoenixHrReplyEmail,
   phoenixHrEmailSignatureHostedUrl,
@@ -13,7 +14,6 @@ import { emailNotificationsEnabled } from "@/lib/notifications/email";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const resendEndpoint = "https://api.resend.com/emails";
 const allowedTones = new Set<PhoenixHrEmailTone>(["professional", "warm", "firm", "concise"]);
 
 type EmailReplySendBody = {
@@ -135,48 +135,12 @@ async function sendEmail({
     return { reason: "EMAIL_NOTIFICATIONS_ENABLED is not true.", skipped: true as const };
   }
 
-  const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.HR_REPLY_EMAIL_FROM || process.env.NOTIFICATION_EMAIL_FROM;
 
-  if (!apiKey) return { reason: "RESEND_API_KEY is missing.", skipped: true as const };
   if (!from) return { reason: "HR_REPLY_EMAIL_FROM or NOTIFICATION_EMAIL_FROM is missing.", skipped: true as const };
 
   const requestId = `phoenix-hr-${Date.now()}`;
-  const response = await fetch(resendEndpoint, {
-    body: JSON.stringify({
-      bcc: bcc.length > 0 ? bcc : undefined,
-      cc: cc.length > 0 ? cc : undefined,
-      from,
-      html,
-      replyTo: process.env.NOTIFICATION_REPLY_TO || undefined,
-      subject,
-      text,
-      to,
-    }),
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "Idempotency-Key": requestId,
-    },
-    method: "POST",
-  });
-
-  const payload = (await response.json().catch(() => null)) as {
-    error?: string;
-    id?: string;
-    message?: string;
-    name?: string;
-  } | null;
-
-  if (!response.ok) {
-    throw new Error(payload?.message ?? payload?.error ?? `Resend request failed with ${response.status}.`);
-  }
-
-  if (!payload?.id) {
-    throw new Error("Resend accepted the request without returning a message id.");
-  }
-
-  return { id: payload.id, skipped: false as const };
+  return sendPhoenixEmail({ bcc, cc, from, html, idempotencyKey: requestId, subject, text, to });
 }
 
 export async function POST(request: Request) {

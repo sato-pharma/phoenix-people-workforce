@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { formatDateOnly } from "@/lib/date-only";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { cn } from "@/lib/utils";
 
@@ -70,15 +71,11 @@ function uniqueOptions(values: Array<string | null>) {
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("en", {
+  return formatDateOnly(value, "en", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(new Date(value));
+  });
 }
 
 function csvCell(value: string | number | null | undefined) {

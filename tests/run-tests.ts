@@ -3,6 +3,15 @@ import { runIncentiveSchemeTests } from "./incentive-scheme.test.ts";
 import { runEmailNotificationTests } from "./email-notifications.test.ts";
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
 import { runPhoenixHrReplyTemplateTests } from "./phoenix-hr-reply-template.test.ts";
+import { runCoachingScoringTests } from "./coaching-scoring.test.ts";
+import { runCoachingAnalyticsTests } from "./coaching-analytics.test.ts";
+import { runCoachingExcelExportTests } from "./coaching-excel-export.test.ts";
+import { runSalesOthersBucketTests } from "./sales-others-bucket.test.ts";
+import { runSalesRoleMappingTests } from "./sales-role-mapping.test.ts";
+import { runCoachingPermissionTests } from "./coaching-permissions.test.ts";
+import { runCoachingInAppNotificationTests } from "./coaching-in-app-notifications.test.ts";
+import { runRlsGapClosureTests } from "./rls-gap-closure.test.ts";
+import { runAuthSessionTests } from "./auth-session.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -19,3 +28,12 @@ await runTest("incentive scheme", runIncentiveSchemeTests);
 await runTest("email notifications", runEmailNotificationTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
 await runTest("phoenix hr reply template", runPhoenixHrReplyTemplateTests);
+await runTest("coaching scoring", runCoachingScoringTests);
+await runTest("coaching analytics", runCoachingAnalyticsTests);
+await runTest("coaching excel export", runCoachingExcelExportTests);
+await runTest("coaching permissions", runCoachingPermissionTests);
+await runTest("coaching in-app notifications", runCoachingInAppNotificationTests);
+await runTest("rls gap closure", runRlsGapClosureTests);
+await runTest("sales others bucket", runSalesOthersBucketTests);
+await runTest("sales role mapping", runSalesRoleMappingTests);
+await runTest("auth session", runAuthSessionTests);

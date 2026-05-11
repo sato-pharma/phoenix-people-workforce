@@ -1,0 +1,151 @@
+import { ClipboardCheck, Plus } from "lucide-react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+
+import {
+  AdminInsightChip,
+  AdminPageHero,
+} from "@/components/admin/admin-design-system";
+import {
+  CoachingReportsCenter,
+  type CoachingReportsFilterOptions,
+} from "@/components/coaching/coaching-reports-center";
+import { AppShell } from "@/components/layout/app-shell";
+import {
+  canAccess,
+  canManageCoachingReports,
+  type AccessContext,
+} from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { getCoachingReports } from "@/lib/coaching/service";
+import type { CoachingReportSummaryRow } from "@/lib/coaching/types";
+import {
+  getEmployeeDirectoryRows,
+  type EmployeeDirectoryRow,
+} from "@/lib/employees/employee-directory";
+
+export const dynamic = "force-dynamic";
+
+function isEmployeePortalRole(access: AccessContext) {
+  return access.role === "Employee" || access.role === "Medical Rep";
+}
+
+function toOptionMap(
+  rows: { label: string | null | undefined; value: number | string | null | undefined }[],
+) {
+  const options = new Map<string, string>();
+  for (const row of rows) {
+    if (row.value === null || typeof row.value === "undefined") continue;
+    const value = String(row.value);
+    const label = row.label?.trim() || value;
+    if (!options.has(value)) options.set(value, label);
+  }
+  return [...options.entries()]
+    .map(([value, label]) => ({ label, value }))
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function buildFilterOptions(
+  reports: CoachingReportSummaryRow[],
+  employees: EmployeeDirectoryRow[],
+): CoachingReportsFilterOptions {
+  return {
+    areas: toOptionMap([
+      ...employees.map((employee) => ({ label: employee.areaName, value: employee.areaId })),
+      ...reports.map((report) => ({ label: report.areaName, value: report.areaId })),
+    ]),
+    coaches: toOptionMap(reports.map((report) => ({
+      label: `${report.coachName || report.coachHrId} (${report.coachHrId})`,
+      value: report.coachHrId,
+    }))),
+    lines: toOptionMap([
+      ...employees.map((employee) => ({ label: employee.lineName, value: employee.lineId })),
+      ...reports.map((report) => ({ label: report.lineName, value: report.lineId })),
+    ]),
+    medicalReps: toOptionMap([
+      ...employees.map((employee) => ({
+        label: `${employee.fullName || employee.hrId} (${employee.hrId})`,
+        value: employee.hrId,
+      })),
+      ...reports.map((report) => ({
+        label: `${report.medicalRepName || report.medicalRepHrId} (${report.medicalRepHrId})`,
+        value: report.medicalRepHrId,
+      })),
+    ]),
+    teams: toOptionMap(reports.map((report) => ({
+      label: report.teamName || (report.teamId ? `Team ${report.teamId}` : null),
+      value: report.teamId,
+    }))),
+  };
+}
+
+export default async function CoachingReportsPage() {
+  const access = await resolveAccessContextFromPage();
+  if (!access.loginId && !access.hrId) {
+    redirect("/login");
+  }
+  if (isEmployeePortalRole(access)) {
+    redirect("/employee-portals/coaching");
+  }
+  if (!(await canAccess(access, "coaching", "read"))) {
+    redirect("/admin/access");
+  }
+
+  const canCreate =
+    canManageCoachingReports(access) &&
+    (await canAccess(access, "coaching", "create"));
+  const canExport =
+    canManageCoachingReports(access) ||
+    (await canAccess(access, "coaching", "export"));
+  const lockedCoachHrId = access.role === "Training Manager" && access.hrId ? access.hrId : null;
+
+  const reports = await getCoachingReports(
+    lockedCoachHrId ? { coachHrId: lockedCoachHrId } : {},
+    access,
+  );
+
+  const employees = await getEmployeeDirectoryRows();
+  const currentEmployee = lockedCoachHrId
+    ? employees.find((employee) => employee.hrId.toUpperCase() === lockedCoachHrId.toUpperCase())
+    : null;
+
+  return (
+    <AppShell navigationMode="admin">
+      <div className="space-y-6">
+        <AdminPageHero
+          actions={
+            canCreate ? (
+              <Link
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-[#EA580C]"
+                href="/coaching/new"
+              >
+                <Plus className="h-4 w-4" />
+                Create Coaching Report
+              </Link>
+            ) : null
+          }
+          badges={
+            <div className="flex flex-wrap gap-2">
+              <AdminInsightChip>Reports Center</AdminInsightChip>
+              <AdminInsightChip tone="orange">Field Excellence</AdminInsightChip>
+              <AdminInsightChip tone="slate">Read-only review workspace</AdminInsightChip>
+            </div>
+          }
+          description="Review field coaching reports, filter by employee context, and inspect scoring outcomes without changing submitted coaching data."
+          eyebrow="Coaching"
+          icon={<ClipboardCheck className="h-3.5 w-3.5" />}
+          title="Field Coaching"
+        />
+
+        <CoachingReportsCenter
+          canCreate={canCreate}
+          canExport={canExport}
+          filterOptions={buildFilterOptions(reports, employees)}
+          initialReports={reports}
+          lockedCoachHrId={lockedCoachHrId}
+          lockedCoachLabel={currentEmployee?.fullName ?? null}
+        />
+      </div>
+    </AppShell>
+  );
+}

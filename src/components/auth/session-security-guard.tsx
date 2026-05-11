@@ -22,7 +22,7 @@ function readLastActivity() {
 }
 
 export function SessionSecurityGuard({
-  idleTimeoutMs = 30 * 60 * 1000,
+  idleTimeoutMs = 15 * 60 * 1000,
 }: {
   idleTimeoutMs?: number;
 }) {

@@ -1,4 +1,5 @@
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { addYearsToDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -60,7 +61,7 @@ type RenewalRequestDbRow = {
 };
 
 function todayDate() {
-  return new Date().toISOString().slice(0, 10);
+  return toDateOnlyString(new Date()) ?? "";
 }
 
 function cleanText(value: string | null | undefined) {
@@ -75,12 +76,7 @@ function normalizeDate(value: string | null | undefined) {
 }
 
 function addYears(value: string | null | undefined, years: number) {
-  const clean = normalizeDate(value);
-  if (!clean) return null;
-  const date = new Date(`${clean}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return null;
-  date.setFullYear(date.getFullYear() + years);
-  return date.toISOString().slice(0, 10);
+  return addYearsToDateOnly(normalizeDate(value), years);
 }
 
 function appendWorkflowNote(
@@ -209,7 +205,7 @@ export async function getContractRenewalDashboardData(): Promise<ContractRenewal
     const contract = contractsByHrId.get(employee.hrId);
     const fallbackRenewalDate = addYears(employee.hireDate, 1) ?? "";
     const renewalDate = contract?.contract_renewal_date ?? fallbackRenewalDate;
-    const renewalDay = renewalDate ? new Date(`${renewalDate}T00:00:00`).getDate() : 0;
+    const renewalDay = parseDateOnly(renewalDate)?.getDate() ?? 0;
 
     return {
       area: employee.areaName ?? "Unassigned",

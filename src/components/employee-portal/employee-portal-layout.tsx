@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, FileText, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, MapPinned } from "lucide-react";
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
+import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 
@@ -12,6 +13,12 @@ function navItemClass(active: boolean) {
   return active
     ? "border-l-2 border-orange-500 bg-orange-50/70 text-slate-900"
     : "border-l-2 border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900";
+}
+
+function isEmployeePortalNavItemActive(pathname: string, href: string) {
+  const hrefPath = href.split("#")[0];
+  if (hrefPath === "/employee-portals") return pathname === hrefPath;
+  return pathname === hrefPath || pathname.startsWith(`${hrefPath}/`);
 }
 
 type EmployeePortalNavProps = {
@@ -41,6 +48,7 @@ function buildEmployeePortalSections({
   showVacanciesTab = false,
   showProbationTab = false,
   showOrganogramTab = false,
+  showCoachingTab = false,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
     {
@@ -49,6 +57,7 @@ function buildEmployeePortalSections({
         { href: "/employee-portals", label: "Dashboard", icon: Activity },
         { href: "/employee-portals/sales", label: "My Performance", icon: LineChartIcon },
         { href: "/employee-portals/incentive", label: "Incentive", icon: Calculator },
+        ...(showCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         { href: "/payslips", label: "Payslips", icon: CircleDollarSign },
         ...(showManagementTab ? [{ href: "/employee-portals/expense-dashboard", label: "Workload & Expense", icon: ReceiptText }] : []),
       ],
@@ -124,6 +133,7 @@ export function EmployeePortalTopNav({
 
   return (
     <>
+      <SessionSecurityGuard />
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur">
         <div className="mx-auto flex w-full max-w-[1560px] items-center gap-3 px-4 py-3 lg:px-6">
           <button
@@ -201,7 +211,7 @@ export function EmployeePortalTopNav({
               </p>
               <div className="space-y-2">
                 {section.items.map((item) => {
-                  const active = pathname === item.href;
+                  const active = isEmployeePortalNavItemActive(pathname, item.href);
                   return (
                     <Link
                       key={item.label}
@@ -273,8 +283,7 @@ export function EmployeePortalSidebar({
               {section.title}
             </p>
             {section.items.map((item) => {
-              const hrefPath = item.href.split("#")[0];
-              const active = pathname === hrefPath;
+              const active = isEmployeePortalNavItemActive(pathname, item.href);
               return (
                 <Link
                   key={item.label}

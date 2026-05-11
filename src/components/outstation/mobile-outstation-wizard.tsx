@@ -136,6 +136,8 @@ export function MobileOutstationWizard({
   useEffect(() => {
     const restore = parseDraft(window.localStorage.getItem(draftKey));
     if (!restore) return;
+    // Restore the offline draft once after hydration; this intentionally syncs React state with localStorage.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCaptured(restore.captured);
     setExpenseType(restore.expenseType);
     setGoTicketAmount(restore.goTicketAmount);
@@ -367,7 +369,6 @@ export function MobileOutstationWizard({
     calculationKey,
     canAutoCalculate,
     isOffline,
-    performCalculation,
   ]);
 
   async function captureLocation() {

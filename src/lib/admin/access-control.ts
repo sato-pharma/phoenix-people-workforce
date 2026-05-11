@@ -18,6 +18,7 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import {
+  mapPhoenixRoleToAccessScopeType,
   mapPhoenixRoleToCoarseAccessRole,
   provisionSupabaseAuthIdentity,
 } from "@/lib/auth/supabase-identity";
@@ -539,6 +540,7 @@ export async function upsertAccessUser(input: AccessUserMutation, actor?: Access
         manager_hr_id: input.managerHrId?.trim() || null,
         phoenix_role: role,
         role: mapPhoenixRoleToCoarseAccessRole(role),
+        scope_type: mapPhoenixRoleToAccessScopeType(role),
         updated_at: new Date().toISOString(),
       }, {
         onConflict: "auth_user_id",

@@ -1,5 +1,13 @@
 ﻿import ExcelJS from "exceljs";
 
+import { toDateOnlyString } from "../date-only.ts";
+import {
+  calculateGrossSalary,
+  calculatePayrollParts,
+  normalizePayrollPaymentMode,
+  type PayrollPaymentMode,
+} from "./policy.ts";
+
 export type SalaryValidationIssue = {
   code: string;
   column?: string;
@@ -33,6 +41,7 @@ export type SalaryValidationRow = {
   otherDeductions: number;
   overtime: number;
   payrollComment: string | null;
+  paymentMode: PayrollPaymentMode;
   row: number;
   secondPart: number;
   socialInsurance: number;
@@ -110,12 +119,14 @@ const columnAliases = {
   ],
   firstPart: ["First Part", "1st Part", "1st Part Day 1 FIXED No Ded No Add", "first_part"],
   secondPart: ["Second Part", "2nd Part", "2nd Part Day 10 30 CoL Fuel All Adj", "second_part"],
+  paymentMode: ["Payment Group", "Payment Mode", "payment_mode", "salary_payment_mode"],
   payrollComment: ["Comment", "Comments", "Notes", "Payroll Comment", "comment"],
   month: ["Month", "month"],
   year: ["Year", "year"],
 } as const;
 
 const requiredColumns = ["hrId", "fullName", "grossSalary", "netSalary"] as const;
+const payrollFormulaTolerance = 1;
 
 function cellText(cell: ExcelJS.Cell) {
   const value = cell.value;
@@ -178,13 +189,22 @@ function toNumber(value: unknown) {
 function toDateOnly(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
 
-  const date = value instanceof Date ? value : new Date(String(value));
-  if (Number.isNaN(date.getTime())) return String(value).trim() || null;
+  return toDateOnlyString(value instanceof Date ? value : String(value));
+}
 
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function money(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function differs(left: number, right: number, tolerance = payrollFormulaTolerance) {
+  return Math.abs(money(left) - money(right)) > tolerance;
+}
+
+function moneyText(value: number) {
+  return money(value).toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  });
 }
 
 function rowValue(row: Record<string, unknown>, aliases: readonly string[]) {
@@ -222,6 +242,15 @@ export async function validateSalaryWorkbook(file: File): Promise<SalaryValidati
   const missingRequiredColumns = requiredColumns.filter((key) =>
     columnAliases[key].every((alias) => !normalizedHeaders.has(normalizeHeader(alias))),
   );
+  const hasColumnFor = (aliases: readonly string[]) =>
+    aliases.some((alias) => normalizedHeaders.has(normalizeHeader(alias)));
+  const hasExplicitGrossColumn = ["Gross Salary", "gross_salary", "Total Gross Salary"].some(
+    (alias) => normalizedHeaders.has(normalizeHeader(alias)),
+  );
+  const hasExplicitTotalAdditionsColumn = hasColumnFor(columnAliases.totalAdditions);
+  const hasExplicitTotalDeductionsColumn = hasColumnFor(columnAliases.totalDeductions);
+  const hasFirstPartColumn = hasColumnFor(columnAliases.firstPart);
+  const hasSecondPartColumn = hasColumnFor(columnAliases.secondPart);
 
   const rows: Record<string, unknown>[] = [];
   for (let rowNumber = headerRowNumber + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
@@ -241,10 +270,66 @@ export async function validateSalaryWorkbook(file: File): Promise<SalaryValidati
     const rowNumber = Number(raw.__rowNumber);
     const hrId = String(rowValue(raw, columnAliases.hrId)).trim();
     const fullName = String(rowValue(raw, columnAliases.fullName)).trim();
-    const grossSalary = toNumber(rowValue(raw, columnAliases.grossSalary));
-    const totalAdditions = toNumber(rowValue(raw, columnAliases.totalAdditions));
-    const totalDeductions = toNumber(rowValue(raw, columnAliases.totalDeductions));
+    const uploadedGrossSalary = toNumber(rowValue(raw, columnAliases.grossSalary));
+    const uploadedTotalAdditions = toNumber(rowValue(raw, columnAliases.totalAdditions));
+    const uploadedTotalDeductions = toNumber(rowValue(raw, columnAliases.totalDeductions));
     const netSalary = toNumber(rowValue(raw, columnAliases.netSalary));
+    const expenses = toNumber(rowValue(raw, columnAliases.expenses));
+    const incentive = toNumber(rowValue(raw, columnAliases.incentive));
+    const overtime = toNumber(rowValue(raw, columnAliases.overtime));
+    const bonus = toNumber(rowValue(raw, columnAliases.bonus));
+    const extraCostOfLiving = toNumber(rowValue(raw, columnAliases.extraCostOfLiving));
+    const fuelAllowance = toNumber(rowValue(raw, columnAliases.fuelAllowance));
+    const otherAdditions = toNumber(rowValue(raw, columnAliases.otherAdditions));
+    const socialInsurance = toNumber(rowValue(raw, columnAliases.socialInsurance));
+    const employmentIncomeTax = toNumber(rowValue(raw, columnAliases.employmentIncomeTax));
+    const crm = toNumber(rowValue(raw, columnAliases.crm));
+    const fingerPrint = toNumber(rowValue(raw, columnAliases.fingerPrint));
+    const unpaidVacations = toNumber(rowValue(raw, columnAliases.unpaidVacations));
+    const medicalInsurance = toNumber(rowValue(raw, columnAliases.medicalInsurance));
+    const loans = toNumber(rowValue(raw, columnAliases.loans));
+    const otherDeductions = toNumber(rowValue(raw, columnAliases.otherDeductions));
+    const uploadedFirstPart = toNumber(rowValue(raw, columnAliases.firstPart));
+    const uploadedSecondPart = toNumber(rowValue(raw, columnAliases.secondPart));
+    const paymentModeText = String(rowValue(raw, columnAliases.paymentMode)).trim();
+    const paymentMode = paymentModeText
+      ? normalizePayrollPaymentMode(paymentModeText)
+      : uploadedFirstPart > 0 && uploadedSecondPart > 0
+        ? "two_parts"
+        : "one_part";
+    const variableAdditions = expenses + incentive + overtime + bonus + otherAdditions;
+    const variableDeductions =
+      crm + fingerPrint + unpaidVacations + medicalInsurance + loans + otherDeductions;
+    const totalAdditions = money(
+      expenses + incentive + overtime + bonus + extraCostOfLiving + fuelAllowance + otherAdditions,
+    );
+    const totalDeductions = money(
+      socialInsurance +
+        employmentIncomeTax +
+        crm +
+        fingerPrint +
+        unpaidVacations +
+        medicalInsurance +
+        loans +
+        otherDeductions,
+    );
+    const grossSalary = calculateGrossSalary({
+      employmentIncomeTax,
+      extraCostOfLiving,
+      fuelAllowance,
+      grossSalary: uploadedGrossSalary,
+      netSalary,
+      socialInsurance,
+    });
+    const parts = calculatePayrollParts({
+      additions: variableAdditions,
+      deductions: variableDeductions,
+      extraCostOfLiving,
+      fuelAllowance,
+      netSalary,
+      paymentMode,
+      previousExpenses: 0,
+    });
 
     if (!hrId) {
       validationErrors.push({
@@ -275,12 +360,27 @@ export async function validateSalaryWorkbook(file: File): Promise<SalaryValidati
       });
     }
 
-    if (grossSalary <= 0) {
+    if (uploadedGrossSalary <= 0 && grossSalary <= 0) {
       validationWarnings.push({
         code: "non_positive_gross",
         column: "Gross Salary",
         hrId,
         message: "Gross salary is zero or missing.",
+        row: rowNumber,
+      });
+    }
+
+    if (
+      hasExplicitGrossColumn &&
+      uploadedGrossSalary > 0 &&
+      grossSalary > 0 &&
+      differs(uploadedGrossSalary, grossSalary)
+    ) {
+      validationWarnings.push({
+        code: "gross_salary_formula_mismatch",
+        column: "Gross Salary",
+        hrId,
+        message: `Gross salary was normalized to ${moneyText(grossSalary)} based on net salary minus cost of living/fuel plus social insurance and income tax.`,
         row: rowNumber,
       });
     }
@@ -295,37 +395,86 @@ export async function validateSalaryWorkbook(file: File): Promise<SalaryValidati
       });
     }
 
+    if (
+      hasExplicitTotalAdditionsColumn &&
+      uploadedTotalAdditions > 0 &&
+      differs(uploadedTotalAdditions, totalAdditions)
+    ) {
+      validationWarnings.push({
+        code: "total_additions_formula_mismatch",
+        column: "Total Additions",
+        hrId,
+        message: `Total additions were normalized to ${moneyText(totalAdditions)} from expenses, incentive, overtime, bonus, cost of living, fuel, and other additions.`,
+        row: rowNumber,
+      });
+    }
+
+    if (
+      hasExplicitTotalDeductionsColumn &&
+      uploadedTotalDeductions > 0 &&
+      differs(uploadedTotalDeductions, totalDeductions)
+    ) {
+      validationWarnings.push({
+        code: "total_deductions_formula_mismatch",
+        column: "Total Deductions",
+        hrId,
+        message: `Total deductions were normalized to ${moneyText(totalDeductions)} from statutory and internal deductions.`,
+        row: rowNumber,
+      });
+    }
+
+    if (hasFirstPartColumn && uploadedFirstPart > 0 && differs(uploadedFirstPart, parts.firstPart)) {
+      validationWarnings.push({
+        code: "first_part_formula_mismatch",
+        column: "First Part",
+        hrId,
+        message: `First part was normalized to ${moneyText(parts.firstPart)} because it must equal the fixed basic salary.`,
+        row: rowNumber,
+      });
+    }
+
+    if (hasSecondPartColumn && uploadedSecondPart > 0 && differs(uploadedSecondPart, parts.secondPart)) {
+      validationWarnings.push({
+        code: "second_part_formula_mismatch",
+        column: "Second Part",
+        hrId,
+        message: `Second part was normalized to ${moneyText(parts.secondPart)} as the variable salary part.`,
+        row: rowNumber,
+      });
+    }
+
     return {
       area: String(rowValue(raw, columnAliases.area)).trim() || "Unassigned",
-      bonus: toNumber(rowValue(raw, columnAliases.bonus)),
-      crm: toNumber(rowValue(raw, columnAliases.crm)),
+      bonus,
+      crm,
       hrId,
-      employmentIncomeTax: toNumber(rowValue(raw, columnAliases.employmentIncomeTax)),
-      expenses: toNumber(rowValue(raw, columnAliases.expenses)),
-      extraCostOfLiving: toNumber(rowValue(raw, columnAliases.extraCostOfLiving)),
-      fingerPrint: toNumber(rowValue(raw, columnAliases.fingerPrint)),
-      firstPart: toNumber(rowValue(raw, columnAliases.firstPart)),
-      fuelAllowance: toNumber(rowValue(raw, columnAliases.fuelAllowance)),
+      employmentIncomeTax,
+      expenses,
+      extraCostOfLiving,
+      fingerPrint,
+      firstPart: parts.firstPart,
+      fuelAllowance,
       fullName,
       grossSalary,
       hireDate: toDateOnly(rowValue(raw, columnAliases.hireDate)),
-      incentive: toNumber(rowValue(raw, columnAliases.incentive)),
+      incentive,
       jobTitle: String(rowValue(raw, columnAliases.jobTitle)).trim() || "Unassigned",
       line: String(rowValue(raw, columnAliases.line)).trim() || "Unassigned",
-      loans: toNumber(rowValue(raw, columnAliases.loans)),
-      medicalInsurance: toNumber(rowValue(raw, columnAliases.medicalInsurance)),
+      loans,
+      medicalInsurance,
       nameAr: String(rowValue(raw, columnAliases.nameAr)).trim() || null,
       netSalary,
-      otherAdditions: toNumber(rowValue(raw, columnAliases.otherAdditions)),
-      otherDeductions: toNumber(rowValue(raw, columnAliases.otherDeductions)),
-      overtime: toNumber(rowValue(raw, columnAliases.overtime)),
+      otherAdditions,
+      otherDeductions,
+      overtime,
       payrollComment: String(rowValue(raw, columnAliases.payrollComment)).trim() || null,
+      paymentMode,
       row: rowNumber,
-      secondPart: toNumber(rowValue(raw, columnAliases.secondPart)),
-      socialInsurance: toNumber(rowValue(raw, columnAliases.socialInsurance)),
+      secondPart: parts.secondPart,
+      socialInsurance,
       totalAdditions,
       totalDeductions,
-      unpaidVacations: toNumber(rowValue(raw, columnAliases.unpaidVacations)),
+      unpaidVacations,
     };
   });
 

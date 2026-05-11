@@ -9,6 +9,7 @@ import {
   emailNotificationTypes,
   getEmailNotificationOutboxStats,
   getEmailNotificationPolicies,
+  getEmailRoutingOptions,
   type EmailNotificationType,
 } from "@/lib/notifications/email";
 
@@ -20,12 +21,14 @@ export default async function AdminEmailNotificationsPage() {
     redirect("/employee-portals");
   }
 
-  const [policies, outboxStats] = await Promise.all([
+  const [policies, outboxStats, routingOptions] = await Promise.all([
     getEmailNotificationPolicies(),
     getEmailNotificationOutboxStats(),
+    getEmailRoutingOptions(),
   ]);
+  const policyByType = new Map(policies.map((policy) => [policy.type, policy]));
   const previews = Object.fromEntries(
-    emailNotificationTypes.map((type) => [type, buildEmailNotificationPreview(type)]),
+    emailNotificationTypes.map((type) => [type, buildEmailNotificationPreview(type, policyByType.get(type))]),
   ) as Record<EmailNotificationType, ReturnType<typeof buildEmailNotificationPreview>>;
 
   return (
@@ -34,6 +37,7 @@ export default async function AdminEmailNotificationsPage() {
         initialPolicies={policies}
         outboxStats={outboxStats}
         previews={previews}
+        routingOptions={routingOptions}
       />
     </AppShell>
   );

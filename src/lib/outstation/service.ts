@@ -1,7 +1,5 @@
 import {
-  normalizeHrId,
   normalizeHrIdForAccess,
-  normalizeLineName,
   normalizeRole,
   resolveEmployeeIdentityId,
   type AccessContext,
@@ -891,7 +889,7 @@ export async function calculateOutstationExpense(
     hasTicketAttachments: input.hasTicketAttachments,
     offlineCaptured: input.offlineCaptured,
   });
-  const { identity, policy, result } = validated;
+  const { policy, result } = validated;
 
   if (!input.tripStartDate || !input.tripEndDate) {
     throw new Error("Trip start and end dates are required.");
