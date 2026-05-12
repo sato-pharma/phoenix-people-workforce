@@ -514,7 +514,6 @@ export async function validateSalaryWorkbook(
 
     if (
       hasExplicitTotalAdditionsColumn &&
-      uploadedTotalAdditions > 0 &&
       differs(uploadedTotalAdditions, calculatedTotalAdditions)
     ) {
       validationWarnings.push({
@@ -528,7 +527,6 @@ export async function validateSalaryWorkbook(
 
     if (
       hasExplicitTotalDeductionsColumn &&
-      uploadedTotalDeductions > 0 &&
       differs(uploadedTotalDeductions, calculatedTotalDeductions)
     ) {
       validationWarnings.push({
@@ -540,7 +538,7 @@ export async function validateSalaryWorkbook(
       });
     }
 
-    if (hasFirstPartColumn && uploadedFirstPart > 0 && differs(uploadedFirstPart, parts.firstPart)) {
+    if (hasFirstPartColumn && differs(uploadedFirstPart, parts.firstPart)) {
       validationWarnings.push({
         code: "first_part_formula_mismatch",
         column: "First Part",
@@ -550,7 +548,7 @@ export async function validateSalaryWorkbook(
       });
     }
 
-    if (hasSecondPartColumn && uploadedSecondPart > 0 && differs(uploadedSecondPart, parts.secondPart)) {
+    if (hasSecondPartColumn && differs(uploadedSecondPart, parts.secondPart)) {
       validationWarnings.push({
         code: "second_part_formula_mismatch",
         column: "Second Part",
