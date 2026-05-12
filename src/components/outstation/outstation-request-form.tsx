@@ -232,7 +232,7 @@ export function OutstationRequestForm({
               Validate destination against registered residence
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-600">
-              Browser permission is required. If the captured distance from your saved residence is less than 60 KM, the request is not eligible.
+              Browser permission is required. Distances below 58 KM are not eligible. Distances from 58 KM to under 60 KM are accepted with warning.
             </p>
           </div>
           <Button
@@ -301,7 +301,7 @@ export function OutstationRequestForm({
             {isCalculating ? <LoadingSpinner className="text-white" /> : transportationType === "car" ? <Car className="h-4 w-4" /> : <TrainFront className="h-4 w-4" />}
             {isCalculating ? "Calculating..." : "Calculate Eligibility & Payable"}
           </Button>
-          <Button className="rounded-xl bg-orange-500 text-white hover:bg-orange-600" disabled={isSubmitting || calculation?.eligibilityStatus !== "eligible"} onClick={submitRequest} type="button">
+          <Button className="rounded-xl bg-orange-500 text-white hover:bg-orange-600" disabled={isSubmitting || calculation?.eligibilityStatus === "not_eligible"} onClick={submitRequest} type="button">
             {isSubmitting ? <LoadingSpinner className="text-white" /> : null}
             {isSubmitting ? "Submitting..." : "Submit Request"}
           </Button>

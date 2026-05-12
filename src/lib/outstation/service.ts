@@ -5,6 +5,7 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { listBrickReferenceRows, normalizeBrickText } from "@/lib/bricks/service";
+import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
   googleDirectionsRoute,
@@ -119,6 +120,19 @@ function isMissingSupabaseRelation(error: { code?: string; message?: string } | 
     error.code === "PGRST205" ||
     message.includes("Could not find the table") ||
     message.includes("schema cache")
+  );
+}
+
+function isMissingTolerancePolicyColumn(
+  error: { code?: string; message?: string } | null,
+) {
+  if (!error) return false;
+  const message = error.message ?? "";
+  return (
+    error.code === "42703" ||
+    (message.includes("column") &&
+      message.includes("does not exist") &&
+      message.includes("tolerance_minimum_distance_km"))
   );
 }
 
@@ -354,10 +368,27 @@ export async function getResidenceLocationForEmployee(employeeHrId: string) {
 
 export async function getOutstationPolicies() {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("outstation_policy_rules")
-    .select("*")
-    .order("role_name", { ascending: true });
+  const queryColumns =
+    "active,created_at,fuel_rate_per_km,gps_accuracy_threshold_meters,id,max_offline_sync_delay_hours,minimum_distance_km,overnight_allowance,requires_ticket_attachment,return_day_allowance,role_name,same_day_allowance,updated_at";
+
+  const executePolicyQuery = async (includeTolerance: boolean) =>
+    includeTolerance
+      ? supabase
+          .from("outstation_policy_rules")
+          .select("*")
+          .order("role_name", { ascending: true })
+      : supabase
+          .from("outstation_policy_rules")
+          .select(queryColumns)
+          .order("role_name", { ascending: true });
+
+  let includeTolerance = true;
+  let { data, error } = await executePolicyQuery(true);
+
+  if (error && isMissingTolerancePolicyColumn(error)) {
+    ({ data, error } = await executePolicyQuery(false));
+    includeTolerance = false;
+  }
 
   if (error) {
     throw new Error(error.message);
@@ -371,6 +402,9 @@ export async function getOutstationPolicies() {
     id: Number(row.id),
     maxOfflineSyncDelayHours: numberValue(row.max_offline_sync_delay_hours || 8),
     minimumDistanceKm: numberValue(row.minimum_distance_km),
+    toleranceMinimumDistanceKm: includeTolerance
+      ? nullableNumber(row.tolerance_minimum_distance_km)
+      : null,
     overnightAllowance: numberValue(row.overnight_allowance),
     requiresTicketAttachment: Boolean(row.requires_ticket_attachment),
     returnDayAllowance: numberValue(row.return_day_allowance),
@@ -760,18 +794,38 @@ async function validateCapturedLocation(
     }
   }
 
-  if (distanceKm == null) {
-    eligibilityStatus = "needs_review";
-    eligibilityReason =
-      "Distance could not be validated against Google Maps. Please retry later or contact HR.";
-    if (routeError) {
-      eligibilityReason = `Distance could not be validated against Google Maps. ${routeError}`;
-    }
-  } else if (distanceKm < policy.minimumDistanceKm) {
+  const distanceEligibility = classifyOutstationExpenseEligibility({
+    actualDistanceKm: distanceKm,
+    policy: {
+      officialMinimumDistanceKm: policy.minimumDistanceKm,
+      toleranceMinimumDistanceKm: policy.toleranceMinimumDistanceKm,
+    },
+  });
+  const distanceReason =
+    distanceEligibility.classification === "missing_distance" && routeError
+      ? `Distance could not be validated against Google Maps. ${routeError}`
+      : distanceEligibility.reason;
+
+  if (distanceEligibility.classification === "not_eligible") {
     fraudFlags.push("distance_below_policy");
     eligibilityStatus = "not_eligible";
+    eligibilityReason = distanceReason;
+  } else if (distanceEligibility.classification === "tolerance_eligible") {
     eligibilityReason =
-      "This trip is not eligible for outstation expense because the captured distance from your registered residence is less than 60 KM.";
+      eligibilityStatus === "eligible"
+        ? distanceReason
+        : `${eligibilityReason} ${distanceReason}`;
+    eligibilityStatus = "needs_review";
+  } else if (
+    distanceEligibility.classification === "missing_distance" ||
+    distanceEligibility.classification === "invalid_distance" ||
+    distanceEligibility.classification === "manual_exception"
+  ) {
+    eligibilityReason =
+      eligibilityStatus === "eligible"
+        ? distanceReason
+        : `${eligibilityReason} ${distanceReason}`;
+    eligibilityStatus = "needs_review";
   }
 
   const reverse = await googleReverseGeocode({
