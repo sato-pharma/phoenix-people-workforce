@@ -16,6 +16,8 @@ Supabase notes: tables created through SQL in `public` must have Row Level Secur
 - Confirm `PHOENIX_CONFIRM_STAGING_RLS_RUN=YES_STAGING_ONLY` before any custom runner is used.
 - Confirm the current app build passes locally.
 - Confirm staging can be restored from a full database backup if the leave-domain backup is not enough.
+- Confirm either `psql` or `dbmate` is available locally.
+- If using the dbmate fallback, confirm `node` can run from the repo because the rollout runner uses the existing `postgres` package for verification queries when `psql` is unavailable.
 
 ## Rollout Checklist
 
@@ -40,7 +42,24 @@ Supabase notes: tables created through SQL in `public` must have Row Level Secur
 
 ## Apply Commands
 
-Use a staging-only database connection. The repo does not currently expose a dedicated `db:migrate` staging script for this migration, and the Supabase CLI may not be installed. Use one of these staging-only approaches:
+Use a staging-only database connection. The preferred path is the automated staging-only runner:
+
+```powershell
+$env:PHOENIX_CONFIRM_STAGING_RLS_RUN="YES_STAGING_ONLY"
+$env:PHOENIX_STAGING_ENVIRONMENT="staging"
+$env:PHOENIX_STAGING_DATABASE_URL="<staging database url only>"
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-leave-staging-rollout.ps1
+```
+
+The runner keeps `psql` as the first SQL executor. If `psql` is unavailable, it automatically falls back to `dbmate` for:
+
+- `supabase/20260512_backup_leave_domain_before_rebuild.sql`
+- `supabase/20260512_leave_management_engine.sql`
+
+When dbmate is used, the runner creates temporary timestamped dbmate migration wrappers with `transaction:false` so the SQL files keep their own transaction boundaries. Verification queries still run automatically through Node using the repo's existing `postgres` dependency.
+
+Manual `psql` fallback, if you need to run the SQL files without the automated script:
 
 ```powershell
 $env:PHOENIX_CONFIRM_STAGING_RLS_RUN="YES_STAGING_ONLY"
@@ -49,7 +68,9 @@ psql "$env:PHOENIX_STAGING_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/20260512
 psql "$env:PHOENIX_STAGING_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/20260512_leave_management_engine.sql
 ```
 
-If `psql` is not available, run the two SQL files in order from the Supabase Dashboard SQL editor for the staging project only.
+Manual dbmate fallback, if you cannot use `psql` and cannot use the automated script, should still be staging-only. Prefer the automated runner because it creates the dbmate wrappers and performs the verification gates. If using dbmate manually, create dbmate migration files from the two SQL files in order, include `-- migrate:up transaction:false`, run the backup migration first, verify the backup manifest, then run the leave engine migration.
+
+The Supabase Dashboard SQL editor remains an emergency staging-only option when neither `psql` nor dbmate can be used locally. Run the backup SQL first, verify backups, then run the migration SQL.
 
 ## SQL Verification Snippets
 

@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
 
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { isPayrollConflictError } from "@/lib/payroll/errors";
+import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { validateSalaryWorkbook } from "@/lib/payroll/salary-import";
 import { getPayrollSalarySourcesByHrId } from "@/lib/payroll/salary-source";
-import { createSalaryBatch, isPayrollSchemaMissing } from "@/lib/payroll/service";
+import {
+  createSalaryBatch,
+  findSalaryBatchForPeriod,
+  isPayrollSchemaMissing,
+  payrollPeriodConflictForBatch,
+} from "@/lib/payroll/service";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
@@ -11,14 +18,27 @@ import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploa
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function payrollPeriodConflictResponse(conflict: ReturnType<typeof payrollPeriodConflictForBatch>) {
+  return NextResponse.json(
+    {
+      conflict,
+      error: conflict.replaceable ? "payroll_period_conflict" : "payroll_period_closed",
+      message: conflict.message,
+    },
+    { status: 409 },
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "payroll", "import");
     const formData = await request.formData();
     const file = formData.get("file");
-    const month = Number(formData.get("month"));
-    const year = Number(formData.get("year"));
+    const rawMonth = formData.get("month");
+    const rawYear = formData.get("year");
+    const month = Number(rawMonth);
+    const year = Number(rawYear);
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "missing_file", message: "Salary file is required." }, { status: 400 });
@@ -39,11 +59,28 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!month || !year) {
+    if (!rawMonth || !rawYear) {
       return NextResponse.json(
         { error: "missing_payroll_period", message: "Payroll month and year are required." },
         { status: 400 },
       );
+    }
+
+    try {
+      assertValidPayrollPeriod(month, year);
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error: "invalid_payroll_period",
+          message: error instanceof Error ? error.message : "Payroll period is invalid.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const existingBatch = await findSalaryBatchForPeriod(month, year);
+    if (existingBatch) {
+      return payrollPeriodConflictResponse(payrollPeriodConflictForBatch(existingBatch));
     }
 
     const salarySources = await getPayrollSalarySourcesByHrId();
@@ -61,6 +98,17 @@ export async function POST(request: Request) {
         {
           error: "salary_validation_failed",
           message: "Fix blocking validation errors before confirming the upload.",
+          validation,
+        },
+        { status: 400 },
+      );
+    }
+
+    if (validation.rowsToImport.length === 0) {
+      return NextResponse.json(
+        {
+          error: "empty_salary_upload",
+          message: "Salary upload file must include at least one salary row.",
           validation,
         },
         { status: 400 },
@@ -96,6 +144,9 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Payroll upload failed.";
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
+    }
+    if (isPayrollConflictError(error)) {
+      return NextResponse.json({ error: "payroll_period_conflict", message }, { status: 409 });
     }
     const schemaMissing = isPayrollSchemaMissing(error);
 

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
+import { isPayrollConflictError } from "@/lib/payroll/errors";
+import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import {
   importApprovedExpensesToPayroll,
   isPayrollExpensesSchemaMissing,
@@ -21,9 +23,21 @@ export async function POST(request: Request) {
     const year = Number(body.year);
     const records = Array.isArray(body.records) ? body.records : [];
 
-    if (!month || !year) {
+    if (body.month === undefined || body.month === null || body.month === "" || body.year === undefined || body.year === null || body.year === "") {
       return NextResponse.json(
         { error: "missing_period", message: "Payroll month and year are required." },
+        { status: 400 },
+      );
+    }
+
+    try {
+      assertValidPayrollPeriod(month, year);
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error: "invalid_period",
+          message: error instanceof Error ? error.message : "Payroll period is invalid.",
+        },
         { status: 400 },
       );
     }
@@ -40,6 +54,9 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Unable to import expenses to payroll.";
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
+    }
+    if (isPayrollConflictError(error)) {
+      return NextResponse.json({ error: "payroll_period_closed", message }, { status: 409 });
     }
     return NextResponse.json(
       {

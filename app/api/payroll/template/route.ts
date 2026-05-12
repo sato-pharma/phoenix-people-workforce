@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { existsSync } from "node:fs";
+import { NextResponse } from "next/server";
 import path from "node:path";
 
 import { assertPermission, getPayrollScope, type AccessContext } from "@/lib/auth/permissions";
@@ -7,6 +8,7 @@ import { parseDateOnly } from "@/lib/date-only";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getApprovedExpenseTotalsForPayroll } from "@/lib/payroll/expenses";
+import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { calculateNetSalary, calculatePayrollParts, payrollPaymentModeLabel } from "@/lib/payroll/policy";
 import { getLatestSalaryRecordsBefore } from "@/lib/payroll/service";
 
@@ -772,6 +774,18 @@ export async function GET(request: Request) {
 
   const month = numberParam(url.searchParams.get("month"), now.getMonth() + 1);
   const year = numberParam(url.searchParams.get("year"), now.getFullYear());
+  try {
+    assertValidPayrollPeriod(month, year);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: "invalid_payroll_period",
+        message: error instanceof Error ? error.message : "Payroll period is invalid.",
+      },
+      { status: 400 },
+    );
+  }
+
   if (ready && getPayrollScope(access) !== "COMPANY") {
     return new Response("Forbidden", { status: 403 });
   }

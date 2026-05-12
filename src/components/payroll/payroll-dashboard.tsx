@@ -40,6 +40,7 @@ import type {
   ExpenseTripRecord,
   PayrollExpenseReport,
   PayrollDashboardData,
+  PayrollPeriodConflict,
   SalaryBatch,
   SalaryRecord,
 } from "@/lib/payroll/types";
@@ -68,6 +69,7 @@ type SalaryValidationResult = {
     month: number;
     year: number;
   };
+  periodConflict?: PayrollPeriodConflict;
   rowsToImport: Array<{
     area: string;
     hrId: string;
@@ -89,6 +91,7 @@ type PayrollSheetTab = "salary" | "expenses";
 type GroupMode = "line" | "area" | "jobTitle";
 type ImpactLevel = "Low" | "Medium" | "High" | "Critical";
 type InsightSentiment = "positive" | "neutral" | "risk";
+type SalaryReplacementTarget = Pick<SalaryBatch, "id" | "month" | "year">;
 
 type PayrollTotals = {
   additions: number;
@@ -199,6 +202,8 @@ const otherDeductionFields: Array<{ key: keyof SalaryRecord; label: string }> = 
 const interactiveCardClass = "phoenix-card-motion";
 const panelClassName =
   "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
+const replaceableBatchStatuses = new Set(["uploaded", "under_review", "rejected"]);
+const publishedPayslipStatuses = new Set(["approved", "locked"]);
 
 function PayrollPageShell({ children }: { children: ReactNode }) {
   return (
@@ -237,6 +242,48 @@ function StatusBanner({
       <div>
         <p className="font-semibold">{title}</p>
         <p className="mt-1 leading-6">{message}</p>
+      </div>
+    </AdminCallout>
+  );
+}
+
+function SalaryPeriodConflictWarning({
+  conflict,
+  fileName,
+  onCancel,
+  onReplace,
+  replacing,
+}: {
+  conflict: PayrollPeriodConflict;
+  fileName?: string;
+  onCancel: () => void;
+  onReplace: () => void;
+  replacing: boolean;
+}) {
+  return (
+    <AdminCallout tone={conflict.replaceable ? "warning" : "danger"}>
+      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold">Payroll period already exists</p>
+        <p className="mt-1 leading-6">
+          {conflict.message}
+          {fileName ? ` Selected file: ${fileName}.` : ""}
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {conflict.replaceable ? (
+            <Button disabled={replacing} onClick={onReplace}>
+              {replacing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              Replace existing upload
+            </Button>
+          ) : null}
+          <Button onClick={onCancel} variant="secondary">
+            Cancel
+          </Button>
+        </div>
       </div>
     </AdminCallout>
   );
@@ -3587,15 +3634,22 @@ function PayrollHistory({
                         Download
                       </Button>
                     </Link>
-                    <Link href={`/api/payroll/${batch.id}/payslips`} target="_blank">
-                      <Button className="px-3 py-1.5 text-xs" variant="secondary">
+                    {publishedPayslipStatuses.has(batch.status) ? (
+                      <Link href={`/api/payroll/${batch.id}/payslips`} target="_blank">
+                        <Button className="px-3 py-1.5 text-xs" variant="secondary">
+                          <FileCheck2 className="mr-2 h-3.5 w-3.5" />
+                          Payslips
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Button className="px-3 py-1.5 text-xs" disabled variant="secondary">
                         <FileCheck2 className="mr-2 h-3.5 w-3.5" />
                         Payslips
                       </Button>
-                    </Link>
+                    )}
                     <Button
                       className="px-3 py-1.5 text-xs"
-                      disabled={replacingBatchId === batch.id}
+                      disabled={!replaceableBatchStatuses.has(batch.status) || replacingBatchId === batch.id}
                       onClick={() => onReplace(batch)}
                       variant="secondary"
                     >
@@ -3608,7 +3662,7 @@ function PayrollHistory({
                     </Button>
                     <Button
                       className="px-3 py-1.5 text-xs"
-                      disabled={deletingBatchId === batch.id}
+                      disabled={publishedPayslipStatuses.has(batch.status) || deletingBatchId === batch.id}
                       onClick={() => onDelete(batch.id)}
                       variant="secondary"
                     >
@@ -4299,6 +4353,8 @@ export function PayrollDashboard({
   const [payrollYear, setPayrollYear] = useState(String(currentYear));
   const [salaryValidation, setSalaryValidation] =
     useState<SalaryValidationResult | null>(null);
+  const [salaryPeriodConflict, setSalaryPeriodConflict] =
+    useState<PayrollPeriodConflict | null>(null);
   const [salaryUploadError, setSalaryUploadError] = useState<string | null>(null);
   const [selectedSalaryFile, setSelectedSalaryFile] = useState<File | null>(null);
   const [confirmingSalary, setConfirmingSalary] = useState(false);
@@ -4328,7 +4384,9 @@ export function PayrollDashboard({
       salaryValidation &&
       salaryValidation.failedRows === 0 &&
       salaryValidation.missingRequiredColumns.length === 0 &&
-      salaryValidation.duplicateHrIds.length === 0,
+      salaryValidation.duplicateHrIds.length === 0 &&
+      salaryValidation.rowsToImport.length > 0 &&
+      !salaryPeriodConflict,
   );
 
   async function loadSavedExpenseReport(reportId?: string) {
@@ -4382,6 +4440,7 @@ export function PayrollDashboard({
 
     setSelectedSalaryFile(file);
     setSalaryValidation(null);
+    setSalaryPeriodConflict(null);
     setSalaryUploadError(null);
     setValidatingSalary(true);
 
@@ -4398,6 +4457,9 @@ export function PayrollDashboard({
       const payload = await response.json();
 
       if (!response.ok) {
+        if (payload.conflict) {
+          setSalaryPeriodConflict(payload.conflict as PayrollPeriodConflict);
+        }
         setSalaryUploadError(
           payload.error === "missing_payroll_period"
             ? "Choose payroll month and year before uploading."
@@ -4406,7 +4468,9 @@ export function PayrollDashboard({
         return;
       }
 
-      setSalaryValidation(payload as SalaryValidationResult);
+      const nextValidation = payload as SalaryValidationResult;
+      setSalaryValidation(nextValidation);
+      setSalaryPeriodConflict(nextValidation.periodConflict ?? null);
     } catch {
       setSalaryUploadError("Unable to validate salary file.");
     } finally {
@@ -4422,7 +4486,11 @@ export function PayrollDashboard({
     }
 
     if (!canConfirmSalaryUpload) {
-      setSalaryUploadError("Fix blocking validation errors before confirming the upload.");
+      setSalaryUploadError(
+        salaryPeriodConflict
+          ? "Choose Replace existing upload or Cancel before continuing."
+          : "Fix blocking validation errors before confirming the upload.",
+      );
       return;
     }
 
@@ -4443,6 +4511,9 @@ export function PayrollDashboard({
       const payload = await response.json();
 
       if (!response.ok) {
+        if (payload.conflict) {
+          setSalaryPeriodConflict(payload.conflict as PayrollPeriodConflict);
+        }
         setSalaryUploadError(
           payload.error === "payroll_schema_not_ready"
             ? payload.message ?? "Payroll database tables are not ready."
@@ -4460,6 +4531,7 @@ export function PayrollDashboard({
         text: `${payload.importedRecords ?? 0} salary records imported with ${payload.governanceWarnings ?? 0} governance warnings.`,
         type: "success",
       });
+      setSalaryPeriodConflict(null);
       window.location.href = `/payroll?batchId=${payload.batch.id}`;
     } catch {
       setSalaryUploadError("Unable to confirm payroll upload.");
@@ -4506,19 +4578,20 @@ export function PayrollDashboard({
     replaceFileInputRef.current?.click();
   }
 
-  async function handleReplaceFile(file: File | null) {
-    if (!file || !replaceTargetBatch) return;
+  async function submitSalaryReplacement(
+    target: SalaryReplacementTarget,
+    file: File,
+    { confirmFirst }: { confirmFirst: boolean },
+  ) {
+    if (confirmFirst) {
+      const confirmed = window.confirm(
+        `Replace ${payrollPeriodLabel(target.month, target.year)} with this file? The old uploaded sheet will be removed after the new file is imported.`,
+      );
 
-    const confirmed = window.confirm(
-      `Replace ${payrollPeriodLabel(replaceTargetBatch.month, replaceTargetBatch.year)} with this file? The old uploaded sheet will be removed after the new file is imported.`,
-    );
-
-    if (!confirmed) {
-      setReplaceTargetBatch(null);
-      return;
+      if (!confirmed) return false;
     }
 
-    setReplacingBatchId(replaceTargetBatch.id);
+    setReplacingBatchId(target.id);
     setSalaryUploadError(null);
     setWorkflowMessage(null);
 
@@ -4526,7 +4599,7 @@ export function PayrollDashboard({
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetch(`/api/payroll/${replaceTargetBatch.id}/replace`, {
+      const response = await fetch(`/api/payroll/${target.id}/replace`, {
         body: formData,
         method: "POST",
       });
@@ -4546,14 +4619,53 @@ export function PayrollDashboard({
         text: `${payload.importedRecords ?? 0} salary records imported as replacement.`,
         type: "success",
       });
+      setSalaryPeriodConflict(null);
       window.location.href = `/payroll?batchId=${payload.batch.id}`;
+      return true;
     } catch {
       setSalaryUploadError("Unable to replace payroll upload.");
+      return false;
     } finally {
       setReplacingBatchId(null);
+    }
+  }
+
+  async function handleReplaceFile(file: File | null) {
+    if (!file || !replaceTargetBatch) return;
+
+    try {
+      await submitSalaryReplacement(replaceTargetBatch, file, { confirmFirst: true });
+    } finally {
       setReplaceTargetBatch(null);
       if (replaceFileInputRef.current) replaceFileInputRef.current.value = "";
     }
+  }
+
+  async function handleReplaceSalaryPeriodConflict() {
+    if (!selectedSalaryFile || !salaryPeriodConflict) return;
+
+    if (!salaryPeriodConflict.replaceable) {
+      setSalaryUploadError("This payroll period is approved or locked and cannot be replaced.");
+      return;
+    }
+
+    await submitSalaryReplacement(
+      {
+        id: salaryPeriodConflict.batchId,
+        month: salaryPeriodConflict.month,
+        year: salaryPeriodConflict.year,
+      },
+      selectedSalaryFile,
+      { confirmFirst: false },
+    );
+  }
+
+  function handleCancelSalaryPeriodConflict() {
+    setSalaryPeriodConflict(null);
+    setSalaryValidation(null);
+    setSelectedSalaryFile(null);
+    setSalaryUploadError(null);
+    if (salaryFileInputRef.current) salaryFileInputRef.current.value = "";
   }
 
   async function handleDeleteExpenseReport(reportId: string) {
@@ -4810,6 +4922,7 @@ export function PayrollDashboard({
           setPayrollMonth(event.target.value);
           setSelectedSalaryFile(null);
           setSalaryValidation(null);
+          setSalaryPeriodConflict(null);
           setSalaryUploadError(null);
         }}
         value={payrollMonth}
@@ -4827,6 +4940,7 @@ export function PayrollDashboard({
           setPayrollYear(event.target.value);
           setSelectedSalaryFile(null);
           setSalaryValidation(null);
+          setSalaryPeriodConflict(null);
           setSalaryUploadError(null);
         }}
         value={payrollYear}
@@ -5030,6 +5144,16 @@ export function PayrollDashboard({
           <StatusBanner message={salaryUploadError} title="Payroll upload error" tone="danger" />
         )}
 
+        {salaryPeriodConflict && (
+          <SalaryPeriodConflictWarning
+            conflict={salaryPeriodConflict}
+            fileName={selectedSalaryFile?.name}
+            onCancel={handleCancelSalaryPeriodConflict}
+            onReplace={() => void handleReplaceSalaryPeriodConflict()}
+            replacing={replacingBatchId === salaryPeriodConflict.batchId}
+          />
+        )}
+
         {salaryValidation && <ValidationSummary result={salaryValidation} />}
 
         {workflowMessage && (
@@ -5126,6 +5250,16 @@ export function PayrollDashboard({
 
       {salaryUploadError && (
         <StatusBanner message={salaryUploadError} title="Payroll upload error" tone="danger" />
+      )}
+
+      {salaryPeriodConflict && (
+        <SalaryPeriodConflictWarning
+          conflict={salaryPeriodConflict}
+          fileName={selectedSalaryFile?.name}
+          onCancel={handleCancelSalaryPeriodConflict}
+          onReplace={() => void handleReplaceSalaryPeriodConflict()}
+          replacing={replacingBatchId === salaryPeriodConflict.batchId}
+        />
       )}
 
       {salaryValidation && <ValidationSummary result={salaryValidation} />}

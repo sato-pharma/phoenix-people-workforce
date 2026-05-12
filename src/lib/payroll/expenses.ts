@@ -1,4 +1,5 @@
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { PayrollConflictError } from "@/lib/payroll/errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -660,7 +661,13 @@ export async function importApprovedExpensesToPayroll(input: {
     },
   );
 
-  if (importError) throw importError;
+  if (importError) {
+    const message = expenseErrorMessage(importError);
+    if (message.toLowerCase().includes("cannot import expenses")) {
+      throw new PayrollConflictError(message);
+    }
+    throw importError;
+  }
 
   const result = (importResult ?? null) as {
     imported_employees?: number;

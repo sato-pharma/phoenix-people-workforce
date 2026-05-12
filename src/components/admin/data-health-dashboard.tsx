@@ -18,6 +18,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { DataHealthStats, SalaryFlag, SalaryFlagsResult } from "@/lib/admin/service";
+import { formatCurrency } from "@/lib/sales/format";
 
 const PAGE_SIZE = 25;
 
@@ -184,7 +185,8 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
           </div>
         </div>
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard color="blue" icon={Users} title="Total Employees" value={stats.summary.totalEmployees} />
+          <SummaryCard color="blue" icon={Users} title="Total Employee Nodes" value={stats.summary.totalEmployees} />
+          <SummaryCard color="green" icon={Users} title="Active Employees" value={stats.summary.activeEmployees} />
           <SummaryCard color="green" icon={Heart} title="Healthy Records" value={stats.summary.healthyEmployees} />
           <SummaryCard
             color={stats.summary.issuesCount > 0 ? "rose" : "green"}
@@ -198,6 +200,18 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
             title="Health Rate"
             value={`${stats.summary.healthRate.toFixed(1)}%`}
           />
+        </div>
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-5">
+          <SummaryCard color={stats.summary.activeEmployeesMissingAuthAccess > 0 ? "rose" : "green"} icon={ShieldCheck} title="Active Missing Auth/Access" value={stats.summary.activeEmployeesMissingAuthAccess} />
+          <SummaryCard color="orange" icon={Database} title="Non-login Nodes" value={stats.summary.nonLoginAggregationNodes} />
+          <SummaryCard color="blue" icon={Database} title="Historical Records" value={stats.summary.historicalRecords} />
+          <SummaryCard color="orange" icon={Users} title="Vacancy Nodes" value={stats.summary.vacancyNodes} />
+          <SummaryCard color={stats.summary.unresolvedSalesExceptions > 0 ? "rose" : "green"} icon={Activity} title="Unresolved Sales" value={stats.summary.unresolvedSalesExceptions} />
+          <SummaryCard color="green" icon={Activity} title="Assigned Sales" value={`${stats.salesClassification.assigned_employee_sales.records} / ${formatCurrency(stats.salesClassification.assigned_employee_sales.salesValue)}`} />
+          <SummaryCard color="orange" icon={Activity} title="Non-Assignable Sales" value={`${stats.salesClassification.non_assignable_territory_sales.records} / ${formatCurrency(stats.salesClassification.non_assignable_territory_sales.salesValue)}`} />
+          <SummaryCard color="orange" icon={Activity} title="Vacant Territory Sales" value={`${stats.salesClassification.vacant_territory_sales.records} / ${formatCurrency(stats.salesClassification.vacant_territory_sales.salesValue)}`} />
+          <SummaryCard color="blue" icon={Activity} title="Line-Level Sales" value={`${stats.salesClassification.line_level_sales.records} / ${formatCurrency(stats.salesClassification.line_level_sales.salesValue)}`} />
+          <SummaryCard color="blue" icon={Activity} title="Others/Unassigned Sales" value={`${stats.salesClassification.others_unassigned_sales.records} / ${formatCurrency(stats.salesClassification.others_unassigned_sales.salesValue)}`} />
         </div>
       </div>
 
@@ -303,7 +317,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
           <table className="w-full border-collapse text-left">
             <thead>
               <tr className={tableHeadClass}>
-                {["HR_ID", "Employee Name", "Job Title", "Manager HR_ID", "Status"].map((h) => (
+                {["HR_ID", "Employee Name", "Node Type", "Auth", "Manager HR_ID", "Status"].map((h) => (
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400" key={h}>
                     {h}
                   </th>
@@ -314,8 +328,17 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
               {empVisible.map((issue, i) => (
                 <tr className={tableRowClass} key={i}>
                   <td className="px-6 py-4 font-mono text-sm font-bold text-slate-600">{issue.hr_id}</td>
-                  <td className="px-6 py-4 text-sm font-bold text-slate-900">{issue.full_name}</td>
-                  <td className="px-6 py-4 text-sm font-medium text-slate-500">{issue.job_title}</td>
+                  <td className="px-6 py-4 text-sm font-bold text-slate-900">
+                    <div>{issue.full_name}</div>
+                    <div className="mt-1 text-xs font-medium text-slate-400">{issue.job_title || issue.reason}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <StatusBadge status={issue.node_type} />
+                  </td>
+                  <td className="px-6 py-4 text-xs font-semibold text-slate-500">
+                    <div>Auth: {issue.has_auth_user ? "yes" : "no"}</div>
+                    <div>Access: {issue.has_access_profile ? "yes" : "no"}</div>
+                  </td>
                   <td className="px-6 py-4 font-mono text-sm text-slate-400">{issue.manager_hr_id ?? "-"}</td>
                   <td className="px-6 py-4">
                     <StatusBadge status={issue.health_status} />
@@ -324,7 +347,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
               ))}
               {empVisible.length === 0 && (
                 <tr>
-                    <td className="p-8 text-center text-sm font-medium text-slate-400" colSpan={5}>
+                    <td className="p-8 text-center text-sm font-medium text-slate-400" colSpan={6}>
                     No employee linkage issues detected.
                   </td>
                 </tr>
@@ -355,7 +378,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className={tableHeadClass}>
-                  {["Employee HR_ID", "Product", "Status"].map((h) => (
+                  {["Row", "Owner", "Line / Territory", "Product", "Sales", "Status"].map((h) => (
                     <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400" key={h}>
                       {h}
                     </th>
@@ -365,16 +388,28 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
               <tbody className={tableBodyClass}>
                 {salesVisible.map((issue, i) => (
                   <tr className={tableRowClass} key={i}>
-                    <td className="px-6 py-4 font-mono text-sm font-bold text-slate-600">{issue.employee_hr_id}</td>
+                    <td className="px-6 py-4 font-mono text-xs font-bold text-slate-500">
+                      {issue.batch_id ? `${issue.batch_id.slice(0, 8)}...` : "-"} / {issue.row_number ?? "-"}
+                    </td>
+                    <td className="px-6 py-4 text-xs font-semibold text-slate-500">
+                      <div>Employee: <span className="font-mono">{issue.employee_hr_id ?? "-"}</span></div>
+                      <div>Manager: <span className="font-mono">{issue.manager_hr_id ?? "-"}</span></div>
+                    </td>
+                    <td className="px-6 py-4 text-xs font-semibold text-slate-500">
+                      <div>{issue.line ?? "-"}</div>
+                      <div className="text-slate-400">{issue.territory ?? "-"}</div>
+                    </td>
                     <td className="px-6 py-4 text-sm font-medium text-slate-500">{issue.product}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-slate-700">{formatCurrency(issue.sales_value)}</td>
                     <td className="px-6 py-4">
                       <StatusBadge status={issue.linkage_health_status} />
+                      <p className="mt-1 max-w-xs text-xs font-medium text-slate-400">{issue.reason}</p>
                     </td>
                   </tr>
                 ))}
                 {salesVisible.length === 0 && (
                   <tr>
-                    <td className="p-8 text-center text-sm font-medium text-slate-400" colSpan={3}>
+                    <td className="p-8 text-center text-sm font-medium text-slate-400" colSpan={6}>
                       No sales linkage issues detected.
                     </td>
                   </tr>
@@ -464,14 +499,27 @@ function SummaryCard({ color, icon: Icon, title, value }: SummaryCardProps) {
         </div>
       </div>
       <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">{title}</p>
-      <p className="text-3xl font-black tracking-tight text-slate-900">{value}</p>
+      <p className="break-words text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">{value}</p>
     </Card>
   );
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const isOk = status === "ok";
-  const isWarning = ["missing_manager", "missing_line", "missing_area"].includes(status);
+  const isOk = ["ok", "active_employee", "assigned_employee_sales"].includes(status);
+  const isWarning = [
+    "missing_manager",
+    "missing_line",
+    "missing_area",
+    "historical_record",
+    "vacancy_node",
+    "system_placeholder",
+    "others_unassigned_node",
+    "non_login_aggregation_node",
+    "non_assignable_territory_sales",
+    "vacant_territory_sales",
+    "line_level_sales",
+    "others_unassigned_sales",
+  ].includes(status);
 
   return (
     <span

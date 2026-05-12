@@ -73,6 +73,17 @@ export async function POST(
       );
     }
 
+    if (validation.rowsToImport.length === 0) {
+      return NextResponse.json(
+        {
+          error: "empty_salary_replacement",
+          message: "Payroll replacement file must include at least one salary row.",
+          validation,
+        },
+        { status: 400 },
+      );
+    }
+
     const result = await replaceSalaryBatch(id, {
       fileName: file.name,
       records: validation.rowsToImport,

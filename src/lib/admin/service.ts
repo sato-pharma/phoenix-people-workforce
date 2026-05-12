@@ -1,4 +1,17 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import {
+  buildSalesOwnershipContext,
+  classifyEmployeeNode,
+  classifySalesOwnership,
+  salesOwnershipLabel,
+  shouldFlagMissingAccessForEmployeeNode,
+  type EmployeeNodeInput,
+  type EmployeeNodeType,
+  type SalesOwnershipClassification,
+  type SalesOwnershipRecord,
+  type SalesOwnershipVacancySignal,
+} from "@/lib/workforce-classification";
+import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 
 export type PhoenixAdminStats = {
   totalEmployees: number;
@@ -189,22 +202,45 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
 export type DataHealthStats = {
   summary: {
     totalEmployees: number;
+    activeEmployees: number;
     healthyEmployees: number;
     issuesCount: number;
     healthRate: number;
+    activeEmployeesMissingAuthAccess: number;
+    nonLoginAggregationNodes: number;
+    historicalRecords: number;
+    vacancyNodes: number;
+    employeeLinkageWarnings: number;
+    unresolvedSalesExceptions: number;
   };
+  salesClassification: Record<SalesOwnershipClassification, {
+    label: string;
+    records: number;
+    salesValue: number;
+  }>;
   employeeIssues: Array<{
     hr_id: string;
     full_name: string;
     job_title: string;
     manager_hr_id: string | null;
+    node_type: EmployeeNodeType;
+    has_auth_user: boolean;
+    has_access_profile: boolean;
     health_status: string;
+    reason: string;
   }>;
   salesIssues: Array<{
-    employee_hr_id: string;
+    batch_id: string | null;
+    row_number: number | null;
+    employee_hr_id: string | null;
     manager_hr_id: string | null;
+    line: string | null;
+    territory: string | null;
     product: string;
+    sales_value: number;
+    classification: SalesOwnershipClassification;
     linkage_health_status: string;
+    reason: string;
   }>;
   orphanAudit: Array<{
     source: string;
@@ -277,38 +313,312 @@ export async function resolveSalaryFlag(id: string, resolvedBy: string): Promise
   if (error) throw error;
 }
 
+const salesOwnershipClassifications: SalesOwnershipClassification[] = [
+  "assigned_employee_sales",
+  "vacant_territory_sales",
+  "non_assignable_territory_sales",
+  "line_level_sales",
+  "others_unassigned_sales",
+  "unresolved_sales_exception",
+];
+
+function normalizeHealthKey(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function rowText(row: Record<string, unknown>, key: string) {
+  const value = row[key];
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
+function rowNumber(row: Record<string, unknown>, key: string) {
+  const value = row[key];
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function relationName(value: unknown, key: string) {
+  const source = Array.isArray(value) ? value[0] : value;
+  if (!source || typeof source !== "object") return null;
+  return rowText(source as Record<string, unknown>, key);
+}
+
+async function fetchAllDataHealthRows<T = Record<string, unknown>>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  buildQuery: () => any,
+  pageSize = 1000,
+): Promise<T[]> {
+  const rows: T[] = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const pageRows = (Array.isArray(data) ? data : []) as T[];
+    rows.push(...pageRows);
+    if (pageRows.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  return rows;
+}
+
+function emptySalesClassificationSummary(): DataHealthStats["salesClassification"] {
+  return Object.fromEntries(
+    salesOwnershipClassifications.map((classification) => [
+      classification,
+      {
+        label: salesOwnershipLabel(classification),
+        records: 0,
+        salesValue: 0,
+      },
+    ]),
+  ) as DataHealthStats["salesClassification"];
+}
+
+function addLineLookup(map: Map<string, number>, name: string | null | undefined, id: number | null | undefined) {
+  if (!name || typeof id !== "number") return;
+  map.set(normalizeHealthKey(name), id);
+}
+
+function employeeToNodeInput(employee: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"][number]): EmployeeNodeInput {
+  return {
+    areaId: employee.areaId,
+    areaName: employee.areaName,
+    crmId: employee.crmId,
+    crmUsername: employee.crmUsername,
+    employmentStatus: employee.employmentStatus,
+    fullName: employee.fullName,
+    hrId: employee.hrId,
+    jobTitle: employee.jobTitle,
+    lineId: employee.lineId,
+    lineName: employee.lineName,
+    managerHrId: employee.managerHrId,
+    positionTitle: employee.positionTitle,
+    workEmail: employee.workEmail,
+  };
+}
+
+function vacancySignalFromRow(row: Record<string, unknown>): SalesOwnershipVacancySignal {
+  return {
+    areaId: rowNumber(row, "area_id"),
+    areaName: relationName(row.areas, "name"),
+    lineId: rowNumber(row, "line_id"),
+    lineName: relationName(row.lines, "name"),
+    managerHrId: rowText(row, "manager_hr_id"),
+    status: rowText(row, "status"),
+    vacancyCode: rowText(row, "vacancy_code"),
+    vacancyId: rowText(row, "id"),
+  };
+}
+
+function salesOwnershipRecordFromRow(row: Record<string, unknown>): SalesOwnershipRecord {
+  return {
+    employeeCrmId: rowText(row, "employee_crm_id"),
+    employeeHrId: rowText(row, "employee_hr_id"),
+    employeeLookupKey: rowText(row, "employee_lookup_key"),
+    employeeName: rowText(row, "employee_name"),
+    line: rowText(row, "line"),
+    managerHrId: rowText(row, "manager_hr_id"),
+    territory: rowText(row, "territory"),
+  };
+}
+
 export async function getDataHealthStats(): Promise<DataHealthStats> {
   const supabase = getSupabaseAdmin();
 
   const [
-    linkageHealth,
-    salesHealth,
+    directory,
+    appAuthUsers,
+    accessProfiles,
+    salesRows,
+    vacancyRows,
     orphanAudit,
-    totalCount
   ] = await Promise.all([
-    supabase.from("employee_linkage_health").select("*"),
-    supabase.from("sales_employee_linkage_health").select("*"),
+    getEmployeeDirectory(),
+    fetchAllDataHealthRows<Record<string, unknown>>(() =>
+      supabase.from("app_auth_users").select("hr_id,is_active,login_id"),
+    ),
+    fetchAllDataHealthRows<Record<string, unknown>>(() =>
+      supabase.from("user_access_profiles").select("hr_id,is_active,auth_user_id,login_id"),
+    ),
+    fetchAllDataHealthRows<Record<string, unknown>>(() =>
+      supabase
+        .from("sales_records")
+        .select("batch_id,row_number,employee_hr_id,employee_crm_id,employee_lookup_key,employee_name,manager_hr_id,line,territory,product,sales_value,validation_state"),
+    ),
+    fetchAllDataHealthRows<Record<string, unknown>>(() =>
+      supabase
+        .from("position_vacancies")
+        .select("id,vacancy_code,area_id,line_id,manager_hr_id,status,areas(name),lines(name)"),
+    ),
     supabase.from("v_hr_id_orphan_audit").select("*"),
-    supabase.from("employees").select("*", { count: "exact", head: true })
   ]);
 
-  const employeeIssues = (linkageHealth.data ?? []);
-  const salesIssues = (salesHealth.data ?? []);
-  const orphans = (orphanAudit.data ?? []);
-  
-  const totalEmployees = totalCount.count ?? 0;
-  const issuesCount = employeeIssues.filter(e => e.health_status !== "ok").length;
-  const healthyEmployees = totalEmployees - issuesCount;
-  const healthRate = totalEmployees > 0 ? (healthyEmployees / totalEmployees) * 100 : 100;
+  const employeeNodes = directory.employees.map(employeeToNodeInput);
+  const authHrIds = new Set(
+    appAuthUsers
+      .filter((row) => row.is_active !== false)
+      .map((row) => normalizeHealthKey(row.hr_id))
+      .filter(Boolean),
+  );
+  const accessProfileHrIds = new Set(
+    accessProfiles
+      .filter((row) => row.is_active !== false)
+      .map((row) => normalizeHealthKey(row.hr_id))
+      .filter(Boolean),
+  );
+  const employeeByHrId = new Map(employeeNodes.map((employee) => [normalizeHealthKey(employee.hrId), employee]));
+  const lineIdByName = new Map<string, number>();
+  const areaIdByName = new Map<string, number>();
+  const lineIdByAreaId = new Map<number, number>();
+
+  for (const line of directory.lookups.lines) {
+    const id = Number(line.value);
+    if (Number.isFinite(id)) addLineLookup(lineIdByName, line.label, id);
+  }
+  for (const area of directory.lookups.areas) {
+    const areaId = Number(area.value);
+    if (Number.isFinite(areaId)) {
+      areaIdByName.set(normalizeHealthKey(area.label), areaId);
+      if (typeof area.lineId === "number") lineIdByAreaId.set(areaId, area.lineId);
+    }
+  }
+  for (const employee of directory.employees) {
+    addLineLookup(lineIdByName, employee.lineName, employee.lineId);
+    if (employee.areaName && typeof employee.areaId === "number") areaIdByName.set(normalizeHealthKey(employee.areaName), employee.areaId);
+    if (typeof employee.areaId === "number" && typeof employee.lineId === "number") lineIdByAreaId.set(employee.areaId, employee.lineId);
+  }
+
+  const ownershipContext = buildSalesOwnershipContext({
+    areaIdByName,
+    employees: employeeNodes,
+    lineIdByAreaId,
+    lineIdByName,
+    vacancies: vacancyRows.map(vacancySignalFromRow),
+  });
+
+  const employeeIssues: DataHealthStats["employeeIssues"] = [];
+  let activeEmployees = 0;
+  let historicalRecords = 0;
+  let vacancyNodes = 0;
+  let nonLoginAggregationNodes = 0;
+
+  for (const employee of employeeNodes) {
+    const node = classifyEmployeeNode(employee);
+    if (node.node_type === "active_employee") activeEmployees += 1;
+    if (node.node_type === "historical_record") historicalRecords += 1;
+    if (node.node_type === "vacancy_node") vacancyNodes += 1;
+    if (
+      node.node_type === "system_placeholder" ||
+      node.node_type === "others_unassigned_node" ||
+      node.node_type === "non_login_aggregation_node"
+    ) {
+      nonLoginAggregationNodes += 1;
+    }
+
+    if (!node.eligible_for_login) continue;
+
+    const hrId = rowText(employee, "hrId") ?? rowText(employee, "hr_id") ?? "";
+    const normalizedHrId = normalizeHealthKey(hrId);
+    const hasAuthUser = authHrIds.has(normalizedHrId);
+    const hasAccessProfile = accessProfileHrIds.has(normalizedHrId);
+    const managerHrId = rowText(employee, "managerHrId") ?? rowText(employee, "manager_hr_id");
+    const normalizedManagerHrId = normalizeHealthKey(managerHrId);
+
+    let healthStatus = "ok";
+    let reason = "Active employee access and linkage are classified.";
+
+    if (shouldFlagMissingAccessForEmployeeNode(employee, { hasAccessProfile, hasAuthUser })) {
+      if (!hasAuthUser && !hasAccessProfile) healthStatus = "missing_auth_access";
+      else if (!hasAuthUser) healthStatus = "missing_auth_user";
+      else healthStatus = "missing_access_profile";
+      reason = "Active employee is eligible for login but is missing auth and/or access profile coverage.";
+    } else if (!managerHrId) {
+      healthStatus = "missing_manager";
+      reason = "Active employee is missing manager_hr_id.";
+    } else if (normalizedManagerHrId && !employeeByHrId.has(normalizedManagerHrId)) {
+      healthStatus = "manager_not_found";
+      reason = "Active employee references a manager HR ID that was not found.";
+    } else if (!rowText(employee, "jobTitle") && !rowText(employee, "job_title") && !rowText(employee, "positionTitle")) {
+      healthStatus = "missing_job_title";
+      reason = "Active employee is missing job title or position title.";
+    } else if (rowNumber(employee, "lineId") === null && rowNumber(employee, "line_id") === null) {
+      healthStatus = "missing_line";
+      reason = "Active employee is missing line ownership.";
+    } else if (rowNumber(employee, "areaId") === null && rowNumber(employee, "area_id") === null) {
+      healthStatus = "missing_area";
+      reason = "Active employee is missing area ownership.";
+    }
+
+    if (healthStatus !== "ok") {
+      employeeIssues.push({
+        full_name: rowText(employee, "fullName") ?? rowText(employee, "full_name") ?? "Unknown employee",
+        has_access_profile: hasAccessProfile,
+        has_auth_user: hasAuthUser,
+        health_status: healthStatus,
+        hr_id: hrId,
+        job_title: rowText(employee, "jobTitle") ?? rowText(employee, "job_title") ?? rowText(employee, "positionTitle") ?? "",
+        manager_hr_id: managerHrId,
+        node_type: node.node_type,
+        reason,
+      });
+    }
+  }
+
+  const salesClassification = emptySalesClassificationSummary();
+  const salesIssues: DataHealthStats["salesIssues"] = [];
+
+  for (const row of salesRows) {
+    const ownership = classifySalesOwnership(salesOwnershipRecordFromRow(row), ownershipContext);
+    const salesValue = rowNumber(row, "sales_value") ?? 0;
+    salesClassification[ownership.classification].records += 1;
+    salesClassification[ownership.classification].salesValue += salesValue;
+
+    if (ownership.classification === "unresolved_sales_exception") {
+      salesIssues.push({
+        batch_id: rowText(row, "batch_id"),
+        classification: ownership.classification,
+        employee_hr_id: rowText(row, "employee_hr_id"),
+        line: rowText(row, "line"),
+        linkage_health_status: ownership.classification,
+        manager_hr_id: rowText(row, "manager_hr_id"),
+        product: rowText(row, "product") ?? "Unknown",
+        reason: ownership.reason,
+        row_number: rowNumber(row, "row_number"),
+        sales_value: salesValue,
+        territory: rowText(row, "territory"),
+      });
+    }
+  }
+
+  const activeEmployeesMissingAuthAccess = employeeIssues.filter((issue) =>
+    ["missing_auth_access", "missing_auth_user", "missing_access_profile"].includes(issue.health_status),
+  ).length;
+  const employeeLinkageWarnings = employeeIssues.length - activeEmployeesMissingAuthAccess;
+  const issuesCount = employeeIssues.length + salesIssues.length;
+  const healthyEmployees = Math.max(0, activeEmployees - employeeIssues.length);
+  const healthRate = activeEmployees > 0 ? (healthyEmployees / activeEmployees) * 100 : 100;
+  const orphans = Array.isArray(orphanAudit.data) ? orphanAudit.data : [];
 
   return {
     summary: {
-      totalEmployees,
+      activeEmployees,
+      activeEmployeesMissingAuthAccess,
+      employeeLinkageWarnings,
+      healthRate,
       healthyEmployees,
+      historicalRecords,
       issuesCount,
-      healthRate
+      nonLoginAggregationNodes,
+      totalEmployees: employeeNodes.length,
+      unresolvedSalesExceptions: salesIssues.length,
+      vacancyNodes,
     },
     employeeIssues,
+    salesClassification,
     salesIssues,
     orphanAudit: orphans
   };

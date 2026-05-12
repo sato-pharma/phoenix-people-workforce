@@ -8,6 +8,7 @@ import {
 } from "@/lib/payroll/expenses";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,14 +18,39 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "expenses", "read");
     const url = new URL(request.url);
-    const month = Number(url.searchParams.get("month"));
-    const year = Number(url.searchParams.get("year"));
+    const rawMonth = url.searchParams.get("month");
+    const rawYear = url.searchParams.get("year");
+    const month = Number(rawMonth);
+    const year = Number(rawYear);
     const reportId = url.searchParams.get("reportId") ?? undefined;
+    const hasPeriodFilter = rawMonth !== null || rawYear !== null;
+
+    if (hasPeriodFilter) {
+      if (!rawMonth || !rawYear) {
+        return NextResponse.json(
+          { error: "missing_period", message: "Payroll month and year are required." },
+          { status: 400 },
+        );
+      }
+
+      try {
+        assertValidPayrollPeriod(month, year);
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error: "invalid_period",
+            message: error instanceof Error ? error.message : "Payroll period is invalid.",
+          },
+          { status: 400 },
+        );
+      }
+    }
+
     const reports = await listPayrollExpenseReports(access);
-    const targetReportId = reportId ?? (!month && !year ? reports[0]?.id : undefined);
+    const targetReportId = reportId ?? (!hasPeriodFilter ? reports[0]?.id : undefined);
     const expenses = await listPayrollExpenses(
-      month || undefined,
-      year || undefined,
+      hasPeriodFilter ? month : undefined,
+      hasPeriodFilter ? year : undefined,
       targetReportId,
       access,
     );
