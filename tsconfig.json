@@ -31,5 +31,13 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    ".next",
+    "phoenix-architecture",
+    "phoenix-system-export",
+    ".claude",
+    "scripts/tmp",
+    "supabase/.temp"
+  ]
 }
