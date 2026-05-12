@@ -143,7 +143,7 @@ function payslip(record: SalaryRecord, month: number, year: number) {
             </div>
             <div class="summary-stack">
               <div class="metric muted">
-                <span>Net Salary</span>
+                <span>Gross Salary</span>
                 <strong>${formatEGP(record.grossSalary)}</strong>
               </div>
               <div class="metric add">

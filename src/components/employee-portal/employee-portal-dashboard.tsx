@@ -2052,26 +2052,27 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
   const latestStatus = data.payroll.latestBatchStatus?.replace(/_/g, " ") ?? "Unknown";
   const historyRows = [...data.payroll.payslipRows];
   const hasRows = historyRows.length > 0;
+  const payslip = data.payroll.latestPayslip;
   const breakdownRows = [
     {
-      formula: "Fixed source of truth",
+      formula: "Net salary minus cost of living and fuel from this upload",
       label: "Base Salary",
-      value: data.payroll.baseSalary,
+      value: payslip.baseSalary,
     },
     {
-      formula: "Base + Cost of Living + Fuel",
+      formula: "Uploaded monthly net salary",
       label: "Net Salary",
-      value: data.payroll.netSalary,
+      value: payslip.netSalary,
     },
     {
-      formula: "Base x 70%",
+      formula: "Uploaded first part / basic amount",
       label: "Basic Salary",
-      value: data.payroll.basicSalary,
+      value: payslip.basicSalary,
     },
     {
-      formula: "Base + Social Insurance + Income Tax",
+      formula: "Uploaded monthly gross salary",
       label: "Gross Salary",
-      value: data.payroll.grossSalary,
+      value: payslip.grossSalary,
     },
   ];
 
@@ -2123,10 +2124,10 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <PayrollStat label="Gross Salary" value={egp(data.payroll.grossSalary)} />
-              <PayrollStat label="Net Salary" value={egp(data.payroll.netSalary)} />
-              <PayrollStat label="Basic Salary" value={egp(data.payroll.basicSalary)} />
-              <PayrollStat label="Base Salary" value={egp(data.payroll.baseSalary)} />
+              <PayrollStat label="Gross Salary" value={egp(payslip.grossSalary)} />
+              <PayrollStat label="Net Salary" value={egp(payslip.netSalary)} />
+              <PayrollStat label="Basic Salary" value={egp(payslip.basicSalary)} />
+              <PayrollStat label="Base Salary" value={egp(payslip.baseSalary)} />
             </div>
           </div>
 
@@ -2136,7 +2137,7 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
                 <div>
                   <p className="text-sm font-semibold text-slate-900">Salary Breakdown</p>
                   <p className="mt-1 text-xs text-slate-500">
-                    Fixed salary is read from the employee compensation profile.
+                    This breakdown is read from the latest uploaded payroll sheet.
                   </p>
                 </div>
                 <Calculator className="h-4 w-4 text-slate-400" />

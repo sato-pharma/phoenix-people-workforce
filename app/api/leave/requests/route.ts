@@ -50,8 +50,9 @@ export async function POST(request: Request) {
     const contentType = request.headers.get("content-type") ?? "";
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData();
+      const attachment = formData.get("attachment");
       const requestRecord = await submitLeaveRequest(access, {
-        attachmentUrl: await saveAttachment(formData.get("attachment") instanceof File ? formData.get("attachment") : null),
+        attachmentUrl: await saveAttachment(attachment instanceof File ? attachment : null),
         endDate: String(formData.get("endDate") ?? ""),
         leaveTypeId: String(formData.get("leaveTypeId") ?? ""),
         reason: String(formData.get("reason") ?? ""),

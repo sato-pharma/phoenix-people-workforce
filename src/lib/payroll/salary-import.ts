@@ -2,9 +2,6 @@
 
 import { toDateOnlyString } from "../date-only.ts";
 import {
-  calculateBaseSalary,
-  calculateGrossSalary,
-  calculateNetSalary,
   calculatePayrollParts,
   normalizePayrollPaymentMode,
   type PayrollPaymentMode,
@@ -135,7 +132,7 @@ const columnAliases = {
   year: ["Year", "year"],
 } as const;
 
-const requiredColumns = ["hrId", "fullName"] as const;
+const requiredColumns = ["hrId", "fullName", "grossSalary", "netSalary"] as const;
 const payrollFormulaTolerance = 1;
 
 function cellText(cell: ExcelJS.Cell) {
@@ -256,12 +253,12 @@ function addSourceMismatchWarning(input: {
   code: string;
   fieldLabel: string;
   hrId: string;
-  normalized: number;
+  expected: number;
   row: number;
   uploaded: number;
   warnings: SalaryValidationIssue[];
 }) {
-  if (input.uploaded <= 0 || input.normalized <= 0 || !differs(input.uploaded, input.normalized)) {
+  if (input.uploaded <= 0 || input.expected <= 0 || !differs(input.uploaded, input.expected)) {
     return;
   }
 
@@ -269,7 +266,7 @@ function addSourceMismatchWarning(input: {
     code: input.code,
     column: input.column,
     hrId: input.hrId,
-    message: `${input.fieldLabel} was normalized to ${moneyText(input.normalized)} from employee compensation source of truth.`,
+    message: `${input.fieldLabel} differs from employee compensation (${moneyText(input.expected)}); the uploaded payroll value was preserved for payslip accuracy.`,
     row: input.row,
   });
 }
@@ -314,9 +311,6 @@ export async function validateSalaryWorkbook(
   );
   const hasColumnFor = (aliases: readonly string[]) =>
     aliases.some((alias) => normalizedHeaders.has(normalizeHeader(alias)));
-  const hasExplicitGrossColumn = ["Gross Salary", "gross_salary", "Total Gross Salary"].some(
-    (alias) => normalizedHeaders.has(normalizeHeader(alias)),
-  );
   const hasExplicitTotalAdditionsColumn = hasColumnFor(columnAliases.totalAdditions);
   const hasExplicitTotalDeductionsColumn = hasColumnFor(columnAliases.totalDeductions);
   const hasFirstPartColumn = hasColumnFor(columnAliases.firstPart);
@@ -363,61 +357,24 @@ export async function validateSalaryWorkbook(
     const uploadedSecondPart = toNumber(rowValue(raw, columnAliases.secondPart));
     const paymentModeText = String(rowValue(raw, columnAliases.paymentMode)).trim();
     const salarySource = lookupSalarySource(options.salarySources, hrId);
-    const normalizedExtraCostOfLiving = sourceAmount(
-      salarySource,
-      "extraCostOfLiving",
-      extraCostOfLiving,
-    );
-    const normalizedFuelAllowance = sourceAmount(salarySource, "fuelAllowance", fuelAllowance);
-    const normalizedSocialInsurance = sourceAmount(
-      salarySource,
-      "socialInsurance",
-      socialInsurance,
-    );
-    const normalizedEmploymentIncomeTax = sourceAmount(
-      salarySource,
-      "employmentIncomeTax",
-      employmentIncomeTax,
-    );
-    const normalizedBaseSalary = sourceAmount(
-      salarySource,
-      "baseSalary",
-      calculateBaseSalary({
-        employmentIncomeTax: normalizedEmploymentIncomeTax,
-        extraCostOfLiving: normalizedExtraCostOfLiving,
-        fuelAllowance: normalizedFuelAllowance,
-        grossSalary: uploadedGrossSalary,
-        netSalary: uploadedNetSalary,
-        socialInsurance: normalizedSocialInsurance,
-      }),
-    );
-    const normalizedNetSalary = sourceAmount(
-      salarySource,
-      "netSalary",
-      calculateNetSalary({
-        baseSalary: normalizedBaseSalary,
-        extraCostOfLiving: normalizedExtraCostOfLiving,
-        fuelAllowance: normalizedFuelAllowance,
-      }),
-    );
     const paymentMode = paymentModeText
       ? normalizePayrollPaymentMode(paymentModeText)
       : salarySource?.paymentMode ?? "two_parts";
     const variableAdditions = expenses + incentive + overtime + bonus + otherAdditions;
     const variableDeductions =
       crm + fingerPrint + unpaidVacations + medicalInsurance + loans + otherDeductions;
-    const totalAdditions = money(
+    const calculatedTotalAdditions = money(
       expenses +
         incentive +
         overtime +
         bonus +
-        normalizedExtraCostOfLiving +
-        normalizedFuelAllowance +
+        extraCostOfLiving +
+        fuelAllowance +
         otherAdditions,
     );
-    const totalDeductions = money(
-      normalizedSocialInsurance +
-        normalizedEmploymentIncomeTax +
+    const calculatedTotalDeductions = money(
+      socialInsurance +
+        employmentIncomeTax +
         crm +
         fingerPrint +
         unpaidVacations +
@@ -425,23 +382,24 @@ export async function validateSalaryWorkbook(
         loans +
         otherDeductions,
     );
-    const grossSalary = calculateGrossSalary({
-      baseSalary: normalizedBaseSalary,
-      employmentIncomeTax: normalizedEmploymentIncomeTax,
-      extraCostOfLiving: normalizedExtraCostOfLiving,
-      fuelAllowance: normalizedFuelAllowance,
-      grossSalary: sourceAmount(salarySource, "grossSalary", uploadedGrossSalary),
-      socialInsurance: normalizedSocialInsurance,
-    });
+    const totalAdditions = hasExplicitTotalAdditionsColumn
+      ? uploadedTotalAdditions
+      : calculatedTotalAdditions;
+    const totalDeductions = hasExplicitTotalDeductionsColumn
+      ? uploadedTotalDeductions
+      : calculatedTotalDeductions;
+    const grossSalary = uploadedGrossSalary;
     const parts = calculatePayrollParts({
       additions: variableAdditions,
-      baseSalary: normalizedBaseSalary,
       deductions: variableDeductions,
-      extraCostOfLiving: normalizedExtraCostOfLiving,
-      fuelAllowance: normalizedFuelAllowance,
+      extraCostOfLiving,
+      fuelAllowance,
+      netSalary: uploadedNetSalary,
       paymentMode,
       previousExpenses: 0,
     });
+    const firstPart = hasFirstPartColumn ? uploadedFirstPart : parts.firstPart;
+    const secondPart = hasSecondPartColumn ? uploadedSecondPart : parts.secondPart;
 
     if (!hrId) {
       validationErrors.push({
@@ -472,22 +430,12 @@ export async function validateSalaryWorkbook(
       });
     }
 
-    if (options.salarySources && hrId && !salarySource) {
-      validationWarnings.push({
-        code: "employee_compensation_source_missing",
-        column: "HR_ID",
-        hrId,
-        message: "Employee compensation source of truth was not found; payroll sheet salary values were used for this row.",
-        row: rowNumber,
-      });
-    }
-
     addSourceMismatchWarning({
       code: "net_salary_source_of_truth_mismatch",
       column: "Net Salary",
       fieldLabel: "Net salary",
+      expected: sourceAmount(salarySource, "netSalary", 0),
       hrId,
-      normalized: normalizedNetSalary,
       row: rowNumber,
       uploaded: uploadedNetSalary,
       warnings: validationWarnings,
@@ -496,8 +444,8 @@ export async function validateSalaryWorkbook(
       code: "extra_cost_of_living_source_of_truth_mismatch",
       column: "Extra Cost of Living",
       fieldLabel: "Extra cost of living",
+      expected: sourceAmount(salarySource, "extraCostOfLiving", 0),
       hrId,
-      normalized: normalizedExtraCostOfLiving,
       row: rowNumber,
       uploaded: extraCostOfLiving,
       warnings: validationWarnings,
@@ -506,8 +454,8 @@ export async function validateSalaryWorkbook(
       code: "fuel_allowance_source_of_truth_mismatch",
       column: "Fuel Allowance",
       fieldLabel: "Fuel allowance",
+      expected: sourceAmount(salarySource, "fuelAllowance", 0),
       hrId,
-      normalized: normalizedFuelAllowance,
       row: rowNumber,
       uploaded: fuelAllowance,
       warnings: validationWarnings,
@@ -516,8 +464,8 @@ export async function validateSalaryWorkbook(
       code: "social_insurance_source_of_truth_mismatch",
       column: "Social Insurance",
       fieldLabel: "Social insurance",
+      expected: sourceAmount(salarySource, "socialInsurance", 0),
       hrId,
-      normalized: normalizedSocialInsurance,
       row: rowNumber,
       uploaded: socialInsurance,
       warnings: validationWarnings,
@@ -526,44 +474,40 @@ export async function validateSalaryWorkbook(
       code: "employment_income_tax_source_of_truth_mismatch",
       column: "Employment Income Tax",
       fieldLabel: "Employment income tax",
+      expected: sourceAmount(salarySource, "employmentIncomeTax", 0),
       hrId,
-      normalized: normalizedEmploymentIncomeTax,
       row: rowNumber,
       uploaded: employmentIncomeTax,
       warnings: validationWarnings,
     });
 
-    if (uploadedGrossSalary <= 0 && grossSalary <= 0) {
-      validationWarnings.push({
-        code: "non_positive_gross",
+    addSourceMismatchWarning({
+      code: "gross_salary_source_of_truth_mismatch",
+      column: "Gross Salary",
+      expected: sourceAmount(salarySource, "grossSalary", 0),
+      fieldLabel: "Gross salary",
+      hrId,
+      row: rowNumber,
+      uploaded: uploadedGrossSalary,
+      warnings: validationWarnings,
+    });
+
+    if (uploadedGrossSalary <= 0) {
+      validationErrors.push({
+        code: "missing_gross_salary",
         column: "Gross Salary",
         hrId,
-        message: "Gross salary is zero or missing.",
+        message: "Gross salary must be uploaded from the monthly payroll sheet.",
         row: rowNumber,
       });
     }
 
-    if (
-      hasExplicitGrossColumn &&
-      uploadedGrossSalary > 0 &&
-      grossSalary > 0 &&
-      differs(uploadedGrossSalary, grossSalary)
-    ) {
-      validationWarnings.push({
-        code: "gross_salary_formula_mismatch",
-        column: "Gross Salary",
-        hrId,
-        message: `Gross salary was normalized to ${moneyText(grossSalary)} from base salary plus social insurance and income tax.`,
-        row: rowNumber,
-      });
-    }
-
-    if (uploadedNetSalary < 0) {
-      validationWarnings.push({
-        code: "negative_net",
+    if (uploadedNetSalary <= 0) {
+      validationErrors.push({
+        code: uploadedNetSalary < 0 ? "negative_net" : "missing_net_salary",
         column: "Net Salary",
         hrId,
-        message: "Net salary is negative.",
+        message: "Net salary must be uploaded from the monthly payroll sheet.",
         row: rowNumber,
       });
     }
@@ -571,13 +515,13 @@ export async function validateSalaryWorkbook(
     if (
       hasExplicitTotalAdditionsColumn &&
       uploadedTotalAdditions > 0 &&
-      differs(uploadedTotalAdditions, totalAdditions)
+      differs(uploadedTotalAdditions, calculatedTotalAdditions)
     ) {
       validationWarnings.push({
         code: "total_additions_formula_mismatch",
         column: "Total Additions",
         hrId,
-        message: `Total additions were normalized to ${moneyText(totalAdditions)} from expenses, incentive, overtime, bonus, cost of living, fuel, and other additions.`,
+        message: `Total additions differ from component sum (${moneyText(calculatedTotalAdditions)}); the uploaded total was preserved for payslip accuracy.`,
         row: rowNumber,
       });
     }
@@ -585,13 +529,13 @@ export async function validateSalaryWorkbook(
     if (
       hasExplicitTotalDeductionsColumn &&
       uploadedTotalDeductions > 0 &&
-      differs(uploadedTotalDeductions, totalDeductions)
+      differs(uploadedTotalDeductions, calculatedTotalDeductions)
     ) {
       validationWarnings.push({
         code: "total_deductions_formula_mismatch",
         column: "Total Deductions",
         hrId,
-        message: `Total deductions were normalized to ${moneyText(totalDeductions)} from statutory and internal deductions.`,
+        message: `Total deductions differ from component sum (${moneyText(calculatedTotalDeductions)}); the uploaded total was preserved for payslip accuracy.`,
         row: rowNumber,
       });
     }
@@ -601,7 +545,7 @@ export async function validateSalaryWorkbook(
         code: "first_part_formula_mismatch",
         column: "First Part",
         hrId,
-        message: `First part was normalized to ${moneyText(parts.firstPart)} because it must equal the fixed basic salary.`,
+        message: `First part differs from payroll formula (${moneyText(parts.firstPart)}); the uploaded value was preserved for payslip accuracy.`,
         row: rowNumber,
       });
     }
@@ -611,7 +555,7 @@ export async function validateSalaryWorkbook(
         code: "second_part_formula_mismatch",
         column: "Second Part",
         hrId,
-        message: `Second part was normalized to ${moneyText(parts.secondPart)} as the variable salary part.`,
+        message: `Second part differs from payroll formula (${moneyText(parts.secondPart)}); the uploaded value was preserved for payslip accuracy.`,
         row: rowNumber,
       });
     }
@@ -621,12 +565,12 @@ export async function validateSalaryWorkbook(
       bonus,
       crm,
       hrId,
-      employmentIncomeTax: normalizedEmploymentIncomeTax,
+      employmentIncomeTax,
       expenses,
-      extraCostOfLiving: normalizedExtraCostOfLiving,
+      extraCostOfLiving,
       fingerPrint,
-      firstPart: parts.firstPart,
-      fuelAllowance: normalizedFuelAllowance,
+      firstPart,
+      fuelAllowance,
       fullName,
       grossSalary,
       hireDate: toDateOnly(rowValue(raw, columnAliases.hireDate)),
@@ -636,15 +580,15 @@ export async function validateSalaryWorkbook(
       loans,
       medicalInsurance,
       nameAr: String(rowValue(raw, columnAliases.nameAr)).trim() || null,
-      netSalary: normalizedNetSalary,
+      netSalary: uploadedNetSalary,
       otherAdditions,
       otherDeductions,
       overtime,
       payrollComment: String(rowValue(raw, columnAliases.payrollComment)).trim() || null,
       paymentMode,
       row: rowNumber,
-      secondPart: parts.secondPart,
-      socialInsurance: normalizedSocialInsurance,
+      secondPart,
+      socialInsurance,
       totalAdditions,
       totalDeductions,
       unpaidVacations,

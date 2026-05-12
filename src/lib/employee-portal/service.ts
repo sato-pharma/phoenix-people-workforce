@@ -20,7 +20,13 @@ import {
 } from "@/lib/employee-portal/sales-scope";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
-import { calculateBaseSalary, calculateGrossSalary, calculateNetSalary, calculatePayrollParts } from "@/lib/payroll/policy";
+import {
+  calculateBaseSalary,
+  calculateBasicSalary,
+  calculateGrossSalary,
+  calculateNetSalary,
+  calculatePayrollParts,
+} from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   PayrollExpenseApproval,
@@ -335,6 +341,11 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
   const year = parseIntValue(row, ["year", "payroll_year"]);
   const month = parseIntValue(row, ["month", "payroll_month"]);
   const fullName = pickText(row, ["full_name", "employee_name", "name", "employee"]);
+  const hasFirstPart = pickOptionalText(row, ["first_part"]) !== null;
+  const hasSecondPart = pickOptionalText(row, ["second_part"]) !== null;
+  const hasTotalAdditions = pickOptionalText(row, ["total_additions", "totalAdditions"]) !== null;
+  const hasTotalDeductions =
+    pickOptionalText(row, ["total_deductions", "totalDeductions", "deductions"]) !== null;
 
   const mapped = {
     area: pickText(row, ["area", "line", "employee_line"]),
@@ -376,7 +387,7 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
     unpaidVacations: pickNumber(row, ["unpaid_vacations", "unpaidVacations"]),
   };
 
-  const totalAdditions =
+  const calculatedTotalAdditions =
     mapped.expenses +
     mapped.incentive +
     mapped.overtime +
@@ -384,7 +395,7 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
     mapped.extraCostOfLiving +
     mapped.fuelAllowance +
     mapped.otherAdditions;
-  const totalDeductions =
+  const calculatedTotalDeductions =
     mapped.socialInsurance +
     mapped.employmentIncomeTax +
     mapped.crm +
@@ -409,19 +420,14 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
     paymentMode,
     previousExpenses: 0,
   });
+  const totalAdditions = hasTotalAdditions ? mapped.totalAdditions : calculatedTotalAdditions;
+  const totalDeductions = hasTotalDeductions ? mapped.totalDeductions : calculatedTotalDeductions;
 
   return {
     ...mapped,
-    firstPart: parts.firstPart,
-    grossSalary: calculateGrossSalary({
-      employmentIncomeTax: mapped.employmentIncomeTax,
-      extraCostOfLiving: mapped.extraCostOfLiving,
-      fuelAllowance: mapped.fuelAllowance,
-      grossSalary: mapped.grossSalary,
-      netSalary: mapped.netSalary,
-      socialInsurance: mapped.socialInsurance,
-    }),
-    secondPart: parts.secondPart,
+    firstPart: hasFirstPart ? mapped.firstPart : parts.firstPart,
+    grossSalary: mapped.grossSalary,
+    secondPart: hasSecondPart ? mapped.secondPart : parts.secondPart,
     totalAdditions,
     totalDeductions,
   };
@@ -1842,6 +1848,16 @@ export type MedicalRepPortalData = {
       firstPart: number;
       grossSalary: number;
       internalDeductions: number;
+      latestPayslip: {
+        baseSalary: number;
+        basicSalary: number;
+        firstPart: number;
+        grossSalary: number;
+        netSalary: number;
+        secondPart: number;
+        totalAdditions: number;
+        totalDeductions: number;
+      };
       latestBatchLabel: string;
       latestBatchStatus: string | null;
       netSalary: number;
@@ -3176,6 +3192,32 @@ export async function getMedicalRepPortalData(
     fixedSocialInsurance > 0 || fixedTaxes > 0
       ? calculatedFixedGrossSalary
       : employee.grossSalary ?? latestRecord?.grossSalary ?? calculatedFixedGrossSalary;
+  const payslipBaseSalary = latestRecord
+    ? calculateBaseSalary({
+        extraCostOfLiving: latestRecord.extraCostOfLiving,
+        fuelAllowance: latestRecord.fuelAllowance,
+        netSalary: latestRecord.netSalary,
+      })
+    : fixedBaseSalary;
+  const payslipBasicSalary = latestRecord?.firstPart
+    ? latestRecord.firstPart
+    : calculateBasicSalary({ baseSalary: payslipBaseSalary });
+  const latestPayslip = {
+    baseSalary: payslipBaseSalary,
+    basicSalary: payslipBasicSalary,
+    firstPart: latestRecord?.firstPart ?? payslipBasicSalary,
+    grossSalary: latestRecord?.grossSalary ?? fixedGrossSalary,
+    netSalary: latestRecord?.netSalary ?? fixedNetSalary,
+    secondPart:
+      latestRecord?.secondPart ??
+      calculatePayrollParts({
+        baseSalary: payslipBaseSalary,
+        extraCostOfLiving: latestRecord?.extraCostOfLiving ?? fixedExtraCostOfLiving,
+        fuelAllowance: latestRecord?.fuelAllowance ?? fixedFuelAllowance,
+      }).secondPart,
+    totalAdditions: latestRecord?.totalAdditions ?? 0,
+    totalDeductions: latestRecord?.totalDeductions ?? 0,
+  };
 
   const fixedIncentiveSalary = {
     baseSalary: fixedBaseSalary,
@@ -3229,11 +3271,12 @@ export async function getMedicalRepPortalData(
       batchId: latestBatch?.id ?? null,
       baseSalary: fixedBaseSalary,
       firstPart: latestRecord?.firstPart ?? 0,
-      grossSalary: fixedGrossSalary,
+      grossSalary: latestPayslip.grossSalary,
       internalDeductions,
+      latestPayslip,
       latestBatchLabel: latestBatch ? formatBatchLabel(latestBatch.month, latestBatch.year) : "No payroll period",
       latestBatchStatus: latestBatch?.status ?? null,
-      netSalary: fixedNetSalary,
+      netSalary: latestPayslip.netSalary,
       payslipRows: (payrollDashboard ? payrollDashboard.batches : []).map((batch) => ({
         createdAt: batch.createdAt,
         id: batch.id,

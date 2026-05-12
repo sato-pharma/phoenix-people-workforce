@@ -16,6 +16,8 @@ import { runRlsGapClosureTests } from "./rls-gap-closure.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
 import { runEmployeeDisplayNameTests } from "./employee-display-name.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
+import { runLeaveCalculationTests } from "./leave-calculations.test.ts";
+import { runLeaveMigrationTests } from "./leave-migration.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -43,5 +45,7 @@ await runTest("sales role mapping", runSalesRoleMappingTests);
 await runTest("sales period", runSalesPeriodTests);
 await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);
 await runTest("employee portal navigation", runEmployeePortalNavigationTests);
+await runTest("leave calculations", runLeaveCalculationTests);
+await runTest("leave migration", runLeaveMigrationTests);
 await runTest("auth session", runAuthSessionTests);
 await runTest("employee display name", runEmployeeDisplayNameTests);

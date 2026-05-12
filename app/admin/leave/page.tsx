@@ -36,7 +36,9 @@ function parseFilters(searchParams: Record<string, string | string[] | undefined
   };
 }
 
-export default async function AdminLeavePage(props: PageProps<"/admin/leave">) {
+export default async function AdminLeavePage(props: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
   if (!(await canAccess(access, "leave", "read"))) {
     redirect("/employee-portals/leave");

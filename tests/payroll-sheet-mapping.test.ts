@@ -131,6 +131,10 @@ export async function runPayrollSheetMappingTests() {
     "employment_income_taxes",
     "unpaid_vacation",
     "medical_insurance",
+    "total_additions",
+    "total_deductions",
+    "first_part",
+    "second_part",
   ]);
   sourceSheet.addRow([
     "B-58",
@@ -145,6 +149,10 @@ export async function runPayrollSheetMappingTests() {
     999,
     100,
     200,
+    7777,
+    8888,
+    44444,
+    -123,
   ]);
 
   const b58Source: PayrollSalarySource = {
@@ -165,16 +173,16 @@ export async function runPayrollSheetMappingTests() {
   const sourceResult = await validateSalaryWorkbook(sourceFile, { salarySources });
   const sourceRow = sourceResult.rowsToImport[0];
 
-  assert.equal(sourceRow.netSalary, 17000);
-  assert.equal(sourceRow.extraCostOfLiving, 2000);
-  assert.equal(sourceRow.fuelAllowance, 1000);
-  assert.equal(sourceRow.socialInsurance, 1200);
-  assert.equal(sourceRow.employmentIncomeTax, 800);
-  assert.equal(sourceRow.grossSalary, 16000);
-  assert.equal(sourceRow.firstPart, 9800);
-  assert.equal(sourceRow.secondPart, 7200);
-  assert.equal(sourceRow.totalAdditions, 3300);
-  assert.equal(sourceRow.totalDeductions, 2300);
+  assert.equal(sourceRow.netSalary, 99999);
+  assert.equal(sourceRow.extraCostOfLiving, 999);
+  assert.equal(sourceRow.fuelAllowance, 999);
+  assert.equal(sourceRow.socialInsurance, 999);
+  assert.equal(sourceRow.employmentIncomeTax, 999);
+  assert.equal(sourceRow.grossSalary, 11111);
+  assert.equal(sourceRow.firstPart, 44444);
+  assert.equal(sourceRow.secondPart, -123);
+  assert.equal(sourceRow.totalAdditions, 7777);
+  assert.equal(sourceRow.totalDeductions, 8888);
   assert.equal(
     sourceResult.validationWarnings.some(
       (warning) => warning.code === "net_salary_source_of_truth_mismatch",

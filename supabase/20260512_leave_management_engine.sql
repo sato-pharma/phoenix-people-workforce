@@ -533,4 +533,64 @@ set
   template_closing_text = coalesce(public.email_notification_policies.template_closing_text, excluded.template_closing_text),
   template_preview_text = coalesce(public.email_notification_policies.template_preview_text, excluded.template_preview_text);
 
+do $$
+declare
+  has_key_column boolean;
+  has_name_column boolean;
+begin
+  if to_regclass('public.permissions') is null then
+    return;
+  end if;
+
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'permissions' and column_name = 'key'
+  ) into has_key_column;
+
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'permissions' and column_name = 'name'
+  ) into has_name_column;
+
+  create temporary table if not exists leave_permission_seed (
+    action text primary key,
+    permission_key text not null,
+    permission_name text not null
+  ) on commit drop;
+
+  truncate table leave_permission_seed;
+
+  insert into leave_permission_seed (action, permission_key, permission_name)
+  values
+    ('read', 'leave.read', 'Leave read'),
+    ('create', 'leave.create', 'Leave create'),
+    ('update', 'leave.update', 'Leave update'),
+    ('delete', 'leave.delete', 'Leave delete'),
+    ('approve', 'leave.approve', 'Leave approve'),
+    ('export', 'leave.export', 'Leave export'),
+    ('import', 'leave.import', 'Leave import');
+
+  if has_key_column and has_name_column then
+    insert into public.permissions (key, name, resource, action)
+    select permission_key, permission_name, 'leave', action
+    from leave_permission_seed
+    on conflict (resource, action) do nothing;
+  elsif has_key_column then
+    insert into public.permissions (key, resource, action)
+    select permission_key, 'leave', action
+    from leave_permission_seed
+    on conflict (resource, action) do nothing;
+  elsif has_name_column then
+    insert into public.permissions (name, resource, action)
+    select permission_name, 'leave', action
+    from leave_permission_seed
+    on conflict (resource, action) do nothing;
+  else
+    insert into public.permissions (resource, action)
+    select 'leave', action
+    from leave_permission_seed
+    on conflict (resource, action) do nothing;
+  end if;
+end $$;
+
 commit;
