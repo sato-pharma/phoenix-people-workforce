@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 const backupPath = "supabase/20260512_backup_leave_domain_before_rebuild.sql";
 const checklistPath = "docs/leave-management-staging-rollout.md";
+const rolloutScriptPath = "scripts/run-leave-staging-rollout.ps1";
 
 const leaveDomainTables = [
   "vacation_attachments",
@@ -23,6 +24,7 @@ const leaveDomainTables = [
 export function runLeaveRolloutTests() {
   assert.equal(existsSync(backupPath), true, "backup SQL script should exist");
   assert.equal(existsSync(checklistPath), true, "staging rollout checklist should exist");
+  assert.equal(existsSync(rolloutScriptPath), true, "staging rollout PowerShell script should exist");
 
   const backupSql = readFileSync(backupPath, "utf8");
   assert.match(backupSql, /create schema if not exists backup/);
@@ -61,4 +63,42 @@ export function runLeaveRolloutTests() {
   ]) {
     assert.match(checklist, new RegExp(snippet.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+
+  const rolloutScript = readFileSync(rolloutScriptPath, "utf8");
+  for (const requiredText of [
+    "PHOENIX_CONFIRM_STAGING_RLS_RUN",
+    "YES_STAGING_ONLY",
+    "PHOENIX_STAGING_ENVIRONMENT",
+    "PHOENIX_STAGING_DATABASE_URL",
+    "Production URL/database guard",
+    "20260512_backup_leave_domain_before_rebuild.sql",
+    "20260512_leave_management_engine.sql",
+    "backup.leave_domain_backup_manifest",
+    "private.phx_current_hr_id()",
+    "private.phx_current_role()",
+    "private.phx_current_scope()",
+    "private.phx_can_access_employee(text)",
+    "has_table_privilege",
+    "Egypt Annual Leave Policy",
+    "public.public_holidays",
+    "npm run test",
+    "npm run typecheck",
+    "npm run lint",
+    "npm run build",
+    "/employee-portals/leave",
+    "/employee-portals/leave-approvals",
+    "/admin/leave",
+    "/api/vacation",
+    "docs\\leave-rollout-report.md",
+  ]) {
+    assert.match(
+      rolloutScript,
+      new RegExp(requiredText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      `rollout script should include ${requiredText}`,
+    );
+  }
+
+  assert.match(rolloutScript, /exit 1/);
+  assert.match(rolloutScript, /Write-RolloutReport -FinalStatus "FAILED"/);
+  assert.match(rolloutScript, /Write-RolloutReport -FinalStatus "SAFE"/);
 }

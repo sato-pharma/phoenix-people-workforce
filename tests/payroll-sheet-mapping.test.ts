@@ -189,4 +189,76 @@ export async function runPayrollSheetMappingTests() {
     ),
     true,
   );
+
+  const blankWorkbook = new ExcelJS.Workbook();
+  const blankSheet = blankWorkbook.addWorksheet("Payroll");
+  blankSheet.addRow([
+    "HR_ID",
+    "Full Name",
+    "gross_salary",
+    "Net Salary",
+    "Month",
+    "Year",
+    "total_additions",
+    "total_deductions",
+    "first_part",
+    "second_part",
+  ]);
+  blankSheet.addRow(["B-99", "Blank Explicit Parts", 10000, 9000, 4, 2026, "", "", "", ""]);
+  const blankFile = new File([await blankWorkbook.xlsx.writeBuffer() as BlobPart], "blank-payroll.xlsx");
+  const blankResult = await validateSalaryWorkbook(blankFile, { expectedPeriod: { month: 4, year: 2026 } });
+  assert.equal(blankResult.failedRows, 1);
+  assert.deepEqual(
+    blankResult.validationErrors.map((error) => error.code).sort(),
+    ["missing_first_part", "missing_second_part", "missing_total_additions", "missing_total_deductions"],
+  );
+
+  const zeroWorkbook = new ExcelJS.Workbook();
+  const zeroSheet = zeroWorkbook.addWorksheet("Payroll");
+  zeroSheet.addRow([
+    "HR_ID",
+    "Full Name",
+    "gross_salary",
+    "Net Salary",
+    "Month",
+    "Year",
+    "total_additions",
+    "total_deductions",
+    "first_part",
+    "second_part",
+  ]);
+  zeroSheet.addRow(["B-100", "Zero Explicit Parts", 10000, 9000, 4, 2026, 0, 0, 0, 0]);
+  const zeroFile = new File([await zeroWorkbook.xlsx.writeBuffer() as BlobPart], "zero-payroll.xlsx");
+  const zeroResult = await validateSalaryWorkbook(zeroFile, { expectedPeriod: { month: 4, year: 2026 } });
+  assert.equal(zeroResult.failedRows, 0);
+  assert.equal(zeroResult.rowsToImport[0].totalAdditions, 0);
+  assert.equal(zeroResult.rowsToImport[0].totalDeductions, 0);
+  assert.equal(zeroResult.rowsToImport[0].firstPart, 0);
+  assert.equal(zeroResult.rowsToImport[0].secondPart, 0);
+
+  const mismatchWorkbook = new ExcelJS.Workbook();
+  const mismatchSheet = mismatchWorkbook.addWorksheet("Payroll");
+  mismatchSheet.addRow(["HR_ID", "Full Name", "gross_salary", "Net Salary", "Month", "Year"]);
+  mismatchSheet.addRow(["B-101", "Wrong Period", 10000, 9000, 5, 2027]);
+  const mismatchFile = new File([await mismatchWorkbook.xlsx.writeBuffer() as BlobPart], "wrong-period.xlsx");
+  const mismatchResult = await validateSalaryWorkbook(mismatchFile, { expectedPeriod: { month: 4, year: 2026 } });
+  assert.equal(mismatchResult.failedRows, 1);
+  assert.equal(
+    mismatchResult.validationErrors.some((error) => error.code === "payroll_month_mismatch"),
+    true,
+  );
+  assert.equal(
+    mismatchResult.validationErrors.some((error) => error.code === "payroll_year_mismatch"),
+    true,
+  );
+
+  const noPeriodWorkbook = new ExcelJS.Workbook();
+  const noPeriodSheet = noPeriodWorkbook.addWorksheet("Payroll");
+  noPeriodSheet.addRow(["HR_ID", "Full Name", "gross_salary", "Net Salary"]);
+  noPeriodSheet.addRow(["B-102", "No Period Columns", 10000, 9000]);
+  const noPeriodFile = new File([await noPeriodWorkbook.xlsx.writeBuffer() as BlobPart], "no-period.xlsx");
+  const noPeriodResult = await validateSalaryWorkbook(noPeriodFile, { expectedPeriod: { month: 4, year: 2026 } });
+  assert.equal(noPeriodResult.failedRows, 0);
+  assert.equal(noPeriodResult.payrollPeriod.month, 4);
+  assert.equal(noPeriodResult.payrollPeriod.year, 2026);
 }

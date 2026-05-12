@@ -71,6 +71,10 @@ export type SalaryValidationResult = {
 };
 
 export type SalaryValidationOptions = {
+  expectedPeriod?: {
+    month: number;
+    year: number;
+  };
   salarySources?: Map<string, PayrollSalarySource>;
 };
 
@@ -193,6 +197,10 @@ function toNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function hasCellValue(value: unknown) {
+  return String(value ?? "").trim() !== "";
+}
+
 function toDateOnly(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
 
@@ -282,14 +290,23 @@ function rowValue(row: Record<string, unknown>, aliases: readonly string[]) {
   return "";
 }
 
-function parseMonth(value: unknown) {
+function rowHasValue(row: Record<string, unknown>, aliases: readonly string[]) {
+  return hasCellValue(rowValue(row, aliases));
+}
+
+function parseMonthCell(value: unknown) {
+  if (!hasCellValue(value)) return null;
   const numeric = Number(value);
   if (Number.isInteger(numeric) && numeric >= 1 && numeric <= 12) return numeric;
   const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
   const index = months.findIndex((month) =>
     String(value ?? "").toLowerCase().startsWith(month),
   );
-  return index >= 0 ? index + 1 : new Date().getMonth() + 1;
+  return index >= 0 ? index + 1 : null;
+}
+
+function parseMonth(value: unknown) {
+  return parseMonthCell(value) ?? new Date().getMonth() + 1;
 }
 
 export async function validateSalaryWorkbook(
@@ -315,6 +332,8 @@ export async function validateSalaryWorkbook(
   const hasExplicitTotalDeductionsColumn = hasColumnFor(columnAliases.totalDeductions);
   const hasFirstPartColumn = hasColumnFor(columnAliases.firstPart);
   const hasSecondPartColumn = hasColumnFor(columnAliases.secondPart);
+  const hasMonthColumn = hasColumnFor(columnAliases.month);
+  const hasYearColumn = hasColumnFor(columnAliases.year);
 
   const rows: Record<string, unknown>[] = [];
   for (let rowNumber = headerRowNumber + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
@@ -355,6 +374,9 @@ export async function validateSalaryWorkbook(
     const otherDeductions = toNumber(rowValue(raw, columnAliases.otherDeductions));
     const uploadedFirstPart = toNumber(rowValue(raw, columnAliases.firstPart));
     const uploadedSecondPart = toNumber(rowValue(raw, columnAliases.secondPart));
+    const uploadedMonth = parseMonthCell(rowValue(raw, columnAliases.month));
+    const uploadedYearValue = rowValue(raw, columnAliases.year);
+    const uploadedYear = hasCellValue(uploadedYearValue) ? Number(uploadedYearValue) : null;
     const paymentModeText = String(rowValue(raw, columnAliases.paymentMode)).trim();
     const salarySource = lookupSalarySource(options.salarySources, hrId);
     const paymentMode = paymentModeText
@@ -502,12 +524,78 @@ export async function validateSalaryWorkbook(
       });
     }
 
+    if (options.expectedPeriod && hasMonthColumn && uploadedMonth !== options.expectedPeriod.month) {
+      validationErrors.push({
+        code: "payroll_month_mismatch",
+        column: "Month",
+        hrId,
+        message: `Payroll sheet month must match selected period (${options.expectedPeriod.month}/${options.expectedPeriod.year}).`,
+        row: rowNumber,
+      });
+    }
+
+    if (
+      options.expectedPeriod &&
+      hasYearColumn &&
+      (typeof uploadedYear !== "number" ||
+        !Number.isInteger(uploadedYear) ||
+        uploadedYear !== options.expectedPeriod.year)
+    ) {
+      validationErrors.push({
+        code: "payroll_year_mismatch",
+        column: "Year",
+        hrId,
+        message: `Payroll sheet year must match selected period (${options.expectedPeriod.month}/${options.expectedPeriod.year}).`,
+        row: rowNumber,
+      });
+    }
+
     if (uploadedNetSalary <= 0) {
       validationErrors.push({
         code: uploadedNetSalary < 0 ? "negative_net" : "missing_net_salary",
         column: "Net Salary",
         hrId,
         message: "Net salary must be uploaded from the monthly payroll sheet.",
+        row: rowNumber,
+      });
+    }
+
+    if (hasExplicitTotalAdditionsColumn && !rowHasValue(raw, columnAliases.totalAdditions)) {
+      validationErrors.push({
+        code: "missing_total_additions",
+        column: "Total Additions",
+        hrId,
+        message: "Total additions is required when the uploaded sheet includes a Total Additions column.",
+        row: rowNumber,
+      });
+    }
+
+    if (hasExplicitTotalDeductionsColumn && !rowHasValue(raw, columnAliases.totalDeductions)) {
+      validationErrors.push({
+        code: "missing_total_deductions",
+        column: "Total Deductions",
+        hrId,
+        message: "Total deductions is required when the uploaded sheet includes a Total Deductions column.",
+        row: rowNumber,
+      });
+    }
+
+    if (hasFirstPartColumn && !rowHasValue(raw, columnAliases.firstPart)) {
+      validationErrors.push({
+        code: "missing_first_part",
+        column: "First Part",
+        hrId,
+        message: "First part is required when the uploaded sheet includes a First Part column.",
+        row: rowNumber,
+      });
+    }
+
+    if (hasSecondPartColumn && !rowHasValue(raw, columnAliases.secondPart)) {
+      validationErrors.push({
+        code: "missing_second_part",
+        column: "Second Part",
+        hrId,
+        message: "Second part is required when the uploaded sheet includes a Second Part column.",
         row: rowNumber,
       });
     }
@@ -594,8 +682,8 @@ export async function validateSalaryWorkbook(
   });
 
   const firstRow = rows[0] ?? {};
-  const month = parseMonth(rowValue(firstRow, columnAliases.month));
-  const year = Number(rowValue(firstRow, columnAliases.year)) || new Date().getFullYear();
+  const month = options.expectedPeriod?.month ?? parseMonth(rowValue(firstRow, columnAliases.month));
+  const year = options.expectedPeriod?.year ?? (Number(rowValue(firstRow, columnAliases.year)) || new Date().getFullYear());
   const errorRows = new Set(validationErrors.map((issue) => issue.row));
   const warningRows = new Set(validationWarnings.map((issue) => issue.row));
 

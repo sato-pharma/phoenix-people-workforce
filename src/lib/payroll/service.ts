@@ -11,6 +11,8 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { calculatePayrollParts } from "@/lib/payroll/policy";
+import { PayrollConflictError } from "@/lib/payroll/errors";
+import { getPayrollWorkflowTransition } from "@/lib/payroll/workflow";
 import type { SalaryValidationIssue, SalaryValidationRow } from "@/lib/payroll/salary-import";
 import type { PayrollDashboardData, SalaryBatch, SalaryFlag, SalaryRecord } from "@/lib/payroll/types";
 
@@ -65,7 +67,9 @@ export function isPayrollSchemaMissing(error: unknown) {
     message.includes("salary_batches") ||
     message.includes("salary_records") ||
     message.includes("salary_flags") ||
+    message.includes("phx_replace_salary_batch") ||
     message.includes("could not find the table") ||
+    message.includes("could not find the function") ||
     message.includes("schema cache") ||
     (message.includes("relation") && message.includes("does not exist"))
   );
@@ -826,6 +830,21 @@ export async function getSalaryBatchExport(
   };
 }
 
+export async function getSalaryBatchById(batchId: string): Promise<SalaryBatch | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("salary_batches")
+    .select("*")
+    .eq("id", batchId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data ? mapBatch(data as Record<string, unknown>) : null;
+}
+
 type CreateSalaryBatchInput = {
   fileName: string;
   month: number;
@@ -1083,63 +1102,48 @@ export async function replaceSalaryBatch(
   }
 
   const existing = mapBatch(existingBatchData as Record<string, unknown>);
+  if (!["uploaded", "under_review", "rejected"].includes(existing.status)) {
+    throw new PayrollConflictError(`Payroll batch cannot be replaced while status is ${existing.status}.`);
+  }
+
   const now = new Date().toISOString();
   const recordPayloads = input.records.map((row) =>
     salaryRecordPayload(existing.id, row),
   );
-
-  const { error: deleteRecordsError } = await supabase
-    .from("salary_records")
-    .delete()
-    .eq("batch_id", existing.id);
-
-  if (deleteRecordsError) {
-    throw deleteRecordsError;
-  }
-
-  await writeSalaryRecordPayloads(supabase, recordPayloads);
-  await verifySalaryRecordPayloads(supabase, existing.id, recordPayloads);
-
-  const { error: deleteFlagsError } = await supabase
-    .from("salary_flags")
-    .delete()
-    .eq("batch_id", existing.id);
-
-  if (deleteFlagsError) {
-    throw deleteFlagsError;
-  }
-
   const flagPayloads = input.validationWarnings.map((warning) =>
     salaryFlagPayload(existing.id, warning),
   );
 
-  if (flagPayloads.length > 0) {
-    const { error: insertFlagsError } = await supabase.from("salary_flags").insert(flagPayloads);
+  const { data: updatedBatchData, error: replaceError } = await supabase.rpc(
+    "phx_replace_salary_batch",
+    {
+      p_batch_id: existing.id,
+      p_expected_month: existing.month,
+      p_expected_year: existing.year,
+      p_file_name: input.fileName,
+      p_flags: flagPayloads,
+      p_records: recordPayloads,
+      p_uploaded_by: input.uploadedBy,
+      p_updated_at: now,
+    },
+  );
 
-    if (insertFlagsError) {
-      throw insertFlagsError;
+  if (replaceError) {
+    const message = payrollErrorMessage(replaceError);
+    if (
+      message.toLowerCase().includes("cannot be replaced") ||
+      message.toLowerCase().includes("payroll batch period changed")
+    ) {
+      throw new PayrollConflictError(message);
     }
+    throw replaceError;
   }
 
-  const { data: updatedBatchData, error: updateBatchError } = await supabase
-    .from("salary_batches")
-    .update({
-      approved_at: null,
-      approved_by: null,
-      file_name: input.fileName,
-      locked_at: null,
-      rejected_reason: null,
-      status: "uploaded",
-      updated_at: now,
-      uploaded_by: input.uploadedBy,
-    })
-    .eq("id", existing.id)
-    .select()
-    .single();
-
-  if (updateBatchError || !updatedBatchData) {
-    throw updateBatchError ?? new Error("Payroll upload could not be updated.");
+  if (!updatedBatchData || typeof updatedBatchData !== "object") {
+    throw new Error("Payroll upload could not be updated.");
   }
+
+  await verifySalaryRecordPayloads(supabase, existing.id, recordPayloads);
 
   return {
     batch: mapBatch(updatedBatchData as Record<string, unknown>),
@@ -1157,38 +1161,57 @@ export async function runPayrollWorkflow(
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
 
-  const updates: Record<string, unknown> = { updated_at: now };
+  const { data: existingBatchData, error: existingBatchError } = await supabase
+    .from("salary_batches")
+    .select("status")
+    .eq("id", batchId)
+    .maybeSingle();
 
-  switch (action) {
-    case "mark_review":
-      updates.status = "under_review";
-      break;
-    case "approve":
-      updates.status = "approved";
-      updates.approved_by = actorName;
-      updates.approved_at = now;
-      break;
-    case "lock":
-      updates.status = "locked";
-      updates.locked_at = now;
-      break;
-    case "reject":
-      updates.status = "rejected";
-      updates.rejected_reason = rejectedReason ?? "No reason provided.";
-      break;
-    case "reopen":
-      updates.status = "uploaded";
-      updates.rejected_reason = null;
-      break;
+  if (existingBatchError) {
+    throw existingBatchError;
+  }
+
+  if (!existingBatchData) {
+    return null;
+  }
+
+  const currentStatus = String((existingBatchData as Record<string, unknown>).status ?? "");
+  const transition = getPayrollWorkflowTransition(currentStatus, action, rejectedReason);
+  const updates: Record<string, unknown> = { updated_at: now };
+  updates.status = transition.nextStatus;
+
+  if (transition.setApproved) {
+    updates.approved_by = actorName;
+    updates.approved_at = now;
+  }
+
+  if (transition.setLocked) {
+    updates.locked_at = now;
+  }
+
+  if (transition.setRejected) {
+    updates.rejected_reason = rejectedReason?.trim();
+  }
+
+  if (transition.clearRejectedReason) {
+    updates.rejected_reason = null;
   }
 
   const { data, error } = await supabase
     .from("salary_batches")
     .update(updates)
     .eq("id", batchId)
+    .eq("status", transition.expectedStatus)
     .select()
     .maybeSingle();
 
-  if (error || !data) return null;
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new PayrollConflictError("Payroll workflow state changed. Refresh and retry.");
+  }
+
   return mapBatch(data as Record<string, unknown>);
 }

@@ -1,7 +1,9 @@
 import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runIncentiveSchemeTests } from "./incentive-scheme.test.ts";
 import { runEmailNotificationTests } from "./email-notifications.test.ts";
+import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
+import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
 import { runPhoenixHrReplyTemplateTests } from "./phoenix-hr-reply-template.test.ts";
 import { runCoachingScoringTests } from "./coaching-scoring.test.ts";
 import { runCoachingAnalyticsTests } from "./coaching-analytics.test.ts";
@@ -35,6 +37,8 @@ await runTest("i18n config", runI18nConfigTests);
 await runTest("incentive scheme", runIncentiveSchemeTests);
 await runTest("email notifications", runEmailNotificationTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
+await runTest("payroll workflow", runPayrollWorkflowTests);
+await runTest("payroll engine hardening", runPayrollEngineHardeningTests);
 await runTest("phoenix hr reply template", runPhoenixHrReplyTemplateTests);
 await runTest("coaching scoring", runCoachingScoringTests);
 await runTest("coaching analytics", runCoachingAnalyticsTests);
