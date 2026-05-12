@@ -513,6 +513,20 @@ async function recordBalanceTransaction(input: {
   const before = input.balance.availableBalance;
   const next = applyBalanceDelta(input.balance, input.transactionType, input.amount);
 
+  const { error: insertError } = await supabase.from("leave_transactions").insert({
+    amount: input.amount,
+    balance_after: next.availableBalance,
+    balance_before: before,
+    created_by: input.createdBy,
+    employee_hr_id: input.balance.employeeHrId,
+    leave_type_id: input.balance.leaveTypeId,
+    notes: input.notes ?? null,
+    policy_id: input.balance.policyId,
+    request_id: input.requestId ?? null,
+    transaction_type: input.transactionType,
+  });
+  if (insertError) throw insertError;
+
   const { data: updated, error: updateError } = await supabase
     .from("employee_leave_balances")
     .update({
@@ -530,19 +544,6 @@ async function recordBalanceTransaction(input: {
     .single();
   if (updateError) throw updateError;
 
-  const { error: insertError } = await supabase.from("leave_transactions").insert({
-    amount: input.amount,
-    balance_after: next.availableBalance,
-    balance_before: before,
-    created_by: input.createdBy,
-    employee_hr_id: input.balance.employeeHrId,
-    leave_type_id: input.balance.leaveTypeId,
-    notes: input.notes ?? null,
-    policy_id: input.balance.policyId,
-    request_id: input.requestId ?? null,
-    transaction_type: input.transactionType,
-  });
-  if (insertError) throw insertError;
   return mapBalance(updated as EmployeeLeaveBalanceRow);
 }
 
@@ -892,9 +893,22 @@ async function loadRequestRow(id: string) {
   return data as LeaveRequestRow;
 }
 
+async function requestHasTransaction(requestId: string, transactionType: LeaveTransactionType) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("leave_transactions")
+    .select("id")
+    .eq("request_id", requestId)
+    .eq("transaction_type", transactionType)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
+
 async function releasePendingIfNeeded(request: LeaveRequestRow, actor: string | null) {
   const leaveType = await getLeaveTypeById(request.leave_type_id);
   if (!shouldConsumeBalance(leaveType)) return;
+  if (await requestHasTransaction(request.id, "pending_reversal")) return;
   const balance = await getBalanceRow(
     request.employee_hr_id,
     request.leave_type_id,
@@ -915,6 +929,7 @@ async function releasePendingIfNeeded(request: LeaveRequestRow, actor: string | 
 async function consumePendingRequest(request: LeaveRequestRow, actor: string | null) {
   const leaveType = await getLeaveTypeById(request.leave_type_id);
   if (!shouldConsumeBalance(leaveType)) return;
+  if (await requestHasTransaction(request.id, "consumed")) return;
   const year = new Date(`${request.start_date}T00:00:00.000Z`).getUTCFullYear();
   const balance = await getBalanceRow(request.employee_hr_id, request.leave_type_id, request.policy_id, year);
   if (!balance) return;

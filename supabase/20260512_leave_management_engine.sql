@@ -192,6 +192,10 @@ create index leave_transactions_request_idx on public.leave_transactions (reques
 create unique index leave_transactions_monthly_accrual_uidx
   on public.leave_transactions (employee_hr_id, leave_type_id, policy_id, transaction_type, notes)
   where transaction_type = 'accrual' and notes like 'monthly-accrual:%';
+create unique index leave_transactions_request_type_uidx
+  on public.leave_transactions (request_id, transaction_type)
+  where request_id is not null
+    and transaction_type in ('pending', 'pending_reversal', 'consumed', 'consumed_reversal');
 create index leave_approvals_request_idx on public.leave_approvals (request_id, created_at);
 create index public_holidays_country_year_idx on public.public_holidays (country, year);
 
@@ -308,8 +312,8 @@ revoke all on public.leave_transactions from anon, authenticated;
 revoke all on public.leave_approvals from anon, authenticated;
 revoke all on public.public_holidays from anon, authenticated;
 
-grant select on public.leave_types, public.leave_policies, public.public_holidays to authenticated;
-grant select, insert, update on public.employee_leave_balances, public.leave_requests, public.leave_transactions, public.leave_approvals to authenticated;
+grant select on public.leave_types, public.leave_policies, public.employee_leave_balances, public.leave_requests, public.leave_transactions, public.leave_approvals, public.public_holidays to authenticated;
+grant insert on public.leave_requests to authenticated;
 grant all on public.leave_types, public.leave_policies, public.employee_leave_balances, public.leave_requests, public.leave_transactions, public.leave_approvals, public.public_holidays to service_role;
 
 do $$
@@ -406,7 +410,13 @@ create policy leave_requests_insert_self
   to authenticated
   with check (
     private.phx_can_manage_leave()
-    or lower(employee_hr_id) = lower(coalesce(private.phx_current_hr_id(), ''))
+    or (
+      lower(employee_hr_id) = lower(coalesce(private.phx_current_hr_id(), ''))
+      and status in ('draft', 'pending_manager')
+      and manager_status in ('pending', 'not_required')
+      and hr_status in ('pending', 'not_required')
+      and payroll_status in ('not_required', 'pending')
+    )
   );
 
 create policy leave_requests_update_access
@@ -473,65 +483,82 @@ create policy leave_approvals_insert_access
     or lower(approver_hr_id) = lower(coalesce(private.phx_current_hr_id(), ''))
   );
 
-alter table public.email_notification_policies
-  drop constraint if exists email_notification_policies_type_check;
+do $$
+begin
+  if to_regclass('public.email_notification_policies') is not null then
+    alter table public.email_notification_policies
+      add column if not exists recipient_modes text[] not null default array['hr_notifications']::text[],
+      add column if not exists target_titles text[] not null default '{}'::text[],
+      add column if not exists target_lines text[] not null default '{}'::text[],
+      add column if not exists template_subject text null,
+      add column if not exists template_title text null,
+      add column if not exists template_greeting text null,
+      add column if not exists template_body_text text null,
+      add column if not exists template_closing_text text null,
+      add column if not exists template_preview_text text null,
+      add column if not exists include_hr_inbox boolean not null default false;
 
-alter table public.email_notification_policies
-  add constraint email_notification_policies_type_check
-    check (notification_type in (
-      'probation',
-      'contract_renewal',
-      'birthday',
-      'offer',
-      'resignation',
+    alter table public.email_notification_policies
+      drop constraint if exists email_notification_policies_type_check;
+
+    alter table public.email_notification_policies
+      add constraint email_notification_policies_type_check
+        check (notification_type in (
+          'probation',
+          'contract_renewal',
+          'birthday',
+          'offer',
+          'resignation',
+          'leave',
+          'password_reset',
+          'user_created',
+          'general'
+        ));
+
+    insert into public.email_notification_policies (
+      notification_type,
+      label,
+      description,
+      enabled,
+      recipient_mode,
+      recipient_modes,
+      include_hr_inbox,
+      template_subject,
+      template_title,
+      template_greeting,
+      template_body_text,
+      template_closing_text,
+      template_preview_text
+    )
+    values (
       'leave',
-      'password_reset',
-      'user_created',
-      'general'
-    ));
-
-insert into public.email_notification_policies (
-  notification_type,
-  label,
-  description,
-  enabled,
-  recipient_mode,
-  recipient_modes,
-  include_hr_inbox,
-  template_subject,
-  template_title,
-  template_greeting,
-  template_body_text,
-  template_closing_text,
-  template_preview_text
-)
-values (
-  'leave',
-  'Leave Management',
-  'Leave request approvals and results routed through managers and HR.',
-  true,
-  'manager_chain',
-  array['manager_chain', 'hr_notifications'],
-  true,
-  '{subject}',
-  '{title}',
-  'Dear Phoenix Team,',
-  '{summary}',
-  'Please review the leave workflow and complete the required action.',
-  'Leave workflow update from Phoenix Workforce.'
-)
-on conflict (notification_type) do update
-set
-  label = excluded.label,
-  description = excluded.description,
-  recipient_modes = excluded.recipient_modes,
-  include_hr_inbox = excluded.include_hr_inbox,
-  template_subject = coalesce(public.email_notification_policies.template_subject, excluded.template_subject),
-  template_title = coalesce(public.email_notification_policies.template_title, excluded.template_title),
-  template_greeting = coalesce(public.email_notification_policies.template_greeting, excluded.template_greeting),
-  template_body_text = coalesce(public.email_notification_policies.template_body_text, excluded.template_body_text),
-  template_closing_text = coalesce(public.email_notification_policies.template_closing_text, excluded.template_closing_text),
-  template_preview_text = coalesce(public.email_notification_policies.template_preview_text, excluded.template_preview_text);
+      'Leave Management',
+      'Leave request approvals and results routed through managers and HR.',
+      true,
+      'manager_chain',
+      array['manager_chain', 'hr_notifications'],
+      true,
+      '{subject}',
+      '{title}',
+      'Dear Phoenix Team,',
+      '{summary}',
+      'Please review the leave workflow and complete the required action.',
+      'Leave workflow update from Phoenix Workforce.'
+    )
+    on conflict (notification_type) do update
+    set
+      label = excluded.label,
+      description = excluded.description,
+      recipient_modes = excluded.recipient_modes,
+      include_hr_inbox = excluded.include_hr_inbox,
+      template_subject = coalesce(public.email_notification_policies.template_subject, excluded.template_subject),
+      template_title = coalesce(public.email_notification_policies.template_title, excluded.template_title),
+      template_greeting = coalesce(public.email_notification_policies.template_greeting, excluded.template_greeting),
+      template_body_text = coalesce(public.email_notification_policies.template_body_text, excluded.template_body_text),
+      template_closing_text = coalesce(public.email_notification_policies.template_closing_text, excluded.template_closing_text),
+      template_preview_text = coalesce(public.email_notification_policies.template_preview_text, excluded.template_preview_text);
+  end if;
+end $$;
 
 do $$
 declare

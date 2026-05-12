@@ -52,6 +52,13 @@ export function runLeaveCalculationTests() {
     4,
     "Friday/Saturday weekends and public holidays should be excluded.",
   );
+  assert.equal(calculateWorkingLeaveDays("2026-05-24", "2026-05-24", [], [5, 6]), 1, "Same-day weekday leave should count as one day.");
+  assert.equal(calculateWorkingLeaveDays("2026-05-22", "2026-05-22", [], [5, 6]), 0, "Same-day weekend leave should count as zero working days.");
+  assert.throws(
+    () => calculateWorkingLeaveDays("2026-05-28", "2026-05-24", [], [5, 6]),
+    /Invalid leave date range/,
+    "Invalid date ranges should be rejected.",
+  );
 
   const ledger = summarizeLeaveLedger([
     { amount: 5, transactionType: "opening_balance" },
