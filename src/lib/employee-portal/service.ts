@@ -1879,6 +1879,13 @@ export type MedicalRepPortalData = {
       sales: number;
       target: number;
     }>;
+    leadingMedicalRep: {
+      achievementPercent: number;
+      name: string;
+      position: number;
+      sales: number;
+      target: number;
+    } | null;
     topProduct: string | null;
     topProductSalesValue: number;
       trend: Array<{
@@ -2254,15 +2261,21 @@ async function fetchOpenVacancySummaryForScope({
 
   try {
     const rows = await fetchAllRows<{
+      area_id?: number | null;
+      id: number;
       job_title: string | null;
       line_id: number | null;
       lines?: { name: string | null } | null;
       manager_hr_id: string | null;
+      note?: string | null;
+      position_id?: number | null;
       positions?: { title: string | null } | null;
+      region_name?: string | null;
+      vacancy_code: string | null;
     }>(() => {
       let query = supabase
         .from("position_vacancies")
-        .select("job_title,line_id,manager_hr_id,lines(name),positions(title)")
+        .select("id,vacancy_code,job_title,line_id,manager_hr_id,note,region_name,area_id,position_id,lines(name),positions(title)")
         .eq("status", "open");
 
       if (isTeamWorkforceRole(role) && currentUser.hrId) {
@@ -2293,11 +2306,13 @@ async function fetchOpenVacancySummaryForScope({
       return false;
     });
 
+    const uniqueRows = uniqueVacancyRows(scopedRows);
+
     return {
-      districtManagerVacancies: scopedRows.filter((row) =>
+      districtManagerVacancies: uniqueRows.filter((row) =>
         isDistrictManagerVacancyTitle(row.job_title, row.positions?.title),
       ).length,
-      openVacancies: scopedRows.length,
+      openVacancies: uniqueRows.length,
     };
   } catch (error) {
     logPortalDebug("open vacancy summary query failed", error);
@@ -2372,7 +2387,7 @@ async function resolveSalesRankInTeam(params: {
   currentHrId: string;
   comparisonPeriod?: string | null;
   directory?: EmployeeDirectoryData | null;
-  comparisonMode?: "team-members" | "line-managers";
+  comparisonMode?: "team-members" | "line-managers" | "line-members";
   comparisonLineId?: number | null;
   comparisonRole?: string | null;
 }) {
@@ -2391,11 +2406,12 @@ async function resolveSalesRankInTeam(params: {
   const viewer = directory.employees.find((employee) => normalizeHrId(employee.hrId) === viewerHrId) ?? null;
   const comparisonMode = params.comparisonMode ?? "team-members";
   const isLineManagersMode = comparisonMode === "line-managers";
+  const isLineMembersMode = comparisonMode === "line-members";
   const canonicalLineId = Number.isFinite(Number(params.comparisonLineId)) ? Number(params.comparisonLineId) : null;
   const canonicalManagerHrId = resolveTeamHrId(managerHrId);
   const canonicalComparisonRole = params.comparisonRole ? normalizeRole(params.comparisonRole) : null;
   const viewerLineId = viewer?.lineId ?? null;
-  const lineIdForComparison = comparisonMode === "line-managers"
+  const lineIdForComparison = isLineManagersMode || isLineMembersMode
     ? (canonicalLineId ?? (viewerLineId != null ? Number(viewerLineId) : null))
     : null;
 
@@ -2404,7 +2420,7 @@ async function resolveSalesRankInTeam(params: {
   const teamHrCanonicalIds = new Set<string>();
   const originalHrIds = new Set<string>();
 
-  if (comparisonMode === "line-managers" && lineIdForComparison !== null) {
+  if ((isLineManagersMode || isLineMembersMode) && lineIdForComparison !== null) {
     directory.employees.forEach((employee) => {
       const employeeHrId = normalizeHrId(employee.hrId);
       if (!employeeHrId) return;
@@ -2916,6 +2932,10 @@ export async function getMedicalRepPortalData(
     comparison: Array<{ position: number; name: string; achievementPercent: number; sales: number; target: number }>; 
     rank: { position: number; total: number } | null 
   } = { comparison: [], rank: null };
+  let leadingMedicalRepResult: {
+    comparison: Array<{ position: number; name: string; achievementPercent: number; sales: number; target: number }>;
+    rank: { position: number; total: number } | null
+  } | null = null;
   try {
     if (currentHrId) {
       const currentRole = normalizeRole(currentUser.role);
@@ -2945,6 +2965,17 @@ export async function getMedicalRepPortalData(
         teamRankAllPeriodsResult = allPeriodsResult;
       }
 
+      if (isNationalSalesManager) {
+        leadingMedicalRepResult = await resolveSalesRankInTeam({
+          managerHrId: null,
+          currentHrId,
+          directory: directory,
+          comparisonMode: "line-members",
+          comparisonRole: "Medical Rep",
+          comparisonLineId,
+        });
+      }
+
       const selectedPeriod = normalizeTeamComparisonPeriod(options.teamComparisonPeriod);
       if (selectedPeriod) {
         const selectedPeriodResult = await resolveSalesRankInTeam({
@@ -2972,6 +3003,7 @@ export async function getMedicalRepPortalData(
   const rankInTeam = teamRankAllPeriodsResult?.rank ?? null;
   const teamComparisonPeriod = normalizeTeamComparisonPeriod(options.teamComparisonPeriod);
   const teamComparison = teamRankResult?.comparison ?? [];
+  const leadingMedicalRep = leadingMedicalRepResult?.comparison[0] ?? null;
 
   const latestRecord = (payrollDashboard && payrollDashboard.records[0]) || base.latestRecord;
   const previousRecord = (payrollDashboard && payrollDashboard.previousRecords?.[0]) || base.previousRecord;
@@ -3019,9 +3051,9 @@ export async function getMedicalRepPortalData(
     previousRecord,
     salaryTrend: base.salaryTrend,
     sales: {
-      achievementRate: achievementPercent / 100,
-      targetValue: currentMonthTarget,
-      totalValue: currentMonthSales,
+      achievementRate: overviewAchievementPercent / 100,
+      targetValue: overviewTarget,
+      totalValue: overviewSales,
     },
   };
   const portalInsights = computeInsights(insightInput);
@@ -3129,6 +3161,7 @@ export async function getMedicalRepPortalData(
       teamComparisonPeriod,
       rankInTeam,
       teamComparison,
+      leadingMedicalRep,
       topProduct,
       topProductSalesValue,
       trend: salesTrend,
@@ -3646,6 +3679,60 @@ function isDistrictManagerVacancyTitle(...values: Array<string | null | undefine
   );
 }
 
+function vacancySeatKey(
+  row: {
+    area_id?: number | null;
+    job_title?: string | null;
+    line_id?: number | null;
+    manager_hr_id?: string | null;
+    note?: string | null;
+    position_id?: number | null;
+    region_name?: string | null;
+    vacancy_code?: string | null;
+  },
+) {
+  const vacancyCode = String(row.vacancy_code ?? "").trim().toLowerCase();
+  const resignationMatch = vacancyCode.match(/^resignation_([^_]+)_\d{8,}$/);
+
+  if (resignationMatch) {
+    const resignedHrId = normalizeHrIdForAccess(resignationMatch[1]) ?? resignationMatch[1].toUpperCase();
+    return `resignation:${resignedHrId}`;
+  }
+
+  if (vacancyCode) return `code:${vacancyCode}`;
+
+  return [
+    "manual",
+    row.line_id ?? "",
+    normalizeHrIdForAccess(row.manager_hr_id) ?? "",
+    row.position_id ?? "",
+    String(row.job_title ?? "").trim().toLowerCase(),
+    row.area_id ?? "",
+    String(row.region_name ?? "").trim().toLowerCase(),
+    String(row.note ?? "").trim().toLowerCase(),
+  ].join("|");
+}
+
+function uniqueVacancyRows<T extends {
+  area_id?: number | null;
+  job_title?: string | null;
+  line_id?: number | null;
+  manager_hr_id?: string | null;
+  note?: string | null;
+  position_id?: number | null;
+  region_name?: string | null;
+  vacancy_code?: string | null;
+}>(rows: T[]) {
+  const seen = new Set<string>();
+
+  return rows.filter((row) => {
+    const key = vacancySeatKey(row);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function isDistrictManagerEmployee(
   employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
 ) {
@@ -3714,7 +3801,9 @@ export async function getEmployeePortalVacancies(
       );
     });
 
-    const vacancies = scopedRows.map((row) => ({
+    const uniqueRows = uniqueVacancyRows(scopedRows);
+
+    const vacancies = uniqueRows.map((row) => ({
       areaName: row.areas?.name ?? row.area_name ?? null,
       createdAt: row.created_at,
       id: row.id,

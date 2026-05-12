@@ -36,8 +36,8 @@ export default async function EmployeePortalPayslipsPage() {
 
   return (
     <EmployeePortalPageShell
-      description="Review your monthly compensation with clarity and confidence."
-      title="My Earnings"
+      description="Review your monthly payslips with clarity and confidence."
+      title="Payslips"
     >
       <MedicalRepPayrollPage data={data} />
     </EmployeePortalPageShell>

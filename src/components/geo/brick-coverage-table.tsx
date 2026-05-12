@@ -6,6 +6,7 @@ import {
   AdminSectionHeader,
 } from "@/components/admin/admin-design-system";
 import { Card } from "@/components/ui/card";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 const panelClassName =
   "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
@@ -59,7 +60,7 @@ export function BrickCoverageTable({
                   <td className="px-4 py-3 text-slate-700">{brick.line ?? "N/A"}</td>
                   <td className="px-4 py-3 text-slate-700">{brick.area ?? "N/A"}</td>
                   <td className="px-4 py-3 text-slate-700">
-                    {brick.employeeName ?? brick.employeeHrId ?? "Unassigned"}
+                    {formatEmployeeDisplayName(brick.employeeName, brick.employeeHrId ?? "Unassigned")}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${tone(brick.coverageStatus)}`}>

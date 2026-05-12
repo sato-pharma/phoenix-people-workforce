@@ -14,6 +14,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import type { DsmTeamMemberData, DsmTeamMemberProductData } from "@/lib/employee-portal/service";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Formatting helpers
@@ -32,9 +33,7 @@ function pct(value: number) {
 }
 
 function shortName(fullName: string) {
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length <= 2) return fullName;
-  return `${parts[0]} ${parts[parts.length - 1]}`;
+  return formatEmployeeDisplayName(fullName);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -251,7 +250,7 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
 
           {/* Name + status */}
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-slate-900 text-sm truncate">{member.name}</p>
+            <p className="font-semibold text-slate-900 text-sm truncate">{formatEmployeeDisplayName(member.name)}</p>
             <div className="flex items-center gap-2 mt-0.5">
               <span
                 className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
@@ -355,7 +354,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
                   </span>
                 </td>
                 <td className="py-2.5 px-3">
-                  <p className="font-medium text-slate-900">{member.name}</p>
+                  <p className="font-medium text-slate-900">{formatEmployeeDisplayName(member.name)}</p>
                   <p className="text-[10px] text-slate-400">{member.products.length} products</p>
                 </td>
                 <td className="py-2.5 px-3 text-right">

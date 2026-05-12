@@ -17,7 +17,7 @@ import type {
   CoachingReportStatus,
   CoachingReportSummaryRow,
 } from "@/lib/coaching/types";
-import { cn } from "@/lib/utils";
+import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
 type FilterOption = {
   label: string;
@@ -540,9 +540,9 @@ export function CoachingReportsCenter({
                     <td className="px-5 py-4">
                       <span className="font-black text-[#0F172A]">{report.reportNumber}</span>
                     </td>
-                    <td className="px-5 py-4 font-semibold text-[#0F172A]">{report.medicalRepName}</td>
+                    <td className="px-5 py-4 font-semibold text-[#0F172A]">{formatEmployeeDisplayName(report.medicalRepName)}</td>
                     <td className="px-5 py-4 font-mono text-xs font-black text-[#475569]">{report.medicalRepHrId}</td>
-                    <td className="px-5 py-4 font-semibold text-[#0F172A]">{report.coachName}</td>
+                    <td className="px-5 py-4 font-semibold text-[#0F172A]">{formatEmployeeDisplayName(report.coachName)}</td>
                     <td className="px-5 py-4 text-[#475569]">{report.lineName || "Not assigned"}</td>
                     <td className="px-5 py-4 text-[#475569]">{report.areaName || "Not assigned"}</td>
                     <td className="px-5 py-4 text-[#475569]">{report.teamName || "Not assigned"}</td>

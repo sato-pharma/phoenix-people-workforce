@@ -20,7 +20,7 @@ import type {
   CoachingReportStatus,
   CoachingScoreItemRow,
 } from "@/lib/coaching/types";
-import { cn } from "@/lib/utils";
+import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
 type CoachingReportDetailProps = {
   detail: CoachingReportDetailType;
@@ -205,10 +205,10 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
               {report.report_number}
             </p>
             <h2 className="mt-2 text-3xl font-black tracking-[-0.04em] text-[#0F172A]">
-              {summary?.medicalRepName || report.medical_rep_hr_id}
+              {formatEmployeeDisplayName(summary?.medicalRepName, report.medical_rep_hr_id)}
             </h2>
             <p className="mt-2 text-sm leading-6 text-[#64748B]">
-              Read-only coaching report for HR ID {report.medical_rep_hr_id}, coached by {summary?.coachName || report.coach_hr_id}.
+              Read-only coaching report for HR ID {report.medical_rep_hr_id}, coached by {formatEmployeeDisplayName(summary?.coachName, report.coach_hr_id)}.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -223,7 +223,7 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
         <div className="grid gap-4 p-5 sm:p-6 lg:grid-cols-4">
           <StatTile icon={<CalendarDays className="h-4 w-4" />} label="Coaching Date" value={formatDate(report.coaching_date)} />
           <StatTile icon={<UserRound className="h-4 w-4" />} label="Medical Rep HR ID" value={report.medical_rep_hr_id} />
-          <StatTile icon={<ClipboardCheck className="h-4 w-4" />} label="Coach" value={summary?.coachName || report.coach_hr_id} />
+          <StatTile icon={<ClipboardCheck className="h-4 w-4" />} label="Coach" value={formatEmployeeDisplayName(summary?.coachName, report.coach_hr_id)} />
           <StatTile label="Coach Role" value={report.coach_role || "Coach"} />
           <StatTile label="Line" value={summary?.lineName || "Not assigned"} />
           <StatTile label="Area" value={summary?.areaName || "Not assigned"} />

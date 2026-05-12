@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card } from "@/components/ui/card";
 import type { GeoTripRouteRecord } from "@/lib/geo-intelligence/types";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 function egp(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -141,7 +142,7 @@ export function ExpenseRouteMap({ routes }: { routes: GeoTripRouteRecord[] }) {
         >
           {routes.map((route) => (
             <option key={route.id} value={route.id}>
-              {route.employeeName ?? "Unknown"} | {route.fromText} to {route.toText}
+              {formatEmployeeDisplayName(route.employeeName, "Unknown")} | {route.fromText} to {route.toText}
             </option>
           ))}
         </select>
@@ -152,7 +153,7 @@ export function ExpenseRouteMap({ routes }: { routes: GeoTripRouteRecord[] }) {
         <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
           {selectedRoute ? (
             <div className="space-y-3">
-              <Stat label="Employee" value={selectedRoute.employeeName ?? "Unknown"} />
+              <Stat label="Employee" value={formatEmployeeDisplayName(selectedRoute.employeeName, "Unknown")} />
               <Stat label="From" value={selectedRoute.fromText} />
               <Stat label="To" value={selectedRoute.toText} />
               <Stat label="Claimed" value={egp(selectedRoute.claimedAmount)} />

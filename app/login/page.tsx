@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default async function LoginPage() {
   const session = await resolveAccessContextFromPage();
 
-  if (session.loginId) {
+  if (session.loginId && session.source !== "dev-header") {
     redirect(resolveLandingPathForRole(session.role));
   }
 

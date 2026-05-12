@@ -12,6 +12,7 @@ import { TerritoryValidationPanel } from "@/components/outstation/territory-vali
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -291,7 +292,7 @@ export function OutstationRequestsAdmin({
                       onClick={() => setSelectedId(request.id)}
                     >
                       <td className="px-4 py-3">
-                        <div className="font-bold text-[#0F172A]">{request.employeeName}</div>
+                        <div className="font-bold text-[#0F172A]">{formatEmployeeDisplayName(request.employeeName)}</div>
                         <div className="text-xs text-[#64748B]">{`${request.employeeHrId} • ${request.employeeRole}`}</div>
                       </td>
                       <td className="px-4 py-3 text-[#64748B]">
@@ -336,7 +337,7 @@ export function OutstationRequestsAdmin({
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EA580C]">Selected request</p>
                 <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-[#0F172A]">
-                  {selectedRequest?.employeeName ?? "No request selected"}
+                  {selectedRequest ? formatEmployeeDisplayName(selectedRequest.employeeName) : "No request selected"}
                 </h2>
               </div>
             </div>

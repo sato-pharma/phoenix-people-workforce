@@ -38,7 +38,7 @@ import type {
   EmployeeLookupOption,
   EmployeeMutationInput,
 } from "@/lib/employees/employee-directory";
-import { cn } from "@/lib/utils";
+import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
 type EmployeeManagementProps = {
   initialData?: EmployeeDirectoryData | null;
@@ -628,7 +628,7 @@ export function EmployeeManagement({
             }
           : current,
       );
-      setNotice(`Resignation recorded for ${resigningEmployee.fullName}. Vacancy ${payload.data?.vacancyCode ?? "opened"} created and employee moved to ${resignationForm.employeeStatus}.`);
+      setNotice(`Resignation recorded for ${formatEmployeeDisplayName(resigningEmployee.fullName)}. Vacancy ${payload.data?.vacancyCode ?? "opened"} created and employee moved to ${resignationForm.employeeStatus}.`);
       closeResignation();
     } catch {
       setResignationError("Unable to process employee resignation.");
@@ -855,7 +855,7 @@ export function EmployeeManagement({
                             type="button"
                           >
                             <p className="font-medium text-text">
-                              {employee.fullName}
+                              {formatEmployeeDisplayName(employee.fullName)}
                             </p>
                             <p className="mt-1 font-mono text-xs text-text-secondary">
                               {employee.hrId}
@@ -1224,7 +1224,7 @@ export function EmployeeManagement({
                 </div>
               ) : null}
               <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 md:col-span-2">
-                <p className="font-semibold text-rose-900">{resigningEmployee.fullName}</p>
+                <p className="font-semibold text-rose-900">{formatEmployeeDisplayName(resigningEmployee.fullName)}</p>
                 <p className="mt-1 text-sm text-rose-800">
                   {resigningEmployee.hrId} · {emptyText(resigningEmployee.positionTitle ?? resigningEmployee.jobTitle)} · {emptyText(resigningEmployee.areaName)}
                 </p>

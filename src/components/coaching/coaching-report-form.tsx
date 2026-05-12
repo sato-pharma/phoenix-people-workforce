@@ -37,7 +37,7 @@ import type {
   CoachingReportDetail,
   CoachingScoreInput,
 } from "@/lib/coaching/types";
-import { cn } from "@/lib/utils";
+import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
 type CoachingEmployeeOption = {
   areaName: string | null;
@@ -364,7 +364,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
                   <option value="">Select Medical Rep by HR_ID...</option>
                   {employees.map((employee) => (
                     <option key={employee.hrId} value={employee.hrId}>
-                      {employee.fullName} - {employee.hrId}
+                      {formatEmployeeDisplayName(employee.fullName)} - {employee.hrId}
                     </option>
                   ))}
                 </select>

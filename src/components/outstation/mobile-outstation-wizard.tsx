@@ -19,6 +19,7 @@ import type {
   OutstationExpenseType,
   OutstationTransportationType,
 } from "@/lib/outstation/types";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 type MedicalTripOption = {
   hrId: string;
@@ -532,7 +533,7 @@ export function MobileOutstationWizard({
           request automatically on the server.
         </p>
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Stat label="Employee" value={employeeName} />
+          <Stat label="Employee" value={formatEmployeeDisplayName(employeeName)} />
           <Stat label="Role" value={employeeRole} />
           <Stat label="From" value={residenceSummary} />
           <Stat label="Residence Coordinates" value={hasResidenceCoordinates ? "Ready" : "Missing"} />
@@ -635,7 +636,7 @@ export function MobileOutstationWizard({
               </option>
               {medicalTripOptions.map((option) => (
                 <option key={option.hrId} value={option.hrId}>
-                  {option.name}
+                  {formatEmployeeDisplayName(option.name)}
                 </option>
               ))}
             </select>

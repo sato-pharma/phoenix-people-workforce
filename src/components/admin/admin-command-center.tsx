@@ -1,38 +1,38 @@
 import Link from "next/link";
 import {
-  Users,
-  TrendingUp,
-  ShieldCheck,
-  BarChart3,
-  FileSpreadsheet,
-  Network,
-  Receipt,
-  Briefcase,
-  ArrowRight,
-  AlertTriangle,
-  CheckCircle2,
   Activity,
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  Briefcase,
+  CheckCircle2,
+  FileSpreadsheet,
   FileUp,
-  Target,
-  Wallet,
   HeartPulse,
   IdCard,
   LockKeyhole,
+  Network,
+  Receipt,
+  ShieldCheck,
+  Target,
+  TrendingDown,
+  TrendingUp,
+  Users,
+  Wallet,
   XCircle,
 } from "lucide-react";
 
 import type { AdminCommandCenterData } from "@/lib/admin/command-center";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Formatting helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
 function egp(value: number) {
-  if (value >= 1_000_000)
-    return `EGP ${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000)
-    return `EGP ${(value / 1_000).toFixed(0)}K`;
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(value);
+  const safe = Number.isFinite(value) ? value : 0;
+  if (Math.abs(safe) >= 1_000_000) return `EGP ${(safe / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(safe) >= 1_000) return `EGP ${(safe / 1_000).toFixed(0)}K`;
+  return new Intl.NumberFormat("en-US", {
+    currency: "EGP",
+    maximumFractionDigits: 0,
+    style: "currency",
+  }).format(safe);
 }
 
 function pct(value: number, decimals = 1) {
@@ -43,238 +43,296 @@ function n(value: number) {
   return Number.isFinite(value) ? value.toLocaleString("en-US") : "0";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// KPI card
-// ─────────────────────────────────────────────────────────────────────────────
+type IconType = typeof Users;
+type MiniMetric = { label: string; ok?: boolean; value: string };
+type AccentColor = "amber" | "blue" | "emerald" | "orange" | "rose" | "violet";
+type Health = "attention" | "healthy" | "warning";
+
+const accentStyles: Record<
+  AccentColor,
+  { button: string; icon: string; metric: string; text: string }
+> = {
+  amber: {
+    button: "bg-amber-600 hover:bg-amber-700",
+    icon: "bg-amber-50 text-amber-700 ring-amber-200",
+    metric: "from-amber-50 to-white",
+    text: "text-amber-700",
+  },
+  blue: {
+    button: "bg-sky-600 hover:bg-sky-700",
+    icon: "bg-sky-50 text-sky-700 ring-sky-200",
+    metric: "from-sky-50 to-white",
+    text: "text-sky-700",
+  },
+  emerald: {
+    button: "bg-emerald-600 hover:bg-emerald-700",
+    icon: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    metric: "from-emerald-50 to-white",
+    text: "text-emerald-700",
+  },
+  orange: {
+    button: "bg-orange-600 hover:bg-orange-700",
+    icon: "bg-orange-50 text-orange-700 ring-orange-200",
+    metric: "from-orange-50 to-white",
+    text: "text-orange-700",
+  },
+  rose: {
+    button: "bg-rose-600 hover:bg-rose-700",
+    icon: "bg-rose-50 text-rose-700 ring-rose-200",
+    metric: "from-rose-50 to-white",
+    text: "text-rose-700",
+  },
+  violet: {
+    button: "bg-violet-600 hover:bg-violet-700",
+    icon: "bg-violet-50 text-violet-700 ring-violet-200",
+    metric: "from-violet-50 to-white",
+    text: "text-violet-700",
+  },
+};
+
+function SectionLabel({
+  action,
+  eyebrow,
+  title,
+}: {
+  action?: React.ReactNode;
+  eyebrow: string;
+  title: string;
+}) {
+  return (
+    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-700">
+          {eyebrow}
+        </p>
+        <h2 className="mt-1 text-lg font-black tracking-[-0.02em] text-slate-950">
+          {title}
+        </h2>
+      </div>
+      {action ? <div className="flex flex-wrap gap-2">{action}</div> : null}
+    </div>
+  );
+}
+
+function StatusPill({
+  children,
+  icon: Icon,
+  tone = "slate",
+}: {
+  children: React.ReactNode;
+  icon?: IconType;
+  tone?: "emerald" | "sky" | "slate" | "violet";
+}) {
+  const toneClassName = {
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    sky: "border-sky-200 bg-sky-50 text-sky-800",
+    slate: "border-slate-200 bg-white text-slate-700",
+    violet: "border-violet-200 bg-violet-50 text-violet-800",
+  }[tone];
+
+  return (
+    <span
+      className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold ${toneClassName}`}
+    >
+      {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
+      {children}
+    </span>
+  );
+}
 
 function KpiCard({
-  label,
-  value,
-  sub,
   accent = false,
   icon: Icon,
-  warn = false,
+  label,
   primary = false,
+  sub,
   trend,
+  value,
+  warn = false,
 }: {
-  label: string;
-  value: string;
-  sub?: string;
   accent?: boolean;
-  icon: typeof Users;
-  warn?: boolean;
+  icon: IconType;
+  label: string;
   primary?: boolean;
-  trend?: "up" | "down" | "neutral";
+  sub?: string;
+  trend?: "down" | "neutral" | "up";
+  value: string;
+  warn?: boolean;
 }) {
-  const getCardAccent = () => {
-    if (warn) {
-      return {
-        bg: "bg-gradient-to-r from-amber-50 to-amber-100/50",
-        iconBg: "bg-gradient-to-br from-amber-100 to-amber-50",
-        iconText: "text-amber-600",
-        border: "border-amber-200/60",
-        text: "text-amber-700",
-        glow: ""
-      };
-    }
-    if (accent) {
-      return {
-        bg: "bg-gradient-to-r from-orange-50 to-orange-100/50",
-        iconBg: "bg-gradient-to-br from-orange-100 to-orange-50",
-        iconText: "text-orange-600",
-        border: "border-orange-200/60",
-        text: "text-orange-700",
-        glow: ""
-      };
-    }
-    return {
-      bg: "bg-gradient-to-r from-slate-50 to-white",
-      iconBg: "bg-gradient-to-br from-slate-100 to-slate-50",
-      iconText: "text-slate-600",
-      border: "border-slate-200",
-      text: "text-slate-900",
-      glow: ""
-    };
-  };
-  const accentStyle = getCardAccent();
+  const tone = warn ? "amber" : accent ? "orange" : "blue";
+  const style = accentStyles[tone];
+  const TrendIcon = trend === "down" ? TrendingDown : trend === "up" ? TrendingUp : null;
+  const trendClassName = trend === "down" ? "text-rose-600" : "text-emerald-600";
 
   return (
     <div
-      className={`relative overflow-hidden rounded-xl border ${accentStyle.border} ${accentStyle.bg} px-5 py-4 shadow-sm transition-all duration-160 ease-out hover:shadow-md hover:-translate-y-px ${primary ? "ring-2 ring-orange-200/40" : ""}`}
+      className={`group relative overflow-hidden rounded-lg border bg-gradient-to-br px-4 py-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md ${
+        warn
+          ? "border-amber-200 from-amber-50 to-white"
+          : accent
+            ? "border-orange-200 from-orange-50 to-white"
+            : "border-slate-200 from-white to-slate-50"
+      } ${primary ? "ring-1 ring-orange-200/70" : ""}`}
     >
-      {primary && (
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-500 via-orange-400 to-amber-400" />
-      )}
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" style={{ animationDuration: '1.5s' }} />
-            {trend === "up" && <span className="text-emerald-500 text-xs font-semibold">↑</span>}
-            {trend === "down" && <span className="text-rose-500 text-xs font-semibold">↓</span>}
+      {primary ? <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-600 via-amber-500 to-sky-500" /> : null}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex min-h-5 items-center gap-2">
+            <p className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+              {label}
+            </p>
+            {TrendIcon ? <TrendIcon className={`h-3.5 w-3.5 ${trendClassName}`} /> : null}
           </div>
-          <p className={`mt-2 ${primary ? "text-3xl" : "text-2xl"} font-semibold ${accentStyle.text}`}>
+          <p className={`${primary ? "text-2xl" : "text-xl"} mt-2 font-black tracking-[-0.03em] ${style.text}`}>
             {value}
           </p>
-          {sub && <p className="mt-1.5 text-xs text-slate-500">{sub}</p>}
+          {sub ? <p className="mt-1.5 text-xs leading-5 text-slate-500">{sub}</p> : null}
         </div>
-        <div
-          className={`flex ${primary ? "h-10 w-10" : "h-9 w-9"} shrink-0 items-center justify-center rounded-lg ${accentStyle.iconBg} ${accentStyle.iconText} shadow-sm transition-all duration-160 ease-out hover:scale-105`}
-        >
-          <Icon className={`${primary ? "h-5 w-5" : "h-4 w-4"}`} />
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ${style.icon}`}>
+          <Icon className="h-5 w-5" />
         </div>
       </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Module card
-// ─────────────────────────────────────────────────────────────────────────────
-
-type MiniMetric = { label: string; value: string; ok?: boolean };
-
 function ModuleCard({
-  title,
+  accentColor = "orange",
   description,
+  health = "healthy",
   href,
   icon: Icon,
-  metrics = [],
-  accentColor = "orange",
-  health = "healthy",
   lastSync,
+  metrics = [],
+  title,
 }: {
-  title: string;
+  accentColor?: AccentColor;
   description: string;
+  health?: Health;
   href: string;
-  icon: typeof Users;
-  metrics?: MiniMetric[];
-  accentColor?: "orange" | "blue" | "emerald" | "violet" | "amber" | "rose";
-  health?: "healthy" | "attention" | "warning";
+  icon: IconType;
   lastSync?: string;
+  metrics?: MiniMetric[];
+  title: string;
 }) {
-  const colors: Record<string, { bg: string; text: string; ring: string; btn: string; btnHover: string }> = {
-    orange:  { bg: "bg-orange-50",  text: "text-orange-600",  ring: "ring-orange-200/60",  btn: "bg-[#0B0B0B] hover:bg-[#F97316]", btnHover: "hover:bg-[#F97316]" },
-    blue:    { bg: "bg-sky-50",    text: "text-sky-600",    ring: "ring-sky-200/60",    btn: "bg-[#0B0B0B] hover:bg-[#0EA5E9]", btnHover: "hover:bg-[#0EA5E9]" },
-    emerald: { bg: "bg-emerald-50", text: "text-emerald-600", ring: "ring-emerald-200/60", btn: "bg-[#0B0B0B] hover:bg-[#10B981]", btnHover: "hover:bg-[#10B981]" },
-    violet:  { bg: "bg-violet-50",  text: "text-violet-600",  ring: "ring-violet-200/60",  btn: "bg-[#0B0B0B] hover:bg-[#8B5CF6]", btnHover: "hover:bg-[#8B5CF6]" },
-    amber:   { bg: "bg-amber-50",   text: "text-amber-600",   ring: "ring-amber-200/60",   btn: "bg-[#0B0B0B] hover:bg-[#F59E0B]", btnHover: "hover:bg-[#F59E0B]" },
-    rose:    { bg: "bg-rose-50",    text: "text-rose-600",    ring: "ring-rose-200/60",    btn: "bg-[#0B0B0B] hover:bg-[#F43F5E]", btnHover: "hover:bg-[#F43F5E]" },
-  };
-  const c = colors[accentColor] ?? colors.orange;
-
-  const healthColors = {
-    healthy: "bg-emerald-500/10 text-emerald-700 border-emerald-200/60",
-    attention: "bg-amber-500/10 text-amber-700 border-amber-200/60",
-    warning: "bg-rose-500/10 text-rose-700 border-rose-200/60",
-  };
+  const style = accentStyles[accentColor];
+  const healthStyle = {
+    attention: "border-amber-200 bg-amber-50 text-amber-800",
+    healthy: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    warning: "border-rose-200 bg-rose-50 text-rose-800",
+  }[health];
 
   return (
-    <div className="group flex flex-col rounded-xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 p-5 shadow-sm transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
-      {/* Icon + title + health */}
-      <div className="mb-4 flex items-start gap-3">
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${c.bg} ${c.text} ${c.ring} shadow-sm transition-all duration-160 ease-out group-hover:scale-110 group-hover:shadow-md`}>
+    <div className="group flex min-h-[236px] flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md">
+      <div className="flex items-start gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ${style.icon}`}>
           <Icon className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-slate-900">{title}</p>
-            <div className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${healthColors[health]}`}>
-              {health === "healthy" && <CheckCircle2 className="h-2.5 w-2.5" />}
-              {health === "attention" && <AlertTriangle className="h-2.5 w-2.5" />}
-              {health === "warning" && <XCircle className="h-2.5 w-2.5" />}
-              <span className="capitalize">{health}</span>
-            </div>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-sm font-black tracking-[-0.01em] text-slate-950">{title}</h3>
+            <span className={`inline-flex shrink-0 items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${healthStyle}`}>
+              {health === "healthy" ? <CheckCircle2 className="h-3 w-3" /> : null}
+              {health === "attention" ? <AlertTriangle className="h-3 w-3" /> : null}
+              {health === "warning" ? <XCircle className="h-3 w-3" /> : null}
+              {health}
+            </span>
           </div>
-          <p className="mt-1 text-xs text-slate-500 leading-relaxed">{description}</p>
-          {lastSync && <p className="mt-1 text-[10px] text-slate-400">Synced: {lastSync}</p>}
+          <p className="mt-1.5 text-xs leading-5 text-slate-500">{description}</p>
+          {lastSync ? <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Synced: {lastSync}</p> : null}
         </div>
       </div>
 
-      {/* Mini metrics */}
-      {metrics.length > 0 && (
-        <div className="mb-4 grid grid-cols-3 gap-2">
-          {metrics.map((m) => (
-            <div key={m.label} className="rounded-lg border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white px-3 py-2 shadow-sm transition-all duration-160 ease-out group-hover:border-slate-300">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{m.label}</p>
-              <p className={`mt-1 text-sm font-semibold ${m.ok === false ? "text-rose-600" : m.ok === true ? "text-emerald-600" : "text-slate-900"}`}>
-                {m.value}
+      {metrics.length > 0 ? (
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {metrics.map((metric) => (
+            <div
+              className={`rounded-lg border border-slate-200 bg-gradient-to-b ${style.metric} px-2.5 py-2`}
+              key={metric.label}
+            >
+              <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                {metric.label}
+              </p>
+              <p
+                className={`mt-1 truncate text-sm font-black ${
+                  metric.ok === false
+                    ? "text-rose-700"
+                    : metric.ok === true
+                      ? "text-emerald-700"
+                      : "text-slate-950"
+                }`}
+              >
+                {metric.value}
               </p>
             </div>
           ))}
         </div>
-      )}
+      ) : null}
 
-      {/* Spacer so button sticks to bottom */}
       <div className="flex-1" />
 
       <Link
+        className={`mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black uppercase tracking-[0.08em] text-white shadow-sm transition duration-200 hover:shadow-md ${style.button}`}
         href={href}
-        className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition-all duration-160 ease-out hover:shadow-md active:scale-95 ${c.btn}`}
       >
-        Open Module
-        <ArrowRight className="h-3.5 w-3.5 transition-transform duration-160 ease-out group-hover:translate-x-0.5" />
+        Open
+        <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
       </Link>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Quick action pill
-// ─────────────────────────────────────────────────────────────────────────────
-
-function QuickAction({ href, label, icon: Icon }: { href: string; label: string; icon: typeof Users }) {
+function QuickAction({ href, icon: Icon, label }: { href: string; icon: IconType; label: string }) {
   return (
     <Link
+      className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-3 text-xs font-semibold text-white shadow-sm backdrop-blur transition hover:border-orange-300/70 hover:bg-orange-500/20"
       href={href}
-      className="group flex items-center gap-2.5 rounded-full border border-slate-200/80 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition-all duration-160 ease-out hover:-translate-y-px hover:border-orange-300/80 hover:bg-orange-50/95 hover:text-orange-700 hover:shadow-md"
     >
-      <Icon className="h-3.5 w-3.5 transition-all duration-160 ease-out group-hover:scale-110 group-hover:text-orange-600" />
+      <Icon className="h-3.5 w-3.5 text-orange-200" />
       {label}
     </Link>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Risk alert strip
-// ─────────────────────────────────────────────────────────────────────────────
 
 function RiskStrip({ expiringContracts, probationEndings }: { expiringContracts: number; probationEndings: number }) {
   const hasRisk = expiringContracts > 0 || probationEndings > 0;
   if (!hasRisk) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200/80 bg-gradient-to-r from-amber-50/95 via-white to-amber-50/95 px-5 py-3 shadow-sm transition-all duration-160 ease-out hover:shadow-md">
-      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
-      <p className="text-xs font-semibold text-amber-900">Attention required:</p>
-      {expiringContracts > 0 && (
-        <Link href="/contracts" className="group flex items-center gap-1.5 rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-200 transition-all duration-160 ease-out hover:shadow-sm">
-          {expiringContracts} contract{expiringContracts !== 1 ? "s" : ""} expiring soon
-        </Link>
-      )}
-      {probationEndings > 0 && (
-        <Link href="/probation" className="group flex items-center gap-1.5 rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-200 transition-all duration-160 ease-out hover:shadow-sm">
-          {probationEndings} probation{probationEndings !== 1 ? "s" : ""} ending soon
-        </Link>
-      )}
+    <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm sm:flex-row sm:items-center">
+      <div className="flex items-center gap-2 text-sm font-black text-amber-950">
+        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+        Attention required
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {expiringContracts > 0 ? (
+          <Link className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-amber-800 ring-1 ring-amber-200 transition hover:bg-amber-100" href="/contracts">
+            {expiringContracts} contract{expiringContracts !== 1 ? "s" : ""} expiring soon
+          </Link>
+        ) : null}
+        {probationEndings > 0 ? (
+          <Link className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-amber-800 ring-1 ring-amber-200 transition hover:bg-amber-100" href="/probation">
+            {probationEndings} probation{probationEndings !== 1 ? "s" : ""} ending soon
+          </Link>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Data unavailability banner
-// ─────────────────────────────────────────────────────────────────────────────
-
 function DataUnavailableBanner({ messages }: { messages: string[] }) {
   if (messages.length === 0) return null;
+
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-slate-200/80 bg-gradient-to-r from-slate-50 to-white px-5 py-3 shadow-sm transition-all duration-160 ease-out hover:shadow-md">
+    <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
       <Activity className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
       <div>
-        <p className="text-xs font-semibold text-slate-700">Some data sources are temporarily unavailable:</p>
+        <p className="text-sm font-black text-slate-800">Some data sources are temporarily unavailable</p>
         <ul className="mt-1.5 space-y-1">
-          {messages.map((m) => (
-            <li key={m} className="text-[11px] font-medium text-slate-500">{m}</li>
+          {messages.map((message) => (
+            <li className="text-xs font-medium text-slate-500" key={message}>
+              {message}
+            </li>
           ))}
         </ul>
       </div>
@@ -282,389 +340,300 @@ function DataUnavailableBanner({ messages }: { messages: string[] }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main component
-// ─────────────────────────────────────────────────────────────────────────────
+function SecondaryLink({
+  href,
+  icon: Icon,
+  label,
+  sub,
+  tone,
+}: {
+  href: string;
+  icon: IconType;
+  label: string;
+  sub: string;
+  tone: AccentColor;
+}) {
+  const style = accentStyles[tone];
+
+  return (
+    <Link
+      className="group flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
+      href={href}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ${style.icon}`}>
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-black text-slate-950">{label}</p>
+          <p className="mt-1 truncate text-xs text-slate-500">{sub}</p>
+        </div>
+      </div>
+      <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition duration-200 group-hover:translate-x-0.5 group-hover:text-orange-600" />
+    </Link>
+  );
+}
 
 export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
   const { overview: o, health, payrollEligibleCount, dataUnavailable } = data;
-
   const salesAchievement = o.sales.achievementRate * 100;
   const offerAcceptance = o.recruitment.acceptanceRate * 100;
+  const pendingRisk = o.risk.expiringContracts + o.risk.probationEndings;
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top_left,rgba(249,115,22,0.06),transparent_50%),radial-gradient(ellipse_at_bottom_right,rgba(251,146,60,0.04),transparent_45%),radial-gradient(ellipse_at_center,rgba(148,163,184,0.02),transparent_40%),linear-gradient(180deg,#F8FAFC_0%,#F1F5F9_40%,#E8EEF5_100%)] px-4 py-8 sm:px-8">
-      <div className="mx-auto max-w-[1480px] space-y-10">
-
-        {/* ── Hero header ─────────────────────────────────────────────── */}
-        <div className="relative overflow-hidden rounded-2xl border border-slate-900/90 bg-[linear-gradient(135deg,#0a0a0a_0%,#111111_35%,#1a1208_65%,#2a1a0a_100%)] px-8 py-8 shadow-[0_20px_60px_rgba(0,0,0,0.40),0_0_0_1px_rgba(255,255,255,0.06)_inset,0_0_80px_rgba(249,115,22,0.06)]">
-          {/* Premium multi-layered glow blobs */}
-          <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-[#F97316]/10 blur-[100px]" />
-          <div className="pointer-events-none absolute -bottom-20 left-40 h-72 w-72 rounded-full bg-[#F59E0B]/8 blur-[80px]" />
-          <div className="pointer-events-none absolute right-1/3 top-1/3 h-56 w-56 rounded-full bg-[#FB923C]/6 blur-[60px]" />
-          {/* Subtle grid pattern overlay */}
-          <div className="pointer-events-none absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTTAgNDBMMDQwIDBIMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDQpIiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-30" />
-
-          <div className="relative z-10">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex-1">
-                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-500/20 bg-orange-500/5 px-3 py-1 backdrop-blur-sm">
-                  <span className="h-1.5 w-1.5 rounded-full bg-orange-400 shadow-[0_0_6px_rgba(251,146,60,0.5)]" />
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-200">Phoenix Workforce</span>
-                </div>
-                <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl lg:text-5xl">
-                  Admin Command Center
-                </h1>
-                <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-300/80">
-                  Unified workforce, payroll, sales, and operational intelligence — all in one place.
-                </p>
+    <div className="min-h-screen bg-[linear-gradient(180deg,#F8FAFC_0%,#F1F5F9_48%,#E8EEF5_100%)] px-3 py-5 sm:px-5 lg:px-6">
+      <div className="mx-auto max-w-[1480px] space-y-7">
+        <section className="relative overflow-hidden rounded-lg border border-slate-950 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] shadow-[0_22px_70px_rgba(15,23,42,0.32)]">
+          <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:44px_44px]" />
+          <div className="relative grid gap-6 p-5 sm:p-6 lg:grid-cols-[1fr_360px] lg:p-8">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-lg border border-orange-400/25 bg-orange-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-orange-100">
+                <span className="h-1.5 w-1.5 rounded-full bg-orange-300" />
+                Phoenix Workforce
               </div>
+              <h1 className="mt-4 max-w-3xl text-3xl font-black tracking-[-0.04em] text-white sm:text-4xl lg:text-5xl">
+                Admin Command Center
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+                Unified workforce, payroll, sales, and operational intelligence in one executive surface.
+              </p>
 
-              {/* Live operational status */}
-              <div className="flex flex-col items-end gap-2">
-                <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/90 px-4 py-2 backdrop-blur-md shadow-[0_6px_20px_rgba(0,0,0,0.3)]">
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" style={{ animationDuration: '1.5s' }} />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
-                  </span>
-                  <span className="text-xs font-semibold text-slate-200">Live data</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <div className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-1 text-emerald-400 border border-emerald-500/20">
-                    <CheckCircle2 className="h-3 w-3" />
-                    <span className="font-medium">Payroll Synced</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 rounded-full bg-sky-500/10 px-2 py-1 text-sky-400 border border-sky-500/20">
-                    <ShieldCheck className="h-3 w-3" />
-                    <span className="font-medium">Governance Active</span>
-                  </div>
-                </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <QuickAction href="/employees" icon={Users} label="Employees" />
+                <QuickAction href="/payroll" icon={Wallet} label="Payroll" />
+                <QuickAction href="/sales" icon={TrendingUp} label="Sales" />
+                <QuickAction href="/admin/access" icon={ShieldCheck} label="Access" />
+                <QuickAction href="/imports/employees" icon={FileUp} label="Import" />
+                <QuickAction href="/organogram" icon={Network} label="Org Chart" />
               </div>
             </div>
 
-            {/* Quick actions */}
-            <div className="mt-5 flex flex-wrap gap-2">
-              <QuickAction href="/employees" label="Employees" icon={Users} />
-              <QuickAction href="/payroll" label="Payroll" icon={Wallet} />
-              <QuickAction href="/sales" label="Sales" icon={TrendingUp} />
-              <QuickAction href="/admin/access" label="Access Control" icon={ShieldCheck} />
-              <QuickAction href="/imports/employees" label="Bulk Import" icon={FileUp} />
-              <QuickAction href="/organogram" label="Organogram" icon={Network} />
+            <div className="rounded-lg border border-white/10 bg-black/20 p-4 backdrop-blur">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                    Operational status
+                  </p>
+                  <p className="mt-2 text-xl font-black text-white">Live data</p>
+                </div>
+                <span className="relative flex h-3 w-3">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" style={{ animationDuration: "1.5s" }} />
+                  <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-400" />
+                </span>
+              </div>
+              <div className="mt-5 grid gap-2">
+                <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
+                  <span className="font-semibold text-slate-300">Payroll synced</span>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
+                  <span className="font-semibold text-slate-300">Governance active</span>
+                  <ShieldCheck className="h-4 w-4 text-sky-300" />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
+                  <span className="font-semibold text-slate-300">Access protected</span>
+                  <LockKeyhole className="h-4 w-4 text-violet-300" />
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* ── Risk & data alerts ──────────────────────────────────────── */}
-        <RiskStrip
-          expiringContracts={o.risk.expiringContracts}
-          probationEndings={o.risk.probationEndings}
-        />
+        <RiskStrip expiringContracts={o.risk.expiringContracts} probationEndings={o.risk.probationEndings} />
         <DataUnavailableBanner messages={dataUnavailable} />
 
-        {/* ── Command Center Summary Strip ─────────────────────────────── */}
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-gradient-to-r from-white via-slate-50/50 to-white px-5 py-3 shadow-sm">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="font-semibold text-slate-700">{n(o.hr.totalEmployees)} Employees</span>
-            <span className="text-slate-300">|</span>
-            <span className="font-semibold text-slate-700">{n(o.hr.activeEmployees)} Active</span>
-          </div>
-          <div className="h-4 w-px bg-slate-200" />
-          <div className="flex items-center gap-2 text-xs">
-            <span className="font-semibold text-slate-700">{o.risk.expiringContracts + o.risk.probationEndings} Pending</span>
-            <span className="text-slate-300">|</span>
-            <span className="font-semibold text-slate-700">{n(o.payroll.flags)} Flags</span>
-          </div>
-          <div className="h-4 w-px bg-slate-200" />
-          <div className="flex items-center gap-2 text-xs">
-            <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-1 text-emerald-700 border border-emerald-200/60">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" style={{ animationDuration: '1.5s' }} />
-              <span className="font-medium">Payroll Synced</span>
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-semibold text-slate-700">
+              <span>{n(o.hr.totalEmployees)} employees</span>
+              <span>{n(o.hr.activeEmployees)} active</span>
+              <span>{pendingRisk} pending risks</span>
+              <span>{n(o.payroll.flags)} payroll flags</span>
             </div>
-            <div className="flex items-center gap-1.5 rounded-full bg-sky-50 px-2 py-1 text-sky-700 border border-sky-200/60">
-              <ShieldCheck className="h-3 w-3" />
-              <span className="font-medium">Audit Healthy</span>
-            </div>
-            <div className="flex items-center gap-1.5 rounded-full bg-violet-50 px-2 py-1 text-violet-700 border border-violet-200/60">
-              <LockKeyhole className="h-3 w-3" />
-              <span className="font-medium">Access Protected</span>
+            <div className="flex flex-wrap gap-2">
+              <StatusPill tone="emerald">Payroll synced</StatusPill>
+              <StatusPill icon={ShieldCheck} tone="sky">Audit healthy</StatusPill>
+              <StatusPill icon={LockKeyhole} tone="violet">Access protected</StatusPill>
             </div>
           </div>
         </div>
 
-        {/* ── KPI strip ────────────────────────────────────────────────── */}
-        <div>
-          <div className="mb-4 flex items-center justify-between">
-            <p className="flex items-center gap-2.5 text-xs font-bold uppercase tracking-[0.12em] text-slate-700">
-              <span className="h-2 w-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_6px_rgba(249,115,22,0.4)]" />
-              Key Metrics
-            </p>
-            <div className="flex items-center gap-2 text-xs">
-              <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 border border-emerald-200/60">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" style={{ animationDuration: '1.5s' }} />
-                <span className="font-medium">Governance Active</span>
-              </div>
-              <div className="flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-1 text-sky-700 border border-sky-200/60">
-                <ShieldCheck className="h-3 w-3" />
-                <span className="font-medium">RLS Protected</span>
-              </div>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
+        <section>
+          <SectionLabel
+            action={
+              <>
+                <StatusPill tone="emerald">Governance active</StatusPill>
+                <StatusPill icon={ShieldCheck} tone="sky">RLS protected</StatusPill>
+              </>
+            }
+            eyebrow="Command metrics"
+            title="Key operating signals"
+          />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard icon={CheckCircle2} label="Active Employees" primary sub={`of ${n(o.hr.totalEmployees)} total`} trend="up" value={n(o.hr.activeEmployees)} />
+            <KpiCard accent icon={Wallet} label="Net Payroll" primary sub={`Gross ${egp(o.payroll.gross)}`} value={egp(o.payroll.net)} />
             <KpiCard
-              label="Active Employees"
-              value={n(o.hr.activeEmployees)}
-              sub={`of ${n(o.hr.totalEmployees)} total`}
-              icon={CheckCircle2}
-              primary
-              trend="up"
-            />
-            <KpiCard
-              label="Net Payroll"
-              value={egp(o.payroll.net)}
-              sub={`Gross ${egp(o.payroll.gross)}`}
-              icon={Wallet}
-              primary
-              accent
-            />
-            <KpiCard
-              label="Sales Achievement"
-              value={pct(salesAchievement)}
-              sub={`${n(o.sales.activeProducts)} active products`}
-              icon={Target}
               accent={salesAchievement >= 90}
-              warn={salesAchievement < 70}
+              icon={Target}
+              label="Sales Achievement"
               primary
+              sub={`${n(o.sales.activeProducts)} active products`}
               trend={salesAchievement >= 90 ? "up" : salesAchievement < 70 ? "down" : "neutral"}
+              value={pct(salesAchievement)}
+              warn={salesAchievement < 70}
             />
+            <KpiCard icon={Users} label="Total Employees" sub={`${n(o.hr.uniqueLines)} lines / ${n(o.hr.uniqueAreas)} areas`} value={n(o.hr.totalEmployees)} />
+            <KpiCard icon={IdCard} label="Payroll Eligible" sub={o.payroll.batchLabel || "Latest batch"} value={n(payrollEligibleCount)} />
+            <KpiCard icon={TrendingUp} label="Total Sales" sub={`vs ${egp(o.sales.targetValue)} target`} value={egp(o.sales.salesValue)} />
+            <KpiCard icon={Receipt} label="Expense Claims" sub={`${n(o.expenses.totalRows)} entries`} value={egp(o.expenses.approvedAmount)} />
             <KpiCard
-              label="Total Employees"
-              value={n(o.hr.totalEmployees)}
-              sub={`${n(o.hr.uniqueLines)} lines · ${n(o.hr.uniqueAreas)} areas`}
-              icon={Users}
-            />
-            <KpiCard
-              label="Payroll Eligible"
-              value={n(payrollEligibleCount)}
-              sub={o.payroll.batchLabel || "Latest batch"}
-              icon={IdCard}
-            />
-            <KpiCard
-              label="Total Sales"
-              value={egp(o.sales.salesValue)}
-              sub={`vs ${egp(o.sales.targetValue)} target`}
-              icon={TrendingUp}
-            />
-            <KpiCard
-              label="Expense Claims"
-              value={egp(o.expenses.approvedAmount)}
-              sub={`${n(o.expenses.totalRows)} entries`}
-              icon={Receipt}
-            />
-            <KpiCard
-              label="Data Health"
-              value={pct(health.employeeHealthRate)}
-              sub={`${n(health.healthyEmployees)} / ${n(health.totalEmployees || o.hr.totalEmployees)} healthy`}
-              icon={HeartPulse}
               accent={health.employeeHealthRate >= 90}
-              warn={health.employeeHealthRate < 70}
+              icon={HeartPulse}
+              label="Data Health"
+              sub={`${n(health.healthyEmployees)} / ${n(health.totalEmployees || o.hr.totalEmployees)} healthy`}
               trend={health.employeeHealthRate >= 90 ? "up" : health.employeeHealthRate < 70 ? "down" : "neutral"}
+              value={pct(health.employeeHealthRate)}
+              warn={health.employeeHealthRate < 70}
             />
           </div>
-        </div>
+        </section>
 
-        {/* ── Module grid ──────────────────────────────────────────────── */}
-        <div>
-          <div className="mb-4 flex items-center justify-between">
-            <p className="flex items-center gap-2.5 text-xs font-bold uppercase tracking-[0.12em] text-slate-700">
-              <span className="h-2 w-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_6px_rgba(249,115,22,0.4)]" />
-              Modules
-            </p>
-            <div className="flex items-center gap-2 text-xs">
-              <div className="flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-1 text-violet-700 border border-violet-200/60">
-                <LockKeyhole className="h-3 w-3" />
-                <span className="font-medium">Audit Enabled</span>
-              </div>
-            </div>
-          </div>
+        <section>
+          <SectionLabel
+            action={<StatusPill icon={LockKeyhole} tone="violet">Audit enabled</StatusPill>}
+            eyebrow="Workspace map"
+            title="Core operating modules"
+          />
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-
-            {/* People & Organogram */}
             <ModuleCard
-              title="People & Organogram"
+              accentColor="blue"
               description="Workforce directory, reporting lines, and org structure visualization."
+              health={o.hr.employeesWithoutManagers > 0 ? "attention" : "healthy"}
               href="/employees"
               icon={Users}
-              accentColor="blue"
-              health={o.hr.employeesWithoutManagers > 0 ? "attention" : "healthy"}
               lastSync="Live"
               metrics={[
                 { label: "Total", value: n(o.hr.totalEmployees) },
                 { label: "Active", value: n(o.hr.activeEmployees) },
                 { label: "Lines", value: n(o.hr.uniqueLines) },
               ]}
+              title="People and Organogram"
             />
-
-            {/* Payroll Operations */}
             <ModuleCard
-              title="Payroll Operations"
+              accentColor="emerald"
               description="Salary batches, payslip distribution, deductions, and financial reconciliation."
+              health={o.payroll.flags > 0 ? "attention" : "healthy"}
               href="/payroll"
               icon={FileSpreadsheet}
-              accentColor="emerald"
-              health={o.payroll.flags > 0 ? "attention" : "healthy"}
               lastSync={o.payroll.batchLabel || "Latest"}
               metrics={[
                 { label: "Net", value: egp(o.payroll.net) },
                 { label: "Staff", value: n(o.payroll.employees) },
-                { label: "Flags", value: n(o.payroll.flags), ok: o.payroll.flags === 0 },
+                { label: "Flags", ok: o.payroll.flags === 0, value: n(o.payroll.flags) },
               ]}
+              title="Payroll Operations"
             />
-
-            {/* Sales Performance */}
             <ModuleCard
-              title="Sales Performance"
+              accentColor="orange"
               description="Rep achievement tracking, product analytics, and territory-level targets."
+              health={salesAchievement >= 90 ? "healthy" : salesAchievement < 70 ? "warning" : "attention"}
               href="/sales"
               icon={BarChart3}
-              accentColor="orange"
-              health={salesAchievement >= 90 ? "healthy" : salesAchievement < 70 ? "warning" : "attention"}
               lastSync="Live"
               metrics={[
                 { label: "Sales", value: egp(o.sales.salesValue) },
-                { label: "Achieve", value: pct(salesAchievement), ok: salesAchievement >= 90 },
+                { label: "Achieve", ok: salesAchievement >= 90, value: pct(salesAchievement) },
                 { label: "Products", value: n(o.sales.activeProducts) },
               ]}
+              title="Sales Performance"
             />
-
-            {/* Field Expenses */}
             <ModuleCard
-              title="Field Expenses"
+              accentColor="amber"
               description="Trip reports, fuel claims, and expense approval workflow."
               href="/payroll/expenses/dashboard"
               icon={Receipt}
-              accentColor="amber"
-              health="healthy"
               lastSync="Live"
               metrics={[
                 { label: "Approved", value: egp(o.expenses.approvedAmount) },
                 { label: "Reports", value: n(o.expenses.reportCount) },
                 { label: "Entries", value: n(o.expenses.totalRows) },
               ]}
+              title="Field Expenses"
             />
-
-            {/* Job Offers */}
             <ModuleCard
-              title="Job Offers"
+              accentColor="violet"
               description="Offer lifecycle management, acceptance tracking, and pipeline overview."
+              health={offerAcceptance >= 70 ? "healthy" : "attention"}
               href="/offers"
               icon={Briefcase}
-              accentColor="violet"
-              health={offerAcceptance >= 70 ? "healthy" : "attention"}
               lastSync="Live"
               metrics={[
                 { label: "Total", value: n(o.recruitment.totalOffers) },
                 { label: "Pending", value: n(o.recruitment.pendingOffers) },
-                { label: "Accept %", value: pct(offerAcceptance), ok: offerAcceptance >= 70 },
+                { label: "Accept", ok: offerAcceptance >= 70, value: pct(offerAcceptance) },
               ]}
+              title="Job Offers"
             />
-
-            {/* Data Health */}
             <ModuleCard
-              title="Data Health"
+              accentColor="rose"
               description="Employee linkage integrity, HR ID orphan detection, and sales data quality."
+              health={health.employeeHealthRate >= 90 ? "healthy" : health.employeeHealthRate < 70 ? "warning" : "attention"}
               href="/imports/employees"
               icon={HeartPulse}
-              accentColor="rose"
-              health={health.employeeHealthRate >= 90 ? "healthy" : health.employeeHealthRate < 70 ? "warning" : "attention"}
               lastSync="Live"
               metrics={[
-                { label: "HR Health", value: pct(health.employeeHealthRate), ok: health.employeeHealthRate >= 90 },
-                { label: "Sales Link", value: pct(health.salesLinkageRate), ok: health.salesLinkageRate >= 90 },
-                { label: "No Mgr", value: n(health.missingManager), ok: health.missingManager === 0 },
+                { label: "HR", ok: health.employeeHealthRate >= 90, value: pct(health.employeeHealthRate) },
+                { label: "Sales", ok: health.salesLinkageRate >= 90, value: pct(health.salesLinkageRate) },
+                { label: "No Mgr", ok: health.missingManager === 0, value: n(health.missingManager) },
               ]}
+              title="Data Health"
             />
-
-            {/* Organogram */}
             <ModuleCard
-              title="Organogram"
+              accentColor="blue"
               description="Interactive org chart with hierarchy visualization and role mapping."
+              health={o.hr.employeesWithoutManagers > 0 ? "attention" : "healthy"}
               href="/organogram"
               icon={Network}
-              accentColor="blue"
-              health={o.hr.employeesWithoutManagers > 0 ? "attention" : "healthy"}
               lastSync="Live"
               metrics={[
                 { label: "Lines", value: n(o.hr.uniqueLines) },
                 { label: "Areas", value: n(o.hr.uniqueAreas) },
-                { label: "No Mgr", value: n(o.hr.employeesWithoutManagers), ok: o.hr.employeesWithoutManagers === 0 },
+                { label: "No Mgr", ok: o.hr.employeesWithoutManagers === 0, value: n(o.hr.employeesWithoutManagers) },
               ]}
+              title="Organogram"
             />
-
-            {/* Access Control */}
             <ModuleCard
-              title="Access Control"
+              accentColor="violet"
               description="User accounts, role permissions, authentication, and audit trail."
               href="/admin/access"
               icon={ShieldCheck}
-              accentColor="violet"
-              health="healthy"
               lastSync="Live"
-              metrics={[]}
+              title="Access Control"
             />
-
           </div>
-        </div>
+        </section>
 
-        {/* ── Secondary modules row ────────────────────────────────────── */}
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Link
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SecondaryLink
             href="/probation"
-            className="group flex items-center justify-between rounded-lg border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 px-5 py-4 shadow-sm transition-all duration-160 ease-out hover:-translate-y-px hover:border-slate-300 hover:shadow-md"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600 ring-1 ring-amber-200/60 shadow-sm transition-all duration-160 ease-out group-hover:scale-110 group-hover:shadow-md">
-                <Activity className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Probation Tracker</p>
-                <p className="text-xs text-slate-500">
-                  {o.risk.probationEndings > 0
-                    ? `${o.risk.probationEndings} ending soon`
-                    : "All on track"}
-                </p>
-              </div>
-            </div>
-            <ArrowRight className="h-4 w-4 text-slate-300 transition-all duration-160 ease-out group-hover:text-orange-500 group-hover:translate-x-1" />
-          </Link>
-
-          <Link
+            icon={Activity}
+            label="Probation Tracker"
+            sub={o.risk.probationEndings > 0 ? `${o.risk.probationEndings} ending soon` : "All on track"}
+            tone="amber"
+          />
+          <SecondaryLink
             href="/contracts"
-            className="group flex items-center justify-between rounded-lg border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 px-5 py-4 shadow-sm transition-all duration-160 ease-out hover:-translate-y-px hover:border-slate-300 hover:shadow-md"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-sky-50 to-sky-100 text-sky-600 ring-1 ring-sky-200/60 shadow-sm transition-all duration-160 ease-out group-hover:scale-110 group-hover:shadow-md">
-                <IdCard className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Contract Renewal</p>
-                <p className="text-xs text-slate-500">
-                  {o.risk.expiringContracts > 0
-                    ? `${o.risk.expiringContracts} expiring soon`
-                    : "No urgent renewals"}
-                </p>
-              </div>
-            </div>
-            <ArrowRight className="h-4 w-4 text-slate-300 transition-all duration-160 ease-out group-hover:text-orange-500 group-hover:translate-x-1" />
-          </Link>
-
+            icon={IdCard}
+            label="Contract Renewal"
+            sub={o.risk.expiringContracts > 0 ? `${o.risk.expiringContracts} expiring soon` : "No urgent renewals"}
+            tone="blue"
+          />
         </div>
 
-        {/* ── Footer ──────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between rounded-lg border border-slate-200/70 bg-gradient-to-r from-white/80 via-white/90 to-white/80 px-5 py-3.5 shadow-sm backdrop-blur-md">
-          <p className="text-[11px] font-semibold text-slate-500">Phoenix Workforce · Admin Command Center</p>
-          <p className="text-[11px] font-medium text-slate-400">Data refreshes on each page load</p>
-        </div>
-
+        <footer className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white/85 px-4 py-3 text-xs text-slate-500 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+          <p className="font-semibold">Phoenix Workforce / Admin Command Center</p>
+          <p>Data refreshes on each page load</p>
+        </footer>
       </div>
     </div>
   );

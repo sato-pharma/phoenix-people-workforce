@@ -26,7 +26,7 @@ import { Card } from "@/components/ui/card";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { formatDateOnly } from "@/lib/date-only";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
-import { cn } from "@/lib/utils";
+import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
 type OrganogramRow = VacancyReportData["organogramRows"][number];
 type MemberNode = {
@@ -281,7 +281,7 @@ function TeamMemberCard({ row }: { row: OrganogramRow }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="whitespace-normal break-words text-[11px] font-semibold leading-tight text-text">
-            {row.fullName}
+            {formatEmployeeDisplayName(row.fullName)}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-text-secondary">
             <span className="font-mono font-medium">{row.hrId}</span>
@@ -591,7 +591,7 @@ function OrganogramView({
               <HierarchyNode
                 icon={<Crown className="h-3.5 w-3.5" />}
                 label={chiefExecutive ? chiefExecutive.positionTitle ?? chiefExecutive.jobTitle ?? "CEO" : "CEO"}
-                name={chiefExecutive?.fullName ?? "Executive Leadership"}
+                name={chiefExecutive ? formatEmployeeDisplayName(chiefExecutive.fullName) : "Executive Leadership"}
                 tone="dark"
               />
               <div className="h-5 w-px bg-border" />
@@ -605,7 +605,7 @@ function OrganogramView({
               <HierarchyNode
                 icon={<UsersRound className="h-3.5 w-3.5" />}
                 label={lineLeader ? lineLeader.positionTitle ?? lineLeader.jobTitle ?? "Line Leadership" : "Line Leadership"}
-                name={lineLeader?.fullName ?? lineName}
+                name={lineLeader ? formatEmployeeDisplayName(lineLeader.fullName) : lineName}
                 tone="primary"
               />
               <div className="h-5 w-px bg-border" />
@@ -651,7 +651,7 @@ function OrganogramView({
                                 <BriefcaseBusiness className="h-3 w-3" />
                               </div>
                               <p className="break-words text-[10px] font-bold uppercase tracking-[0.08em] leading-3">
-                                {group.name}
+                                {formatEmployeeDisplayName(group.name)}
                               </p>
                               <p className="mt-1 break-words text-[9px] font-medium leading-3 opacity-80">
                                 {group.title}

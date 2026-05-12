@@ -43,7 +43,7 @@ import type {
   SalaryBatch,
   SalaryRecord,
 } from "@/lib/payroll/types";
-import { cn } from "@/lib/utils";
+import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
 type Props = {
   initialData: PayrollDashboardData | null;
@@ -1131,7 +1131,7 @@ function calculateEmployeeScores(records: SalaryRecord[], previousRecords: Salar
       return {
         band: scoreBand(clamp(score)),
         key: record.id,
-        label: record.fullName || record.hrId,
+        label: formatEmployeeDisplayName(record.fullName, record.hrId),
         meta: `${record.hrId} / ${formatEGP(record.netSalary)}`,
         reasons: [
           `${formatNumber(missing)} missing identity fields`,
@@ -1368,7 +1368,7 @@ function generatePredictiveAlerts({
     const lead = anomalies[0];
     alerts.push({
       action: "Open anomaly review and inspect this employee before approval.",
-      affected: lead.fullName || lead.hrId,
+      affected: formatEmployeeDisplayName(lead.fullName, lead.hrId),
       confidence,
       reason: `${lead.signals.join(", ")} detected from uploaded payroll values.`,
       risk: lead.severity,
@@ -1910,7 +1910,7 @@ function ComparePayrollChart({
         .slice(0, 16)
         .map((record) => ({
           key: record.hrId,
-          label: record.fullName || record.hrId,
+          label: formatEmployeeDisplayName(record.fullName, record.hrId),
           meta: record.jobTitle || record.line || "Employee",
         }));
     }
@@ -4878,7 +4878,7 @@ export function PayrollDashboard({
       <Button
         disabled={!canConfirmSalaryUpload || confirmingSalary}
         onClick={handleConfirmSalaryUpload}
-        variant={canConfirmSalaryUpload ? "primary" : "secondary"}
+        variant={canConfirmSalaryUpload ? "default" : "secondary"}
       >
         {confirmingSalary ? (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -4905,7 +4905,7 @@ export function PayrollDashboard({
     if (!salaryReportBatch) return [];
     const salaryColumnValue = (record: SalaryRecord, key: string) => {
       if (key === "hrId") return record.hrId;
-      if (key === "fullName") return record.fullName;
+      if (key === "fullName") return formatEmployeeDisplayName(record.fullName);
       if (key === "hireDate") return formatPayrollDate(record.hireDate);
       if (key === "line") return record.line;
       if (key === "area") return record.area;
@@ -5322,7 +5322,7 @@ export function PayrollDashboard({
                           key={record.id}
                         >
                           <td className="px-4 py-3 font-mono text-xs text-text-secondary">{record.hrId}</td>
-                          <td className="px-4 py-3 font-medium text-text">{record.fullName}</td>
+                          <td className="px-4 py-3 font-medium text-text">{formatEmployeeDisplayName(record.fullName)}</td>
                           <td className="px-4 py-3 text-text-secondary">{formatPayrollDate(record.hireDate)}</td>
                           <td className="px-4 py-3 text-text-secondary">{record.line || "-"}</td>
                           <td className="px-4 py-3 text-text-secondary">{record.area || "-"}</td>

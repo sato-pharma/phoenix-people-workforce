@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import type { OutstationCalculationResult } from "@/lib/outstation/types";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 type CapturedLocation = {
   capturedAccuracyMeters: number;
@@ -211,7 +212,7 @@ export function OutstationRequestForm({
           The system validates your live browser GPS location against your registered residence. You do not enter the From location manually.
         </p>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <InfoCard label="Employee" value={employeeName} />
+          <InfoCard label="Employee" value={formatEmployeeDisplayName(employeeName)} />
           <InfoCard label="Role" value={employeeRole} />
           <InfoCard label="Registered Residence" value={residenceSummary} />
           <InfoCard

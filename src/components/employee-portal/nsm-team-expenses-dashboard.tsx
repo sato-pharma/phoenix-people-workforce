@@ -15,6 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import type { NsmTeamExpensesData } from "@/lib/employee-portal/service";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 function egp(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -52,9 +53,7 @@ function formatRoute(from: string | null | undefined, to: string | null | undefi
 }
 
 function compactPersonName(value: string) {
-  const parts = value.trim().split(/\s+/).filter(Boolean);
-  if (parts.length <= 2) return value;
-  return `${parts[0]} ${parts[parts.length - 1]}`;
+  return formatEmployeeDisplayName(value);
 }
 
 function chartTooltipStyle() {
@@ -251,7 +250,7 @@ export function NsmTeamExpensesDashboard({
                 <tr key={dsm.hrId} className="hover:bg-slate-50">
                   <td className="px-4 py-3">
                     <div>
-                      <p className="font-semibold text-slate-900">{dsm.name}</p>
+                      <p className="font-semibold text-slate-900">{formatEmployeeDisplayName(dsm.name)}</p>
                       <p className="text-xs text-slate-500">
                         {dsm.hrId}
                         {dsm.lineName ? ` | ${dsm.lineName}` : ""}

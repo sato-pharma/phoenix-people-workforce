@@ -4,6 +4,10 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import {
+  accessContextFromDevPreviewToken,
+  phoenixDevPreviewCookieName,
+} from "@/lib/auth/dev-preview";
+import {
   getCookieValue,
   phoenixSessionCookieName,
   verifySessionToken,
@@ -36,6 +40,14 @@ function isLocalHostname(value: string | null | undefined) {
 
 function isLocalDevHeaderRequest(headerStore: Pick<Headers, "get">) {
   if (!isDevHeaderEnabled() || !isLocalDevelopment()) {
+    return false;
+  }
+
+  return isLocalDevelopmentRequest(headerStore);
+}
+
+function isLocalDevelopmentRequest(headerStore: Pick<Headers, "get">) {
+  if (!isLocalDevelopment()) {
     return false;
   }
 
@@ -153,12 +165,22 @@ async function resolveSessionAccessContext(token: string | null | undefined) {
 }
 
 export async function resolveAccessContext(request: Request): Promise<AccessContext> {
+  const cookieHeader = request.headers.get("cookie");
   const sessionContext = await resolveSessionAccessContext(
-    getCookieValue(request.headers.get("cookie"), phoenixSessionCookieName),
+    getCookieValue(cookieHeader, phoenixSessionCookieName),
   );
 
   if (sessionContext) {
     return sessionContext;
+  }
+
+  if (isLocalDevelopmentRequest(request.headers)) {
+    const devPreviewContext = accessContextFromDevPreviewToken(
+      getCookieValue(cookieHeader, phoenixDevPreviewCookieName),
+    );
+    if (devPreviewContext) {
+      return devPreviewContext;
+    }
   }
 
   if (!isLocalDevHeaderRequest(request.headers)) {
@@ -187,6 +209,15 @@ export async function resolveAccessContextFromPage(): Promise<AccessContext> {
 
   if (sessionContext) {
     return sessionContext;
+  }
+
+  if (isLocalDevelopmentRequest(headerStore)) {
+    const devPreviewContext = accessContextFromDevPreviewToken(
+      cookieStore.get(phoenixDevPreviewCookieName)?.value,
+    );
+    if (devPreviewContext) {
+      return devPreviewContext;
+    }
   }
 
   if (!isLocalDevHeaderRequest(headerStore)) {
@@ -223,7 +254,7 @@ export async function resolveViewerIdentityFromPage(accessContext?: AccessContex
   const fallbackName = access.loginId || access.hrId || "User";
   const fallbackRole = access.role;
 
-  if (!access.loginId && !access.hrId) {
+  if (access.source === "dev-header" || (!access.loginId && !access.hrId)) {
     return {
       displayName: fallbackName,
       initials: buildInitials(fallbackName),

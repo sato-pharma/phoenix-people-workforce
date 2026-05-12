@@ -24,7 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import type { HrCalendarEmployee } from "@/lib/hr-calendar/types";
-import { cn } from "@/lib/utils";
+import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 type Props = {
@@ -582,10 +582,10 @@ export function HrCalendar({ initialData, initialError }: Props) {
                                 eventClass(event.eventType),
                               )}
                               key={`${event.eventType}-${event.employee.hrId}-${event.date}`}
-                              title={`${event.employee.fullName} - ${eventLabel(event)}`}
+                              title={`${formatEmployeeDisplayName(event.employee.fullName)} - ${eventLabel(event)}`}
                             >
                               <p className="truncate font-semibold">
-                                {event.employee.fullName}
+                                {formatEmployeeDisplayName(event.employee.fullName)}
                               </p>
                               <p className="truncate text-[11px] font-medium opacity-80">
                                 {eventLabel(event)}
@@ -658,7 +658,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
                     <td className="px-3 py-3">
                       <div>
                         <p className="font-semibold text-[#0F172A]">
-                          {event.employee.fullName}
+                          {formatEmployeeDisplayName(event.employee.fullName)}
                         </p>
                         <p className="mt-0.5 text-xs text-[#64748B]">
                           {event.employee.workEmail ?? "No work email"}
