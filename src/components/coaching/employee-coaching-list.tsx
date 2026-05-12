@@ -7,9 +7,10 @@ import type {
   CoachingReportStatus,
   CoachingReportSummaryRow,
 } from "@/lib/coaching/types";
-import { cn } from "@/lib/utils";
+import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
 type EmployeeCoachingListProps = {
+  mode?: "self" | "team";
   reports: CoachingReportSummaryRow[];
 };
 
@@ -69,16 +70,22 @@ function ZoneBadge({ zone }: { zone: CoachingPerformanceZone | null }) {
   );
 }
 
-export function EmployeeCoachingList({ reports }: EmployeeCoachingListProps) {
+export function EmployeeCoachingList({ mode = "self", reports }: EmployeeCoachingListProps) {
+  const isTeamMode = mode === "team";
+
   if (reports.length === 0) {
     return (
       <Card className="rounded-[30px] border border-white/75 bg-white/95 p-8 text-center shadow-[0_24px_70px_rgba(15,23,42,0.10)] ring-1 ring-slate-900/5">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
           <ClipboardCheck className="h-5 w-5" />
         </div>
-        <p className="mt-4 text-lg font-semibold text-slate-900">No coaching reports are available yet.</p>
+        <p className="mt-4 text-lg font-semibold text-slate-900">
+          {isTeamMode ? "No team coaching reports are available yet." : "No coaching reports are available yet."}
+        </p>
         <p className="mt-2 text-sm text-slate-600">
-          Submitted field coaching reports will appear here once your coach publishes them.
+          {isTeamMode
+            ? "Submitted field coaching reports for your team will appear here once they are published."
+            : "Submitted field coaching reports will appear here once your coach publishes them."}
         </p>
       </Card>
     );
@@ -114,8 +121,15 @@ export function EmployeeCoachingList({ reports }: EmployeeCoachingListProps) {
 
               <div>
                 <h2 className="text-xl font-black tracking-[-0.03em] text-slate-950">
-                  Field coaching review
+                  {isTeamMode
+                    ? formatEmployeeDisplayName(report.medicalRepName, report.medicalRepHrId)
+                    : "Field coaching review"}
                 </h2>
+                {isTeamMode ? (
+                  <p className="mt-1 text-sm font-semibold text-slate-500">
+                    {report.teamName || "Team not assigned"} - {report.lineName || "Line not assigned"}
+                  </p>
+                ) : null}
                 <div className="mt-3 grid gap-3 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
                   <span className="flex items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/80 px-3 py-2">
                     <CalendarDays className="h-4 w-4 text-orange-500" />

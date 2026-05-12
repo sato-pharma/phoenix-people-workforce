@@ -9,6 +9,7 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveEmployeeCoachingPortalMode } from "@/lib/coaching/portal-access";
 import { getCoachingReportById } from "@/lib/coaching/service";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,17 @@ export default async function EmployeeCoachingReportDetailPage({ params }: PageP
     );
   }
 
+  const coachingMode = await resolveEmployeeCoachingPortalMode(access);
+  if (!coachingMode) {
+    return (
+      <EmployeePortalEmptyState
+        message="Coaching reports are available to Medical Reps for their own reports, and to DSM/NSM roles for team reports."
+        title="Coaching Access Unavailable"
+      />
+    );
+  }
+  const isMyReportsView = coachingMode === "self";
+
   const { id } = await params;
   let report = null;
   try {
@@ -48,15 +60,22 @@ export default async function EmployeeCoachingReportDetailPage({ params }: PageP
         message="This coaching report could not be found, or it is not available to your account."
         title="Coaching Report Unavailable"
       >
-        <EmployeePortalActionLink href="/employee-portals/coaching" label="Back to My Coaching Reports" />
+        <EmployeePortalActionLink
+          href="/employee-portals/coaching"
+          label={isMyReportsView ? "Back to My Coaching Reports" : "Back to Team Coaching Reports"}
+        />
       </EmployeePortalEmptyState>
     );
   }
 
+  const description = isMyReportsView
+    ? "Read your coaching feedback, review the structured score, and submit your acknowledgment."
+    : "Review the team member's coaching score, field feedback, and acknowledgment status.";
+
   return (
     <EmployeePortalPageShell
       badge="Coaching Review"
-      description="Read your coaching feedback, review the structured score, and submit your acknowledgment."
+      description={description}
       title="Coaching Report Review"
     >
       <EmployeePortalActionBar
@@ -69,7 +88,7 @@ export default async function EmployeeCoachingReportDetailPage({ params }: PageP
           </>
         }
       />
-      <EmployeeCoachingReview initialDetail={report} />
+      <EmployeeCoachingReview allowAcknowledgment={isMyReportsView} initialDetail={report} />
     </EmployeePortalPageShell>
   );
 }

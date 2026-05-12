@@ -118,7 +118,8 @@ export type SalesDashboardFilters = Partial<{
   family: string;
   line: string;
   manager: string;
-  period: string;
+  period: string | string[];
+  periods: string[];
   product: string | string[];
   products: string[];
   salesType: string;

@@ -2,8 +2,6 @@ import { redirect } from "next/navigation";
 
 import { MedicalRepOverviewPage } from "@/components/employee-portal/employee-portal-dashboard";
 import {
-  EmployeePortalActionBar,
-  EmployeePortalActionLink,
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
@@ -35,7 +33,7 @@ export default async function EmployeePortalsHomePage({
     data = await getMedicalRepPortalData(access, {
       teamComparisonPeriod,
     });
-  } catch {
+  } catch (err) {
     data = null;
   }
 
@@ -54,16 +52,6 @@ export default async function EmployeePortalsHomePage({
       description="Performance, structure, and team comparison in one command surface."
       title="Dashboard Overview"
     >
-      <EmployeePortalActionBar
-        actions={
-          <>
-            <span className="inline-flex items-center justify-center rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 shadow-[0_8px_20px_rgba(249,115,22,0.07)]">
-              Dashboard View: All uploaded periods
-            </span>
-            <EmployeePortalActionLink href="/employee-portals/sales" label="Open Sales Workspace" />
-          </>
-        }
-      />
       <MedicalRepOverviewPage data={data} />
     </EmployeePortalPageShell>
   );

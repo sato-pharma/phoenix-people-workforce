@@ -39,11 +39,10 @@ export default async function EmployeePortalLayout({
   const visibility = resolveEmployeePortalNavVisibility(data.employee.roleLabel);
 
   return (
-    <div className="relative min-h-screen bg-[#f8fafc]">
-      {/* Subtle top accent line */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-orange-400 via-orange-500 to-orange-400" />
-      {/* Ambient background texture */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[480px] bg-[radial-gradient(ellipse_70%_35%_at_50%_0%,rgba(249,115,22,0.04),transparent)]" />
+    <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f8_46%,#f8fafc_100%)]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.035)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.78),transparent_64%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,255,255,0)_70%)]" />
       <EmployeePortalTopNav data={data} visibility={visibility} />
       <div className="relative mx-auto flex w-full max-w-[1560px] gap-6 px-4 py-6 lg:gap-8 lg:px-8 lg:py-8">
         <EmployeePortalSidebar visibility={visibility} />

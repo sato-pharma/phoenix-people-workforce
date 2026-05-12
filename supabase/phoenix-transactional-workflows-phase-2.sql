@@ -25,6 +25,9 @@ declare
   v_candidate integer;
   v_attempt integer := 0;
   v_matching_vacancy_id bigint;
+  v_monthly_package numeric;
+  v_base_salary numeric;
+  v_gross_salary numeric;
 begin
   select *
   into v_offer
@@ -194,6 +197,13 @@ begin
       updated_at = now();
   end if;
 
+  v_monthly_package := coalesce(p_gross_salary, 0);
+  v_base_salary := greatest(
+    0,
+    v_monthly_package - coalesce(p_extra_cost_of_living, 0) - coalesce(p_fuel_allowance, 0)
+  );
+  v_gross_salary := v_base_salary;
+
   insert into public.employee_compensation (
     employee_hr_id,
     net_salary,
@@ -205,12 +215,12 @@ begin
     updated_at
   ) values (
     v_employee_hr_id,
-    coalesce(p_gross_salary, 0),
-    coalesce(p_gross_salary, 0),
+    v_base_salary,
+    v_base_salary,
     coalesce(p_fuel_allowance, 0),
     coalesce(p_extra_cost_of_living, 0),
-    coalesce(p_gross_salary, 0),
-    'one_part',
+    v_gross_salary,
+    'two_parts',
     now()
   )
   on conflict (employee_hr_id) do update

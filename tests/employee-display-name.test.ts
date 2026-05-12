@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 
-import { formatEmployeeDisplayName } from "../src/lib/utils";
+import { formatEmployeeDisplayName } from "../src/lib/utils.ts";
 
 export function runEmployeeDisplayNameTests() {
   assert.equal(formatEmployeeDisplayName("Ali Mohamed Hassan", "Employee", 2), "Ali Mohamed");

@@ -760,11 +760,15 @@ export async function getSalesDashboard(
     ...toFilterStringList(filters.product),
     ...toFilterStringList(filters.products),
   ].map(normalizeFilterToken).filter(Boolean))];
+  const periodFilter = [...new Set([
+    ...toFilterStringList(filters.period),
+    ...toFilterStringList(filters.periods),
+  ])];
 
   const filteredRecords = approvedRecords.filter((record) => {
 
     if (filters.line && record.line !== filters.line) return false;
-    if (filters.period && record.period !== filters.period) return false;
+    if (periodFilter.length > 0 && !periodFilter.includes(record.period)) return false;
     if (filters.salesType && record.salesType !== filters.salesType) return false;
     if (filters.manager && managerKey(record) !== filters.manager) return false;
     if (filters.territory && record.territory !== filters.territory) return false;

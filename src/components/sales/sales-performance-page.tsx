@@ -71,20 +71,23 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
   const [comparisonPeriod, setComparisonPeriod] = useState<ComparisonPeriod>("none");
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" }>({ key: "sales", direction: "desc" });
   const [showMoreFilters, setShowMoreFilters] = useState(false);
-  const parseProducts = (products: string | null) => {
-    return [...new Set((products ?? "").split(",").map((item) => item.trim()).filter(Boolean))];
+  const parseQueryList = (values: string[]) => {
+    return [...new Set(values.flatMap((value) => value.split(",")).map((item) => item.trim()).filter(Boolean))];
   };
-  const selectedPeriod = searchParams.get("period") ?? "";
+  const selectedPeriods = useMemo(
+    () => parseQueryList(searchParams.getAll("period")),
+    [searchParams],
+  );
   const selectedFamily = searchParams.get("family") ?? "";
   const selectedProducts = useMemo(
-    () => parseProducts(searchParams.get("products")),
+    () => parseQueryList(searchParams.getAll("products")),
     [searchParams],
   );
   const contextSource = searchParams.get("source") === "dashboard" ? "Dashboard" : null;
   const contextMonth = searchParams.get("month");
 
   // Update URL when filters change to trigger server-side refetch
-  const updateFilters = (newPeriod: string, newFamily: string, newProducts: string[]) => {
+  const updateFilters = (newPeriods: string[], newFamily: string, newProducts: string[]) => {
     const params = new URLSearchParams(searchParams.toString());
     
     // Remove context params when filters change
@@ -92,8 +95,8 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
     params.delete("month");
     
     // Add filter params
-    if (newPeriod) {
-      params.set("period", newPeriod);
+    if (newPeriods.length > 0) {
+      params.set("period", newPeriods.join(","));
     } else {
       params.delete("period");
     }
@@ -114,16 +117,16 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
     router.push(newUrl);
   };
 
-  const handlePeriodChange = (period: string) => {
-    updateFilters(period, selectedFamily, selectedProducts);
+  const handlePeriodsChange = (periods: string[]) => {
+    updateFilters(periods, selectedFamily, selectedProducts);
   };
 
   const handleFamilyChange = (family: string) => {
-    updateFilters(selectedPeriod, family, selectedProducts);
+    updateFilters(selectedPeriods, family, selectedProducts);
   };
 
   const handleProductsChange = (products: string[]) => {
-    updateFilters(selectedPeriod, selectedFamily, products);
+    updateFilters(selectedPeriods, selectedFamily, products);
   };
 
   // Filter data based on selections (client-side only for search query)
@@ -340,14 +343,14 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
   const handleResetFilters = () => {
     setComparisonPeriod("none");
     setSearchQuery("");
-    updateFilters("", "", []);
+    updateFilters([], "", []);
   };
 
   const handleProductClick = (product: string) => {
     const nextProducts = selectedProducts.includes(product)
       ? selectedProducts.filter((p) => p !== product)
       : [...selectedProducts, product];
-    updateFilters(selectedPeriod, selectedFamily, nextProducts);
+    updateFilters(selectedPeriods, selectedFamily, nextProducts);
   };
 
   if (isLoading) {
@@ -361,13 +364,12 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
   return (
     <div className="rounded-[30px] border border-white/75 bg-white/88 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.10)] ring-1 ring-slate-900/5 sm:p-5">
       <div className="mx-auto max-w-none">
-        {/* Header */}
         <Header
           onResetFilters={handleResetFilters}
-          hasActiveFilters={selectedProducts.length > 0 || !!selectedPeriod || !!selectedFamily}
+          hasActiveFilters={selectedProducts.length > 0 || selectedPeriods.length > 0 || !!selectedFamily}
           contextSource={contextSource}
           contextMonth={contextMonth}
-          onClearContext={() => updateFilters(selectedPeriod, selectedFamily, selectedProducts)}
+          onClearContext={() => updateFilters(selectedPeriods, selectedFamily, selectedProducts)}
         />
 
         {/* Advanced Filter Bar */}
@@ -376,11 +378,11 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
           availablePeriods={data.filters.periods}
           availableFamilies={data.filters.families}
           selectedProducts={selectedProducts}
-          selectedPeriod={selectedPeriod}
+          selectedPeriods={selectedPeriods}
           selectedFamily={selectedFamily}
           comparisonPeriod={comparisonPeriod}
           onProductsChange={handleProductsChange}
-          onPeriodChange={handlePeriodChange}
+          onPeriodsChange={handlePeriodsChange}
           onFamilyChange={handleFamilyChange}
           onComparisonChange={setComparisonPeriod}
           showMoreFilters={showMoreFilters}
@@ -449,12 +451,11 @@ function Header({
   contextMonth: string | null;
   onClearContext: () => void;
 }) {
+  if (!hasActiveFilters && !contextSource && !contextMonth) return null;
+
   return (
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4 rounded-[28px] border border-[#FED7AA]/80 bg-[linear-gradient(135deg,#FFF7ED_0%,#FFFFFF_58%,#F8FAFC_100%)] p-5 shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
       <div>
-        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#F97316]">Sales Workspace</p>
-        <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-[#0F172A]">Performance Controls</h2>
-        <p className="mt-1 max-w-2xl text-sm leading-6 text-[#64748B]">Track your product performance and sales trends over time.</p>
         {(contextSource || contextMonth) && (
           <div className="mt-2 flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[#FED7AA] bg-white px-3 py-1 text-xs font-black text-[#C2410C] shadow-[0_10px_24px_rgba(249,115,22,0.08)]">
@@ -492,11 +493,11 @@ function FilterBar({
   availablePeriods,
   availableFamilies,
   selectedProducts,
-  selectedPeriod,
+  selectedPeriods,
   selectedFamily,
   comparisonPeriod,
   onProductsChange,
-  onPeriodChange,
+  onPeriodsChange,
   onFamilyChange,
   onComparisonChange,
   showMoreFilters,
@@ -506,16 +507,38 @@ function FilterBar({
   availablePeriods: string[];
   availableFamilies: string[];
   selectedProducts: string[];
-  selectedPeriod: string;
+  selectedPeriods: string[];
   selectedFamily: string;
   comparisonPeriod: ComparisonPeriod;
   onProductsChange: (products: string[]) => void;
-  onPeriodChange: (period: string) => void;
+  onPeriodsChange: (periods: string[]) => void;
   onFamilyChange: (family: string) => void;
   onComparisonChange: (period: ComparisonPeriod) => void;
   showMoreFilters: boolean;
   onToggleMoreFilters: () => void;
 }) {
+  const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
+  const allPeriodsSelected = selectedPeriods.length === 0;
+  const selectedPeriodSet = new Set(selectedPeriods);
+  const selectedPeriodsLabel = allPeriodsSelected
+    ? `All Periods (${availablePeriods.length})`
+    : selectedPeriods.length === 1
+      ? selectedPeriods[0]
+      : `${selectedPeriods.length} periods selected`;
+  const togglePeriod = (period: string) => {
+    if (allPeriodsSelected) {
+      onPeriodsChange(availablePeriods.filter((option) => option !== period));
+      return;
+    }
+
+    if (selectedPeriodSet.has(period)) {
+      onPeriodsChange(selectedPeriods.filter((option) => option !== period));
+      return;
+    }
+
+    onPeriodsChange(availablePeriods.filter((option) => selectedPeriodSet.has(option) || option === period));
+  };
+
   return (
     <div className="mb-8 rounded-[28px] border border-white/75 bg-white/94 p-5 shadow-[0_22px_60px_rgba(15,23,42,0.09)] ring-1 ring-slate-900/5">
       <div className="flex flex-wrap items-center gap-4">
@@ -523,19 +546,46 @@ function FilterBar({
         <div className="flex-1 min-w-[200px]">
           <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Period</label>
           <div className="relative">
-            <select
-              value={selectedPeriod}
-              onChange={(e) => onPeriodChange(e.target.value)}
-              className="h-11 w-full appearance-none rounded-2xl border border-[#D8E0EA] bg-white/95 px-4 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#F97316]/15"
+            <button
+              type="button"
+              onClick={() => setPeriodPickerOpen((current) => !current)}
+              className="flex h-11 w-full items-center justify-between rounded-2xl border border-[#D8E0EA] bg-white/95 px-4 text-left text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] transition hover:border-[#F97316] hover:bg-[#FFF7ED] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#F97316]/15"
             >
-              <option value="">All Periods</option>
-              {availablePeriods.map((period) => (
-                <option key={period} value={period}>
-                  {period}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#64748B] pointer-events-none" />
+              <span className="truncate">{selectedPeriodsLabel}</span>
+              <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${periodPickerOpen ? "rotate-180" : ""}`} />
+            </button>
+            {periodPickerOpen && (
+              <div className="absolute z-30 mt-2 w-full rounded-2xl border border-[#E2E8F0] bg-white p-3 shadow-2xl">
+                <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 text-sm font-semibold text-[#0F172A] hover:bg-[#FFF7ED]">
+                  <input
+                    checked={allPeriodsSelected}
+                    className="h-4 w-4 accent-[#F97316]"
+                    onChange={() => onPeriodsChange([])}
+                    type="checkbox"
+                  />
+                  Select All
+                </label>
+                <div className="mt-1 max-h-56 space-y-1 overflow-auto">
+                  {availablePeriods.map((period) => {
+                    const selected = allPeriodsSelected || selectedPeriodSet.has(period);
+                    return (
+                      <label
+                        className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 text-sm font-semibold text-[#0F172A] hover:bg-[#FFF7ED]"
+                        key={period}
+                      >
+                        <input
+                          checked={selected}
+                          className="h-4 w-4 accent-[#F97316]"
+                          onChange={() => togglePeriod(period)}
+                          type="checkbox"
+                        />
+                        {period}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -615,8 +665,23 @@ function FilterBar({
       )}
 
       {/* Active Filter Chips */}
-      {selectedProducts.length > 0 && (
+      {(selectedPeriods.length > 0 || selectedProducts.length > 0) && (
         <div className="mt-4 flex flex-wrap gap-2">
+          {selectedPeriods.map((period) => (
+            <div
+              key={period}
+              className="flex items-center gap-1 rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1 text-sm font-black text-[#C2410C]"
+            >
+              Period: {period}
+              <button
+                onClick={() => onPeriodsChange(selectedPeriods.filter((item) => item !== period))}
+                className="hover:text-[#EA580C]"
+                type="button"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
           {selectedProducts.map((product) => (
             <div
               key={product}
@@ -626,6 +691,7 @@ function FilterBar({
               <button
                 onClick={() => onProductsChange(selectedProducts.filter((p) => p !== product))}
                 className="hover:text-[#EA580C]"
+                type="button"
               >
                 <X className="h-3 w-3" />
               </button>

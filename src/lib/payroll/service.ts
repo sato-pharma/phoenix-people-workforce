@@ -174,7 +174,7 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     otherDeductions;
   const netSalary = Number(row.net_salary ?? 0);
   const uploadedFirstPart = Number(row.first_part ?? 0);
-  const paymentMode = uploadedFirstPart > 0 && uploadedFirstPart < netSalary - 1 ? "two_parts" : "one_part";
+  const paymentMode = uploadedFirstPart > 0 && uploadedFirstPart >= netSalary - 1 ? "one_part" : "two_parts";
   const parts = calculatePayrollParts({
     additions: expenses + incentive + overtime + bonus + otherAdditions,
     deductions: crm + fingerPrint + unpaidVacations + medicalInsurance + loans + otherDeductions,

@@ -13,9 +13,14 @@ import {
 } from "@/lib/auth/permissions";
 import { listBrickReferenceRows, normalizeBrickText } from "@/lib/bricks/service";
 import { addDaysToDateOnly, addYearsToDateOnly, daysBetweenDateOnly, parseDateOnly } from "@/lib/date-only";
+import {
+  createPortalSalesLineScope,
+  employeeMatchesPortalSalesScope,
+  salesRecordMatchesPortalSalesScope,
+} from "@/lib/employee-portal/sales-scope";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
-import { calculateGrossSalary, calculateNetSalary, calculatePayrollParts } from "@/lib/payroll/policy";
+import { calculateBaseSalary, calculateGrossSalary, calculateNetSalary, calculatePayrollParts } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   PayrollExpenseApproval,
@@ -232,8 +237,15 @@ type PortalSalesNormalized = {
 // ---------------------------------------------------------------------------
 
 function logPortalDebug(message: string, payload?: unknown) {
-  if (!isDevelopment) return;
-  console.debug(`[employee-portal] ${message}`, payload);
+  void message;
+  void payload;
+}
+
+function resolvePortalSalesLineFilter(
+  currentUser: Pick<PortalCurrentUser, "line">,
+  employee?: Pick<EmployeeDirectoryRow, "lineName"> | null,
+) {
+  return normalizeFilter(employee?.lineName) ?? normalizeFilter(currentUser.line) ?? null;
 }
 
 function isPortalFilterText(value: unknown): value is string {
@@ -381,7 +393,7 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
     mapped.medicalInsurance +
     mapped.loans +
     mapped.otherDeductions;
-  const paymentMode = mapped.firstPart > 0 && mapped.firstPart < mapped.netSalary - 1 ? "two_parts" : "one_part";
+  const paymentMode = mapped.firstPart > 0 && mapped.firstPart >= mapped.netSalary - 1 ? "one_part" : "two_parts";
   const parts = calculatePayrollParts({
     additions: mapped.expenses + mapped.incentive + mapped.overtime + mapped.bonus + mapped.otherAdditions,
     deductions:
@@ -532,6 +544,26 @@ function mapSalesRow(row: PortalSalesSourceRow): PortalSalesNormalized {
 
 function normalizeFilter(value: unknown) {
   return isPortalFilterText(value) ? value.trim() : null;
+}
+
+function toCanonicalPortalHrId(hrId: string | null | undefined) {
+  const normalized = normalizeHrId(hrId);
+  if (!normalized) return null;
+  return normalizeHrIdForAccess(normalized) || normalized;
+}
+
+function findDirectoryEmployeeByHrId(
+  directory: EmployeeDirectoryData,
+  hrId: string | null | undefined,
+) {
+  const currentCanonical = toCanonicalPortalHrId(hrId);
+  if (!currentCanonical) return null;
+
+  return (
+    directory.employees.find(
+      (employee) => toCanonicalPortalHrId(employee.hrId) === currentCanonical,
+    ) ?? null
+  );
 }
 
 type SalesFilterQuery = {
@@ -760,7 +792,7 @@ async function fetchPortalNotifications(hrId: string): Promise<PortalNotificatio
     const { data } = await supabase
       .from("notification_events")
       .select("id,category,subject,scheduled_for,sent_at,status,metadata")
-      .ilike("employee_hr_id", hrId)
+      .eq("employee_hr_id", hrId)
       .order("scheduled_for", { ascending: false })
       .limit(5);
 
@@ -811,7 +843,7 @@ async function resolvePortalCurrentUser(access: AccessContext): Promise<PortalCu
     const { data: loginData } = await supabase
       .from("app_auth_users")
       .select("login_id,hr_id,line,manager_hr_id,name,role,sales_scope_override")
-      .ilike("login_id", access.loginId!)
+      .eq("login_id", loginId)
       .maybeSingle();
     if (loginData) row = loginData as PortalAuthRow;
   }
@@ -820,7 +852,7 @@ async function resolvePortalCurrentUser(access: AccessContext): Promise<PortalCu
     const { data: hrData } = await supabase
       .from("app_auth_users")
       .select("login_id,hr_id,line,manager_hr_id,name,role,sales_scope_override")
-      .ilike("hr_id", fallbackHr)
+      .eq("hr_id", fallbackHr)
       .maybeSingle();
     if (hrData) row = hrData as PortalAuthRow;
   }
@@ -840,11 +872,6 @@ async function resolvePortalCurrentUser(access: AccessContext): Promise<PortalCu
       ? resolvedSalesScopeOverride.toUpperCase()
       : null) as BusinessScope | null,
   };
-
-  if (isDevelopment) {
-    console.debug("[employee-portal] currentUser", currentUser);
-    console.debug("[employee-portal] currentUser.hrId", currentUser.hrId);
-  }
 
   return currentUser;
 }
@@ -909,53 +936,6 @@ async function fetchPortalPayslips(hrId: string): Promise<PortalPayrollRecord[]>
       }
     }
 
-    if (isDevelopment) {
-      console.debug("[employee-portal] salary_records query results", {
-        hrIdCount: hrIdData?.length ?? 0,
-        employeeHrIdCount: employeeHrIdData?.length ?? 0,
-        hasHrIdError: !!hrIdError,
-        hasEmployeeHrIdError: !!employeeHrIdError,
-      });
-      console.debug("[employee-portal] salary_records query extra fallback", {
-        employeeCodeCount: employeeCodeData?.length ?? 0,
-        hasEmployeeCodeError: !!employeeCodeError,
-      });
-      if (hrIdError) {
-        console.error("[employee-portal] salary_records query error by hr_id", { error: hrIdError, hr_id: normalizedHrId });
-      }
-      if (employeeHrIdError && !hasMissingColumnError(employeeHrIdError, "employee_hr_id") && hasMeaningfulError(employeeHrIdError)) {
-        console.error("[employee-portal] salary_records query error by employee_hr_id", {
-          error: employeeHrIdError,
-          hr_id: normalizedHrId,
-        });
-      } else if (employeeHrIdError && hasMissingColumnError(employeeHrIdError, "employee_hr_id")) {
-        if (isDevelopment) {
-          console.debug("[employee-portal] salary_records fallback skipped", {
-            reason: "employee_hr_id column missing",
-            hr_id: normalizedHrId,
-          });
-        }
-      }
-      if (employeeCodeError && !hasMissingColumnError(employeeCodeError, "employee_code") && hasMeaningfulError(employeeCodeError)) {
-        console.error("[employee-portal] salary_records query error by employee_code", {
-          error: employeeCodeError,
-          hr_id: normalizedHrId,
-        });
-      }
-      if (
-        hrIdError ||
-        (employeeHrIdError && !hasMissingColumnError(employeeHrIdError, "employee_hr_id")) ||
-        (employeeCodeError && !hasMissingColumnError(employeeCodeError, "employee_code"))
-      ) {
-        logPortalDebug("payroll query error", {
-          hrIdError,
-          employeeHrIdError,
-          employeeCodeError,
-          hr_id: normalizedHrId,
-        });
-      }
-    }
-
     const data = [
       ...toSafeArray(dataByColumn),
       ...toSafeArray(employeeHrIdData),
@@ -982,19 +962,8 @@ async function fetchPortalPayslips(hrId: string): Promise<PortalPayrollRecord[]>
         return mapPayrollRecordFromPayslipView(merged as unknown as PortalPayrollSourceRow);
       });
 
-    if (isDevelopment) {
-      console.debug("[employee-portal] salary_records mapped", {
-        hr_id: normalizedHrId,
-        rawCount: data.length,
-        dedupedCount: dataById.size,
-        mappedCount: mapped.length,
-      });
-    }
     return mapped;
   } catch (error) {
-    if (isDevelopment) {
-      console.error("[employee-portal] payroll query exception", { error, hr_id: normalizedHrId });
-    }
     logPortalDebug("payroll query exception", { error, hr_id: normalizedHrId });
     return [];
   }
@@ -1112,9 +1081,6 @@ async function fetchPortalSalesRecords(
     const data = await fetchAllRows(buildSalesQuery);
     return data.map((row) => mapSalesRow(row as PortalSalesSourceRow));
   } catch (error) {
-    if (isDevelopment) {
-      console.error("[employee-portal] sales query exception", { error, hr_ids: queryHrIds });
-    }
     logPortalDebug("sales query exception", { error, hr_ids: queryHrIds });
     return [];
   }
@@ -1380,6 +1346,48 @@ function buildEmployeeSalesDashboard(records: PortalSalesNormalized[]): SalesDas
   } as SalesDashboardData;
 }
 
+function salesDashboardHasData(dashboard: SalesDashboardData | null) {
+  if (!dashboard) return false;
+  const summary = dashboard.summary ?? {};
+  return (
+    Number(summary.totalApprovedSales ?? 0) > 0 ||
+    Number(summary.totalApprovedTarget ?? 0) > 0 ||
+    Number(summary.unitsSold ?? 0) > 0 ||
+    toSafeArray(dashboard.trend).length > 0 ||
+    toSafeArray(dashboard.productPerformance).length > 0 ||
+    toSafeArray(dashboard.familyMatrix).length > 0
+  );
+}
+
+async function getScopedEmployeePortalSalesDashboard({
+  line,
+  salesScope,
+  targetSalesHrIds,
+}: {
+  line: string | null;
+  salesScope: BusinessScope;
+  targetSalesHrIds: string[];
+}): Promise<SalesDashboardData> {
+  if (salesScope === "LINE") {
+    const byLine = line
+      ? await getEmployeePortalSalesDashboard(null, { line })
+      : null;
+    if (byLine && salesDashboardHasData(byLine)) return byLine;
+
+    if (targetSalesHrIds.length > 0) {
+      logPortalDebug("line sales query returned no rows; falling back to visible HR IDs", {
+        line,
+        targetSalesHrIds: targetSalesHrIds.length,
+      });
+      return getEmployeePortalSalesDashboard(targetSalesHrIds, {});
+    }
+
+    return byLine ?? getEmployeePortalSalesDashboard([], {});
+  }
+
+  return getEmployeePortalSalesDashboard(targetSalesHrIds, {});
+}
+
 function formatCurrencyEGP(value: number) {
   return new Intl.NumberFormat("en-US", {
     currency: "EGP",
@@ -1503,7 +1511,7 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     mobileNumber: null,
     nameAr: null,
     netSalary: null,
-    salaryPaymentMode: "one_part",
+    salaryPaymentMode: "two_parts",
     positionId: null,
     positionTitle: null,
     residenceAddress: null,
@@ -1532,6 +1540,8 @@ export async function getEmployeePortalData(
     payroll?: EmployeePortalPayrollDashboard | null;
     sales?: SalesDashboardData | null;
     directory?: EmployeeDirectoryData | null;
+    expenses?: PayrollExpenseApproval[] | null;
+    expenseReports?: PayrollExpenseReport[] | null;
   }
 ): Promise<EmployeePortalData> {
   const currentUser = await resolvePortalCurrentUser(access);
@@ -1612,6 +1622,10 @@ export async function getEmployeePortalData(
 
   const directory = prefetched?.directory ?? await getEmployeeDirectory();
 
+  const employee = directory.employees.find((row) => normalizeHrId(row.hrId) === currentHrId) ??
+    fallbackEmployee(access);
+  const salesLineFilter = resolvePortalSalesLineFilter(currentUser, employee);
+
   const visibleTeamMembers = directory.employees.filter((row) => {
     const rowHrId = normalizeHrId(row.hrId);
     return rowHrId !== currentHrId && canSeeEmployee(access, row);
@@ -1625,18 +1639,16 @@ export async function getEmployeePortalData(
 
   const [payroll, sales, expenses, expenseReports, documents, notifications] = await Promise.all([
     prefetched?.payroll ?? getEmployeePortalPayrollDashboard(currentHrId),
-    prefetched?.sales ?? getEmployeePortalSalesDashboard(
-      salesScope === "LINE" ? null : targetSalesHrIds, 
-      salesScope === "LINE" ? { line: currentUser.line } : {}
-    ),
-    listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
-    listPayrollExpenseReports({ ...access, hrId: currentHrId }),
+    prefetched?.sales ?? getScopedEmployeePortalSalesDashboard({
+      line: salesLineFilter,
+      salesScope,
+      targetSalesHrIds,
+    }),
+    prefetched?.expenses ?? listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
+    prefetched?.expenseReports ?? listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     listEmployeeDocuments(currentHrId),
     fetchPortalNotifications(currentHrId),
   ]);
-
-  const employee = directory.employees.find((row) => normalizeHrId(row.hrId) === currentHrId) ??
-    fallbackEmployee(access);
 
   const latestExpense = expenses[0] ?? null;
   const latestRecord = payroll.records[0] ?? null;
@@ -1697,6 +1709,8 @@ export async function getEmployeePortalData(
   });
   const sourceGrossSalary = calculateGrossSalary({
     baseSalary: employee.netSalary,
+    extraCostOfLiving: employee.extraCostOfLiving,
+    fuelAllowance: employee.fuelAllowance,
     socialInsurance: employee.socialInsurance,
     taxes: employee.taxes,
   });
@@ -1788,6 +1802,7 @@ export type MedicalRepPortalData = {
   };
   orgStructure: {
     actualNow: number;
+    compositionLabel: string | null;
     districtManagerVacancies: number;
     scope: "line" | "team";
     scopeLabel: string;
@@ -1823,6 +1838,7 @@ export type MedicalRepPortalData = {
   insights: string[];
   payroll: {
       batchId: string | null;
+      baseSalary: number;
       firstPart: number;
       grossSalary: number;
       internalDeductions: number;
@@ -2118,7 +2134,36 @@ function isActiveDirectoryEmployee(employee: Pick<EmployeeDirectoryRow, "employm
 function isMedicalRepDirectoryEmployee(
   employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
 ) {
-  return normalizeRole(employee.jobTitle) === "Medical Rep" || normalizeRole(employee.positionTitle) === "Medical Rep";
+  const normalizedTitle = `${employee.jobTitle ?? ""} ${employee.positionTitle ?? ""}`.toLowerCase();
+  return (
+    normalizeRole(employee.jobTitle) === "Medical Rep" ||
+    normalizeRole(employee.positionTitle) === "Medical Rep" ||
+    normalizedTitle.includes("medical representative") ||
+    normalizedTitle.includes("medical rep")
+  );
+}
+
+function isNationalSalesManagerDirectoryEmployee(
+  employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
+) {
+  return normalizeRole(employee.jobTitle) === "National Sales Manager" || normalizeRole(employee.positionTitle) === "National Sales Manager";
+}
+
+function isGroupProductManagerDirectoryEmployee(
+  employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
+) {
+  return normalizeRole(employee.jobTitle) === "Group Product Manager" || normalizeRole(employee.positionTitle) === "Group Product Manager";
+}
+
+function isLineStructureDirectoryEmployee(
+  employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
+) {
+  return (
+    isNationalSalesManagerDirectoryEmployee(employee) ||
+    isDistrictManagerEmployee(employee) ||
+    isGroupProductManagerDirectoryEmployee(employee) ||
+    isMedicalRepDirectoryEmployee(employee)
+  );
 }
 
 function isCompanyWorkforceRole(role: PhoenixRole) {
@@ -2244,6 +2289,10 @@ function buildPortalWorkforceSummary({
 
 type PortalVacancySummary = {
   districtManagerVacancies: number;
+  groupProductManagerVacancies: number;
+  lineStructureVacancies: number;
+  medicalRepVacancies: number;
+  nationalSalesManagerVacancies: number;
   openVacancies: number;
 };
 
@@ -2307,16 +2356,41 @@ async function fetchOpenVacancySummaryForScope({
     });
 
     const uniqueRows = uniqueVacancyRows(scopedRows);
+    const districtManagerVacancies = uniqueRows.filter((row) =>
+      isDistrictManagerVacancyTitle(row.job_title, row.positions?.title),
+    ).length;
+    const medicalRepVacancies = uniqueRows.filter((row) =>
+      isMedicalRepVacancyTitle(row.job_title, row.positions?.title),
+    ).length;
+    const nationalSalesManagerVacancies = uniqueRows.filter((row) =>
+      isNationalSalesManagerVacancyTitle(row.job_title, row.positions?.title),
+    ).length;
+    const groupProductManagerVacancies = uniqueRows.filter((row) =>
+      isGroupProductManagerVacancyTitle(row.job_title, row.positions?.title),
+    ).length;
 
     return {
-      districtManagerVacancies: uniqueRows.filter((row) =>
-        isDistrictManagerVacancyTitle(row.job_title, row.positions?.title),
-      ).length,
+      districtManagerVacancies,
+      groupProductManagerVacancies,
+      lineStructureVacancies:
+        districtManagerVacancies +
+        medicalRepVacancies +
+        nationalSalesManagerVacancies +
+        groupProductManagerVacancies,
+      medicalRepVacancies,
+      nationalSalesManagerVacancies,
       openVacancies: uniqueRows.length,
     };
   } catch (error) {
     logPortalDebug("open vacancy summary query failed", error);
-    return { districtManagerVacancies: 0, openVacancies: 0 };
+    return {
+      districtManagerVacancies: 0,
+      groupProductManagerVacancies: 0,
+      lineStructureVacancies: 0,
+      medicalRepVacancies: 0,
+      nationalSalesManagerVacancies: 0,
+      openVacancies: 0,
+    };
   }
 }
 
@@ -2340,30 +2414,49 @@ async function resolvePortalStructureSummary({
 
   const currentCanonicalHrId = normalizeHrIdForAccess(currentUser.hrId);
   const currentLine = normalizeLineName(currentUser.line ?? employee.lineName);
-  const activeMedicalReps = directory.employees.filter((row) => {
-    if (!isActiveDirectoryEmployee(row) || !isMedicalRepDirectoryEmployee(row)) return false;
+  const isCurrentLineRow = (row: EmployeeDirectoryRow) => {
+    if (typeof employee.lineId === "number" && typeof row.lineId === "number") {
+      return row.lineId === employee.lineId;
+    }
+    return normalizeLineName(row.lineName) === currentLine;
+  };
+
+  const activeRows = directory.employees.filter((row) => {
+    if (!isActiveDirectoryEmployee(row)) return false;
 
     if (isNsm) {
-      if (typeof employee.lineId === "number" && typeof row.lineId === "number") {
-        return row.lineId === employee.lineId;
-      }
-      return normalizeLineName(row.lineName) === currentLine;
+      return isCurrentLineRow(row) && isLineStructureDirectoryEmployee(row);
     }
 
     const managerCanonicalHrId = normalizeHrIdForAccess(row.managerHrId);
     return Boolean(
-      managerCanonicalHrId &&
+      isMedicalRepDirectoryEmployee(row) &&
+        managerCanonicalHrId &&
         currentCanonicalHrId &&
         managerCanonicalHrId === currentCanonicalHrId,
     );
   });
 
   void access;
-  const vacancyCount = vacancySummary.openVacancies;
-  const actualNow = activeMedicalReps.length;
+  const vacancyCount = isNsm ? vacancySummary.lineStructureVacancies : vacancySummary.openVacancies;
+  const actualNow = activeRows.length;
+  const activeNationalSalesManagers = activeRows.filter(isNationalSalesManagerDirectoryEmployee).length;
+  const activeDistrictManagers = activeRows.filter(isDistrictManagerEmployee).length;
+  const activeGroupProductManagers = activeRows.filter(isGroupProductManagerDirectoryEmployee).length;
+  const activeMedicalReps = activeRows.filter(isMedicalRepDirectoryEmployee).length;
 
   return {
     actualNow,
+    compositionLabel: isNsm
+      ? formatLineStructureComposition({
+          districtManagers: activeDistrictManagers + vacancySummary.districtManagerVacancies,
+          groupProductManagers:
+            activeGroupProductManagers + vacancySummary.groupProductManagerVacancies,
+          medicalRepresentatives: activeMedicalReps + vacancySummary.medicalRepVacancies,
+          nationalSalesManagers:
+            activeNationalSalesManagers + vacancySummary.nationalSalesManagerVacancies,
+        })
+      : null,
     districtManagerVacancies: vacancySummary.districtManagerVacancies,
     scope: isNsm ? "line" : "team",
     scopeLabel: isNsm
@@ -2372,6 +2465,30 @@ async function resolvePortalStructureSummary({
     totalStructure: actualNow + vacancyCount,
     vacancies: vacancyCount,
   };
+}
+
+function formatLineStructureComposition({
+  districtManagers,
+  groupProductManagers,
+  medicalRepresentatives,
+  nationalSalesManagers,
+}: {
+  districtManagers: number;
+  groupProductManagers: number;
+  medicalRepresentatives: number;
+  nationalSalesManagers: number;
+}) {
+  const compactCount = (value: number) =>
+    new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(
+      Number.isFinite(value) ? value : 0,
+    );
+
+  return [
+    `${compactCount(nationalSalesManagers)} National Sales Manager${nationalSalesManagers === 1 ? "" : "s"}`,
+    `${compactCount(districtManagers)} District Manager${districtManagers === 1 ? "" : "s"}`,
+    `${compactCount(groupProductManagers)} Group Product Manager${groupProductManagers === 1 ? "" : "s"}`,
+    `${compactCount(medicalRepresentatives)} Medical Representative${medicalRepresentatives === 1 ? "" : "s"}`,
+  ].join(" + ");
 }
 
 function egp(value: number) {
@@ -2512,6 +2629,7 @@ async function resolveSalesRankInTeam(params: {
 
   let data: unknown[] = [];
   let error: unknown = null;
+  const startTime = Date.now();
   try {
     data = await fetchAllRows(buildRankQuery);
   } catch (err) {
@@ -2538,22 +2656,7 @@ async function resolveSalesRankInTeam(params: {
   }
 
   if (error) {
-    if (isDevelopment) {
-      console.error("[employee-portal] rank query error", {
-        message: (error as Error).message,
-        code: (error as Record<string, unknown>).code,
-        details: (error as Record<string, unknown>).details,
-        team: Array.from(originalHrIds)
-      });
-    }
     return { rank: null, comparison: [] as Array<{ position: number; name: string; achievementPercent: number; sales: number; target: number }> };
-  }
-
-  if (isDevelopment) {
-    console.debug("[employee-portal] rank query results", {
-      count: data?.length,
-      team: Array.from(originalHrIds),
-    });
   }
 
   const nameByHrId = new Map(
@@ -2743,17 +2846,16 @@ export async function getMedicalRepPortalData(
     const currentUser = await resolvePortalCurrentUser(access);
     const currentHrId = normalizeHrId(currentUser.hrId);
 
-    if (isDevelopment) {
-      console.debug("[employee-portal] session identifier (loginId):", access.loginId);
-      console.debug("[employee-portal] resolved currentHrId:", currentHrId);
-    }
-
     const salesScope = getSalesScope({
       role: currentUser.role as PhoenixRole,
       salesScopeOverride: currentUser.salesScopeOverride as BusinessScope,
     });
 
     const directory = await getEmployeeDirectory();
+    const currentEmployee = currentHrId
+      ? directory.employees.find((row) => normalizeHrId(row.hrId) === currentHrId) ?? null
+      : null;
+    const salesLineFilter = resolvePortalSalesLineFilter(currentUser, currentEmployee);
     const visibleTeamMembers = directory.employees.filter((row) => {
       const rowHrId = normalizeHrId(row.hrId);
       return rowHrId !== currentHrId && canSeeEmployee(access, row);
@@ -2767,11 +2869,11 @@ export async function getMedicalRepPortalData(
 
     // Prefetch dashboards to avoid double fetching inside getEmployeePortalData
     const [salesDashboard, payrollDashboard, historicalExpenses, liveOutstationExpenses, expenseReports] = await Promise.all([
-      salesScope === "LINE" 
-        ? getEmployeePortalSalesDashboard(null, { line: currentUser.line })
-        : targetSalesHrIds.length > 0 
-          ? getEmployeePortalSalesDashboard(targetSalesHrIds, {}) 
-          : Promise.resolve(null),
+      getScopedEmployeePortalSalesDashboard({
+        line: salesLineFilter,
+        salesScope,
+        targetSalesHrIds,
+      }),
       currentHrId ? getEmployeePortalPayrollDashboard(currentHrId) : Promise.resolve(null),
       listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
       listOutstationExpensesForPortal(currentHrId ? [currentHrId] : []),
@@ -2779,16 +2881,12 @@ export async function getMedicalRepPortalData(
     ]);
     const expenses = [...historicalExpenses, ...liveOutstationExpenses];
 
-    if (isDevelopment) {
-      console.debug("[employee-portal] fetched expenses count:", expenses.length);
-      console.debug("[employee-portal] fetched live outstation expenses count:", liveOutstationExpenses.length);
-      console.debug("[employee-portal] fetched reports count:", expenseReports.length);
-    }
-
     const base = await getEmployeePortalData(access, {
       payroll: payrollDashboard,
       sales: salesDashboard,
       directory: directory,
+      expenses: historicalExpenses,
+      expenseReports: expenseReports,
     });
 
   const employee = base.employee;
@@ -2995,9 +3093,7 @@ export async function getMedicalRepPortalData(
       }
     }
   } catch (error) {
-    if (isDevelopment) {
-      console.error("[employee-portal] team rank exception", error);
-    }
+    // team rank exception
   }
   
   const rankInTeam = teamRankAllPeriodsResult?.rank ?? null;
@@ -3014,14 +3110,6 @@ export async function getMedicalRepPortalData(
   const totalDeductions = latestRecord?.totalDeductions ?? 0;
   const internalDeductions = Math.max(0, totalDeductions - statutoryDeductions);
   const latestBatch = (payrollDashboard && (payrollDashboard.batch ?? payrollDashboard.batches[0])) || null;
-
-  if (isDevelopment) {
-    console.debug("[employee-portal] latest salary batch period:", { 
-      year: latestBatch?.year, 
-      month: latestBatch?.month,
-      status: latestBatch?.status 
-    });
-  }
 
   const netVsLastMonth = latestRecord && previousRecord && previousRecord.netSalary > 0
     ? ((latestRecord.netSalary - previousRecord.netSalary) / previousRecord.netSalary) * 100
@@ -3061,14 +3149,42 @@ export async function getMedicalRepPortalData(
   
   if (!salesTrend.length) insights.push("Sales data has not been uploaded yet.");
   
+  const fixedBaseSalary =
+    employee.netSalary ??
+    (latestRecord
+      ? calculateBaseSalary({
+          extraCostOfLiving: latestRecord.extraCostOfLiving,
+          fuelAllowance: latestRecord.fuelAllowance,
+          netSalary: latestRecord.netSalary,
+        })
+      : 0);
+  const fixedExtraCostOfLiving = employee.extraCostOfLiving ?? latestRecord?.extraCostOfLiving ?? 0;
+  const fixedFuelAllowance = employee.fuelAllowance ?? latestRecord?.fuelAllowance ?? 0;
+  const fixedSocialInsurance = employee.socialInsurance ?? latestRecord?.socialInsurance ?? 0;
+  const fixedTaxes = employee.taxes ?? latestRecord?.employmentIncomeTax ?? 0;
+  const fixedNetSalary = calculateNetSalary({
+    baseSalary: fixedBaseSalary,
+    extraCostOfLiving: fixedExtraCostOfLiving,
+    fuelAllowance: fixedFuelAllowance,
+  });
+  const calculatedFixedGrossSalary = calculateGrossSalary({
+    baseSalary: fixedBaseSalary,
+    socialInsurance: fixedSocialInsurance,
+    taxes: fixedTaxes,
+  });
+  const fixedGrossSalary =
+    fixedSocialInsurance > 0 || fixedTaxes > 0
+      ? calculatedFixedGrossSalary
+      : employee.grossSalary ?? latestRecord?.grossSalary ?? calculatedFixedGrossSalary;
+
   const fixedIncentiveSalary = {
-    baseSalary: employee.netSalary ?? undefined,
-    extraCostOfLiving: employee.extraCostOfLiving ?? latestRecord?.extraCostOfLiving ?? 0,
-    fuelAllowance: employee.fuelAllowance ?? latestRecord?.fuelAllowance ?? 0,
-    grossSalary: employee.grossSalary ?? latestRecord?.grossSalary ?? 0,
-    netSalary: latestRecord?.netSalary ?? 0,
-    socialInsurance: employee.socialInsurance ?? latestRecord?.socialInsurance ?? 0,
-    taxes: employee.taxes ?? latestRecord?.employmentIncomeTax ?? 0,
+    baseSalary: fixedBaseSalary,
+    extraCostOfLiving: fixedExtraCostOfLiving,
+    fuelAllowance: fixedFuelAllowance,
+    grossSalary: fixedGrossSalary,
+    netSalary: fixedNetSalary,
+    socialInsurance: fixedSocialInsurance,
+    taxes: fixedTaxes,
   };
   const incentiveCalc = calculateIncentive2026({
     ...fixedIncentiveSalary,
@@ -3111,12 +3227,13 @@ export async function getMedicalRepPortalData(
     insights,
     payroll: {
       batchId: latestBatch?.id ?? null,
+      baseSalary: fixedBaseSalary,
       firstPart: latestRecord?.firstPart ?? 0,
-      grossSalary: latestRecord?.grossSalary ?? 0,
+      grossSalary: fixedGrossSalary,
       internalDeductions,
       latestBatchLabel: latestBatch ? formatBatchLabel(latestBatch.month, latestBatch.year) : "No payroll period",
       latestBatchStatus: latestBatch?.status ?? null,
-      netSalary: latestRecord?.netSalary ?? 0,
+      netSalary: fixedNetSalary,
       payslipRows: (payrollDashboard ? payrollDashboard.batches : []).map((batch) => ({
         createdAt: batch.createdAt,
         id: batch.id,
@@ -3140,10 +3257,10 @@ export async function getMedicalRepPortalData(
       incentiveTarget: incentiveCalc.semesterTargetIncentive / 6,
       loans: latestRecord?.loans ?? 0,
       otherDeductions: latestRecord?.otherDeductions ?? 0,
-      socialInsurance: latestRecord?.socialInsurance ?? 0,
-      incomeTax: latestRecord?.employmentIncomeTax ?? 0,
-      fuelAllowance: latestRecord?.fuelAllowance ?? employee.fuelAllowance ?? 0,
-      extraCostOfLiving: latestRecord?.extraCostOfLiving ?? employee.extraCostOfLiving ?? 0,
+      socialInsurance: fixedSocialInsurance,
+      incomeTax: fixedTaxes,
+      fuelAllowance: fixedFuelAllowance,
+      extraCostOfLiving: fixedExtraCostOfLiving,
     },
     sales: {
       achievementPercent: Number.isFinite(achievementPercent) ? achievementPercent : 0,
@@ -3254,7 +3371,6 @@ export async function getMedicalRepPortalData(
     },
   };
 } catch (error) {
-  console.error("[employee-portal] failed to fetch medical rep portal data:", error);
   throw error;
 }
 }
@@ -3313,28 +3429,38 @@ export async function getDsmTeamPerformance(
     const directory = await getEmployeeDirectory().catch(() => null);
     if (!directory) return null;
 
-    const toCanonical = (hrId: string | null | undefined): string | null => {
-      const normalized = normalizeHrId(hrId);
-      if (!normalized) return null;
-      const canonical = normalizeHrIdForAccess(normalized);
-      return canonical || normalized;
-    };
+    const dsmCanonical = toCanonicalPortalHrId(currentHrId);
+    const currentEmployee = findDirectoryEmployeeByHrId(directory, currentHrId);
+    const lineScope = createPortalSalesLineScope({
+      fallbackLine: currentUser.line,
+      lineId: currentEmployee?.lineId ?? null,
+      lineName: currentEmployee?.lineName ?? null,
+    });
 
-    const dsmCanonical = toCanonical(currentHrId);
-    const userLine = normalizeLineName(currentUser.line);
+    const scopedDsmRows = isNsm
+      ? directory.employees.filter(
+          (emp) =>
+            isDistrictManagerEmployee(emp) &&
+            employeeMatchesPortalSalesScope(emp, lineScope),
+        )
+      : [];
+    const scopedDsmCanonicalIds = new Set(
+      scopedDsmRows
+        .map((emp) => toCanonicalPortalHrId(emp.hrId))
+        .filter((hrId): hrId is string => Boolean(hrId)),
+    );
 
     // Find target employees based on role
     // NSM sees all Med Reps in their line
     // DSM sees only their direct reports
     const medRepRows = directory.employees.filter((emp) => {
-      const role = normalizeRole(emp.jobTitle);
-      if (role !== "Medical Rep") return false;
+      if (!isMedicalRepDirectoryEmployee(emp)) return false;
 
       if (isNsm) {
-        return normalizeLineName(emp.lineName) === userLine;
+        return employeeMatchesPortalSalesScope(emp, lineScope);
       }
       
-      const managerCanonical = toCanonical(emp.managerHrId);
+      const managerCanonical = toCanonicalPortalHrId(emp.managerHrId);
       return managerCanonical && dsmCanonical && managerCanonical === dsmCanonical;
     });
 
@@ -3342,7 +3468,7 @@ export async function getDsmTeamPerformance(
     const hrIdToCanonical = new Map<string, string>();
     const canonicalToName = new Map<string, string>();
     medRepRows.forEach((emp) => {
-      const canonical = toCanonical(emp.hrId);
+      const canonical = toCanonicalPortalHrId(emp.hrId);
       const normalized = normalizeHrId(emp.hrId);
       if (canonical) {
         if (normalized) hrIdToCanonical.set(normalized, canonical);
@@ -3361,13 +3487,38 @@ export async function getDsmTeamPerformance(
       teamTotalSales: 0,
       teamTotalTarget: 0,
     };
-    if (medRepHrIds.length === 0) return empty;
+    if (medRepHrIds.length === 0 && (!isNsm || scopedDsmRows.length === 0)) return empty;
 
     // Fetch all sales records without period filter (used for period list + all-periods view)
-    // For NSMs, we fetch the entire line to ensure line totals include vacant areas
-    const allRecords = isNsm 
-      ? await fetchPortalSalesRecords(null, { line: currentUser.line })
+    // For NSMs, fetch scoped people by HR ID so stale auth line values cannot pull another line.
+    const nsmSalesHrIds = Array.from(
+      new Set([...medRepHrIds, ...scopedDsmRows.map((emp) => emp.hrId).filter(Boolean)]),
+    ) as string[];
+    const fetchedRecords = isNsm
+      ? await fetchPortalSalesRecords(nsmSalesHrIds, {})
       : await fetchPortalSalesRecords(medRepHrIds, {});
+    const scopedMedRepCanonicalIds = new Set(
+      medRepRows
+        .map((emp) => toCanonicalPortalHrId(emp.hrId))
+        .filter((hrId): hrId is string => Boolean(hrId)),
+    );
+    const allRecords = isNsm
+      ? fetchedRecords.filter((record) => {
+          const recordCanonical = toCanonicalPortalHrId(record.hrId);
+          const managerCanonical = toCanonicalPortalHrId(record.managerHrId);
+          const belongsToScopedRep =
+            Boolean(recordCanonical && scopedMedRepCanonicalIds.has(recordCanonical));
+          const belongsToScopedDsm = Boolean(
+            (recordCanonical && scopedDsmCanonicalIds.has(recordCanonical)) ||
+              (managerCanonical && scopedDsmCanonicalIds.has(managerCanonical)),
+          );
+
+          return (
+            (belongsToScopedRep || belongsToScopedDsm) &&
+            salesRecordMatchesPortalSalesScope(record, lineScope)
+          );
+        })
+      : fetchedRecords;
 
     // Available periods (newest first)
     const periods = Array.from(new Set(allRecords.map((r) => r.period).filter(Boolean)))
@@ -3446,7 +3597,7 @@ export async function getDsmTeamPerformance(
     // Pass 3 — build per-member data (include all med reps, even those with no sales)
     const membersMap = new Map<string, DsmTeamMemberData>();
     medRepRows.forEach((emp) => {
-      const canonical = toCanonical(emp.hrId);
+      const canonical = toCanonicalPortalHrId(emp.hrId);
       if (!canonical) return;
       membersMap.set(canonical, {
         achievementPercent: 0,
@@ -3515,9 +3666,6 @@ export async function getDsmTeamPerformance(
       teamTotalTarget,
     };
   } catch (error) {
-    if (isDevelopment) {
-      console.error("[employee-portal] getDsmTeamPerformance failed:", error);
-    }
     return null;
   }
 }
@@ -3679,6 +3827,33 @@ function isDistrictManagerVacancyTitle(...values: Array<string | null | undefine
   );
 }
 
+function isMedicalRepVacancyTitle(...values: Array<string | null | undefined>) {
+  const normalized = values
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+
+  return normalized.includes("medical representative") || normalized.includes("medical rep");
+}
+
+function isNationalSalesManagerVacancyTitle(...values: Array<string | null | undefined>) {
+  const normalized = values
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+
+  return normalized.includes("national sales manager") || normalized.includes("nsm");
+}
+
+function isGroupProductManagerVacancyTitle(...values: Array<string | null | undefined>) {
+  const normalized = values
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+
+  return normalized.includes("group product manager") || normalized.includes("gpm");
+}
+
 function vacancySeatKey(
   row: {
     area_id?: number | null;
@@ -3836,9 +4011,6 @@ export async function getEmployeePortalVacancies(
       vacancies,
     };
   } catch (error) {
-    if (isDevelopment) {
-      console.error("[employee-portal] getEmployeePortalVacancies failed:", error);
-    }
     return null;
   }
 }
@@ -3857,37 +4029,26 @@ export async function getNsmDsmPerformance(
     const directory = await getEmployeeDirectory().catch(() => null);
     if (!directory) return null;
 
-    const userLine = normalizeLineName(currentUser.line);
-
-    // Find all DSMs in this line using lineId matching if line names fail
-    const targetLineId = directory.employees.find(e => e.hrId === currentUser.hrId)?.lineId;
-
-    const dsmRows = directory.employees.filter((emp) => {
-      const title = (emp.jobTitle || "").toLowerCase();
-      const isDsmRole = title.includes("district") || title.includes("dsm");
-      
-      if (!isDsmRole) return false;
-
-      // Match by lineId first, then by lineName as fallback
-      if (targetLineId !== undefined && emp.lineId !== null) {
-        return emp.lineId === targetLineId;
-      }
-      return normalizeLineName(emp.lineName) === userLine;
+    const currentEmployee = findDirectoryEmployeeByHrId(directory, currentUser.hrId);
+    const lineScope = createPortalSalesLineScope({
+      fallbackLine: currentUser.line,
+      lineId: currentEmployee?.lineId ?? null,
+      lineName: currentEmployee?.lineName ?? null,
     });
 
-    const toCanonical = (hrId: string | null | undefined): string | null => {
-      const normalized = normalizeHrId(hrId);
-      if (!normalized) return null;
-      const canonical = normalizeHrIdForAccess(normalized);
-      return canonical || normalized;
-    };
+    const dsmRows = directory.employees.filter((emp) => {
+      return (
+        isDistrictManagerEmployee(emp) &&
+        employeeMatchesPortalSalesScope(emp, lineScope)
+      );
+    });
 
     // Map to identify which DSM a sales record belongs to
     // For NSM viewing DSMs, we look at the manager_hr_id of the records
     const dsmHrIdToCanonical = new Map<string, string>();
     const canonicalToName = new Map<string, string>();
     dsmRows.forEach((emp) => {
-      const canonical = toCanonical(emp.hrId);
+      const canonical = toCanonicalPortalHrId(emp.hrId);
       const normalized = normalizeHrId(emp.hrId);
       if (canonical) {
         if (normalized) dsmHrIdToCanonical.set(normalized, canonical);
@@ -3895,17 +4056,59 @@ export async function getNsmDsmPerformance(
         canonicalToName.set(canonical, emp.fullName);
       }
     });
+    const dsmCanonicalIds = new Set(dsmHrIdToCanonical.values());
 
-    // Fetch all sales records for the line
-    const allRecords = await fetchPortalSalesRecords(null, { line: currentUser.line });
+    const medRepToDsmCanonical = new Map<string, string>();
+    directory.employees.forEach((emp) => {
+      if (!isMedicalRepDirectoryEmployee(emp)) return;
+      if (!employeeMatchesPortalSalesScope(emp, lineScope)) return;
+
+      const repCanonical = toCanonicalPortalHrId(emp.hrId);
+      const managerCanonical = toCanonicalPortalHrId(emp.managerHrId);
+      if (!repCanonical || !managerCanonical || !dsmCanonicalIds.has(managerCanonical)) return;
+      medRepToDsmCanonical.set(repCanonical, managerCanonical);
+    });
+
+    const resolveDsmForSalesRecord = (record: PortalSalesNormalized) => {
+      const managerCanonical = toCanonicalPortalHrId(record.managerHrId);
+      if (managerCanonical && dsmCanonicalIds.has(managerCanonical)) {
+        return managerCanonical;
+      }
+
+      const recordCanonical = toCanonicalPortalHrId(record.hrId);
+      if (recordCanonical && dsmCanonicalIds.has(recordCanonical)) {
+        return recordCanonical;
+      }
+
+      return recordCanonical ? medRepToDsmCanonical.get(recordCanonical) ?? null : null;
+    };
+
+    // Fetch by scoped HR IDs so stale app_auth_users.line values do not leak other lines.
+    const salesQueryHrIds = Array.from(
+      new Set([
+        ...dsmRows.map((emp) => emp.hrId),
+        ...Array.from(medRepToDsmCanonical.keys()),
+      ]),
+    );
+    const fetchedRecords =
+      salesQueryHrIds.length > 0
+        ? await fetchPortalSalesRecords(salesQueryHrIds, {})
+        : [];
+    const allRecords = fetchedRecords
+      .map((record) => ({ dsmCanonical: resolveDsmForSalesRecord(record), record }))
+      .filter(
+        (entry): entry is { dsmCanonical: string; record: PortalSalesNormalized } =>
+          Boolean(entry.dsmCanonical) &&
+          salesRecordMatchesPortalSalesScope(entry.record, lineScope),
+      );
 
     // Available periods
-    const periods = Array.from(new Set(allRecords.map((r) => r.period).filter(Boolean)))
+    const periods = Array.from(new Set(allRecords.map(({ record }) => record.period).filter(Boolean)))
       .sort((a, b) => b.localeCompare(a));
 
     const selectedPeriod = normalizeTeamComparisonPeriod(options.period);
     const records = selectedPeriod
-      ? allRecords.filter((r) => r.period === selectedPeriod)
+      ? allRecords.filter(({ record }) => record.period === selectedPeriod)
       : allRecords;
 
     const salesByDsmProduct = new Map<string, { sales: number; units: number; family: string }>();
@@ -3914,7 +4117,7 @@ export async function getNsmDsmPerformance(
     let lineTotalSales = 0;
     const globalMaxTargetByKey = new Map<string, number>();
 
-    records.forEach((record) => {
+    records.forEach(({ dsmCanonical, record }) => {
       const salesVal = record.salesValue;
       const targetVal = record.targetValue;
       const period = record.period || "unknown";
@@ -3926,12 +4129,6 @@ export async function getNsmDsmPerformance(
       if (targetVal > (globalMaxTargetByKey.get(lineTargetKey) ?? 0)) {
         globalMaxTargetByKey.set(lineTargetKey, targetVal);
       }
-
-      // Attribute to DSM based on manager_hr_id
-      const managerNormalized = normalizeHrId(record.managerHrId);
-      if (!managerNormalized) return;
-      const dsmCanonical = dsmHrIdToCanonical.get(managerNormalized);
-      if (!dsmCanonical) return;
 
       const family = record.family || "";
       const dpKey = `${dsmCanonical}::${product}`;
@@ -3967,7 +4164,7 @@ export async function getNsmDsmPerformance(
     // Build DSM data objects
     const dsmsMap = new Map<string, DsmTeamMemberData>();
     dsmRows.forEach((emp) => {
-      const canonical = toCanonical(emp.hrId);
+      const canonical = toCanonicalPortalHrId(emp.hrId);
       if (!canonical) return;
       dsmsMap.set(canonical, {
         achievementPercent: 0,
@@ -4026,7 +4223,6 @@ export async function getNsmDsmPerformance(
       lineTotalTarget
     };
   } catch (error) {
-    if (isDevelopment) console.error("[employee-portal] getNsmDsmPerformance failed:", error);
     return null;
   }
 }
@@ -4315,10 +4511,6 @@ export async function getNsmTeamExpenses(
       summary,
     };
   } catch (error) {
-    if (isDevelopment) {
-      console.error("[employee-portal] getNsmTeamExpenses failed:", error);
-    }
-
     return null;
   }
 }
@@ -4579,10 +4771,6 @@ export async function getNsmBrickCoverage(
       },
     };
   } catch (error) {
-    if (isDevelopment) {
-      console.error("[employee-portal] getNsmBrickCoverage failed:", error);
-    }
-
     return null;
   }
 }

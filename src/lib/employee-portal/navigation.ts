@@ -5,11 +5,13 @@ export type EmployeePortalNavVisibility = {
   showMedRepsPerformanceTab?: boolean;
   showDsmsPerformanceTab?: boolean;
   showTeamExpensesTab?: boolean;
+  showLeaveApprovalsTab?: boolean;
   showBrickCoverageTab?: boolean;
   showVacanciesTab?: boolean;
   showProbationTab?: boolean;
   showOrganogramTab?: boolean;
-  showCoachingTab?: boolean;
+  showMyCoachingTab?: boolean;
+  showTeamCoachingTab?: boolean;
 };
 
 export function resolveEmployeePortalNavVisibility(
@@ -27,37 +29,33 @@ export function resolveEmployeePortalNavVisibility(
     roleNormalized.includes("district manager") ||
     roleNormalized.includes("district sales manager") ||
     roleNormalized.includes("dsm");
-  const showMedRepsPerformanceTab = roleNormalized.includes("national sales manager");
+  const isNationalSalesManager =
+    roleNormalized.includes("national sales manager") ||
+    roleNormalized === "nsm";
+  const showMedRepsPerformanceTab = isNationalSalesManager;
   const showExpenseActionTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
-  const coachingRoles = [
-    "employee",
-    "medical rep",
-    "district manager",
-    "district sales manager",
-    "regional manager",
-    "national sales manager",
-    "product manager",
-    "group product manager",
-    "sfe manager",
-    "training manager",
-    "manager",
-    "ceo",
-  ];
-  const showCoachingTab =
-    coachingRoles.includes(roleNormalized) ||
-    roleNormalized.includes("district manager") ||
-    roleNormalized === "dsm";
+  const showMyCoachingTab =
+    roleNormalized.includes("medical rep") ||
+    roleNormalized === "medical representative";
+  const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
+  const showLeaveApprovalsTab =
+    showTeamPerformanceTab ||
+    isNationalSalesManager ||
+    roleNormalized.includes("regional manager") ||
+    roleNormalized.includes("manager");
 
   return {
-    showBrickCoverageTab: roleNormalized.includes("national sales manager"),
-    showCoachingTab,
-    showDsmsPerformanceTab: roleNormalized.includes("national sales manager"),
+    showBrickCoverageTab: isNationalSalesManager,
+    showDsmsPerformanceTab: isNationalSalesManager,
     showExpenseActionTab,
+    showLeaveApprovalsTab,
     showManagementTab,
     showMedRepsPerformanceTab,
+    showMyCoachingTab,
     showOrganogramTab: showMedRepsPerformanceTab,
     showProbationTab: showTeamPerformanceTab || showMedRepsPerformanceTab,
-    showTeamExpensesTab: roleNormalized.includes("national sales manager"),
+    showTeamCoachingTab,
+    showTeamExpensesTab: isNationalSalesManager,
     showTeamPerformanceTab,
     showVacanciesTab: showTeamPerformanceTab || showMedRepsPerformanceTab,
   };

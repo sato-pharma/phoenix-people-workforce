@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { validateSalaryWorkbook } from "@/lib/payroll/salary-import";
+import { getPayrollSalarySourcesByHrId } from "@/lib/payroll/salary-source";
 import { createSalaryBatch, isPayrollSchemaMissing } from "@/lib/payroll/service";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -45,7 +46,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const validation = await validateSalaryWorkbook(file);
+    const salarySources = await getPayrollSalarySourcesByHrId();
+    const validation = await validateSalaryWorkbook(file, { salarySources });
 
     if (
       validation.failedRows > 0 ||

@@ -107,6 +107,7 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
         { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
         { href: "/offers", icon: IdCard, label: "Offer Lifecycle", permissions: [{ resource: "offers" }] },
         { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }] },
+        { href: "/admin/leave", icon: CalendarDays, label: "Leave Management", permissions: [{ resource: "leave" }] },
         { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
         { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }] },
         { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
@@ -132,15 +133,18 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
     .filter((section) => section.items.length > 0);
 }
 
-function getEmployeePortalSections(permissionLookup: PermissionLookup): SidebarSection[] {
+function getEmployeePortalSections(permissionLookup: PermissionLookup, currentRole?: PhoenixRole): SidebarSection[] {
   const sections: SidebarSection[] = [
     {
       items: [
         { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", permissions: [{ resource: "employee_profile" }] },
         { href: "/employee-portals/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales", permissions: [{ resource: "sales" }] },
-        { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "My Coaching Reports", permissions: [{ resource: "coaching" }] },
+        { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "My Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["Medical Rep"] },
+        { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Team Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["District Manager", "National Sales Manager"] },
         { href: "/employee-portals/payroll", icon: ChartColumnBig, label: "Payroll & Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }] },
         { href: "/employee/outstation/new", icon: MapPinned, label: "Outstation", permissions: [{ resource: "outstation" }] },
+        { href: "/employee-portals/leave", icon: CalendarDays, label: "Vacation / Leave", permissions: [{ resource: "leave" }] },
+        { href: "/employee-portals/leave-approvals", icon: CalendarClock, label: "Leave Approvals", permissions: [{ resource: "leave", action: "approve" }] },
       ],
       label: "Medical Rep Portal",
     },
@@ -149,14 +153,14 @@ function getEmployeePortalSections(permissionLookup: PermissionLookup): SidebarS
   return sections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => permissionAllowed(permissionLookup, item.permissions)),
+      items: section.items.filter((item) => permissionAllowed(permissionLookup, item.permissions) && roleAllowed(currentRole, item.roles)),
     }))
     .filter((section) => section.items.length > 0);
 }
 
 function getSections(mode: NavigationMode, permissionLookup: PermissionLookup, currentRole?: PhoenixRole): SidebarSection[] {
   return mode === "employee-portal"
-    ? getEmployeePortalSections(permissionLookup)
+    ? getEmployeePortalSections(permissionLookup, currentRole)
     : getAdminSections(permissionLookup, currentRole);
 }
 
