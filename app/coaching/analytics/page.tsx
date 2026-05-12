@@ -32,6 +32,7 @@ import {
   getEmployeeDirectoryRows,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -106,11 +107,11 @@ function buildFilterOptions(
     ]),
     medicalReps: toOptionMap([
       ...employees.map((employee) => ({
-        label: `${employee.fullName || employee.hrId} (${employee.hrId})`,
+        label: `${formatEmployeeDisplayName(employee.fullName, employee.hrId)} (${employee.hrId})`,
         value: employee.hrId,
       })),
       ...reports.map((report) => ({
-        label: `${report.medicalRepName || report.medicalRepHrId} (${report.medicalRepHrId})`,
+        label: `${formatEmployeeDisplayName(report.medicalRepName, report.medicalRepHrId)} (${report.medicalRepHrId})`,
         value: report.medicalRepHrId,
       })),
     ]),

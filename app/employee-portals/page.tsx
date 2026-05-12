@@ -48,12 +48,6 @@ export default async function EmployeePortalsHomePage({
     );
   }
 
-  const formattedTeamPeriod = teamComparisonPeriod
-    ? new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(
-      new Date(`${teamComparisonPeriod}-01T00:00:00.000Z`),
-    )
-    : "Current period";
-
   return (
     <EmployeePortalPageShell
       badge="Employee Portal"
@@ -63,8 +57,8 @@ export default async function EmployeePortalsHomePage({
       <EmployeePortalActionBar
         actions={
           <>
-            <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black text-orange-700 shadow-[0_10px_24px_rgba(249,115,22,0.08)]">
-              Team View: {formattedTeamPeriod}
+            <span className="inline-flex items-center justify-center rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 shadow-[0_8px_20px_rgba(249,115,22,0.07)]">
+              Dashboard View: All uploaded periods
             </span>
             <EmployeePortalActionLink href="/employee-portals/sales" label="Open Sales Workspace" />
           </>

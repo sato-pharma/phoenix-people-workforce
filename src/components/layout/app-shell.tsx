@@ -66,7 +66,7 @@ export async function AppShell({
           <main className="min-w-0 flex-1 px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6 xl:px-8">
             <div
               className={`w-full ${
-                isAdminMode && contentWidth !== "full"
+                contentWidth !== "full"
                   ? "mx-auto max-w-[1480px]"
                   : "max-w-none"
               }`}

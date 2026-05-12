@@ -16,6 +16,7 @@ import { Card } from "@/components/ui/card";
 import { canAccess, getPayrollScope } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getPayslipCenterEmployeeOptions, searchPayslipCenter } from "@/lib/payroll/payslip-center";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,7 @@ export default async function AdminPayslipsCenterPage(
   ]);
   const latestNet = data.rows[0] ? formatMoney(data.rows[0].netSalary) : "-";
   const employeeSummary = data.employees[0]
-    ? `${data.employees[0].fullName} - ${data.employees[0].jobTitle} - ${data.employees[0].line}`
+    ? `${formatEmployeeDisplayName(data.employees[0].fullName)} - ${data.employees[0].jobTitle} - ${data.employees[0].line}`
     : "Matching payslip history";
 
   return (
@@ -127,7 +128,7 @@ export default async function AdminPayslipsCenterPage(
                   {data.rows.map((row) => (
                     <tr className="transition hover:bg-[#FCFDFE]" key={`${row.batchId}-${row.recordId}`}>
                       <td className="px-3 py-3">
-                        <p className="font-semibold text-[#0F172A]">{row.fullName}</p>
+                        <p className="font-semibold text-[#0F172A]">{formatEmployeeDisplayName(row.fullName)}</p>
                         <p className="mt-1 text-xs text-[#64748B]">{row.jobTitle}</p>
                       </td>
                       <td className="px-3 py-3 font-mono text-xs text-[#64748B]">{row.hrId || row.employeeCode || "-"}</td>

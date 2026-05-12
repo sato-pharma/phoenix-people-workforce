@@ -12,6 +12,7 @@ import { runCoachingPermissionTests } from "./coaching-permissions.test.ts";
 import { runCoachingInAppNotificationTests } from "./coaching-in-app-notifications.test.ts";
 import { runRlsGapClosureTests } from "./rls-gap-closure.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
+import { runEmployeeDisplayNameTests } from "./employee-display-name.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -37,3 +38,4 @@ await runTest("rls gap closure", runRlsGapClosureTests);
 await runTest("sales others bucket", runSalesOthersBucketTests);
 await runTest("sales role mapping", runSalesRoleMappingTests);
 await runTest("auth session", runAuthSessionTests);
+await runTest("employee display name", runEmployeeDisplayNameTests);

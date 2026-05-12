@@ -27,7 +27,7 @@ import type {
   CoachingReportDetail,
   CoachingScoreItemRow,
 } from "@/lib/coaching/types";
-import { cn } from "@/lib/utils";
+import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
 type EmployeeCoachingReviewProps = {
   initialDetail: CoachingReportDetail;
@@ -269,7 +269,7 @@ export function EmployeeCoachingReview({ initialDetail }: EmployeeCoachingReview
 
         <div className="grid gap-4 p-5 sm:p-6 lg:grid-cols-4">
           <DetailPill label="Coaching date" value={formatDate(report.coaching_date)} />
-          <DetailPill label="Coach" value={summary?.coachName || report.coach_hr_id} />
+          <DetailPill label="Coach" value={formatEmployeeDisplayName(summary?.coachName, report.coach_hr_id)} />
           <DetailPill label="Coach role" value={report.coach_role || "Coach"} />
           <DetailPill label="Status" value={report.status.replace(/_/g, " ")} />
         </div>
@@ -281,7 +281,7 @@ export function EmployeeCoachingReview({ initialDetail }: EmployeeCoachingReview
             <div>
               <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Employee context</p>
               <h3 className="mt-2 text-2xl font-black tracking-[-0.03em] text-slate-950">
-                {summary?.medicalRepName || report.medical_rep_hr_id}
+                {formatEmployeeDisplayName(summary?.medicalRepName, report.medical_rep_hr_id)}
               </h3>
               <p className="mt-1 text-sm font-semibold text-slate-500">HR ID: {report.medical_rep_hr_id}</p>
             </div>

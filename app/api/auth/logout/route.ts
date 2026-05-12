@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
 import { getRequestIp, writeAuthAudit } from "@/lib/auth/audit";
+import { phoenixDevPreviewCookieName } from "@/lib/auth/dev-preview";
 import { phoenixSessionCookieName, verifySessionToken } from "@/lib/auth/session";
 import {
   phoenixSupabaseAccessTokenCookieName,
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
   
   cookieStore.delete(phoenixSupabaseAccessTokenCookieName);
   cookieStore.delete(phoenixSupabaseRefreshTokenCookieName);
+  cookieStore.delete(phoenixDevPreviewCookieName);
   cookieStore.delete(phoenixSessionCookieName);
 
   if (session) {

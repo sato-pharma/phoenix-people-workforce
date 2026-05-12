@@ -60,8 +60,10 @@ import { daysBetweenDateOnly, formatDateOnly } from "@/lib/date-only";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 type ContributionMetric = "sales" | "units";
+type MetricAccent = "amber" | "blue" | "green" | "orange" | "purple";
 type ContributionRow = {
   name: string;
   sales: number;
@@ -155,14 +157,14 @@ function ContributionMetricToggle({
   onChange: (metric: ContributionMetric) => void;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
       {(["sales", "units"] as const).map((option) => {
         const active = metric === option;
         return (
           <button
             className={active
-              ? "rounded-md bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
-              : "rounded-md px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"}
+              ? "rounded-md bg-white px-3 py-1 text-xs font-semibold text-orange-600 shadow-sm ring-1 ring-slate-200"
+              : "rounded-md px-3 py-1 text-xs font-semibold text-slate-500 transition hover:text-slate-700"}
             key={option}
             onClick={() => onChange(option)}
             type="button"
@@ -199,6 +201,51 @@ function payrollStatusTone(value: string) {
     return "danger" as const;
   }
   return "neutral" as const;
+}
+
+function metricTone(accent: MetricAccent = "orange") {
+  const tones = {
+    amber: {
+      border: "border-amber-200 border-t-amber-500 hover:border-amber-300",
+      icon: "bg-amber-50 text-amber-600 ring-amber-100",
+      line: "bg-amber-500",
+      soft: "bg-amber-100/70 text-amber-800",
+    },
+    blue: {
+      border: "border-sky-200 border-t-sky-500 hover:border-sky-300",
+      icon: "bg-sky-50 text-sky-600 ring-sky-100",
+      line: "bg-sky-500",
+      soft: "bg-sky-100/70 text-sky-800",
+    },
+    green: {
+      border: "border-emerald-200 border-t-emerald-500 hover:border-emerald-300",
+      icon: "bg-emerald-50 text-emerald-600 ring-emerald-100",
+      line: "bg-emerald-500",
+      soft: "bg-emerald-100/70 text-emerald-800",
+    },
+    orange: {
+      border: "border-orange-200 border-t-orange-500 hover:border-orange-300",
+      icon: "bg-orange-50 text-orange-600 ring-orange-100",
+      line: "bg-orange-500",
+      soft: "bg-orange-100/70 text-orange-800",
+    },
+    purple: {
+      border: "border-violet-200 border-t-violet-500 hover:border-violet-300",
+      icon: "bg-violet-50 text-violet-600 ring-violet-100",
+      line: "bg-violet-500",
+      soft: "bg-violet-100/70 text-violet-800",
+    },
+  } satisfies Record<MetricAccent, Record<string, string>>;
+
+  return tones[accent];
+}
+
+function compactStatus(progress?: number | null, fallback = "Tracked") {
+  if (typeof progress !== "number" || !Number.isFinite(progress)) return fallback;
+  if (progress >= 100) return "Ahead";
+  if (progress >= 90) return "On track";
+  if (progress > 0) return "Watch";
+  return "No signal";
 }
 
 function PayrollStat({
@@ -270,9 +317,12 @@ function insightMeta(text: string) {
 
 function sectionTitle(kicker: string, title: string) {
   return (
-    <div className="mb-2">
-      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{kicker}</p>
-      <h2 className="mt-2 text-2xl font-semibold text-slate-900">{title}</h2>
+    <div className="mb-2 flex items-center gap-3">
+      <div className="h-8 w-[3px] rounded-full bg-gradient-to-b from-orange-400 to-orange-600" />
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-500">{kicker}</p>
+        <h2 className="mt-0.5 text-[22px] font-semibold leading-tight tracking-tight text-slate-900">{title}</h2>
+      </div>
     </div>
   );
 }
@@ -707,71 +757,89 @@ function OverviewStatCard({
   progress,
   value,
 }: {
-  accent?: "orange" | "green" | "purple" | "blue";
+  accent?: MetricAccent;
   icon: typeof Target;
   label: string;
   note?: string;
   progress?: number | null;
   value: string;
 }) {
-  const tone = {
-    bar: "bg-orange-500",
-    border: "hover:border-orange-200",
-    icon: "bg-orange-50 text-orange-600 ring-orange-100",
-    progress: "bg-orange-500",
-    tint: "bg-orange-50/55",
-  };
-
-  if (accent === "green") {
-    tone.bar = "bg-emerald-500";
-    tone.border = "hover:border-emerald-200";
-    tone.icon = "bg-emerald-50 text-emerald-600 ring-emerald-100";
-    tone.progress = "bg-emerald-500";
-    tone.tint = "bg-emerald-50/55";
-  } else if (accent === "purple") {
-    tone.bar = "bg-violet-500";
-    tone.border = "hover:border-violet-200";
-    tone.icon = "bg-violet-50 text-violet-600 ring-violet-100";
-    tone.progress = "bg-violet-500";
-    tone.tint = "bg-violet-50/55";
-  } else if (accent === "blue") {
-    tone.bar = "bg-sky-500";
-    tone.border = "hover:border-sky-200";
-    tone.icon = "bg-sky-50 text-sky-600 ring-sky-100";
-    tone.progress = "bg-sky-500";
-    tone.tint = "bg-sky-50/55";
-  }
-
+  const tone = metricTone(accent);
   const clampedProgress =
     typeof progress === "number" ? Math.max(0, Math.min(100, Math.round(progress))) : null;
+  const isCurrencyValue = value.startsWith("EGP");
+  const isLongText = value.length > 18 && !isCurrencyValue;
+  const isLongLabel = label.length > 18;
+  const status = compactStatus(progress);
+  const TrendIcon = clampedProgress === null || clampedProgress >= 90 ? TrendingUp : TrendingDown;
 
   return (
-    <Card className={`group relative min-h-[172px] overflow-hidden rounded-[26px] border border-slate-200/90 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-5 py-5 shadow-[0_18px_42px_rgba(15,23,42,0.075)] transition duration-200 hover:-translate-y-0.5 ${tone.border} hover:shadow-[0_24px_54px_rgba(15,23,42,0.11)]`}>
-      <div className={`absolute right-0 top-0 h-[76px] w-[76px] rounded-bl-[38px] ${tone.tint}`} />
-      <div className={`mb-5 h-[3px] w-10 rounded-full ${tone.bar} transition group-hover:w-16`} />
-      <div className="relative flex h-full flex-col justify-between gap-5">
+    <Card className={`group relative min-h-[152px] overflow-hidden rounded-[18px] border border-t-[3px] ${tone.border} bg-white px-4 py-4 shadow-[0_4px_20px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_32px_rgba(15,23,42,0.10)]`}>
+      <div className={`absolute inset-x-0 top-0 h-0.5 ${tone.line} opacity-80`} />
+      <div className="relative flex h-full min-h-[120px] flex-col justify-between gap-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="break-words text-[1.65rem] font-black leading-[1.05] text-slate-950 [overflow-wrap:anywhere] lg:text-[1.85rem] 2xl:text-[2rem]">
+            <div className="flex items-center gap-2">
+              <span className={`h-1.5 w-1.5 rounded-full ${tone.line} shadow-[0_0_0_3px_rgba(15,23,42,0.03)]`} />
+              <p
+                className={[
+                  "whitespace-nowrap font-bold uppercase text-slate-500",
+                  isLongLabel ? "text-[9px] tracking-[0.08em]" : "text-[10px] tracking-[0.15em]",
+                ].join(" ")}
+              >
+                {label}
+              </p>
+            </div>
+            <p
+              className={[
+                "mt-2.5 max-w-full whitespace-nowrap font-black leading-none tracking-tight text-slate-950",
+                isCurrencyValue
+                  ? "tabular-nums text-[clamp(1.25rem,1.15vw,1.55rem)]"
+                  : isLongText
+                    ? "text-[clamp(1.1rem,1.05vw,1.35rem)]"
+                    : "text-[clamp(1.45rem,1.3vw,1.85rem)]",
+              ].join(" ")}
+              title={value}
+            >
               {value}
             </p>
-            <p className="mt-2.5 text-[11px] font-black uppercase text-slate-500">{label}</p>
           </div>
-          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1 ${tone.icon}`}>
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white bg-slate-50/50 shadow-sm ring-1 ${tone.icon} transition-transform duration-300 group-hover:scale-110`}>
             <Icon className="h-5 w-5" />
           </div>
         </div>
 
-        <div>
-          {note ? <p className="line-clamp-2 min-h-[34px] text-[13px] font-medium leading-5 text-slate-500">{note}</p> : null}
-          {clampedProgress !== null ? (
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
-              <div
-                className={`h-2 rounded-full ${tone.progress}`}
-                style={{ width: `${clampedProgress}%` }}
-              />
+        <div className="relative">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              {note ? (
+                <p className="line-clamp-2 text-[11px] font-semibold leading-snug text-slate-500" title={note}>
+                  {note}
+                </p>
+              ) : null}
             </div>
-          ) : null}
+            {clampedProgress !== null ? (
+              <span className="shrink-0 whitespace-nowrap text-xs font-bold text-slate-600 tabular-nums">{clampedProgress}%</span>
+            ) : null}
+          </div>
+          {clampedProgress !== null ? (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className={`inline-flex min-w-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${tone.soft}`}>
+                  <TrendIcon className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{status}</span>
+                </span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full border border-slate-200/70 bg-slate-100/80">
+                <div
+                  className={`h-full rounded-full ${tone.line} transition-all duration-500`}
+                  style={{ width: `${clampedProgress}%` }}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className={`mt-3 h-1.5 w-16 rounded-full ${tone.line} opacity-70`} />
+          )}
         </div>
       </div>
     </Card>
@@ -779,7 +847,7 @@ function OverviewStatCard({
 }
 
 type OverviewKeyCard = {
-  accent?: "orange" | "green" | "purple" | "blue";
+  accent?: MetricAccent;
   icon: typeof Target;
   label: string;
   note?: string;
@@ -833,12 +901,12 @@ function comparisonRows(data: MedicalRepPortalData) {
 }
 
 function topComparisonName(data: MedicalRepPortalData, fallback = "Not available") {
-  return comparisonRows(data)[0]?.name ?? fallback;
+  return formatEmployeeDisplayName(comparisonRows(data)[0]?.name, fallback, 3);
 }
 
 function weakComparisonName(data: MedicalRepPortalData, fallback = "Not available") {
   const rows = comparisonRows(data).filter((row) => Number.isFinite(row.achievementPercent));
-  return rows.sort((left, right) => left.achievementPercent - right.achievementPercent)[0]?.name ?? fallback;
+  return formatEmployeeDisplayName(rows.sort((left, right) => left.achievementPercent - right.achievementPercent)[0]?.name, fallback, 3);
 }
 
 function underperformingCount(data: MedicalRepPortalData) {
@@ -887,6 +955,16 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
     note: data.sales.topProduct ?? "No product data",
     value: egp(data.sales.topProductSalesValue),
   };
+  const leadingMedicalRepCard: OverviewKeyCard = {
+    accent: "green",
+    icon: UserRound,
+    label: "Leading Medical Representative",
+    note: data.sales.leadingMedicalRep
+      ? `${pct(data.sales.leadingMedicalRep.achievementPercent)} achievement`
+      : "No medical rep data",
+    progress: data.sales.leadingMedicalRep?.achievementPercent ?? null,
+    value: formatEmployeeDisplayName(data.sales.leadingMedicalRep?.name, "Not available", 3),
+  };
   const employmentCard: OverviewKeyCard = {
     accent: "blue",
     icon: CalendarDays,
@@ -932,7 +1010,6 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
 
   if (isRole(data, "national sales manager")) {
     return [
-      ...achievementCards(data, "Line"),
       {
         accent: "blue",
         icon: Users,
@@ -941,27 +1018,36 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
         value: formatUnits(org?.totalStructure ?? data.workforce.activeHeadcount + data.workforce.openVacancies),
       },
       {
+        accent: "blue",
+        icon: Users,
+        label: "Workforce",
+        note: data.workforce.scopeLabel,
+        progress: data.workforce.dataCoveragePercent,
+        value: formatUnits(data.workforce.activeHeadcount),
+      },
+      {
         accent: "orange",
         icon: BriefcaseBusiness,
-        label: "DSM Vacancies",
+        label: "District Manager Vacancies",
         note: "Open district manager seats",
         value: formatUnits(org?.districtManagerVacancies ?? 0),
       },
       {
+        accent: "orange",
+        icon: BriefcaseBusiness,
+        label: "Open Vacancies",
+        note: "Open positions in scope",
+        value: formatUnits(data.workforce.openVacancies),
+      },
+      highestProductCard,
+      {
         accent: "green",
         icon: Crown,
-        label: "Top DSM",
+        label: "Leading District Manager",
         note: "Best current comparison rank",
         value: topComparisonName(data),
       },
-      {
-        accent: "orange",
-        icon: TrendingDown,
-        label: "Underperforming Districts",
-        note: "Below 90% achievement",
-        value: formatUnits(underperformingCount(data)),
-      },
-      highestProductCard,
+      leadingMedicalRepCard,
     ];
   }
 
@@ -1256,6 +1342,120 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
   ];
 }
 
+function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
+  const achievement = Number.isFinite(data.sales.overviewAchievementPercent)
+    ? data.sales.overviewAchievementPercent
+    : 0;
+  const gap = Math.max(0, data.sales.overviewTarget - data.sales.overviewSales);
+  const performanceState = achievement >= 100
+    ? "Ahead of plan"
+    : achievement >= 90
+      ? "Within control band"
+      : "Needs attention";
+  const signals = [
+    {
+      accent: "green" as const,
+      icon: TrendingUp,
+      label: "Sales",
+      note: `Target ${egp(data.sales.overviewTarget)}`,
+      progress: achievement,
+      status: compactStatus(achievement, "Tracked"),
+      value: egp(data.sales.overviewSales),
+    },
+    {
+      accent: "orange" as const,
+      icon: Target,
+      label: "Target",
+      progress: achievement,
+      status: "Tracked",
+      note: "Approved sales target",
+      value: egp(data.sales.overviewTarget),
+    },
+    {
+      accent: "blue" as const,
+      icon: Activity,
+      label: "Achievement Rate",
+      note: "All-time sales versus target",
+      progress: achievement,
+      status: compactStatus(achievement, "Tracked"),
+      value: `${achievement.toFixed(1)}%`,
+    },
+    {
+      accent: "amber" as const,
+      icon: Calculator,
+      label: "Gap to Target",
+      note: performanceState,
+      progress: achievement,
+      status: gap > 0 ? "Variance" : "Closed",
+      value: egp(gap),
+    },
+  ];
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3 px-1">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-600">Command Metrics</p>
+          <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">Key operating signals</h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full border border-emerald-200 bg-emerald-50/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700 shadow-sm">Data coverage {pct(data.workforce.dataCoveragePercent)}</span>
+          <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-700 shadow-sm backdrop-blur-sm">{data.workforce.scopeLabel}</span>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {signals.map((signal) => {
+          const Icon = signal.icon;
+          const tone = metricTone(signal.accent);
+          const percent = Math.max(0, Math.min(100, Math.round(signal.progress)));
+          return (
+            <Card
+              className={`group relative flex min-h-[150px] min-w-0 flex-col overflow-hidden rounded-[18px] border border-t-[3px] ${tone.border} bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_32px_rgba(15,23,42,0.10)]`}
+              key={signal.label}
+            >
+              <div className={`absolute inset-x-0 top-0 h-0.5 ${tone.line} opacity-80`} />
+              <div className="relative flex flex-1 flex-col justify-between gap-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`h-1.5 w-1.5 rounded-full ${tone.line} shadow-[0_0_0_3px_rgba(15,23,42,0.03)]`} />
+                      <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500">{signal.label}</p>
+                    </div>
+                    <p className="mt-2.5 max-w-full whitespace-nowrap text-[clamp(1.35rem,1.25vw,1.75rem)] font-black leading-none tracking-tight text-slate-950 tabular-nums" title={signal.value}>
+                      {signal.value}
+                    </p>
+                    <p className="mt-2.5 line-clamp-2 text-[11px] font-semibold leading-snug text-slate-500" title={signal.note}>{signal.note}</p>
+                  </div>
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white bg-slate-50/50 shadow-sm ring-1 ${tone.icon} transition-transform duration-300 group-hover:scale-110`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                </div>
+
+                <div className="mt-auto">
+                  <div className="relative flex items-center justify-between gap-2">
+                    <span className={`inline-flex min-w-0 items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${tone.soft}`}>
+                      <span className="truncate">{signal.status}</span>
+                    </span>
+                    <span className="shrink-0 whitespace-nowrap text-[11px] font-black text-slate-600 tabular-nums">
+                      {percent}%
+                    </span>
+                  </div>
+                  <div className="relative mt-2 h-1.5 overflow-hidden rounded-full border border-slate-200/70 bg-slate-100/80">
+                    <div
+                      className={`h-full rounded-full ${tone.line} transition-all duration-500`}
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function IncentiveStatusCard({ data }: { data: MedicalRepPortalData }) {
   const achievementPercent = data.sales.overviewAchievementPercent;
   const shortfallPercent = Math.max(0, 90 - achievementPercent);
@@ -1393,8 +1593,8 @@ function IncentiveCalculatorWidget({ data }: { data: MedicalRepPortalData }) {
 }
 
 function ToReachTargetWidget({ data }: { data: MedicalRepPortalData }) {
-  const target = Math.max(0, data.sales.currentMonthTarget);
-  const current = Math.max(0, data.sales.currentMonthSales);
+  const target = Math.max(0, data.sales.overviewTarget);
+  const current = Math.max(0, data.sales.overviewSales);
   const gap = Math.max(0, target - current);
   const percent = target > 0 ? Math.max(0, Math.min(100, (current / target) * 100)) : 0;
   const achieved = gap <= 0 && target > 0;
@@ -1415,7 +1615,7 @@ function ToReachTargetWidget({ data }: { data: MedicalRepPortalData }) {
               <p className="text-xl font-semibold text-slate-900">{egp(gap)}</p>
             </div>
             <div className="text-sm text-slate-600">
-              <span className="font-semibold text-slate-900">{percent.toFixed(1)}%</span> current achievement
+              <span className="font-semibold text-slate-900">{percent.toFixed(1)}%</span> all-period achievement
             </div>
             <div className="h-2 rounded-full bg-slate-100">
               <div className="h-2 rounded-full bg-orange-500" style={{ width: `${percent}%` }} />
@@ -1504,7 +1704,7 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
           <label className="mb-1 inline-block text-xs text-slate-500" htmlFor="team-period-filter">Comparison period</label>
           <select
             id="team-period-filter"
-            className="w-full max-w-xs rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
+            className="w-full max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
             onChange={(event) => handlePeriodChange(event.target.value)}
             value={selectedPeriod}
           >
@@ -1529,7 +1729,7 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
           </label>
           <select
             id="team-period-filter"
-            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
             onChange={(event) => handlePeriodChange(event.target.value)}
             value={selectedPeriod}
           >
@@ -1541,19 +1741,25 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
         </div>
       )}
     >
-      <div className="space-y-2">
-        {rows.map((row) => (
-          <div key={`${row.position}-${row.name}`} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0 w-7 text-sm font-semibold text-slate-700">#{row.position}</span>
-              <span className="truncate text-sm text-slate-700">{row.name}</span>
+      <div className="space-y-1.5">
+        {rows.map((row) => {
+          const pct = row.achievementPercent;
+          const pctClass = pct >= 100 ? "text-emerald-600" : pct >= 80 ? "text-orange-600" : "text-rose-500";
+          return (
+            <div key={`${row.position}-${row.name}`} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 transition hover:bg-orange-50/60 hover:border-orange-100">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className={`shrink-0 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${row.position === 1 ? "bg-orange-500 text-white" : "bg-slate-200 text-slate-600"}`}>
+                  {row.position}
+                </span>
+                <span className="truncate text-sm font-medium text-slate-700">{row.name}</span>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className={`text-sm font-bold ${pctClass}`}>{pct.toFixed(1)}%</p>
+                <p className="whitespace-nowrap text-[11px] text-slate-400">{egp(row.sales)}</p>
+              </div>
             </div>
-            <div className="shrink-0 text-right">
-              <p className="text-sm font-semibold text-slate-900">{row.achievementPercent.toFixed(1)}%</p>
-              <p className="whitespace-nowrap text-[11px] text-slate-500">{egp(row.sales)} / {egp(row.target)}</p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </OverviewPagePanel>
   );
@@ -1571,10 +1777,10 @@ function OverviewPagePanel({
   action?: ReactNode;
 }) {
   return (
-    <Card className="group flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-4 lg:p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)] transition-all duration-160 ease-out hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)]">
-      <div className="mb-4 lg:mb-6 flex flex-wrap items-center justify-between gap-3">
+    <Card className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 lg:p-6 shadow-[0_2px_12px_rgba(15,23,42,0.05)] transition-all duration-200 hover:shadow-[0_8px_24px_rgba(15,23,42,0.08)] hover:-translate-y-0.5">
+      <div className="mb-4 lg:mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <span className="h-2 w-2 rounded-full bg-orange-500 ring-2 ring-orange-100" />
+          <span className="h-2 w-2 rounded-full bg-orange-500 ep-pulse-orange" />
           <p className="text-base lg:text-lg font-semibold text-slate-900">{title}</p>
         </div>
         {action}
@@ -1590,9 +1796,9 @@ function OverviewInsightsAlerts({ data }: { data: MedicalRepPortalData }) {
   const topProductContribution = topProduct && totalTopSales > 0 ? (topProduct.sales / totalTopSales) * 100 : 0;
 
   const raw = [
-    data.sales.achievementPercent < 100
-      ? `You are ${Math.max(0, 100 - data.sales.achievementPercent).toFixed(1)}% towards your monthly target.`
-      : "You have reached your monthly target.",
+    data.sales.overviewAchievementPercent < 100
+      ? `You are ${data.sales.overviewAchievementPercent.toFixed(1)}% towards your all-period target.`
+      : "You have reached your all-period target.",
     data.sales.growthVsLastMonthPercent !== null
       ? `Sales ${data.sales.growthVsLastMonthPercent < 0 ? "decreased" : "increased"} by ${Math.abs(data.sales.growthVsLastMonthPercent).toFixed(1)}% vs last month.`
       : "Last month comparison is not available yet.",
@@ -3230,69 +3436,74 @@ export function IdentityCard({ data }: { data: MedicalRepPortalData }) {
           ? "bg-rose-500"
           : "bg-slate-500";
 
+  const initials = employee.fullName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join("")
+    .toUpperCase();
+
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 shadow-[0_8px_28px_rgba(15,23,42,0.05)] lg:px-8 lg:py-6">
+    <div className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_4px_20px_rgba(15,23,42,0.06)] lg:px-8 lg:py-6">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-center">
 
-        {/* Avatar circle */}
-        <div className="flex h-[80px] w-[80px] lg:h-[112px] lg:w-[112px] shrink-0 items-center justify-center rounded-full border-2 border-orange-100 bg-orange-50/40">
-          <div className="flex h-[56px] w-[56px] lg:h-[72px] lg:w-[72px] items-center justify-center rounded-full bg-orange-500/10 text-orange-500">
-            <UserRound className="h-6 w-6 lg:h-9 lg:w-9" />
-          </div>
+        {/* Avatar */}
+        <div className="flex h-[76px] w-[76px] lg:h-[100px] lg:w-[100px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-[0_4px_16px_rgba(249,115,22,0.30)] ring-4 ring-orange-100">
+          <span className="text-[26px] lg:text-[34px] font-bold tracking-tight">{initials || "EM"}</span>
         </div>
 
         {/* Content */}
         <div className="min-w-0 flex-1">
 
           {/* Name + role */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <h1 className="text-[22px] lg:text-[28px] font-bold leading-tight tracking-[-0.01em] text-slate-900">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="font-display text-[22px] lg:text-[28px] font-semibold leading-tight tracking-[-0.02em] text-slate-900">
               {employee.fullName}
             </h1>
-            <span className="hidden lg:block h-2 w-2 shrink-0 rounded-full bg-orange-500" />
-            <p className="text-[14px] lg:text-[17px] font-medium text-slate-400">{employee.roleLabel}</p>
+            <span className="hidden lg:block h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400" />
+            <p className="text-[13px] lg:text-[16px] font-medium text-slate-400">{employee.roleLabel}</p>
           </div>
 
           {/* Line · Territory · Manager */}
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 lg:mt-3.5 lg:gap-x-5">
-            <div className="flex items-center gap-1.5 text-slate-700 lg:gap-2">
-              <BriefcaseBusiness className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-orange-500" />
-              <span className="text-[12px] lg:text-[14px] font-medium">{employee.line ?? "Unassigned"} Line</span>
+            <div className="flex items-center gap-1.5 text-slate-600 lg:gap-2">
+              <BriefcaseBusiness className="h-4 w-4 shrink-0 text-orange-400" />
+              <span className="text-[12px] lg:text-[13px] font-medium">{employee.line ?? "Unassigned"} Line</span>
             </div>
-            <span className="hidden lg:block h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400/60" />
-            <div className="flex items-center gap-1.5 text-slate-700 lg:gap-2">
-              <MapPin className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-orange-500" />
-              <span className="text-[12px] lg:text-[14px] font-medium">{employee.territory ?? "Unassigned"} Territory</span>
+            <span className="hidden lg:block h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
+            <div className="flex items-center gap-1.5 text-slate-600 lg:gap-2">
+              <MapPin className="h-4 w-4 shrink-0 text-orange-400" />
+              <span className="text-[12px] lg:text-[13px] font-medium">{employee.territory ?? "Unassigned"} Territory</span>
             </div>
-            <span className="hidden lg:block h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400/60" />
-            <div className="flex items-center gap-1.5 text-slate-700 lg:gap-2">
-              <Users className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-orange-500" />
-              <span className="text-[12px] lg:text-[14px] font-medium">Reports to {employee.manager ?? "Unassigned"}</span>
+            <span className="hidden lg:block h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
+            <div className="flex items-center gap-1.5 text-slate-600 lg:gap-2">
+              <Users className="h-4 w-4 shrink-0 text-orange-400" />
+              <span className="text-[12px] lg:text-[13px] font-medium">Reports to {employee.manager ?? "Unassigned"}</span>
             </div>
           </div>
 
           {/* Divider */}
-          <div className="my-4 h-px w-full bg-slate-200" />
+          <div className="my-3.5 h-px w-full bg-slate-100" />
 
-          {/* HR ID | Active | Hired */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-3 lg:gap-x-5 lg:gap-y-2">
+          {/* HR ID | Status | Hired */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 lg:gap-x-5">
             <div className="flex items-center gap-2">
-              <IdCard className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-slate-400" />
-              <span className="text-[12px] lg:text-[14px] text-slate-600">HR ID: {employee.hrId}</span>
+              <IdCard className="h-4 w-4 shrink-0 text-slate-400" />
+              <span className="font-mono text-[11px] lg:text-[13px] text-slate-500">HR ID: {employee.hrId}</span>
             </div>
 
-            <span className="hidden lg:block h-5 w-px shrink-0 bg-slate-200" />
+            <span className="hidden lg:block h-4 w-px shrink-0 bg-slate-200" />
 
-            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-0.5 text-[11px] lg:px-3.5 lg:text-[13px] font-semibold ${statusPillClass}`}>
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-[11px] lg:text-[12px] font-semibold ${statusPillClass}`}>
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotClass} ${statusVariant === "success" ? "ep-pulse-green" : statusVariant === "warning" ? "ep-pulse-amber" : ""}`} />
               {employee.status}
-              <span className={`h-2 w-2 lg:h-2.5 lg:w-2.5 shrink-0 rounded-full ${statusDotClass}`} />
             </span>
 
-            <span className="hidden lg:block h-5 w-px shrink-0 bg-slate-200" />
+            <span className="hidden lg:block h-4 w-px shrink-0 bg-slate-200" />
 
             <div className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-slate-400" />
-              <span className="text-[12px] lg:text-[14px] text-slate-600">Hired {hiredLabel}</span>
+              <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
+              <span className="text-[12px] lg:text-[13px] text-slate-500">Hired {hiredLabel}</span>
             </div>
           </div>
 
@@ -3316,7 +3527,29 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
 
   return (
     <div className="space-y-6 lg:space-y-7">
-      <div className="grid gap-4 md:grid-cols-2 lg:gap-5 xl:grid-cols-3">
+      {/* Operational Status Badge Cluster */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 shadow-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 ep-pulse-green" />
+          <Activity className="h-3 w-3" />
+          <span>Metrics Synced</span>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-[11px] font-semibold text-sky-700 shadow-sm">
+          <BadgeCheck className="h-3 w-3" />
+          <span>Audit Healthy</span>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-700 shadow-sm">
+          <Sparkles className="h-3 w-3" />
+          <span>Access Protected</span>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-[11px] font-semibold text-orange-700 shadow-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-orange-500 ep-pulse-orange" />
+          <Zap className="h-3 w-3" />
+          <span>Live Data</span>
+        </div>
+      </div>
+      <ExecutiveCommandStrip data={data} />
+      <div className="grid gap-3 sm:grid-cols-2 lg:gap-4 xl:grid-cols-4">
         {overviewCards.map((card) => (
           <OverviewStatCard
             key={card.label}

@@ -23,6 +23,7 @@ import {
   getEmployeeDirectoryRows,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ function buildFilterOptions(
       ...reports.map((report) => ({ label: report.areaName, value: report.areaId })),
     ]),
     coaches: toOptionMap(reports.map((report) => ({
-      label: `${report.coachName || report.coachHrId} (${report.coachHrId})`,
+      label: `${formatEmployeeDisplayName(report.coachName, report.coachHrId)} (${report.coachHrId})`,
       value: report.coachHrId,
     }))),
     lines: toOptionMap([
@@ -64,11 +65,11 @@ function buildFilterOptions(
     ]),
     medicalReps: toOptionMap([
       ...employees.map((employee) => ({
-        label: `${employee.fullName || employee.hrId} (${employee.hrId})`,
+        label: `${formatEmployeeDisplayName(employee.fullName, employee.hrId)} (${employee.hrId})`,
         value: employee.hrId,
       })),
       ...reports.map((report) => ({
-        label: `${report.medicalRepName || report.medicalRepHrId} (${report.medicalRepHrId})`,
+        label: `${formatEmployeeDisplayName(report.medicalRepName, report.medicalRepHrId)} (${report.medicalRepHrId})`,
         value: report.medicalRepHrId,
       })),
     ]),
@@ -143,7 +144,7 @@ export default async function CoachingReportsPage() {
           filterOptions={buildFilterOptions(reports, employees)}
           initialReports={reports}
           lockedCoachHrId={lockedCoachHrId}
-          lockedCoachLabel={currentEmployee?.fullName ?? null}
+          lockedCoachLabel={currentEmployee ? formatEmployeeDisplayName(currentEmployee.fullName) : null}
         />
       </div>
     </AppShell>

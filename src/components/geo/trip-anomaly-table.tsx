@@ -6,6 +6,7 @@ import {
   AdminSectionHeader,
 } from "@/components/admin/admin-design-system";
 import { Card } from "@/components/ui/card";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 const panelClassName =
   "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
@@ -60,7 +61,7 @@ export function TripAnomalyTable({
               routes.map((route) => (
                 <tr className="border-b border-[#E2E8F0] transition hover:bg-[#FFF7ED]/65" key={route.id}>
                   <td className="px-4 py-3">
-                    <p className="font-semibold text-slate-900">{route.employeeName ?? "Unknown"}</p>
+                    <p className="font-semibold text-slate-900">{formatEmployeeDisplayName(route.employeeName, "Unknown")}</p>
                     <p className="text-xs text-slate-500">{route.employeeHrId ?? "No HR ID"}</p>
                   </td>
                   <td className="px-4 py-3 text-slate-700">

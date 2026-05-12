@@ -31,6 +31,7 @@ import type {
   ResignationStatus,
   ResignationWorkflowAction,
 } from "@/lib/resignations/types";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 type Props = {
   initialData: ResignationDashboardData | null;
@@ -653,7 +654,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
                   return (
                     <tr className="align-top transition-colors hover:bg-[#FFF7ED]/55" key={record.id}>
                       <td className="px-3 py-4">
-                        <p className="font-medium text-[#0F172A]">{record.employeeName}</p>
+                        <p className="font-medium text-[#0F172A]">{formatEmployeeDisplayName(record.employeeName)}</p>
                         <p className="mt-1 font-mono text-xs text-[#64748B]">{record.employeeHrId}</p>
                         <p className="mt-1 text-xs text-[#64748B]">{record.jobTitle ?? "-"}</p>
                       </td>
