@@ -1,0 +1,36 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+
+export function runLeaveMigrationTests() {
+  const source = readFileSync("supabase/20260512_leave_management_engine.sql", "utf8");
+
+  for (const table of [
+    "leave_types",
+    "leave_policies",
+    "employee_leave_balances",
+    "leave_requests",
+    "leave_transactions",
+    "leave_approvals",
+    "public_holidays",
+  ]) {
+    assert.match(source, new RegExp(`create table public\\.${table}`));
+    assert.match(source, new RegExp(`alter table public\\.${table} enable row level security`));
+  }
+
+  assert.match(source, /Egypt Annual Leave Policy/);
+  assert.match(source, /annual_days_first_year[\s\S]*default 15/);
+  assert.match(source, /annual_days_after_first_year[\s\S]*default 21/);
+  assert.match(source, /annual_days_senior[\s\S]*default 30/);
+  assert.match(source, /annual_days_disability[\s\S]*default 45/);
+  assert.match(source, /Opening Balance \+ Accrual|opening_balance/);
+  assert.match(source, /leave_transactions_monthly_accrual_uidx/);
+  assert.match(source, /pending_manager/);
+  assert.match(source, /pending_hr/);
+  assert.match(source, /hr_approved/);
+  assert.match(source, /private\.phx_can_access_employee/);
+  assert.match(source, /notification_type[\s\S]*'leave'/);
+
+  assert.equal(existsSync("app/api/vacation"), false, "legacy vacation API routes should be removed");
+  assert.equal(existsSync("src/lib/vacation"), false, "legacy vacation library should be removed");
+  assert.equal(existsSync("src/components/vacation"), false, "legacy vacation components should be removed");
+}

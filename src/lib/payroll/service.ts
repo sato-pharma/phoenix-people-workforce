@@ -10,7 +10,7 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
-import { calculateGrossSalary, calculatePayrollParts } from "@/lib/payroll/policy";
+import { calculatePayrollParts } from "@/lib/payroll/policy";
 import type { SalaryValidationIssue, SalaryValidationRow } from "@/lib/payroll/salary-import";
 import type { PayrollDashboardData, SalaryBatch, SalaryFlag, SalaryRecord } from "@/lib/payroll/types";
 
@@ -161,9 +161,9 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
   const loans = Number(row.loans ?? 0);
   const otherDeductions = Number(row.other_deductions ?? 0);
   const otherAdditions = Number(row.other_additions ?? 0);
-  const totalAdditions =
+  const calculatedTotalAdditions =
     expenses + incentive + overtime + bonus + extraCostOfLiving + fuelAllowance + otherAdditions;
-  const totalDeductions =
+  const calculatedTotalDeductions =
     socialInsurance +
     employmentIncomeTax +
     crm +
@@ -174,6 +174,7 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     otherDeductions;
   const netSalary = Number(row.net_salary ?? 0);
   const uploadedFirstPart = Number(row.first_part ?? 0);
+  const uploadedSecondPart = Number(row.second_part ?? 0);
   const paymentMode = uploadedFirstPart > 0 && uploadedFirstPart >= netSalary - 1 ? "one_part" : "two_parts";
   const parts = calculatePayrollParts({
     additions: expenses + incentive + overtime + bonus + otherAdditions,
@@ -184,14 +185,9 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     paymentMode,
     previousExpenses: 0,
   });
-  const grossSalary = calculateGrossSalary({
-    employmentIncomeTax,
-    extraCostOfLiving,
-    fuelAllowance,
-    grossSalary: Number(row.gross_salary ?? 0),
-    netSalary,
-    socialInsurance,
-  });
+  const grossSalary = Number(row.gross_salary ?? 0);
+  const totalAdditions = Number(row.total_additions ?? calculatedTotalAdditions);
+  const totalDeductions = Number(row.total_deductions ?? calculatedTotalDeductions);
 
   return {
     id: String(row.id),
@@ -223,8 +219,8 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     totalDeductions,
     netSalary,
     payrollComment: row.comment ? String(row.comment) : null,
-    firstPart: parts.firstPart,
-    secondPart: parts.secondPart,
+    firstPart: row.first_part === null || row.first_part === undefined ? parts.firstPart : uploadedFirstPart,
+    secondPart: row.second_part === null || row.second_part === undefined ? parts.secondPart : uploadedSecondPart,
     hireDate: row.hire_date ? String(row.hire_date) : null,
   };
 }
