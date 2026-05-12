@@ -23,34 +23,30 @@ import {
   Activity,
   BadgeCheck,
   BriefcaseBusiness,
-  CalendarDays,
+  Calculator,
   CalendarClock,
-  CircleDollarSign,
+  CalendarDays,
+  Car,
+  ChartLine as LineChartIcon,
   CircleDashed,
-  CircleHelp,
-  Crown,
+  CircleDollarSign,
   FileText,
   HelpCircle,
-  IdCard,
   Info,
-  LineChart as LineChartIcon,
   MapPin,
   MinusCircle,
+  ReceiptText,
   RefreshCw,
   Send,
+  ShieldCheck,
   Sparkles,
   Target,
-  Trophy,
-  TrendingDown,
   TrendingUp,
+  Trophy,
   Upload,
-  Users,
   UserRound,
+  Users,
   Wallet,
-  Car,
-  ReceiptText,
-  Calculator,
-  Zap,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -157,14 +153,14 @@ function ContributionMetricToggle({
   onChange: (metric: ContributionMetric) => void;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+    <div className="inline-flex rounded-xl border border-slate-200 bg-white/80 p-1 shadow-[0_6px_18px_rgba(15,23,42,0.05)] ring-1 ring-white/80">
       {(["sales", "units"] as const).map((option) => {
         const active = metric === option;
         return (
           <button
             className={active
-              ? "rounded-md bg-white px-3 py-1 text-xs font-semibold text-orange-600 shadow-sm ring-1 ring-slate-200"
-              : "rounded-md px-3 py-1 text-xs font-semibold text-slate-500 transition hover:text-slate-700"}
+              ? "rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white shadow-sm"
+              : "rounded-lg px-3 py-1.5 text-xs font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"}
             key={option}
             onClick={() => onChange(option)}
             type="button"
@@ -240,14 +236,6 @@ function metricTone(accent: MetricAccent = "orange") {
   return tones[accent];
 }
 
-function compactStatus(progress?: number | null, fallback = "Tracked") {
-  if (typeof progress !== "number" || !Number.isFinite(progress)) return fallback;
-  if (progress >= 100) return "Ahead";
-  if (progress >= 90) return "On track";
-  if (progress > 0) return "Watch";
-  return "No signal";
-}
-
 function PayrollStat({
   label,
   value,
@@ -265,10 +253,42 @@ function PayrollStat({
 
 function chartTooltipStyle() {
   return {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 12,
-    boxShadow: "0 10px 30px rgba(15,23,42,0.08)",
+    backdropFilter: "blur(18px)",
+    background: "rgba(255,255,255,0.96)",
+    border: "1px solid rgba(226,232,240,0.9)",
+    borderRadius: 14,
+    boxShadow: "0 18px 44px rgba(15,23,42,0.14)",
+    color: "#0f172a",
+    fontSize: 12,
+    fontWeight: 700,
+  };
+}
+
+const chartAxisStyle = {
+  fill: "#64748b",
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: 0,
+};
+
+const chartMargin = { bottom: 6, left: 2, right: 16, top: 16 };
+const chartGridStroke = "#e8edf4";
+const chartCursor = { stroke: "#cbd5e1", strokeDasharray: "4 4", strokeWidth: 1.5 };
+
+function chartAxisProps() {
+  return {
+    axisLine: false,
+    stroke: "#94a3b8",
+    style: chartAxisStyle,
+    tickLine: false,
+  };
+}
+
+function chartLegendStyle() {
+  return {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: 700,
   };
 }
 
@@ -310,7 +330,7 @@ function insightMeta(text: string) {
     return { badge: "Positive", classes: "bg-emerald-50 text-emerald-700", icon: TrendingUp };
   }
   if (tone === "warning") {
-    return { badge: "Warning", classes: "bg-rose-50 text-rose-700", icon: TrendingDown };
+    return { badge: "Warning", classes: "bg-rose-50 text-rose-700", icon: Activity };
   }
   return { badge: "Insight", classes: "bg-slate-100 text-slate-700", icon: Info };
 }
@@ -346,9 +366,6 @@ export function EmptyStateCard({
 }) {
   return (
     <Card className="rounded-3xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-10 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
-      <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
-        <CircleDashed className="h-5 w-5" />
-      </div>
       <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
       <p className="mt-2 text-sm text-slate-600">{message}</p>
     </Card>
@@ -365,14 +382,12 @@ export function MetricCard({
   value: string;
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
+    <div
+      className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300"
+      title={tooltip}
+    >
       <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
         <span>{label}</span>
-        {tooltip ? (
-          <span title={tooltip}>
-            <CircleHelp className="h-3 w-3 text-slate-400" />
-          </span>
-        ) : null}
       </div>
       <p className="mt-2 text-base font-semibold text-slate-900">{value}</p>
     </div>
@@ -380,20 +395,15 @@ export function MetricCard({
 }
 
 export function SmartInsightCard({
-  icon: Icon,
   label,
   value,
 }: {
-  icon: typeof Sparkles;
   label: string;
   value: string;
 }) {
   return (
     <div className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
       <div className="flex items-center gap-2 text-slate-700">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 text-orange-600 ring-1 ring-orange-100 transition-colors group-hover:bg-orange-100">
-          <Icon className="h-4 w-4" />
-        </div>
         <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
       </div>
       <p className="mt-2.5 text-sm font-semibold text-slate-900">{value}</p>
@@ -509,17 +519,14 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
 
             <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 text-slate-900">
               <div className="flex items-center gap-2.5">
-                <BriefcaseBusiness className="h-6 w-6 text-orange-500" />
                 <span className="text-[21px] font-medium">{employee.line ?? "Unassigned Line"} Line</span>
               </div>
               <span className="h-2 w-2 rounded-full bg-orange-500/90" />
               <div className="flex items-center gap-2.5">
-                <MapPin className="h-6 w-6 text-orange-500" />
                 <span className="text-[21px] font-medium">{employee.territory ?? "Unassigned Territory"} Territory</span>
               </div>
               <span className="h-2 w-2 rounded-full bg-orange-500/90" />
               <div className="flex items-center gap-2.5">
-                <Users className="h-6 w-6 text-orange-500" />
                 <span className="text-[21px] font-medium">Reports to {employee.manager ?? "Unassigned Manager"}</span>
               </div>
             </div>
@@ -528,7 +535,6 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
 
             <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 text-slate-900">
               <div className="flex items-center gap-2.5">
-                <IdCard className="h-7 w-7 text-slate-500" />
                 <span className="text-[22px]">HR ID: {employee.hrId}</span>
               </div>
 
@@ -542,7 +548,6 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
               <span className="h-7 w-px bg-slate-200" />
 
               <div className="flex items-center gap-2.5">
-                <CalendarDays className="h-7 w-7 text-slate-500" />
                 <span className="text-[22px]">Hired {hiredLabel}</span>
               </div>
             </div>
@@ -608,22 +613,18 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
 
         <div className="space-y-3">
           <SmartInsightCard
-            icon={CalendarClock}
             label="Contract Renewal"
             value={data.hrContract.daysUntilRenewal === null ? "No renewal date" : `${data.hrContract.daysUntilRenewal} days remaining`}
           />
           <SmartInsightCard
-            icon={FileText}
             label="Next Payroll"
             value={payroll.latestBatchStatus ? payroll.latestBatchStatus.replace(/_/g, " ") : "No payroll run"}
           />
           <SmartInsightCard
-            icon={Crown}
             label="Rank in Team"
             value={sales.rankInTeam ? `#${sales.rankInTeam.position} / ${sales.rankInTeam.total}` : "Not available"}
           />
           <SmartInsightCard
-            icon={Target}
             label="Top Product"
             value={sales.topProduct ?? "No product data"}
           />
@@ -728,14 +729,10 @@ function SmartInsightsStrip({ data }: { data: MedicalRepPortalData }) {
       <div className="grid gap-3 lg:grid-cols-4">
         {items.map((insight) => {
           const meta = insightMeta(insight);
-          const Icon = meta.icon;
           return (
             <div key={insight} className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-slate-700">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-50 text-orange-600 ring-1 ring-orange-100 transition-colors group-hover:bg-orange-100">
-                    <Icon className="h-3.5 w-3.5" />
-                  </div>
                   <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Insight</span>
                 </div>
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${meta.classes}`}>{meta.badge}</span>
@@ -751,31 +748,23 @@ function SmartInsightsStrip({ data }: { data: MedicalRepPortalData }) {
 
 function OverviewStatCard({
   accent,
-  icon: Icon,
   label,
   note,
-  progress,
   value,
 }: {
   accent?: MetricAccent;
-  icon: typeof Target;
   label: string;
   note?: string;
-  progress?: number | null;
   value: string;
 }) {
   const tone = metricTone(accent);
-  const clampedProgress =
-    typeof progress === "number" ? Math.max(0, Math.min(100, Math.round(progress))) : null;
   const isCurrencyValue = value.startsWith("EGP");
   const isLongText = value.length > 18 && !isCurrencyValue;
   const isLongLabel = label.length > 18;
-  const status = compactStatus(progress);
-  const TrendIcon = clampedProgress === null || clampedProgress >= 90 ? TrendingUp : TrendingDown;
 
   return (
-    <Card className={`group relative min-h-[152px] overflow-hidden rounded-[18px] border border-t-[3px] ${tone.border} bg-white px-4 py-4 shadow-[0_4px_20px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_32px_rgba(15,23,42,0.10)]`}>
-      <div className={`absolute inset-x-0 top-0 h-0.5 ${tone.line} opacity-80`} />
+    <Card className="group relative min-h-[152px] overflow-hidden rounded-[24px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-300 hover:-translate-y-1 hover:ring-slate-300 hover:shadow-[0_20px_42px_rgba(15,23,42,0.09)]">
+      <div className={`absolute inset-x-0 top-0 h-1 ${tone.line} opacity-90 transition-all duration-300 group-hover:h-1.5`} />
       <div className="relative flex h-full min-h-[120px] flex-col justify-between gap-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -783,7 +772,7 @@ function OverviewStatCard({
               <span className={`h-1.5 w-1.5 rounded-full ${tone.line} shadow-[0_0_0_3px_rgba(15,23,42,0.03)]`} />
               <p
                 className={[
-                  "whitespace-nowrap font-bold uppercase text-slate-500",
+                  "whitespace-nowrap font-bold uppercase text-slate-400",
                   isLongLabel ? "text-[9px] tracking-[0.08em]" : "text-[10px] tracking-[0.15em]",
                 ].join(" ")}
               >
@@ -794,18 +783,15 @@ function OverviewStatCard({
               className={[
                 "mt-2.5 max-w-full whitespace-nowrap font-black leading-none tracking-tight text-slate-950",
                 isCurrencyValue
-                  ? "tabular-nums text-[clamp(1.25rem,1.15vw,1.55rem)]"
+                  ? "text-xl tabular-nums"
                   : isLongText
-                    ? "text-[clamp(1.1rem,1.05vw,1.35rem)]"
-                    : "text-[clamp(1.45rem,1.3vw,1.85rem)]",
+                    ? "text-lg"
+                    : "text-2xl",
               ].join(" ")}
               title={value}
             >
               {value}
             </p>
-          </div>
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white bg-slate-50/50 shadow-sm ring-1 ${tone.icon} transition-transform duration-300 group-hover:scale-110`}>
-            <Icon className="h-5 w-5" />
           </div>
         </div>
 
@@ -818,28 +804,8 @@ function OverviewStatCard({
                 </p>
               ) : null}
             </div>
-            {clampedProgress !== null ? (
-              <span className="shrink-0 whitespace-nowrap text-xs font-bold text-slate-600 tabular-nums">{clampedProgress}%</span>
-            ) : null}
           </div>
-          {clampedProgress !== null ? (
-            <div className="mt-3 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className={`inline-flex min-w-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${tone.soft}`}>
-                  <TrendIcon className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{status}</span>
-                </span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full border border-slate-200/70 bg-slate-100/80">
-                <div
-                  className={`h-full rounded-full ${tone.line} transition-all duration-500`}
-                  style={{ width: `${clampedProgress}%` }}
-                />
-              </div>
-            </div>
-          ) : (
-            <div className={`mt-3 h-1.5 w-16 rounded-full ${tone.line} opacity-70`} />
-          )}
+          <div className={`mt-3 h-1.5 w-16 rounded-full ${tone.line} opacity-70`} />
         </div>
       </div>
     </Card>
@@ -848,7 +814,7 @@ function OverviewStatCard({
 
 type OverviewKeyCard = {
   accent?: MetricAccent;
-  icon: typeof Target;
+  icon?: typeof Target;
   label: string;
   note?: string;
   progress?: number | null;
@@ -957,17 +923,14 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
   };
   const leadingMedicalRepCard: OverviewKeyCard = {
     accent: "green",
-    icon: UserRound,
     label: "Leading Medical Representative",
     note: data.sales.leadingMedicalRep
       ? `${pct(data.sales.leadingMedicalRep.achievementPercent)} achievement`
       : "No medical rep data",
-    progress: data.sales.leadingMedicalRep?.achievementPercent ?? null,
     value: formatEmployeeDisplayName(data.sales.leadingMedicalRep?.name, "Not available", 3),
   };
   const employmentCard: OverviewKeyCard = {
     accent: "blue",
-    icon: CalendarDays,
     label: "Employment Duration",
     note: `Hired ${prettyDate(data.hrContract.hireDate)}`,
     value: serviceDurationText,
@@ -978,14 +941,12 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
       ...achievementCards(data, "Team"),
       {
         accent: "blue",
-        icon: Users,
         label: "Team Structure",
         note: `${formatUnits(org?.actualNow ?? data.workforce.activeHeadcount)} actual now - ${formatUnits(org?.vacancies ?? data.workforce.openVacancies)} vacant`,
         value: formatUnits(org?.totalStructure ?? data.workforce.activeHeadcount + data.workforce.openVacancies),
       },
       {
         accent: "orange",
-        icon: TrendingDown,
         label: "Reps Below 90%",
         note: "All-period achievement",
         value: formatUnits(underperformingCount(data)),
@@ -993,14 +954,12 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
       highestProductCard,
       {
         accent: "green",
-        icon: Crown,
         label: "Top Rep",
         note: "Best current comparison rank",
         value: topComparisonName(data),
       },
       {
         accent: "purple",
-        icon: ReceiptText,
         label: "Pending Team Expenses",
         note: "Awaiting approval",
         value: formatUnits(pendingExpenseCount(data)),
@@ -1012,29 +971,24 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
     return [
       {
         accent: "blue",
-        icon: Users,
         label: "Line Structure",
         note: `${formatUnits(org?.actualNow ?? data.workforce.activeHeadcount)} actual now - ${formatUnits(org?.vacancies ?? data.workforce.openVacancies)} vacant`,
         value: formatUnits(org?.totalStructure ?? data.workforce.activeHeadcount + data.workforce.openVacancies),
       },
       {
         accent: "blue",
-        icon: Users,
         label: "Workforce",
         note: data.workforce.scopeLabel,
-        progress: data.workforce.dataCoveragePercent,
         value: formatUnits(data.workforce.activeHeadcount),
       },
       {
         accent: "orange",
-        icon: BriefcaseBusiness,
         label: "District Manager Vacancies",
         note: "Open district manager seats",
         value: formatUnits(org?.districtManagerVacancies ?? 0),
       },
       {
         accent: "orange",
-        icon: BriefcaseBusiness,
         label: "Open Vacancies",
         note: "Open positions in scope",
         value: formatUnits(data.workforce.openVacancies),
@@ -1042,7 +996,6 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
       highestProductCard,
       {
         accent: "green",
-        icon: Crown,
         label: "Leading District Manager",
         note: "Best current comparison rank",
         value: topComparisonName(data),
@@ -1056,35 +1009,30 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
       ...achievementCards(data, "Region"),
       {
         accent: "blue",
-        icon: Users,
         label: "Active Headcount",
         note: data.workforce.scopeLabel,
         value: formatUnits(data.workforce.activeHeadcount),
       },
       {
         accent: "orange",
-        icon: BriefcaseBusiness,
         label: "Vacancies",
         note: "Open positions",
         value: formatUnits(data.workforce.openVacancies),
       },
       {
         accent: "green",
-        icon: Crown,
         label: "Top District",
         note: "Best current comparison rank",
         value: topComparisonName(data),
       },
       {
         accent: "orange",
-        icon: TrendingDown,
         label: "Lowest District",
         note: "Lowest achievement in scope",
         value: weakComparisonName(data),
       },
       {
         accent: "purple",
-        icon: ReceiptText,
         label: "Expense Load",
         note: "Visible submitted expenses",
         value: egp(data.workload?.totalExpenses ?? 0),
@@ -1099,28 +1047,24 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
       ...achievementCards(data, "Product"),
       {
         accent: "green",
-        icon: MapPin,
         label: "Top Territory",
         note: bestTerritory ? egp(bestTerritory.sales) : "No territory data",
         value: bestTerritory?.name ?? "Not available",
       },
       {
         accent: "orange",
-        icon: TrendingDown,
         label: "Weak Territory",
         note: weakestTerritory ? `${pct(weakestTerritory.achievementPercent)} achievement` : "No territory data",
         value: weakestTerritory?.name ?? "Not available",
       },
       {
         accent: "blue",
-        icon: Crown,
         label: "Top DSM Contribution",
         note: "Best current comparison rank",
         value: topComparisonName(data),
       },
       {
         accent: "purple",
-        icon: Calculator,
         label: "Product Mix Share",
         note: data.sales.topProduct ?? "No product data",
         value: pct(productMixShare),
@@ -1133,43 +1077,36 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
     return [
       {
         accent: "green",
-        icon: BadgeCheck,
         label: "Field Coaching Completion",
         note: "Coaching records in scope",
         value: "Pending",
       },
       {
         accent: "orange",
-        icon: TrendingDown,
         label: "Low Performers",
         note: "Below 90% achievement",
         value: formatUnits(underperformingCount(data)),
       },
       {
         accent: "blue",
-        icon: Activity,
         label: "Data Coverage",
         note: data.workforce.scopeLabel,
-        progress: data.workforce.dataCoveragePercent,
         value: pct(data.workforce.dataCoveragePercent),
       },
       {
         accent: "blue",
-        icon: Users,
         label: "Active Reps",
         note: "Visible active headcount",
         value: formatUnits(data.workforce.activeHeadcount),
       },
       {
         accent: "purple",
-        icon: CalendarClock,
         label: "Training Pending",
         note: "Training workflow integration",
         value: "Pending",
       },
       {
         accent: "orange",
-        icon: MapPin,
         label: "Territory Coverage Gaps",
         note: "Territories below 90%",
         value: formatUnits(territoryGaps),
@@ -1181,45 +1118,38 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
     return [
       {
         accent: "orange",
-        icon: ReceiptText,
         label: "Expense Claims Pending",
         note: "Awaiting approval",
         value: formatUnits(pendingExpenseCount(data)),
       },
       {
         accent: "purple",
-        icon: Activity,
         label: "Expense Load",
         note: "Visible submitted expenses",
         value: egp(data.workload?.totalExpenses ?? 0),
       },
       {
         accent: "blue",
-        icon: Users,
         label: "Active Headcount",
         note: data.workforce.scopeLabel,
         value: formatUnits(data.workforce.activeHeadcount),
       },
       {
         accent: "orange",
-        icon: BriefcaseBusiness,
         label: "Open Vacancies",
         note: "Visible open positions",
         value: formatUnits(data.workforce.openVacancies),
       },
       {
         accent: "green",
-        icon: BadgeCheck,
         label: "Pending Approvals",
         note: "Operational approval queue",
         value: formatUnits(data.workforce.pendingApprovals),
       },
       {
         accent: "blue",
-        icon: Activity,
         label: "Data Coverage",
         note: "Employee records completeness",
-        progress: data.workforce.dataCoveragePercent,
         value: pct(data.workforce.dataCoveragePercent),
       },
     ];
@@ -1229,42 +1159,36 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
     return [
       {
         accent: "blue",
-        icon: Users,
         label: "Active Headcount",
         note: data.workforce.scopeLabel,
         value: formatUnits(data.workforce.activeHeadcount),
       },
       {
         accent: "orange",
-        icon: BriefcaseBusiness,
         label: "Open Vacancies",
         note: "Visible open positions",
         value: formatUnits(data.workforce.openVacancies),
       },
       {
         accent: "green",
-        icon: UserRound,
         label: "New Hires",
         note: "Last 30 days",
         value: formatUnits(data.workforce.newHires),
       },
       {
         accent: "orange",
-        icon: CalendarClock,
         label: "Probation Due",
         note: "Next 30 days",
         value: formatUnits(data.workforce.probationDue),
       },
       {
         accent: "purple",
-        icon: FileText,
         label: "Contract Renewals Due",
         note: "Next 30 days",
         value: formatUnits(data.workforce.contractRenewalsDue),
       },
       {
         accent: "orange",
-        icon: CircleHelp,
         label: "Missing Employee Data",
         note: "Needs HR cleanup",
         value: formatUnits(data.workforce.missingEmployeeData),
@@ -1279,35 +1203,30 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
       ...achievementCards(data, "Company"),
       {
         accent: "blue",
-        icon: Users,
         label: "Total Headcount",
         note: "Visible active employees",
         value: formatUnits(data.workforce.activeHeadcount),
       },
       {
         accent: "orange",
-        icon: BriefcaseBusiness,
         label: "Vacancies",
         note: "Visible open positions",
         value: formatUnits(data.workforce.openVacancies),
       },
       {
         accent: "green",
-        icon: Crown,
         label: "Top Line",
         note: bestLine ? egp(bestLine.sales) : "No line data",
         value: bestLine?.name ?? "Not available",
       },
       {
         accent: "orange",
-        icon: TrendingDown,
         label: "Weak Line",
         note: weakestLine ? `${pct(weakestLine.achievementPercent)} achievement` : "No line data",
         value: weakestLine?.name ?? "Not available",
       },
       {
         accent: "purple",
-        icon: BadgeCheck,
         label: "Pending Approvals",
         note: "Operational approval queue",
         value: formatUnits(data.workforce.pendingApprovals),
@@ -1319,21 +1238,18 @@ function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: 
     ...achievementCards(data, "All Time"),
     {
       accent: "orange",
-      icon: Calculator,
       label: "Gap to Target",
       note: "Remaining all-time gap",
-      value: egp(gapToTarget),
+      value: egp(Math.max(0, data.sales.overviewTarget - data.sales.overviewSales)),
     },
     {
       accent: "purple",
-      icon: Zap,
       label: "Expected Incentive",
       note: `${pct(data.payroll.allPeriodsAchievementPercent)} all-time achievement`,
       value: egp(data.payroll.allPeriodsIncentive),
     },
     {
       accent: "blue",
-      icon: Crown,
       label: "Rank in Team",
       note: data.sales.rankInTeam ? "All-time comparison" : "Not available",
       value: data.sales.rankInTeam ? `${data.sales.rankInTeam.position} / ${data.sales.rankInTeam.total}` : "N/A",
@@ -1355,38 +1271,30 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
   const signals = [
     {
       accent: "green" as const,
-      icon: TrendingUp,
       label: "Sales",
       note: `Target ${egp(data.sales.overviewTarget)}`,
       progress: achievement,
-      status: compactStatus(achievement, "Tracked"),
       value: egp(data.sales.overviewSales),
     },
     {
       accent: "orange" as const,
-      icon: Target,
       label: "Target",
       progress: achievement,
-      status: "Tracked",
       note: "Approved sales target",
       value: egp(data.sales.overviewTarget),
     },
     {
       accent: "blue" as const,
-      icon: Activity,
       label: "Achievement Rate",
       note: "All-time sales versus target",
       progress: achievement,
-      status: compactStatus(achievement, "Tracked"),
       value: `${achievement.toFixed(1)}%`,
     },
     {
       accent: "amber" as const,
-      icon: Calculator,
       label: "Gap to Target",
       note: performanceState,
       progress: achievement,
-      status: gap > 0 ? "Variance" : "Closed",
       value: egp(gap),
     },
   ];
@@ -1399,21 +1307,18 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
           <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">Key operating signals</h2>
         </div>
         <div className="flex flex-wrap gap-2">
-          <span className="rounded-full border border-emerald-200 bg-emerald-50/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700 shadow-sm">Data coverage {pct(data.workforce.dataCoveragePercent)}</span>
           <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-700 shadow-sm backdrop-blur-sm">{data.workforce.scopeLabel}</span>
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {signals.map((signal) => {
-          const Icon = signal.icon;
           const tone = metricTone(signal.accent);
-          const percent = Math.max(0, Math.min(100, Math.round(signal.progress)));
           return (
             <Card
-              className={`group relative flex min-h-[150px] min-w-0 flex-col overflow-hidden rounded-[18px] border border-t-[3px] ${tone.border} bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_32px_rgba(15,23,42,0.10)]`}
+              className="group relative flex min-h-[150px] min-w-0 flex-col overflow-hidden rounded-[22px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-300 hover:-translate-y-1 hover:ring-slate-300 hover:shadow-[0_22px_48px_rgba(15,23,42,0.10)]"
               key={signal.label}
             >
-              <div className={`absolute inset-x-0 top-0 h-0.5 ${tone.line} opacity-80`} />
+              <div className={`absolute inset-x-0 top-0 h-1 ${tone.line} opacity-90 transition-all duration-300 group-hover:h-1.5`} />
               <div className="relative flex flex-1 flex-col justify-between gap-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -1421,30 +1326,10 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
                       <span className={`h-1.5 w-1.5 rounded-full ${tone.line} shadow-[0_0_0_3px_rgba(15,23,42,0.03)]`} />
                       <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500">{signal.label}</p>
                     </div>
-                    <p className="mt-2.5 max-w-full whitespace-nowrap text-[clamp(1.35rem,1.25vw,1.75rem)] font-black leading-none tracking-tight text-slate-950 tabular-nums" title={signal.value}>
+                    <p className="mt-2.5 max-w-full whitespace-nowrap text-2xl font-black leading-none tracking-tight text-slate-950 tabular-nums" title={signal.value}>
                       {signal.value}
                     </p>
                     <p className="mt-2.5 line-clamp-2 text-[11px] font-semibold leading-snug text-slate-500" title={signal.note}>{signal.note}</p>
-                  </div>
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white bg-slate-50/50 shadow-sm ring-1 ${tone.icon} transition-transform duration-300 group-hover:scale-110`}>
-                    <Icon className="h-5 w-5" />
-                  </div>
-                </div>
-
-                <div className="mt-auto">
-                  <div className="relative flex items-center justify-between gap-2">
-                    <span className={`inline-flex min-w-0 items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${tone.soft}`}>
-                      <span className="truncate">{signal.status}</span>
-                    </span>
-                    <span className="shrink-0 whitespace-nowrap text-[11px] font-black text-slate-600 tabular-nums">
-                      {percent}%
-                    </span>
-                  </div>
-                  <div className="relative mt-2 h-1.5 overflow-hidden rounded-full border border-slate-200/70 bg-slate-100/80">
-                    <div
-                      className={`h-full rounded-full ${tone.line} transition-all duration-500`}
-                      style={{ width: `${percent}%` }}
-                    />
                   </div>
                 </div>
               </div>
@@ -1461,6 +1346,7 @@ function IncentiveStatusCard({ data }: { data: MedicalRepPortalData }) {
   const shortfallPercent = Math.max(0, 90 - achievementPercent);
   const calculation = calculateIncentive2026({
     basicSalary: data.payroll.basicSalary,
+    baseSalary: data.payroll.baseSalary,
     extraCostOfLiving: data.payroll.extraCostOfLiving,
     fuelAllowance: data.payroll.fuelAllowance,
     netSalary: data.payroll.netSalary,
@@ -1477,7 +1363,7 @@ function IncentiveStatusCard({ data }: { data: MedicalRepPortalData }) {
       <div className="mb-4 h-0.5 w-8 rounded-full bg-amber-200 transition group-hover:w-12 group-hover:bg-amber-500" />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-       <p className="text-[clamp(1.5rem,2.4vw,1.85rem)] leading-tight font-semibold tracking-tight text-slate-900">
+          <p className="text-2xl leading-tight font-semibold tracking-tight text-slate-900">
             {isEligible ? egp(calculation.payoutAmount) : "Below Threshold"}
           </p>
           <p className="mt-1.5 text-xs font-medium text-slate-500">2026 Incentive Scheme</p>
@@ -1510,6 +1396,7 @@ function IncentiveCalculatorWidget({ data }: { data: MedicalRepPortalData }) {
   const salaryReference = calculateIncentive2026({
     achievementPercent: 100,
     basicSalary: data.payroll.basicSalary,
+    baseSalary: data.payroll.baseSalary,
     extraCostOfLiving: data.payroll.extraCostOfLiving,
     fuelAllowance: data.payroll.fuelAllowance,
     grossSalary: data.payroll.grossSalary,
@@ -1524,6 +1411,7 @@ function IncentiveCalculatorWidget({ data }: { data: MedicalRepPortalData }) {
 
   const calc = calculateIncentive2026({
     basicSalary: calculatedBasicSalary,
+    baseSalary: data.payroll.baseSalary,
     extraCostOfLiving: data.payroll.extraCostOfLiving,
     fuelAllowance: data.payroll.fuelAllowance,
     netSalary: simNetSalary,
@@ -1741,21 +1629,30 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
         </div>
       )}
     >
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {rows.map((row) => {
           const pct = row.achievementPercent;
+          const fillWidth = Math.max(6, Math.min(100, pct));
           const pctClass = pct >= 100 ? "text-emerald-600" : pct >= 80 ? "text-orange-600" : "text-rose-500";
           return (
-            <div key={`${row.position}-${row.name}`} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 transition hover:bg-orange-50/60 hover:border-orange-100">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <span className={`shrink-0 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${row.position === 1 ? "bg-orange-500 text-white" : "bg-slate-200 text-slate-600"}`}>
-                  {row.position}
-                </span>
-                <span className="truncate text-sm font-medium text-slate-700">{row.name}</span>
+            <div key={`${row.position}-${row.name}`} className="rounded-2xl border border-slate-100 bg-white px-3 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:border-orange-100 hover:shadow-[0_12px_26px_rgba(15,23,42,0.07)]">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className={`shrink-0 flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-black ${row.position === 1 ? "bg-slate-950 text-white shadow-sm" : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"}`}>
+                    {row.position}
+                  </span>
+                  <span className="truncate text-sm font-bold text-slate-700">{row.name}</span>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className={`font-mono text-sm font-black tabular-nums ${pctClass}`}>{pct.toFixed(1)}%</p>
+                  <p className="whitespace-nowrap font-mono text-[11px] text-slate-400 tabular-nums">{egp(row.sales)}</p>
+                </div>
               </div>
-              <div className="shrink-0 text-right">
-                <p className={`text-sm font-bold ${pctClass}`}>{pct.toFixed(1)}%</p>
-                <p className="whitespace-nowrap text-[11px] text-slate-400">{egp(row.sales)}</p>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-orange-500 via-amber-400 to-emerald-400"
+                  style={{ width: `${fillWidth}%` }}
+                />
               </div>
             </div>
           );
@@ -1777,15 +1674,16 @@ function OverviewPagePanel({
   action?: ReactNode;
 }) {
   return (
-    <Card className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 lg:p-6 shadow-[0_2px_12px_rgba(15,23,42,0.05)] transition-all duration-200 hover:shadow-[0_8px_24px_rgba(15,23,42,0.08)] hover:-translate-y-0.5">
-      <div className="mb-4 lg:mb-5 flex flex-wrap items-center justify-between gap-3">
+    <Card className="group relative flex h-full flex-col overflow-hidden rounded-[22px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:ring-slate-300 hover:shadow-[0_20px_44px_rgba(15,23,42,0.09)] lg:p-6">
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-400/80 via-sky-400/70 to-emerald-400/70 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+      <div className="relative mb-4 flex flex-wrap items-center justify-between gap-3 lg:mb-5">
         <div className="flex items-center gap-2.5">
           <span className="h-2 w-2 rounded-full bg-orange-500 ep-pulse-orange" />
-          <p className="text-base lg:text-lg font-semibold text-slate-900">{title}</p>
+          <p className="text-base font-black tracking-tight text-slate-900 lg:text-lg">{title}</p>
         </div>
         {action}
       </div>
-      <div className="flex-1 min-w-0">{children}</div>
+      <div className="relative min-w-0 flex-1">{children}</div>
     </Card>
   );
 }
@@ -1854,7 +1752,7 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
         </div>
       }
     >
-      <div className="space-y-3">
+      <div className="space-y-3.5">
         {rows.length === 0 ? (
           <p className="text-sm text-slate-500">No product contribution data.</p>
         ) : rows.map((row) => {
@@ -1862,16 +1760,16 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
           const width = Math.max(8, Math.round((value / max) * 100));
           const contributionPercent = total > 0 ? (value / total) * 100 : 0;
           return (
-            <div key={row.name}>
+            <div key={row.name} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
               <div className="mb-1 flex items-center justify-between text-sm">
                 <div className="flex flex-col">
-                  <span className="font-medium text-slate-700">{row.name}</span>
-                  <span className="text-[10px] text-slate-500">{contributionPercent.toFixed(1)}% of top 4</span>
+                  <span className="font-bold text-slate-800">{row.name}</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{contributionPercent.toFixed(1)}% of top 4</span>
                 </div>
-                <span className="font-semibold text-slate-900">{formatContributionValue(metric, value)}</span>
+                <span className="font-mono text-xs font-black text-slate-900 tabular-nums">{formatContributionValue(metric, value)}</span>
               </div>
-              <div className="h-2 rounded-full bg-slate-100">
-                <div className="h-2 rounded-full bg-orange-500" style={{ width: `${width}%` }} />
+              <div className="h-2.5 overflow-hidden rounded-full bg-slate-100 shadow-inner">
+                <div className="h-full rounded-full bg-gradient-to-r from-orange-600 via-amber-400 to-sky-400 shadow-[0_0_18px_rgba(249,115,22,0.24)]" style={{ width: `${width}%` }} />
               </div>
             </div>
           );
@@ -1901,37 +1799,51 @@ function OverviewAchievementByLine({ data }: { data: MedicalRepPortalData }) {
         title="Achievement by Product Family"
         action={<ContributionMetricToggle metric={metric} onChange={setMetric} />}
       >
-        <div className="grid gap-3 md:grid-cols-[0.9fr_1.1fr]">
-          <div className="relative h-56">
+        <div className="grid gap-4 md:grid-cols-[0.9fr_1.1fr]">
+          <div className="relative h-56 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={source} dataKey="value" innerRadius={60} outerRadius={84} paddingAngle={1}>
+                <Pie
+                  cornerRadius={7}
+                  data={source}
+                  dataKey="value"
+                  innerRadius={58}
+                  outerRadius={84}
+                  paddingAngle={2}
+                  stroke="#ffffff"
+                  strokeWidth={3}
+                >
                   {source.map((item) => (
                     <Cell key={item.name} fill={item.color} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={chartTooltipStyle()} formatter={(v: unknown) => formatContributionValue(metric, Number(v ?? 0))} />
+                <Tooltip contentStyle={chartTooltipStyle()} cursor={false} formatter={(v: unknown) => formatContributionValue(metric, Number(v ?? 0))} />
               </PieChart>
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <p className="text-[22px] font-semibold tracking-tight text-slate-900">
+              <p className="font-mono text-[20px] font-black tracking-tight text-slate-900 tabular-nums">
                 {formatContributionValue(metric, source.reduce((sum, row) => sum + row.value, 0))}
               </p>
-              <p className="text-[11px] text-slate-500">{metric === "sales" ? "Sales Value" : "Units Sold"}</p>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{metric === "sales" ? "Sales Value" : "Units Sold"}</p>
             </div>
           </div>
-          <div className="space-y-2 pt-2">
+          <div className="space-y-2 pt-1">
             {source.map((row) => {
               const percent = Math.max(0, Math.round(row.percentage || (row.value / total) * 100));
               return (
-                <div key={row.name} className="flex items-center justify-between gap-3 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
-                    <span className="text-slate-700">{row.name}</span>
+                <div key={row.name} className="rounded-2xl border border-slate-100 bg-white px-3 py-2.5 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-white" style={{ backgroundColor: row.color }} />
+                      <span className="truncate font-bold text-slate-700">{row.name}</span>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="font-mono text-sm font-black text-slate-900 tabular-nums">{percent}%</p>
+                      <p className="font-mono text-[11px] text-slate-400 tabular-nums">{formatContributionValue(metric, row.value)}</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-slate-900">{percent}%</p>
-                    <p className="text-xs text-slate-500">{formatContributionValue(metric, row.value)}</p>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full" style={{ backgroundColor: row.color, width: `${Math.max(4, Math.min(100, percent))}%` }} />
                   </div>
                 </div>
               );
@@ -1950,28 +1862,27 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
     >
       <OverviewPagePanel
         title="Performance Overview"
-        action={<div className="rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-600">This Month</div>}
       >
-        <div className="h-64">
+        <div className="h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data.sales.trend}>
+            <AreaChart data={data.sales.trend} margin={chartMargin}>
               <defs>
                 <linearGradient id="overviewSalesFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.16} />
-                  <stop offset="95%" stopColor="#f97316" stopOpacity={0.01} />
+                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.28} />
+                  <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-              <XAxis dataKey="period" tickFormatter={periodLabel} stroke="#64748b" />
-              <YAxis stroke="#64748b" tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} vertical={false} />
+              <XAxis {...chartAxisProps()} dataKey="period" tickFormatter={periodLabel} />
+              <YAxis {...chartAxisProps()} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
               <Tooltip
                 contentStyle={chartTooltipStyle()}
-                cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 3" }}
+                cursor={chartCursor}
                 formatter={(value: unknown) => tooltipCurrency(value)}
                 labelFormatter={(value) => `Period: ${periodLabel(String(value))}`}
               />
-              <Area dataKey="sales" name="Achievement" stroke="#f97316" strokeWidth={2.5} fill="url(#overviewSalesFill)" activeDot={{ r: 4 }} type="monotone" />
-              <Area dataKey="target" name="Target" stroke="#94a3b8" strokeDasharray="4 4" fillOpacity={0} type="monotone" />
+              <Area activeDot={{ r: 5, stroke: "#ffffff", strokeWidth: 3 }} dataKey="sales" dot={false} fill="url(#overviewSalesFill)" name="Achievement" stroke="#f97316" strokeWidth={3} type="monotone" />
+              <Area dataKey="target" dot={false} fillOpacity={0} name="Target" stroke="#64748b" strokeDasharray="5 5" strokeWidth={2.25} type="monotone" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -2010,31 +1921,37 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
             </div>
 
             <div className="grid gap-4 xl:grid-cols-2">
-              <Card className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                <div className="mb-3 flex items-center gap-2">
-                  <LineChartIcon className="h-4 w-4 text-slate-500" />
-                  <p className="text-sm font-semibold text-slate-900">Sales Trend</p>
+              <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
+                      <LineChartIcon className="h-4 w-4" />
+                    </span>
+                    <p className="text-sm font-black tracking-tight text-slate-900">Sales Trend</p>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Monthly</span>
                 </div>
-                <div className="h-64 w-full min-w-0">
+                <div className="h-64 w-full min-w-0 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
                   {trendData && trendData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <AreaChart data={trendData} margin={chartMargin}>
                         <defs>
                           <linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#f97316" stopOpacity={0.16} />
-                            <stop offset="95%" stopColor="#f97316" stopOpacity={0.01} />
+                            <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-                        <XAxis dataKey="period" tickFormatter={periodLabel} stroke="#64748b" />
-                        <YAxis stroke="#64748b" tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
+                        <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} vertical={false} />
+                        <XAxis {...chartAxisProps()} dataKey="period" tickFormatter={periodLabel} />
+                        <YAxis {...chartAxisProps()} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
                         <Tooltip
                           contentStyle={chartTooltipStyle()}
+                          cursor={chartCursor}
                           formatter={(value: unknown) => tooltipCurrency(value)}
                           labelFormatter={(value) => `Period: ${periodLabel(String(value))}`}
                         />
-                        <Area dataKey="target" name="Target" stroke="#94a3b8" fill="#cbd5e1" fillOpacity={0.18} />
-                        <Area dataKey="sales" name="Sales" stroke="#f97316" fill="url(#salesFill)" />
+                        <Area dataKey="target" dot={false} fill="none" name="Target" stroke="#64748b" strokeDasharray="5 5" strokeWidth={2.25} type="monotone" />
+                        <Area activeDot={{ r: 5, stroke: "#ffffff", strokeWidth: 3 }} dataKey="sales" dot={false} fill="url(#salesFill)" name="Sales" stroke="#f97316" strokeWidth={3} type="monotone" />
                       </AreaChart>
                     </ResponsiveContainer>
                   ) : (
@@ -2045,18 +1962,27 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
                 </div>
               </Card>
 
-              <Card className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                <p className="mb-3 text-sm font-semibold text-slate-900">Sales vs Target</p>
-                <div className="h-64 w-full min-w-0">
+              <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <p className="text-sm font-black tracking-tight text-slate-900">Sales vs Target</p>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Variance</span>
+                </div>
+                <div className="h-64 w-full min-w-0 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
                   {trendData && trendData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-                        <XAxis dataKey="period" tickFormatter={periodLabel} stroke="#64748b" />
-                        <YAxis stroke="#64748b" tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
-                        <Tooltip contentStyle={chartTooltipStyle()} formatter={(value: unknown) => tooltipCurrency(value)} />
-                        <Bar dataKey="sales" name="Sales" fill="#f97316" radius={[6, 6, 0, 0]} />
-                        <Bar dataKey="target" name="Target" fill="#94a3b8" radius={[6, 6, 0, 0]} />
+                      <BarChart data={trendData} margin={chartMargin}>
+                        <defs>
+                          <linearGradient id="salesBarFill" x1="0" x2="0" y1="0" y2="1">
+                            <stop offset="0%" stopColor="#fb923c" />
+                            <stop offset="100%" stopColor="#ea580c" />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} vertical={false} />
+                        <XAxis {...chartAxisProps()} dataKey="period" tickFormatter={periodLabel} />
+                        <YAxis {...chartAxisProps()} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
+                        <Tooltip contentStyle={chartTooltipStyle()} cursor={chartCursor} formatter={(value: unknown) => tooltipCurrency(value)} />
+                        <Bar dataKey="sales" fill="url(#salesBarFill)" name="Sales" radius={[8, 8, 0, 0]} />
+                        <Bar dataKey="target" fill="#cbd5e1" name="Target" radius={[8, 8, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   ) : (
@@ -2068,41 +1994,44 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
               </Card>
             </div>
 
-            <Card className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-slate-900">Product Mix & Contribution</p>
+                <p className="text-sm font-black tracking-tight text-slate-900">Product Mix & Contribution</p>
                 <ContributionMetricToggle metric={productMetric} onChange={setProductMetric} />
               </div>
               <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
-                <div className="h-56 w-full min-w-0">
+                <div className="h-56 w-full min-w-0 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                       <Pie
+                        cornerRadius={7}
                         data={productChartRows}
                         dataKey="value"
                         innerRadius={54}
                         outerRadius={84}
                         paddingAngle={2}
                         nameKey="name"
+                        stroke="#ffffff"
+                        strokeWidth={3}
                       >
                         {productChartRows.map((entry, index) => (
                           <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />
                         ))}
                       </Pie>
-                      <Tooltip contentStyle={chartTooltipStyle()} formatter={(value: unknown) => formatContributionValue(productMetric, Number(value ?? 0))} />
+                      <Tooltip contentStyle={chartTooltipStyle()} cursor={false} formatter={(value: unknown) => formatContributionValue(productMetric, Number(value ?? 0))} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
                 <div className="flex flex-col justify-center space-y-2">
                   {productRows.slice(0, 5).map((p, i) => (
-                    <div key={p.name} className="flex items-center justify-between text-xs">
+                    <div key={p.name} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs shadow-[0_5px_14px_rgba(15,23,42,0.03)]">
                       <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full" style={{ backgroundColor: chartColors[i % chartColors.length] }} />
-                        <span className="max-w-[120px] truncate text-slate-600" title={p.name}>{p.name}</span>
+                        <div className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: chartColors[i % chartColors.length] }} />
+                        <span className="max-w-[120px] truncate font-bold text-slate-700" title={p.name}>{p.name}</span>
                       </div>
                       <div className="flex gap-3">
-                        <span className="font-semibold text-slate-900">{getContributionPercentage(p, productMetric).toFixed(1)}%</span>
-                        <span className="text-slate-400">{formatContributionValue(productMetric, getContributionValue(p, productMetric))}</span>
+                        <span className="font-mono font-black text-slate-900 tabular-nums">{getContributionPercentage(p, productMetric).toFixed(1)}%</span>
+                        <span className="font-mono text-slate-400 tabular-nums">{formatContributionValue(productMetric, getContributionValue(p, productMetric))}</span>
                       </div>
                     </div>
                   ))}
@@ -2122,17 +2051,29 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
   const payrollMissing = data.empty.payroll;
   const latestStatus = data.payroll.latestBatchStatus?.replace(/_/g, " ") ?? "Unknown";
   const historyRows = [...data.payroll.payslipRows];
-  const latestRow = historyRows[0];
   const hasRows = historyRows.length > 0;
-  const grossReference = Math.max(1, data.payroll.grossSalary || 1);
-  const additionsWidth = Math.max(
-    2,
-    Math.min(100, Math.round((Math.max(0, data.payroll.totalAdditions) / grossReference) * 100)),
-  );
-  const deductionsWidth = Math.max(
-    2,
-    Math.min(100, Math.round((Math.max(0, data.payroll.totalDeductions) / grossReference) * 100)),
-  );
+  const breakdownRows = [
+    {
+      formula: "Fixed source of truth",
+      label: "Base Salary",
+      value: data.payroll.baseSalary,
+    },
+    {
+      formula: "Base + Cost of Living + Fuel",
+      label: "Net Salary",
+      value: data.payroll.netSalary,
+    },
+    {
+      formula: "Base x 70%",
+      label: "Basic Salary",
+      value: data.payroll.basicSalary,
+    },
+    {
+      formula: "Base + Social Insurance + Income Tax",
+      label: "Gross Salary",
+      value: data.payroll.grossSalary,
+    },
+  ];
 
   return (
     <section id="payroll" className="space-y-4">
@@ -2181,82 +2122,38 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
               </div>
             </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <PayrollStat label="Net Salary" value={egp(data.payroll.netSalary)} />
-            <PayrollStat label="Gross Salary" value={egp(data.payroll.grossSalary)} />
-            <PayrollStat label="Total Additions" value={egp(data.payroll.totalAdditions)} />
-            <PayrollStat label="Total Deductions" value={egp(data.payroll.totalDeductions)} />
-          </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <PayrollStat label="Gross Salary" value={egp(data.payroll.grossSalary)} />
+              <PayrollStat label="Net Salary" value={egp(data.payroll.netSalary)} />
+              <PayrollStat label="Basic Salary" value={egp(data.payroll.basicSalary)} />
+              <PayrollStat label="Base Salary" value={egp(data.payroll.baseSalary)} />
+            </div>
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[1.1fr_1.5fr]">
             <Card className="rounded-[18px] border border-slate-200 bg-white p-5">
-              <p className="text-sm font-semibold text-slate-900">Latest Payslip Components</p>
-              <p className="mt-1 text-xs text-slate-500">{data.payroll.latestBatchLabel}</p>
-
-              <div className="mt-4 space-y-3">
-                <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-500">Gross</span>
-                    <span className="font-semibold text-slate-900">{egp(data.payroll.grossSalary)}</span>
-                  </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-                    <div className="h-full rounded-full bg-orange-500" style={{ width: "100%" }} />
-                  </div>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Salary Breakdown</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Fixed salary is read from the employee compensation profile.
+                  </p>
                 </div>
-                <div className="rounded-2xl border border-slate-100 bg-emerald-50/40 p-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-500">Additions</span>
-                    <span className="font-semibold text-emerald-700">{egp(data.payroll.totalAdditions)}</span>
-                  </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-emerald-100">
-                    <div
-                      className="h-full rounded-full bg-emerald-500"
-                      style={{ width: `${additionsWidth}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-slate-100 bg-rose-50/50 p-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-500">Deductions</span>
-                    <span className="font-semibold text-rose-700">{egp(data.payroll.totalDeductions)}</span>
-                  </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-rose-100">
-                    <div
-                      className="h-full rounded-full bg-rose-500"
-                      style={{ width: `${deductionsWidth}%` }}
-                    />
-                  </div>
-                </div>
+                <Calculator className="h-4 w-4 text-slate-400" />
               </div>
 
-              <div className="mt-4 space-y-2 border-t border-slate-200 pt-4 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">First Part</span>
-                  <span className="font-semibold text-slate-900">{egp(data.payroll.firstPart)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Second Part</span>
-                  <span className="font-semibold text-slate-900">{egp(data.payroll.secondPart)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Statutory / Internal</span>
-                  <span className="font-semibold text-slate-900">{egp(data.payroll.statutoryDeductions + data.payroll.internalDeductions)}</span>
-                </div>
-              </div>
-              <div className="mt-4">
-                {latestRow ? (
-                  <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-3">
-                    <span className="text-sm text-slate-600">
-                      Latest file: <strong>{latestRow.label}</strong>
-                    </span>
-                    <Link href={`/api/payroll/${latestRow.id}/payslips`} target="_blank">
-                      <Button className="h-8 px-3 text-xs" variant="secondary">
-                        Open latest payslip
-                      </Button>
-                    </Link>
+              <div className="mt-4 divide-y divide-slate-100 rounded-2xl border border-slate-100">
+                {breakdownRows.map((row) => (
+                  <div className="grid gap-2 px-3 py-3 sm:grid-cols-[1fr_auto]" key={row.label}>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">{row.label}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{row.formula}</p>
+                    </div>
+                    <p className="font-mono text-sm font-semibold text-slate-900 tabular-nums">
+                      {egp(row.value)}
+                    </p>
                   </div>
-                ) : null}
+                ))}
               </div>
             </Card>
 
@@ -2308,220 +2205,6 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
         </div>
       )}
     </section>
-  );
-}
-
-export function EarningsPage({ data }: { data: MedicalRepPortalData }) {
-  if (data.empty.payroll) {
-    return (
-      <Card className="rounded-3xl border border-slate-100 bg-white p-10 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-        <div className="mx-auto flex max-w-lg flex-col items-center text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 text-slate-500">
-            <CircleDashed className="h-5 w-5" />
-          </div>
-          <p className="mt-4 text-sm font-semibold text-slate-900">Earnings Unavailable</p>
-          <p className="mt-1 text-sm text-slate-600">Payslip data has not been uploaded yet.</p>
-        </div>
-      </Card>
-    );
-  }
-
-  const latestRecord = data.payroll;
-  const netEarnings = latestRecord.netSalary;
-  const basicSalary = latestRecord.basicSalary;
-  const currentIncentive = latestRecord.allPeriodsIncentive;
-  const grossSalary = latestRecord.grossSalary;
-  const totalAdditions = latestRecord.totalAdditions;
-  const payrollTaxes = latestRecord.incomeTax > 0
-    ? latestRecord.incomeTax
-    : Math.max(0, grossSalary - latestRecord.socialInsurance - netEarnings);
-  const additionsRatio = grossSalary > 0 ? (totalAdditions / grossSalary) * 100 : 0;
-  const netToGrossPercent = grossSalary > 0 ? (netEarnings / grossSalary) * 100 : 0;
-
-  const netVsLastMonth = data.payroll.netVsLastMonth;
-  const baseVsLastMonth = data.payroll.grossVsLastMonth;
-
-  const achievementPercent = latestRecord.allPeriodsAchievementPercent ?? data.sales.overviewAchievementPercent;
-  const salesGap = Math.max(0, (data.sales.overviewTarget ?? 0) - (data.sales.overviewSales ?? 0));
-
-  const trendData = data.payroll.salaryTrend.length > 0
-    ? data.payroll.salaryTrend.map(point => ({
-        month: String(point.month),
-        totalPaid: point.netSalary,
-      }))
-    : [
-      {
-        month: data.payroll.latestBatchLabel ?? "No data",
-        totalPaid: netEarnings,
-      },
-    ];
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold text-slate-900">Earnings</h1>
-          <p className="mt-1 text-sm text-slate-500">Overview of your earnings, incentives, and deductions</p>
-        </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <EarningsKPICard
-          label="Net Earnings (This Month)"
-          subLabel="Take Home Pay"
-          value={egp(netEarnings)}
-          delta={netVsLastMonth}
-          icon={Wallet}
-        />
-        <EarningsKPICard
-          label="Basic Salary"
-          subLabel="Fixed Pay"
-          value={egp(basicSalary)}
-          delta={baseVsLastMonth}
-          icon={BriefcaseBusiness}
-        />
-        <EarningsKPICard
-          label="Earnings Key"
-          subLabel="Net-to-Gross"
-          value={`${netToGrossPercent.toFixed(1)}%`}
-          delta={null}
-          icon={CircleDollarSign}
-        />
-        <EarningsKPICard
-          label="Additions Share"
-          subLabel="Incentives + Bonuses %"
-          value={`${additionsRatio.toFixed(1)}%`}
-          delta={null}
-          icon={Sparkles}
-        />
-      </div>
-
-      <div className="grid gap-6">
-        <EarningsTrendCard data={trendData} />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <IncentiveBlock
-          achievementPercent={achievementPercent}
-          currentIncentive={currentIncentive}
-          salesGap={salesGap}
-        />
-        <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-          <div className="mb-4">
-            <p className="text-sm font-semibold text-slate-900">Latest Payroll Snapshot</p>
-            <p className="text-xs text-slate-500">
-              {data.payroll.latestBatchLabel ?? "Payroll details"}
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <MetricCard label="Gross Salary" value={egp(data.payroll.grossSalary)} />
-            <MetricCard label="Insurance" value={egp(data.payroll.socialInsurance)} />
-            <MetricCard label="Taxes" value={egp(payrollTaxes)} />
-            <MetricCard label="Net Salary" value={egp(data.payroll.netSalary)} />
-          </div>
-        </Card>
-      </div>
-
-      <NotificationsSection />
-    </div>
-  );
-}
-
-function EarningsKPICard({
-  delta,
-  icon: Icon,
-  label,
-  subLabel,
-  value,
-  isDeduction = false,
-}: {
-  delta: number | null;
-  icon: typeof Wallet;
-  label: string;
-  subLabel: string;
-  value: string;
-  isDeduction?: boolean;
-}) {
-  const deltaColor = delta === null ? "text-slate-500" : delta > 0 ? "text-emerald-600" : "text-rose-600";
-  const deltaPrefix = delta === null ? "" : delta > 0 ? "+" : "";
-
-  return (
-       <Card className="group rounded-2xl border border-slate-200 bg-white/95 px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
-      <div className="mb-4 h-0.5 w-8 rounded-full bg-slate-200 transition group-hover:w-12 group-hover:bg-orange-500" />
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-           <p className="min-w-0 text-[clamp(1.5rem,2.4vw,2rem)] leading-tight font-semibold tracking-tight text-slate-900 break-words">{value}</p>
-           <p className="mt-1.5 text-[11px] font-medium text-slate-500">{label}</p>
-           <p className="mt-0.5 text-[10px] leading-snug text-slate-400">{subLabel}</p>
-          {delta !== null && (
-            <p className={`mt-2 text-sm font-medium ${deltaColor}`}>
-              {deltaPrefix}{delta.toFixed(1)}% vs last month
-            </p>
-          )}
-        </div>
-        <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isDeduction ? "bg-rose-50 text-rose-600" : "bg-orange-50 text-orange-600"}`}>
-          <Icon className="h-4.5 w-4.5" />
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function EarningsTrendCard({ data }: { data: Array<{ month: string; totalPaid: number }> }) {
-  const hasData = data && data.length > 0;
-
-  return (
-    <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-      <div className="mb-4 flex items-center gap-2">
-        <span className="h-2 w-2 rounded-full bg-orange-500/80" />
-        <p className="text-lg font-semibold text-slate-900">Earnings Trend</p>
-      </div>
-      {!hasData ? (
-        <div className="rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-6 text-sm text-slate-600">
-          Trend data is being prepared. Please check back after this month&rsquo;s payroll is finalized.
-        </div>
-      ) : (
-      <div className="h-[280px] w-full min-w-0 overflow-hidden">
-        <ResponsiveContainer height="100%" width="100%">
-            <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-              <defs>
-              <linearGradient id="totalPaidGradient" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-            <XAxis
-              axisLine={false}
-              dataKey="month"
-              stroke="#94a3b8"
-              style={{ fontSize: 12 }}
-              tickLine={false}
-            />
-            <YAxis
-              axisLine={false}
-              stroke="#94a3b8"
-              style={{ fontSize: 12 }}
-              tickLine={false}
-              tickFormatter={(value) => `EGP ${value / 1000}k`}
-            />
-            <Tooltip
-              contentStyle={chartTooltipStyle()}
-              formatter={(value) => egp(Number(value))}
-            />
-            <Area
-              dataKey="totalPaid"
-              fill="url(#totalPaidGradient)"
-              name="Total Paid"
-              stroke="#f97316"
-              strokeWidth={2}
-              type="monotone"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-      )}
-    </Card>
   );
 }
 
@@ -3059,10 +2742,10 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-6 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
           <div className="mb-4 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
-            <p className="text-lg font-semibold text-slate-900">Workload Overview</p>
+            <p className="text-lg font-black tracking-tight text-slate-900">Workload Overview</p>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {workloadOverview.map((item) => (
@@ -3073,60 +2756,63 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               </div>
             ))}
           </div>
-          <div className="mt-6 h-64">
+          <div className="mt-6 h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
             <ResponsiveContainer height="100%" width="100%">
-              <AreaChart data={tripsVsDistanceTrend}>
+              <AreaChart data={tripsVsDistanceTrend} margin={chartMargin}>
                 <defs>
                   <linearGradient id="tripsGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.32} />
+                    <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="month" stroke="#94a3b8" style={{ fontSize: 12 }} tickLine={false} />
-                <YAxis stroke="#94a3b8" style={{ fontSize: 12 }} tickLine={false} />
-                <Tooltip contentStyle={chartTooltipStyle()} />
-                <Area dataKey="trips" fill="url(#tripsGradient)" name="Trips" stroke="#f97316" strokeWidth={2} type="monotone" />
-                <Area dataKey="distance" fill="none" name="Distance (km)" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" type="monotone" />
-                <Legend />
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} vertical={false} />
+                <XAxis {...chartAxisProps()} dataKey="month" />
+                <YAxis {...chartAxisProps()} />
+                <Tooltip contentStyle={chartTooltipStyle()} cursor={chartCursor} />
+                <Area activeDot={{ r: 5, stroke: "#ffffff", strokeWidth: 3 }} dataKey="trips" dot={false} fill="url(#tripsGradient)" name="Trips" stroke="#f97316" strokeWidth={3} type="monotone" />
+                <Area dataKey="distance" dot={false} fill="none" name="Distance (km)" stroke="#64748b" strokeDasharray="5 5" strokeWidth={2.25} type="monotone" />
+                <Legend iconType="circle" wrapperStyle={chartLegendStyle()} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </Card>
 
-        <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-6 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
           <div className="mb-4 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
-            <p className="text-lg font-semibold text-slate-900">Workload Distribution</p>
+            <p className="text-lg font-black tracking-tight text-slate-900">Workload Distribution</p>
           </div>
           <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
-            <div className="h-64">
+            <div className="h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
               <ResponsiveContainer height="100%" width="100%">
                 <PieChart>
                   <Pie
+                    cornerRadius={7}
                     data={workloadDistribution}
                     dataKey="value"
                     innerRadius={60}
                     outerRadius={100}
                     paddingAngle={2}
                     nameKey="name"
+                    stroke="#ffffff"
+                    strokeWidth={3}
                   >
                     {workloadDistribution.map((entry) => (
                       <Cell key={entry.name} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={chartTooltipStyle()} />
+                  <Tooltip contentStyle={chartTooltipStyle()} cursor={false} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
             <div className="flex flex-col justify-center space-y-3">
               {workloadDistribution.map((item) => (
-                <div key={item.name} className="flex items-center justify-between">
+                <div key={item.name} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white px-3 py-2 shadow-[0_5px_14px_rgba(15,23,42,0.03)]">
                   <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
-                    <span className="text-sm text-slate-600">{item.name}</span>
+                    <div className="h-3 w-3 rounded-full ring-2 ring-white" style={{ backgroundColor: item.color }} />
+                    <span className="text-sm font-bold text-slate-700">{item.name}</span>
                   </div>
-                  <span className="text-sm font-semibold text-slate-900">{item.value}</span>
+                  <span className="font-mono text-sm font-black text-slate-900 tabular-nums">{item.value}</span>
                 </div>
               ))}
             </div>
@@ -3237,10 +2923,10 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-6 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
           <div className="mb-4 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
-            <p className="text-lg font-semibold text-slate-900">Expense Analysis</p>
+            <p className="text-lg font-black tracking-tight text-slate-900">Expense Analysis</p>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             {expenseAnalysis.map((item) => (
@@ -3251,20 +2937,20 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               </div>
             ))}
           </div>
-          <div className="mt-6 h-48">
+          <div className="mt-6 h-48 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
             <ResponsiveContainer height="100%" width="100%">
-              <AreaChart data={expenseTrend}>
+              <AreaChart data={expenseTrend} margin={chartMargin}>
                 <defs>
                   <linearGradient id="expenseTrendGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.32} />
+                    <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="month" stroke="#94a3b8" style={{ fontSize: 12 }} tickLine={false} />
-                <YAxis stroke="#94a3b8" style={{ fontSize: 12 }} tickLine={false} tickFormatter={(value) => `EGP ${(value / 1000).toFixed(0)}k`} />
-                <Tooltip contentStyle={chartTooltipStyle()} formatter={(value) => egp(Number(value))} />
-                <Area dataKey="expenses" fill="url(#expenseTrendGradient)" name="Expenses" stroke="#f97316" strokeWidth={2} type="monotone" />
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} vertical={false} />
+                <XAxis {...chartAxisProps()} dataKey="month" />
+                <YAxis {...chartAxisProps()} tickFormatter={(value) => `EGP ${(value / 1000).toFixed(0)}k`} />
+                <Tooltip contentStyle={chartTooltipStyle()} cursor={chartCursor} formatter={(value) => egp(Number(value))} />
+                <Area activeDot={{ r: 5, stroke: "#ffffff", strokeWidth: 3 }} dataKey="expenses" dot={false} fill="url(#expenseTrendGradient)" name="Expenses" stroke="#f97316" strokeWidth={3} type="monotone" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -3420,21 +3106,21 @@ export function IdentityCard({ data }: { data: MedicalRepPortalData }) {
 
   const statusPillClass =
     statusVariant === "success"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-600"
+      ? "border-emerald-200/50 bg-emerald-50/50 text-emerald-600 shadow-sm"
       : statusVariant === "warning"
-        ? "border-amber-200 bg-amber-50 text-amber-700"
+        ? "border-amber-200/50 bg-amber-50/50 text-amber-700 shadow-sm"
         : statusVariant === "danger"
-          ? "border-rose-200 bg-rose-50 text-rose-700"
-          : "border-slate-200 bg-slate-50 text-slate-600";
+          ? "border-rose-200/50 bg-rose-50/50 text-rose-700 shadow-sm"
+          : "border-slate-200/50 bg-slate-50/50 text-slate-600 shadow-sm";
 
   const statusDotClass =
     statusVariant === "success"
-      ? "bg-emerald-500"
+      ? "bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.1)]"
       : statusVariant === "warning"
-        ? "bg-amber-500"
+        ? "bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.1)]"
         : statusVariant === "danger"
-          ? "bg-rose-500"
-          : "bg-slate-500";
+          ? "bg-rose-500 shadow-[0_0_0_4px_rgba(244,63,94,0.1)]"
+          : "bg-slate-500 shadow-[0_0_0_4px_rgba(100,116,139,0.1)]";
 
   const initials = employee.fullName
     .split(/\s+/)
@@ -3444,66 +3130,87 @@ export function IdentityCard({ data }: { data: MedicalRepPortalData }) {
     .toUpperCase();
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_4px_20px_rgba(15,23,42,0.06)] lg:px-8 lg:py-6">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-center">
+    <div className="relative overflow-hidden rounded-[30px] border border-white/80 bg-[linear-gradient(135deg,#ffffff_0%,#ffffff_48%,#f8fafc_100%)] px-5 py-5 shadow-[0_18px_48px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/70 lg:px-10 lg:py-8">
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.025)_1px,transparent_1px)] bg-[size:34px_34px] opacity-70 [mask-image:linear-gradient(110deg,rgba(0,0,0,0.85),transparent_76%)]" />
+      
+      <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center">
 
-        {/* Avatar */}
-        <div className="flex h-[76px] w-[76px] lg:h-[100px] lg:w-[100px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-[0_4px_16px_rgba(249,115,22,0.30)] ring-4 ring-orange-100">
-          <span className="text-[26px] lg:text-[34px] font-bold tracking-tight">{initials || "EM"}</span>
+        {/* Avatar circle */}
+        <div className="group relative flex h-[90px] w-[90px] shrink-0 items-center justify-center rounded-full border border-orange-100 bg-gradient-to-tr from-orange-50/80 to-white p-1.5 shadow-[0_14px_34px_rgba(249,115,22,0.12)] lg:h-[124px] lg:w-[124px]">
+          <div className="flex h-full w-full items-center justify-center rounded-full bg-white shadow-inner">
+            <div className="flex h-full w-full items-center justify-center rounded-full bg-orange-500/10 text-orange-500 transition-transform duration-500 group-hover:scale-105">
+              <span className="text-[28px] lg:text-[40px] font-black tracking-tight">{initials || "EM"}</span>
+            </div>
+          </div>
+          {/* Active status ring on avatar */}
+          <div className="absolute bottom-1 right-1 h-4 w-4 rounded-full border-4 border-white bg-emerald-500 shadow-sm lg:h-6 lg:w-6" />
         </div>
 
         {/* Content */}
         <div className="min-w-0 flex-1">
 
           {/* Name + role */}
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="font-display text-[22px] lg:text-[28px] font-semibold leading-tight tracking-[-0.02em] text-slate-900">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <h1 className="text-[24px] font-black leading-tight tracking-tight text-slate-950 lg:text-[32px]">
               {employee.fullName}
             </h1>
-            <span className="hidden lg:block h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400" />
-            <p className="text-[13px] lg:text-[16px] font-medium text-slate-400">{employee.roleLabel}</p>
-          </div>
-
-          {/* Line · Territory · Manager */}
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 lg:mt-3.5 lg:gap-x-5">
-            <div className="flex items-center gap-1.5 text-slate-600 lg:gap-2">
-              <BriefcaseBusiness className="h-4 w-4 shrink-0 text-orange-400" />
-              <span className="text-[12px] lg:text-[13px] font-medium">{employee.line ?? "Unassigned"} Line</span>
-            </div>
-            <span className="hidden lg:block h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
-            <div className="flex items-center gap-1.5 text-slate-600 lg:gap-2">
-              <MapPin className="h-4 w-4 shrink-0 text-orange-400" />
-              <span className="text-[12px] lg:text-[13px] font-medium">{employee.territory ?? "Unassigned"} Territory</span>
-            </div>
-            <span className="hidden lg:block h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
-            <div className="flex items-center gap-1.5 text-slate-600 lg:gap-2">
-              <Users className="h-4 w-4 shrink-0 text-orange-400" />
-              <span className="text-[12px] lg:text-[13px] font-medium">Reports to {employee.manager ?? "Unassigned"}</span>
-            </div>
-          </div>
-
-          {/* Divider */}
-          <div className="my-3.5 h-px w-full bg-slate-100" />
-
-          {/* HR ID | Status | Hired */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 lg:gap-x-5">
-            <div className="flex items-center gap-2">
-              <IdCard className="h-4 w-4 shrink-0 text-slate-400" />
-              <span className="font-mono text-[11px] lg:text-[13px] text-slate-500">HR ID: {employee.hrId}</span>
-            </div>
-
-            <span className="hidden lg:block h-4 w-px shrink-0 bg-slate-200" />
-
-            <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-[11px] lg:text-[12px] font-semibold ${statusPillClass}`}>
-              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotClass} ${statusVariant === "success" ? "ep-pulse-green" : statusVariant === "warning" ? "ep-pulse-amber" : ""}`} />
+            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider lg:px-4 lg:text-[13px] ${statusPillClass}`}>
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full lg:h-2 lg:w-2 ${statusDotClass} ${statusVariant === "success" ? "animate-pulse" : ""}`} />
               {employee.status}
             </span>
+          </div>
 
-            <span className="hidden lg:block h-4 w-px shrink-0 bg-slate-200" />
+          {/* Role + Metadata Subline */}
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-slate-400">
+            <p className="text-[14px] font-semibold tracking-tight lg:text-[16px]">{employee.roleLabel}</p>
+            <span className="h-1 w-1 rounded-full bg-slate-200" />
+            <p className="text-[13px] font-medium tabular-nums lg:text-[14px]">HR ID: {employee.hrId}</p>
+          </div>
 
-            <div className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
-              <span className="text-[12px] lg:text-[13px] text-slate-500">Hired {hiredLabel}</span>
+          {/* Line · Territory · Manager - Enhanced Grid */}
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:mt-6">
+            <div className="flex items-center gap-2.5 group/item">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-orange-500 shadow-sm ring-1 ring-slate-200 transition-colors group-hover/item:bg-orange-50">
+                <BriefcaseBusiness className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Business Line</p>
+                <p className="truncate text-sm font-bold text-slate-700">{employee.line ?? "Unassigned"}</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2.5 group/item">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-orange-500 shadow-sm ring-1 ring-slate-200 transition-colors group-hover/item:bg-orange-50">
+                <MapPin className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Territory</p>
+                <p className="truncate text-sm font-bold text-slate-700">{employee.territory ?? "Unassigned"}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 group/item">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-orange-500 shadow-sm ring-1 ring-slate-200 transition-colors group-hover/item:bg-orange-50">
+                <Users className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Direct Manager</p>
+                <p className="truncate text-sm font-bold text-slate-700">{employee.manager ?? "Unassigned"}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer Info */}
+          <div className="mt-6 flex flex-wrap items-center gap-4 border-t border-slate-100 pt-5">
+            <div className="flex items-center gap-2 text-slate-500">
+              <CalendarDays className="h-4 w-4 text-slate-300" />
+              <span className="text-[13px] font-medium">Hired <span className="text-slate-900 font-bold">{hiredLabel}</span></span>
+            </div>
+            <div className="hidden h-4 w-px bg-slate-200 sm:block" />
+            <div className="flex items-center gap-2 text-slate-500">
+              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              <span className="text-[13px] font-medium">Verified Profile</span>
             </div>
           </div>
 
@@ -3527,37 +3234,14 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
 
   return (
     <div className="space-y-6 lg:space-y-7">
-      {/* Operational Status Badge Cluster */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 shadow-sm">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 ep-pulse-green" />
-          <Activity className="h-3 w-3" />
-          <span>Metrics Synced</span>
-        </div>
-        <div className="flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-[11px] font-semibold text-sky-700 shadow-sm">
-          <BadgeCheck className="h-3 w-3" />
-          <span>Audit Healthy</span>
-        </div>
-        <div className="flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-700 shadow-sm">
-          <Sparkles className="h-3 w-3" />
-          <span>Access Protected</span>
-        </div>
-        <div className="flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-[11px] font-semibold text-orange-700 shadow-sm">
-          <span className="h-1.5 w-1.5 rounded-full bg-orange-500 ep-pulse-orange" />
-          <Zap className="h-3 w-3" />
-          <span>Live Data</span>
-        </div>
-      </div>
       <ExecutiveCommandStrip data={data} />
       <div className="grid gap-3 sm:grid-cols-2 lg:gap-4 xl:grid-cols-4">
         {overviewCards.map((card) => (
           <OverviewStatCard
             key={card.label}
             accent={card.accent}
-            icon={card.icon}
             label={card.label}
             note={card.note}
-            progress={card.progress}
             value={card.value}
           />
         ))}
@@ -3581,11 +3265,6 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
           <Button className="w-full rounded-xl px-5 lg:w-auto" variant="secondary">Open Full Performance</Button>
         </Link>
       </div>
-      <section className="sr-only">
-        <div className="grid gap-3 md:grid-cols-2">
-          <MetricCard label="Employment Status" value={data.hrContract.employmentStatus} />
-        </div>
-      </section>
     </div>
   );
 }

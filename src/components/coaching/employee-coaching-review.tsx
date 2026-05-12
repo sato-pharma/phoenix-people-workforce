@@ -30,6 +30,7 @@ import type {
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
 type EmployeeCoachingReviewProps = {
+  allowAcknowledgment?: boolean;
   initialDetail: CoachingReportDetail;
 };
 
@@ -198,7 +199,7 @@ function ScoreItemNotes({ score }: { score: CoachingScoreItemRow | undefined }) 
   );
 }
 
-export function EmployeeCoachingReview({ initialDetail }: EmployeeCoachingReviewProps) {
+export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDetail }: EmployeeCoachingReviewProps) {
   const [detail, setDetail] = useState(initialDetail);
   const [checked, setChecked] = useState(false);
   const [closedByConflict, setClosedByConflict] = useState(false);
@@ -209,7 +210,7 @@ export function EmployeeCoachingReview({ initialDetail }: EmployeeCoachingReview
   const summary = detail.summary;
   const scoresByKey = scoreMap(detail.scores);
   const acknowledged = report.employee_acknowledged || Boolean(report.acknowledged_at);
-  const canAcknowledge = report.status === "submitted" && !acknowledged && !closedByConflict;
+  const canAcknowledge = allowAcknowledgment && report.status === "submitted" && !acknowledged && !closedByConflict;
   const displayZone = report.performance_zone ?? summary?.performanceZone ?? null;
 
   const handleAcknowledge = async () => {
@@ -445,7 +446,9 @@ export function EmployeeCoachingReview({ initialDetail }: EmployeeCoachingReview
             <div className="flex items-center gap-3">
               <Sparkles className="h-5 w-5 text-orange-500" />
               <p className="text-sm font-semibold">
-                This report is not currently open for employee acknowledgment.
+                {allowAcknowledgment
+                  ? "This report is not currently open for employee acknowledgment."
+                  : "Only the Medical Rep can submit the employee acknowledgment for this report."}
               </p>
             </div>
           </div>

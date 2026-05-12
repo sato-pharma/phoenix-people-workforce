@@ -145,7 +145,9 @@ export type OfferDecisionPreview = {
   status: "accepted" | "pending" | "rejected" | "expired" | "invalid";
 };
 
-const databaseQueryTimeoutMs = 8000;
+const databaseQueryTimeoutMs = 15000;
+const databaseQueryRetryMs = 30000;
+const databaseQueryMaxAttempts = 2;
 
 function getRequiredEnv(name: string) {
   const value = process.env[name];
@@ -237,41 +239,63 @@ function daysFromNow(days: number) {
 async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const url = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL").replace(/\/+$/g, "");
   const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), databaseQueryTimeoutMs);
+  let lastError: unknown;
 
-  try {
-    const response = await fetch(`${url}/rest/v1/${path}`, {
-      ...init,
-      cache: "no-store",
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        "Content-Type": "application/json",
-        ...(init.headers ?? {}),
-      },
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    const payload = text ? JSON.parse(text) : null;
+  for (let attempt = 0; attempt < databaseQueryMaxAttempts; attempt++) {
+    const timeoutMs = attempt === 0 ? databaseQueryTimeoutMs : databaseQueryRetryMs;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!response.ok) {
-      throw new Error(
-        typeof payload?.message === "string"
-          ? payload.message
-          : `Supabase request failed with ${response.status}.`,
-      );
+    try {
+      const response = await fetch(`${url}/rest/v1/${path}`, {
+        ...init,
+        cache: "no-store",
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+          "Content-Type": "application/json",
+          ...(init.headers ?? {}),
+        },
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      const payload = text ? JSON.parse(text) : null;
+
+      if (!response.ok) {
+        throw new Error(
+          typeof payload?.message === "string"
+            ? payload.message
+            : `Supabase request failed with ${response.status}.`,
+        );
+      }
+
+      return payload as T;
+    } catch (error) {
+      lastError = error;
+      const message = offerErrorMessage(error).toLowerCase();
+      const isTimeout =
+        error instanceof Error &&
+        (error.name === "AbortError" || message.includes("timed out"));
+      const shouldRetry = isTimeout && attempt < databaseQueryMaxAttempts - 1;
+
+      if (!shouldRetry) {
+        if (error instanceof Error && error.name === "AbortError") {
+          throw new Error("Supabase request timed out.");
+        }
+        throw error;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    } finally {
+      clearTimeout(timeout);
     }
-
-    return payload as T;
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("Supabase request timed out.");
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  if (lastError instanceof Error && lastError.name === "AbortError") {
+    throw new Error("Supabase request timed out.");
+  }
+  if (lastError instanceof Error) throw lastError;
+  throw new Error("Supabase request failed.");
 }
 
 async function supabaseRpc<T>(fn: string, input: Record<string, unknown>): Promise<T> {
@@ -302,73 +326,70 @@ async function loadAllOptions(table: string, label = "name") {
 
 export async function getOpenMedicalRepVacancies(): Promise<VacancyLookupRow[]> {
   const vacancyParams = new URLSearchParams({
-    select: "id,vacancy_code,area_id,line_id,position_id,manager_hr_id,manager_name,job_title,department_id,region_name,status",
+    select:
+      "id,vacancy_code,area_id,line_id,position_id,manager_hr_id,manager_name,job_title,department_id,region_name,status,lines(name),areas(name),positions(title)",
     status: "eq.open",
   });
 
-  const [vacancies, lines, areas, positions] = await Promise.all([
-    supabaseRest<Array<{
+  try {
+    const vacancies = await supabaseRest<Array<{
       area_id: number | null;
-      created_at: string;
+      areas?: { name: string | null } | null;
       department_id: number | null;
       id: number;
       job_title: string;
       line_id: number | null;
+      lines?: { name: string | null } | null;
       manager_hr_id: string | null;
       manager_name: string | null;
       position_id: number | null;
+      positions?: { title: string | null } | null;
       region_name: string | null;
       vacancy_code: string;
-    }>>(`position_vacancies?${vacancyParams}`),
-    loadAllOptions("lines"),
-    loadAllOptions("areas"),
-    supabaseRest<LookupRow[]>(
-      `positions?${new URLSearchParams({ order: "title.asc", select: "id,title" })}`,
-    ),
-  ]);
+    }>>(`position_vacancies?${vacancyParams}`);
 
-  const lineMap = new Map(lines.map((l) => [String(l.value), l.label]));
-  const areaMap = new Map(areas.map((a) => [String(a.value), a.label]));
-  const positionMap = new Map(
-    positions.map((p) => [
-      String(p.id),
-      String((p as { title?: string }).title ?? p.name ?? ""),
-    ]),
-  );
+    return vacancies
+      .map((v) => {
+        const positionTitle = v.positions?.title ?? v.job_title ?? "";
+        const jobTitle = v.job_title ?? "";
+        const normalizedTitle = `${jobTitle} ${positionTitle}`.toLowerCase();
+        const isMedicalRep =
+          normalizedTitle.includes("medical representative") ||
+          normalizedTitle.includes("medical rep") ||
+          (normalizedTitle.includes("medical") && normalizedTitle.includes("representative"));
 
-  const medicalRepVacancies = vacancies
-    .map((v) => {
-      const positionTitle = positionMap.get(String(v.position_id)) ?? v.job_title ?? "";
-      const jobTitle = v.job_title ?? "";
-      
-      const isMedicalRep = 
-        jobTitle.toLowerCase().includes("medical") || 
-        jobTitle.toLowerCase().includes("representative") ||
-        positionTitle.toLowerCase().includes("medical") ||
-        positionTitle.toLowerCase().includes("representative") ||
-        positionTitle === "Medical Representative";
+        if (!isMedicalRep) return null;
 
-      if (!isMedicalRep) return null;
+        return {
+          areaId: v.area_id,
+          areaName: v.areas?.name ?? "Unknown Area",
+          departmentId: v.department_id,
+          jobTitle: v.job_title,
+          lineId: v.line_id,
+          lineName: v.lines?.name ?? "Unknown Line",
+          managerHrId: v.manager_hr_id,
+          managerName: v.manager_name,
+          positionId: v.position_id,
+          positionTitle,
+          regionName: v.region_name,
+          vacancyCode: v.vacancy_code,
+          vacancyId: v.id,
+        };
+      })
+      .filter((v): v is NonNullable<typeof v> => v !== null);
+  } catch (error) {
+    const message = offerErrorMessage(error).toLowerCase();
+    if (
+      message.includes("timed out") ||
+      message.includes("relationship") ||
+      message.includes("schema cache") ||
+      message.includes("could not find")
+    ) {
+      return [];
+    }
 
-      return {
-        areaId: v.area_id,
-        areaName: areaMap.get(String(v.area_id)) ?? "Unknown Area",
-        departmentId: v.department_id,
-        jobTitle: v.job_title,
-        lineId: v.line_id,
-        lineName: lineMap.get(String(v.line_id)) ?? "Unknown Line",
-        managerHrId: v.manager_hr_id,
-        managerName: v.manager_name,
-        positionId: v.position_id,
-        positionTitle: positionTitle,
-        regionName: v.region_name,
-        vacancyCode: v.vacancy_code,
-        vacancyId: v.id,
-      };
-    })
-    .filter((v): v is NonNullable<typeof v> => v !== null);
-
-  return medicalRepVacancies;
+    throw error;
+  }
 }
 
 export async function closeVacancyForOffer(input: {
@@ -863,7 +884,7 @@ export async function approveAcceptedOffer(
   if (offer.status !== "accepted") throw new Error("Only accepted offers can be approved.");
 
   const template = getOfferTemplate(offer.template_key);
-  const grossSalary = Number(offer.salary_amount ?? template?.monthlyPackage ?? 0);
+  const monthlyPackage = Number(offer.salary_amount ?? template?.monthlyPackage ?? 0);
   const extraCostOfLiving = Number(template?.costOfLivingAllowance ?? 0);
   const fuelAllowance = Number(
     template?.regionalTravelExpenses ??
@@ -880,7 +901,7 @@ export async function approveAcceptedOffer(
     p_employee_hr_id: manualHrId ?? offer.employee_hr_id ?? null,
     p_extra_cost_of_living: extraCostOfLiving,
     p_fuel_allowance: fuelAllowance,
-    p_gross_salary: grossSalary,
+    p_gross_salary: monthlyPackage,
     p_offer_id: offer.id,
   });
   const employeeHrId = String(rpcResult.employee_hr_id);

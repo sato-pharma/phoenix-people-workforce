@@ -2,6 +2,12 @@ import ExcelJS from "exceljs";
 import { createHash } from "crypto";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { periodLabel } from "@/lib/sales/format";
+import {
+  extractSalesPeriodFromFileName,
+  salesPeriodLabel,
+  salesPeriodsMatch,
+  type SalesPeriod,
+} from "@/lib/sales/period";
 import { parseSalesRow } from "@/lib/sales/validation";
 import type { SalesImportPayload } from "@/lib/sales/types";
 
@@ -281,12 +287,49 @@ function duplicateHash(line: string, month: number, year: number, rows: Record<s
   return createHash("sha256").update(signature).digest("hex");
 }
 
+function uniqueRecordPeriods(records: Array<{ month: number; year: number }>) {
+  const periods = new Map<string, SalesPeriod>();
+  records.forEach((record) => {
+    const month = Number(record.month);
+    const year = Number(record.year);
+    if (!month || !year) return;
+    const key = periodLabel(year, month);
+    periods.set(key, { month, year });
+  });
+  return [...periods.values()].sort((left, right) =>
+    salesPeriodLabel(left).localeCompare(salesPeriodLabel(right)),
+  );
+}
+
+function assertFileNamePeriodMatchesRows(fileName: string, records: Array<{ month: number; year: number }>) {
+  const fileNamePeriod = extractSalesPeriodFromFileName(fileName);
+  if (!fileNamePeriod) return;
+
+  const rowPeriods = uniqueRecordPeriods(records);
+  if (rowPeriods.length === 0) return;
+  if (rowPeriods.some((period) => salesPeriodsMatch(period, fileNamePeriod))) return;
+
+  const filePeriodLabel = salesPeriodLabel(fileNamePeriod);
+  const rowPeriodLabels = rowPeriods.map(salesPeriodLabel);
+
+  throw new SalesWorkflowError(
+    "period_mismatch",
+    `Upload period mismatch. File name says ${filePeriodLabel}, but the sheet Month/Year columns say ${rowPeriodLabels.join(", ")}. Fix the workbook Month/Year columns or rename the file before uploading.`,
+    400,
+    {
+      fileNamePeriod: filePeriodLabel,
+      sheetPeriods: rowPeriodLabels,
+    },
+  );
+}
+
 export async function parseSalesUpload(file: File, line: string, uploadedBy: string): Promise<SalesImportPayload> {
   const parsed = await readUploadRows(file);
 
   const parsedRecords = parsed.rows.map((row, index) =>
     parseSalesRow(row, line, Number(row.__sourceRowNumber) || index + 2)
   );
+  assertFileNamePeriodMatchesRows(file.name, parsedRecords);
   const firstValid = parsedRecords.find((record) => record.month && record.year);
   const month = firstValid?.month || new Date().getMonth() + 1;
   const year = firstValid?.year || new Date().getFullYear();

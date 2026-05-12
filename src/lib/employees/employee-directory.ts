@@ -2,6 +2,7 @@ import {
   normalizePayrollPaymentMode,
   type PayrollPaymentMode,
 } from "@/lib/payroll/policy";
+import { isDevelopment } from "@/lib/env";
 import { googleGeocodeAddress } from "@/lib/geo-intelligence/google";
 import { generateNextHrIdForLine } from "./hr-id-helper";
 
@@ -457,6 +458,7 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     return directoryCache.data;
   }
 
+  const startTime = Date.now();
   try {
     const result = await fetchEmployeeDirectory();
     directoryCache = {
@@ -913,7 +915,7 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       mobileNumber: row.mobile_number,
       nameAr: row.name_ar,
       netSalary: null,
-      salaryPaymentMode: "one_part",
+      salaryPaymentMode: "two_parts",
       positionId: row.position_id,
       positionTitle: row.position_id
         ? positionTitles.get(row.position_id) ?? null

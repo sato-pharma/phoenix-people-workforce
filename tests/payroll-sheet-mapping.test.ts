@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 
 import { validateSalaryWorkbook } from "../src/lib/payroll/salary-import.ts";
+import {
+  salarySourceLookupKeys,
+  type PayrollSalarySource,
+} from "../src/lib/payroll/salary-source-model.ts";
 
 export async function runPayrollSheetMappingTests() {
   const workbook = new ExcelJS.Workbook();
@@ -110,5 +114,71 @@ export async function runPayrollSheetMappingTests() {
       (warning) => warning.code === "first_part_formula_mismatch",
     ),
     false,
+  );
+
+  const sourceWorkbook = new ExcelJS.Workbook();
+  const sourceSheet = sourceWorkbook.addWorksheet("Payroll");
+  sourceSheet.addRow([
+    "HR_ID",
+    "Full Name",
+    "gross_salary",
+    "Net Salary",
+    "Month Salary",
+    "expenses",
+    "extra_cost_of_living",
+    "fuel_allowance",
+    "social_insurance",
+    "employment_income_taxes",
+    "unpaid_vacation",
+    "medical_insurance",
+  ]);
+  sourceSheet.addRow([
+    "B-58",
+    "Source Truth Employee",
+    11111,
+    99999,
+    88888,
+    300,
+    999,
+    999,
+    999,
+    999,
+    100,
+    200,
+  ]);
+
+  const b58Source: PayrollSalarySource = {
+    baseSalary: 14000,
+    employmentIncomeTax: 800,
+    extraCostOfLiving: 2000,
+    fuelAllowance: 1000,
+    grossSalary: null,
+    netSalary: 17000,
+    paymentMode: "two_parts",
+    socialInsurance: 1200,
+  };
+  const salarySources = new Map(
+    salarySourceLookupKeys("B-58").map((key) => [key, b58Source]),
+  );
+  const sourceBuffer = await sourceWorkbook.xlsx.writeBuffer();
+  const sourceFile = new File([sourceBuffer as BlobPart], "payroll-source.xlsx");
+  const sourceResult = await validateSalaryWorkbook(sourceFile, { salarySources });
+  const sourceRow = sourceResult.rowsToImport[0];
+
+  assert.equal(sourceRow.netSalary, 17000);
+  assert.equal(sourceRow.extraCostOfLiving, 2000);
+  assert.equal(sourceRow.fuelAllowance, 1000);
+  assert.equal(sourceRow.socialInsurance, 1200);
+  assert.equal(sourceRow.employmentIncomeTax, 800);
+  assert.equal(sourceRow.grossSalary, 16000);
+  assert.equal(sourceRow.firstPart, 9800);
+  assert.equal(sourceRow.secondPart, 7200);
+  assert.equal(sourceRow.totalAdditions, 3300);
+  assert.equal(sourceRow.totalDeductions, 2300);
+  assert.equal(
+    sourceResult.validationWarnings.some(
+      (warning) => warning.code === "net_salary_source_of_truth_mismatch",
+    ),
+    true,
   );
 }

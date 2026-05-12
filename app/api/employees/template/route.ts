@@ -59,9 +59,10 @@ export async function GET() {
   const paymentModeColumn = headers.indexOf("Payment Mode") + 1;
 
   for (let rowNumber = 2; rowNumber <= 1000; rowNumber += 1) {
+    sheet.getCell(rowNumber, paymentModeColumn).value = "two_parts";
     sheet.getCell(rowNumber, paymentModeColumn).dataValidation = {
       allowBlank: true,
-      formulae: ['"one_part,two_parts"'],
+      formulae: ['"two_parts,one_part"'],
       type: "list",
     };
   }

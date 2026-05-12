@@ -537,9 +537,7 @@ function compensationValues(record: EmployeeImportRecord) {
     gross_salary: record.compensation.grossSalary,
     medical_insurance: record.compensation.medicalInsurance,
     net_salary: record.compensation.netSalary,
-    ...(record.compensation.paymentMode
-      ? { payment_mode: normalizePayrollPaymentMode(record.compensation.paymentMode) }
-      : {}),
+    payment_mode: normalizePayrollPaymentMode(record.compensation.paymentMode),
     social_insurance: record.compensation.socialInsurance,
     subscription_wage: record.compensation.subscriptionWage,
     taxes: record.compensation.taxes,
@@ -554,8 +552,9 @@ function isMissingPaymentModeColumn(error: unknown) {
 }
 
 function withoutPaymentModeColumn(values: ReturnType<typeof compensationValues>) {
-  const rest = { ...values };
-  delete rest.payment_mode;
+  const { payment_mode, ...rest } = values;
+
+  void payment_mode;
 
   return rest;
 }

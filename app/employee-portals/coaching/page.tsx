@@ -9,7 +9,8 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getMyCoachingReports } from "@/lib/coaching/service";
+import { resolveEmployeeCoachingPortalMode } from "@/lib/coaching/portal-access";
+import { getMyCoachingReports, getTeamCoachingReports } from "@/lib/coaching/service";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +29,22 @@ export default async function EmployeeCoachingReportsPage() {
     );
   }
 
+  const coachingMode = await resolveEmployeeCoachingPortalMode(access);
+  if (!coachingMode) {
+    return (
+      <EmployeePortalEmptyState
+        message="Coaching reports are available to Medical Reps for their own reports, and to DSM/NSM roles for team reports."
+        title="Coaching Access Unavailable"
+      />
+    );
+  }
+  const isMyReportsView = coachingMode === "self";
+
   let reports = null;
   try {
-    reports = await getMyCoachingReports(access);
+    reports = isMyReportsView
+      ? await getMyCoachingReports(access)
+      : await getTeamCoachingReports(access);
   } catch {
     reports = null;
   }
@@ -44,11 +58,16 @@ export default async function EmployeeCoachingReportsPage() {
     );
   }
 
+  const title = isMyReportsView ? "My Coaching Reports" : "Team Coaching Reports";
+  const description = isMyReportsView
+    ? "Review your submitted field coaching reports, scores, feedback, and acknowledgment status."
+    : "Review submitted field coaching reports, scores, and acknowledgment status for the Medical Reps in your scope.";
+
   return (
     <EmployeePortalPageShell
       badge="Field Excellence"
-      description="Review your submitted field coaching reports, scores, feedback, and acknowledgment status."
-      title="My Coaching Reports"
+      description={description}
+      title={title}
     >
       <EmployeePortalActionBar
         actions={
@@ -60,7 +79,7 @@ export default async function EmployeeCoachingReportsPage() {
           </>
         }
       />
-      <EmployeeCoachingList reports={reports} />
+      <EmployeeCoachingList mode={isMyReportsView ? "self" : "team"} reports={reports} />
     </EmployeePortalPageShell>
   );
 }

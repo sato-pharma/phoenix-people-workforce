@@ -95,7 +95,7 @@ const emptyForm: EmployeeFormState = {
   residenceAddress: "",
   residenceArea: "",
   residenceCity: "",
-  salaryPaymentMode: "one_part",
+  salaryPaymentMode: "two_parts",
   workEmail: "",
 };
 

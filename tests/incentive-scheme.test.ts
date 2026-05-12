@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import { calculateIncentive2026 } from "../src/lib/incentives/scheme-2026.ts";
+import { calculatePayrollParts } from "../src/lib/payroll/policy.ts";
 
 export function runIncentiveSchemeTests() {
   const result = calculateIncentive2026({
@@ -33,6 +34,17 @@ export function runIncentiveSchemeTests() {
   assert.equal(withAllowances.semesterTargetIncentive, 22400);
   assert.equal(withAllowances.payoutAmount, 22400);
 
+  const netSalaryWithAllowances = calculateIncentive2026({
+    achievementPercent: 100,
+    netSalary: 22550,
+    extraCostOfLiving: 2500,
+    fuelAllowance: 4050,
+  });
+
+  assert.equal(netSalaryWithAllowances.netSalary, 22550);
+  assert.equal(netSalaryWithAllowances.basicSalary, 11200);
+  assert.equal(netSalaryWithAllowances.semesterTargetIncentive, 22400);
+
   const fixedBasic = calculateIncentive2026({
     achievementPercent: 100,
     basicSalary: 11200,
@@ -63,4 +75,15 @@ export function runIncentiveSchemeTests() {
   assert.equal(b67.semesterTargetIncentive, 23100);
   assert.equal(b67.payoutPercentage, 85);
   assert.equal(b67.payoutAmount, 19635);
+
+  const twoPartSalary = calculatePayrollParts({
+    netSalary: 22550,
+    extraCostOfLiving: 2500,
+    fuelAllowance: 4050,
+  });
+
+  assert.equal(twoPartSalary.basicSalary, 11200);
+  assert.equal(twoPartSalary.firstPart, 11200);
+  assert.equal(twoPartSalary.secondPart, 11350);
+  assert.equal(twoPartSalary.totalPayable, 22550);
 }

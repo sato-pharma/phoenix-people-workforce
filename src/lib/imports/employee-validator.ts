@@ -483,7 +483,7 @@ export function validateEmployeeImportRows(
             rowNumber: record.rowNumber,
             field: "grossSalary",
             code: "gross_salary_formula_mismatch",
-            message: `Gross salary was normalized to ${moneyText(expectedGrossSalary)} based on base salary plus social insurance and income tax.`,
+            message: `Gross salary was normalized to ${moneyText(expectedGrossSalary)} from base salary plus social insurance and income tax.`,
           });
         }
 

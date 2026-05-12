@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ArrowUpRight, CircleDashed, Database, LockKeyhole, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, CircleDashed } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 type EmployeePortalPageShellProps = {
@@ -17,15 +17,16 @@ export function EmployeePortalPageShell({
   title,
 }: EmployeePortalPageShellProps) {
   return (
-    <div className="mx-auto w-full space-y-4">
+    <div className="mx-auto w-full space-y-5">
       <section
-        className="relative box-border w-full overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]"
+        className="relative box-border w-full overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.09)] ring-1 ring-slate-200/70"
         style={{ boxSizing: "border-box" }}
       >
-        <div className="absolute inset-0 bg-gradient-to-br from-white via-white to-slate-50/50" />
-        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600" />
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,#ffffff_0%,#ffffff_44%,#f8fafc_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.03)_1px,transparent_1px)] bg-[size:36px_36px] opacity-70 [mask-image:linear-gradient(120deg,rgba(0,0,0,0.95),transparent_72%)]" />
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
         <div className="relative box-border grid w-full min-w-0 gap-5 p-5 sm:p-6 lg:grid-cols-12 lg:p-8">
-          <div className="min-w-0 lg:col-span-8 xl:col-span-9">
+          <div className="min-w-0 lg:col-span-12">
             <p className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50/80 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-700 shadow-sm">
               <span className="h-1.5 w-1.5 rounded-full bg-orange-500 shadow-[0_0_0_4px_rgba(249,115,22,0.15)]" />
               {badge ?? "Employee Portal"}
@@ -33,34 +34,7 @@ export function EmployeePortalPageShell({
             <h1 className="mt-5 max-w-4xl text-3xl font-black leading-[1.02] tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">
               {title}
             </h1>
-            <p className="mt-4 max-w-2xl text-base font-medium leading-7 text-slate-600">{description}</p>
-          </div>
-          <div className="min-w-0 rounded-[20px] border border-slate-200 bg-white/60 p-5 shadow-sm backdrop-blur-sm lg:col-span-4 xl:col-span-3">
-            <div className="mb-5 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Operational Status</p>
-                <p className="mt-1.5 text-lg font-black tracking-tight text-slate-950">Live data</p>
-              </div>
-              <div className="relative mt-1 flex h-3 w-3">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-500 shadow-[0_0_0_5px_rgba(16,185,129,0.15)]" />
-              </div>
-            </div>
-            <div className="space-y-2.5">
-              {[
-                { icon: Database, label: "Metrics synced", tone: "text-emerald-600", bg: "bg-emerald-50/80 border-emerald-100" },
-                { icon: ShieldCheck, label: "Audit healthy", tone: "text-sky-600", bg: "bg-sky-50/80 border-sky-100" },
-                { icon: LockKeyhole, label: "Access protected", tone: "text-violet-600", bg: "bg-violet-50/80 border-violet-100" },
-              ].map((item) => (
-                <div
-                  className={`flex min-w-0 items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-700 shadow-sm transition-all hover:scale-[1.02] ${item.bg}`}
-                  key={item.label}
-                >
-                  <span className="min-w-0 truncate">{item.label}</span>
-                  <item.icon className={`h-3.5 w-3.5 ${item.tone}`} />
-                </div>
-              ))}
-            </div>
+            <p className="mt-4 max-w-2xl text-base font-semibold leading-7 text-slate-600">{description}</p>
           </div>
         </div>
       </section>
@@ -75,7 +49,7 @@ export function EmployeePortalActionBar({
   actions: ReactNode;
 }) {
   return (
-    <div className="mb-4 flex max-w-full flex-col items-stretch gap-2 overflow-hidden rounded-[18px] border border-slate-200/90 bg-white px-3 py-2.5 shadow-[0_12px_30px_rgba(15,23,42,0.055)] sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+    <div className="mb-4 flex max-w-full flex-col items-stretch gap-2 overflow-hidden rounded-[20px] border border-white/80 bg-white/90 px-3 py-2.5 shadow-[0_14px_34px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 backdrop-blur sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
       {actions}
     </div>
   );

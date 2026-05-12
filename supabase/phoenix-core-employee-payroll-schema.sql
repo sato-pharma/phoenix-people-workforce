@@ -95,7 +95,7 @@ create table if not exists public.employee_compensation (
   fuel_allowance numeric(20, 2) not null default 0,
   extra_cost_of_living numeric(20, 2) not null default 0,
   gross_salary numeric(20, 2) not null default 0,
-  payment_mode text not null default 'one_part',
+  payment_mode text not null default 'two_parts',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint employee_compensation_payment_mode_check

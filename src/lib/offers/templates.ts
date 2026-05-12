@@ -22,7 +22,7 @@ export type OfferTemplate = {
 
 export const offerTemplates: OfferTemplate[] = [
   {
-    // Adjusted Net = Gross - CoL - Fuel
+    // Base Salary = Monthly Package - CoL - Fuel
     // RSM: 45000 - 3500 - 12450 - 5000 = 24050. 70% of 24050 = 16835.
     basicSalary: 16835,
     costOfLivingAllowance: 3500,

@@ -3,8 +3,9 @@ export type PayrollPaymentMode = "one_part" | "two_parts";
 export const BASIC_SALARY_RATE = 0.7;
 
 export type PayrollPartsInput = {
-  // Use this for employee_compensation.net_salary; that field is the fixed base salary.
+  // Fixed basic salary used as-is for incentive calculations.
   basicSalary?: number | null;
+  // Base salary excludes fuel/cost of living and monthly payroll variables.
   baseSalary?: number | null;
   deductions?: number | null;
   employmentIncomeTax?: number | null;
@@ -12,7 +13,7 @@ export type PayrollPartsInput = {
   fuelAllowance?: number | null;
   grossSalary?: number | null;
   additions?: number | null;
-  // Use this for payroll rows where net salary already includes cost of living and fuel.
+  // Net Salary is fixed salary + cost of living + fuel, before monthly variables.
   netSalary?: number | null;
   paymentMode?: string | null;
   previousExpenses?: number | null;
@@ -60,7 +61,18 @@ export function normalizePayrollPaymentMode(
     return "two_parts";
   }
 
-  return "one_part";
+  if (
+    normalized === "one_part" ||
+    normalized === "one_parts" ||
+    normalized === "single" ||
+    normalized === "single_salary" ||
+    normalized === "1" ||
+    normalized === "1_part"
+  ) {
+    return "one_part";
+  }
+
+  return "two_parts";
 }
 
 export function payrollPaymentModeLabel(mode: PayrollPaymentMode) {
@@ -81,7 +93,7 @@ export function calculateBaseSalary(input: PayrollPartsInput) {
   const netSalary = amount(input.netSalary);
   const extraCostOfLiving = amount(input.extraCostOfLiving);
   const fuelAllowance = amount(input.fuelAllowance);
-  if (netSalary > 0 || extraCostOfLiving > 0 || fuelAllowance > 0) {
+  if (netSalary > 0) {
     return money(Math.max(0, netSalary - extraCostOfLiving - fuelAllowance));
   }
 

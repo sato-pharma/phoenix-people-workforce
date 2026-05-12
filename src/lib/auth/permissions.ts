@@ -51,6 +51,7 @@ export type PermissionResource =
   | "hr_calendar"
   | "geo_intelligence"
   | "outstation"
+  | "leave"
   | "admin"
   | "user_admin"
   | "permission_admin";
@@ -80,6 +81,7 @@ export const permissionResources: PermissionResource[] = [
   "payslips",
   "geo_intelligence",
   "outstation",
+  "leave",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -144,6 +146,7 @@ const defaultPermissionMatrix: PermissionMap = {
     geo_intelligence: allActions,
     hr_calendar: allActions,
     outstation: allActions,
+    leave: allActions,
     organogram: allActions,
     offers: allActions,
     payroll: allActions,
@@ -168,6 +171,7 @@ const defaultPermissionMatrix: PermissionMap = {
     expenses: ["read", "approve", "export"],
     geo_intelligence: ["read", "export"],
     outstation: ["read", "approve", "export", "update"],
+    leave: ["read", "approve", "export"],
     organogram: ["read", "export"],
     payroll: ["read", "export"],
     permission_admin: ["read"],
@@ -192,6 +196,7 @@ const defaultPermissionMatrix: PermissionMap = {
     geo_intelligence: allActions,
     hr_calendar: allActions,
     outstation: allActions,
+    leave: allActions,
     organogram: ["read", "export"],
     offers: allActions,
     payroll: allActions,
@@ -209,6 +214,7 @@ const defaultPermissionMatrix: PermissionMap = {
     expenses: allActions,
     geo_intelligence: ["read", "export"],
     outstation: ["read", "approve", "export", "update"],
+    leave: ["read", "approve", "export", "update"],
     payroll: allActions,
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -220,6 +226,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    leave: ["read", "create", "update"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -231,6 +238,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    leave: ["read", "create", "update"],
     payroll: ["read", "export"],
     sales: ["read", "export"],
     payslips: ["read", "export"],
@@ -241,6 +249,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
     outstation: ["read", "create", "approve", "export"],
+    leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
     organogram: ["read"],
     payroll: ["read", "export"],
@@ -256,6 +265,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
     outstation: ["read", "create", "approve", "export"],
+    leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
     organogram: ["read"],
     payroll: ["read", "export"],
@@ -269,6 +279,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
     outstation: ["read", "create", "approve", "export"],
+    leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
     probation: ["read", "export"],
     payroll: ["read", "export"],
@@ -284,6 +295,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    leave: ["read", "create", "update"],
     coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -295,6 +307,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    leave: ["read", "create", "update"],
     coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -306,6 +319,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    leave: allActions,
     coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -318,6 +332,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employees: ["read", "export"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    leave: ["read", "create", "approve", "export"],
     coaching: ["read", "create", "update"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -331,6 +346,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employees: ["read"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    leave: ["read", "create", "update"],
     offers: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -342,6 +358,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employees: ["read", "export"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
+    leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],

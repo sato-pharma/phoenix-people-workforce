@@ -13,6 +13,7 @@ export const emailNotificationTypes = [
   "birthday",
   "offer",
   "resignation",
+  "leave",
   "password_reset",
   "user_created",
   "general",
@@ -237,6 +238,25 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
       title: "{title}",
     },
     type: "resignation",
+  },
+  {
+    description: "Leave request approvals and results routed through managers and HR.",
+    enabled: true,
+    includeHrInbox: true,
+    label: "Leave Management",
+    recipientModes: ["manager_chain"],
+    recipientMode: "manager_chain",
+    targetLines: [],
+    targetTitles: [],
+    template: {
+      bodyText: "{summary}",
+      closingText: "Please review the leave workflow and complete the required action.",
+      greeting: "Dear Phoenix Team,",
+      previewText: "Leave workflow update from Phoenix Workforce.",
+      subject: "{subject}",
+      title: "{title}",
+    },
+    type: "leave",
   },
   {
     description: "Password reset links routed directly to the target account email.",
@@ -614,7 +634,8 @@ export async function resolveNotificationDelivery(input: NotificationEmailInput)
   );
   const policyRecipients = cleanEmailList(allPolicyRecipients.flat());
   const hrRecipients = policy.includeHrInbox ? recipientsFromEnv() : [];
-  const recipients = cleanEmailList([...policyRecipients, ...hrRecipients]);
+  const explicitRecipients = cleanEmailList(input.recipients ?? []);
+  const recipients = cleanEmailList([...policyRecipients, ...hrRecipients, ...explicitRecipients]);
 
   if (recipients.length === 0) {
     return { reason: `Email skipped: ${policy.label} routing resolved no recipient emails.`, skipped: true };
@@ -798,6 +819,22 @@ export function buildEmailNotificationPreview(type: EmailNotificationType, polic
       summary: "Resignation workflow for Mariam Nabil is now under review.",
       title: "Resignation Workflow Updated",
       tone: "danger",
+    },
+    leave: {
+      ctaHref: "/admin/leave",
+      ctaLabel: "Open leave requests",
+      employeeHrId: "B-001",
+      metrics: [
+        { label: "Employee", value: "Mariam Nabil (B-001)" },
+        { label: "Leave Type", value: "Annual Leave" },
+        { label: "Duration", value: "5 days" },
+        { label: "Status", value: "Pending manager approval" },
+      ],
+      notificationType: "leave",
+      subject: "Leave approval needed - Mariam Nabil",
+      summary: "Mariam Nabil submitted an Annual Leave request for 5 days.",
+      title: "Leave Approval Needed",
+      tone: "warning",
     },
     password_reset: {
       candidateEmail: "employee@example.com",
