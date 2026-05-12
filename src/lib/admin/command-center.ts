@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { getDataHealthStats } from "@/lib/admin/service";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getPayrollDashboard } from "@/lib/payroll/service";
 import { getSalesDashboard } from "@/lib/sales/service";
@@ -78,69 +79,42 @@ function safeNumber(value: unknown): number {
 // ---------------------------------------------------------------------------
 
 async function fetchDataHealth(): Promise<{ health: DataHealthMetrics; errors: string[] }> {
-  const supabase = getSupabaseAdmin();
   const errors: string[] = [];
-
-  let employeeHealthRate = 0;
-  let healthyEmployees = 0;
-  let totalEmployees = 0;
-  let missingManager = 0;
-  let missingJobTitle = 0;
-
   try {
-    const { data: empHealth, error: empErr } = await supabase
-      .from("employee_linkage_health_summary")
-      .select("health_rate,healthy_employees,total_employees,missing_manager,missing_job_title")
-      .maybeSingle();
+    const stats = await getDataHealthStats();
+    const totalSalesRows = Object.values(stats.salesClassification).reduce((sum, item) => sum + item.records, 0);
+    const salesLinkageRate =
+      totalSalesRows > 0
+        ? ((totalSalesRows - stats.summary.unresolvedSalesExceptions) / totalSalesRows) * 100
+        : 100;
 
-    if (empErr) throw empErr;
-    if (empHealth) {
-      employeeHealthRate = safeNumber(empHealth.health_rate) * 100;
-      healthyEmployees = safeNumber(empHealth.healthy_employees);
-      totalEmployees = safeNumber(empHealth.total_employees);
-      missingManager = safeNumber(empHealth.missing_manager);
-      missingJobTitle = safeNumber(empHealth.missing_job_title);
-    }
+    return {
+      health: {
+        employeeHealthRate: stats.summary.healthRate,
+        healthyEmployees: stats.summary.healthyEmployees,
+        missingJobTitle: stats.employeeIssues.filter((issue) => issue.health_status === "missing_job_title").length,
+        missingManager: stats.employeeIssues.filter((issue) => issue.health_status === "missing_manager").length,
+        salesLinkageBatch: null,
+        salesLinkageRate,
+        totalEmployees: stats.summary.activeEmployees,
+      },
+      errors,
+    };
   } catch {
-    errors.push("Employee linkage health data unavailable.");
+    errors.push("Classified data health data unavailable.");
+    return {
+      health: {
+        employeeHealthRate: 0,
+        healthyEmployees: 0,
+        missingJobTitle: 0,
+        missingManager: 0,
+        salesLinkageBatch: null,
+        salesLinkageRate: 0,
+        totalEmployees: 0,
+      },
+      errors,
+    };
   }
-
-  let salesLinkageRate = 0;
-  let salesLinkageBatch: string | null = null;
-
-  try {
-    const { data: salesHealth, error: salesErr } = await supabase
-      .from("sales_employee_linkage_health_summary")
-      .select("linkage_health_rate,batch_id,period,line")
-      .order("batch_id", { ascending: false })
-      .limit(5);
-
-    if (salesErr) throw salesErr;
-    if (salesHealth && salesHealth.length > 0) {
-      const latestBatchId = salesHealth[0].batch_id;
-      const latestLines = salesHealth.filter((r) => r.batch_id === latestBatchId);
-      salesLinkageRate =
-        (latestLines.reduce((s, r) => s + safeNumber(r.linkage_health_rate), 0) /
-          latestLines.length) *
-        100;
-      salesLinkageBatch = latestLines[0]?.period ?? null;
-    }
-  } catch {
-    errors.push("Sales linkage health data unavailable.");
-  }
-
-  return {
-    health: {
-      employeeHealthRate,
-      healthyEmployees,
-      totalEmployees,
-      missingManager,
-      missingJobTitle,
-      salesLinkageRate,
-      salesLinkageBatch,
-    },
-    errors,
-  };
 }
 
 async function fetchPayrollEligibleCount(): Promise<{ count: number; error: string | null }> {

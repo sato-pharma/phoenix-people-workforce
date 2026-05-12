@@ -310,7 +310,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
             <h3 className="text-sm font-bold text-slate-900">Employee Linkage Audit</h3>
           </div>
           <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
-            Source: employee_linkage_health
+            Source: classified employee nodes
           </span>
         </div>
         <div className="overflow-x-auto">

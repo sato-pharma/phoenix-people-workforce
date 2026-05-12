@@ -6,6 +6,13 @@ import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSalesScope, normalizeHrId, normalizeLineName, resolveEmployeeIdentityId, type AccessContext, type BusinessScope } from "@/lib/auth/permissions";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
 import {
+  buildSalesOwnershipContext,
+  classifySalesOwnership,
+  salesOwnershipLabel,
+  type SalesOwnershipContext,
+  type SalesOwnershipResult,
+} from "@/lib/workforce-classification";
+import {
   type SalesBatch,
   type SalesBatchDetail,
   type SalesBatchIssue,
@@ -20,11 +27,17 @@ import {
 } from "@/lib/sales/types";
 
 type ScopedRecord = SalesRecordInput & { batchId: string; period: string };
+type ClassifiedScopedRecord = ScopedRecord & {
+  ownership: SalesOwnershipResult;
+  ownershipClassification: SalesOwnershipResult["classification"];
+  derivedTeamKey: string | null;
+};
 type DbRow = Record<string, unknown>;
 type SalesAccessFilter = {
   all: boolean;
   allowedHrIds: Set<string>;
   allowedLine?: string;
+  includeManagerOwnedHrId?: string;
 };
 
 function toSafeArray<T = unknown>(value: readonly T[] | null | undefined): T[] {
@@ -126,11 +139,19 @@ async function resolveSalesAccessFilter(accessContext?: AccessContext | null): P
 
   const managerMap = buildManagerMap(directory);
   if (salesScope === "TEAM") {
-    return { all: false, allowedHrIds: new Set(managerMap.get(currentHrId) ?? []) };
+    return {
+      all: false,
+      allowedHrIds: new Set(managerMap.get(currentHrId) ?? []),
+      includeManagerOwnedHrId: currentHrId,
+    };
   }
 
   if (salesScope === "HIERARCHY") {
-    return { all: false, allowedHrIds: collectHierarchy(managerMap, currentHrId) };
+    return {
+      all: false,
+      allowedHrIds: collectHierarchy(managerMap, currentHrId),
+      includeManagerOwnedHrId: currentHrId,
+    };
   }
 
   if (salesScope === "LINE" && viewer?.lineName) {
@@ -175,6 +196,7 @@ async function filterSalesRecordsForAccess(
     // 3. Check if the record is managed by an allowed manager (important for vacant areas)
     const managerHrId = normalizeHrId(record.managerHrId);
     if (managerHrId && accessFilter.allowedHrIds.has(managerHrId)) return true;
+    if (managerHrId && accessFilter.includeManagerOwnedHrId === managerHrId) return true;
 
     return false;
   });
@@ -255,8 +277,70 @@ function aggregate<T>(items: T[], keyBuilder: (item: T) => string) {
   return map;
 }
 
-function countLinkedEmployees(records: ScopedRecord[]) {
-  return new Set(records.map((record) => record.employeeHrId).filter(Boolean)).size;
+function countPersonalSalesEmployees(records: ClassifiedScopedRecord[]) {
+  return new Set(
+    records
+      .filter((record) => record.ownership.include_in_employee_total)
+      .map((record) => record.ownership.owner_employee_hr_id)
+      .filter(Boolean),
+  ).size;
+}
+
+function buildSalesOwnershipContextFromDirectory(
+  directory: Awaited<ReturnType<typeof getEmployeeDirectory>>,
+): SalesOwnershipContext {
+  const lineIdByName = new Map<string, number>();
+  const areaIdByName = new Map<string, number>();
+  const lineIdByAreaId = new Map<number, number>();
+  const normalizeKey = (value: unknown) => String(value ?? "").trim().toLowerCase();
+
+  directory.lookups.lines.forEach((line) => {
+    const lineId = Number(line.value);
+    if (line.label && Number.isFinite(lineId)) lineIdByName.set(normalizeKey(line.label), lineId);
+  });
+
+  directory.lookups.areas.forEach((area) => {
+    const areaId = Number(area.value);
+    if (area.label && Number.isFinite(areaId)) areaIdByName.set(normalizeKey(area.label), areaId);
+    if (Number.isFinite(areaId) && typeof area.lineId === "number") lineIdByAreaId.set(areaId, area.lineId);
+  });
+
+  directory.employees.forEach((employee) => {
+    if (employee.lineName && typeof employee.lineId === "number") lineIdByName.set(normalizeKey(employee.lineName), employee.lineId);
+    if (employee.areaName && typeof employee.areaId === "number") areaIdByName.set(normalizeKey(employee.areaName), employee.areaId);
+    if (typeof employee.areaId === "number" && typeof employee.lineId === "number") lineIdByAreaId.set(employee.areaId, employee.lineId);
+  });
+
+  return buildSalesOwnershipContext({
+    areaIdByName,
+    employees: directory.employees.map((employee) => ({
+      areaId: employee.areaId,
+      areaName: employee.areaName,
+      crmId: employee.crmId,
+      crmUsername: employee.crmUsername,
+      employmentStatus: employee.employmentStatus,
+      fullName: employee.fullName,
+      hrId: employee.hrId,
+      jobTitle: employee.jobTitle,
+      lineId: employee.lineId,
+      lineName: employee.lineName,
+      managerHrId: employee.managerHrId,
+      positionTitle: employee.positionTitle,
+      workEmail: employee.workEmail,
+    })),
+    lineIdByAreaId,
+    lineIdByName,
+    vacancies: directory.lookups.medicalRepVacancies.map((vacancy) => ({
+      areaId: vacancy.areaId,
+      areaName: vacancy.areaName,
+      lineId: vacancy.lineId,
+      lineName: vacancy.lineName,
+      managerHrId: vacancy.managerHrId,
+      status: "open",
+      vacancyCode: vacancy.vacancyCode,
+      vacancyId: vacancy.vacancyId,
+    })),
+  });
 }
 
 function dmName(record: ScopedRecord) {
@@ -777,23 +861,36 @@ export async function getSalesDashboard(
     return true;
   });
 
-  const totalSales = sum(filteredRecords, (record) => record.salesValue);
-  const totalTarget = sumTargetValues(filteredRecords);
-  const unitsSold = sum(filteredRecords, (record) => record.salesUnits);
-  const periodGroups = aggregate(filteredRecords, (record) => record.period);
+  const directory = await getEmployeeDirectory();
+  const ownershipContext = buildSalesOwnershipContextFromDirectory(directory);
+  const classifiedRecords: ClassifiedScopedRecord[] = filteredRecords.map((record) => {
+    const ownership = classifySalesOwnership(record, ownershipContext);
+    return {
+      ...record,
+      derivedTeamKey: ownership.derived_team_key,
+      ownership,
+      ownershipClassification: ownership.classification,
+    };
+  });
+  const companyRecords = classifiedRecords.filter((record) => record.ownership.include_in_company_total);
+
+  const totalSales = sum(companyRecords, (record) => record.salesValue);
+  const totalTarget = sumTargetValues(companyRecords);
+  const unitsSold = sum(companyRecords, (record) => record.salesUnits);
+  const periodGroups = aggregate(companyRecords, (record) => record.period);
   const sortedPeriods = [...periodGroups.keys()].sort();
   const trend = sortedPeriods.map((period) => {
     const items = periodGroups.get(period) ?? [];
     const sales = sum(items, (item) => item.salesValue);
     const target = sumTargetValues(items);
-    return { period, sales, target, achievementRate: performanceMetric(sales, target), linkedEmployees: countLinkedEmployees(items) };
+    return { period, sales, target, achievementRate: performanceMetric(sales, target), linkedEmployees: countPersonalSalesEmployees(items) };
   });
 
-  const channelMix = [...aggregate(filteredRecords, (record) => record.salesType).entries()]
+  const channelMix = [...aggregate(companyRecords, (record) => record.salesType).entries()]
     .map(([name, items]) => ({ name, value: sum(items, (item) => item.salesValue) }))
     .sort((left, right) => right.value - left.value);
 
-  const familyGroupsMap = aggregate(filteredRecords, (record) => record.family);
+  const familyGroupsMap = aggregate(companyRecords, (record) => record.family);
   const familyMatrix = [...familyGroupsMap.entries()].map(([name, items]) => {
     const sales = sum(items, (item) => item.salesValue);
     const target = sumTargetValues(items);
@@ -803,7 +900,7 @@ export async function getSalesDashboard(
     return { name, sales, target, achievementRate, units: sum(items, (item) => item.salesUnits), status };
   });
 
-  const productGroupsMap = aggregate(filteredRecords, (record) => record.product);
+  const productGroupsMap = aggregate(companyRecords, (record) => record.product);
   const productPerformance = [...productGroupsMap.entries()]
     .map(([product, items]) => {
       const sales = sum(items, (item) => item.salesValue);
@@ -822,7 +919,7 @@ export async function getSalesDashboard(
     totalSales,
   );
 
-  const territoryPerformance = [...aggregate(filteredRecords, (record) => record.territory).entries()]
+  const territoryPerformance = [...aggregate(companyRecords, (record) => record.territory).entries()]
     .map(([name, items]) => {
       const sales = sum(items, (item) => item.salesValue);
       const target = sumTargetValues(items);
@@ -830,15 +927,14 @@ export async function getSalesDashboard(
     })
     .sort((left, right) => right.sales - left.sales);
 
-  const linePerformance = [...aggregate(filteredRecords, (record) => record.line).entries()]
+  const linePerformance = [...aggregate(companyRecords.filter((record) => record.ownership.include_in_line_total), (record) => record.line).entries()]
     .map(([line, items]) => {
       const sales = sum(items, (item) => item.salesValue);
       const target = sumTargetValues(items);
-      return { line, sales, target, achievementRate: performanceMetric(sales, target), linkedEmployees: countLinkedEmployees(items) };
+      return { line, sales, target, achievementRate: performanceMetric(sales, target), linkedEmployees: countPersonalSalesEmployees(items) };
     })
     .sort((left, right) => right.sales - left.sales);
 
-  const directory = await getEmployeeDirectory();
   const employeeByHrId = new Map<string, { hrId: string; jobTitle: string | null; positionTitle: string | null }>();
   directory.employees.forEach((employee) => {
     const hrId = normalizeHrId(employee.hrId);
@@ -849,14 +945,18 @@ export async function getSalesDashboard(
       positionTitle: employee.positionTitle,
     });
   });
-  const dsmAttributableRecords = filteredRecords.filter((record) => shouldAttributeRecordToDsm(record, employeeByHrId));
+  const dsmAttributableRecords = companyRecords.filter((record) =>
+    record.ownership.include_in_manager_total && shouldAttributeRecordToDsm(record, employeeByHrId)
+  );
 
   const peopleLabels = await getSalesPeopleLabels([
-    ...filteredRecords.map((record) => record.managerHrId),
-    ...filteredRecords.map((record) => record.employeeHrId),
+    ...companyRecords.map((record) => record.ownership.owner_manager_hr_id ?? record.managerHrId),
+    ...companyRecords.map((record) => record.ownership.owner_employee_hr_id ?? record.employeeHrId),
   ]);
 
-  const managerGroupsMap = aggregate(dsmAttributableRecords, (record) => personLabel(peopleLabels, record.managerHrId, managerKey(record)));
+  const managerGroupsMap = aggregate(dsmAttributableRecords, (record) =>
+    personLabel(peopleLabels, record.ownership.owner_manager_hr_id ?? record.managerHrId, managerKey(record))
+  );
   const managerPerformance = [...managerGroupsMap.entries()]
     .filter(([name]) => name !== "Unassigned")
     .map(([manager, items]) => {
@@ -880,19 +980,25 @@ export async function getSalesDashboard(
     })
     .sort((left, right) => right.sales - left.sales);
 
-  const transactions = filteredRecords
+  const transactions = companyRecords
     .map((record) => {
       const hasDsmAttribution = shouldAttributeRecordToDsm(record, employeeByHrId);
+      const ownerEmployeeHrId = record.ownership.owner_employee_hr_id;
+      const ownerManagerHrId = record.ownership.owner_manager_hr_id;
       return {
-        employeeHrId: record.employeeHrId ?? null,
-        employeeName: record.employeeHrId
-          ? personLabel(peopleLabels, record.employeeHrId, medicalRepKey(record))
+        derivedTeamKey: record.derivedTeamKey,
+        employeeHrId: ownerEmployeeHrId,
+        employeeName: ownerEmployeeHrId
+          ? personLabel(peopleLabels, ownerEmployeeHrId, medicalRepKey(record))
           : null,
         employeeSourceName: dmName(record),
         linkStatus: record.linkStatus,
-        managerHrId: hasDsmAttribution ? record.managerHrId ?? null : null,
-        managerName: hasDsmAttribution ? personLabel(peopleLabels, record.managerHrId, managerKey(record)) : null,
+        managerHrId: hasDsmAttribution ? ownerManagerHrId ?? null : null,
+        managerName: hasDsmAttribution ? personLabel(peopleLabels, ownerManagerHrId, managerKey(record)) : null,
         line: record.line,
+        ownershipClassification: record.ownershipClassification,
+        ownershipLabel: salesOwnershipLabel(record.ownershipClassification),
+        includeInVacancyDashboard: record.ownership.include_in_vacancy_dashboard,
         territory: record.territory,
         salesType: record.salesType,
         family: record.family,
@@ -907,9 +1013,9 @@ export async function getSalesDashboard(
     });
 
   const linkageStats = {
-    linked: filteredRecords.filter((record) => record.linkStatus === "linked").length,
-    unlinked: filteredRecords.filter((record) => record.linkStatus === "unlinked").length,
-    ambiguous: filteredRecords.filter((record) => record.linkStatus === "ambiguous").length,
+    linked: companyRecords.filter((record) => record.linkStatus === "linked").length,
+    unlinked: companyRecords.filter((record) => record.linkStatus === "unlinked").length,
+    ambiguous: companyRecords.filter((record) => record.linkStatus === "ambiguous").length,
   };
 
   const openReviewBatches = batches.filter(
@@ -917,13 +1023,32 @@ export async function getSalesDashboard(
   ).length;
 
   const topManagerEntry = managerPerformance[0];
-  const allProducts = new Set(filteredRecords.map((record) => record.product));
-  const factoryPrices = filteredRecords.filter((record) => record.factoryPrice > 0).map((record) => record.factoryPrice);
+  const allProducts = new Set(companyRecords.map((record) => record.product));
+  const factoryPrices = companyRecords.filter((record) => record.factoryPrice > 0).map((record) => record.factoryPrice);
   const avgFactoryPrice = factoryPrices.length > 0 ? factoryPrices.reduce((sum, price) => sum + price, 0) / factoryPrices.length : 0;
-  const dashboardLinkage = await summarizeSalesLinkage(filteredRecords);
+  const dashboardLinkage = await summarizeSalesLinkage(companyRecords);
   const linkedCount = dashboardLinkage.dsmLinked;
   const linkageTotal = dashboardLinkage.dsmTotal;
   const qualityRate = linkageTotal > 0 ? linkedCount / linkageTotal : 1;
+  const ownershipBreakdown = Object.fromEntries(
+    [
+      "assigned_employee_sales",
+      "vacant_territory_sales",
+      "non_assignable_territory_sales",
+      "line_level_sales",
+      "others_unassigned_sales",
+      "unresolved_sales_exception",
+    ].map((classification) => [
+      classification,
+      {
+        records: classifiedRecords.filter((record) => record.ownershipClassification === classification).length,
+        salesValue: sum(
+          classifiedRecords.filter((record) => record.ownershipClassification === classification),
+          (record) => record.salesValue,
+        ),
+      },
+    ]),
+  );
 
   const recentBatches = mapHistoryRows(batches, records).slice(0, 5);
 
@@ -932,11 +1057,11 @@ export async function getSalesDashboard(
       totalApprovedSales: totalSales,
       totalApprovedTarget: totalTarget,
       achievementRate: performanceMetric(totalSales, totalTarget),
-      approvedRecords: filteredRecords.length,
+      approvedRecords: companyRecords.length,
       dsmLinkedRecords: linkedCount,
       dsmTotalRecords: linkageTotal,
       linkedRecords: linkedCount,
-      linkedEmployees: countLinkedEmployees(filteredRecords),
+      linkedEmployees: countPersonalSalesEmployees(companyRecords),
       openReviewBatches,
       activeTargetRecords: 0,
       unitsSold,
@@ -944,6 +1069,7 @@ export async function getSalesDashboard(
       activeProducts: allProducts.size,
       topManager: topManagerEntry?.manager ?? "-",
       dataQualityRate: qualityRate,
+      salesOwnership: ownershipBreakdown,
     },
     filters: {
       lines: uniq(records.map((record) => record.line)),

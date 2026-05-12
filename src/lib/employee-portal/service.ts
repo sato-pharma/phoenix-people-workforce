@@ -19,6 +19,7 @@ import {
   salesRecordMatchesPortalSalesScope,
 } from "@/lib/employee-portal/sales-scope";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
 import {
   calculateBaseSalary,
@@ -35,6 +36,7 @@ import type {
 } from "@/lib/payroll/types";
 import type { SalesDashboardData } from "@/lib/sales/types";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
+import { canonicalSalesLine } from "@/lib/sales/others";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -169,7 +171,7 @@ type PortalSalesFilters = {
   year?: string | number | null;
   territory?: string;
   sales_type?: string;
-  line?: string | null;
+  line?: string | string[] | null;
 };
 
 type PortalPayrollRecord = SalaryRecord & {
@@ -251,7 +253,38 @@ function resolvePortalSalesLineFilter(
   currentUser: Pick<PortalCurrentUser, "line">,
   employee?: Pick<EmployeeDirectoryRow, "lineName"> | null,
 ) {
-  return normalizeFilter(employee?.lineName) ?? normalizeFilter(currentUser.line) ?? null;
+  const line = normalizeFilter(employee?.lineName) ?? normalizeFilter(currentUser.line);
+  return line ? resolvePortalSalesFilterLineValues(line) : [];
+}
+
+function resolvePortalSalesFilterLineValues(value: string | string[] | null | undefined) {
+  const rawValues = Array.isArray(value) ? value : value == null ? [] : [value];
+  const lineCandidates = new Set<string>();
+
+  rawValues.forEach((entry) => {
+    const currentLine = normalizeFilter(entry);
+    if (!currentLine) return;
+
+    lineCandidates.add(currentLine);
+
+    const normalized = canonicalSalesLine(currentLine);
+    if (normalized === "cns") {
+      lineCandidates.add("O-3");
+      lineCandidates.add("cns");
+    }
+
+    if (normalized === "o 3") {
+      lineCandidates.add("CNS");
+      lineCandidates.add("cns");
+    }
+
+    if (normalized === "o 2" || normalized === "anti infective") {
+      lineCandidates.add("O-2");
+      lineCandidates.add("anti infective");
+    }
+  });
+
+  return Array.from(lineCandidates);
 }
 
 function isPortalFilterText(value: unknown): value is string {
@@ -573,6 +606,7 @@ function findDirectoryEmployeeByHrId(
 }
 
 type SalesFilterQuery = {
+  or: (filter: string) => SalesFilterQuery;
   eq: (column: string, value: number | string) => SalesFilterQuery;
   ilike: (column: string, pattern: string) => SalesFilterQuery;
   in: (column: string, values: string[]) => SalesFilterQuery;
@@ -587,7 +621,16 @@ function applySalesFiltersToQuery(query: SalesFilterQuery, filters: PortalSalesF
   if (filters.salesType) nextQuery = nextQuery.eq("sales_type", filters.salesType);
   if (filters.sales_type) nextQuery = nextQuery.eq("sales_type", filters.sales_type);
   if (filters.territory) nextQuery = nextQuery.eq("territory", filters.territory);
-  if (filters.line) nextQuery = nextQuery.ilike("line", filters.line);
+  if (filters.line) {
+    const lineFilters = Array.from(
+      new Set(Array.isArray(filters.line) ? filters.line : [filters.line]),
+    ).filter(Boolean);
+    if (lineFilters.length === 1) {
+      nextQuery = nextQuery.ilike("line", lineFilters[0] as string);
+    } else if (lineFilters.length > 1) {
+      nextQuery = nextQuery.or(lineFilters.map((line) => `line.ilike.${line}`).join(","));
+    }
+  }
   if (filters.products && filters.products.length > 0) nextQuery = nextQuery.in("product", filters.products);
   if (filters.period) {
     const [yearText, monthText] = String(filters.period).split("-");
@@ -825,6 +868,7 @@ async function fetchPortalNotifications(hrId: string): Promise<PortalNotificatio
 
 function resolveSalesFilterValues(filters: PortalSalesFilters) {
   const products = toSafeArray(filters.products).map((value) => value.trim()).filter(Boolean);
+  const lineValues = resolvePortalSalesFilterLineValues(filters.line);
   return {
     family: normalizeFilter(filters.family) ?? undefined,
     month: parseSalesFilterMonth(filters.month),
@@ -835,7 +879,7 @@ function resolveSalesFilterValues(filters: PortalSalesFilters) {
     sales_type: normalizeSalesFilterToken(filters.sales_type),
     territory: normalizeFilter(filters.territory) ?? undefined,
     year: normalizeFilter(filters.year) ?? undefined,
-    line: normalizeFilter(filters.line) ?? undefined,
+    line: lineValues.length > 0 ? lineValues : undefined,
   };
 }
 
@@ -1371,12 +1415,12 @@ async function getScopedEmployeePortalSalesDashboard({
   salesScope,
   targetSalesHrIds,
 }: {
-  line: string | null;
+  line: string[];
   salesScope: BusinessScope;
   targetSalesHrIds: string[];
 }): Promise<SalesDashboardData> {
   if (salesScope === "LINE") {
-    const byLine = line
+    const byLine = line.length > 0
       ? await getEmployeePortalSalesDashboard(null, { line })
       : null;
     if (byLine && salesDashboardHasData(byLine)) return byLine;
@@ -2140,12 +2184,7 @@ function serviceDurationText(days: number) {
 }
 
 function isActiveDirectoryEmployee(employee: Pick<EmployeeDirectoryRow, "employmentStatus">) {
-  const normalized = String(employee.employmentStatus ?? "active").trim().toLowerCase();
-  if (!normalized) return true;
-
-  return !["inactive", "resigned", "terminated", "left", "suspended", "vacant"].some((token) =>
-    normalized.includes(token)
-  );
+  return classifyEmployeeNode(employee).eligible_for_headcount;
 }
 
 function isMedicalRepDirectoryEmployee(

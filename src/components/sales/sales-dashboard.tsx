@@ -1060,6 +1060,15 @@ function SalesDashboardContent({
   const underperformingTerritories = view.territoryRows.filter((row: AnyRow) => valueAsNumber(row.achievementRate) < 0.8).length;
   const topRep = repRankingRows.length > 0 ? repRankingRows[0] : null;
   const growthTrend = salesDelta >= 0 ? "positive" : "negative";
+  const ownershipSummary = (summary.salesOwnership ?? {}) as Record<string, { records?: number; salesValue?: number }>;
+  const nonAssignableSales = ownershipSummary.non_assignable_territory_sales ?? { records: 0, salesValue: 0 };
+  const vacantTerritorySales = ownershipSummary.vacant_territory_sales ?? { records: 0, salesValue: 0 };
+  const lineLevelSales = ownershipSummary.line_level_sales ?? { records: 0, salesValue: 0 };
+  const ownershipBadges = [
+    nonAssignableSales.records ? `Non-Assignable Territory: ${formatNumber(nonAssignableSales.records)} / ${shortCurrency(nonAssignableSales.salesValue)}` : "",
+    vacantTerritorySales.records ? `Vacant Territory: ${formatNumber(vacantTerritorySales.records)} / ${shortCurrency(vacantTerritorySales.salesValue)}` : "",
+    lineLevelSales.records ? `Line-Level: ${formatNumber(lineLevelSales.records)} / ${shortCurrency(lineLevelSales.salesValue)}` : "",
+  ].filter(Boolean);
 
   return (
     <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
@@ -1340,6 +1349,14 @@ function SalesDashboardContent({
           trend={summary.dataQualityRate >= 0.9 ? "up" : "neutral"}
         />
       </div>
+
+      {ownershipBadges.length > 0 && (
+        <div className="flex flex-wrap gap-2 rounded-2xl border border-[#D8E0EA] bg-white/90 px-4 py-3 shadow-sm">
+          {ownershipBadges.map((label) => (
+            <Badge key={label} variant="neutral">{label}</Badge>
+          ))}
+        </div>
+      )}
 
       {/* Charts - Featured Section */}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.85fr)_minmax(320px,0.7fr)]">
