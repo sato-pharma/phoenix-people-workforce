@@ -24,6 +24,11 @@ export function runLeaveMigrationTests() {
   assert.match(source, /annual_days_disability[\s\S]*default 45/);
   assert.match(source, /Opening Balance \+ Accrual|opening_balance/);
   assert.match(source, /leave_transactions_monthly_accrual_uidx/);
+  assert.match(source, /leave_transactions_request_type_uidx/);
+  assert.match(source, /transaction_type in \('pending', 'pending_reversal', 'consumed', 'consumed_reversal'\)/);
+  assert.match(source, /grant select on public\.leave_types, public\.leave_policies, public\.employee_leave_balances, public\.leave_requests, public\.leave_transactions, public\.leave_approvals, public\.public_holidays to authenticated/);
+  assert.doesNotMatch(source, /grant select, insert, update on public\.employee_leave_balances/);
+  assert.match(source, /if to_regclass\('public\.email_notification_policies'\) is not null then/);
   assert.match(source, /pending_manager/);
   assert.match(source, /pending_hr/);
   assert.match(source, /hr_approved/);

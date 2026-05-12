@@ -18,6 +18,8 @@ import { runEmployeeDisplayNameTests } from "./employee-display-name.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
 import { runLeaveCalculationTests } from "./leave-calculations.test.ts";
 import { runLeaveMigrationTests } from "./leave-migration.test.ts";
+import { runLeaveRolloutTests } from "./leave-rollout.test.ts";
+import { runLeaveServiceSafetyTests } from "./leave-service-safety.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -47,5 +49,7 @@ await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);
 await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("leave calculations", runLeaveCalculationTests);
 await runTest("leave migration", runLeaveMigrationTests);
+await runTest("leave staging rollout", runLeaveRolloutTests);
+await runTest("leave service safety", runLeaveServiceSafetyTests);
 await runTest("auth session", runAuthSessionTests);
 await runTest("employee display name", runEmployeeDisplayNameTests);
