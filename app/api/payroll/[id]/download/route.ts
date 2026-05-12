@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import type { SalaryRecord } from "@/lib/payroll/types";
@@ -17,7 +18,7 @@ const headers = [
   "Line",
   "Area",
   "Hire Date",
-  "Net Salary",
+  "Gross Salary",
   "Expenses (Prev Month)",
   "Incentive",
   "Overtime",
@@ -86,6 +87,7 @@ export async function GET(
 ) {
   try {
     const access = await resolveAccessContext(_request);
+    await assertPermission(access, "payroll", "export");
     const { id } = await params;
     const exportData = await getSalaryBatchExport(id, access);
 

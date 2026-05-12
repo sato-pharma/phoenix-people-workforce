@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { isPayrollConflictError } from "@/lib/payroll/errors";
 import { runPayrollWorkflow } from "@/lib/payroll/service";
 import type { PayrollWorkflowAction } from "@/lib/payroll/types";
 
@@ -49,6 +50,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const message = error instanceof Error ? error.message : "Workflow action failed.";
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: message }, { status: 403 });
+    }
+    if (isPayrollConflictError(error)) {
+      return NextResponse.json({ success: false, error: message }, { status: 409 });
     }
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }

@@ -47,7 +47,10 @@ export async function POST(request: Request) {
     }
 
     const salarySources = await getPayrollSalarySourcesByHrId();
-    const validation = await validateSalaryWorkbook(file, { salarySources });
+    const validation = await validateSalaryWorkbook(file, {
+      expectedPeriod: { month, year },
+      salarySources,
+    });
 
     if (
       validation.failedRows > 0 ||

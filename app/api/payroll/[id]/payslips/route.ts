@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
 import { isDevelopment } from "@/lib/env";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -496,6 +497,7 @@ export async function GET(
   let batchId = "";
   try {
     const access = await resolveAccessContext(request);
+    await assertPermission(access, "payslips", "read");
     const { id } = await params;
     batchId = id;
 

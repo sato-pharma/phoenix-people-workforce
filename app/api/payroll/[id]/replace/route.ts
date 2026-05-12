@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { isPayrollConflictError } from "@/lib/payroll/errors";
 import { validateSalaryWorkbook } from "@/lib/payroll/salary-import";
 import { getPayrollSalarySourcesByHrId } from "@/lib/payroll/salary-source";
-import { isPayrollSchemaMissing, replaceSalaryBatch } from "@/lib/payroll/service";
+import { getSalaryBatchById, isPayrollSchemaMissing, replaceSalaryBatch } from "@/lib/payroll/service";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
@@ -43,8 +44,19 @@ export async function POST(
       );
     }
 
+    const existingBatch = await getSalaryBatchById(id);
+    if (!existingBatch) {
+      return NextResponse.json(
+        { error: "not_found", message: "Payroll upload not found." },
+        { status: 404 },
+      );
+    }
+
     const salarySources = await getPayrollSalarySourcesByHrId();
-    const validation = await validateSalaryWorkbook(file, { salarySources });
+    const validation = await validateSalaryWorkbook(file, {
+      expectedPeriod: { month: existingBatch.month, year: existingBatch.year },
+      salarySources,
+    });
 
     if (
       validation.failedRows > 0 ||
@@ -73,6 +85,9 @@ export async function POST(
     const message = error instanceof Error ? error.message : "Payroll replace failed.";
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
+    }
+    if (isPayrollConflictError(error)) {
+      return NextResponse.json({ error: "payroll_replace_conflict", message }, { status: 409 });
     }
     const schemaMissing = isPayrollSchemaMissing(error);
 
