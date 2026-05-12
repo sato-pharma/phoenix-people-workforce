@@ -68,7 +68,6 @@ export async function getPhoenixAdminStats(): Promise<PhoenixAdminStats> {
     salesRecords,
     expenses,
     salaryFlags,
-    dataHealth,
     vacancies,
     offers,
     auditLogs
@@ -80,21 +79,21 @@ export async function getPhoenixAdminStats(): Promise<PhoenixAdminStats> {
     supabase.from("sales_records").select("*", { count: "exact", head: true }),
     supabase.from("payroll_expenses").select("*", { count: "exact", head: true }),
     supabase.from("salary_flags").select("*", { count: "exact", head: true }),
-    supabase.from("employee_linkage_health").select("*", { count: "exact", head: true }).neq("health_status", "ok"),
     supabase.from("position_vacancies").select("*", { count: "exact", head: true }),
     supabase.from("job_offers").select("*", { count: "exact", head: true }),
     supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(10)
   ]);
+  const dataHealthStats = await getDataHealthStats().catch(() => null);
 
   return {
-    totalEmployees: employees.count ?? 0,
-    activeEmployees: active.count ?? 0,
+    totalEmployees: dataHealthStats?.summary.totalEmployees ?? employees.count ?? 0,
+    activeEmployees: dataHealthStats?.summary.activeEmployees ?? active.count ?? 0,
     payrollEligible: payrollEligible.count ?? 0,
     salaryRecords: salaryRecords.count ?? 0,
     salesRecords: salesRecords.count ?? 0,
     expensesCount: expenses.count ?? 0,
     salaryFlags: salaryFlags.count ?? 0,
-    dataHealthIssues: dataHealth.count ?? 0,
+    dataHealthIssues: dataHealthStats?.summary.issuesCount ?? 0,
     vacancies: vacancies.count ?? 0,
     offers: offers.count ?? 0,
     auditLogs: (auditLogs.data ?? []).map((log) => ({

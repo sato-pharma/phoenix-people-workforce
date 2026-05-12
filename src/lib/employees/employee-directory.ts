@@ -4,6 +4,7 @@ import {
 } from "@/lib/payroll/policy";
 import { isDevelopment } from "@/lib/env";
 import { googleGeocodeAddress } from "@/lib/geo-intelligence/google";
+import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { generateNextHrIdForLine } from "./hr-id-helper";
 
 export type EmployeeDirectoryRow = {
@@ -183,6 +184,10 @@ let directoryCache: {
 
 const CACHE_TTL = 30000; // 30 seconds
 const statusOptions = ["active", "inactive", "on_leave", "terminated", "resigned"];
+
+function isClassifiedActiveEmployee(employee: EmployeeDirectoryRow) {
+  return classifyEmployeeNode(employee).eligible_for_headcount;
+}
 
 function getRequiredEnv(name: string) {
   const value = process.env[name];
@@ -605,7 +610,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       };
     });
 
-    const activeEmployees = employeesData.filter((employee) => (employee.employmentStatus ?? "active") === "active");
+    const activeEmployees = employeesData.filter(isClassifiedActiveEmployee);
 
     return {
       employees: employeesData,
@@ -722,7 +727,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       };
     });
 
-    const activeEmployees = employeesData.filter((employee) => (employee.employmentStatus ?? "active") === "active");
+    const activeEmployees = employeesData.filter(isClassifiedActiveEmployee);
 
     return {
       employees: employeesData,

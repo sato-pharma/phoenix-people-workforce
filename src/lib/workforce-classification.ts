@@ -115,10 +115,6 @@ function normalizeKey(value: unknown) {
   return normalize(value).replace(/\s+/g, " ");
 }
 
-function normalizeHrId(value: unknown) {
-  return normalize(value);
-}
-
 function getText(source: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = compact(source[key]);
