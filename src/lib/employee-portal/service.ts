@@ -891,6 +891,7 @@ async function fetchPortalPayslips(hrId: string): Promise<PortalPayrollRecord[]>
   const buildPayslipQuery = () => supabase
       .from("salary_records")
       .select("*, salary_batches!inner(year, month, status)")
+      .in("salary_batches.status", ["approved", "locked"])
       .order("year", { foreignTable: "salary_batches", ascending: false })
       .order("month", { foreignTable: "salary_batches", ascending: false })
       .order("created_at", { ascending: false });

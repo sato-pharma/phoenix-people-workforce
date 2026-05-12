@@ -106,12 +106,13 @@ export function AdminCallout({
   tone = "neutral",
 }: {
   children: ReactNode;
-  tone?: "danger" | "neutral" | "success";
+  tone?: "danger" | "neutral" | "success" | "warning";
 }) {
   const toneClassName = {
     danger: "border-rose-200/90 bg-gradient-to-r from-rose-50/95 to-white text-rose-800 shadow-[0_8px_20px_rgba(244,63,94,0.12)]",
     neutral: "border-slate-200/90 bg-gradient-to-r from-slate-50/95 to-white text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.08)]",
     success: "border-emerald-200/90 bg-gradient-to-r from-emerald-50/95 to-white text-emerald-800 shadow-[0_8px_20px_rgba(16,185,129,0.12)]",
+    warning: "border-amber-200/90 bg-gradient-to-r from-amber-50/95 to-white text-amber-900 shadow-[0_8px_20px_rgba(245,158,11,0.12)]",
   }[tone];
 
   return <div className={cn("flex items-start gap-3 rounded-xl border px-5 py-4 text-sm transition-all duration-200 hover:shadow-md", toneClassName)}>{children}</div>;

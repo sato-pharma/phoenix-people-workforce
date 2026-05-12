@@ -19,6 +19,16 @@ export type SalaryBatch = {
   year: number;
 };
 
+export type PayrollPeriodConflict = {
+  batchId: string;
+  fileName?: string;
+  message: string;
+  month: number;
+  replaceable: boolean;
+  status: string;
+  year: number;
+};
+
 export type SalaryRecord = {
   area: string;
   batchId: string;

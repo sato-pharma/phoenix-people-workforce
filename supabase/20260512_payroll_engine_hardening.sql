@@ -26,6 +26,10 @@ begin
     raise exception 'Payroll replacement flags must be a JSON array.' using errcode = '22023';
   end if;
 
+  if jsonb_array_length(v_records) = 0 then
+    raise exception 'Payroll replacement records must include at least one salary record.' using errcode = '22023';
+  end if;
+
   select *
   into v_batch
   from public.salary_batches
@@ -185,3 +189,221 @@ $$;
 
 revoke all on function public.phx_replace_salary_batch(uuid, integer, integer, text, text, jsonb, jsonb, timestamptz) from public, anon, authenticated;
 grant execute on function public.phx_replace_salary_batch(uuid, integer, integer, text, text, jsonb, jsonb, timestamptz) to service_role;
+
+create or replace function public.phx_prevent_duplicate_salary_period()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if new.status <> 'rejected' and exists (
+    select 1
+    from public.salary_batches existing
+    where existing.month = new.month
+      and existing.year = new.year
+      and existing.status <> 'rejected'
+      and existing.id is distinct from new.id
+  ) then
+    raise exception 'Payroll period %/% already has an active batch.', new.month, new.year using errcode = '23505';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists phx_prevent_duplicate_salary_period on public.salary_batches;
+create trigger phx_prevent_duplicate_salary_period
+before insert or update of month, year, status on public.salary_batches
+for each row
+execute function public.phx_prevent_duplicate_salary_period();
+
+create or replace function public.phx_prevent_closed_salary_batch_delete()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if old.status in ('approved', 'locked') then
+    raise exception 'Payroll batch cannot be deleted while status is %.', old.status using errcode = 'P0001';
+  end if;
+
+  return old;
+end;
+$$;
+
+drop trigger if exists phx_prevent_closed_salary_batch_delete on public.salary_batches;
+create trigger phx_prevent_closed_salary_batch_delete
+before delete on public.salary_batches
+for each row
+execute function public.phx_prevent_closed_salary_batch_delete();
+
+create or replace function public.phx_prevent_closed_salary_batch_update()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if old.status in ('approved', 'locked') then
+    if old.status = 'approved'
+      and new.status = 'locked'
+      and new.id is not distinct from old.id
+      and new.month is not distinct from old.month
+      and new.year is not distinct from old.year
+      and new.file_name is not distinct from old.file_name
+      and new.uploaded_by is not distinct from old.uploaded_by
+      and new.approved_at is not distinct from old.approved_at
+      and new.approved_by is not distinct from old.approved_by
+      and new.rejected_reason is not distinct from old.rejected_reason
+      and new.created_at is not distinct from old.created_at then
+      return new;
+    end if;
+
+    raise exception 'Payroll batch cannot be updated while status is %.', old.status using errcode = 'P0001';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists phx_prevent_closed_salary_batch_update on public.salary_batches;
+create trigger phx_prevent_closed_salary_batch_update
+before update on public.salary_batches
+for each row
+execute function public.phx_prevent_closed_salary_batch_update();
+
+create or replace function public.phx_prevent_closed_salary_detail_mutation()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_batch_id uuid;
+  v_batch_status text;
+begin
+  if tg_op = 'DELETE' then
+    v_batch_id := old.batch_id;
+  else
+    v_batch_id := new.batch_id;
+  end if;
+
+  select status
+  into v_batch_status
+  from public.salary_batches
+  where id = v_batch_id;
+
+  if v_batch_status in ('approved', 'locked') then
+    raise exception 'Payroll batch cannot be changed while status is %.', v_batch_status using errcode = 'P0001';
+  end if;
+
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists phx_prevent_closed_salary_records_mutation on public.salary_records;
+create trigger phx_prevent_closed_salary_records_mutation
+before insert or update or delete on public.salary_records
+for each row
+execute function public.phx_prevent_closed_salary_detail_mutation();
+
+drop trigger if exists phx_prevent_closed_salary_flags_mutation on public.salary_flags;
+create trigger phx_prevent_closed_salary_flags_mutation
+before insert or update or delete on public.salary_flags
+for each row
+execute function public.phx_prevent_closed_salary_detail_mutation();
+
+create or replace function public.phx_import_approved_expenses_to_payroll(
+  p_month integer,
+  p_year integer
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_batch public.salary_batches%rowtype;
+  v_imported_employees integer := 0;
+  v_imported_total numeric := 0;
+  v_matched_employees text[] := '{}'::text[];
+begin
+  select *
+  into v_batch
+  from public.salary_batches
+  where month = p_month
+    and year = p_year
+  order by created_at desc, id desc
+  limit 1
+  for update;
+
+  if not found then
+    return jsonb_build_object(
+      'imported_employees', 0,
+      'imported_total', 0,
+      'matched_employees', '[]'::jsonb,
+      'target_batch_id', null,
+      'target_batch_month', null,
+      'target_batch_year', null
+    );
+  end if;
+
+  if v_batch.status not in ('uploaded', 'under_review', 'rejected') then
+    raise exception 'Payroll batch cannot import expenses while status is %.', v_batch.status using errcode = 'P0001';
+  end if;
+
+  with approved_totals as (
+    select
+      lower(hr_id) as normalized_hr_id,
+      min(hr_id) as hr_id,
+      sum(total)::numeric(20,2) as approved_expense
+    from public.payroll_expenses
+    where hr_approved = true
+      and payout_month = p_month
+      and payout_year = p_year
+      and hr_id is not null
+      and trim(hr_id) <> ''
+    group by lower(hr_id)
+  ),
+  updated_rows as (
+    update public.salary_records sr
+    set expenses = at.approved_expense,
+        total_additions = coalesce(sr.total_additions, 0) - coalesce(sr.expenses, 0) + at.approved_expense
+    from approved_totals at
+    where sr.batch_id = v_batch.id
+      and lower(sr.hr_id) = at.normalized_hr_id
+    returning sr.hr_id, at.approved_expense
+  )
+  select
+    count(*)::integer,
+    coalesce(sum(approved_expense), 0)::numeric,
+    coalesce(array_agg(hr_id order by hr_id), '{}'::text[])
+  into
+    v_imported_employees,
+    v_imported_total,
+    v_matched_employees
+  from updated_rows;
+
+  return jsonb_build_object(
+    'imported_employees', v_imported_employees,
+    'imported_total', v_imported_total,
+    'matched_employees', to_jsonb(v_matched_employees),
+    'target_batch_id', v_batch.id,
+    'target_batch_month', v_batch.month,
+    'target_batch_year', v_batch.year
+  );
+end;
+$$;
+
+revoke all on function public.phx_prevent_duplicate_salary_period() from public, anon, authenticated;
+revoke all on function public.phx_prevent_closed_salary_batch_delete() from public, anon, authenticated;
+revoke all on function public.phx_prevent_closed_salary_batch_update() from public, anon, authenticated;
+revoke all on function public.phx_prevent_closed_salary_detail_mutation() from public, anon, authenticated;
+revoke all on function public.phx_import_approved_expenses_to_payroll(integer, integer) from public, anon, authenticated;
+grant execute on function public.phx_import_approved_expenses_to_payroll(integer, integer) to service_role;

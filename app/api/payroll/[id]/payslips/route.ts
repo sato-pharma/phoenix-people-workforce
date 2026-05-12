@@ -4,7 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isDevelopment } from "@/lib/env";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import type { SalaryRecord } from "@/lib/payroll/types";
+import type { SalaryBatch, SalaryRecord } from "@/lib/payroll/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,6 +59,14 @@ function periodLabel(month: number, year: number) {
   );
 }
 
+function payslipStatusLabel(status: string) {
+  return status.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function isPublishedPayslipStatus(status: string) {
+  return status === "approved" || status === "locked";
+}
+
 function moneyRow(label: string, value: number) {
   return `
     <tr>
@@ -77,7 +85,7 @@ function infoRow(label: string, value: unknown) {
   `;
 }
 
-function payslip(record: SalaryRecord, month: number, year: number) {
+function payslip(record: SalaryRecord, month: number, year: number, batchStatus: SalaryBatch["status"]) {
   const additions = [
     ["Expenses (Prev Month)", record.expenses],
     ["Incentive", record.incentive],
@@ -110,7 +118,7 @@ function payslip(record: SalaryRecord, month: number, year: number) {
         <div class="period-pill">
           <span>Month: <strong>${month}</strong></span>
           <span>Year: <strong>${year}</strong></span>
-          <span>Status: <strong>Posted</strong></span>
+          <span>Status: <strong>${escapeHtml(payslipStatusLabel(batchStatus))}</strong></span>
         </div>
       </header>
 
@@ -211,7 +219,7 @@ function payslip(record: SalaryRecord, month: number, year: number) {
   `;
 }
 
-function page(records: SalaryRecord[], month: number, year: number) {
+function page(records: SalaryRecord[], month: number, year: number, batchStatus: SalaryBatch["status"]) {
   return `<!doctype html>
   <html>
     <head>
@@ -485,7 +493,7 @@ function page(records: SalaryRecord[], month: number, year: number) {
         <strong>Phoenix Workforce Payslips - ${escapeHtml(periodLabel(month, year))}</strong>
         <button onclick="window.print()">Print / Save PDF</button>
       </div>
-      ${records.map((record) => payslip(record, month, year)).join("")}
+      ${records.map((record) => payslip(record, month, year, batchStatus)).join("")}
     </body>
   </html>`;
 }
@@ -511,6 +519,15 @@ export async function GET(
     }
 
     const exportData = await getSalaryBatchExport(id, access);
+    if (exportData && !isPublishedPayslipStatus(exportData.batch.status)) {
+      return NextResponse.json(
+        {
+          error: "payslips_not_published",
+          message: "Payslips are available only after payroll is approved or locked.",
+        },
+        { status: 409 },
+      );
+    }
 
     const url = new URL(request.url);
     const employeeHrId = url.searchParams.get("employeeHrId")?.trim().toLowerCase() ?? "";
@@ -532,7 +549,7 @@ export async function GET(
     }
 
     return new Response(
-      page(records, exportData.batch.month, exportData.batch.year),
+      page(records, exportData.batch.month, exportData.batch.year, exportData.batch.status),
       {
         headers: {
           "Content-Type": "text/html; charset=utf-8",

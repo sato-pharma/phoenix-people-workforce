@@ -14,7 +14,13 @@ import { calculatePayrollParts } from "@/lib/payroll/policy";
 import { PayrollConflictError } from "@/lib/payroll/errors";
 import { getPayrollWorkflowTransition } from "@/lib/payroll/workflow";
 import type { SalaryValidationIssue, SalaryValidationRow } from "@/lib/payroll/salary-import";
-import type { PayrollDashboardData, SalaryBatch, SalaryFlag, SalaryRecord } from "@/lib/payroll/types";
+import type {
+  PayrollDashboardData,
+  PayrollPeriodConflict,
+  SalaryBatch,
+  SalaryFlag,
+  SalaryRecord,
+} from "@/lib/payroll/types";
 
 const emptyPayrollDashboard: PayrollDashboardData = {
   batch: null,
@@ -563,6 +569,25 @@ export async function listSalaryBatches(): Promise<SalaryBatch[]> {
   return (data ?? []).map((row) => mapBatch(row as Record<string, unknown>));
 }
 
+export async function findSalaryBatchForPeriod(month: number, year: number): Promise<SalaryBatch | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("salary_batches")
+    .select("*")
+    .eq("month", month)
+    .eq("year", year)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data ? mapBatch(data as Record<string, unknown>) : null;
+}
+
 function payrollPeriodSortValue(batch: Pick<SalaryBatch, "month" | "year">) {
   return batch.year * 12 + batch.month;
 }
@@ -830,6 +855,45 @@ export async function getSalaryBatchExport(
   };
 }
 
+const replaceableSalaryBatchStatuses = new Set(["uploaded", "under_review", "rejected"]);
+const closedSalaryBatchStatuses = new Set(["approved", "locked"]);
+
+export function isReplaceableSalaryBatchStatus(status: string) {
+  return replaceableSalaryBatchStatuses.has(status);
+}
+
+export function payrollPeriodConflictForBatch(batch: SalaryBatch): PayrollPeriodConflict {
+  const replaceable = isReplaceableSalaryBatchStatus(batch.status);
+
+  return {
+    batchId: batch.id,
+    fileName: batch.fileName,
+    message: replaceable
+      ? "A payroll upload already exists for this period. Replace the existing upload or cancel."
+      : `Payroll ${batch.month}/${batch.year} is ${batch.status.replace(/_/g, " ")} and cannot be replaced.`,
+    month: batch.month,
+    replaceable,
+    status: batch.status,
+    year: batch.year,
+  };
+}
+
+export function assertSalaryBatchDeletable(status: string) {
+  if (closedSalaryBatchStatuses.has(status)) {
+    throw new PayrollConflictError(`Payroll batch cannot be deleted while status is ${status}.`);
+  }
+}
+
+function assertSalaryBatchHasImportRows(recordCount: number, operation: "upload" | "replace") {
+  if (recordCount === 0) {
+    throw new Error(
+      operation === "replace"
+        ? "Payroll replacement file must include at least one salary row."
+        : "Payroll upload file must include at least one salary row.",
+    );
+  }
+}
+
 export async function getSalaryBatchById(batchId: string): Promise<SalaryBatch | null> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -1021,6 +1085,13 @@ async function cleanupSalaryBatch(batchId: string) {
 }
 
 export async function createSalaryBatch(input: CreateSalaryBatchInput) {
+  assertSalaryBatchHasImportRows(input.records.length, "upload");
+
+  const existingPeriodBatch = await findSalaryBatchForPeriod(input.month, input.year);
+  if (existingPeriodBatch) {
+    throw new PayrollConflictError(payrollPeriodConflictForBatch(existingPeriodBatch).message);
+  }
+
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
 
@@ -1076,6 +1147,11 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
 
 export async function deleteSalaryBatch(batchId: string) {
   const supabase = getSupabaseAdmin();
+  const existing = await getSalaryBatchById(batchId);
+  if (existing) {
+    assertSalaryBatchDeletable(existing.status);
+  }
+
   const { error } = await supabase.from("salary_batches").delete().eq("id", batchId);
 
   if (error) {
@@ -1089,6 +1165,8 @@ export async function replaceSalaryBatch(
   batchId: string,
   input: Omit<CreateSalaryBatchInput, "month" | "year">,
 ) {
+  assertSalaryBatchHasImportRows(input.records.length, "replace");
+
   const supabase = getSupabaseAdmin();
   const { data: existingBatchData, error: batchError } = await supabase
     .from("salary_batches")
@@ -1102,7 +1180,7 @@ export async function replaceSalaryBatch(
   }
 
   const existing = mapBatch(existingBatchData as Record<string, unknown>);
-  if (!["uploaded", "under_review", "rejected"].includes(existing.status)) {
+  if (!isReplaceableSalaryBatchStatus(existing.status)) {
     throw new PayrollConflictError(`Payroll batch cannot be replaced while status is ${existing.status}.`);
   }
 

@@ -23,11 +23,19 @@ $script:StartedAt = Get-Date
 $script:Checks = [System.Collections.Generic.List[object]]::new()
 $script:CommandResults = [ordered]@{}
 $script:Warnings = [System.Collections.Generic.List[string]]::new()
+$script:FailureDetails = [System.Collections.Generic.List[object]]::new()
 $script:BackupRows = @()
 $script:StagingDbModified = $false
 $script:MigrationExecuted = $false
 $script:DatabaseUrl = $null
+$script:SqlExecutor = "uninitialized"
 $script:PsqlPath = $null
+$script:DbmatePath = $null
+$script:NodePath = $null
+$script:DbmateMigrationsDir = $null
+$script:NodeScriptsDir = $null
+$script:DbmateMigrationTable = "phoenix_leave_staging_rollout_migrations"
+$script:DbmateRunVersion = (Get-Date).ToString("yyyyMMddHHmmss")
 
 $script:BackupSqlPath = Join-Path $RepositoryRoot "supabase\20260512_backup_leave_domain_before_rebuild.sql"
 $script:MigrationSqlPath = Join-Path $RepositoryRoot "supabase\20260512_leave_management_engine.sql"
@@ -76,6 +84,64 @@ function Get-OutputExcerpt {
   return $normalized.Substring($normalized.Length - 4000)
 }
 
+function Add-FailureDetail {
+  param(
+    [Parameter(Mandatory = $true)][string]$Step,
+    [Parameter(Mandatory = $true)][string]$Kind,
+    [AllowNull()][object]$ExitCode,
+    [AllowNull()][string]$ScriptPath,
+    [AllowNull()][string]$Stdout,
+    [AllowNull()][string]$Stderr,
+    [AllowNull()][string]$Message
+  )
+
+  $script:FailureDetails.Add([pscustomobject]@{
+    Step = $Step
+    Kind = $Kind
+    ExitCode = $ExitCode
+    ScriptPath = $ScriptPath
+    Stdout = if ($null -eq $Stdout) { "" } else { $Stdout }
+    Stderr = if ($null -eq $Stderr) { "" } else { $Stderr }
+    Message = if ($null -eq $Message) { "" } else { $Message }
+    At = (Get-Date).ToString("s")
+  }) | Out-Null
+}
+
+function Format-NodeFailureDetail {
+  param(
+    [Parameter(Mandatory = $true)][string]$Step,
+    [Parameter(Mandatory = $true)][int]$ExitCode,
+    [Parameter(Mandatory = $true)][string]$ScriptPath,
+    [AllowNull()][string]$Stdout,
+    [AllowNull()][string]$Stderr
+  )
+
+  return @"
+Node/Postgres verification step failed.
+Step: $Step
+Exit code: $ExitCode
+Temporary JS file: $ScriptPath
+
+STDOUT:
+$Stdout
+
+STDERR:
+$Stderr
+"@
+}
+
+function Add-MarkdownCodeBlock {
+  param(
+    [Parameter(Mandatory = $true)][System.Collections.Generic.List[string]]$Lines,
+    [AllowNull()][string]$Text
+  )
+
+  $safeText = if ([string]::IsNullOrEmpty($Text)) { "" } else { $Text -replace '```', '````' }
+  $Lines.Add('````text') | Out-Null
+  $Lines.Add($safeText) | Out-Null
+  $Lines.Add('````') | Out-Null
+}
+
 function Get-ArrayCount {
   param([AllowNull()]$Value)
 
@@ -112,6 +178,7 @@ function Write-RolloutReport {
   $lines.Add("- Final status: $FinalStatus") | Out-Null
   $lines.Add("- Staging DB modified: $stagingDbModifiedText") | Out-Null
   $lines.Add("- Migration status: $migrationStatus") | Out-Null
+  $lines.Add("- SQL executor: $($script:SqlExecutor)") | Out-Null
   $lines.Add("- Rollback possible: $rollbackPossible") | Out-Null
   $lines.Add("") | Out-Null
 
@@ -145,6 +212,30 @@ function Write-RolloutReport {
       $result = $script:CommandResults[$name]
       $detail = if ($result.ExitCode -eq 0) { "exit 0" } else { Get-OutputExcerpt $result.Output }
       $lines.Add("| $(Convert-ToReportText $name) | $(Convert-ToReportText $result.Status) | $(Convert-ToReportText $result.DurationSeconds) | $(Convert-ToReportText $detail) |") | Out-Null
+    }
+  }
+  $lines.Add("") | Out-Null
+
+  $lines.Add("## Detailed Failures") | Out-Null
+  if ($script:FailureDetails.Count -eq 0) {
+    $lines.Add("- None") | Out-Null
+  } else {
+    foreach ($failure in $script:FailureDetails) {
+      $lines.Add("### $($failure.Step)") | Out-Null
+      $lines.Add("") | Out-Null
+      $lines.Add("- Kind: $($failure.Kind)") | Out-Null
+      $lines.Add("- Exit code: $($failure.ExitCode)") | Out-Null
+      $lines.Add("- Temporary JS file: $($failure.ScriptPath)") | Out-Null
+      if (-not [string]::IsNullOrWhiteSpace($failure.Message)) {
+        $lines.Add("- Message: $($failure.Message)") | Out-Null
+      }
+      $lines.Add("") | Out-Null
+      $lines.Add("Stdout:") | Out-Null
+      Add-MarkdownCodeBlock -Lines $lines -Text $failure.Stdout
+      $lines.Add("") | Out-Null
+      $lines.Add("Stderr:") | Out-Null
+      Add-MarkdownCodeBlock -Lines $lines -Text $failure.Stderr
+      $lines.Add("") | Out-Null
     }
   }
   $lines.Add("") | Out-Null
@@ -267,14 +358,42 @@ function Assert-StagingEnvironment {
   Add-Check -Name "Staging environment guards" -Status "PASS" -Details "Required staging guard variables are present and production-like URL text was not detected."
 }
 
-function Initialize-Psql {
-  $command = Get-Command psql -ErrorAction SilentlyContinue
-  if ($null -eq $command) {
-    Stop-Rollout -CheckName "psql availability" -Message "psql is required to run the staging rollout SQL files."
+function Initialize-SqlExecutor {
+  $psqlCommand = Get-Command psql -ErrorAction SilentlyContinue
+  if ($null -ne $psqlCommand) {
+    $script:PsqlPath = $psqlCommand.Source
+    $script:SqlExecutor = "psql"
+    Add-Check -Name "SQL executor" -Status "PASS" -Details "psql found and will be used for SQL files and verification queries."
+    return
   }
 
-  $script:PsqlPath = $command.Source
-  Add-Check -Name "psql availability" -Status "PASS" -Details "psql found."
+  Add-Check -Name "psql availability" -Status "WARN" -Details "psql was not found; checking dbmate fallback."
+  $script:Warnings.Add("psql was not found. The runner will use dbmate for SQL file execution when dbmate is available.") | Out-Null
+
+  $dbmateCommand = Get-Command dbmate -ErrorAction SilentlyContinue
+  if ($null -eq $dbmateCommand) {
+    Stop-Rollout -CheckName "dbmate availability" -Message "Neither psql nor dbmate is available. Install psql or dbmate before running the staging rollout."
+  }
+
+  $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+  if ($null -eq $nodeCommand) {
+    Stop-Rollout -CheckName "Node/Postgres verification runner" -Message "dbmate can run SQL files, but node is required for verification queries when psql is unavailable."
+  }
+
+  $script:DbmatePath = $dbmateCommand.Source
+  $script:NodePath = $nodeCommand.Source
+  $script:SqlExecutor = "dbmate + node-postgres verification"
+
+  $dbmateVersionOutput = & $script:DbmatePath --version 2>&1
+  $dbmateVersion = (($dbmateVersionOutput | ForEach-Object { "$_" }) -join " ").Trim()
+  try {
+    $preflightResult = Test-NodePostgresPreflight
+  } catch {
+    Stop-Rollout -CheckName "Node/Postgres verification runner" -Message $_.Exception.Message
+  }
+
+  Add-Check -Name "dbmate availability" -Status "PASS" -Details "Using dbmate fallback. $dbmateVersion"
+  Add-Check -Name "Node/Postgres verification runner" -Status "PASS" -Details "node found and postgres package import/use preflight passed. Temporary JS file: $($preflightResult.ScriptPath)"
 }
 
 function Invoke-PsqlRaw {
@@ -294,23 +413,184 @@ function Invoke-PsqlRaw {
   return $text
 }
 
-function Invoke-PsqlScalar {
-  param(
-    [Parameter(Mandatory = $true)][string]$Sql,
-    [Parameter(Mandatory = $true)][string]$Label
-  )
+function Initialize-NodeScriptsDir {
+  if (-not [string]::IsNullOrWhiteSpace($script:NodeScriptsDir)) {
+    return
+  }
 
-  $arguments = @("-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1", $script:DatabaseUrl, "-c", $Sql)
-  return (Invoke-PsqlRaw -Arguments $arguments -Label $Label).Trim()
+  $safeRoot = Join-Path ([System.IO.Path]::GetTempPath()) "phoenix-leave-staging-rollout-node"
+  if (-not (Test-Path -LiteralPath $safeRoot)) {
+    New-Item -ItemType Directory -Path $safeRoot | Out-Null
+  }
+
+  $script:NodeScriptsDir = Join-Path $safeRoot $script:DbmateRunVersion
+  New-Item -ItemType Directory -Path $script:NodeScriptsDir -Force | Out-Null
 }
 
-function Invoke-PsqlJson {
+function New-NodeScriptFile {
+  param(
+    [Parameter(Mandatory = $true)][string]$Label,
+    [Parameter(Mandatory = $true)][string]$Source
+  )
+
+  Initialize-NodeScriptsDir
+
+  $safeName = [regex]::Replace($Label.ToLowerInvariant(), "[^a-z0-9]+", "-").Trim("-")
+  if ([string]::IsNullOrWhiteSpace($safeName)) {
+    $safeName = "node-verification"
+  }
+
+  $scriptPath = Join-Path $script:NodeScriptsDir "$safeName-$([System.Guid]::NewGuid().ToString("N")).mjs"
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($scriptPath, $Source, $utf8NoBom)
+  return $scriptPath
+}
+
+function Invoke-NodeScript {
+  param(
+    [Parameter(Mandatory = $true)][string]$Label,
+    [Parameter(Mandatory = $true)][string]$ScriptPath,
+    [hashtable]$Environment = @{}
+  )
+
+  $stdoutPath = Join-Path ([System.IO.Path]::GetTempPath()) "phoenix-node-$([System.Guid]::NewGuid().ToString("N")).stdout.log"
+  $stderrPath = Join-Path ([System.IO.Path]::GetTempPath()) "phoenix-node-$([System.Guid]::NewGuid().ToString("N")).stderr.log"
+  $previousEnvironment = @{}
+
+  foreach ($key in $Environment.Keys) {
+    $previousEnvironment[$key] = [System.Environment]::GetEnvironmentVariable($key, "Process")
+    [System.Environment]::SetEnvironmentVariable($key, [string]$Environment[$key], "Process")
+  }
+
+  try {
+    Push-Location $RepositoryRoot
+    try {
+      & $script:NodePath $ScriptPath > $stdoutPath 2> $stderrPath
+      $exitCode = $LASTEXITCODE
+    } finally {
+      Pop-Location
+    }
+  } finally {
+    foreach ($key in $Environment.Keys) {
+      [System.Environment]::SetEnvironmentVariable($key, $previousEnvironment[$key], "Process")
+    }
+  }
+
+  $stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw } else { "" }
+  $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw } else { "" }
+
+  if ($exitCode -ne 0) {
+    $message = Format-NodeFailureDetail -Step $Label -ExitCode $exitCode -ScriptPath $ScriptPath -Stdout $stdout -Stderr $stderr
+    Add-FailureDetail -Step $Label -Kind "node-postgres-verification" -ExitCode $exitCode -ScriptPath $ScriptPath -Stdout $stdout -Stderr $stderr -Message "Node verification command failed."
+    throw $message
+  }
+
+  return [pscustomobject]@{
+    Step = $Label
+    ExitCode = $exitCode
+    ScriptPath = $ScriptPath
+    Stdout = $stdout
+    Stderr = $stderr
+  }
+}
+
+function Test-NodePostgresPreflight {
+  $preflightSource = @"
+const postgresModule = await import('postgres');
+const postgres = postgresModule.default;
+
+if (typeof postgres !== 'function') {
+  throw new Error('postgres default export is not a function');
+}
+
+const databaseUrl = process.env.PHOENIX_ROLLOUT_DATABASE_URL;
+if (!databaseUrl) {
+  throw new Error('PHOENIX_ROLLOUT_DATABASE_URL is missing');
+}
+
+const sql = postgres(databaseUrl, { max: 1 });
+await sql.end({ timeout: 1 });
+console.log('postgres package import/use OK');
+"@
+
+  $scriptPath = New-NodeScriptFile -Label "node-postgres-preflight" -Source $preflightSource
+  return Invoke-NodeScript -Label "Node/Postgres preflight" -ScriptPath $scriptPath -Environment @{
+    PHOENIX_ROLLOUT_DATABASE_URL = $script:DatabaseUrl
+  }
+}
+
+function Invoke-NodePostgresScalar {
   param(
     [Parameter(Mandatory = $true)][string]$Sql,
     [Parameter(Mandatory = $true)][string]$Label
   )
 
-  $raw = Invoke-PsqlScalar -Sql $Sql -Label $Label
+  $bridge = @"
+const postgresModule = await import('postgres');
+const postgres = postgresModule.default;
+const databaseUrl = process.env.PHOENIX_ROLLOUT_DATABASE_URL;
+const query = process.env.PHOENIX_ROLLOUT_QUERY;
+
+if (!databaseUrl || !query) {
+  console.error('Missing PHOENIX_ROLLOUT_DATABASE_URL or PHOENIX_ROLLOUT_QUERY.');
+  process.exit(2);
+}
+
+const sql = postgres(databaseUrl, { max: 1 });
+
+try {
+  const rows = await sql.unsafe(query);
+  if (!rows.length) {
+    process.exit(3);
+  }
+
+  const first = rows[0];
+  const key = Object.keys(first)[0];
+  const value = first[key];
+
+  if (value === null || value === undefined) {
+    console.log('');
+  } else if (typeof value === 'boolean') {
+    console.log(value ? 't' : 'f');
+  } else if (typeof value === 'object') {
+    console.log(JSON.stringify(value));
+  } else {
+    console.log(String(value));
+  }
+} finally {
+  await sql.end({ timeout: 5 });
+}
+"@
+  $scriptPath = New-NodeScriptFile -Label $Label -Source $bridge
+  $result = Invoke-NodeScript -Label $Label -ScriptPath $scriptPath -Environment @{
+    PHOENIX_ROLLOUT_DATABASE_URL = $script:DatabaseUrl
+    PHOENIX_ROLLOUT_QUERY = $Sql
+  }
+
+  return $result.Stdout.Trim()
+}
+
+function Invoke-DatabaseScalar {
+  param(
+    [Parameter(Mandatory = $true)][string]$Sql,
+    [Parameter(Mandatory = $true)][string]$Label
+  )
+
+  if ($script:SqlExecutor -eq "psql") {
+    $arguments = @("-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1", $script:DatabaseUrl, "-c", $Sql)
+    return (Invoke-PsqlRaw -Arguments $arguments -Label $Label).Trim()
+  }
+
+  return Invoke-NodePostgresScalar -Sql $Sql -Label $Label
+}
+
+function Invoke-DatabaseJson {
+  param(
+    [Parameter(Mandatory = $true)][string]$Sql,
+    [Parameter(Mandatory = $true)][string]$Label
+  )
+
+  $raw = Invoke-DatabaseScalar -Sql $Sql -Label $Label
   if ([string]::IsNullOrWhiteSpace($raw)) {
     throw "$Label returned no JSON."
   }
@@ -318,18 +598,98 @@ function Invoke-PsqlJson {
   return $raw | ConvertFrom-Json
 }
 
-function Invoke-PsqlFile {
+function Initialize-DbmateMigrationsDir {
+  if (-not [string]::IsNullOrWhiteSpace($script:DbmateMigrationsDir)) {
+    return
+  }
+
+  $safeRoot = Join-Path ([System.IO.Path]::GetTempPath()) "phoenix-leave-staging-rollout"
+  if (-not (Test-Path -LiteralPath $safeRoot)) {
+    New-Item -ItemType Directory -Path $safeRoot | Out-Null
+  }
+
+  $script:DbmateMigrationsDir = Join-Path $safeRoot $script:DbmateRunVersion
+  New-Item -ItemType Directory -Path $script:DbmateMigrationsDir -Force | Out-Null
+}
+
+function New-DbmateMigrationWrapper {
   param(
-    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$SourcePath,
+    [Parameter(Mandatory = $true)][string]$Name,
+    [Parameter(Mandatory = $true)][string]$Ordinal
+  )
+
+  Initialize-DbmateMigrationsDir
+
+  $sourceSql = Get-Content -LiteralPath $SourcePath -Raw
+  $migrationFile = Join-Path $script:DbmateMigrationsDir "$($script:DbmateRunVersion)$($Ordinal)_$Name.sql"
+  $wrappedSql = @"
+-- migrate:up transaction:false
+
+$sourceSql
+
+-- migrate:down
+
+select 1;
+"@
+
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($migrationFile, $wrappedSql, $utf8NoBom)
+  return $migrationFile
+}
+
+function Invoke-DbmateUp {
+  param(
     [Parameter(Mandatory = $true)][string]$Label
   )
 
-  $arguments = @("-X", "-v", "ON_ERROR_STOP=1", $script:DatabaseUrl, "-f", $Path)
-  return Invoke-PsqlRaw -Arguments $arguments -Label $Label
+  $previousDatabaseUrl = $env:DATABASE_URL
+
+  try {
+    $env:DATABASE_URL = $script:DatabaseUrl
+    $arguments = @(
+      "--migrations-dir", $script:DbmateMigrationsDir,
+      "--migrations-table", $script:DbmateMigrationTable,
+      "--no-dump-schema",
+      "up"
+    )
+    $output = & $script:DbmatePath @arguments 2>&1
+    $exitCode = $LASTEXITCODE
+  } finally {
+    if ($null -eq $previousDatabaseUrl) {
+      Remove-Item Env:DATABASE_URL -ErrorAction SilentlyContinue
+    } else {
+      $env:DATABASE_URL = $previousDatabaseUrl
+    }
+  }
+
+  $text = ($output | ForEach-Object { "$_" }) -join "`n"
+  if ($exitCode -ne 0) {
+    throw "$Label failed through dbmate with exit code $exitCode.`n$(Get-OutputExcerpt $text)"
+  }
+
+  return $text
+}
+
+function Invoke-DatabaseFile {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Label,
+    [Parameter(Mandatory = $true)][string]$DbmateName,
+    [Parameter(Mandatory = $true)][string]$DbmateOrdinal
+  )
+
+  if ($script:SqlExecutor -eq "psql") {
+    $arguments = @("-X", "-v", "ON_ERROR_STOP=1", $script:DatabaseUrl, "-f", $Path)
+    return Invoke-PsqlRaw -Arguments $arguments -Label $Label
+  }
+
+  New-DbmateMigrationWrapper -SourcePath $Path -Name $DbmateName -Ordinal $DbmateOrdinal | Out-Null
+  return Invoke-DbmateUp -Label $Label
 }
 
 function Assert-CurrentDatabaseIsSafe {
-  $databaseName = Invoke-PsqlScalar -Sql "select current_database();" -Label "current database check"
+  $databaseName = Invoke-DatabaseScalar -Sql "select current_database();" -Label "current database check"
   Test-ProductionLikeText -Value $databaseName -Label "Connected database name"
   Add-Check -Name "Connected database guard" -Status "PASS" -Details "Connected database name passed production-like guard."
 }
@@ -344,7 +704,7 @@ select jsonb_build_object(
 )::text;
 "@
 
-  $result = Invoke-PsqlJson -Sql $sql -Label "required private functions check"
+  $result = Invoke-DatabaseJson -Sql $sql -Label "required private functions check"
   $missing = @()
   foreach ($property in $result.PSObject.Properties) {
     if ($property.Value -ne $true) {
@@ -360,17 +720,17 @@ select jsonb_build_object(
 }
 
 function Invoke-BackupAndVerify {
-  Invoke-PsqlFile -Path $script:BackupSqlPath -Label "leave domain backup" | Out-Null
   $script:StagingDbModified = $true
+  Invoke-DatabaseFile -Path $script:BackupSqlPath -Label "leave domain backup" -DbmateName "backup_leave_domain_before_rebuild" -DbmateOrdinal "01" | Out-Null
   Add-Check -Name "Backup SQL execution" -Status "PASS" -Details "Backup SQL completed."
 
-  $schemaExists = Invoke-PsqlScalar -Sql "select exists (select 1 from information_schema.schemata where schema_name = 'backup');" -Label "backup schema check"
+  $schemaExists = Invoke-DatabaseScalar -Sql "select exists (select 1 from information_schema.schemata where schema_name = 'backup');" -Label "backup schema check"
   if ($schemaExists -ne "t") {
     Stop-Rollout -CheckName "Backup schema verification" -Message "backup schema does not exist after backup script."
   }
   Add-Check -Name "Backup schema verification" -Status "PASS" -Details "backup schema exists."
 
-  $manifestExists = Invoke-PsqlScalar -Sql "select to_regclass('backup.leave_domain_backup_manifest') is not null;" -Label "backup manifest check"
+  $manifestExists = Invoke-DatabaseScalar -Sql "select to_regclass('backup.leave_domain_backup_manifest') is not null;" -Label "backup manifest check"
   if ($manifestExists -ne "t") {
     Stop-Rollout -CheckName "Backup manifest verification" -Message "backup.leave_domain_backup_manifest does not exist after backup script."
   }
@@ -417,7 +777,7 @@ select jsonb_build_object(
 )::text;
 "@
 
-  $result = Invoke-PsqlJson -Sql $sql -Label "backup manifest verification"
+  $result = Invoke-DatabaseJson -Sql $sql -Label "backup manifest verification"
   $script:BackupRows = @($result.rows)
 
   if ($result.all_expected_rows_present -ne $true -or $result.all_rows_valid -ne $true) {
@@ -428,9 +788,9 @@ select jsonb_build_object(
 }
 
 function Invoke-MigrationAndVerify {
-  Invoke-PsqlFile -Path $script:MigrationSqlPath -Label "leave management migration" | Out-Null
-  $script:MigrationExecuted = $true
   $script:StagingDbModified = $true
+  Invoke-DatabaseFile -Path $script:MigrationSqlPath -Label "leave management migration" -DbmateName "leave_management_engine" -DbmateOrdinal "02" | Out-Null
+  $script:MigrationExecuted = $true
   Add-Check -Name "Leave migration execution" -Status "PASS" -Details "Migration SQL completed."
 
   $requiredTablesSql = @"
@@ -453,7 +813,7 @@ left join information_schema.tables t
   on t.table_schema = 'public'
  and t.table_name = r.table_name;
 "@
-  $tables = Invoke-PsqlJson -Sql $requiredTablesSql -Label "leave table verification"
+  $tables = Invoke-DatabaseJson -Sql $requiredTablesSql -Label "leave table verification"
   if ((Get-ArrayCount $tables.missing_tables) -gt 0) {
     Stop-Rollout -CheckName "Leave table verification" -Message "Missing leave tables: $($tables.missing_tables -join ', ')"
   }
@@ -478,7 +838,7 @@ from required r
 join pg_class c on c.relname = r.table_name
 join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public';
 "@
-  $rls = Invoke-PsqlJson -Sql $rlsSql -Label "RLS verification"
+  $rls = Invoke-DatabaseJson -Sql $rlsSql -Label "RLS verification"
   if ((Get-ArrayCount $rls.rls_disabled_tables) -gt 0) {
     Stop-Rollout -CheckName "RLS verification" -Message "RLS is disabled on: $($rls.rls_disabled_tables -join ', ')"
   }
@@ -509,7 +869,7 @@ select jsonb_build_object(
 )
 from policy_counts;
 "@
-  $policies = Invoke-PsqlJson -Sql $policySql -Label "policy verification"
+  $policies = Invoke-DatabaseJson -Sql $policySql -Label "policy verification"
   if ((Get-ArrayCount $policies.tables_without_policies) -gt 0) {
     Stop-Rollout -CheckName "Policy verification" -Message "No policies found on: $($policies.tables_without_policies -join ', ')"
   }
@@ -545,7 +905,7 @@ select jsonb_build_object(
     and has_table_privilege('service_role', 'public.public_holidays', 'delete')
 )::text;
 "@
-  $grants = Invoke-PsqlJson -Sql $grantSql -Label "grant verification"
+  $grants = Invoke-DatabaseJson -Sql $grantSql -Label "grant verification"
   $badGrants = @()
   foreach ($property in $grants.PSObject.Properties) {
     if ($property.Value -ne $true) {
@@ -578,7 +938,7 @@ select jsonb_build_object(
   )
 )::text;
 "@
-  $policySeed = Invoke-PsqlJson -Sql $policySeedSql -Label "seed leave policy verification"
+  $policySeed = Invoke-DatabaseJson -Sql $policySeedSql -Label "seed leave policy verification"
   if ($policySeed.exists -ne $true) {
     Stop-Rollout -CheckName "Seed leave policy verification" -Message "Egypt Annual Leave Policy seed row was not found with expected values."
   }
@@ -601,7 +961,7 @@ select jsonb_build_object(
 from required r
 left join public.leave_types lt on lt.code = r.code and lt.is_active is true;
 "@
-  $typeSeed = Invoke-PsqlJson -Sql $typeSeedSql -Label "seed leave type verification"
+  $typeSeed = Invoke-DatabaseJson -Sql $typeSeedSql -Label "seed leave type verification"
   if ((Get-ArrayCount $typeSeed.missing_types) -gt 0) {
     Stop-Rollout -CheckName "Seed leave type verification" -Message "Missing seed leave types: $($typeSeed.missing_types -join ', ')"
   }
@@ -617,7 +977,7 @@ where country = 'EG'
   and year = 2026
   and is_active is true;
 "@
-  $holidaySeed = Invoke-PsqlJson -Sql $holidaySeedSql -Label "public holiday seed verification"
+  $holidaySeed = Invoke-DatabaseJson -Sql $holidaySeedSql -Label "public holiday seed verification"
   if ($holidaySeed.has_seed_rows -ne $true) {
     Stop-Rollout -CheckName "Public holiday seed verification" -Message "No active EG 2026 public holidays were found."
   }
@@ -715,7 +1075,7 @@ try {
   Add-Check -Name "Required rollout files" -Status "PASS" -Details "Backup and migration SQL files exist."
 
   Assert-StagingEnvironment
-  Initialize-Psql
+  Initialize-SqlExecutor
   Assert-CurrentDatabaseIsSafe
   Assert-RequiredPrivateFunctions
   Invoke-BackupAndVerify

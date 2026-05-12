@@ -293,7 +293,7 @@ create or replace function public.phx_import_approved_expenses_to_payroll(
 )
 returns jsonb
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 declare
@@ -320,6 +320,10 @@ begin
       'target_batch_month', null,
       'target_batch_year', null
     );
+  end if;
+
+  if v_batch.status not in ('uploaded', 'under_review', 'rejected') then
+    raise exception 'Payroll batch cannot import expenses while status is %.', v_batch.status using errcode = 'P0001';
   end if;
 
   with approved_totals as (

@@ -1,10 +1,11 @@
 ﻿# Phoenix Leave Management Staging Rollout Report
 
-- Generated at: 2026-05-12 23:40:48 +03:00
-- Started at: 2026-05-12 23:40:48 +03:00
+- Generated at: 2026-05-13 00:11:41 +03:00
+- Started at: 2026-05-13 00:11:41 +03:00
 - Final status: FAILED
 - Staging DB modified: No
 - Migration status: Not executed
+- SQL executor: uninitialized
 - Rollback possible: No backup tables were created during this run.
 
 ## Backup Results
@@ -18,6 +19,9 @@ No backup manifest rows were captured during this run.
 
 ## Test Results
 App validation commands were not reached during this run.
+
+## Detailed Failures
+- None
 
 ## Warnings
 - Staging only: never run this script with production database URLs or production credentials.
