@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     "**/.next/**",
     ".claude/**",
+    "scripts/export-supabase-to-xlsx.js",
     "out/**",
     "build/**",
     "**/build/**",
