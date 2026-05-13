@@ -30,6 +30,24 @@ export function runEmployeePortalPayslipSalaryTests() {
     "Payslip Basic Salary keycard must be calculated from fixed base salary.",
   );
 
+  assert.match(
+    serviceSource,
+    /netSalary: sourceNetSalary,/,
+    "Employee portal summary net salary must use fixed base + standard allowances.",
+  );
+
+  assert.match(
+    serviceSource,
+    /netSalary: fixedNetSalary,/,
+    "Employee portal latest payslip net salary must use fixed base + standard allowances.",
+  );
+
+  assert.doesNotMatch(
+    serviceSource,
+    /netSalary:\s*latestRecord\?\.netSalary\s*\?\?\s*(sourceNetSalary|fixedNetSalary)/,
+    "Employee portal fixed net salary must not be overridden by uploaded monthly net salary.",
+  );
+
   assert.doesNotMatch(
     serviceSource,
     /payslipBasicSalary\s*=\s*latestRecord\?\.firstPart/,

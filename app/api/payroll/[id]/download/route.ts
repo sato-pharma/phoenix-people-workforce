@@ -4,82 +4,12 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import type { SalaryRecord } from "@/lib/payroll/types";
+import { payrollSheetHeaders, payrollSheetValue } from "@/lib/payroll/salary-sheet-fields";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const headers = [
-  "#",
-  "HR ID",
-  "Employee Name",
-  "Arabic Name",
-  "Job Title",
-  "Line",
-  "Area",
-  "Hire Date",
-  "Gross Salary",
-  "Expenses (Prev Month)",
-  "Incentive",
-  "Overtime",
-  "Bonus",
-  "Extra CoL",
-  "Fuel Allow.",
-  "Other Add.",
-  "Total Additions",
-  "Social Ins.",
-  "Income Tax",
-  "No CRM",
-  "Fingerprint",
-  "Unpaid Vac.",
-  "Medical Ins.",
-  "Loans",
-  "Other Ded.",
-  "Total Deductions",
-  "Month Salary",
-  "1st Part",
-  "2nd Part",
-  "Comment",
-  "Month",
-  "Year",
-];
-
-function rowValues(record: SalaryRecord, month: number, year: number, index: number) {
-  return [
-    index,
-    record.employeeCode,
-    record.fullName,
-    record.nameAr ?? "",
-    record.jobTitle,
-    record.line,
-    record.area,
-    record.hireDate ?? "",
-    record.grossSalary,
-    record.expenses,
-    record.incentive,
-    record.overtime,
-    record.bonus,
-    record.extraCostOfLiving,
-    record.fuelAllowance,
-    record.otherAdditions,
-    record.totalAdditions,
-    record.socialInsurance,
-    record.employmentIncomeTax,
-    record.crm,
-    record.fingerPrint,
-    record.unpaidVacations,
-    record.medicalInsurance,
-    record.loans,
-    record.otherDeductions,
-    record.totalDeductions,
-    record.netSalary,
-    record.firstPart,
-    record.secondPart,
-    record.payrollComment ?? "",
-    month,
-    year,
-  ];
-}
+const headers = [...payrollSheetHeaders];
 
 export async function GET(
   _request: Request,
@@ -116,7 +46,9 @@ export async function GET(
     }));
 
     exportData.records.forEach((record, index) => {
-      sheet.addRow(rowValues(record, exportData.batch.month, exportData.batch.year, index + 1));
+      sheet.addRow(headers.map((header) =>
+        payrollSheetValue(record, exportData.batch.month, exportData.batch.year, index + 1, header),
+      ));
     });
 
     const buffer = await workbook.xlsx.writeBuffer();

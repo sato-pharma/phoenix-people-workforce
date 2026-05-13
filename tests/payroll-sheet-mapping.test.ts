@@ -107,6 +107,7 @@ export async function runPayrollSheetMappingTests() {
   assert.equal(row.totalDeductions, 5840);
   assert.equal(row.firstPart, 11550);
   assert.equal(row.secondPart, 7241);
+  assert.equal(row.monthSalary, 18791);
   assert.equal(row.paymentMode, "two_parts");
   assert.equal(row.payrollComment, "Manual adjustment");
   assert.equal(
@@ -115,6 +116,93 @@ export async function runPayrollSheetMappingTests() {
     ),
     false,
   );
+  assert.equal(
+    result.validationWarnings.some(
+      (warning) => warning.code === "second_part_formula_mismatch",
+    ),
+    false,
+  );
+  assert.equal(result.validationTotals.grossSalary, 21506);
+  assert.equal(result.validationTotals.netSalary, 19000);
+  assert.equal(result.validationTotals.monthSalary, 18791);
+  assert.equal(result.validationTotals.totalAdditions, 3125);
+  assert.equal(result.validationTotals.totalDeductions, 5840);
+  assert.equal(result.validationTotals.firstPart, 11550);
+  assert.equal(result.validationTotals.secondPart, 7241);
+
+  const invalidHireDateWorkbook = new ExcelJS.Workbook();
+  const invalidHireDateSheet = invalidHireDateWorkbook.addWorksheet("Payroll");
+  invalidHireDateSheet.addRow(["HR_ID", "Full Name", "Gross Salary", "Net Salary", "Hire Date"]);
+  invalidHireDateSheet.addRow(["B-61", "Invalid Hire Date", 1000, 900, "Head office"]);
+  const invalidHireDateFile = new File([await invalidHireDateWorkbook.xlsx.writeBuffer() as BlobPart], "invalid-hire-date.xlsx");
+  const invalidHireDateResult = await validateSalaryWorkbook(invalidHireDateFile);
+
+  assert.equal(invalidHireDateResult.failedRows, 0);
+  assert.equal(invalidHireDateResult.rowsToImport[0].hireDate, null);
+
+  const unknownEmployeeWorkbook = new ExcelJS.Workbook();
+  const unknownEmployeeSheet = unknownEmployeeWorkbook.addWorksheet("Payroll");
+  unknownEmployeeSheet.addRow(["HR_ID", "Full Name", "Gross Salary", "Net Salary"]);
+  unknownEmployeeSheet.addRow(["B-404", "Missing Employee", 1000, 900]);
+  const unknownEmployeeFile = new File([await unknownEmployeeWorkbook.xlsx.writeBuffer() as BlobPart], "unknown-employee.xlsx");
+  const unknownEmployeeResult = await validateSalaryWorkbook(unknownEmployeeFile, {
+    expectedPeriod: { month: 1, year: 2026 },
+    salarySources: new Map(),
+  });
+
+  assert.equal(unknownEmployeeResult.failedRows, 0);
+  assert.equal(unknownEmployeeResult.rowsToImport.length, 1);
+  assert.equal(unknownEmployeeResult.rowsToImport[0].hrId, "B-404");
+  assert.equal(unknownEmployeeResult.validationTotals.grossSalary, 1000);
+  assert.equal(unknownEmployeeResult.validationTotals.netSalary, 900);
+  assert.deepEqual(unknownEmployeeResult.payrollResignationCandidates, [
+    {
+      area: null,
+      fullName: "Missing Employee",
+      hireDate: null,
+      hrId: "B-404",
+      jobTitle: null,
+      lastPayoutMonth: 1,
+      lastPayoutYear: 2026,
+      line: null,
+      nameAr: null,
+      row: 2,
+    },
+  ]);
+  assert.equal(
+    unknownEmployeeResult.validationWarnings.some(
+      (warning) => warning.code === "employee_not_found" && warning.hrId === "B-404",
+    ),
+    true,
+  );
+  assert.equal(unknownEmployeeResult.warningRows, 0);
+
+  const mixedEmployeeWorkbook = new ExcelJS.Workbook();
+  const mixedEmployeeSheet = mixedEmployeeWorkbook.addWorksheet("Payroll");
+  mixedEmployeeSheet.addRow(["HR_ID", "Full Name", "Gross Salary", "Net Salary"]);
+  mixedEmployeeSheet.addRow(["B-405", "Known Employee", 1000, 900]);
+  mixedEmployeeSheet.addRow(["B-406", "Missing Employee", 2000, 1800]);
+  const mixedEmployeeFile = new File([await mixedEmployeeWorkbook.xlsx.writeBuffer() as BlobPart], "mixed-employee.xlsx");
+  const mixedEmployeeSource: PayrollSalarySource = {
+    baseSalary: null,
+    employmentIncomeTax: null,
+    extraCostOfLiving: null,
+    fuelAllowance: null,
+    grossSalary: null,
+    netSalary: null,
+    paymentMode: "two_parts",
+    socialInsurance: null,
+  };
+  const mixedEmployeeResult = await validateSalaryWorkbook(mixedEmployeeFile, {
+    expectedPeriod: { month: 1, year: 2026 },
+    salarySources: new Map(salarySourceLookupKeys("B-405").map((key) => [key, mixedEmployeeSource])),
+  });
+
+  assert.equal(mixedEmployeeResult.failedRows, 0);
+  assert.deepEqual(mixedEmployeeResult.rowsToImport.map((item) => item.hrId), ["B-405", "B-406"]);
+  assert.equal(mixedEmployeeResult.validationTotals.grossSalary, 3000);
+  assert.equal(mixedEmployeeResult.validationTotals.netSalary, 2700);
+  assert.deepEqual(mixedEmployeeResult.payrollResignationCandidates.map((item) => item.hrId), ["B-406"]);
 
   const sourceWorkbook = new ExcelJS.Workbook();
   const sourceSheet = sourceWorkbook.addWorksheet("Payroll");
@@ -135,6 +223,7 @@ export async function runPayrollSheetMappingTests() {
     "total_deductions",
     "first_part",
     "second_part",
+    "Payment Group",
   ]);
   sourceSheet.addRow([
     "B-58",
@@ -149,10 +238,11 @@ export async function runPayrollSheetMappingTests() {
     999,
     100,
     200,
-    7777,
-    8888,
+    2298,
+    2298,
     44444,
     -123,
+    "One Part",
   ]);
 
   const b58Source: PayrollSalarySource = {
@@ -181,11 +271,25 @@ export async function runPayrollSheetMappingTests() {
   assert.equal(sourceRow.grossSalary, 11111);
   assert.equal(sourceRow.firstPart, 44444);
   assert.equal(sourceRow.secondPart, -123);
-  assert.equal(sourceRow.totalAdditions, 7777);
-  assert.equal(sourceRow.totalDeductions, 8888);
+  assert.equal(sourceRow.totalAdditions, 2298);
+  assert.equal(sourceRow.totalDeductions, 2298);
   assert.equal(
     sourceResult.validationWarnings.some(
       (warning) => warning.code === "net_salary_source_of_truth_mismatch",
+    ),
+    true,
+  );
+  assert.equal(
+    sourceResult.validationWarnings.some(
+      (warning) =>
+        warning.code === "first_part_formula_mismatch" ||
+        warning.code === "second_part_formula_mismatch",
+    ),
+    false,
+  );
+  assert.equal(
+    sourceResult.validationWarnings.some(
+      (warning) => warning.code === "payment_mode_source_of_truth_mismatch",
     ),
     true,
   );
@@ -236,6 +340,97 @@ export async function runPayrollSheetMappingTests() {
   assert.equal(zeroResult.rowsToImport[0].firstPart, 0);
   assert.equal(zeroResult.rowsToImport[0].secondPart, 0);
 
+  const formulaMismatchWorkbook = new ExcelJS.Workbook();
+  const formulaMismatchSheet = formulaMismatchWorkbook.addWorksheet("Payroll");
+  formulaMismatchSheet.addRow([
+    "HR_ID",
+    "Full Name",
+    "gross_salary",
+    "Net Salary",
+    "expenses",
+    "incentive",
+    "extra_cost_of_living",
+    "fuel_allowance",
+    "other_additions",
+    "total_additions",
+    "Social Insurance",
+    "Employment Income Tax",
+    "Governmental Deductions",
+    "CRM",
+    "Medical Insurance",
+    "Other Deductions",
+    "total_deductions",
+  ]);
+  formulaMismatchSheet.addRow([
+    "B-103",
+    "Formula Mismatch",
+    10000,
+    9000,
+    100,
+    50,
+    200,
+    500,
+    25,
+    999,
+    120,
+    80,
+    250,
+    10,
+    20,
+    30,
+    999,
+  ]);
+  const formulaMismatchFile = new File([await formulaMismatchWorkbook.xlsx.writeBuffer() as BlobPart], "formula-mismatch.xlsx");
+  const formulaMismatchResult = await validateSalaryWorkbook(formulaMismatchFile);
+
+  assert.equal(formulaMismatchResult.failedRows, 1);
+  assert.equal(formulaMismatchResult.rowsToImport.length, 0);
+  assert.deepEqual(
+    formulaMismatchResult.validationErrors.map((error) => error.code).sort(),
+    [
+      "governmental_deductions_formula_mismatch",
+      "total_additions_formula_mismatch",
+      "total_deductions_formula_mismatch",
+    ],
+  );
+
+  const separatedDeductionsWorkbook = new ExcelJS.Workbook();
+  const separatedDeductionsSheet = separatedDeductionsWorkbook.addWorksheet("Payroll");
+  separatedDeductionsSheet.addRow([
+    "HR_ID",
+    "Full Name",
+    "gross_salary",
+    "Net Salary",
+    "Social Insurance",
+    "Employment Income Tax",
+    "Governmental Deductions",
+    "CRM",
+    "Medical Insurance",
+    "Other Deductions",
+    "total_deductions",
+  ]);
+  separatedDeductionsSheet.addRow([
+    "B-104",
+    "Separated Deductions",
+    10000,
+    9000,
+    120,
+    80,
+    200,
+    10,
+    20,
+    30,
+    60,
+  ]);
+  const separatedDeductionsFile = new File([await separatedDeductionsWorkbook.xlsx.writeBuffer() as BlobPart], "separated-deductions.xlsx");
+  const separatedDeductionsResult = await validateSalaryWorkbook(separatedDeductionsFile);
+
+  assert.equal(separatedDeductionsResult.failedRows, 0);
+  assert.equal(separatedDeductionsResult.rowsToImport[0].governmentalDeductions, 200);
+  assert.equal(separatedDeductionsResult.rowsToImport[0].totalDeductions, 60);
+  assert.equal(separatedDeductionsResult.validationTotals.governmentalDeductions, 200);
+  assert.equal(separatedDeductionsResult.validationTotals.totalDeductions, 60);
+
   const mismatchWorkbook = new ExcelJS.Workbook();
   const mismatchSheet = mismatchWorkbook.addWorksheet("Payroll");
   mismatchSheet.addRow(["HR_ID", "Full Name", "gross_salary", "Net Salary", "Month", "Year"]);
@@ -261,4 +456,112 @@ export async function runPayrollSheetMappingTests() {
   assert.equal(noPeriodResult.failedRows, 0);
   assert.equal(noPeriodResult.payrollPeriod.month, 4);
   assert.equal(noPeriodResult.payrollPeriod.year, 2026);
+
+  const baseSalaryWorkbook = new ExcelJS.Workbook();
+  const baseSalarySheet = baseSalaryWorkbook.addWorksheet("Payroll");
+  baseSalarySheet.addRow([
+    "HR_ID",
+    "Full Name",
+    "Base Salary",
+    "Gross Salary",
+    "Net Salary",
+    "Extra Cost of Living",
+    "Fuel Allowance",
+    "Social Insurance",
+    "Employment Income Tax",
+    "Governmental Deductions",
+    "Payment Group",
+  ]);
+  baseSalarySheet.addRow([
+    "B-58",
+    "Base Salary Employee",
+    14000,
+    "",
+    "",
+    2000,
+    500,
+    1200,
+    800,
+    2000,
+    "Two Parts",
+  ]);
+  baseSalarySheet.addRow([
+    "",
+    "",
+    14000,
+    16000,
+    16500,
+    2000,
+    500,
+    1200,
+    800,
+    2000,
+    "",
+  ]);
+  const baseSalaryFile = new File([await baseSalaryWorkbook.xlsx.writeBuffer() as BlobPart], "base-salary-payroll.xlsx");
+  const baseSalaryResult = await validateSalaryWorkbook(baseSalaryFile);
+  const baseSalaryRow = baseSalaryResult.rowsToImport[0];
+
+  assert.equal(baseSalaryResult.failedRows, 0);
+  assert.equal(baseSalaryResult.totalRows, 1);
+  assert.equal(baseSalaryResult.rowsToImport.length, 1);
+  assert.equal(baseSalaryRow.netSalary, 16500);
+  assert.equal(baseSalaryRow.grossSalary, 16000);
+  assert.equal(baseSalaryRow.firstPart, 9800);
+  assert.equal(baseSalaryRow.secondPart, 6700);
+  assert.equal(baseSalaryRow.monthSalary, 16500);
+  assert.equal(baseSalaryRow.totalDeductions, 0);
+  assert.equal(baseSalaryResult.validationTotals.baseSalary, 14000);
+  assert.equal(baseSalaryResult.validationTotals.grossSalary, 16000);
+  assert.equal(baseSalaryResult.validationTotals.netSalary, 16500);
+  assert.equal(baseSalaryResult.validationTotals.monthSalary, 16500);
+  assert.equal(baseSalaryResult.validationTotals.totalAdditions, 2500);
+  assert.equal(baseSalaryResult.validationTotals.governmentalDeductions, 2000);
+  assert.equal(baseSalaryResult.validationTotals.totalDeductions, 0);
+
+  const uploadedFixedWorkbook = new ExcelJS.Workbook();
+  const uploadedFixedSheet = uploadedFixedWorkbook.addWorksheet("Payroll");
+  uploadedFixedSheet.addRow([
+    "HR_ID",
+    "Full Name",
+    "Base Salary",
+    "Gross Salary",
+    "Net Salary",
+    "Social Insurance",
+    "Employment Income Tax",
+    "Payment Group",
+  ]);
+  uploadedFixedSheet.addRow(["B-60", "Uploaded Fixed Values", 100, 999, 888, 10, 20, "Two Parts"]);
+  const uploadedFixedFile = new File([await uploadedFixedWorkbook.xlsx.writeBuffer() as BlobPart], "uploaded-fixed.xlsx");
+  const uploadedFixedResult = await validateSalaryWorkbook(uploadedFixedFile);
+
+  assert.equal(uploadedFixedResult.rowsToImport[0].baseSalary, 100);
+  assert.equal(uploadedFixedResult.rowsToImport[0].grossSalary, 999);
+  assert.equal(uploadedFixedResult.rowsToImport[0].netSalary, 888);
+  assert.equal(uploadedFixedResult.validationTotals.grossSalary, 999);
+  assert.equal(uploadedFixedResult.validationTotals.netSalary, 888);
+
+  const governmentalMismatchWorkbook = new ExcelJS.Workbook();
+  const governmentalMismatchSheet = governmentalMismatchWorkbook.addWorksheet("Payroll");
+  governmentalMismatchSheet.addRow([
+    "HR_ID",
+    "Full Name",
+    "gross_salary",
+    "Net Salary",
+    "Social Insurance",
+    "Employment Income Tax",
+    "Governmental Deductions",
+  ]);
+  governmentalMismatchSheet.addRow(["B-59", "Government Deduction Mismatch", 16000, 16500, 1200, 800, 2500]);
+  const governmentalMismatchFile = new File([await governmentalMismatchWorkbook.xlsx.writeBuffer() as BlobPart], "gov-mismatch.xlsx");
+  const governmentalMismatchResult = await validateSalaryWorkbook(governmentalMismatchFile);
+
+  assert.equal(governmentalMismatchResult.failedRows, 1);
+  assert.equal(governmentalMismatchResult.rowsToImport.length, 0);
+  assert.equal(
+    governmentalMismatchResult.validationErrors.some(
+      (error) => error.code === "governmental_deductions_formula_mismatch",
+    ),
+    true,
+  );
 }

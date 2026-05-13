@@ -836,11 +836,15 @@ function TrendChart({
                 }}
                 formatter={(value, name) => {
                   if (value === undefined) return ["--", name];
-                  if (name === "achievement" && typeof value === "number") {
+                  const seriesName = String(name ?? "");
+                  if (seriesName.toLowerCase() === "achievement" && typeof value === "number") {
                     return [`${value.toFixed(1)}%`, "Achievement"];
                   }
                   const numericValue = typeof value === "number" ? value : Number(value) || 0;
-                  return [formatCurrency(numericValue), name === "sales" ? "Sales" : "Target"];
+                  return [
+                    formatCurrency(numericValue),
+                    seriesName.toLowerCase() === "sales" ? "Sales" : "Target",
+                  ];
                 }}
               />
               <Legend />

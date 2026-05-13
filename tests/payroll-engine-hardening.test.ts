@@ -11,6 +11,26 @@ const payrollTenMigrationSource = readFileSync(
   "utf8",
 );
 
+const payrollAdminDeleteMigrationSource = readFileSync(
+  new URL("../supabase/migrations/20260513154219_payroll_admin_delete_uploads.sql", import.meta.url),
+  "utf8",
+);
+
+const payrollResignationCandidatesMigrationSource = readFileSync(
+  new URL("../supabase/migrations/20260513180426_payroll_resignation_candidates.sql", import.meta.url),
+  "utf8",
+);
+
+const payrollMissingHrIdMigrationSource = readFileSync(
+  new URL("../supabase/migrations/20260513182207_payroll_salary_records_allow_missing_employee_hr_ids.sql", import.meta.url),
+  "utf8",
+);
+
+const payslipUploadedSheetMigrationSource = readFileSync(
+  new URL("../supabase/migrations/20260513184233_payroll_payslip_uploaded_sheet_fields.sql", import.meta.url),
+  "utf8",
+);
+
 const adminPayslipCenterSource = readFileSync(
   new URL("../app/admin/payslips-center/page.tsx", import.meta.url),
   "utf8",
@@ -46,6 +66,16 @@ const payrollDashboardSource = readFileSync(
   "utf8",
 );
 
+const resignationsReportSource = readFileSync(
+  new URL("../src/components/reports/resignations-report.tsx", import.meta.url),
+  "utf8",
+);
+
+const resignationsServiceSource = readFileSync(
+  new URL("../src/lib/resignations/service.ts", import.meta.url),
+  "utf8",
+);
+
 const payslipCenterSource = readFileSync(
   new URL("../src/lib/payroll/payslip-center.ts", import.meta.url),
   "utf8",
@@ -66,8 +96,23 @@ const uploadRouteSource = readFileSync(
   "utf8",
 );
 
+const replaceRouteSource = readFileSync(
+  new URL("../app/api/payroll/[id]/replace/route.ts", import.meta.url),
+  "utf8",
+);
+
 const validateRouteSource = readFileSync(
   new URL("../app/api/payroll/validate/route.ts", import.meta.url),
+  "utf8",
+);
+
+const salaryImportSource = readFileSync(
+  new URL("../src/lib/payroll/salary-import.ts", import.meta.url),
+  "utf8",
+);
+
+const salarySheetFieldsSource = readFileSync(
+  new URL("../src/lib/payroll/salary-sheet-fields.ts", import.meta.url),
   "utf8",
 );
 
@@ -170,7 +215,57 @@ export function runPayrollEngineHardeningTests() {
   assert.match(
     migrationSource,
     /phx_prevent_closed_salary_batch_delete/i,
-    "Payroll migration must block deleting approved or locked batches.",
+    "Payroll migration must include a direct table delete guard for closed batches.",
+  );
+  assert.match(
+    payrollAdminDeleteMigrationSource,
+    /create or replace function public\.phx_delete_salary_batch/i,
+    "Payroll migration must add an explicit admin delete RPC for uploaded payroll sheets.",
+  );
+  assert.match(
+    payrollAdminDeleteMigrationSource,
+    /request\.phx_allow_salary_batch_delete/i,
+    "Payroll admin delete RPC must use an explicit trigger bypass setting.",
+  );
+  assert.match(
+    payrollAdminDeleteMigrationSource,
+    /revoke all on function public\.phx_delete_salary_batch\(uuid\) from public, anon, authenticated/i,
+    "Payroll admin delete RPC must not be callable by public, anon, or authenticated.",
+  );
+  assert.match(
+    payrollAdminDeleteMigrationSource,
+    /grant execute on function public\.phx_delete_salary_batch\(uuid\) to service_role/i,
+    "Payroll admin delete RPC must be callable only by service_role.",
+  );
+  assert.match(
+    payrollResignationCandidatesMigrationSource,
+    /create table if not exists public\.payroll_resignation_candidates/i,
+    "Payroll missing employee candidates must have a persisted resignation-report table.",
+  );
+  assert.match(
+    payrollResignationCandidatesMigrationSource,
+    /employee_name text not null[\s\S]*area_name text[\s\S]*hire_date date[\s\S]*last_payout_month integer not null[\s\S]*last_payout_year integer not null/i,
+    "Payroll resignation candidate table must preserve name, area, hire date, and last payout period.",
+  );
+  assert.match(
+    payrollResignationCandidatesMigrationSource,
+    /alter table public\.payroll_resignation_candidates enable row level security/i,
+    "Payroll resignation candidate table must enable RLS.",
+  );
+  assert.match(
+    payrollResignationCandidatesMigrationSource,
+    /to service_role[\s\S]*using \(true\)[\s\S]*with check \(true\)/i,
+    "Payroll resignation candidate table must only expose writes through service-role workflows.",
+  );
+  assert.match(
+    payrollMissingHrIdMigrationSource,
+    /drop constraint if exists salary_records_hr_id_fkey/i,
+    "Payroll salary records must allow uploaded historical HR IDs that are no longer in employees.",
+  );
+  assert.match(
+    payrollMissingHrIdMigrationSource,
+    /drop constraint if exists salary_flags_hr_id_fkey/i,
+    "Payroll warning flags must allow missing-directory HR IDs.",
   );
   assert.match(
     migrationSource,
@@ -183,14 +278,44 @@ export function runPayrollEngineHardeningTests() {
     "Expense import must move expense changes into Second Part.",
   );
   assert.match(
-    downloadRouteSource,
-    /"Gross Salary"/,
-    "Payroll XLSX export must label the gross salary column correctly.",
+    payslipUploadedSheetMigrationSource,
+    /add column if not exists base_salary numeric[\s\S]*governmental_deductions numeric[\s\S]*month_salary numeric[\s\S]*payment_mode text/i,
+    "Payroll payslips must persist every new uploaded-sheet field needed for the canonical template.",
   );
-  assert.doesNotMatch(
+  assert.match(
+    payslipUploadedSheetMigrationSource,
+    /create or replace function public\.phx_create_salary_batch[\s\S]*base_salary[\s\S]*governmental_deductions[\s\S]*month_salary[\s\S]*payment_mode/i,
+    "Payroll create RPC must insert the persisted uploaded-sheet fields.",
+  );
+  assert.match(
+    payslipUploadedSheetMigrationSource,
+    /create or replace function public\.phx_replace_salary_batch[\s\S]*base_salary[\s\S]*governmental_deductions[\s\S]*month_salary[\s\S]*payment_mode/i,
+    "Payroll replace RPC must insert the persisted uploaded-sheet fields.",
+  );
+  assert.match(
+    payslipUploadedSheetMigrationSource,
+    /month_salary = coalesce\(sr\.month_salary/i,
+    "Expense import must keep Month Salary aligned when expenses update Second Part.",
+  );
+  assert.match(
+    payslipUploadedSheetMigrationSource,
+    /grant execute on function public\.phx_create_salary_batch\(integer, integer, text, text, jsonb, jsonb, timestamptz\) to service_role/i,
+    "Updated payroll create RPC must stay service-role only.",
+  );
+  assert.match(
+    payslipUploadedSheetMigrationSource,
+    /grant execute on function public\.phx_replace_salary_batch\(uuid, integer, integer, text, text, jsonb, jsonb, timestamptz\) to service_role/i,
+    "Updated payroll replace RPC must stay service-role only.",
+  );
+  assert.match(
     downloadRouteSource,
-    /"Net Salary",\s*"Expenses \(Prev Month\)"/,
-    "Payroll XLSX export must not label grossSalary as Net Salary.",
+    /payrollSheetHeaders/,
+    "Payroll XLSX export must use the same canonical headers as the upload template.",
+  );
+  assert.match(
+    downloadRouteSource,
+    /payrollSheetValue/,
+    "Payroll XLSX export rows must be generated from canonical uploaded-sheet fields.",
   );
   assert.match(
     downloadRouteSource,
@@ -201,6 +326,66 @@ export function runPayrollEngineHardeningTests() {
     payslipRouteSource,
     /assertPermission\(access, "payslips", "read"\)/,
     "Payslip route must assert payslips read permission.",
+  );
+  assert.doesNotMatch(
+    payslipRouteSource,
+    /Monthly Uploaded Payroll Sheet/,
+    "Payslip route must not render the raw monthly uploaded payroll sheet heading.",
+  );
+  assert.doesNotMatch(
+    payslipRouteSource,
+    /Every field below matches/,
+    "Payslip route must not render the raw upload-sheet explanatory sentence.",
+  );
+  assert.doesNotMatch(
+    payslipRouteSource,
+    /payrollSheetHeaders\.length\} headers|36 headers/,
+    "Payslip route must not render the upload template header count.",
+  );
+  assert.doesNotMatch(
+    payslipRouteSource,
+    /Print \/ Save PDF/,
+    "Payslip route must not render the print/save toolbar button.",
+  );
+  assert.match(
+    payslipRouteSource,
+    /payslipHiddenHeaders[\s\S]*"Policy Comment"/,
+    "Payslip route must hide Policy Comment from the displayed detail table.",
+  );
+  assert.match(
+    payslipRouteSource,
+    /payslipDisplayHeaders = payrollSheetHeaders\.filter\(\(header\) => !payslipHiddenHeaders\.has\(header\)\)/,
+    "Payslip route must derive display headers from the canonical payroll sheet headers.",
+  );
+  assert.match(
+    payslipRouteSource,
+    /payrollSheetHeaders/,
+    "Payslip route must keep the canonical uploaded payroll sheet order for displayed payroll values.",
+  );
+  assert.match(
+    payslipRouteSource,
+    /payrollSheetValue/,
+    "Payslip route values must come from the same canonical uploaded-sheet mapping.",
+  );
+  assert.match(
+    payslipRouteSource,
+    /<thead><tr><th>Component<\/th><th>Amount \/ Value<\/th><\/tr><\/thead>/,
+    "Payslip route must render only Component and Amount / Value columns.",
+  );
+  assert.match(
+    payslipRouteSource,
+    /total-additions-row/,
+    "Payslip route must give Total Additions a dedicated styling hook.",
+  );
+  assert.match(
+    payslipRouteSource,
+    /governmental-deductions-row/,
+    "Payslip route must give Governmental Deductions a dedicated styling hook.",
+  );
+  assert.match(
+    payslipRouteSource,
+    /total-deductions-row/,
+    "Payslip route must give Total Deductions a dedicated styling hook.",
   );
   assert.match(
     payslipRouteSource,
@@ -238,9 +423,79 @@ export function runPayrollEngineHardeningTests() {
     "Payroll validation route must return duplicate-period metadata for the UI warning.",
   );
   assert.match(
+    salaryImportSource,
+    /payrollResignationCandidates/,
+    "Payroll validation must surface missing-directory rows as resignation report candidates.",
+  );
+  assert.match(
+    validateRouteSource,
+    /upsertPayrollResignationCandidates/,
+    "Payroll validation route must send missing employee rows to the resignation report candidate table.",
+  );
+  assert.match(
+    uploadRouteSource,
+    /upsertPayrollResignationCandidates/,
+    "Payroll upload route must send missing employee rows to the resignation report candidate table before returning validation errors.",
+  );
+  assert.match(
+    uploadRouteSource,
+    /warning\)\s*=>\s*warning\.code !== "employee_not_found"/,
+    "Payroll upload route must not persist missing-directory HR IDs as governance warning flags.",
+  );
+  assert.match(
+    replaceRouteSource,
+    /upsertPayrollResignationCandidates/,
+    "Payroll replace route must send missing employee rows to the resignation report candidate table before returning validation errors.",
+  );
+  assert.match(
+    replaceRouteSource,
+    /warning\)\s*=>\s*warning\.code !== "employee_not_found"/,
+    "Payroll replace route must not persist missing-directory HR IDs as governance warning flags.",
+  );
+  assert.match(
+    payrollDashboardSource,
+    /Resignation alarm:/,
+    "Payroll validation UI must render missing-directory HR IDs as a resignation alarm.",
+  );
+  assert.match(
+    payrollDashboardSource,
+    /issue\.code !== "employee_not_found"/,
+    "Payroll validation UI must exclude resignation alarms from normal warnings.",
+  );
+  assert.match(
+    payrollDashboardSource,
+    /readPayrollApiPayload/,
+    "Payroll UI must use defensive API response parsing so non-JSON failures do not become generic upload errors.",
+  );
+  assert.doesNotMatch(
+    payrollDashboardSource,
+    /response\.json\(\)/,
+    "Payroll UI must not parse API responses directly with response.json().",
+  );
+  assert.doesNotMatch(
+    payrollDashboardSource,
+    /setSalaryUploadError\("Unable to confirm payroll upload\."\)/,
+    "Payroll upload confirm must preserve the underlying request or API error message.",
+  );
+  assert.match(
+    resignationsServiceSource,
+    /payroll_resignation_candidates/,
+    "Resignation dashboard service must load payroll missing employee candidates.",
+  );
+  assert.match(
+    resignationsReportSource,
+    /Payroll Missing Employee Candidates/,
+    "Resignation report UI must render payroll missing employee candidates.",
+  );
+  assert.match(
     payrollDashboardSource,
     /Replace existing upload/,
     "Payroll UI must present a replace action for duplicate editable periods.",
+  );
+  assert.match(
+    payrollDashboardSource,
+    /template\?upload=1&month=\$\{payrollMonth\}&year=\$\{payrollYear\}/,
+    "Payroll upload template download must use the selected payroll period.",
   );
   assert.match(
     payrollDashboardSource,
@@ -264,8 +519,8 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     payrollServiceSource,
-    /assertSalaryBatchDeletable/,
-    "Payroll service must guard destructive delete actions by batch status.",
+    /"phx_delete_salary_batch"/,
+    "Payroll service must use the explicit admin delete RPC for uploaded payroll sheets.",
   );
   assert.match(
     payrollServiceSource,
@@ -281,6 +536,111 @@ export function runPayrollEngineHardeningTests() {
     templateRouteSource,
     /resolveStandardSalaryAllowances/,
     "Ready payroll template must use the global standard allowance policy.",
+  );
+  assert.match(
+    templateRouteSource,
+    /Phoenix Salary Upload Policy/,
+    "Payroll template must include the current salary policy reference sheet.",
+  );
+  assert.match(
+    templateRouteSource,
+    /"Base Salary"/,
+    "Payroll upload template must include a Base Salary header.",
+  );
+  assert.match(
+    templateRouteSource,
+    /const headers = \[\.\.\.payrollSheetHeaders\]/,
+    "Payroll upload template must put Month and Year at the start of each row.",
+  );
+  assert.match(
+    salarySheetFieldsSource,
+    /payrollSheetHeaders = \[\s*"#",\s*"Month",\s*"Year",\s*"HR_ID"[\s\S]*"Policy Comment"/,
+    "Canonical payroll sheet headers must include every upload template column in order.",
+  );
+  assert.match(
+    templateRouteSource,
+    /"Gross Salary"/,
+    "Payroll upload template must include a Gross Salary header.",
+  );
+  assert.match(
+    templateRouteSource,
+    /"Governmental Deductions"/,
+    "Payroll upload template must separate governmental deductions from internal deductions.",
+  );
+  assert.match(
+    templateRouteSource,
+    /governmentalDeductions/,
+    "Payroll upload template rows must populate governmental deductions.",
+  );
+  assert.match(
+    templateRouteSource,
+    /buildUploadRows/,
+    "Payroll upload template must be populated from fixed employee salary data.",
+  );
+  assert.match(
+    templateRouteSource,
+    /createFallbackWorkbook\(await buildUploadRows\(month, year\), month, year\)/,
+    "Payroll upload template download must include populated employee rows for the selected period.",
+  );
+  assert.match(
+    templateRouteSource,
+    /resolveStandardSalaryAllowances\(\{[\s\S]*month,[\s\S]*year,/,
+    "Payroll upload template fixed allowances must be resolved for the selected period.",
+  );
+  assert.match(
+    templateRouteSource,
+    /Net Salary", "Base Salary \+ Extra Cost of Living \+ Fuel Allowance\./,
+    "Payroll template must explain the fixed net salary formula.",
+  );
+  assert.match(
+    templateRouteSource,
+    /uploadTemplateSections/,
+    "Payroll upload template must define colored section partitions.",
+  );
+  assert.match(
+    templateRouteSource,
+    /label: "Employee Data"/,
+    "Payroll upload template must group employee data in its own section.",
+  );
+  assert.match(
+    templateRouteSource,
+    /label: "Additions"/,
+    "Payroll upload template must group monthly additions in its own section.",
+  );
+  assert.match(
+    templateRouteSource,
+    /label: "Total Additions"/,
+    "Payroll upload template must make total additions a separate darker section.",
+  );
+  assert.match(
+    templateRouteSource,
+    /label: "Governmental Deductions"/,
+    "Payroll upload template must group governmental deductions separately.",
+  );
+  assert.match(
+    templateRouteSource,
+    /label: "Internal Deductions"/,
+    "Payroll upload template must group internal deductions separately.",
+  );
+  assert.match(
+    templateRouteSource,
+    /label: "Total Deductions"/,
+    "Payroll upload template must make total deductions a separate darker section.",
+  );
+  assert.match(
+    templateRouteSource,
+    /label: "Payment Split"/,
+    "Payroll upload template must group month salary and part payments separately.",
+  );
+  assert.match(
+    templateRouteSource,
+    /writeUploadSectionRow/,
+    "Payroll upload template must render a visible section row above the headers.",
+  );
+  assert.match(
+    templateRouteSource,
+    /stylePayrollDataCell/,
+    "Payroll upload template must color body cells by section.",
   );
   assert.doesNotMatch(
     templateRouteSource,

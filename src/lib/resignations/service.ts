@@ -1,11 +1,13 @@
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type {
   CreateResignationInput,
   ResignationDashboardData,
   EmployeeResignationInput,
+  PayrollResignationCandidateRecord,
   ResignationRecord,
   ResignationStatus,
   ResignationWorkflowAction,
@@ -36,6 +38,25 @@ type ResignationRow = {
   completed_by: string | null;
   cancelled_at: string | null;
   cancelled_by: string | null;
+};
+
+type PayrollResignationCandidateRow = {
+  id: string;
+  area_name: string | null;
+  created_by: string | null;
+  employee_name: string;
+  first_seen_at: string;
+  hire_date: string | null;
+  hr_id: string;
+  job_title: string | null;
+  last_payout_month: number;
+  last_payout_year: number;
+  last_seen_at: string;
+  line_name: string | null;
+  name_ar: string | null;
+  source_file_name: string | null;
+  source_row: number | null;
+  updated_at: string;
 };
 
 function asIso(value: string | null | undefined) {
@@ -103,6 +124,27 @@ function mapResignation(row: ResignationRow): ResignationRecord {
   };
 }
 
+function mapPayrollResignationCandidate(row: PayrollResignationCandidateRow): PayrollResignationCandidateRecord {
+  return {
+    id: row.id,
+    areaName: row.area_name,
+    createdBy: row.created_by,
+    employeeName: row.employee_name,
+    firstSeenAt: new Date(row.first_seen_at).toISOString(),
+    hireDate: row.hire_date,
+    hrId: row.hr_id,
+    jobTitle: row.job_title,
+    lastPayoutMonth: Number(row.last_payout_month),
+    lastPayoutYear: Number(row.last_payout_year),
+    lastSeenAt: new Date(row.last_seen_at).toISOString(),
+    lineName: row.line_name,
+    nameAr: row.name_ar,
+    sourceFileName: row.source_file_name,
+    sourceRow: row.source_row === null || row.source_row === undefined ? null : Number(row.source_row),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
 async function notifyResignationWorkflow(
   record: {
     effectiveDate: string;
@@ -142,24 +184,113 @@ export function isResignationsSchemaMissing(error: unknown) {
   const message = resignationErrorMessage(error).toLowerCase();
   return (
     message.includes("employee_resignations") ||
+    message.includes("payroll_resignation_candidates") ||
     message.includes("could not find the table") ||
     message.includes("schema cache") ||
     (message.includes("relation") && message.includes("does not exist"))
   );
 }
 
+function periodSortValue(month: number, year: number) {
+  return year * 100 + month;
+}
+
+export async function upsertPayrollResignationCandidates(input: {
+  actor: string | null;
+  candidates: PayrollResignationCandidate[];
+  month: number;
+  sourceFileName: string;
+  year: number;
+}) {
+  const candidatesByHrId = new Map<string, PayrollResignationCandidate>();
+  input.candidates.forEach((candidate) => {
+    const hrId = candidate.hrId.trim();
+    if (!hrId) return;
+    candidatesByHrId.set(hrId, { ...candidate, hrId });
+  });
+
+  const candidates = Array.from(candidatesByHrId.values());
+  if (candidates.length === 0) return 0;
+
+  const supabase = getSupabaseAdmin();
+  const hrIds = candidates.map((candidate) => candidate.hrId);
+  const { data: existingRows, error: existingError } = await supabase
+    .from("payroll_resignation_candidates")
+    .select("hr_id,last_payout_month,last_payout_year")
+    .in("hr_id", hrIds);
+
+  if (existingError) throw existingError;
+
+  const existingByHrId = new Map(
+    ((existingRows ?? []) as Array<Record<string, unknown>>).map((row) => [
+      String(row.hr_id ?? ""),
+      {
+        month: Number(row.last_payout_month ?? 0),
+        year: Number(row.last_payout_year ?? 0),
+      },
+    ]),
+  );
+  const currentPeriod = periodSortValue(input.month, input.year);
+  const now = new Date().toISOString();
+  const payload = candidates
+    .filter((candidate) => {
+      const existing = existingByHrId.get(candidate.hrId);
+      if (!existing) return true;
+      return currentPeriod >= periodSortValue(existing.month, existing.year);
+    })
+    .map((candidate) => ({
+      area_name: candidate.area,
+      created_by: input.actor,
+      employee_name: candidate.fullName || candidate.hrId,
+      hire_date: candidate.hireDate,
+      hr_id: candidate.hrId,
+      job_title: candidate.jobTitle,
+      last_payout_month: input.month,
+      last_payout_year: input.year,
+      last_seen_at: now,
+      line_name: candidate.line,
+      name_ar: candidate.nameAr,
+      source_file_name: input.sourceFileName,
+      source_row: candidate.row,
+      updated_at: now,
+    }));
+
+  if (payload.length === 0) return 0;
+
+  const { error } = await supabase
+    .from("payroll_resignation_candidates")
+    .upsert(payload, {
+      onConflict: "hr_id",
+    });
+
+  if (error) throw error;
+  return payload.length;
+}
+
 export async function getResignationsDashboardData(): Promise<ResignationDashboardData> {
   const supabase = getSupabaseAdmin();
   const directory = await getEmployeeDirectory();
-  const { data, error } = await supabase
-    .from("employee_resignations")
-    .select("*")
-    .order("effective_date", { ascending: true })
-    .order("created_at", { ascending: false });
+  const [resignationsResult, candidatesResult] = await Promise.all([
+    supabase
+      .from("employee_resignations")
+      .select("*")
+      .order("effective_date", { ascending: true })
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("payroll_resignation_candidates")
+      .select("*")
+      .order("last_payout_year", { ascending: false })
+      .order("last_payout_month", { ascending: false })
+      .order("updated_at", { ascending: false }),
+  ]);
 
-  if (error) throw error;
+  if (resignationsResult.error) throw resignationsResult.error;
+  if (candidatesResult.error) throw candidatesResult.error;
 
-  const records = (data ?? []).map((row) => mapResignation(row as ResignationRow));
+  const records = (resignationsResult.data ?? []).map((row) => mapResignation(row as ResignationRow));
+  const payrollCandidates = (candidatesResult.data ?? []).map((row) =>
+    mapPayrollResignationCandidate(row as PayrollResignationCandidateRow),
+  );
   const employees = directory.employees
     .map((employee) => ({
       jobTitle: employee.positionTitle ?? employee.jobTitle ?? null,
@@ -173,11 +304,12 @@ export async function getResignationsDashboardData(): Promise<ResignationDashboa
     active: records.filter((record) => ["submitted", "under_review", "approved"].includes(record.status)).length,
     approved: records.filter((record) => record.status === "approved").length,
     completed: records.filter((record) => record.status === "completed").length,
+    payrollCandidates: payrollCandidates.length,
     pending: records.filter((record) => ["submitted", "under_review"].includes(record.status)).length,
     total: records.length,
   };
 
-  return { employees, records, summary };
+  return { employees, payrollCandidates, records, summary };
 }
 
 export async function createResignation(

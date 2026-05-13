@@ -11,6 +11,7 @@ import {
   isPayrollSchemaMissing,
   payrollPeriodConflictForBatch,
 } from "@/lib/payroll/service";
+import { upsertPayrollResignationCandidates } from "@/lib/resignations/service";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
@@ -83,10 +84,18 @@ export async function POST(request: Request) {
       return payrollPeriodConflictResponse(payrollPeriodConflictForBatch(existingBatch));
     }
 
-    const salarySources = await getPayrollSalarySourcesByHrId();
+    const salarySources = await getPayrollSalarySourcesByHrId({ month, year });
     const validation = await validateSalaryWorkbook(file, {
       expectedPeriod: { month, year },
       salarySources,
+    });
+    const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    await upsertPayrollResignationCandidates({
+      actor,
+      candidates: validation.payrollResignationCandidates,
+      month,
+      sourceFileName: file.name,
+      year,
     });
 
     if (
@@ -115,12 +124,16 @@ export async function POST(request: Request) {
       );
     }
 
+    const payrollGovernanceWarnings = validation.validationWarnings.filter(
+      (warning) => warning.code !== "employee_not_found",
+    );
+
     const result = await createSalaryBatch({
       fileName: file.name,
       month,
       records: validation.rowsToImport,
-      uploadedBy: resolveEmployeeIdentityId(access) ?? access.loginId ?? "system",
-      validationWarnings: validation.validationWarnings,
+      uploadedBy: actor,
+      validationWarnings: payrollGovernanceWarnings,
       year,
     });
 

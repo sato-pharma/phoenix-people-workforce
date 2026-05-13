@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode, RefObject } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,6 +61,33 @@ type SalaryValidationIssue = {
   row: number;
 };
 
+type SalaryValidationTotals = {
+  baseSalary: number;
+  bonus: number;
+  crm: number;
+  employmentIncomeTax: number;
+  expenses: number;
+  extraCostOfLiving: number;
+  fingerPrint: number;
+  firstPart: number;
+  fuelAllowance: number;
+  governmentalDeductions: number;
+  grossSalary: number;
+  incentive: number;
+  loans: number;
+  medicalInsurance: number;
+  monthSalary: number;
+  netSalary: number;
+  otherAdditions: number;
+  otherDeductions: number;
+  overtime: number;
+  secondPart: number;
+  socialInsurance: number;
+  totalAdditions: number;
+  totalDeductions: number;
+  unpaidVacations: number;
+};
+
 type SalaryValidationResult = {
   detectedColumns: string[];
   duplicateHrIds: string[];
@@ -70,6 +97,18 @@ type SalaryValidationResult = {
     month: number;
     year: number;
   };
+  payrollResignationCandidates?: Array<{
+    area: string | null;
+    fullName: string;
+    hireDate: string | null;
+    hrId: string;
+    jobTitle: string | null;
+    lastPayoutMonth: number;
+    lastPayoutYear: number;
+    line: string | null;
+    nameAr: string | null;
+    row: number;
+  }>;
   periodConflict?: PayrollPeriodConflict;
   rowsToImport: Array<{
     area: string;
@@ -83,6 +122,7 @@ type SalaryValidationResult = {
   totalRows: number;
   validRows: number;
   validationErrors: SalaryValidationIssue[];
+  validationTotals: SalaryValidationTotals;
   validationWarnings: SalaryValidationIssue[];
   warningRows: number;
 };
@@ -204,7 +244,6 @@ const interactiveCardClass = "phoenix-card-motion";
 const panelClassName =
   "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 const replaceableBatchStatuses = new Set(["uploaded", "part1_ready", "rejected"]);
-const deletableBatchStatuses = new Set(["uploaded", "part1_ready", "rejected"]);
 const publishedPayslipStatuses = new Set(["approved", "locked"]);
 
 const payrollStageOrder = [
@@ -226,8 +265,55 @@ function isBatchReplaceable(batch: SalaryBatch) {
   return replaceableBatchStatuses.has(batch.status) && !isPart1PaidBatch(batch);
 }
 
-function isBatchDeletable(batch: SalaryBatch) {
-  return deletableBatchStatuses.has(batch.status) && !isPart1PaidBatch(batch);
+async function readPayrollApiPayload(response: Response) {
+  const text = await response.text();
+  if (!text.trim()) return {};
+
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object"
+      ? parsed
+      : { message: String(parsed ?? "") };
+  } catch {
+    const status = `${response.status} ${response.statusText}`.trim();
+    const compactBody = text
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 260);
+    const redirectedMessage = response.redirected
+      ? " The request was redirected, so your session may need a refresh."
+      : "";
+
+    return {
+      error: "non_json_response",
+      message: compactBody
+        ? `Payroll API returned a non-JSON response (${status}).${redirectedMessage} ${compactBody}`
+        : `Payroll API returned an empty or unreadable response (${status}).${redirectedMessage}`,
+    };
+  }
+}
+
+function payrollPayloadMessage(payload: { error?: unknown; message?: unknown }, fallback: string) {
+  if (typeof payload.message === "string" && payload.message.trim()) return payload.message;
+  if (typeof payload.error === "string" && payload.error.trim()) return payload.error;
+  return fallback;
+}
+
+function payrollRequestErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) {
+    return `${fallback} ${error.message}`;
+  }
+
+  return fallback;
+}
+
+function payrollPayloadBatchId(payload: { batch?: unknown }) {
+  if (!payload.batch || typeof payload.batch !== "object") return null;
+  const id = (payload.batch as { id?: unknown }).id;
+  return typeof id === "string" && id.trim() ? id : null;
 }
 
 function PayrollPageShell({ children }: { children: ReactNode }) {
@@ -874,11 +960,11 @@ function percentDelta(current: number, previous: number) {
 }
 
 function governmentalDeductionsFor(record: SalaryRecord) {
-  return record.socialInsurance + record.employmentIncomeTax;
+  return record.governmentalDeductions;
 }
 
 function otherDeductionsFor(record: SalaryRecord) {
-  return Math.max(0, record.totalDeductions - governmentalDeductionsFor(record));
+  return record.totalDeductions;
 }
 
 function isNonOperationalTerritory(area: string) {
@@ -3334,13 +3420,78 @@ const retainedLegacyPayrollDashboardArtifacts = [
 void retainedLegacyPayrollDashboardArtifacts;
 
 function ValidationSummary({ result }: { result: SalaryValidationResult }) {
+  const resignationAlarms = result.validationWarnings.filter(
+    (issue) => issue.code === "employee_not_found",
+  );
+  const payrollWarnings = result.validationWarnings.filter(
+    (issue) => issue.code !== "employee_not_found",
+  );
+  const resignationCandidates = result.payrollResignationCandidates ?? [];
+  const resignationAlarmCount =
+    resignationCandidates.length ||
+    new Set(resignationAlarms.map((issue) => issue.hrId ?? `${issue.row}`)).size;
+  const resignationPreview = (
+    resignationCandidates.length > 0
+      ? resignationCandidates.map((candidate) => ({
+          fullName: candidate.fullName,
+          hrId: candidate.hrId,
+          row: candidate.row,
+        }))
+      : resignationAlarms.map((issue) => ({
+          fullName: "Missing employee",
+          hrId: issue.hrId ?? "-",
+          row: issue.row,
+        }))
+  ).slice(0, 8);
+  const payrollWarningRows = new Set(payrollWarnings.map((issue) => issue.row)).size;
   const issuePreview = [
     ...result.validationErrors.map((issue) => ({ ...issue, severity: "error" })),
-    ...result.validationWarnings.map((issue) => ({
+    ...payrollWarnings.map((issue) => ({
       ...issue,
       severity: "warning",
     })),
   ].slice(0, 12);
+  const totalSections = [
+    {
+      items: [
+        ["Base Salary", result.validationTotals.baseSalary],
+        ["Gross Salary", result.validationTotals.grossSalary],
+        ["Net Salary", result.validationTotals.netSalary],
+        ["Month Salary", result.validationTotals.monthSalary],
+        ["First Part", result.validationTotals.firstPart],
+        ["Second Part", result.validationTotals.secondPart],
+      ],
+      title: "Salary Totals",
+    },
+    {
+      items: [
+        ["Expenses", result.validationTotals.expenses],
+        ["Incentive", result.validationTotals.incentive],
+        ["Overtime", result.validationTotals.overtime],
+        ["Bonus", result.validationTotals.bonus],
+        ["Extra Cost of Living", result.validationTotals.extraCostOfLiving],
+        ["Fuel Allowance", result.validationTotals.fuelAllowance],
+        ["Other Additions", result.validationTotals.otherAdditions],
+        ["Total Additions", result.validationTotals.totalAdditions],
+      ],
+      title: "Additions Totals",
+    },
+    {
+      items: [
+        ["Social Insurance", result.validationTotals.socialInsurance],
+        ["Employment Income Tax", result.validationTotals.employmentIncomeTax],
+        ["Governmental Deductions", result.validationTotals.governmentalDeductions],
+        ["CRM", result.validationTotals.crm],
+        ["Finger Print", result.validationTotals.fingerPrint],
+        ["Unpaid Vacations", result.validationTotals.unpaidVacations],
+        ["Medical Insurance", result.validationTotals.medicalInsurance],
+        ["Loans", result.validationTotals.loans],
+        ["Other Deductions", result.validationTotals.otherDeductions],
+        ["Total Deductions", result.validationTotals.totalDeductions],
+      ],
+      title: "Deductions Totals",
+    },
+  ] as const;
 
   return (
     <Card className={`${panelClassName} p-5`}>
@@ -3362,11 +3513,12 @@ function ValidationSummary({ result }: { result: SalaryValidationResult }) {
         </Badge>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-5">
         {[
           ["Rows", result.totalRows],
           ["Valid", result.validRows],
-          ["Warnings", result.warningRows],
+          ["Alarms", resignationAlarmCount],
+          ["Warnings", payrollWarningRows],
           ["Failed", result.failedRows],
         ].map(([label, value]) => (
           <div className="rounded-[22px] border border-[#E2E8F0] bg-[#FCFDFE] p-4" key={label}>
@@ -3374,6 +3526,69 @@ function ValidationSummary({ result }: { result: SalaryValidationResult }) {
             <p className="mt-2 text-2xl font-black tracking-[-0.03em] text-[#0F172A]">{value}</p>
           </div>
         ))}
+      </div>
+
+      {resignationAlarmCount > 0 && (
+        <div className="mt-4 rounded-[22px] border border-[#FDBA74] bg-[#FFF7ED] p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#C2410C]">
+              <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-black text-[#9A3412]">
+                Resignation alarm: {resignationAlarmCount} employees may have resigned and are not in the employee directory.
+              </p>
+              <p className="mt-1 text-sm text-[#9A3412]">
+                These rows stay inside payroll import and totals, and they are sent to the resignation report.
+              </p>
+              {resignationPreview.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {resignationPreview.map((candidate) => (
+                    <span
+                      className="rounded-full border border-[#FED7AA] bg-white px-3 py-1 text-xs font-semibold text-[#9A3412]"
+                      key={`${candidate.row}-${candidate.hrId}`}
+                    >
+                      {candidate.hrId} - {candidate.fullName}
+                    </span>
+                  ))}
+                  {resignationAlarmCount > resignationPreview.length && (
+                    <span className="rounded-full border border-[#FED7AA] bg-white px-3 py-1 text-xs font-semibold text-[#9A3412]">
+                      +{resignationAlarmCount - resignationPreview.length} more
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 overflow-hidden rounded-[24px] border border-[#E2E8F0]">
+        <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748B]">
+            Validation Totals
+          </p>
+          <p className="mt-1 text-xs text-[#64748B]">
+            Calculated from all importable payroll rows. Missing-directory HR IDs remain included.
+          </p>
+        </div>
+        <div className="grid divide-y divide-[#E2E8F0] lg:grid-cols-3 lg:divide-x lg:divide-y-0">
+          {totalSections.map((section) => (
+            <div className="p-4" key={section.title}>
+              <p className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#0F172A]">
+                {section.title}
+              </p>
+              <dl className="space-y-2">
+                {section.items.map(([label, value]) => (
+                  <div className="flex items-center justify-between gap-3 text-sm" key={label}>
+                    <dt className="text-[#64748B]">{label}</dt>
+                    <dd className="font-mono font-semibold text-[#0F172A]">{formatEGP(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ))}
+        </div>
       </div>
 
       {result.missingRequiredColumns.length > 0 && (
@@ -3825,7 +4040,7 @@ function PayrollHistory({
                     </Button>
                     <Button
                       className="px-3 py-1.5 text-xs"
-                      disabled={!isBatchDeletable(batch) || deletingBatchId === batch.id}
+                      disabled={deletingBatchId === batch.id}
                       onClick={() => onDelete(batch.id)}
                       variant="secondary"
                     >
@@ -4554,10 +4769,10 @@ export function PayrollDashboard({
       !salaryPeriodConflict,
   );
 
-  async function loadSavedExpenseReport(reportId?: string) {
+  const loadSavedExpenseReport = useCallback(async (reportId?: string) => {
     const query = reportId ? `?reportId=${encodeURIComponent(reportId)}` : "";
     const response = await fetch(`/api/payroll/expenses${query}`);
-    const payload = await response.json();
+    const payload = await readPayrollApiPayload(response);
 
     if (!response.ok) return;
 
@@ -4580,7 +4795,7 @@ export function PayrollDashboard({
     } else if (targetReportId) {
       setExpenseAnalysis(buildExpenseAnalysis("Saved payroll expenses", []));
     }
-  }
+  }, []);
 
   useEffect(() => {
     if (payrollSheetTab !== "expenses" || expenseAnalysis || expenseAnalyzing) return;
@@ -4594,7 +4809,7 @@ export function PayrollDashboard({
     }
 
     void loadSavedExpenses();
-  }, [expenseAnalysis, expenseAnalyzing, payrollSheetTab]);
+  }, [expenseAnalysis, expenseAnalyzing, loadSavedExpenseReport, payrollSheetTab]);
 
   async function handleSalaryTemplateUpload(file: File | null) {
     if (!file) return;
@@ -4619,7 +4834,7 @@ export function PayrollDashboard({
         body: formData,
         method: "POST",
       });
-      const payload = await response.json();
+      const payload = await readPayrollApiPayload(response);
 
       if (!response.ok) {
         if (payload.conflict) {
@@ -4628,7 +4843,7 @@ export function PayrollDashboard({
         setSalaryUploadError(
           payload.error === "missing_payroll_period"
             ? "Choose payroll month and year before uploading."
-            : payload.message ?? payload.error ?? "Salary validation failed.",
+            : payrollPayloadMessage(payload, "Salary validation failed."),
         );
         return;
       }
@@ -4636,8 +4851,8 @@ export function PayrollDashboard({
       const nextValidation = payload as SalaryValidationResult;
       setSalaryValidation(nextValidation);
       setSalaryPeriodConflict(nextValidation.periodConflict ?? null);
-    } catch {
-      setSalaryUploadError("Unable to validate salary file.");
+    } catch (error) {
+      setSalaryUploadError(payrollRequestErrorMessage(error, "Unable to validate salary file."));
     } finally {
       setValidatingSalary(false);
       if (salaryFileInputRef.current) salaryFileInputRef.current.value = "";
@@ -4673,16 +4888,16 @@ export function PayrollDashboard({
         body: formData,
         method: "POST",
       });
-      const payload = await response.json();
+      const payload = await readPayrollApiPayload(response);
 
-      if (!response.ok) {
+      if (!response.ok || payload.error === "non_json_response") {
         if (payload.conflict) {
           setSalaryPeriodConflict(payload.conflict as PayrollPeriodConflict);
         }
         setSalaryUploadError(
           payload.error === "payroll_schema_not_ready"
-            ? payload.message ?? "Payroll database tables are not ready."
-            : payload.message ?? payload.error ?? "Payroll upload failed.",
+            ? payrollPayloadMessage(payload, "Payroll database tables are not ready.")
+            : payrollPayloadMessage(payload, "Payroll upload failed."),
         );
 
         if (payload.validation) {
@@ -4697,9 +4912,14 @@ export function PayrollDashboard({
         type: "success",
       });
       setSalaryPeriodConflict(null);
-      window.location.href = `/payroll?batchId=${payload.batch.id}`;
-    } catch {
-      setSalaryUploadError("Unable to confirm payroll upload.");
+      const batchId = payrollPayloadBatchId(payload);
+      if (!batchId) {
+        setSalaryUploadError(payrollPayloadMessage(payload, "Payroll upload succeeded but did not return a batch id."));
+        return;
+      }
+      window.location.href = `/payroll?batchId=${batchId}`;
+    } catch (error) {
+      setSalaryUploadError(payrollRequestErrorMessage(error, "Payroll upload request failed before the server responded."));
     } finally {
       setConfirmingSalary(false);
     }
@@ -4741,11 +4961,11 @@ export function PayrollDashboard({
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-      const payload = await response.json();
+      const payload = await readPayrollApiPayload(response);
 
       if (!response.ok || !payload.success) {
         setWorkflowMessage({
-          text: payload.error ?? "Payroll workflow action failed.",
+          text: payrollPayloadMessage(payload, "Payroll workflow action failed."),
           type: "error",
         });
         return;
@@ -4753,8 +4973,8 @@ export function PayrollDashboard({
 
       setWorkflowMessage({ text: "Payroll workflow updated.", type: "success" });
       window.location.href = `/payroll?batchId=${payload.data?.id ?? activeBatch.id}`;
-    } catch {
-      setWorkflowMessage({ text: "Network error.", type: "error" });
+    } catch (error) {
+      setWorkflowMessage({ text: payrollRequestErrorMessage(error, "Network error."), type: "error" });
     } finally {
       setWorkflowActionBusy(null);
     }
@@ -4762,7 +4982,7 @@ export function PayrollDashboard({
 
   async function handleDeleteBatch(batchId: string) {
     const confirmed = window.confirm(
-      "Delete this payroll upload? This removes the batch, salary records, and governance flags.",
+      "Admin cleanup: delete this uploaded payroll sheet? This removes the batch, salary records, governance flags, and any published payslips for this period. Re-upload the period after deletion.",
     );
 
     if (!confirmed) return;
@@ -4774,11 +4994,11 @@ export function PayrollDashboard({
       const response = await fetch(`/api/payroll/${batchId}`, {
         method: "DELETE",
       });
-      const payload = await response.json();
+      const payload = await readPayrollApiPayload(response);
 
       if (!response.ok || !payload.success) {
         setWorkflowMessage({
-          text: payload.error ?? "Payroll upload delete failed.",
+          text: payrollPayloadMessage(payload, "Payroll upload delete failed."),
           type: "error",
         });
         return;
@@ -4786,8 +5006,8 @@ export function PayrollDashboard({
 
       setWorkflowMessage({ text: "Payroll upload deleted.", type: "success" });
       window.location.href = "/payroll";
-    } catch {
-      setWorkflowMessage({ text: "Network error.", type: "error" });
+    } catch (error) {
+      setWorkflowMessage({ text: payrollRequestErrorMessage(error, "Network error."), type: "error" });
     } finally {
       setDeletingBatchId(null);
     }
@@ -4823,10 +5043,10 @@ export function PayrollDashboard({
         body: formData,
         method: "POST",
       });
-      const payload = await response.json();
+      const payload = await readPayrollApiPayload(response);
 
-      if (!response.ok) {
-        setSalaryUploadError(payload.message ?? payload.error ?? "Payroll replace failed.");
+      if (!response.ok || payload.error === "non_json_response") {
+        setSalaryUploadError(payrollPayloadMessage(payload, "Payroll replace failed."));
 
         if (payload.validation) {
           setSalaryValidation(payload.validation as SalaryValidationResult);
@@ -4840,10 +5060,15 @@ export function PayrollDashboard({
         type: "success",
       });
       setSalaryPeriodConflict(null);
-      window.location.href = `/payroll?batchId=${payload.batch.id}`;
+      const batchId = payrollPayloadBatchId(payload);
+      if (!batchId) {
+        setSalaryUploadError(payrollPayloadMessage(payload, "Payroll replacement succeeded but did not return a batch id."));
+        return false;
+      }
+      window.location.href = `/payroll?batchId=${batchId}`;
       return true;
-    } catch {
-      setSalaryUploadError("Unable to replace payroll upload.");
+    } catch (error) {
+      setSalaryUploadError(payrollRequestErrorMessage(error, "Unable to replace payroll upload."));
       return false;
     } finally {
       setReplacingBatchId(null);
@@ -4904,10 +5129,10 @@ export function PayrollDashboard({
       const response = await fetch(`/api/payroll/expenses/reports/${reportId}`, {
         method: "DELETE",
       });
-      const payload = await response.json();
+      const payload = await readPayrollApiPayload(response);
 
       if (!response.ok || !payload.success) {
-        setExpenseAnalysisError(payload.message ?? payload.error ?? "Unable to delete expense report.");
+        setExpenseAnalysisError(payrollPayloadMessage(payload, "Unable to delete expense report."));
         return;
       }
 
@@ -4920,8 +5145,8 @@ export function PayrollDashboard({
       await loadSavedExpenseReport(
         selectedExpenseReportId === reportId ? undefined : selectedExpenseReportId ?? undefined,
       );
-    } catch {
-      setExpenseAnalysisError("Unable to delete expense report.");
+    } catch (error) {
+      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to delete expense report."));
     } finally {
       setDeletingExpenseReportId(null);
     }
@@ -4949,10 +5174,10 @@ export function PayrollDashboard({
         body: formData,
         method: "PUT",
       });
-      const payload = await response.json();
+      const payload = await readPayrollApiPayload(response);
 
       if (!response.ok) {
-        setExpenseAnalysisError(payload.message ?? payload.error ?? "Unable to replace expense report.");
+        setExpenseAnalysisError(payrollPayloadMessage(payload, "Unable to replace expense report."));
         return;
       }
 
@@ -4960,8 +5185,8 @@ export function PayrollDashboard({
         `${payload.saved ?? 0} expense rows replaced and saved to the report.`,
       );
       await loadSavedExpenseReport(reportId);
-    } catch {
-      setExpenseAnalysisError("Unable to replace expense report.");
+    } catch (error) {
+      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to replace expense report."));
     } finally {
       setReplacingExpenseReportId(null);
     }
@@ -4982,13 +5207,13 @@ export function PayrollDashboard({
         body: formData,
         method: "POST",
       });
-      const payload = await response.json();
+      const payload = await readPayrollApiPayload(response);
 
       if (!response.ok) {
         setExpenseAnalysisError(
           payload.error === "payroll_expenses_schema_not_ready"
             ? "Payroll expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
-            : payload.message ?? payload.error ?? "Expenses upload failed.",
+            : payrollPayloadMessage(payload, "Expenses upload failed."),
         );
         return;
       }
@@ -5003,8 +5228,8 @@ export function PayrollDashboard({
       setExpenseApprovalMessage(
         `${payload.saved ?? (payload.records?.length ?? 0)} expense rows uploaded and saved to the system. Review HR approvals, then import approved expenses to payroll.`,
       );
-    } catch {
-      setExpenseAnalysisError("Unable to upload expenses file.");
+    } catch (error) {
+      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to upload expenses file."));
     } finally {
       setExpenseAnalyzing(false);
       if (expenseFileInputRef.current) expenseFileInputRef.current.value = "";
@@ -5029,13 +5254,13 @@ export function PayrollDashboard({
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-      const payload = await response.json();
+      const payload = await readPayrollApiPayload(response);
 
       if (!response.ok) {
         setExpenseAnalysisError(
           payload.error === "payroll_expenses_schema_not_ready"
             ? "Payroll expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
-            : payload.message ?? payload.error ?? "Unable to save expense approvals.",
+            : payrollPayloadMessage(payload, "Unable to save expense approvals."),
         );
         return;
       }
@@ -5047,8 +5272,8 @@ export function PayrollDashboard({
       setExpenseApprovalMessage(
         `${payload.saved ?? recordsToSave.length} expense rows saved. Approved total ${formatEGP(approvedTotal)} will appear in the next payroll month.`,
       );
-    } catch {
-      setExpenseAnalysisError("Unable to save expense approvals.");
+    } catch (error) {
+      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to save expense approvals."));
     } finally {
       setExpenseApprovalsSaving(false);
     }
@@ -5088,13 +5313,13 @@ export function PayrollDashboard({
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-      const payload = await response.json();
+      const payload = await readPayrollApiPayload(response);
 
       if (!response.ok) {
         setExpenseAnalysisError(
           payload.error === "payroll_expenses_schema_not_ready"
             ? "Payroll expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
-            : payload.message ?? payload.error ?? "Unable to import expenses to payroll.",
+            : payrollPayloadMessage(payload, "Unable to import expenses to payroll."),
         );
         return;
       }
@@ -5110,8 +5335,8 @@ export function PayrollDashboard({
       window.setTimeout(() => {
         window.location.href = `/payroll?batchId=${payload.targetBatch.id}`;
       }, 700);
-    } catch {
-      setExpenseAnalysisError("Unable to import expenses to payroll.");
+    } catch (error) {
+      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to import expenses to payroll."));
     } finally {
       setExpenseImportingToPayroll(false);
     }
@@ -5173,12 +5398,19 @@ export function PayrollDashboard({
           </option>
         ))}
       </select>
-      <Link href="/api/payroll/template?upload=1">
-        <Button variant="secondary">
+      {hasPayrollPeriod ? (
+        <Link href={`/api/payroll/template?upload=1&month=${payrollMonth}&year=${payrollYear}`}>
+          <Button variant="secondary">
+            <Download className="mr-2 h-4 w-4" />
+            Download Upload Template
+          </Button>
+        </Link>
+      ) : (
+        <Button disabled variant="secondary">
           <Download className="mr-2 h-4 w-4" />
           Download Upload Template
         </Button>
-      </Link>
+      )}
       {hasPayrollPeriod ? (
         <Link href={`/api/payroll/template?ready=1&month=${payrollMonth}&year=${payrollYear}`}>
           <Button variant="secondary">
