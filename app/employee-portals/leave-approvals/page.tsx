@@ -16,6 +16,9 @@ export default async function ManagerLeaveApprovalsPage() {
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/admin/leave");
   }
+  if (access.role === "Training Manager") {
+    redirect("/employee-portals/training-manager");
+  }
 
   if (!(await canAccess(access, "leave", "approve"))) {
     return (

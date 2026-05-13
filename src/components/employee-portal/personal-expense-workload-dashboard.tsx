@@ -30,7 +30,9 @@ type ExpenseRow = {
   toDate: string;
   requestType: string;
   from: string;
+  fromCity: string;
   to: string;
+  toCity: string;
   destinationCity: string;
   status: string;
   travelCost: number;
@@ -72,6 +74,8 @@ type SortField =
   | "tripId"
   | "toDate"
   | "requestType"
+  | "fromCity"
+  | "toCity"
   | "total"
   | "travelCost"
   | "meetingAmount"
@@ -105,6 +109,60 @@ function normalizeString(value: string | null | undefined) {
   return (value || "").trim();
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function containsArabic(value: string) {
+  return /[\u0600-\u06FF]/.test(value);
+}
+
+const placeAliases: Array<{ aliases: string[]; label: string }> = [
+  { label: "Alexandria", aliases: ["alexandria", "alex", "الإسكندرية", "اسكندرية"] },
+  { label: "Manoufia", aliases: ["manoufia", "menoufia", "monufia", "menofia", "المنوفية", "منوفية"] },
+  { label: "Kafr El Sheikh", aliases: ["kafr el sheikh", "kafr el sheykh", "kafr elsheikh", "كفر الشيخ"] },
+  { label: "Port Said", aliases: ["port said", "بورسعيد"] },
+  { label: "Beni Suef", aliases: ["beni suef", "bani suef", "بني سويف"] },
+  { label: "Red Sea", aliases: ["red sea", "البحر الأحمر", "البحر الاحمر"] },
+  { label: "North Sinai", aliases: ["north sinai", "شمال سيناء"] },
+  { label: "South Sinai", aliases: ["south sinai", "جنوب سيناء"] },
+  { label: "6th Of October", aliases: ["6th of october", "6 october", "sixth of october", "أكتوبر", "اكتوبر"] },
+  { label: "New Cairo", aliases: ["new cairo", "tagamoa", "tagamo3", "التجمع"] },
+  { label: "Cairo", aliases: ["cairo", "القاهرة", "sheraton", "heliopolis", "el nozha", "nozha", "matar", "airport"] },
+  { label: "Giza", aliases: ["giza", "gizah", "الجيزة", "sheikh zayed", "zayed", "الشيخ زايد"] },
+  { label: "Qalyubia", aliases: ["qalyubia", "qaliubiya", "القليوبية"] },
+  { label: "Sharqia", aliases: ["sharqia", "sharkia", "الشرقية"] },
+  { label: "Dakahlia", aliases: ["dakahlia", "dakahliya", "الدقهلية"] },
+  { label: "Gharbia", aliases: ["gharbia", "الغربية"] },
+  { label: "Beheira", aliases: ["beheira", "البحيرة"] },
+  { label: "Damietta", aliases: ["damietta", "دمياط"] },
+  { label: "Ismailia", aliases: ["ismailia", "الإسماعيلية", "الاسماعيلية"] },
+  { label: "Suez", aliases: ["suez", "السويس"] },
+  { label: "Fayoum", aliases: ["fayoum", "faiyum", "الفيوم"] },
+  { label: "Minya", aliases: ["minya", "المنيا"] },
+  { label: "Assiut", aliases: ["assiut", "asyut", "أسيوط", "اسيوط"] },
+  { label: "Sohag", aliases: ["sohag", "سوهاج"] },
+  { label: "Qena", aliases: ["qena", "قنا"] },
+  { label: "Luxor", aliases: ["luxor", "الأقصر", "الاقصر"] },
+  { label: "Aswan", aliases: ["aswan", "أسوان", "اسوان"] },
+  { label: "Matrouh", aliases: ["matrouh", "matruh", "مطروح"] },
+];
+
+function aliasMatches(value: string, alias: string) {
+  if (containsArabic(alias)) return value.includes(alias);
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(alias.toLowerCase())}([^a-z0-9]|$)`).test(value);
+}
+
+function extractKnownPlace(value: string) {
+  const normalized = value.toLowerCase().replace(/\s+/g, " ");
+  for (const place of placeAliases) {
+    if (place.aliases.some((alias) => aliasMatches(normalized, alias))) {
+      return place.label;
+    }
+  }
+  return "";
+}
+
 function monthLabel(period: string) {
   const [yearText, monthText] = period.split("-");
   const year = Number(yearText);
@@ -131,25 +189,32 @@ function statusVariant(statusCategory: string) {
 }
 
 function normalizeCityName(value: string) {
-  const normalized = normalizeString(value).replace(/\s+/g, " ");
-  if (!normalized) return "";
-
-  const text = normalized
+  const normalized = normalizeString(value)
     .replace(/\([^)]*\)/g, " ")
     .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\bEgypt\b/gi, " ")
+    .replace(/\bGovernorate\b/gi, " ")
+    .replace(/\bGov\.?\b/gi, " ")
+    .replace(/\b\d{4,}\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  if (!normalized) return "";
 
-  const base = text
+  const knownPlace = extractKnownPlace(normalized);
+  if (knownPlace) return knownPlace;
+
+  const routeBaseText = normalized
     .split("|")[0]
-    .split(",")[0]
     .split("→")[0]
     .split(" to ")[0]
     .split(" To ")[0]
     .split(" - ")[0]
     .split(" – ")[0]
     .split(" — ")[0]
-    .split("/")[0]
+    .split("/")[0];
+  const routeBaseParts = routeBaseText.split(",").map((part) => part.trim()).filter(Boolean);
+  const base = (routeBaseParts[routeBaseParts.length - 1] || "")
+    .replace(/^[,.\-\s]+|[,.\-\s]+$/g, "")
     .trim();
 
   if (!base) return "";
@@ -169,6 +234,7 @@ function normalizeCityName(value: string) {
   return base
     .toLowerCase()
     .split(" ")
+    .slice(0, 4)
     .map((part) => {
       if (!part) return part;
       if (part.length <= 1) return part;
@@ -178,9 +244,27 @@ function normalizeCityName(value: string) {
 }
 
 function extractDestination(to: string, fallback: string) {
-  const fromTo = normalizeCityName(to || "");
+  const fromTo = normalizeCityName(extractRoutePart(to || "", "to") || to || "");
   const fromFallback = normalizeCityName(fallback || "");
   return fromTo || fromFallback || "Unknown";
+}
+
+function extractRoutePart(value: string, endpoint: "from" | "to") {
+  const text = normalizeString(value);
+  if (!text) return "";
+
+  const arrowParts = text.split(/\s*(?:→|->|-->)\s*/).map((part) => part.trim()).filter(Boolean);
+  if (arrowParts.length >= 2) return endpoint === "from" ? arrowParts[0] : arrowParts[arrowParts.length - 1];
+
+  const fromToMatch = text.match(/\bfrom\s+(.+?)\s+to\s+(.+)$/i);
+  if (fromToMatch) return endpoint === "from" ? fromToMatch[1] : fromToMatch[2];
+
+  return "";
+}
+
+function compactTripPlace(primary: string, routeFallback: string, endpoint: "from" | "to", fallbackPlace = "") {
+  const routePart = extractRoutePart(primary, endpoint) || extractRoutePart(routeFallback, endpoint);
+  return normalizeCityName(routePart || primary || fallbackPlace) || "Unknown";
 }
 
 function chartTooltipStyle() {
@@ -252,7 +336,9 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
       toDate: normalizeString(expense.toDate),
       requestType: normalizeString(expense.requestType),
       from: normalizeString(expense.from),
+      fromCity: compactTripPlace(expense.from || "", expense.to || "", "from"),
       to: normalizeString(expense.to),
+      toCity: compactTripPlace(expense.to || "", expense.from || "", "to", expense.location),
       destinationCity: extractDestination(expense.to || "", expense.location),
       status: normalizeString(expense.status),
       travelCost: Number(expense.travelCost ?? 0),
@@ -318,7 +404,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
       if (transportationFilter !== "All" && normalizeString(trip.transportationType) !== transportationFilter) return false;
       if (destinationFilter !== "All" && trip.destinationCity !== destinationFilter) return false;
       if (lowerSearch) {
-        const searchable = `${trip.tripId} ${trip.requestType} ${trip.from} ${trip.to} ${trip.status} ${trip.transportationType} ${trip.description} ${trip.hrNotes} ${trip.destinationCity}`.toLowerCase();
+        const searchable = `${trip.tripId} ${trip.requestType} ${trip.from} ${trip.fromCity} ${trip.to} ${trip.toCity} ${trip.status} ${trip.transportationType} ${trip.description} ${trip.hrNotes} ${trip.destinationCity}`.toLowerCase();
         if (!searchable.includes(lowerSearch)) return false;
       }
       return true;
@@ -344,8 +430,8 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
         return (left[numericField] - right[numericField]) * factor;
       }
 
-      const leftValue = normalizeString(left[searchSortField as "tripId" | "requestType" | "status" | "transportationType"]).toLowerCase();
-      const rightValue = normalizeString(right[searchSortField as "tripId" | "requestType" | "status" | "transportationType"]).toLowerCase();
+      const leftValue = normalizeString(left[searchSortField as "tripId" | "requestType" | "fromCity" | "toCity" | "status" | "transportationType"]).toLowerCase();
+      const rightValue = normalizeString(right[searchSortField as "tripId" | "requestType" | "fromCity" | "toCity" | "status" | "transportationType"]).toLowerCase();
       return leftValue.localeCompare(rightValue) * factor;
     });
     return mutableTrips;
@@ -895,14 +981,15 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
 
         <Card className="overflow-hidden rounded-[28px] border border-orange-100/80 bg-white/95 shadow-[0_24px_65px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03]">
           <div className="hidden overflow-x-auto md:block">
-            <table className="min-w-full divide-y divide-orange-50 text-left text-sm">
+            <table className="min-w-[1580px] divide-y divide-orange-50 text-left text-sm">
               <thead className="bg-orange-50/70">
                 <tr>
                   <th className="px-4 py-3">{header("tripId", "TripID")}</th>
                   <th className="px-4 py-3">{header("date", "Date")}</th>
                   <th className="px-4 py-3">{header("toDate", "To Date")}</th>
                   <th className="px-4 py-3">{header("requestType", "Request Type")}</th>
-                  <th className="px-4 py-3">From → To</th>
+                  <th className="px-4 py-3">{header("fromCity", "From")}</th>
+                  <th className="px-4 py-3">{header("toCity", "To")}</th>
                   <th className="px-4 py-3 text-right">{header("total", "Total")}</th>
                   <th className="px-4 py-3 text-right">{header("travelCost", "Travel Cost")}</th>
                   <th className="px-4 py-3 text-right">{header("meetingAmount", "Meeting Amount")}</th>
@@ -923,7 +1010,8 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                       <td className="px-4 py-3 font-medium text-slate-700">{formatDate(trip.date)}</td>
                       <td className="px-4 py-3 font-medium text-slate-700">{trip.toDate ? formatDate(trip.toDate) : "—"}</td>
                       <td className="px-4 py-3 font-medium text-slate-700">{trip.requestType || "N/A"}</td>
-                      <td className="px-4 py-3 font-medium text-slate-700">{trip.from || "N/A"} → {trip.to || "N/A"}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-800">{trip.fromCity || "Unknown"}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-800">{trip.toCity || "Unknown"}</td>
                       <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatMoney(trip.total)}</td>
                       <td className="px-4 py-3 text-right font-medium text-slate-700">{formatMoney(trip.travelCost)}</td>
                       <td className="px-4 py-3 text-right font-medium text-slate-700">{formatMoney(trip.meetingAmount)}</td>
@@ -931,8 +1019,8 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                       <td className="px-4 py-3 text-right font-medium text-slate-700">{formatKm(trip.km)}</td>
                       <td className="px-4 py-3"><Badge variant={statusVariant(category)}>{category}</Badge></td>
                       <td className="px-4 py-3 font-medium text-slate-700">{trip.transportationType || "N/A"}</td>
-                      <td className="max-w-xs px-4 py-3 font-medium text-slate-700">{trip.description || "—"}</td>
-                      <td className="max-w-xs px-4 py-3 font-medium text-slate-700">{trip.hrNotes || "—"}</td>
+                      <td className="max-w-[220px] truncate px-4 py-3 font-medium text-slate-700">{trip.description || "—"}</td>
+                      <td className="max-w-[260px] truncate px-4 py-3 font-medium text-slate-700">{trip.hrNotes || "—"}</td>
                     </tr>
                   );
                 })}
@@ -953,7 +1041,10 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                     {formatDate(trip.date)} {trip.toDate ? `→ ${formatDate(trip.toDate)}` : ""}
                   </p>
                   <p className="mt-2 text-sm text-slate-700">{trip.requestType || "N/A"} · {trip.transportationType || "N/A"}</p>
-                  <p className="mt-1 text-sm text-slate-700">{trip.from || "N/A"} → {trip.to || "N/A"}</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <p className="text-slate-700">From: <span className="font-semibold text-slate-900">{trip.fromCity || "Unknown"}</span></p>
+                    <p className="text-slate-700">To: <span className="font-semibold text-slate-900">{trip.toCity || "Unknown"}</span></p>
+                  </div>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                     <p className="text-slate-700">Total: <span className="font-semibold text-slate-900">{formatMoney(trip.total)}</span></p>
                     <p className="text-slate-700">KM: <span className="font-semibold text-slate-900">{formatKm(trip.km)}</span></p>

@@ -1,4 +1,5 @@
 import { SalesPerformancePage } from "@/components/sales/sales-performance-page";
+import { redirect } from "next/navigation";
 import {
   EmployeePortalActionLink,
   EmployeePortalEmptyState,
@@ -39,6 +40,9 @@ export default async function EmployeePortalSalesPage({
         </div>
       </EmployeePortalEmptyState>
     );
+  }
+  if (accessContext.role === "Training Manager") {
+    redirect("/employee-portals/training-manager");
   }
 
   const resolvedParams = await searchParams;

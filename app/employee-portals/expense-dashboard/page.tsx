@@ -7,10 +7,7 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
-import {
-  EmployeePortalEmptyState,
-  EmployeePortalPageShell,
-} from "@/components/employee-portal/enterprise-shell";
+import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -47,12 +44,5 @@ export default async function EmployeePortalExpenseDashboardPage() {
     );
   }
 
-  return (
-    <EmployeePortalPageShell
-      description="Track, filter, and audit your monthly workload and expense records."
-      title="Expense Workload"
-    >
-      <PersonalExpenseWorkloadDashboard data={data} />
-    </EmployeePortalPageShell>
-  );
+  return <PersonalExpenseWorkloadDashboard data={data} />;
 }

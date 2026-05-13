@@ -85,6 +85,9 @@ export default async function CoachingReportsPage() {
   if (!access.loginId && !access.hrId) {
     redirect("/login");
   }
+  if (access.role === "Training Manager") {
+    redirect("/employee-portals/training-manager/field-coaching");
+  }
   if (isEmployeePortalRole(access)) {
     redirect("/employee-portals/coaching");
   }
@@ -98,17 +101,9 @@ export default async function CoachingReportsPage() {
   const canExport =
     canManageCoachingReports(access) ||
     (await canAccess(access, "coaching", "export"));
-  const lockedCoachHrId = access.role === "Training Manager" && access.hrId ? access.hrId : null;
-
-  const reports = await getCoachingReports(
-    lockedCoachHrId ? { coachHrId: lockedCoachHrId } : {},
-    access,
-  );
+  const reports = await getCoachingReports({}, access);
 
   const employees = await getEmployeeDirectoryRows();
-  const currentEmployee = lockedCoachHrId
-    ? employees.find((employee) => employee.hrId.toUpperCase() === lockedCoachHrId.toUpperCase())
-    : null;
 
   return (
     <AppShell navigationMode="admin">
@@ -143,8 +138,8 @@ export default async function CoachingReportsPage() {
           canExport={canExport}
           filterOptions={buildFilterOptions(reports, employees)}
           initialReports={reports}
-          lockedCoachHrId={lockedCoachHrId}
-          lockedCoachLabel={currentEmployee ? formatEmployeeDisplayName(currentEmployee.fullName) : null}
+          lockedCoachHrId={null}
+          lockedCoachLabel={null}
         />
       </div>
     </AppShell>

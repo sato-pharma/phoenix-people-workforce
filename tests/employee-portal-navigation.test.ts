@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
 
+import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
 import { resolveEmployeePortalNavVisibility } from "../src/lib/employee-portal/navigation.ts";
 
 export function runEmployeePortalNavigationTests() {
   const medicalRep = resolveEmployeePortalNavVisibility("Medical Rep");
+  assert.equal(medicalRep.showDashboardTab, true, "Medical Rep should see Dashboard");
+  assert.equal(medicalRep.showMyPerformanceTab, true, "Medical Rep should see My Performance");
   assert.equal(medicalRep.showMyCoachingTab, true, "Medical Rep should see My Coaching Reports");
   assert.equal(medicalRep.showTeamCoachingTab, false, "Medical Rep should not see Team Coaching Reports");
+  assert.equal(medicalRep.showTrainingManagerCreateCoachingTab, false, "Medical Rep should not see Create Coaching Report");
   assert.equal(medicalRep.showLeaveApprovalsTab, false, "Medical Rep should not see leave approvals");
 
   const districtManager = resolveEmployeePortalNavVisibility("District Manager");
   assert.equal(districtManager.showMyCoachingTab, false, "DSM should not see My Coaching Reports");
   assert.equal(districtManager.showTeamCoachingTab, true, "DSM should see Team Coaching Reports");
+  assert.equal(districtManager.showTrainingManagerCreateCoachingTab, false, "DSM should not see Create Coaching Report");
   assert.equal(districtManager.showLeaveApprovalsTab, true, "DSM should see leave approvals");
 
   const nationalSalesManager = resolveEmployeePortalNavVisibility("National Sales Manager");
@@ -22,6 +27,18 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(nsmAlias.showTeamCoachingTab, true, "NSM alias should see Team Coaching Reports");
 
   const trainingManager = resolveEmployeePortalNavVisibility("Training Manager");
+  assert.equal(trainingManager.showDashboardTab, false, "Training Manager should not see Dashboard");
+  assert.equal(trainingManager.showMyPerformanceTab, false, "Training Manager should not see My Performance");
+  assert.equal(trainingManager.showIncentiveTab, false, "Training Manager should not see Incentive");
+  assert.equal(trainingManager.showTrainingManagerDashboardTab, true, "Training Manager should see Coaching Dashboard");
+  assert.equal(trainingManager.showTrainingManagerCreateCoachingTab, true, "Training Manager should see Create Coaching Report");
+  assert.equal(trainingManager.showTrainingManagerFieldCoachingTab, true, "Training Manager should see Field Coaching");
   assert.equal(trainingManager.showMyCoachingTab, false, "Training Manager should not see My Coaching Reports");
   assert.equal(trainingManager.showTeamCoachingTab, false, "Training Manager should not see Team Coaching Reports");
+  assert.equal(trainingManager.showLeaveApprovalsTab, false, "Training Manager should not see leave approvals");
+  assert.equal(
+    resolveLandingPathForRole("Training Manager"),
+    "/employee-portals/training-manager",
+    "Training Manager should land on the dedicated coaching dashboard",
+  );
 }

@@ -3,7 +3,7 @@
 import { startTransition, useEffect, useEffectEvent, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, MapPinned } from "lucide-react";
+import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, MapPinned, ChartColumnBig, FilePlus2 } from "lucide-react";
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
@@ -18,6 +18,7 @@ function navItemClass(active: boolean) {
 function isEmployeePortalNavItemActive(pathname: string, href: string) {
   const hrefPath = href.split("#")[0];
   if (hrefPath === "/employee-portals") return pathname === hrefPath;
+  if (hrefPath === "/employee-portals/training-manager") return pathname === hrefPath;
   return pathname === hrefPath || pathname.startsWith(`${hrefPath}/`);
 }
 
@@ -40,8 +41,11 @@ type EmployeePortalNavSection = {
 };
 
 function buildEmployeePortalSections({
+  showDashboardTab = true,
   showExpenseActionTab = false,
+  showIncentiveTab = true,
   showManagementTab = false,
+  showMyPerformanceTab = true,
   showTeamPerformanceTab = false,
   showMedRepsPerformanceTab = false,
   showDsmsPerformanceTab = false,
@@ -53,14 +57,25 @@ function buildEmployeePortalSections({
   showOrganogramTab = false,
   showMyCoachingTab = false,
   showTeamCoachingTab = false,
+  showTrainingManagerCreateCoachingTab = false,
+  showTrainingManagerDashboardTab = false,
+  showTrainingManagerFieldCoachingTab = false,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
     {
+      title: "Training Manager",
+      items: [
+        ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager", label: "Coaching Dashboard", icon: ChartColumnBig }] : []),
+        ...(showTrainingManagerCreateCoachingTab ? [{ href: "/employee-portals/training-manager/create-coaching-report", label: "Create Coaching Report", icon: FilePlus2 }] : []),
+        ...(showTrainingManagerFieldCoachingTab ? [{ href: "/employee-portals/training-manager/field-coaching", label: "Field Coaching", icon: ClipboardCheck }] : []),
+      ],
+    },
+    {
       title: "My Workspace",
       items: [
-        { href: "/employee-portals", label: "Dashboard", icon: Activity },
-        { href: "/employee-portals/sales", label: "My Performance", icon: LineChartIcon },
-        { href: "/employee-portals/incentive", label: "Incentive", icon: Calculator },
+        ...(showDashboardTab ? [{ href: "/employee-portals", label: "Dashboard", icon: Activity }] : []),
+        ...(showMyPerformanceTab ? [{ href: "/employee-portals/sales", label: "My Performance", icon: LineChartIcon }] : []),
+        ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Calculator }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         { href: "/payslips", label: "Payslips", icon: CircleDollarSign },
         ...(showManagementTab ? [{ href: "/employee-portals/expense-dashboard", label: "Workload & Expense", icon: ReceiptText }] : []),
@@ -183,11 +198,13 @@ export function EmployeePortalTopNav({
               {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
             </span>
           </div>
-          <div className="hidden items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700 shadow-sm lg:flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-orange-500 ep-pulse-orange" />
-            <Zap className="h-3.5 w-3.5" />
-            <span>Live Performance</span>
-          </div>
+          {visibility.showMyPerformanceTab === false ? null : (
+            <div className="hidden items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700 shadow-sm lg:flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-orange-500 ep-pulse-orange" />
+              <Zap className="h-3.5 w-3.5" />
+              <span>Live Performance</span>
+            </div>
+          )}
           <div className="ml-auto flex min-w-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm lg:ml-0">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-xs font-bold text-white shadow-[0_2px_6px_rgba(249,115,22,0.35)]">
               {initials || "EM"}

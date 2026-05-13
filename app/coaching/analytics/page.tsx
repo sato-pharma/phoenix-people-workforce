@@ -15,7 +15,6 @@ import { AppShell } from "@/components/layout/app-shell";
 import {
   canAccess,
   canManageCoachingReports,
-  normalizeHrId,
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -132,6 +131,9 @@ export default async function CoachingAnalyticsPage() {
   if (!access.loginId && !access.hrId) {
     redirect("/login");
   }
+  if (access.role === "Training Manager") {
+    redirect("/employee-portals/training-manager");
+  }
   if (isEmployeePortalRole(access)) {
     redirect("/employee-portals/coaching");
   }
@@ -142,11 +144,9 @@ export default async function CoachingAnalyticsPage() {
   const canCreate =
     canManageCoachingReports(access) &&
     (await canAccess(access, "coaching", "create"));
-  const lockedCoachHrId = access.role === "Training Manager" ? normalizeHrId(access.hrId) : null;
-  const initialFilters = lockedCoachHrId ? { coachHrId: lockedCoachHrId } : {};
 
   const [reports, quarterlySummary, employees] = await Promise.all([
-    getCoachingReports(initialFilters, access),
+    getCoachingReports({}, access),
     getCoachingQuarterlySummary({}, access),
     getEmployeeDirectoryRows(),
   ]);

@@ -10,6 +10,7 @@ import {
   ChartColumnBig,
   ClipboardCheck,
   FileSpreadsheet,
+  FilePlus2,
   FileUp,
   Hourglass,
   IdCard,
@@ -47,6 +48,7 @@ type SidebarSectionItem = {
   href: string;
   icon: typeof ChartNoAxesColumnIncreasing;
   label: string;
+  excludedRoles?: PhoenixRole[];
   roles?: PhoenixRole[];
   permissions?: SidebarPermission[];
 };
@@ -65,6 +67,11 @@ function permissionAllowed(permissionLookup: PermissionLookup | undefined, permi
 function roleAllowed(currentRole: PhoenixRole | undefined, roles?: PhoenixRole[]) {
   if (!roles) return true;
   return Boolean(currentRole && roles.includes(currentRole));
+}
+
+function roleNotExcluded(currentRole: PhoenixRole | undefined, excludedRoles?: PhoenixRole[]) {
+  if (!excludedRoles) return true;
+  return !currentRole || !excludedRoles.includes(currentRole);
 }
 
 function getAdminSections(permissionLookup: PermissionLookup, currentRole?: PhoenixRole): SidebarSection[] {
@@ -137,14 +144,17 @@ function getEmployeePortalSections(permissionLookup: PermissionLookup, currentRo
   const sections: SidebarSection[] = [
     {
       items: [
-        { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", permissions: [{ resource: "employee_profile" }] },
-        { href: "/employee-portals/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales", permissions: [{ resource: "sales" }] },
+        { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }] },
+        { href: "/employee-portals/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales", excludedRoles: ["Training Manager"], permissions: [{ resource: "sales" }] },
+        { href: "/employee-portals/training-manager", icon: ChartColumnBig, label: "Coaching Dashboard", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
+        { href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, label: "Create Coaching Report", permissions: [{ resource: "coaching", action: "create" }], roles: ["Training Manager"] },
+        { href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
         { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "My Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["Medical Rep"] },
         { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Team Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["District Manager", "National Sales Manager"] },
         { href: "/employee-portals/payroll", icon: ChartColumnBig, label: "Payroll & Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }] },
         { href: "/employee/outstation/new", icon: MapPinned, label: "Outstation", permissions: [{ resource: "outstation" }] },
         { href: "/employee-portals/leave", icon: CalendarDays, label: "Vacation / Leave", permissions: [{ resource: "leave" }] },
-        { href: "/employee-portals/leave-approvals", icon: CalendarClock, label: "Leave Approvals", permissions: [{ resource: "leave", action: "approve" }] },
+        { href: "/employee-portals/leave-approvals", icon: CalendarClock, label: "Leave Approvals", excludedRoles: ["Training Manager"], permissions: [{ resource: "leave", action: "approve" }] },
       ],
       label: "Medical Rep Portal",
     },
@@ -153,7 +163,7 @@ function getEmployeePortalSections(permissionLookup: PermissionLookup, currentRo
   return sections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => permissionAllowed(permissionLookup, item.permissions) && roleAllowed(currentRole, item.roles)),
+      items: section.items.filter((item) => permissionAllowed(permissionLookup, item.permissions) && roleAllowed(currentRole, item.roles) && roleNotExcluded(currentRole, item.excludedRoles)),
     }))
     .filter((section) => section.items.length > 0);
 }
