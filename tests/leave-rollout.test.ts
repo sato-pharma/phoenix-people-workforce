@@ -4,6 +4,8 @@ import { existsSync, readFileSync } from "node:fs";
 const backupPath = "supabase/20260512_backup_leave_domain_before_rebuild.sql";
 const checklistPath = "docs/leave-management-staging-rollout.md";
 const rolloutScriptPath = "scripts/run-leave-staging-rollout.ps1";
+const officialBackupMigrationPath = "supabase/migrations/20260512235939_backup_leave_domain_before_rebuild.sql";
+const officialLeaveMigrationPath = "supabase/migrations/20260512235948_leave_management_engine.sql";
 
 const leaveDomainTables = [
   "vacation_attachments",
@@ -25,8 +27,12 @@ export function runLeaveRolloutTests() {
   assert.equal(existsSync(backupPath), true, "backup SQL script should exist");
   assert.equal(existsSync(checklistPath), true, "staging rollout checklist should exist");
   assert.equal(existsSync(rolloutScriptPath), true, "staging rollout PowerShell script should exist");
+  assert.equal(existsSync(officialBackupMigrationPath), true, "official Supabase backup migration should exist");
+  assert.equal(existsSync(officialLeaveMigrationPath), true, "official Supabase leave migration should exist");
 
   const backupSql = readFileSync(backupPath, "utf8");
+  const officialBackupMigration = readFileSync(officialBackupMigrationPath, "utf8");
+  assert.equal(officialBackupMigration, backupSql, "official backup migration should mirror the reviewed source SQL");
   assert.match(backupSql, /create schema if not exists backup/);
   assert.match(backupSql, /leave_domain_backup_manifest/);
   assert.match(backupSql, /to_regclass\(format\('public\.\%I', v_table\)\)/);
@@ -38,18 +44,26 @@ export function runLeaveRolloutTests() {
     assert.match(backupSql, new RegExp(`'${table}'`), `backup SQL should include ${table}`);
   }
 
+  const officialLeaveMigration = readFileSync(officialLeaveMigrationPath, "utf8");
+  assert.match(officialLeaveMigration, /Phoenix Workforce Leave Management Engine/);
+  assert.match(officialLeaveMigration, /drop table if exists public\.vacation_requests cascade/);
+  assert.match(officialLeaveMigration, /create table public\.leave_requests/);
+
   const checklist = readFileSync(checklistPath, "utf8");
   for (const phrase of [
     "backup old leave/vacation tables",
     "verify required private functions exist",
-    "apply 20260512_leave_management_engine.sql",
+    "apply the official supabase migrations",
     "test `/employee-portals/leave`",
     "test `/employee-portals/leave-approvals`",
     "test `/admin/leave`",
     "confirm old `/api/vacation` routes are gone",
     "rollback notes",
-    "automatically falls back to `dbmate`",
-    "transaction:false",
+    "official supabase cli rollout",
+    "supabase migration fetch",
+    "supabase db push --dry-run",
+    "supabase db push",
+    "do not run `supabase migration repair`",
   ]) {
     assert.match(checklist.toLowerCase(), new RegExp(phrase.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
@@ -64,6 +78,19 @@ export function runLeaveRolloutTests() {
     "from public.permissions",
   ]) {
     assert.match(checklist, new RegExp(snippet.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+
+  for (const officialMigrationText of [
+    "supabase/migrations/20260512235939_backup_leave_domain_before_rebuild.sql",
+    "supabase/migrations/20260512235948_leave_management_engine.sql",
+    "20260512235939_backup_leave_domain_before_rebuild",
+    "20260512235948_leave_management_engine",
+  ]) {
+    assert.match(
+      checklist,
+      new RegExp(officialMigrationText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      `checklist should include ${officialMigrationText}`,
+    );
   }
 
   const rolloutScript = readFileSync(rolloutScriptPath, "utf8");

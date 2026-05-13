@@ -1404,6 +1404,7 @@ function IncentiveCalculatorWidget({ data }: { data: MedicalRepPortalData }) {
     socialInsurance: data.payroll.socialInsurance,
     taxes: data.payroll.incomeTax,
   });
+  const calculatedBaseSalary = data.payroll.baseSalary;
   const calculatedNetSalary = salaryReference.netSalary;
   const calculatedBasicSalary = salaryReference.basicSalary;
   const simNetSalary = calculatedNetSalary;
@@ -1434,8 +1435,8 @@ function IncentiveCalculatorWidget({ data }: { data: MedicalRepPortalData }) {
       <div className="space-y-6">
         <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-600">Actual Net Salary (formula)</span>
-            <span className="font-medium text-slate-900">{egp(calculatedNetSalary)}</span>
+            <span className="text-slate-600">Base Salary</span>
+            <span className="font-medium text-slate-900">{egp(calculatedBaseSalary)}</span>
           </div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
@@ -1779,82 +1780,6 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
   );
 }
 
-function OverviewAchievementByLine({ data }: { data: MedicalRepPortalData }) {
-  const [metric, setMetric] = useState<ContributionMetric>("sales");
-  const palette = ["#f97316", "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#06b6d4", "#ef4444", "#14b8a6"];
-  const rows = sortContributionRows(data.sales.familyContribution, metric);
-  const source = rows.map((row, index) => ({
-    name: row.name,
-    value: getContributionValue(row, metric),
-    percentage: getContributionPercentage(row, metric),
-    color: palette[index % palette.length],
-  }));
-  const total = Math.max(1, source.reduce((sum, row) => sum + row.value, 0));
-  
-  return (
-    <div
-      className="flex h-full flex-col"
-    >
-      <OverviewPagePanel
-        title="Achievement by Product Family"
-        action={<ContributionMetricToggle metric={metric} onChange={setMetric} />}
-      >
-        <div className="grid gap-4 md:grid-cols-[0.9fr_1.1fr]">
-          <div className="relative h-56 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  cornerRadius={7}
-                  data={source}
-                  dataKey="value"
-                  innerRadius={58}
-                  outerRadius={84}
-                  paddingAngle={2}
-                  stroke="#ffffff"
-                  strokeWidth={3}
-                >
-                  {source.map((item) => (
-                    <Cell key={item.name} fill={item.color} />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={chartTooltipStyle()} cursor={false} formatter={(v: unknown) => formatContributionValue(metric, Number(v ?? 0))} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <p className="font-mono text-[20px] font-black tracking-tight text-slate-900 tabular-nums">
-                {formatContributionValue(metric, source.reduce((sum, row) => sum + row.value, 0))}
-              </p>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{metric === "sales" ? "Sales Value" : "Units Sold"}</p>
-            </div>
-          </div>
-          <div className="space-y-2 pt-1">
-            {source.map((row) => {
-              const percent = Math.max(0, Math.round(row.percentage || (row.value / total) * 100));
-              return (
-                <div key={row.name} className="rounded-2xl border border-slate-100 bg-white px-3 py-2.5 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-white" style={{ backgroundColor: row.color }} />
-                      <span className="truncate font-bold text-slate-700">{row.name}</span>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="font-mono text-sm font-black text-slate-900 tabular-nums">{percent}%</p>
-                      <p className="font-mono text-[11px] text-slate-400 tabular-nums">{formatContributionValue(metric, row.value)}</p>
-                    </div>
-                  </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full rounded-full" style={{ backgroundColor: row.color, width: `${Math.max(4, Math.min(100, percent))}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </OverviewPagePanel>
-    </div>
-  );
-}
-
 function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
   return (
     <div
@@ -2055,22 +1980,22 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
   const payslip = data.payroll.latestPayslip;
   const breakdownRows = [
     {
-      formula: "Net salary minus cost of living and fuel from this upload",
+      formula: "Net Salary - Extra Cost of Living - Fuel Allowance",
       label: "Base Salary",
       value: payslip.baseSalary,
     },
     {
-      formula: "Uploaded monthly net salary",
+      formula: "Base Salary + Extra Cost of Living + Fuel Allowance",
       label: "Net Salary",
       value: payslip.netSalary,
     },
     {
-      formula: "Uploaded first part / basic amount",
+      formula: "Base Salary x 70%",
       label: "Basic Salary",
       value: payslip.basicSalary,
     },
     {
-      formula: "Uploaded monthly gross salary",
+      formula: "Base Salary + Social Insurance + Income Tax",
       label: "Gross Salary",
       value: payslip.grossSalary,
     },
@@ -2137,7 +2062,7 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
                 <div>
                   <p className="text-sm font-semibold text-slate-900">Salary Breakdown</p>
                   <p className="mt-1 text-xs text-slate-500">
-                    This breakdown is read from the latest uploaded payroll sheet.
+                    Fixed breakdown using the standard payroll salary policy.
                   </p>
                 </div>
                 <Calculator className="h-4 w-4 text-slate-400" />
@@ -3250,16 +3175,15 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
       <div className="grid gap-4 lg:gap-5 xl:grid-cols-1">
         <OverviewPerformanceChart data={data} />
       </div>
-      <div className="grid gap-4 lg:gap-5 xl:grid-cols-[1.55fr_0.9fr]">
+      <div className="grid gap-4 lg:gap-5 xl:grid-cols-1">
         <OverviewInsightsAlerts data={data} />
-        <OverviewAchievementByLine data={data} />
       </div>
       <div className="grid gap-4 lg:gap-5 xl:grid-cols-[1.55fr_0.9fr]">
-        <OverviewTopProducts data={data} />
         <div className="grid gap-4 lg:gap-5">
-          <TeamRankComparisonWidget data={data} />
+          <OverviewTopProducts data={data} />
           <ToReachTargetWidget data={data} />
         </div>
+        <TeamRankComparisonWidget data={data} />
       </div>
       <div className="flex justify-center lg:justify-end">
         <Link className="w-full lg:w-auto" href="/employee-portals/sales">
