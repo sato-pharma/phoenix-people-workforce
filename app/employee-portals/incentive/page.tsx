@@ -16,6 +16,9 @@ export default async function EmployeePortalIncentivePageRoute() {
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/overview");
   }
+  if (access.role === "Training Manager") {
+    redirect("/employee-portals/training-manager");
+  }
 
   await assertPermission(access, "employee_profile", "read");
 

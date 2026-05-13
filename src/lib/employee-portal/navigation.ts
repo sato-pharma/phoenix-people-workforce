@@ -1,6 +1,9 @@
 export type EmployeePortalNavVisibility = {
+  showDashboardTab?: boolean;
   showExpenseActionTab?: boolean;
+  showIncentiveTab?: boolean;
   showManagementTab?: boolean;
+  showMyPerformanceTab?: boolean;
   showTeamPerformanceTab?: boolean;
   showMedRepsPerformanceTab?: boolean;
   showDsmsPerformanceTab?: boolean;
@@ -12,6 +15,9 @@ export type EmployeePortalNavVisibility = {
   showOrganogramTab?: boolean;
   showMyCoachingTab?: boolean;
   showTeamCoachingTab?: boolean;
+  showTrainingManagerCreateCoachingTab?: boolean;
+  showTrainingManagerDashboardTab?: boolean;
+  showTrainingManagerFieldCoachingTab?: boolean;
 };
 
 export function resolveEmployeePortalNavVisibility(
@@ -24,6 +30,7 @@ export function resolveEmployeePortalNavVisibility(
     "training manager",
   ];
   const roleNormalized = String(roleLabel ?? "").trim().toLowerCase();
+  const isTrainingManager = roleNormalized === "training manager";
   const showManagementTab = MANAGEMENT_ROLES.includes(roleNormalized);
   const showTeamPerformanceTab =
     roleNormalized.includes("district manager") ||
@@ -39,24 +46,33 @@ export function resolveEmployeePortalNavVisibility(
     roleNormalized === "medical representative";
   const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
   const showLeaveApprovalsTab =
-    showTeamPerformanceTab ||
-    isNationalSalesManager ||
-    roleNormalized.includes("regional manager") ||
-    roleNormalized.includes("manager");
+    !isTrainingManager &&
+    (
+      showTeamPerformanceTab ||
+      isNationalSalesManager ||
+      roleNormalized.includes("regional manager") ||
+      roleNormalized.includes("manager")
+    );
 
   return {
     showBrickCoverageTab: isNationalSalesManager,
+    showDashboardTab: !isTrainingManager,
     showDsmsPerformanceTab: isNationalSalesManager,
     showExpenseActionTab,
+    showIncentiveTab: !isTrainingManager,
     showLeaveApprovalsTab,
     showManagementTab,
     showMedRepsPerformanceTab,
+    showMyPerformanceTab: !isTrainingManager,
     showMyCoachingTab,
     showOrganogramTab: showMedRepsPerformanceTab,
     showProbationTab: showTeamPerformanceTab || showMedRepsPerformanceTab,
     showTeamCoachingTab,
     showTeamExpensesTab: isNationalSalesManager,
     showTeamPerformanceTab,
+    showTrainingManagerCreateCoachingTab: isTrainingManager,
+    showTrainingManagerDashboardTab: isTrainingManager,
+    showTrainingManagerFieldCoachingTab: isTrainingManager,
     showVacanciesTab: showTeamPerformanceTab || showMedRepsPerformanceTab,
   };
 }

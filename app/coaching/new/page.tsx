@@ -21,6 +21,9 @@ export default async function NewCoachingReportPage() {
   if (!access.loginId && !access.hrId) {
     redirect("/login");
   }
+  if (access.role === "Training Manager") {
+    redirect("/employee-portals/training-manager/create-coaching-report");
+  }
   if (!canManageCoachingReports(access) || !(await canAccess(access, "coaching", "create"))) {
     redirect("/admin/access");
   }

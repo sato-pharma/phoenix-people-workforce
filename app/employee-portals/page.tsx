@@ -26,6 +26,9 @@ export default async function EmployeePortalsHomePage({
   if (mode !== "employee-portal") {
     redirect("/overview");
   }
+  if (access.role === "Training Manager") {
+    redirect("/employee-portals/training-manager");
+  }
   await assertPermission(access, "employee_profile", "read");
 
   let data = null;
