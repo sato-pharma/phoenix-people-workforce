@@ -50,13 +50,95 @@ declare global {
   }
 }
 
+type GoogleMapsBootstrapNamespace = GoogleMapsApi & {
+  __ib__?: () => void;
+};
+
 export function getLoadedGoogleMaps() {
   return window.google?.maps ?? null;
 }
 
+function hasRenderableMapApi(maps: GoogleMapsApi | null) {
+  return Boolean(maps?.Map || maps?.importLibrary);
+}
+
+function createBootstrapLoader(browserKey: string) {
+  const googleRoot = window.google ?? (window.google = {});
+  const mapsRoot = (googleRoot.maps ?? (googleRoot.maps = {})) as GoogleMapsBootstrapNamespace;
+
+  if (mapsRoot.importLibrary) {
+    return mapsRoot;
+  }
+
+  const requestedLibraries = new Set<string>();
+  let scriptPromise: Promise<void> | null = null;
+
+  const loadScript = () => {
+    if (scriptPromise) return scriptPromise;
+
+    scriptPromise = new Promise<void>((resolve, reject) => {
+      const params = new URLSearchParams();
+      params.set("key", browserKey);
+      params.set("v", "weekly");
+      params.set("loading", "async");
+      params.set("libraries", Array.from(requestedLibraries).join(","));
+      params.set("callback", "google.maps.__ib__");
+
+      const script = document.createElement("script");
+      script.async = true;
+      script.defer = true;
+      script.id = "phoenix-google-maps-js";
+      script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
+      script.onerror = () => {
+        script.remove();
+        if (mapsRoot.importLibrary === bootstrapImportLibrary) {
+          delete mapsRoot.importLibrary;
+        }
+        delete mapsRoot.__ib__;
+        scriptPromise = null;
+        reject(new Error("Google Maps failed to load. Check API restrictions."));
+      };
+      script.nonce = document.querySelector<HTMLScriptElement>("script[nonce]")?.nonce ?? "";
+      mapsRoot.__ib__ = resolve;
+      document.head.appendChild(script);
+    });
+
+    return scriptPromise;
+  };
+
+  function bootstrapImportLibrary(library: string) {
+    requestedLibraries.add(library);
+    return loadScript().then(() => {
+      const liveImportLibrary = window.google?.maps?.importLibrary;
+      if (!liveImportLibrary || liveImportLibrary === bootstrapImportLibrary) {
+        throw new Error("Google Maps loaded without dynamic library support.");
+      }
+      return liveImportLibrary(library);
+    });
+  }
+
+  mapsRoot.importLibrary = bootstrapImportLibrary;
+
+  return mapsRoot;
+}
+
+async function ensureCoreLibraries(maps: GoogleMapsApi) {
+  if (!maps.importLibrary) return;
+
+  await Promise.all([
+    maps.importLibrary("core").catch(() => ({})),
+    maps.importLibrary("maps").catch(() => ({})),
+  ]);
+}
+
 export function loadGoogleMaps(browserKey: string): Promise<GoogleMapsApi> {
   const loaded = getLoadedGoogleMaps();
-  if (loaded) return Promise.resolve(loaded);
+  if (hasRenderableMapApi(loaded)) {
+    return (async () => {
+      await ensureCoreLibraries(loaded!);
+      return getLoadedGoogleMaps() ?? loaded!;
+    })();
+  }
 
   if (!browserKey.trim()) {
     return Promise.reject(new Error("NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY is missing."));
@@ -66,37 +148,25 @@ export function loadGoogleMaps(browserKey: string): Promise<GoogleMapsApi> {
     return window.__phoenixGoogleMapsPromise;
   }
 
-  window.__phoenixGoogleMapsPromise = new Promise((resolve, reject) => {
-    const existing = document.getElementById("phoenix-google-maps-js") as HTMLScriptElement | null;
-    if (existing) {
-      existing.addEventListener("load", () => {
-        const maps = getLoadedGoogleMaps();
-        if (maps) {
-          resolve(maps);
-        } else {
-          reject(new Error("Google Maps loaded without maps API."));
-        }
-      }, { once: true });
-      existing.addEventListener("error", () => reject(new Error("Google Maps failed to load.")), { once: true });
-      return;
+  const loadingPromise = (async () => {
+    const maps = createBootstrapLoader(browserKey.trim());
+    await ensureCoreLibraries(maps);
+
+    const loadedMaps = getLoadedGoogleMaps() ?? maps;
+    if (!hasRenderableMapApi(loadedMaps)) {
+      throw new Error("Google Maps loaded without maps API.");
     }
 
-    const script = document.createElement("script");
-    script.async = true;
-    script.defer = true;
-    script.id = "phoenix-google-maps-js";
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(browserKey)}&v=weekly&loading=async`;
-    script.onload = () => {
-      const maps = getLoadedGoogleMaps();
-      if (maps) {
-        resolve(maps);
-      } else {
-        reject(new Error("Google Maps loaded without maps API."));
-      }
-    };
-    script.onerror = () => reject(new Error("Google Maps failed to load. Check API restrictions."));
-    document.head.appendChild(script);
+    return loadedMaps;
+  })();
+
+  const storedPromise = loadingPromise.catch((error) => {
+    if (window.__phoenixGoogleMapsPromise === storedPromise) {
+      window.__phoenixGoogleMapsPromise = undefined;
+    }
+    throw error;
   });
+  window.__phoenixGoogleMapsPromise = storedPromise;
 
   return window.__phoenixGoogleMapsPromise;
 }

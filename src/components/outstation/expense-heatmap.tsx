@@ -1,53 +1,23 @@
 "use client";
 
-import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
 import type { OutstationHeatmapData } from "@/lib/outstation/types";
+import {
+  importGoogleLibrary,
+  loadGoogleMaps,
+  type GoogleLatLngBoundsHandle,
+  type GoogleMapHandle,
+  type GoogleMapsApi,
+  type GoogleMarkerHandle,
+} from "@/lib/google-maps/browser";
 
 const panelClassName =
   "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 
-type GoogleMapHandle = {
-  fitBounds(bounds: { extend: (point: { lat: number; lng: number }) => void }): void;
-};
-
-type GoogleMarkerHandle = {
-  setMap(map: GoogleMapHandle | null): void;
-};
-
-type GoogleMapConstructor = new (
-  container: HTMLDivElement,
-  options: {
-    center: { lat: number; lng: number };
-    mapTypeControl: boolean;
-    streetViewControl: boolean;
-    zoom: number;
-  },
-) => GoogleMapHandle;
-
-type GoogleLatLngBoundsConstructor = new () => {
-  extend: (position: { lat: number; lng: number }) => void;
-};
-
-type GoogleMarkerConstructor = new (options: {
-  map: GoogleMapHandle;
-  position: { lat: number; lng: number };
-  title: string;
-}) => GoogleMarkerHandle;
-
-type GoogleMapsApi = {
-  importLibrary: (
-    library: "maps" | "marker" | string,
-  ) => Promise<{
-    Map: GoogleMapConstructor;
-    LatLngBounds: GoogleLatLngBoundsConstructor;
-      Marker?: GoogleMarkerConstructor;
-  }>;
-  LatLngBounds?: GoogleLatLngBoundsConstructor;
-  Map?: GoogleMapConstructor;
-  Marker?: GoogleMarkerConstructor;
-};
+type GoogleMapConstructor = NonNullable<GoogleMapsApi["Map"]>;
+type GoogleLatLngBoundsConstructor = new () => GoogleLatLngBoundsHandle;
+type GoogleMarkerConstructor = NonNullable<GoogleMapsApi["Marker"]>;
 
 type GoogleMapsLibrary = {
   LatLngBounds?: GoogleLatLngBoundsConstructor;
@@ -64,32 +34,47 @@ export function ExpenseHeatmap({
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<GoogleMapHandle | null>(null);
   const markersRef = useRef<GoogleMarkerHandle[]>([]);
+  const [googleMaps, setGoogleMaps] = useState<GoogleMapsApi | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const googleMaps = (window as { google?: { maps?: GoogleMapsApi } }).google?.maps;
+    if (!browserKey) return;
+
+    let cancelled = false;
+    void loadGoogleMaps(browserKey)
+      .then((maps) => {
+        if (cancelled) return;
+        setGoogleMaps(maps as GoogleMapsApi);
+        setReady(true);
+      })
+      .catch(() => setReady(false));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [browserKey]);
+
+  useEffect(() => {
     const mapElement = mapRef.current;
     if (!ready || !mapElement || !googleMaps) return;
 
     let cancelled = false;
 
     const run = async () => {
-      const mapsLibrary: GoogleMapsLibrary = googleMaps.importLibrary
-        ? await googleMaps.importLibrary("maps")
-        : {
-            LatLngBounds: googleMaps.LatLngBounds,
-            Map: googleMaps.Map,
-          };
-      const markerLibrary: GoogleMapsLibrary = googleMaps.importLibrary
-        ? await googleMaps.importLibrary("marker")
-        : {
-            Marker: googleMaps.Marker,
-          };
+      const mapsLibrary: GoogleMapsLibrary = await importGoogleLibrary(googleMaps, "maps", {
+        Map: googleMaps.Map,
+      });
+      const markerLibrary: GoogleMapsLibrary = await importGoogleLibrary(googleMaps, "marker", {
+        Marker: googleMaps.Marker,
+      });
+      const coreLibrary: GoogleMapsLibrary = await importGoogleLibrary(googleMaps, "core", {
+        LatLngBounds: googleMaps.LatLngBounds,
+      });
       if (cancelled) return;
 
       const mapCtor = mapsLibrary.Map;
       const markerCtor = markerLibrary.Marker ?? mapsLibrary.Marker;
-      const latLngBoundsCtor = mapsLibrary.LatLngBounds;
+      const latLngBoundsCtor = coreLibrary.LatLngBounds ?? mapsLibrary.LatLngBounds;
       if (!mapCtor || !markerCtor || !latLngBoundsCtor) return;
 
       const map =
@@ -102,7 +87,7 @@ export function ExpenseHeatmap({
         });
 
       mapInstanceRef.current = map;
-      markersRef.current.forEach((marker) => marker.setMap(null));
+      markersRef.current.forEach((marker) => marker.setMap?.(null));
       markersRef.current = [];
 
       const bounds = new latLngBoundsCtor();
@@ -125,15 +110,10 @@ export function ExpenseHeatmap({
     return () => {
       cancelled = true;
     };
-  }, [data.markers, ready]);
+  }, [data.markers, googleMaps, ready]);
 
   return (
     <div className={`${panelClassName} overflow-hidden p-0`}>
-      <Script
-        onLoad={() => setReady(true)}
-        src={`https://maps.googleapis.com/maps/api/js?key=${browserKey}&loading=async`}
-        strategy="afterInteractive"
-      />
       <div className="relative overflow-hidden border-b border-[#1F2937] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_34%),linear-gradient(135deg,#080B10_0%,#111827_58%,#24150D_100%)] px-5 py-5 text-white">
         <div
           aria-hidden="true"

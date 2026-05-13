@@ -1,6 +1,5 @@
 "use client";
 
-import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -8,6 +7,11 @@ import {
 } from "@/components/admin/admin-design-system";
 import { Card } from "@/components/ui/card";
 import type { GeoDashboardData, GeoMarker } from "@/lib/geo-intelligence/types";
+import {
+  importGoogleLibrary,
+  loadGoogleMaps,
+  type GoogleMapsApi as SharedGoogleMapsApi,
+} from "@/lib/google-maps/browser";
 
 type GoogleMapOptions = {
   center: { lat: number; lng: number };
@@ -56,31 +60,22 @@ type GoogleBounds = {
 
 type GoogleBoundsCtor = new () => GoogleBounds;
 
-type GoogleMapsLibrary = {
-  importLibrary: (name: "maps" | "marker") => Promise<unknown>;
-};
-
 type GoogleMapLibrary = {
-  Map: GoogleMapCtor;
-  InfoWindow: GoogleInfoWindowCtor;
-  LatLngBounds: GoogleBoundsCtor;
+  Map?: GoogleMapCtor;
+  InfoWindow?: GoogleInfoWindowCtor;
+  LatLngBounds?: GoogleBoundsCtor;
 };
 
 type GoogleMarkerLibrary = {
   Marker?: GoogleMarkerCtor;
 };
 
-type GoogleCoreMaps = {
-  maps?: GoogleMapsLibrary & {
-    Map?: GoogleMapCtor;
-    InfoWindow?: GoogleInfoWindowCtor;
-    LatLngBounds?: GoogleBoundsCtor;
-    Marker?: GoogleMarkerCtor;
-  };
-};
-
-type WindowWithGoogle = Window & {
-  google?: GoogleCoreMaps;
+type GoogleMapsRuntime = {
+  importLibrary?: SharedGoogleMapsApi["importLibrary"];
+  InfoWindow?: GoogleInfoWindowCtor;
+  LatLngBounds?: GoogleBoundsCtor;
+  Map?: GoogleMapCtor;
+  Marker?: GoogleMarkerCtor;
 };
 
 const panelClassName =
@@ -108,34 +103,48 @@ export function TerritoryMap({ data }: { data: GeoDashboardData }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<GoogleMap | null>(null);
   const markersRef = useRef<GoogleMarker[]>([]);
+  const [googleMaps, setGoogleMaps] = useState<GoogleMapsRuntime | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (!ready || !mapRef.current) return;
+    if (!browserKey) return;
 
-    const googleMaps = (window as WindowWithGoogle).google?.maps;
-    if (!googleMaps) return;
+    let cancelled = false;
+    void loadGoogleMaps(browserKey)
+      .then((maps) => {
+        if (cancelled) return;
+        setGoogleMaps(maps as unknown as GoogleMapsRuntime);
+        setReady(true);
+      })
+      .catch(() => setReady(false));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [browserKey]);
+
+  useEffect(() => {
+    if (!ready || !mapRef.current || !googleMaps) return;
 
     const container = mapRef.current;
 
     let cancelled = false;
     const run = async () => {
-      const mapsLibrary = googleMaps.importLibrary
-        ? ((await googleMaps.importLibrary("maps")) as GoogleMapLibrary)
-        : ({
-            InfoWindow: googleMaps.InfoWindow!,
-            LatLngBounds: googleMaps.LatLngBounds!,
-            Map: googleMaps.Map!,
-          } satisfies GoogleMapLibrary);
-      const markerLibrary = googleMaps.importLibrary
-        ? ((await googleMaps.importLibrary("marker")) as GoogleMarkerLibrary)
-        : ({ Marker: googleMaps.Marker } satisfies GoogleMarkerLibrary);
+      const sharedGoogleMaps = googleMaps as unknown as SharedGoogleMapsApi;
+      const mapsLibrary: GoogleMapLibrary = await importGoogleLibrary(sharedGoogleMaps, "maps", {
+        InfoWindow: googleMaps.InfoWindow,
+        LatLngBounds: googleMaps.LatLngBounds,
+        Map: googleMaps.Map,
+      });
+      const markerLibrary: GoogleMarkerLibrary = await importGoogleLibrary(sharedGoogleMaps, "marker", {
+        Marker: googleMaps.Marker,
+      });
       if (cancelled) return;
 
       const MapCtor = mapsLibrary.Map;
       const MarkerCtor = markerLibrary.Marker ?? googleMaps.Marker;
-      const InfoWindowCtor = googleMaps.InfoWindow;
-      const BoundsCtor = googleMaps.LatLngBounds;
+      const InfoWindowCtor = mapsLibrary.InfoWindow ?? googleMaps.InfoWindow;
+      const BoundsCtor = mapsLibrary.LatLngBounds ?? googleMaps.LatLngBounds;
 
       if (!MapCtor || !MarkerCtor || !InfoWindowCtor || !BoundsCtor) {
         return;
@@ -187,15 +196,10 @@ export function TerritoryMap({ data }: { data: GeoDashboardData }) {
     return () => {
       cancelled = true;
     };
-  }, [data, ready]);
+  }, [data, googleMaps, ready]);
 
   return (
     <Card className={`${panelClassName} overflow-hidden p-0`}>
-      <Script
-        onLoad={() => setReady(true)}
-        src={`https://maps.googleapis.com/maps/api/js?key=${browserKey}&libraries=places&loading=async`}
-        strategy="afterInteractive"
-      />
       <AdminSectionHeader
         description="Inspect route clusters, vacancies, and trip points on a single visual layer."
         title="Territory map"
