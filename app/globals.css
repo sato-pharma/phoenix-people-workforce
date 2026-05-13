@@ -24,8 +24,9 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-dm-sans);
+  --font-mono: var(--font-jetbrains-mono);
+  --font-display: var(--font-dm-serif);
 }
 
 .dark {
@@ -240,6 +241,96 @@ body {
   .login-fire-haze,
   .login-logo-glow::after,
   .login-logo-glow::before {
+    animation: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   Employee Portal — Premium Animation Utilities
+   ══════════════════════════════════════════════════════ */
+
+@keyframes ep-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes ep-breathe-orange {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(249, 115, 22, 0.55); }
+  60%       { box-shadow: 0 0 0 7px rgba(249, 115, 22, 0); }
+}
+
+@keyframes ep-breathe-green {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(16, 185, 129, 0.55); }
+  60%       { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }
+}
+
+@keyframes ep-breathe-amber {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(245, 158, 11, 0.55); }
+  60%       { box-shadow: 0 0 0 7px rgba(245, 158, 11, 0); }
+}
+
+@keyframes ep-count-reveal {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+@keyframes ep-fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Dot pulse animations */
+.ep-pulse-orange { animation: ep-breathe-orange 2.4s ease-in-out infinite; }
+.ep-pulse-green  { animation: ep-breathe-green  2.4s ease-in-out infinite; }
+.ep-pulse-amber  { animation: ep-breathe-amber  2.4s ease-in-out infinite; }
+
+/* Progress bar shimmer overlay */
+.ep-progress-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.ep-progress-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.42) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: ep-shimmer 2s ease-in-out infinite;
+}
+
+/* Number reveal on mount */
+.ep-count-reveal {
+  animation: ep-count-reveal 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Card fade-in stagger */
+.ep-fade-in-up {
+  animation: ep-fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Glass surface helper — use alongside bg-* for layered glass */
+.ep-glass {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* Font shorthands */
+.font-display {
+  font-family: var(--font-display), serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ep-pulse-orange,
+  .ep-pulse-green,
+  .ep-pulse-amber,
+  .ep-progress-shimmer::after,
+  .ep-count-reveal,
+  .ep-fade-in-up {
     animation: none;
   }
 }

@@ -11,8 +11,8 @@ import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigati
 
 function navItemClass(active: boolean) {
   return active
-    ? "border-l-2 border-orange-500 bg-orange-50/70 text-slate-900"
-    : "border-l-2 border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900";
+    ? "border-l-2 border-orange-500 bg-orange-500/15 text-white"
+    : "border-l-2 border-transparent text-slate-400 hover:border-white/20 hover:bg-white/8 hover:text-slate-200";
 }
 
 function isEmployeePortalNavItemActive(pathname: string, href: string) {
@@ -134,11 +134,11 @@ export function EmployeePortalTopNav({
   return (
     <>
       <SessionSecurityGuard />
-      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0F1117]/95 ep-glass">
         <div className="mx-auto flex w-full max-w-[1560px] items-center gap-3 px-4 py-3 lg:px-6">
           <button
             aria-label="Menu"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700 lg:hidden"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-slate-400 transition hover:border-white/20 hover:text-slate-200 lg:hidden"
             onClick={() => setIsMobileMenuOpen(true)}
             type="button"
           >
@@ -147,37 +147,38 @@ export function EmployeePortalTopNav({
           <PhoenixLogo />
 
           <div className="relative ml-auto hidden w-full max-w-sm items-center md:flex">
-            <Search className="pointer-events-none absolute left-3 h-4 w-4 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 h-4 w-4 text-slate-500" />
             <input
               aria-label="Search"
-              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 pl-9 pr-3 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:bg-white focus:shadow-[0_0_0_4px_rgba(249,115,22,0.08)]"
+              className="h-10 w-full rounded-xl border border-white/10 bg-white/6 pl-9 pr-3 text-sm text-slate-300 placeholder:text-slate-500 outline-none transition focus:border-orange-500/40 focus:bg-white/10 focus:shadow-[0_0_0_4px_rgba(249,115,22,0.10)]"
               placeholder="Search anything..."
               type="text"
             />
           </div>
           <button
             aria-label="Alerts"
-            className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700 sm:inline-flex"
+            className="hidden h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-slate-400 transition hover:border-white/20 hover:text-slate-200 sm:inline-flex"
             type="button"
           >
             <Bell className="h-4 w-4" />
           </button>
-          <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 lg:flex">
-            <CalendarClock className="h-3.5 w-3.5 text-slate-400" />
+          <div className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-400 lg:flex">
+            <CalendarClock className="h-3.5 w-3.5 text-slate-500" />
             <span>
               {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
             </span>
           </div>
-          <div className="hidden items-center gap-2 rounded-xl border border-orange-100 bg-orange-50/60 px-3 py-2 text-xs text-orange-700 lg:flex">
+          <div className="hidden items-center gap-2 rounded-xl border border-orange-500/25 bg-orange-500/10 px-3 py-2 text-xs text-orange-400 lg:flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-orange-500 ep-pulse-orange" />
             <Zap className="h-3.5 w-3.5" />
             <span>Live Performance</span>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-1 ml-auto lg:ml-0">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-100 text-xs font-semibold text-orange-700">
+          <div className="ml-auto flex items-center gap-2 rounded-full border border-white/10 bg-white/6 px-2 py-1 lg:ml-0">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-xs font-bold text-white shadow-[0_2px_8px_rgba(249,115,22,0.4)]">
               {initials || "EM"}
             </div>
             <div className="hidden pr-1 sm:block">
-              <p className="text-xs font-semibold text-slate-900">{firstName}</p>
+              <p className="text-xs font-semibold text-slate-200">{firstName}</p>
             </div>
           </div>
         </div>
@@ -192,12 +193,12 @@ export function EmployeePortalTopNav({
       )}
 
       {/* Mobile Sidebar Content */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-[280px] transform bg-white p-6 shadow-2xl transition-transform duration-300 ease-in-out lg:hidden ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <div className={`fixed inset-y-0 left-0 z-50 w-[280px] transform bg-[#0F1117] border-r border-white/10 p-6 shadow-2xl transition-transform duration-300 ease-in-out lg:hidden ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="flex items-center justify-between mb-8">
           <PhoenixLogo />
-          <button 
+          <button
             onClick={() => setIsMobileMenuOpen(false)}
-            className="h-10 w-10 flex items-center justify-center rounded-xl border border-slate-100 text-slate-400 hover:text-slate-600"
+            className="h-10 w-10 flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:text-slate-200"
           >
             <X className="h-5 w-5" />
           </button>
@@ -206,19 +207,19 @@ export function EmployeePortalTopNav({
         <nav className="space-y-5">
           {menuSections.map((section) => (
             <div key={section.title}>
-              <p className="mb-2 px-2 text-[11px] font-bold uppercase tracking-[0.18em] text-orange-600">
+              <p className="mb-2 px-2 text-[11px] font-bold uppercase tracking-[0.18em] text-orange-500">
                 {section.title}
               </p>
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {section.items.map((item) => {
                   const active = isEmployeePortalNavItemActive(pathname, item.href);
                   return (
                     <Link
                       key={item.label}
-                      className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition duration-200 border ${navItemClass(active)}`}
+                      className={`flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition duration-200 border ${navItemClass(active)}`}
                       href={item.href}
                     >
-                      <item.icon className="h-5 w-5" />
+                      <item.icon className="h-4.5 w-4.5" />
                       <span>{item.label}</span>
                     </Link>
                   );
@@ -226,28 +227,28 @@ export function EmployeePortalTopNav({
               </div>
             </div>
           ))}
-          
-          <div className="pt-4 mt-4 border-t border-slate-100">
+
+          <div className="pt-4 mt-4 border-t border-white/10">
             <button
-              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+              className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/8 hover:text-slate-200"
               onClick={handleLogout}
               type="button"
             >
-              <LogOut className="h-5 w-5" />
+              <LogOut className="h-4.5 w-4.5" />
               <span>Log Out</span>
             </button>
           </div>
         </nav>
 
         <div className="absolute bottom-8 left-6 right-6">
-          <div className="rounded-2xl bg-orange-50 p-4 border border-orange-100">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="h-8 w-8 rounded-full bg-orange-500 flex items-center justify-center text-white text-xs font-bold">
+          <div className="rounded-2xl bg-white/6 border border-white/10 p-4">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-xs font-bold shadow-[0_2px_8px_rgba(249,115,22,0.4)]">
                 {initials}
               </div>
               <div>
-                <p className="text-sm font-bold text-slate-900">{data.employee.fullName}</p>
-                <p className="text-[10px] text-orange-600 font-medium uppercase tracking-wider">{data.employee.roleLabel}</p>
+                <p className="text-sm font-semibold text-white">{data.employee.fullName}</p>
+                <p className="text-[10px] text-orange-400 font-medium uppercase tracking-wider">{data.employee.roleLabel}</p>
               </div>
             </div>
           </div>
@@ -275,11 +276,11 @@ export function EmployeePortalSidebar({
   };
 
   return (
-      <aside className="hidden w-[228px] shrink-0 lg:block">
-      <div className="sticky top-[96px] space-y-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <aside className="hidden w-[220px] shrink-0 lg:block">
+      <div className="sticky top-[76px] space-y-1 rounded-2xl border border-white/10 bg-white/[0.055] p-3 ep-glass shadow-[0_8px_32px_rgba(0,0,0,0.28)]">
         {sections.map((section) => (
-          <div key={section.title} className="space-y-1.5">
-            <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-[0.18em] text-orange-600">
+          <div key={section.title} className="space-y-0.5">
+            <p className="px-3 pb-1 pt-2.5 text-[10px] font-black uppercase tracking-[0.20em] text-orange-500">
               {section.title}
             </p>
             {section.items.map((item) => {
@@ -287,24 +288,26 @@ export function EmployeePortalSidebar({
               return (
                 <Link
                   key={item.label}
-                  className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 border ${navItemClass(active)}`}
+                  className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${navItemClass(active)}`}
                   href={item.href}
                 >
-                  <item.icon className="h-4 w-4" />
+                  <item.icon className="h-4 w-4 shrink-0" />
                   <span>{item.label}</span>
                 </Link>
               );
             })}
           </div>
         ))}
-        <button
-          className="mt-2 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-          onClick={handleLogout}
-          type="button"
-        >
-          <LogOut className="h-4 w-4" />
-          <span>Log Out</span>
-        </button>
+        <div className="pt-1 mt-1 border-t border-white/10">
+          <button
+            className="mt-1 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-white/8 hover:text-slate-300"
+            onClick={handleLogout}
+            type="button"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            <span>Log Out</span>
+          </button>
+        </div>
       </div>
     </aside>
   );

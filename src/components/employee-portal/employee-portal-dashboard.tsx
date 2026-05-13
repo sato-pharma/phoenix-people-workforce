@@ -155,14 +155,14 @@ function ContributionMetricToggle({
   onChange: (metric: ContributionMetric) => void;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+    <div className="inline-flex rounded-lg border border-white/10 bg-white/6 p-1">
       {(["sales", "units"] as const).map((option) => {
         const active = metric === option;
         return (
           <button
             className={active
-              ? "rounded-md bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
-              : "rounded-md px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"}
+              ? "rounded-md bg-orange-500/90 px-3 py-1 text-xs font-semibold text-white shadow-sm"
+              : "rounded-md px-3 py-1 text-xs font-semibold text-slate-400 transition hover:bg-white/8 hover:text-slate-200"}
             key={option}
             onClick={() => onChange(option)}
             type="button"
@@ -218,10 +218,13 @@ function PayrollStat({
 
 function chartTooltipStyle() {
   return {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
+    background: "#1E2535",
+    border: "1px solid rgba(255,255,255,0.12)",
     borderRadius: 12,
-    boxShadow: "0 10px 30px rgba(15,23,42,0.08)",
+    boxShadow: "0 12px 36px rgba(0,0,0,0.45)",
+    color: "#e2e8f0",
+    fontSize: "13px",
+    fontWeight: 500,
   };
 }
 
@@ -260,19 +263,19 @@ function insightTone(text: string): "neutral" | "positive" | "warning" {
 function insightMeta(text: string) {
   const tone = insightTone(text);
   if (tone === "positive") {
-    return { badge: "Positive", classes: "bg-emerald-50 text-emerald-700", icon: TrendingUp };
+    return { badge: "Positive", classes: "bg-emerald-500/15 text-emerald-300", icon: TrendingUp };
   }
   if (tone === "warning") {
-    return { badge: "Warning", classes: "bg-rose-50 text-rose-700", icon: TrendingDown };
+    return { badge: "Warning", classes: "bg-rose-500/15 text-rose-300", icon: TrendingDown };
   }
-  return { badge: "Insight", classes: "bg-slate-100 text-slate-700", icon: Info };
+  return { badge: "Insight", classes: "bg-white/10 text-slate-300", icon: Info };
 }
 
 function sectionTitle(kicker: string, title: string) {
   return (
-    <div className="mb-2">
-      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{kicker}</p>
-      <h2 className="mt-2 text-2xl font-semibold text-slate-900">{title}</h2>
+    <div className="mb-3 border-l-[3px] border-orange-500 pl-3.5">
+      <p className="text-[10px] font-black uppercase tracking-[0.20em] text-orange-400">{kicker}</p>
+      <h2 className="mt-1.5 text-2xl font-bold tracking-tight text-white">{title}</h2>
     </div>
   );
 }
@@ -715,59 +718,61 @@ function OverviewStatCard({
   value: string;
 }) {
   const tone = {
-    bar: "bg-orange-500",
-    border: "hover:border-orange-200",
-    icon: "bg-orange-50 text-orange-600 ring-orange-100",
-    progress: "bg-orange-500",
-    tint: "bg-orange-50/55",
+    bar: "from-orange-500 to-orange-400",
+    barSolid: "bg-orange-500",
+    icon: "bg-orange-500/20 text-orange-300 ring-orange-500/20",
+    progress: "from-orange-500 to-orange-400",
+    tint: "from-orange-500/20 to-transparent",
   };
 
   if (accent === "green") {
-    tone.bar = "bg-emerald-500";
-    tone.border = "hover:border-emerald-200";
-    tone.icon = "bg-emerald-50 text-emerald-600 ring-emerald-100";
-    tone.progress = "bg-emerald-500";
-    tone.tint = "bg-emerald-50/55";
+    tone.bar = "from-emerald-500 to-emerald-400";
+    tone.barSolid = "bg-emerald-500";
+    tone.icon = "bg-emerald-500/20 text-emerald-300 ring-emerald-500/20";
+    tone.progress = "from-emerald-500 to-emerald-400";
+    tone.tint = "from-emerald-500/20 to-transparent";
   } else if (accent === "purple") {
-    tone.bar = "bg-violet-500";
-    tone.border = "hover:border-violet-200";
-    tone.icon = "bg-violet-50 text-violet-600 ring-violet-100";
-    tone.progress = "bg-violet-500";
-    tone.tint = "bg-violet-50/55";
+    tone.bar = "from-violet-500 to-violet-400";
+    tone.barSolid = "bg-violet-500";
+    tone.icon = "bg-violet-500/20 text-violet-300 ring-violet-500/20";
+    tone.progress = "from-violet-500 to-violet-400";
+    tone.tint = "from-violet-500/20 to-transparent";
   } else if (accent === "blue") {
-    tone.bar = "bg-sky-500";
-    tone.border = "hover:border-sky-200";
-    tone.icon = "bg-sky-50 text-sky-600 ring-sky-100";
-    tone.progress = "bg-sky-500";
-    tone.tint = "bg-sky-50/55";
+    tone.bar = "from-sky-500 to-sky-400";
+    tone.barSolid = "bg-sky-500";
+    tone.icon = "bg-sky-500/20 text-sky-300 ring-sky-500/20";
+    tone.progress = "from-sky-500 to-sky-400";
+    tone.tint = "from-sky-500/20 to-transparent";
   }
 
   const clampedProgress =
     typeof progress === "number" ? Math.max(0, Math.min(100, Math.round(progress))) : null;
 
   return (
-    <Card className={`group relative min-h-[172px] overflow-hidden rounded-[26px] border border-slate-200/90 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-5 py-5 shadow-[0_18px_42px_rgba(15,23,42,0.075)] transition duration-200 hover:-translate-y-0.5 ${tone.border} hover:shadow-[0_24px_54px_rgba(15,23,42,0.11)]`}>
-      <div className={`absolute right-0 top-0 h-[76px] w-[76px] rounded-bl-[38px] ${tone.tint}`} />
-      <div className={`mb-5 h-[3px] w-10 rounded-full ${tone.bar} transition group-hover:w-16`} />
+    <Card className="group relative min-h-[172px] overflow-hidden rounded-[26px] border border-white/[0.10] bg-white/[0.06] ep-glass px-5 py-5 shadow-[0_18px_42px_rgba(0,0,0,0.28)] transition duration-250 hover:-translate-y-1 hover:border-white/[0.18] hover:bg-white/[0.10] hover:shadow-[0_28px_60px_rgba(0,0,0,0.40)]">
+      {/* Corner accent glow */}
+      <div className={`pointer-events-none absolute right-0 top-0 h-24 w-24 rounded-bl-[48px] bg-gradient-to-bl opacity-30 ${tone.tint}`} />
+      {/* Top bar indicator */}
+      <div className={`mb-5 h-[3px] w-10 rounded-full bg-gradient-to-r transition-all duration-300 group-hover:w-16 ${tone.bar}`} />
       <div className="relative flex h-full flex-col justify-between gap-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="break-words text-[1.65rem] font-black leading-[1.05] text-slate-950 [overflow-wrap:anywhere] lg:text-[1.85rem] 2xl:text-[2rem]">
+            <p className="ep-count-reveal break-words text-[1.65rem] font-black leading-[1.05] text-white [overflow-wrap:anywhere] lg:text-[1.85rem] 2xl:text-[2rem]">
               {value}
             </p>
-            <p className="mt-2.5 text-[11px] font-black uppercase text-slate-500">{label}</p>
+            <p className="mt-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
           </div>
-          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1 ${tone.icon}`}>
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1 transition-transform duration-200 group-hover:scale-110 ${tone.icon}`}>
             <Icon className="h-5 w-5" />
           </div>
         </div>
 
         <div>
-          {note ? <p className="line-clamp-2 min-h-[34px] text-[13px] font-medium leading-5 text-slate-500">{note}</p> : null}
+          {note ? <p className="line-clamp-2 min-h-[34px] text-[13px] font-medium leading-5 text-slate-400">{note}</p> : null}
           {clampedProgress !== null ? (
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
               <div
-                className={`h-2 rounded-full ${tone.progress}`}
+                className={`ep-progress-shimmer h-2 rounded-full bg-gradient-to-r ${tone.progress}`}
                 style={{ width: `${clampedProgress}%` }}
               />
             </div>
@@ -1403,25 +1408,25 @@ function ToReachTargetWidget({ data }: { data: MedicalRepPortalData }) {
       <div className="space-y-3">
         {achieved ? (
           <>
-            <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2">
-              <p className="text-sm font-semibold text-emerald-700">Target Achieved</p>
-              <p className="mt-1 text-sm text-emerald-700">Great job! You have reached your target and are now in over-achievement.</p>
+            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2">
+              <p className="text-sm font-semibold text-emerald-300">Target Achieved</p>
+              <p className="mt-1 text-sm text-emerald-400">Great job! You have reached your target and are now in over-achievement.</p>
             </div>
           </>
         ) : (
           <>
-            <div className="rounded-xl border border-orange-100 bg-orange-50/50 px-3 py-2">
+            <div className="rounded-xl border border-orange-500/20 bg-orange-500/8 px-3 py-2">
               <p className="text-xs text-slate-500">Remaining Gap</p>
-              <p className="text-xl font-semibold text-slate-900">{egp(gap)}</p>
+              <p className="text-xl font-bold text-white">{egp(gap)}</p>
             </div>
-            <div className="text-sm text-slate-600">
-              <span className="font-semibold text-slate-900">{percent.toFixed(1)}%</span> current achievement
+            <div className="text-sm text-slate-400">
+              <span className="font-bold text-white">{percent.toFixed(1)}%</span> current achievement
             </div>
-            <div className="h-2 rounded-full bg-slate-100">
-              <div className="h-2 rounded-full bg-orange-500" style={{ width: `${percent}%` }} />
+            <div className="h-2 overflow-hidden rounded-full bg-white/10">
+              <div className="ep-progress-shimmer h-2 rounded-full bg-gradient-to-r from-orange-500 to-orange-400" style={{ width: `${percent}%` }} />
             </div>
-            <p className="text-sm text-slate-600">
-              Suggested Focus: <span className="text-slate-900">You are {egp(gap)} away from reaching your target to unlock full incentives.</span>
+            <p className="text-sm text-slate-400">
+              Suggested Focus: <span className="text-slate-300">You are {egp(gap)} away from reaching your target to unlock full incentives.</span>
             </p>
           </>
         )}
@@ -1504,7 +1509,7 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
           <label className="mb-1 inline-block text-xs text-slate-500" htmlFor="team-period-filter">Comparison period</label>
           <select
             id="team-period-filter"
-            className="w-full max-w-xs rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
+            className="w-full max-w-xs rounded-lg border border-white/10 bg-[#1E2535] px-2 py-1.5 text-sm text-slate-300"
             onChange={(event) => handlePeriodChange(event.target.value)}
             value={selectedPeriod}
           >
@@ -1529,7 +1534,7 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
           </label>
           <select
             id="team-period-filter"
-            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
+            className="rounded-lg border border-white/10 bg-[#1E2535] px-2 py-1.5 text-sm text-slate-300"
             onChange={(event) => handlePeriodChange(event.target.value)}
             value={selectedPeriod}
           >
@@ -1541,19 +1546,64 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
         </div>
       )}
     >
-      <div className="space-y-2">
-        {rows.map((row) => (
-          <div key={`${row.position}-${row.name}`} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0 w-7 text-sm font-semibold text-slate-700">#{row.position}</span>
-              <span className="truncate text-sm text-slate-700">{row.name}</span>
+      <div className="space-y-1.5">
+        {rows.map((row) => {
+          const isCurrentUser = row.name === data.employee.fullName;
+          const avatarInitials = row.name
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((p) => p.charAt(0))
+            .join("")
+            .toUpperCase();
+          const avatarGradients = [
+            "from-orange-500 to-orange-600",
+            "from-sky-500 to-sky-600",
+            "from-emerald-500 to-emerald-600",
+            "from-violet-500 to-violet-600",
+            "from-rose-500 to-rose-600",
+            "from-amber-500 to-amber-600",
+          ];
+          const grad = avatarGradients[(row.position - 1) % avatarGradients.length];
+          const pctColor =
+            row.achievementPercent >= 100
+              ? "text-emerald-400"
+              : row.achievementPercent >= 90
+                ? "text-orange-400"
+                : "text-rose-400";
+
+          return (
+            <div
+              key={`${row.position}-${row.name}`}
+              className={`flex items-center justify-between rounded-xl border px-3 py-2.5 transition duration-200 ${
+                isCurrentUser
+                  ? "border-orange-500/30 bg-orange-500/10 shadow-[0_0_0_1px_rgba(249,115,22,0.15),0_4px_14px_rgba(249,115,22,0.10)]"
+                  : "border-white/8 bg-white/5 hover:bg-white/8"
+              }`}
+            >
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="shrink-0 w-5 text-xs font-bold text-slate-500">
+                  #{row.position}
+                </span>
+                {/* Avatar circle */}
+                <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${grad} text-[10px] font-bold text-white shadow-sm`}>
+                  {avatarInitials}
+                </div>
+                <span className="truncate text-sm text-slate-300">{row.name}</span>
+                {isCurrentUser && (
+                  <span className="shrink-0 rounded-full bg-orange-500/20 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-orange-400">
+                    You
+                  </span>
+                )}
+              </div>
+              <div className="shrink-0 text-right">
+                <p className={`text-sm font-bold ${pctColor}`}>
+                  {row.achievementPercent.toFixed(1)}%
+                </p>
+                <p className="whitespace-nowrap text-[10px] text-slate-500">{egp(row.sales)}</p>
+              </div>
             </div>
-            <div className="shrink-0 text-right">
-              <p className="text-sm font-semibold text-slate-900">{row.achievementPercent.toFixed(1)}%</p>
-              <p className="whitespace-nowrap text-[11px] text-slate-500">{egp(row.sales)} / {egp(row.target)}</p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </OverviewPagePanel>
   );
@@ -1571,11 +1621,11 @@ function OverviewPagePanel({
   action?: ReactNode;
 }) {
   return (
-    <Card className="group flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-4 lg:p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)] transition-all duration-160 ease-out hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)]">
-      <div className="mb-4 lg:mb-6 flex flex-wrap items-center justify-between gap-3">
+    <Card className="group flex h-full flex-col overflow-hidden rounded-3xl border border-white/[0.10] bg-white/[0.06] ep-glass p-4 lg:p-6 shadow-[0_12px_32px_rgba(0,0,0,0.28)] transition-all duration-200 hover:border-white/[0.15] hover:shadow-[0_18px_44px_rgba(0,0,0,0.36)]">
+      <div className="mb-4 lg:mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <span className="h-2 w-2 rounded-full bg-orange-500 ring-2 ring-orange-100" />
-          <p className="text-base lg:text-lg font-semibold text-slate-900">{title}</p>
+          <span className="h-2 w-2 rounded-full bg-orange-500 ep-pulse-orange" />
+          <p className="text-base lg:text-lg font-semibold text-white tracking-tight">{title}</p>
         </div>
         {action}
       </div>
@@ -1611,19 +1661,19 @@ function OverviewInsightsAlerts({ data }: { data: MedicalRepPortalData }) {
           const meta = insightMeta(text);
           const Icon = meta.icon;
           const borderTone = meta.badge === "Positive"
-            ? "border-l-emerald-500"
+            ? "border-l-emerald-400 border-white/8"
             : meta.badge === "Warning"
-              ? "border-l-amber-500"
+              ? "border-l-amber-400 border-white/8"
               : meta.badge === "Insight"
-                ? "border-l-blue-500"
-                : "border-l-rose-500";
+                ? "border-l-sky-400 border-white/8"
+                : "border-l-rose-400 border-white/8";
           return (
-            <div key={text} className={`rounded-xl border border-slate-100 border-l-2 ${borderTone} bg-white p-3 shadow-[0_4px_14px_rgba(15,23,42,0.03)]`}>
+            <div key={text} className={`rounded-xl border border-l-2 bg-white/5 p-3 ${borderTone}`}>
               <div className="flex items-center gap-2">
-                <Icon className="h-4 w-4 text-slate-500" />
+                <Icon className="h-4 w-4 text-slate-400" />
                 <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.classes}`}>{meta.badge}</span>
               </div>
-              <p className="mt-2 text-sm text-slate-700">{shortInsight(text)}</p>
+              <p className="mt-2 text-sm text-slate-300">{shortInsight(text)}</p>
             </div>
           );
         })}
@@ -1650,22 +1700,22 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
     >
       <div className="space-y-3">
         {rows.length === 0 ? (
-          <p className="text-sm text-slate-500">No product contribution data.</p>
+          <p className="text-sm text-slate-400">No product contribution data.</p>
         ) : rows.map((row) => {
           const value = getContributionValue(row, metric);
           const width = Math.max(8, Math.round((value / max) * 100));
           const contributionPercent = total > 0 ? (value / total) * 100 : 0;
           return (
             <div key={row.name}>
-              <div className="mb-1 flex items-center justify-between text-sm">
+              <div className="mb-1.5 flex items-center justify-between text-sm">
                 <div className="flex flex-col">
-                  <span className="font-medium text-slate-700">{row.name}</span>
+                  <span className="font-medium text-slate-200">{row.name}</span>
                   <span className="text-[10px] text-slate-500">{contributionPercent.toFixed(1)}% of top 4</span>
                 </div>
-                <span className="font-semibold text-slate-900">{formatContributionValue(metric, value)}</span>
+                <span className="font-bold text-white">{formatContributionValue(metric, value)}</span>
               </div>
-              <div className="h-2 rounded-full bg-slate-100">
-                <div className="h-2 rounded-full bg-orange-500" style={{ width: `${width}%` }} />
+              <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                <div className="ep-progress-shimmer h-2 rounded-full bg-gradient-to-r from-orange-500 to-orange-400" style={{ width: `${width}%` }} />
               </div>
             </div>
           );
@@ -1708,10 +1758,10 @@ function OverviewAchievementByLine({ data }: { data: MedicalRepPortalData }) {
               </PieChart>
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <p className="text-[22px] font-semibold tracking-tight text-slate-900">
+              <p className="text-[22px] font-bold tracking-tight text-white">
                 {formatContributionValue(metric, source.reduce((sum, row) => sum + row.value, 0))}
               </p>
-              <p className="text-[11px] text-slate-500">{metric === "sales" ? "Sales Value" : "Units Sold"}</p>
+              <p className="text-[11px] text-slate-400">{metric === "sales" ? "Sales Value" : "Units Sold"}</p>
             </div>
           </div>
           <div className="space-y-2 pt-2">
@@ -1721,10 +1771,10 @@ function OverviewAchievementByLine({ data }: { data: MedicalRepPortalData }) {
                 <div key={row.name} className="flex items-center justify-between gap-3 text-sm">
                   <div className="flex items-center gap-2">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
-                    <span className="text-slate-700">{row.name}</span>
+                    <span className="text-slate-300">{row.name}</span>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-slate-900">{percent}%</p>
+                    <p className="font-bold text-white">{percent}%</p>
                     <p className="text-xs text-slate-500">{formatContributionValue(metric, row.value)}</p>
                   </div>
                 </div>
@@ -1739,33 +1789,35 @@ function OverviewAchievementByLine({ data }: { data: MedicalRepPortalData }) {
 
 function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
   return (
-    <div
-      className="flex h-full flex-col"
-    >
+    <div className="flex h-full flex-col">
       <OverviewPagePanel
         title="Performance Overview"
-        action={<div className="rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-600">This Month</div>}
+        action={<div className="rounded-lg border border-white/10 bg-white/6 px-3 py-1 text-xs text-slate-400">This Month</div>}
       >
-        <div className="h-64">
+        <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data.sales.trend}>
               <defs>
                 <linearGradient id="overviewSalesFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.16} />
-                  <stop offset="95%" stopColor="#f97316" stopOpacity={0.01} />
+                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.32} />
+                  <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="overviewTargetFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#94a3b8" stopOpacity={0.12} />
+                  <stop offset="95%" stopColor="#94a3b8" stopOpacity={0.01} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-              <XAxis dataKey="period" tickFormatter={periodLabel} stroke="#64748b" />
-              <YAxis stroke="#64748b" tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.07)" />
+              <XAxis dataKey="period" tickFormatter={periodLabel} stroke="rgba(255,255,255,0.35)" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
+              <YAxis stroke="rgba(255,255,255,0.35)" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
               <Tooltip
                 contentStyle={chartTooltipStyle()}
-                cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 3" }}
+                cursor={{ stroke: "rgba(249,115,22,0.3)", strokeDasharray: "3 3" }}
                 formatter={(value: unknown) => tooltipCurrency(value)}
                 labelFormatter={(value) => `Period: ${periodLabel(String(value))}`}
               />
-              <Area dataKey="sales" name="Achievement" stroke="#f97316" strokeWidth={2.5} fill="url(#overviewSalesFill)" activeDot={{ r: 4 }} type="monotone" />
-              <Area dataKey="target" name="Target" stroke="#94a3b8" strokeDasharray="4 4" fillOpacity={0} type="monotone" />
+              <Area dataKey="target" name="Target" stroke="rgba(148,163,184,0.5)" strokeDasharray="5 4" fill="url(#overviewTargetFill)" type="monotone" />
+              <Area dataKey="sales" name="Achievement" stroke="#f97316" strokeWidth={2.5} fill="url(#overviewSalesFill)" activeDot={{ r: 5, fill: "#f97316", stroke: "rgba(249,115,22,0.3)", strokeWidth: 6 }} type="monotone" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -3230,15 +3282,40 @@ export function IdentityCard({ data }: { data: MedicalRepPortalData }) {
           ? "bg-rose-500"
           : "bg-slate-500";
 
+  const identityInitials = employee.fullName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p.charAt(0))
+    .join("")
+    .toUpperCase();
+
+  const statusPillDark =
+    statusVariant === "success"
+      ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
+      : statusVariant === "warning"
+        ? "border-amber-500/30 bg-amber-500/15 text-amber-300"
+        : statusVariant === "danger"
+          ? "border-rose-500/30 bg-rose-500/15 text-rose-300"
+          : "border-white/15 bg-white/8 text-slate-400";
+
+  const statusDotDark =
+    statusVariant === "success"
+      ? "bg-emerald-400 ep-pulse-green"
+      : statusVariant === "warning"
+        ? "bg-amber-400 ep-pulse-amber"
+        : statusVariant === "danger"
+          ? "bg-rose-400 ep-pulse-orange"
+          : "bg-slate-500";
+
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 shadow-[0_8px_28px_rgba(15,23,42,0.05)] lg:px-8 lg:py-6">
+    <div className="rounded-[28px] border border-white/[0.10] bg-white/[0.06] ep-glass px-5 py-5 shadow-[0_8px_32px_rgba(0,0,0,0.28)] lg:px-8 lg:py-6">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-center">
 
-        {/* Avatar circle */}
-        <div className="flex h-[80px] w-[80px] lg:h-[112px] lg:w-[112px] shrink-0 items-center justify-center rounded-full border-2 border-orange-100 bg-orange-50/40">
-          <div className="flex h-[56px] w-[56px] lg:h-[72px] lg:w-[72px] items-center justify-center rounded-full bg-orange-500/10 text-orange-500">
-            <UserRound className="h-6 w-6 lg:h-9 lg:w-9" />
-          </div>
+        {/* Gradient avatar circle */}
+        <div className="relative flex h-[80px] w-[80px] lg:h-[112px] lg:w-[112px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-orange-600 shadow-[0_4px_20px_rgba(249,115,22,0.45)]">
+          <span className="text-2xl lg:text-3xl font-black text-white">{identityInitials}</span>
+          {/* Outer ring */}
+          <div className="absolute inset-0 rounded-full ring-2 ring-orange-500/40 ring-offset-2 ring-offset-transparent" />
         </div>
 
         {/* Content */}
@@ -3246,53 +3323,53 @@ export function IdentityCard({ data }: { data: MedicalRepPortalData }) {
 
           {/* Name + role */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <h1 className="text-[22px] lg:text-[28px] font-bold leading-tight tracking-[-0.01em] text-slate-900">
+            <h1 className="font-display text-[22px] lg:text-[28px] font-normal leading-tight tracking-[-0.02em] text-white">
               {employee.fullName}
             </h1>
             <span className="hidden lg:block h-2 w-2 shrink-0 rounded-full bg-orange-500" />
-            <p className="text-[14px] lg:text-[17px] font-medium text-slate-400">{employee.roleLabel}</p>
+            <p className="text-[14px] lg:text-[16px] font-medium text-slate-400">{employee.roleLabel}</p>
           </div>
 
           {/* Line · Territory · Manager */}
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 lg:mt-3.5 lg:gap-x-5">
-            <div className="flex items-center gap-1.5 text-slate-700 lg:gap-2">
-              <BriefcaseBusiness className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-orange-500" />
+            <div className="flex items-center gap-1.5 text-slate-300 lg:gap-2">
+              <BriefcaseBusiness className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-orange-400" />
               <span className="text-[12px] lg:text-[14px] font-medium">{employee.line ?? "Unassigned"} Line</span>
             </div>
-            <span className="hidden lg:block h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400/60" />
-            <div className="flex items-center gap-1.5 text-slate-700 lg:gap-2">
-              <MapPin className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-orange-500" />
+            <span className="hidden lg:block h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500/40" />
+            <div className="flex items-center gap-1.5 text-slate-300 lg:gap-2">
+              <MapPin className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-orange-400" />
               <span className="text-[12px] lg:text-[14px] font-medium">{employee.territory ?? "Unassigned"} Territory</span>
             </div>
-            <span className="hidden lg:block h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400/60" />
-            <div className="flex items-center gap-1.5 text-slate-700 lg:gap-2">
-              <Users className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-orange-500" />
+            <span className="hidden lg:block h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500/40" />
+            <div className="flex items-center gap-1.5 text-slate-300 lg:gap-2">
+              <Users className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-orange-400" />
               <span className="text-[12px] lg:text-[14px] font-medium">Reports to {employee.manager ?? "Unassigned"}</span>
             </div>
           </div>
 
           {/* Divider */}
-          <div className="my-4 h-px w-full bg-slate-200" />
+          <div className="my-4 h-px w-full bg-white/10" />
 
           {/* HR ID | Active | Hired */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3 lg:gap-x-5 lg:gap-y-2">
             <div className="flex items-center gap-2">
-              <IdCard className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-slate-400" />
-              <span className="text-[12px] lg:text-[14px] text-slate-600">HR ID: {employee.hrId}</span>
+              <IdCard className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-slate-500" />
+              <span className="font-mono text-[12px] lg:text-[13px] text-slate-400">HR ID: {employee.hrId}</span>
             </div>
 
-            <span className="hidden lg:block h-5 w-px shrink-0 bg-slate-200" />
+            <span className="hidden lg:block h-5 w-px shrink-0 bg-white/10" />
 
-            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-0.5 text-[11px] lg:px-3.5 lg:text-[13px] font-semibold ${statusPillClass}`}>
+            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-0.5 text-[11px] lg:px-3.5 lg:text-[12px] font-semibold ${statusPillDark}`}>
               {employee.status}
-              <span className={`h-2 w-2 lg:h-2.5 lg:w-2.5 shrink-0 rounded-full ${statusDotClass}`} />
+              <span className={`h-2 w-2 lg:h-2 lg:w-2 shrink-0 rounded-full ${statusDotDark}`} />
             </span>
 
-            <span className="hidden lg:block h-5 w-px shrink-0 bg-slate-200" />
+            <span className="hidden lg:block h-5 w-px shrink-0 bg-white/10" />
 
             <div className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-slate-400" />
-              <span className="text-[12px] lg:text-[14px] text-slate-600">Hired {hiredLabel}</span>
+              <CalendarDays className="h-4 w-4 lg:h-[18px] lg:w-[18px] shrink-0 text-slate-500" />
+              <span className="text-[12px] lg:text-[13px] text-slate-400">Hired {hiredLabel}</span>
             </div>
           </div>
 
@@ -3316,6 +3393,27 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
 
   return (
     <div className="space-y-6 lg:space-y-7">
+      {/* Operational Status Cluster */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-400 ep-glass shadow-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 ep-pulse-green" />
+          <Activity className="h-3 w-3" />
+          <span>Metrics Synced</span>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-full border border-sky-500/25 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-400 ep-glass shadow-sm">
+          <BadgeCheck className="h-3 w-3" />
+          <span>Audit Healthy</span>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-full border border-orange-500/25 bg-orange-500/10 px-3 py-1.5 text-xs font-semibold text-orange-400 ep-glass shadow-sm">
+          <Zap className="h-3 w-3" />
+          <span>Access Protected</span>
+        </div>
+        <div className="ml-auto flex items-center gap-1.5 rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-xs font-semibold text-slate-400 ep-glass shadow-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 ep-pulse-green" />
+          <span>Live Data</span>
+        </div>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 lg:gap-5 xl:grid-cols-3">
         {overviewCards.map((card) => (
           <OverviewStatCard
@@ -3345,7 +3443,9 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
       </div>
       <div className="flex justify-center lg:justify-end">
         <Link className="w-full lg:w-auto" href="/employee-portals/sales">
-          <Button className="w-full rounded-xl px-5 lg:w-auto" variant="secondary">Open Full Performance</Button>
+          <Button className="w-full rounded-xl border border-white/15 bg-white/8 px-5 text-slate-200 transition hover:border-orange-500/40 hover:bg-orange-500/10 hover:text-orange-300 lg:w-auto" variant="secondary">
+            Open Full Performance
+          </Button>
         </Link>
       </div>
       <section className="sr-only">
