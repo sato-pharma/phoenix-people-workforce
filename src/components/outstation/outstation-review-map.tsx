@@ -1,42 +1,18 @@
 "use client";
 
-import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
 import { Card } from "@/components/ui/card";
+import {
+  importGoogleLibrary,
+  loadGoogleMaps,
+  type GoogleMapsApi,
+  type GoogleMarkerHandle,
+  type GooglePolylineHandle,
+} from "@/lib/google-maps/browser";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 
-type GoogleMarkerLike = {
-  map?: unknown;
-  setMap?: (map: unknown) => void;
-};
-
-type GoogleMapsNamespace = {
-  importLibrary?: (name: string) => Promise<Record<string, unknown>>;
-  LatLngBounds?: new () => {
-    extend: (point: { lat: number; lng: number }) => void;
-  };
-  Map?: new (
-    element: HTMLElement,
-    options: Record<string, unknown>,
-  ) => {
-    fitBounds: (
-      bounds: {
-        extend: (point: { lat: number; lng: number }) => void;
-      },
-      padding?: number,
-    ) => void;
-  };
-  marker?: {
-    AdvancedMarkerElement?: new (options: Record<string, unknown>) => GoogleMarkerLike;
-  };
-  Marker?: new (options: Record<string, unknown>) => GoogleMarkerLike;
-  Polyline?: new (options: Record<string, unknown>) => GoogleMarkerLike;
-};
-
-function googleMapsNamespace() {
-  return (window as { google?: { maps?: GoogleMapsNamespace } }).google?.maps;
-}
+type GoogleMapsNamespace = GoogleMapsApi;
 
 function decodePolyline(encoded: string): Array<{ lat: number; lng: number }> {
   const points: Array<{ lat: number; lng: number }> = [];
@@ -97,41 +73,40 @@ export function OutstationReviewMap({
   const browserKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY ?? "";
   const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "";
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const markersRef = useRef<GoogleMarkerLike[]>([]);
-  const polylineRef = useRef<GoogleMarkerLike | null>(null);
+  const markersRef = useRef<GoogleMarkerHandle[]>([]);
+  const polylineRef = useRef<GooglePolylineHandle | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [shouldLoadScript, setShouldLoadScript] = useState(false);
+  const [googleMaps, setGoogleMaps] = useState<GoogleMapsNamespace | null>(null);
 
   useEffect(() => {
-    if (googleMapsNamespace()) {
-      queueMicrotask(() => {
-        setReady(true);
-        setShouldLoadScript(false);
-      });
+    if (!browserKey || !coordinatesReady(request)) {
       return;
     }
 
-    const existingGoogleMapsScript = document.querySelector<HTMLScriptElement>(
-      'script[src*="maps.googleapis.com/maps/api/js"]',
-    );
+    let cancelled = false;
 
-    if (existingGoogleMapsScript) {
-      const handleExistingLoad = () => setReady(true);
-      existingGoogleMapsScript.addEventListener("load", handleExistingLoad, { once: true });
-      queueMicrotask(() => setShouldLoadScript(false));
-      return () => existingGoogleMapsScript.removeEventListener("load", handleExistingLoad);
-    }
+    void loadGoogleMaps(browserKey)
+      .then((maps) => {
+        if (cancelled) return;
+        setGoogleMaps(maps as GoogleMapsNamespace);
+        setReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError("Google Maps failed to load. Check browser key referrer restrictions.");
+      });
 
-    queueMicrotask(() => setShouldLoadScript(true));
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [browserKey, request]);
 
   useEffect(() => {
     if (!request) {
       return;
     }
 
-    const googleMaps = googleMapsNamespace();
     const mapElement = mapRef.current;
 
     if (
@@ -151,12 +126,17 @@ export function OutstationReviewMap({
 
     const run = async () => {
       try {
-        const mapsLibrary = googleMaps.importLibrary
-          ? await googleMaps.importLibrary("maps")
-          : { Map: googleMaps.Map };
-        const markerLibrary = googleMaps.importLibrary
-          ? await googleMaps.importLibrary("marker")
-          : { Marker: googleMaps.Marker };
+        const coreLibrary = await importGoogleLibrary(googleMaps, "core", {
+          LatLngBounds: googleMaps.LatLngBounds,
+        });
+        const mapsLibrary = await importGoogleLibrary(googleMaps, "maps", {
+          Map: googleMaps.Map,
+          Polyline: googleMaps.Polyline,
+        });
+        const markerLibrary = await importGoogleLibrary(googleMaps, "marker", {
+          AdvancedMarkerElement: googleMaps.marker?.AdvancedMarkerElement,
+          Marker: googleMaps.Marker,
+        });
         if (cancelled) return;
 
         const MapCtor = mapsLibrary?.Map as GoogleMapsNamespace["Map"];
@@ -164,11 +144,15 @@ export function OutstationReviewMap({
         const MarkerCtor = useAdvancedMarkers
           ? markerLibrary?.AdvancedMarkerElement as GoogleMapsNamespace["Marker"] ?? googleMaps.marker?.AdvancedMarkerElement
           : markerLibrary?.Marker as GoogleMapsNamespace["Marker"] ?? googleMaps.Marker;
-        const LatLngBoundsCtor = googleMaps.LatLngBounds;
-        const PolylineCtor = googleMaps.Polyline;
+        const LatLngBoundsCtor =
+          coreLibrary?.LatLngBounds as GoogleMapsNamespace["LatLngBounds"] ??
+          googleMaps.LatLngBounds;
+        const PolylineCtor =
+          mapsLibrary?.Polyline as GoogleMapsNamespace["Polyline"] ??
+          googleMaps.Polyline;
 
-        if (!MapCtor || !MarkerCtor || !LatLngBoundsCtor || !PolylineCtor) {
-          setError("Google Maps libraries are missing required constructors.");
+        if (!MapCtor) {
+          setError("Google Maps loaded, but the map renderer is unavailable. Refresh the page and retry.");
           return;
         }
 
@@ -187,8 +171,8 @@ export function OutstationReviewMap({
 
         const map = new MapCtor(mapElement, {
           center: {
-            lat: currentRequest.residenceLatitude!,
-            lng: currentRequest.residenceLongitude!,
+            lat: (currentRequest.residenceLatitude! + currentRequest.capturedLatitude) / 2,
+            lng: (currentRequest.residenceLongitude! + currentRequest.capturedLongitude) / 2,
           },
           ...(useAdvancedMarkers ? { mapId } : {}),
           mapTypeControl: false,
@@ -196,22 +180,26 @@ export function OutstationReviewMap({
           zoom: 8,
         });
 
-        const residenceMarker = new MarkerCtor({
-          map,
-          position: { lat: currentRequest.residenceLatitude!, lng: currentRequest.residenceLongitude! },
-          title: "Registered residence",
-        });
-        const capturedMarker = new MarkerCtor({
-          map,
-          position: { lat: currentRequest.capturedLatitude, lng: currentRequest.capturedLongitude },
-          title: "Captured location",
-        });
-        markersRef.current.push(residenceMarker, capturedMarker);
+        if (MarkerCtor) {
+          const residenceMarker = new MarkerCtor({
+            map,
+            position: { lat: currentRequest.residenceLatitude!, lng: currentRequest.residenceLongitude! },
+            title: "Registered residence",
+          });
+          const capturedMarker = new MarkerCtor({
+            map,
+            position: { lat: currentRequest.capturedLatitude, lng: currentRequest.capturedLongitude },
+            title: "Captured location",
+          });
+          markersRef.current.push(residenceMarker, capturedMarker);
+        }
 
-        const bounds = new LatLngBoundsCtor();
-        bounds.extend({ lat: currentRequest.residenceLatitude!, lng: currentRequest.residenceLongitude! });
-        bounds.extend({ lat: currentRequest.capturedLatitude, lng: currentRequest.capturedLongitude });
-        map.fitBounds(bounds, 72);
+        const bounds = LatLngBoundsCtor ? new LatLngBoundsCtor() : null;
+        bounds?.extend({ lat: currentRequest.residenceLatitude!, lng: currentRequest.residenceLongitude! });
+        bounds?.extend({ lat: currentRequest.capturedLatitude, lng: currentRequest.capturedLongitude });
+        if (bounds) {
+          map.fitBounds(bounds, 72);
+        }
 
         if (!currentRequest.routePolyline || currentRequest.routePolyline.trim().length === 0) {
           setError("Google Maps did not return a real driving route for this trip yet.");
@@ -219,8 +207,15 @@ export function OutstationReviewMap({
         }
 
         const path = decodePolyline(currentRequest.routePolyline);
-        path.forEach((point) => bounds.extend(point));
-        map.fitBounds(bounds, 72);
+        path.forEach((point) => bounds?.extend(point));
+        if (bounds) {
+          map.fitBounds(bounds, 72);
+        }
+
+        if (!PolylineCtor) {
+          setError(null);
+          return;
+        }
 
         const polyline = new PolylineCtor({
           map,
@@ -245,7 +240,7 @@ export function OutstationReviewMap({
     return () => {
       cancelled = true;
     };
-  }, [mapId, ready, request]);
+  }, [googleMaps, mapId, ready, request]);
 
   if (!browserKey) {
     return (
@@ -260,17 +255,6 @@ export function OutstationReviewMap({
 
   return (
     <Card className="rounded-[28px] border border-[#D8E0EA] bg-white/94 p-6 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur">
-      {shouldLoadScript ? (
-        <Script
-          id="phoenix-google-maps-js"
-          onError={() => setError("Google Maps failed to load. Check browser key referrer restrictions.")}
-          onLoad={() => setReady(true)}
-          onReady={() => setReady(true)}
-          src={`https://maps.googleapis.com/maps/api/js?key=${browserKey}&v=weekly&libraries=marker&loading=async`}
-          strategy="afterInteractive"
-        />
-      ) : null}
-
       <div className="mb-4">
         <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
           Route Review
