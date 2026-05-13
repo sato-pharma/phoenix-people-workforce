@@ -40,6 +40,7 @@ export type PayrollPeriodConflict = {
 export type SalaryRecord = {
   area: string;
   batchId: string;
+  baseSalary: number;
   bonus: number;
   crm: number;
   employeeCode: string;
@@ -51,6 +52,7 @@ export type SalaryRecord = {
   firstPart: number;
   fuelAllowance: number;
   fullName: string;
+  governmentalDeductions: number;
   grossSalary: number;
   hireDate: string | null;
   nameAr: string | null;
@@ -60,11 +62,13 @@ export type SalaryRecord = {
   line: string;
   loans: number;
   medicalInsurance: number;
+  monthSalary: number;
   netSalary: number;
   otherAdditions: number;
   otherDeductions: number;
   overtime: number;
   payrollComment: string | null;
+  paymentMode: string;
   secondPart: number;
   socialInsurance: number;
   totalAdditions: number;

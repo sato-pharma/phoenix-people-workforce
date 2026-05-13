@@ -28,6 +28,7 @@ import {
   calculateGrossSalary,
   calculateNetSalary,
   calculatePayrollParts,
+  normalizePayrollPaymentMode,
 } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
@@ -389,6 +390,7 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
   const mapped = {
     area: pickText(row, ["area", "line", "employee_line"]),
     batchId: pickText(row, ["batch_id", "batchId", "payroll_batch_id"]),
+    baseSalary: pickNumber(row, ["base_salary", "baseSalary"]),
     bonus: pickNumber(row, ["bonus", "incentive_bonus", "extra_bonus"]),
     crm: pickNumber(row, ["crm"]),
     employeeCode: pickText(row, ["employee_code", "employee_hr_id", "hr_id", "emp_code"]),
@@ -400,6 +402,7 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
     firstPart: pickNumber(row, ["first_part"]),
     fuelAllowance: pickNumber(row, ["fuel_allowance"]),
     fullName,
+    governmentalDeductions: pickNumber(row, ["governmental_deductions", "governmentalDeductions"]),
     grossSalary: pickNumber(row, ["gross_salary", "grossSalary", "gross"]),
     hireDate: pickOptionalText(row, ["hire_date", "hireDate", "contract_start_date"]) as string | null,
     id: pickText(row, ["id", "record_id"]),
@@ -408,12 +411,14 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
     line: pickText(row, ["line", "area", "employee_line"]),
     loans: pickNumber(row, ["loans", "loan"]),
     medicalInsurance: pickNumber(row, ["medical_insurance", "medicalInsurance"]),
+    monthSalary: pickNumber(row, ["month_salary", "monthSalary"]),
     nameAr: pickOptionalText(row, ["name_ar", "arabic_name", "employee_name_ar"]),
     netSalary: pickNumber(row, ["net_salary", "netSalary", "net"]),
     otherAdditions: pickNumber(row, ["other_additions"]),
     otherDeductions: pickNumber(row, ["other_deductions"]),
     overtime: pickNumber(row, ["overtime"]),
     payrollComment: pickOptionalText(row, ["comment", "payroll_comment", "notes"]),
+    paymentMode: pickText(row, ["payment_mode", "paymentMode", "salary_payment_mode"]),
     secondPart: pickNumber(row, ["second_part"]),
     status: pickText(row, ["status", "batch_status", "payroll_status"]),
     socialInsurance: pickNumber(row, ["social_insurance", "socialInsurance"]),
@@ -443,7 +448,11 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
     mapped.medicalInsurance +
     mapped.loans +
     mapped.otherDeductions;
-  const paymentMode = mapped.firstPart > 0 && mapped.firstPart >= mapped.netSalary - 1 ? "one_part" : "two_parts";
+  const paymentMode = mapped.paymentMode
+    ? normalizePayrollPaymentMode(mapped.paymentMode)
+    : mapped.firstPart > 0 && mapped.firstPart >= mapped.netSalary - 1
+      ? "one_part"
+      : "two_parts";
   const parts = calculatePayrollParts({
     additions: mapped.expenses + mapped.incentive + mapped.overtime + mapped.bonus + mapped.otherAdditions,
     deductions:
@@ -464,8 +473,18 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
 
   return {
     ...mapped,
+    baseSalary: mapped.baseSalary > 0
+      ? mapped.baseSalary
+      : Math.max(0, mapped.netSalary - mapped.extraCostOfLiving - mapped.fuelAllowance),
     firstPart: hasFirstPart ? mapped.firstPart : parts.firstPart,
+    governmentalDeductions: mapped.governmentalDeductions > 0
+      ? mapped.governmentalDeductions
+      : mapped.socialInsurance + mapped.employmentIncomeTax,
     grossSalary: mapped.grossSalary,
+    monthSalary: mapped.monthSalary > 0
+      ? mapped.monthSalary
+      : (hasFirstPart ? mapped.firstPart : parts.firstPart) + (hasSecondPart ? mapped.secondPart : parts.secondPart),
+    paymentMode,
     secondPart: hasSecondPart ? mapped.secondPart : parts.secondPart,
     totalAdditions,
     totalDeductions,
@@ -1763,7 +1782,9 @@ export async function getEmployeePortalData(
     departmentName: employee.departmentName,
     jobTitle: employee.jobTitle,
     lineName: employee.lineName,
+    month: latestBatch?.month,
     positionTitle: employee.positionTitle,
+    year: latestBatch?.year,
   });
   const sourceBaseSalary =
     positiveMoneyOrNull(employee.netSalary) ??
@@ -1813,10 +1834,10 @@ export async function getEmployeePortalData(
     payroll: {
       batchId: latestBatch?.id ?? null,
       batchLabel: formatBatchLabel(latestBatch?.month, latestBatch?.year),
-      grossSalary: latestRecord?.grossSalary ?? sourceGrossSalary,
+      grossSalary: sourceGrossSalary,
       latestHireDate: latestRecord?.hireDate ?? employee.hireDate ?? null,
       line: latestRecord?.line ?? employee.lineName ?? null,
-      netSalary: latestRecord?.netSalary ?? sourceNetSalary,
+      netSalary: sourceNetSalary,
       totalAdditions: latestRecord?.totalAdditions ?? 0,
       totalDeductions: latestRecord?.totalDeductions ?? 0,
       salaryTrend: salaryTrend,
@@ -3181,10 +3202,10 @@ export async function getMedicalRepPortalData(
   const previousRecord = (payrollDashboard && payrollDashboard.previousRecords?.[0]) || base.previousRecord;
   
   const statutoryDeductions = latestRecord
-    ? (latestRecord.socialInsurance || 0) + (latestRecord.employmentIncomeTax || 0)
+    ? latestRecord.governmentalDeductions || (latestRecord.socialInsurance || 0) + (latestRecord.employmentIncomeTax || 0)
     : 0;
   const totalDeductions = latestRecord?.totalDeductions ?? 0;
-  const internalDeductions = Math.max(0, totalDeductions - statutoryDeductions);
+  const internalDeductions = totalDeductions;
   const latestBatch = (payrollDashboard && (payrollDashboard.batch ?? payrollDashboard.batches[0])) || null;
 
   const netVsLastMonth = latestRecord && previousRecord && previousRecord.netSalary > 0
@@ -3229,7 +3250,9 @@ export async function getMedicalRepPortalData(
     departmentName: employee.departmentName,
     jobTitle: employee.jobTitle,
     lineName: employee.lineName,
+    month: latestBatch?.month,
     positionTitle: employee.positionTitle,
+    year: latestBatch?.year,
   });
   const fixedExtraCostOfLiving = fixedAllowances.extraCostOfLiving;
   const fixedFuelAllowance = fixedAllowances.fuelAllowance;
@@ -3264,8 +3287,8 @@ export async function getMedicalRepPortalData(
     baseSalary: payslipBaseSalary,
     basicSalary: payslipBasicSalary,
     firstPart: latestRecord?.firstPart ?? payslipBasicSalary,
-    grossSalary: latestRecord?.grossSalary ?? fixedGrossSalary,
-    netSalary: latestRecord?.netSalary ?? fixedNetSalary,
+    grossSalary: fixedGrossSalary,
+    netSalary: fixedNetSalary,
     secondPart:
       latestRecord?.secondPart ??
       calculatePayrollParts({

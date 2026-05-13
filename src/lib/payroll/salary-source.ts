@@ -23,7 +23,7 @@ function moneyOrNull(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-export async function getPayrollSalarySourcesByHrId() {
+export async function getPayrollSalarySourcesByHrId(expectedPeriod?: { month: number; year: number }) {
   const directory = await getEmployeeDirectory();
   const sources = new Map<string, PayrollSalarySource>();
 
@@ -33,7 +33,9 @@ export async function getPayrollSalarySourcesByHrId() {
       departmentName: employee.departmentName,
       jobTitle: employee.jobTitle,
       lineName: employee.lineName,
+      month: expectedPeriod?.month,
       positionTitle: employee.positionTitle,
+      year: expectedPeriod?.year,
     });
     const extraCostOfLiving = standardAllowances.extraCostOfLiving;
     const fuelAllowance = standardAllowances.fuelAllowance;

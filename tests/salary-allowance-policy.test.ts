@@ -23,11 +23,27 @@ export function runSalaryAllowancePolicyTests() {
   assert.equal(standardExtraCostOfLiving({ jobTitle: "MR" }), 2000);
   assert.equal(standardExtraCostOfLiving({ jobTitle: "MRs" }), 2000);
   assert.equal(standardExtraCostOfLiving({ jobTitle: "M.R." }), 2000);
-  assert.equal(standardExtraCostOfLiving({ departmentName: "Marketing" }), 3000);
+  assert.equal(standardExtraCostOfLiving({ departmentName: "Marketing" }), 1500);
+  assert.equal(standardExtraCostOfLiving({ jobTitle: "Marketing Manager" }), 3000);
+  assert.equal(standardExtraCostOfLiving({ jobTitle: "Product Manager" }), 3000);
+  assert.equal(standardExtraCostOfLiving({ jobTitle: "Group Product Manager" }), 3000);
   assert.equal(standardExtraCostOfLiving({ positionTitle: "Training Manager" }), 3000);
   assert.equal(standardExtraCostOfLiving({ jobTitle: "Accountant" }), 1500);
 
-  const mrAllowances = resolveStandardSalaryAllowances({ jobTitle: "Medical Representative" });
+  const preAprilAllowances = resolveStandardSalaryAllowances({
+    jobTitle: "Medical Representative",
+    month: 3,
+    year: 2026,
+  });
+  assert.equal(preAprilAllowances.fuelAllowance, 0);
+  assert.equal(preAprilAllowances.extraCostOfLiving, 0);
+  assert.equal(calculateNetSalary({ baseSalary: 14000, ...preAprilAllowances }), 14000);
+
+  const mrAllowances = resolveStandardSalaryAllowances({
+    jobTitle: "Medical Representative",
+    month: 4,
+    year: 2026,
+  });
   assert.equal(mrAllowances.fuelAllowance, 500);
   assert.equal(mrAllowances.extraCostOfLiving, 2000);
   assert.equal(calculateNetSalary({ baseSalary: 14000, ...mrAllowances }), 16500);

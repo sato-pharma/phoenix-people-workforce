@@ -90,6 +90,16 @@ function formatDate(value: string | null | undefined) {
   }).format(date);
 }
 
+function formatPayoutMonth(month: number | null | undefined, year: number | null | undefined) {
+  if (!month || !year) return "-";
+  const date = new Date(year, month - 1, 1);
+  if (Number.isNaN(date.getTime())) return `${month}/${year}`;
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
 function daysUntil(value: string | null | undefined) {
   if (!value) return null;
   const date = new Date(`${value}T00:00:00`);
@@ -205,8 +215,15 @@ export function ResignationsReport({ initialData, initialError }: Props) {
   const [busyAction, setBusyAction] = React.useState<string | null>(null);
 
   const records = React.useMemo(() => data?.records ?? [], [data]);
+  const payrollCandidates = React.useMemo(() => data?.payrollCandidates ?? [], [data]);
   const employees = React.useMemo(() => data?.employees ?? [], [data]);
-  const lineOptions = React.useMemo(() => uniqueOptions(records.map((record) => record.lineName)), [records]);
+  const lineOptions = React.useMemo(
+    () => uniqueOptions([
+      ...records.map((record) => record.lineName),
+      ...payrollCandidates.map((candidate) => candidate.lineName),
+    ]),
+    [payrollCandidates, records],
+  );
 
   const filteredRecords = React.useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -244,6 +261,30 @@ export function ResignationsReport({ initialData, initialError }: Props) {
     return sorted;
   }, [lineFilter, query, records, sortBy, statusFilter]);
 
+  const filteredPayrollCandidates = React.useMemo(() => {
+    const search = query.trim().toLowerCase();
+
+    return payrollCandidates.filter((candidate) => {
+      const searchable = [
+        candidate.hrId,
+        candidate.employeeName,
+        candidate.nameAr,
+        candidate.jobTitle,
+        candidate.lineName,
+        candidate.areaName,
+        candidate.sourceFileName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return (
+        (!search || searchable.includes(search)) &&
+        (lineFilter === allValue || candidate.lineName === lineFilter)
+      );
+    });
+  }, [lineFilter, payrollCandidates, query]);
+
   const hasActiveFilters = Boolean(
     query ||
     statusFilter !== allValue ||
@@ -262,6 +303,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
     active: 0,
     approved: 0,
     completed: 0,
+    payrollCandidates: 0,
     pending: 0,
     total: 0,
   };
@@ -356,10 +398,14 @@ export function ResignationsReport({ initialData, initialError }: Props) {
 
   function exportCsv() {
     const headers = [
+      "record_type",
       "employee_hr_id",
       "employee_name",
       "line_name",
+      "area_name",
       "job_title",
+      "hire_date",
+      "last_payout_month",
       "submitted_date",
       "effective_date",
       "days_left",
@@ -373,13 +419,17 @@ export function ResignationsReport({ initialData, initialError }: Props) {
     const toCsvCell = (value: string | number | null | undefined) =>
       `"${String(value ?? "").replace(/"/g, '""')}"`;
 
-    const rows = filteredRecords.map((record) => {
+    const resignationRows = filteredRecords.map((record) => {
       const daysLeft = daysUntil(record.effectiveDate);
       return [
+        "resignation",
         record.employeeHrId,
         record.employeeName,
         record.lineName ?? "-",
+        "-",
         record.jobTitle ?? "-",
+        "-",
+        "-",
         record.submittedDate,
         record.effectiveDate,
         daysLeft === null ? "-" : `${daysLeft}`,
@@ -390,6 +440,25 @@ export function ResignationsReport({ initialData, initialError }: Props) {
         record.updatedAt.slice(0, 10),
       ].map(toCsvCell);
     });
+    const candidateRows = filteredPayrollCandidates.map((candidate) => [
+      "payroll_missing_employee",
+      candidate.hrId,
+      candidate.employeeName,
+      candidate.lineName ?? "-",
+      candidate.areaName ?? "-",
+      candidate.jobTitle ?? "-",
+      candidate.hireDate ?? "-",
+      formatPayoutMonth(candidate.lastPayoutMonth, candidate.lastPayoutYear),
+      "-",
+      "-",
+      "-",
+      "payroll_candidate",
+      `Missing from employee directory. Source row ${candidate.sourceRow ?? "-"}`,
+      "",
+      candidate.createdBy ?? "-",
+      candidate.updatedAt.slice(0, 10),
+    ].map(toCsvCell));
+    const rows = [...candidateRows, ...resignationRows];
 
     const blob = new Blob([`${headers.map(toCsvCell).join(",")}\n${rows.map((row) => row.join(",")).join("\n")}`], {
       type: "text/csv;charset=utf-8;",
@@ -435,6 +504,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
           <div className="flex flex-wrap gap-2">
             <AdminInsightChip>Total {summary.total}</AdminInsightChip>
             <AdminInsightChip tone="orange">{summary.pending} pending</AdminInsightChip>
+            <AdminInsightChip tone="slate">{summary.payrollCandidates} payroll candidates</AdminInsightChip>
             <AdminInsightChip tone="slate">{summary.active} active</AdminInsightChip>
             <AdminInsightChip>{summary.completed} completed</AdminInsightChip>
           </div>
@@ -461,7 +531,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
         </AdminCallout>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <AdminStatCard
           description="All resignation records in dashboard"
           icon={<UserMinus className="h-5 w-5" />}
@@ -487,12 +557,71 @@ export function ResignationsReport({ initialData, initialError }: Props) {
           value={summary.approved}
         />
         <AdminStatCard
+          description="Payroll rows missing from employee directory"
+          icon={<AlertTriangle className="h-5 w-5" />}
+          label="Payroll Candidates"
+          value={summary.payrollCandidates}
+        />
+        <AdminStatCard
           description="Closed after finalization"
           icon={<X className="h-5 w-5" />}
           label="Completed"
           value={summary.completed}
         />
       </div>
+
+      <Card className={`${panelClassName} overflow-hidden p-0`}>
+        <AdminSectionHeader
+          description="Payroll upload rows where HR ID is missing from the employee directory. These are kept separate from approved resignation workflows until HR reviews them."
+          title="Payroll Missing Employee Candidates"
+        />
+        <div className="overflow-x-auto bg-white/80">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-[#FFF7ED]/80 text-xs uppercase tracking-[0.12em] text-[#64748B] backdrop-blur">
+              <tr className="border-b border-[#FED7AA]">
+                <th className={adminTableHeaderClassName}>Employee</th>
+                <th className={adminTableHeaderClassName}>Area</th>
+                <th className={adminTableHeaderClassName}>Line</th>
+                <th className={adminTableHeaderClassName}>Hiring Date</th>
+                <th className={adminTableHeaderClassName}>Last Payout</th>
+                <th className={adminTableHeaderClassName}>Source</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E2E8F0]">
+              {filteredPayrollCandidates.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-10 text-center text-sm text-[#64748B]" colSpan={6}>
+                    No payroll missing-employee candidates match the current filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredPayrollCandidates.map((candidate) => (
+                  <tr className="align-top transition-colors hover:bg-[#FFF7ED]/55" key={candidate.id}>
+                    <td className="px-3 py-4">
+                      <p className="font-medium text-[#0F172A]">{formatEmployeeDisplayName(candidate.employeeName)}</p>
+                      <p className="mt-1 font-mono text-xs text-[#64748B]">{candidate.hrId}</p>
+                      <p className="mt-1 text-xs text-[#64748B]">{candidate.jobTitle ?? "-"}</p>
+                    </td>
+                    <td className="px-3 py-4 text-[#64748B]">{candidate.areaName ?? "-"}</td>
+                    <td className="px-3 py-4 text-[#64748B]">{candidate.lineName ?? "-"}</td>
+                    <td className="px-3 py-4 text-[#64748B]">{formatDate(candidate.hireDate)}</td>
+                    <td className="px-3 py-4">
+                      <Badge variant="warning">
+                        {formatPayoutMonth(candidate.lastPayoutMonth, candidate.lastPayoutYear)}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-4 text-xs text-[#64748B]">
+                      <p>{candidate.sourceFileName ?? "-"}</p>
+                      <p className="mt-1">Row {candidate.sourceRow ?? "-"}</p>
+                      <p className="mt-1">Updated {formatDate(candidate.updatedAt.slice(0, 10))}</p>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       <AdminTableShell title="Create Resignation Workflow" description="Submit a new resignation record and initialize workflow tracking.">
         <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">

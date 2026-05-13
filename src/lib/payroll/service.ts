@@ -10,7 +10,7 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
-import { calculatePayrollParts } from "@/lib/payroll/policy";
+import { calculatePayrollParts, normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import { PayrollConflictError } from "@/lib/payroll/errors";
 import { getPayrollWorkflowTransition } from "@/lib/payroll/workflow";
 import type { SalaryValidationIssue, SalaryValidationRow } from "@/lib/payroll/salary-import";
@@ -96,6 +96,7 @@ export function isPayrollSchemaMissing(error: unknown) {
     message.includes("salary_flags") ||
     message.includes("phx_create_salary_batch") ||
     message.includes("phx_replace_salary_batch") ||
+    message.includes("phx_delete_salary_batch") ||
     message.includes("could not find the table") ||
     message.includes("could not find the function") ||
     message.includes("schema cache") ||
@@ -182,6 +183,7 @@ function mapBatch(row: Record<string, unknown>): SalaryBatch {
 }
 
 function mapRecord(row: Record<string, unknown>): SalaryRecord {
+  const baseSalary = Number(row.base_salary ?? 0);
   const expenses = Number(row.expenses ?? 0);
   const incentive = Number(row.incentive ?? 0);
   const overtime = Number(row.overtime ?? 0);
@@ -199,9 +201,8 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
   const otherAdditions = Number(row.other_additions ?? 0);
   const calculatedTotalAdditions =
     expenses + incentive + overtime + bonus + extraCostOfLiving + fuelAllowance + otherAdditions;
+  const governmentalDeductions = Number(row.governmental_deductions ?? (socialInsurance + employmentIncomeTax));
   const calculatedTotalDeductions =
-    socialInsurance +
-    employmentIncomeTax +
     crm +
     fingerPrint +
     unpaidVacations +
@@ -211,10 +212,16 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
   const netSalary = Number(row.net_salary ?? 0);
   const uploadedFirstPart = Number(row.first_part ?? 0);
   const uploadedSecondPart = Number(row.second_part ?? 0);
-  const paymentMode = uploadedFirstPart > 0 && uploadedFirstPart >= netSalary - 1 ? "one_part" : "two_parts";
+  const paymentMode = row.payment_mode
+    ? normalizePayrollPaymentMode(String(row.payment_mode))
+    : uploadedFirstPart > 0 && uploadedFirstPart >= netSalary - 1
+      ? "one_part"
+      : "two_parts";
+  const resolvedBaseSalary = baseSalary > 0 ? baseSalary : Math.max(0, netSalary - extraCostOfLiving - fuelAllowance);
   const parts = calculatePayrollParts({
     additions: expenses + incentive + overtime + bonus + otherAdditions,
     deductions: crm + fingerPrint + unpaidVacations + medicalInsurance + loans + otherDeductions,
+    baseSalary: resolvedBaseSalary,
     extraCostOfLiving,
     fuelAllowance,
     netSalary,
@@ -224,10 +231,14 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
   const grossSalary = Number(row.gross_salary ?? 0);
   const totalAdditions = Number(row.total_additions ?? calculatedTotalAdditions);
   const totalDeductions = Number(row.total_deductions ?? calculatedTotalDeductions);
+  const firstPart = row.first_part === null || row.first_part === undefined ? parts.firstPart : uploadedFirstPart;
+  const secondPart = row.second_part === null || row.second_part === undefined ? parts.secondPart : uploadedSecondPart;
+  const monthSalary = Number(row.month_salary ?? (firstPart + secondPart));
 
   return {
     id: String(row.id),
     batchId: String(row.batch_id),
+    baseSalary: resolvedBaseSalary,
     employeeCode: String(row.employee_code ?? row.hr_id ?? ""),
     hrId: String(row.hr_id ?? ""),
     fullName: String(row.full_name ?? ""),
@@ -255,8 +266,11 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     totalDeductions,
     netSalary,
     payrollComment: row.comment ? String(row.comment) : null,
-    firstPart: row.first_part === null || row.first_part === undefined ? parts.firstPart : uploadedFirstPart,
-    secondPart: row.second_part === null || row.second_part === undefined ? parts.secondPart : uploadedSecondPart,
+    firstPart,
+    governmentalDeductions,
+    secondPart,
+    monthSalary,
+    paymentMode,
     hireDate: row.hire_date ? String(row.hire_date) : null,
   };
 }
@@ -761,7 +775,7 @@ export async function getPayrollDashboard(
   const totalGross = records.reduce((sum, r) => sum + r.grossSalary, 0);
   const totalNet = records.reduce((sum, r) => sum + r.netSalary, 0);
   const totalAdditions = records.reduce((sum, r) => sum + r.totalAdditions, 0);
-  const totalGovtDeductions = records.reduce((sum, r) => sum + r.socialInsurance + r.employmentIncomeTax, 0);
+  const totalGovtDeductions = records.reduce((sum, r) => sum + r.governmentalDeductions, 0);
   const avgNet = records.length > 0 ? totalNet / records.length : 0;
   const anomalies = records.filter((r) => r.netSalary > avgNet * 2.25);
   const readinessRate = records.length > 0 ? (records.length - anomalies.length) / records.length : 1;
@@ -890,7 +904,6 @@ const part1PaidSalaryBatchStatuses = new Set([
   "approved",
   "locked",
 ]);
-const closedSalaryBatchStatuses = new Set(["approved", "locked"]);
 
 export function isReplaceableSalaryBatchStatus(status: string) {
   return prePart1EditableSalaryBatchStatuses.has(status) && !part1PaidSalaryBatchStatuses.has(status);
@@ -918,15 +931,6 @@ export function payrollPeriodConflictForBatch(batch: SalaryBatch): PayrollPeriod
     status: batch.status,
     year: batch.year,
   };
-}
-
-export function assertSalaryBatchDeletable(batch: SalaryBatch | string) {
-  const status = typeof batch === "string" ? batch : batch.status;
-  const part1Paid = typeof batch === "string" ? part1PaidSalaryBatchStatuses.has(batch) : isSalaryBatchPart1Paid(batch);
-
-  if (closedSalaryBatchStatuses.has(status) || part1Paid) {
-    throw new PayrollConflictError(`Payroll batch cannot be deleted after Part 1 is paid or while status is ${status}.`);
-  }
 }
 
 function assertSalaryBatchHasImportRows(recordCount: number, operation: "upload" | "replace") {
@@ -967,6 +971,7 @@ function salaryRecordPayload(batchId: string, row: SalaryValidationRow) {
   return {
     area: row.area,
     batch_id: batchId,
+    base_salary: row.baseSalary,
     bonus: row.bonus,
     crm: row.crm,
     hr_id: row.hrId,
@@ -977,6 +982,7 @@ function salaryRecordPayload(batchId: string, row: SalaryValidationRow) {
     first_part: row.firstPart,
     fuel_allowance: row.fuelAllowance,
     full_name: row.fullName,
+    governmental_deductions: row.governmentalDeductions,
     gross_salary: row.grossSalary,
     hire_date: row.hireDate,
     incentive: row.incentive,
@@ -984,12 +990,14 @@ function salaryRecordPayload(batchId: string, row: SalaryValidationRow) {
     line: row.line,
     loans: row.loans,
     medical_insurance: row.medicalInsurance,
+    month_salary: row.monthSalary,
     name_ar: row.nameAr,
     net_salary: row.netSalary,
     other_additions: row.otherAdditions,
     other_deductions: row.otherDeductions,
     overtime: row.overtime,
     comment: row.payrollComment,
+    payment_mode: row.paymentMode,
     second_part: row.secondPart,
     social_insurance: row.socialInsurance,
     total_additions: row.totalAdditions,
@@ -1001,6 +1009,7 @@ function salaryRecordPayload(batchId: string, row: SalaryValidationRow) {
 type SalaryRecordPayload = ReturnType<typeof salaryRecordPayload>;
 
 const salaryRecordNumericColumns = new Set([
+  "base_salary",
   "bonus",
   "crm",
   "employment_income_tax",
@@ -1009,10 +1018,12 @@ const salaryRecordNumericColumns = new Set([
   "finger_print",
   "first_part",
   "fuel_allowance",
+  "governmental_deductions",
   "gross_salary",
   "incentive",
   "loans",
   "medical_insurance",
+  "month_salary",
   "net_salary",
   "other_additions",
   "other_deductions",
@@ -1136,9 +1147,13 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
     }
 
     if (
+      isMissingColumnError(batchError, "base_salary") ||
+      isMissingColumnError(batchError, "governmental_deductions") ||
       isMissingColumnError(batchError, "hire_date") ||
+      isMissingColumnError(batchError, "month_salary") ||
       isMissingColumnError(batchError, "name_ar") ||
-      isMissingColumnError(batchError, "comment")
+      isMissingColumnError(batchError, "comment") ||
+      isMissingColumnError(batchError, "payment_mode")
     ) {
       throw new Error(
         "Payroll schema is missing salary_records sheet-mapping columns. Run the salary_records SQL migration before uploading payroll.",
@@ -1164,14 +1179,15 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
 
 export async function deleteSalaryBatch(batchId: string) {
   const supabase = getSupabaseAdmin();
-  const existing = await getSalaryBatchById(batchId);
-  if (existing) {
-    assertSalaryBatchDeletable(existing);
-  }
-
-  const { error } = await supabase.from("salary_batches").delete().eq("id", batchId);
+  const { error } = await supabase.rpc("phx_delete_salary_batch", {
+    p_batch_id: batchId,
+  });
 
   if (error) {
+    if (isMissingColumnError(error, "phx_delete_salary_batch")) {
+      throw new Error("Payroll admin delete RPC is missing. Run the payroll admin delete migration before deleting uploads.");
+    }
+
     throw error;
   }
 
@@ -1230,6 +1246,16 @@ export async function replaceSalaryBatch(
       message.toLowerCase().includes("payroll batch period changed")
     ) {
       throw new PayrollConflictError(message);
+    }
+    if (
+      isMissingColumnError(replaceError, "base_salary") ||
+      isMissingColumnError(replaceError, "governmental_deductions") ||
+      isMissingColumnError(replaceError, "month_salary") ||
+      isMissingColumnError(replaceError, "payment_mode")
+    ) {
+      throw new Error(
+        "Payroll schema is missing salary_records sheet-mapping columns. Run the salary_records SQL migration before replacing payroll.",
+      );
     }
     throw replaceError;
   }

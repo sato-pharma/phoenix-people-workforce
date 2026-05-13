@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { validateSalaryWorkbook } from "@/lib/payroll/salary-import";
 import { getPayrollSalarySourcesByHrId } from "@/lib/payroll/salary-source";
 import { findSalaryBatchForPeriod, payrollPeriodConflictForBatch } from "@/lib/payroll/service";
+import { upsertPayrollResignationCandidates } from "@/lib/resignations/service";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
@@ -61,10 +62,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const salarySources = await getPayrollSalarySourcesByHrId();
+    const salarySources = await getPayrollSalarySourcesByHrId({ month, year });
     const validation = await validateSalaryWorkbook(file, {
       expectedPeriod: { month, year },
       salarySources,
+    });
+    await upsertPayrollResignationCandidates({
+      actor: resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role,
+      candidates: validation.payrollResignationCandidates,
+      month,
+      sourceFileName: file.name,
+      year,
     });
     const existingBatch = await findSalaryBatchForPeriod(month, year);
     const periodConflict = existingBatch ? payrollPeriodConflictForBatch(existingBatch) : null;

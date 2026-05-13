@@ -168,30 +168,39 @@ export function TeamSalesVsTargetChart({ members }: { members: DsmTeamMemberData
     Sales: Math.round(m.totalSales),
     Target: Math.round(m.totalTarget),
   }));
+  const chartMinWidth = Math.max(520, chartData.length * 96);
 
   return (
-    <div className="h-64">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData} margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-          <XAxis
-            dataKey="name"
-            tick={{ fontSize: 10, fill: "#475569" }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <YAxis
-            tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
-            tick={{ fontSize: 10, fill: "#94a3b8" }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <Tooltip content={<SalesVsTargetTooltip />} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="Sales" fill="#f97316" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="Target" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+    <div className="overflow-x-auto pb-2">
+      <div className="h-72" style={{ minWidth: chartMinWidth }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData} margin={{ left: 0, right: 8, top: 4, bottom: 30 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+            <XAxis
+              dataKey="name"
+              angle={-28}
+              axisLine={false}
+              height={58}
+              interval={0}
+              minTickGap={0}
+              tick={{ fontSize: 10, fill: "#475569" }}
+              tickLine={false}
+              tickMargin={10}
+              textAnchor="end"
+            />
+            <YAxis
+              tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+              tick={{ fontSize: 10, fill: "#94a3b8" }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip content={<SalesVsTargetTooltip />} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="Sales" fill="#f97316" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="Target" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

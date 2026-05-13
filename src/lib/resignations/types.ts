@@ -41,6 +41,25 @@ export type ResignationRecord = {
   cancelledBy: string | null;
 };
 
+export type PayrollResignationCandidateRecord = {
+  id: string;
+  areaName: string | null;
+  createdBy: string | null;
+  employeeName: string;
+  hireDate: string | null;
+  hrId: string;
+  jobTitle: string | null;
+  lastPayoutMonth: number;
+  lastPayoutYear: number;
+  lineName: string | null;
+  nameAr: string | null;
+  sourceFileName: string | null;
+  sourceRow: number | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  updatedAt: string;
+};
+
 export type ResignationEmployeeOption = {
   value: string;
   label: string;
@@ -50,11 +69,13 @@ export type ResignationEmployeeOption = {
 
 export type ResignationDashboardData = {
   employees: ResignationEmployeeOption[];
+  payrollCandidates: PayrollResignationCandidateRecord[];
   records: ResignationRecord[];
   summary: {
     active: number;
     approved: number;
     completed: number;
+    payrollCandidates: number;
     pending: number;
     total: number;
   };
