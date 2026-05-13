@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit --pretty false",
     "test": "node --experimental-strip-types --experimental-specifier-resolution=node tests/run-tests.ts",
+    "test:e2e:leave": "playwright test tests/e2e/leave-management.spec.ts",
     "db:rls:create-staging-env": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/create-staging-rls-env-local.ts",
     "db:rls:check-local-prereqs": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/check-local-rls-prereqs.ts",
     "db:rls:bootstrap-sandbox": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/bootstrap-phoenix-sandbox.ts",
@@ -46,6 +47,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",

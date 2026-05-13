@@ -6,7 +6,7 @@ import {
   resolveStandardSalaryAllowances,
   standardExtraCostOfLiving,
 } from "../src/lib/payroll/allowance-policy.ts";
-import { calculateNetSalary } from "../src/lib/payroll/policy.ts";
+import { calculateNetSalary, calculatePayrollParts } from "../src/lib/payroll/policy.ts";
 
 export function runSalaryAllowancePolicyTests() {
   assert.equal(STANDARD_FUEL_ALLOWANCE, 500);
@@ -31,4 +31,14 @@ export function runSalaryAllowancePolicyTests() {
   assert.equal(mrAllowances.fuelAllowance, 500);
   assert.equal(mrAllowances.extraCostOfLiving, 2000);
   assert.equal(calculateNetSalary({ baseSalary: 14000, ...mrAllowances }), 16500);
+
+  const mrParts = calculatePayrollParts({
+    baseSalary: 14000,
+    ...mrAllowances,
+    paymentMode: "two_parts",
+  });
+  assert.equal(mrParts.basicSalary, 9800);
+  assert.equal(mrParts.firstPart, 9800);
+  assert.equal(mrParts.secondPart, 6700);
+  assert.equal(mrParts.totalPayable, 16500);
 }

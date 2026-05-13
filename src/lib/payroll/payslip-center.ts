@@ -95,11 +95,14 @@ function uniqueRows(rows: SalaryRecordLookupRow[]) {
   return [...byId.values()];
 }
 
+const publishedPayslipStatuses = ["approved", "locked"] as const;
+
 export async function getPayslipCenterEmployeeOptions() {
   const supabase = getSupabaseAdmin();
   const initialResult = await supabase
     .from("salary_records")
-    .select("employee_code,hr_id,full_name,line,area,job_title")
+    .select("employee_code,hr_id,full_name,line,area,job_title,salary_batches!inner(status)")
+    .in("salary_batches.status", publishedPayslipStatuses)
     .order("full_name", { ascending: true })
     .limit(2000);
   let data: unknown[] | null = initialResult.data;
@@ -108,7 +111,8 @@ export async function getPayslipCenterEmployeeOptions() {
   if (error && isMissingColumn(error, "employee_code")) {
     const fallbackResult = await supabase
       .from("salary_records")
-      .select("hr_id,full_name,line,area,job_title")
+      .select("hr_id,full_name,line,area,job_title,salary_batches!inner(status)")
+      .in("salary_batches.status", publishedPayslipStatuses)
       .order("full_name", { ascending: true })
       .limit(2000);
     data = fallbackResult.data;
@@ -151,7 +155,8 @@ async function querySalaryRecords(column: "employee_code" | "full_name" | "hr_id
   const supabase = getSupabaseAdmin();
   const initialResult = await supabase
     .from("salary_records")
-    .select("id,batch_id,employee_code,hr_id,full_name,line,area,job_title,gross_salary,total_additions,total_deductions,net_salary")
+    .select("id,batch_id,employee_code,hr_id,full_name,line,area,job_title,gross_salary,total_additions,total_deductions,net_salary,salary_batches!inner(status)")
+    .in("salary_batches.status", publishedPayslipStatuses)
     .ilike(column, `%${query}%`)
     .limit(120);
   let data: unknown[] | null = initialResult.data;
@@ -162,7 +167,8 @@ async function querySalaryRecords(column: "employee_code" | "full_name" | "hr_id
 
     const fallbackResult = await supabase
       .from("salary_records")
-      .select("id,batch_id,hr_id,full_name,line,area,job_title,gross_salary,total_additions,total_deductions,net_salary")
+      .select("id,batch_id,hr_id,full_name,line,area,job_title,gross_salary,total_additions,total_deductions,net_salary,salary_batches!inner(status)")
+      .in("salary_batches.status", publishedPayslipStatuses)
       .ilike(column, `%${query}%`)
       .limit(120);
     data = fallbackResult.data;
@@ -197,7 +203,8 @@ export async function searchPayslipCenter(search: string | string[] | undefined)
     const { data, error } = await supabase
       .from("salary_batches")
       .select("id,month,year,status,created_at")
-      .in("id", batchIds);
+      .in("id", batchIds)
+      .in("status", publishedPayslipStatuses);
 
     if (error) throw error;
     ((data ?? []) as SalaryBatchLookupRow[]).forEach((batch) => {
@@ -209,6 +216,7 @@ export async function searchPayslipCenter(search: string | string[] | undefined)
     .map((record): PayslipCenterRow | null => {
       const batch = batchesById.get(record.batch_id);
       if (!batch) return null;
+      if (!publishedPayslipStatuses.includes(batch.status as (typeof publishedPayslipStatuses)[number])) return null;
 
       return {
         area: record.area ?? "Unassigned",

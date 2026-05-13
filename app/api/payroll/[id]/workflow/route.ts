@@ -15,7 +15,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const action = String(body.action ?? "") as PayrollWorkflowAction;
     const rejectedReason = body.rejectedReason ? String(body.rejectedReason) : undefined;
 
-    const validActions: PayrollWorkflowAction[] = ["mark_review", "approve", "lock", "reject", "reopen"];
+    const validActions: PayrollWorkflowAction[] = [
+      "mark_part1_ready",
+      "mark_part1_paid",
+      "open_adjustments",
+      "mark_part2_ready",
+      "mark_review",
+      "approve",
+      "lock",
+      "reject",
+      "reopen",
+    ];
     if (!validActions.includes(action)) {
       return NextResponse.json({ success: false, error: "Invalid action." }, { status: 400 });
     }
@@ -42,7 +52,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           ? `Payroll workflow was rejected. Reason: ${rejectedReason ?? "No reason provided."}`
           : `Payroll workflow action "${action}" was completed by ${actorIdentity}.`,
       title: "Payroll Workflow Updated",
-      tone: action === "approve" || action === "lock" ? "success" : action === "reject" ? "danger" : "warning",
+      tone: action === "approve" || action === "lock" || action === "mark_part1_paid" ? "success" : action === "reject" ? "danger" : "warning",
     });
 
     return NextResponse.json({ success: true, data: updated });

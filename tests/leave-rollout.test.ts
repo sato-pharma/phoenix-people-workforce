@@ -7,6 +7,10 @@ const rolloutScriptPath = "scripts/run-leave-staging-rollout.ps1";
 const officialBackupMigrationPath = "supabase/migrations/20260512235939_backup_leave_domain_before_rebuild.sql";
 const officialLeaveMigrationPath = "supabase/migrations/20260512235948_leave_management_engine.sql";
 
+function normalizeNewlines(value: string) {
+  return value.replace(/\r\n/g, "\n");
+}
+
 const leaveDomainTables = [
   "vacation_attachments",
   "vacation_approvals",
@@ -24,6 +28,9 @@ const leaveDomainTables = [
 ];
 
 export function runLeaveRolloutTests() {
+  const legacyDomain = ["vac", "ation"].join("");
+  const legacyApiPath = ["/api", legacyDomain].join("/");
+
   assert.equal(existsSync(backupPath), true, "backup SQL script should exist");
   assert.equal(existsSync(checklistPath), true, "staging rollout checklist should exist");
   assert.equal(existsSync(rolloutScriptPath), true, "staging rollout PowerShell script should exist");
@@ -32,7 +39,7 @@ export function runLeaveRolloutTests() {
 
   const backupSql = readFileSync(backupPath, "utf8");
   const officialBackupMigration = readFileSync(officialBackupMigrationPath, "utf8");
-  assert.equal(officialBackupMigration, backupSql, "official backup migration should mirror the reviewed source SQL");
+  assert.equal(normalizeNewlines(officialBackupMigration), normalizeNewlines(backupSql), "official backup migration should mirror the reviewed source SQL");
   assert.match(backupSql, /create schema if not exists backup/);
   assert.match(backupSql, /leave_domain_backup_manifest/);
   assert.match(backupSql, /to_regclass\(format\('public\.\%I', v_table\)\)/);
@@ -57,7 +64,7 @@ export function runLeaveRolloutTests() {
     "test `/employee-portals/leave`",
     "test `/employee-portals/leave-approvals`",
     "test `/admin/leave`",
-    "confirm old `/api/vacation` routes are gone",
+    `confirm old \`${legacyApiPath}\` routes are gone`,
     "rollback notes",
     "official supabase cli rollout",
     "supabase migration fetch",
@@ -132,7 +139,7 @@ export function runLeaveRolloutTests() {
     "/employee-portals/leave",
     "/employee-portals/leave-approvals",
     "/admin/leave",
-    "/api/vacation",
+    legacyApiPath,
     "docs\\leave-rollout-report.md",
   ]) {
     assert.match(

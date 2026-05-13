@@ -2,10 +2,13 @@ import { PayrollConflictError } from "./errors.ts";
 import type { PayrollWorkflowAction } from "./types.ts";
 
 export type PayrollWorkflowTransition = {
+  clearPart2Ready?: boolean;
   clearRejectedReason?: boolean;
   expectedStatus: string;
   nextStatus: string;
   setApproved?: boolean;
+  setPart1Paid?: boolean;
+  setPart2Ready?: boolean;
   setLocked?: boolean;
   setRejected?: boolean;
 };
@@ -21,9 +24,27 @@ const payrollTransitions: Record<PayrollWorkflowAction, PayrollWorkflowTransitio
     nextStatus: "locked",
     setLocked: true,
   },
-  mark_review: {
+  mark_part1_paid: {
+    expectedStatus: "part1_ready",
+    nextStatus: "part1_paid",
+    setPart1Paid: true,
+  },
+  mark_part1_ready: {
     expectedStatus: "uploaded",
+    nextStatus: "part1_ready",
+  },
+  mark_part2_ready: {
+    expectedStatus: "adjustments_open",
+    nextStatus: "part2_ready",
+    setPart2Ready: true,
+  },
+  mark_review: {
+    expectedStatus: "part2_ready",
     nextStatus: "under_review",
+  },
+  open_adjustments: {
+    expectedStatus: "part1_paid",
+    nextStatus: "adjustments_open",
   },
   reject: {
     expectedStatus: "under_review",
@@ -31,9 +52,10 @@ const payrollTransitions: Record<PayrollWorkflowAction, PayrollWorkflowTransitio
     setRejected: true,
   },
   reopen: {
+    clearPart2Ready: true,
     clearRejectedReason: true,
     expectedStatus: "rejected",
-    nextStatus: "uploaded",
+    nextStatus: "adjustments_open",
   },
 };
 

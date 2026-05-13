@@ -17,6 +17,7 @@ import type { SalaryValidationIssue, SalaryValidationRow } from "@/lib/payroll/s
 import type {
   PayrollDashboardData,
   PayrollPeriodConflict,
+  PayrollWorkflowAction,
   SalaryBatch,
   SalaryFlag,
   SalaryRecord,
@@ -52,6 +53,26 @@ function payrollErrorMessage(error: unknown) {
   return String(error);
 }
 
+function payrollErrorCode(error: unknown) {
+  if (typeof error === "object" && error && "code" in error) {
+    return String((error as { code?: unknown }).code ?? "");
+  }
+
+  return "";
+}
+
+function isDuplicatePayrollPeriodError(error: unknown) {
+  const message = payrollErrorMessage(error).toLowerCase();
+  return (
+    payrollErrorCode(error) === "23505" &&
+    (
+      message.includes("already has a batch") ||
+      message.includes("salary_batches_year_month_unique_idx") ||
+      message.includes("salary_batches_period")
+    )
+  );
+}
+
 function isLikelyUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
@@ -73,6 +94,7 @@ export function isPayrollSchemaMissing(error: unknown) {
     message.includes("salary_batches") ||
     message.includes("salary_records") ||
     message.includes("salary_flags") ||
+    message.includes("phx_create_salary_batch") ||
     message.includes("phx_replace_salary_batch") ||
     message.includes("could not find the table") ||
     message.includes("could not find the function") ||
@@ -150,6 +172,10 @@ function mapBatch(row: Record<string, unknown>): SalaryBatch {
     approvedBy: row.approved_by ? String(row.approved_by) : null,
     approvedAt: row.approved_at ? new Date(String(row.approved_at)).toISOString() : null,
     lockedAt: row.locked_at ? new Date(String(row.locked_at)).toISOString() : null,
+    part1PaidAt: row.part1_paid_at ? new Date(String(row.part1_paid_at)).toISOString() : null,
+    part1PaidBy: row.part1_paid_by ? String(row.part1_paid_by) : null,
+    part2ReadyAt: row.part2_ready_at ? new Date(String(row.part2_ready_at)).toISOString() : null,
+    part2ReadyBy: row.part2_ready_by ? String(row.part2_ready_by) : null,
     rejectedReason: row.rejected_reason ? String(row.rejected_reason) : null,
     createdAt: new Date(String(row.created_at)).toISOString(),
   };
@@ -855,15 +881,31 @@ export async function getSalaryBatchExport(
   };
 }
 
-const replaceableSalaryBatchStatuses = new Set(["uploaded", "under_review", "rejected"]);
+const prePart1EditableSalaryBatchStatuses = new Set(["uploaded", "part1_ready", "rejected"]);
+const part1PaidSalaryBatchStatuses = new Set([
+  "part1_paid",
+  "adjustments_open",
+  "part2_ready",
+  "under_review",
+  "approved",
+  "locked",
+]);
 const closedSalaryBatchStatuses = new Set(["approved", "locked"]);
 
 export function isReplaceableSalaryBatchStatus(status: string) {
-  return replaceableSalaryBatchStatuses.has(status);
+  return prePart1EditableSalaryBatchStatuses.has(status) && !part1PaidSalaryBatchStatuses.has(status);
+}
+
+function isSalaryBatchPart1Paid(batch: SalaryBatch) {
+  return Boolean(batch.part1PaidAt) || part1PaidSalaryBatchStatuses.has(batch.status);
+}
+
+export function isReplaceableSalaryBatch(batch: SalaryBatch) {
+  return isReplaceableSalaryBatchStatus(batch.status) && !isSalaryBatchPart1Paid(batch);
 }
 
 export function payrollPeriodConflictForBatch(batch: SalaryBatch): PayrollPeriodConflict {
-  const replaceable = isReplaceableSalaryBatchStatus(batch.status);
+  const replaceable = isReplaceableSalaryBatch(batch);
 
   return {
     batchId: batch.id,
@@ -878,9 +920,12 @@ export function payrollPeriodConflictForBatch(batch: SalaryBatch): PayrollPeriod
   };
 }
 
-export function assertSalaryBatchDeletable(status: string) {
-  if (closedSalaryBatchStatuses.has(status)) {
-    throw new PayrollConflictError(`Payroll batch cannot be deleted while status is ${status}.`);
+export function assertSalaryBatchDeletable(batch: SalaryBatch | string) {
+  const status = typeof batch === "string" ? batch : batch.status;
+  const part1Paid = typeof batch === "string" ? part1PaidSalaryBatchStatuses.has(batch) : isSalaryBatchPart1Paid(batch);
+
+  if (closedSalaryBatchStatuses.has(status) || part1Paid) {
+    throw new PayrollConflictError(`Payroll batch cannot be deleted after Part 1 is paid or while status is ${status}.`);
   }
 }
 
@@ -954,33 +999,6 @@ function salaryRecordPayload(batchId: string, row: SalaryValidationRow) {
 }
 
 type SalaryRecordPayload = ReturnType<typeof salaryRecordPayload>;
-
-async function writeSalaryRecordPayloads(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  recordPayloads: SalaryRecordPayload[],
-) {
-  if (recordPayloads.length === 0) {
-    return;
-  }
-
-  const { error } = await supabase.from("salary_records").insert(recordPayloads);
-
-  if (!error) {
-    return;
-  }
-
-  if (
-    isMissingColumnError(error, "hire_date") ||
-    isMissingColumnError(error, "name_ar") ||
-    isMissingColumnError(error, "comment")
-  ) {
-    throw new Error(
-      "Payroll schema is missing salary_records sheet-mapping columns. Run the salary_records SQL migration before uploading payroll.",
-    );
-  }
-
-  throw error;
-}
 
 const salaryRecordNumericColumns = new Set([
   "bonus",
@@ -1079,11 +1097,6 @@ function salaryFlagPayload(batchId: string, warning: SalaryValidationIssue) {
   };
 }
 
-async function cleanupSalaryBatch(batchId: string) {
-  const supabase = getSupabaseAdmin();
-  await supabase.from("salary_batches").delete().eq("id", batchId);
-}
-
 export async function createSalaryBatch(input: CreateSalaryBatchInput) {
   assertSalaryBatchHasImportRows(input.records.length, "upload");
 
@@ -1094,62 +1107,66 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
 
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
+  const recordPayloads = input.records.map((row) =>
+    salaryRecordPayload("", row),
+  );
+  const flagPayloads = input.validationWarnings.map((warning) =>
+    salaryFlagPayload("", warning),
+  );
 
-  const { data: batchData, error: batchError } = await supabase
-    .from("salary_batches")
-    .insert({
-      file_name: input.fileName,
-      month: input.month,
-      status: "uploaded",
-      updated_at: now,
-      uploaded_by: input.uploadedBy,
-      year: input.year,
-    })
-    .select()
-    .single();
+  const { data: batchData, error: batchError } = await supabase.rpc(
+    "phx_create_salary_batch",
+    {
+      p_created_at: now,
+      p_file_name: input.fileName,
+      p_flags: flagPayloads,
+      p_month: input.month,
+      p_records: recordPayloads,
+      p_uploaded_by: input.uploadedBy,
+      p_year: input.year,
+    },
+  );
 
-  if (batchError || !batchData) {
-    throw batchError ?? new Error("Payroll batch could not be created.");
+  if (batchError) {
+    if (
+      isDuplicatePayrollPeriodError(batchError) ||
+      payrollErrorMessage(batchError).toLowerCase().includes("already has a batch")
+    ) {
+      throw new PayrollConflictError(payrollErrorMessage(batchError));
+    }
+
+    if (
+      isMissingColumnError(batchError, "hire_date") ||
+      isMissingColumnError(batchError, "name_ar") ||
+      isMissingColumnError(batchError, "comment")
+    ) {
+      throw new Error(
+        "Payroll schema is missing salary_records sheet-mapping columns. Run the salary_records SQL migration before uploading payroll.",
+      );
+    }
+
+    throw batchError;
+  }
+
+  if (!batchData || typeof batchData !== "object") {
+    throw new Error("Payroll batch could not be created.");
   }
 
   const batch = mapBatch(batchData as Record<string, unknown>);
+  await verifySalaryRecordPayloads(supabase, batch.id, recordPayloads);
 
-  try {
-    const recordPayloads = input.records.map((row) =>
-      salaryRecordPayload(batch.id, row),
-    );
-
-    await writeSalaryRecordPayloads(supabase, recordPayloads);
-    await verifySalaryRecordPayloads(supabase, batch.id, recordPayloads);
-
-    const flagPayloads = input.validationWarnings.map((warning) =>
-      salaryFlagPayload(batch.id, warning),
-    );
-
-    if (flagPayloads.length > 0) {
-      const { error } = await supabase.from("salary_flags").insert(flagPayloads);
-
-      if (error) {
-        throw error;
-      }
-    }
-
-    return {
-      batch,
-      importedRecords: recordPayloads.length,
-      governanceWarnings: flagPayloads.length,
-    };
-  } catch (error) {
-    await cleanupSalaryBatch(batch.id);
-    throw error;
-  }
+  return {
+    batch,
+    importedRecords: recordPayloads.length,
+    governanceWarnings: flagPayloads.length,
+  };
 }
 
 export async function deleteSalaryBatch(batchId: string) {
   const supabase = getSupabaseAdmin();
   const existing = await getSalaryBatchById(batchId);
   if (existing) {
-    assertSalaryBatchDeletable(existing.status);
+    assertSalaryBatchDeletable(existing);
   }
 
   const { error } = await supabase.from("salary_batches").delete().eq("id", batchId);
@@ -1180,8 +1197,8 @@ export async function replaceSalaryBatch(
   }
 
   const existing = mapBatch(existingBatchData as Record<string, unknown>);
-  if (!isReplaceableSalaryBatchStatus(existing.status)) {
-    throw new PayrollConflictError(`Payroll batch cannot be replaced while status is ${existing.status}.`);
+  if (!isReplaceableSalaryBatch(existing)) {
+    throw new PayrollConflictError(`Payroll batch cannot be replaced after Part 1 is paid or while status is ${existing.status}.`);
   }
 
   const now = new Date().toISOString();
@@ -1232,7 +1249,7 @@ export async function replaceSalaryBatch(
 
 export async function runPayrollWorkflow(
   batchId: string,
-  action: "mark_review" | "approve" | "lock" | "reject" | "reopen",
+  action: PayrollWorkflowAction,
   actorName: string,
   rejectedReason?: string
 ): Promise<SalaryBatch | null> {
@@ -1263,6 +1280,16 @@ export async function runPayrollWorkflow(
     updates.approved_at = now;
   }
 
+  if (transition.setPart1Paid) {
+    updates.part1_paid_by = actorName;
+    updates.part1_paid_at = now;
+  }
+
+  if (transition.setPart2Ready) {
+    updates.part2_ready_by = actorName;
+    updates.part2_ready_at = now;
+  }
+
   if (transition.setLocked) {
     updates.locked_at = now;
   }
@@ -1273,6 +1300,11 @@ export async function runPayrollWorkflow(
 
   if (transition.clearRejectedReason) {
     updates.rejected_reason = null;
+  }
+
+  if (transition.clearPart2Ready) {
+    updates.part2_ready_by = null;
+    updates.part2_ready_at = null;
   }
 
   const { data, error } = await supabase

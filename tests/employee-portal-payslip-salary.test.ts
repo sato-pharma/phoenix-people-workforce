@@ -48,6 +48,12 @@ export function runEmployeePortalPayslipSalaryTests() {
     "Payslip salary breakdown must explain the fixed net salary formula.",
   );
 
+  assert.match(
+    dashboardSource,
+    /\.sort\(\(left, right\) => left\.value - right\.value/,
+    "Payslip salary breakdown rows must render from smallest amount to largest amount.",
+  );
+
   assert.doesNotMatch(
     dashboardSource,
     /This breakdown is read from the latest uploaded payroll sheet/,

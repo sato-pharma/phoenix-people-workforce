@@ -628,29 +628,6 @@ export async function importApprovedExpensesToPayroll(input: {
         records: input.records,
       }, accessContext)
     : await listPayrollExpenses(input.month, input.year, undefined, accessContext);
-  const approvedTotals = new Map<string, number>();
-
-  savedExpenses
-    .filter((expense) =>
-      expense.hrApproved &&
-      expense.hrId &&
-      expense.payoutMonth === input.month &&
-      expense.payoutYear === input.year,
-    )
-    .forEach((expense) => {
-      const hrId = String(expense.hrId);
-      approvedTotals.set(hrId, (approvedTotals.get(hrId) ?? 0) + expense.total);
-    });
-
-  if (approvedTotals.size === 0) {
-    return {
-      importedEmployees: 0,
-      importedTotal: 0,
-      matchedEmployees: [],
-      saved: savedExpenses.length,
-      targetBatch: null,
-    };
-  }
 
   const supabase = getSupabaseAdmin();
   const { data: importResult, error: importError } = await supabase.rpc(

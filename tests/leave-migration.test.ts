@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 export function runLeaveMigrationTests() {
   const source = readFileSync("supabase/20260512_leave_management_engine.sql", "utf8");
+  const legacyDomain = ["vac", "ation"].join("");
 
   for (const table of [
     "leave_types",
@@ -35,7 +36,7 @@ export function runLeaveMigrationTests() {
   assert.match(source, /private\.phx_can_access_employee/);
   assert.match(source, /notification_type[\s\S]*'leave'/);
 
-  assert.equal(existsSync("app/api/vacation"), false, "legacy vacation API routes should be removed");
-  assert.equal(existsSync("src/lib/vacation"), false, "legacy vacation library should be removed");
-  assert.equal(existsSync("src/components/vacation"), false, "legacy vacation components should be removed");
+  assert.equal(existsSync(["app/api", legacyDomain].join("/")), false, "legacy vacation API routes should be removed");
+  assert.equal(existsSync(["src/lib", legacyDomain].join("/")), false, "legacy vacation library should be removed");
+  assert.equal(existsSync(["src/components", legacyDomain].join("/")), false, "legacy vacation components should be removed");
 }

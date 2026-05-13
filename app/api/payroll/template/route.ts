@@ -8,6 +8,7 @@ import { parseDateOnly } from "@/lib/date-only";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getApprovedExpenseTotalsForPayroll } from "@/lib/payroll/expenses";
+import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { calculateNetSalary, calculatePayrollParts, payrollPaymentModeLabel } from "@/lib/payroll/policy";
 import { getLatestSalaryRecordsBefore } from "@/lib/payroll/service";
@@ -637,20 +638,27 @@ async function buildReadyRows(
         approvedExpenseTotals.get(employee.hrId) ??
           previousExpensesByEmployee.get(employee.hrId),
       );
+      const baseSalary = money(employee.netSalary);
+      const standardAllowances = resolveStandardSalaryAllowances({
+        departmentName: employee.departmentName,
+        jobTitle: employee.jobTitle,
+        lineName: employee.lineName,
+        positionTitle: employee.positionTitle,
+      });
+      const extraCostOfLiving = money(standardAllowances.extraCostOfLiving);
+      const fuelAllowance = money(standardAllowances.fuelAllowance);
       const parts = calculatePayrollParts({
         additions: 0,
-        baseSalary: employee.netSalary,
+        baseSalary,
         deductions: 0,
-        extraCostOfLiving: employee.extraCostOfLiving,
-        fuelAllowance: employee.fuelAllowance,
+        extraCostOfLiving,
+        fuelAllowance,
         paymentMode: employee.salaryPaymentMode,
         previousExpenses: expenses,
       });
       const socialInsurance = money(employee.socialInsurance);
       const employmentIncomeTax = money(employee.taxes);
       const medicalInsurance = money(employee.medicalInsurance);
-      const extraCostOfLiving = money(employee.extraCostOfLiving);
-      const fuelAllowance = money(employee.fuelAllowance);
       const incentive = 0;
       const overtime = 0;
       const bonus = 0;
@@ -675,7 +683,7 @@ async function buildReadyRows(
       );
       const paymentMode = payrollPaymentModeLabel(parts.paymentMode);
       const netSalary = calculateNetSalary({
-        baseSalary: employee.netSalary,
+        baseSalary,
         extraCostOfLiving,
         fuelAllowance,
       });

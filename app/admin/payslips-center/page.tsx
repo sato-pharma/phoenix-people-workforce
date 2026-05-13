@@ -35,6 +35,10 @@ function periodLabel(month: number, year: number) {
   );
 }
 
+function payslipStatusTone(status: string) {
+  return status === "approved" || status === "locked" ? "success" : "neutral";
+}
+
 export default async function AdminPayslipsCenterPage(
   props: PageProps<"/admin/payslips-center">,
 ) {
@@ -139,7 +143,7 @@ export default async function AdminPayslipsCenterPage(
                       <td className="px-3 py-3 text-rose-700">{formatMoney(row.totalDeductions)}</td>
                       <td className="px-3 py-3 font-black text-[#0F172A]">{formatMoney(row.netSalary)}</td>
                       <td className="px-3 py-3">
-                        <Badge variant={row.status === "posted" ? "success" : "neutral"}>{row.status}</Badge>
+                        <Badge variant={payslipStatusTone(row.status)}>{row.status}</Badge>
                       </td>
                       <td className="px-3 py-3">
                         <Link
