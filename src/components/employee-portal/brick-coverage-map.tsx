@@ -27,9 +27,64 @@ type MarkerRecord = {
   point: BrickMapPoint;
 };
 
+type BrickGeocodeResult = {
+  area: string;
+  brick: string;
+  lat: number | null;
+  lng: number | null;
+};
 
-function buildQuery(point: BrickMapPoint, lineLabel: string) {
-  return [point.brick, point.area, lineLabel, "Egypt"].filter(Boolean).join(", ");
+type ResolvedBrickMapPoint = BrickMapPoint & {
+  lat: number;
+  lng: number;
+};
+
+function pointKey(point: Pick<BrickMapPoint, "area" | "brick">) {
+  return `${point.brick.trim().toLowerCase()}\u0000${point.area.trim().toLowerCase()}`;
+}
+
+async function geocodeBrickCoveragePoints(
+  points: BrickMapPoint[],
+  lineLabel: string,
+): Promise<ResolvedBrickMapPoint[]> {
+  const response = await fetch("/api/employee-portals/brick-coverage/geocode", {
+    body: JSON.stringify({
+      points: points.map((point) => ({
+        area: point.area,
+        brick: point.brick,
+        lineLabel,
+      })),
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error("Unable to geocode brick coverage points.");
+  }
+
+  const payload = (await response.json()) as { results?: BrickGeocodeResult[] };
+  const locations = new Map<string, BrickGeocodeResult>();
+  payload.results?.forEach((result) => {
+    locations.set(pointKey(result), result);
+  });
+
+  return points.flatMap((point) => {
+    const location = locations.get(pointKey(point));
+    if (
+      !location ||
+      !Number.isFinite(location.lat) ||
+      !Number.isFinite(location.lng)
+    ) {
+      return [];
+    }
+
+    return [{
+      ...point,
+      lat: Number(location.lat),
+      lng: Number(location.lng),
+    }];
+  });
 }
 
 function createMarkerIcon(googleMaps: GoogleMapsNamespace, color: string) {
@@ -117,81 +172,77 @@ export function BrickCoverageMap({
     let cancelled = false;
 
     const run = async () => {
-      const mapsLibrary = await importGoogleLibrary(googleMaps, "maps", { Map: googleMaps.Map });
-      const markerLibrary = await importGoogleLibrary(googleMaps, "marker", { Marker: googleMaps.Marker });
-      const geocodingLibrary = await importGoogleLibrary(googleMaps, "geocoding", { Geocoder: googleMaps.Geocoder });
-      const coreLibrary = await importGoogleLibrary(googleMaps, "core", {
-        LatLngBounds: googleMaps.LatLngBounds,
-        SymbolPath: googleMaps.SymbolPath,
-      });
-      if (cancelled) return;
-
-      const MapCtor = mapsLibrary?.Map as GoogleMapsNamespace["Map"] | undefined;
-      const GeocoderCtor = geocodingLibrary?.Geocoder as GoogleMapsNamespace["Geocoder"] | undefined;
-      const LatLngBoundsCtor =
-        coreLibrary?.LatLngBounds as GoogleMapsNamespace["LatLngBounds"] | undefined;
-      const MarkerCtor = (markerLibrary?.Marker ?? googleMaps.Marker) as GoogleMapsNamespace["Marker"] | undefined;
-      const InfoWindowCtor = googleMaps.InfoWindow;
-      const symbolPath = coreLibrary?.SymbolPath as GoogleMapsNamespace["SymbolPath"] | undefined;
-      const mapsForIcons: GoogleMapsNamespace = {
-        ...googleMaps,
-        SymbolPath: symbolPath ?? googleMaps.SymbolPath,
-      };
-
-      if (
-        !MapCtor ||
-        !GeocoderCtor ||
-        !MarkerCtor ||
-        !InfoWindowCtor
-      ) {
-        setGeocodeError("Google Maps loaded, but the coverage map tools are unavailable.");
-        return;
-      }
-
-      const map =
-        mapInstanceRef.current ??
-        new MapCtor(mapElement, {
-          center: { lat: 26.8206, lng: 30.8025 },
-          disableDefaultUI: false,
-          mapTypeControl: false,
-          streetViewControl: false,
-          zoom: 6,
+      try {
+        const mapsLibrary = await importGoogleLibrary(googleMaps, "maps", {
+          InfoWindow: googleMaps.InfoWindow,
+          Map: googleMaps.Map,
         });
+        const markerLibrary = await importGoogleLibrary(googleMaps, "marker", { Marker: googleMaps.Marker });
+        const coreLibrary = await importGoogleLibrary(googleMaps, "core", {
+          LatLngBounds: googleMaps.LatLngBounds,
+          SymbolPath: googleMaps.SymbolPath,
+        });
+        if (cancelled) return;
 
-      mapInstanceRef.current = map;
-      infoWindowRef.current = infoWindowRef.current ?? new InfoWindowCtor();
-      markerRecordsRef.current.forEach(({ marker }) => marker.setMap?.(null));
-      markerRecordsRef.current = [];
-      setGeocodeError(null);
+        const MapCtor = mapsLibrary?.Map as GoogleMapsNamespace["Map"] | undefined;
+        const LatLngBoundsCtor =
+          coreLibrary?.LatLngBounds as GoogleMapsNamespace["LatLngBounds"] | undefined;
+        const MarkerCtor = (markerLibrary?.Marker ?? googleMaps.Marker) as GoogleMapsNamespace["Marker"] | undefined;
+        const InfoWindowCtor = (mapsLibrary?.InfoWindow ?? googleMaps.InfoWindow) as GoogleMapsNamespace["InfoWindow"] | undefined;
+        const symbolPath = coreLibrary?.SymbolPath as GoogleMapsNamespace["SymbolPath"] | undefined;
+        const mapsForIcons: GoogleMapsNamespace = {
+          ...googleMaps,
+          SymbolPath: symbolPath ?? googleMaps.SymbolPath,
+        };
 
-      if (points.length === 0) {
-        return;
-      }
+        if (
+          !MapCtor ||
+          !MarkerCtor ||
+          !InfoWindowCtor
+        ) {
+          setGeocodeError("Google Maps loaded, but the coverage map tools are unavailable.");
+          return;
+        }
 
-      const geocoder = new GeocoderCtor();
-      const bounds = LatLngBoundsCtor ? new LatLngBoundsCtor() : null;
-      let resolvedCount = 0;
-
-      for (const point of points) {
-        const query = buildQuery(point, data.scopeLabel);
-
-        try {
-          const result = await geocoder.geocode({ address: query });
-          const location = result.results[0]?.geometry.location;
-          if (!location || cancelled) {
-            continue;
-          }
-
-          const marker = new MarkerCtor({
-            icon: createMarkerIcon(mapsForIcons, point.status === "visited" ? "#16a34a" : "#f97316"),
-            map,
-            position: location,
-            title: point.brick,
+        const map =
+          mapInstanceRef.current ??
+          new MapCtor(mapElement, {
+            center: { lat: 26.8206, lng: 30.8025 },
+            disableDefaultUI: false,
+            mapTypeControl: false,
+            streetViewControl: false,
+            zoom: 6,
           });
 
-          marker.addListener?.("click", () => {
-            infoWindowRef.current?.setContent(
-              `<div style="min-width:180px;padding:4px 6px">
+        mapInstanceRef.current = map;
+        infoWindowRef.current = infoWindowRef.current ?? new InfoWindowCtor();
+        markerRecordsRef.current.forEach(({ marker }) => marker.setMap?.(null));
+        markerRecordsRef.current = [];
+        setGeocodeError(null);
+
+        if (points.length === 0) {
+          return;
+        }
+
+        const resolvedPoints = await geocodeBrickCoveragePoints(points, data.scopeLabel);
+        if (cancelled) return;
+
+        const bounds = LatLngBoundsCtor ? new LatLngBoundsCtor() : null;
+        let resolvedCount = 0;
+
+        for (const point of resolvedPoints) {
+          try {
+            const position = { lat: point.lat, lng: point.lng };
+            const marker = new MarkerCtor({
+              icon: createMarkerIcon(mapsForIcons, point.status === "visited" ? "#16a34a" : "#f97316"),
+              map,
+              position,
+              title: point.brick,
+            });
+
+            marker.addListener?.("click", () => {
+              infoWindowRef.current?.setContent(
+                `<div style="min-width:180px;padding:4px 6px">
                 <div style="font-weight:700;color:#0f172a">${point.brick}</div>
                 <div style="font-size:12px;color:#475569;margin-top:4px">${point.area || "No area"}</div>
                 <div style="font-size:12px;color:#475569;margin-top:6px">${
@@ -200,26 +251,31 @@ export function BrickCoverageMap({
                     : "Not visited"
                 }</div>
               </div>`,
-            );
-            infoWindowRef.current?.open({ anchor: marker, map });
-          });
+              );
+              infoWindowRef.current?.open({ anchor: marker, map });
+            });
 
-          markerRecordsRef.current.push({ marker, point });
-          bounds?.extend(location);
-          resolvedCount += 1;
-        } catch {
-          continue;
+            markerRecordsRef.current.push({ marker, point });
+            bounds?.extend(position);
+            resolvedCount += 1;
+          } catch {
+            continue;
+          }
         }
-      }
 
-      if (cancelled) return;
+        if (cancelled) return;
 
-      if (resolvedCount > 0) {
-        if (bounds) {
-          map.fitBounds(bounds, 56);
+        if (resolvedCount > 0) {
+          if (bounds) {
+            map.fitBounds(bounds, 56);
+          }
+        } else {
+          setGeocodeError("Google Maps loaded, but none of the selected bricks could be geocoded yet.");
         }
-      } else {
-        setGeocodeError("Google Maps loaded, but none of the selected bricks could be geocoded yet.");
+      } catch {
+        if (!cancelled) {
+          setGeocodeError("Google Maps loaded, but brick coordinates could not be geocoded yet.");
+        }
       }
     };
 

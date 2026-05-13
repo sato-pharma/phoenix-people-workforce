@@ -1,5 +1,11 @@
 type LatLng = { lat: number; lng: number };
 
+export type GoogleRoutesApiRoute = {
+  distanceMeters?: number;
+  duration?: string;
+  polyline?: { encodedPolyline?: string };
+};
+
 type GeocodeResponse = {
   area: string | null;
   city: string | null;
@@ -73,6 +79,28 @@ function parseDurationSeconds(value: unknown) {
   return Number.isFinite(seconds) ? seconds : null;
 }
 
+function routeDistanceMeters(route: GoogleRoutesApiRoute) {
+  return route.distanceMeters != null && Number.isFinite(route.distanceMeters)
+    ? Number(route.distanceMeters)
+    : null;
+}
+
+export function selectShortestGoogleRoute(
+  routes: GoogleRoutesApiRoute[] | null | undefined,
+) {
+  return routes?.reduce<GoogleRoutesApiRoute | null>((shortest, route) => {
+    const distanceMeters = routeDistanceMeters(route);
+    if (distanceMeters == null) return shortest;
+
+    const shortestDistanceMeters = shortest ? routeDistanceMeters(shortest) : null;
+    if (shortestDistanceMeters == null || distanceMeters < shortestDistanceMeters) {
+      return route;
+    }
+
+    return shortest;
+  }, null) ?? null;
+}
+
 async function computeRoutes(
   origin: LatLng,
   destination: LatLng,
@@ -90,6 +118,7 @@ async function computeRoutes(
     "https://routes.googleapis.com/directions/v2:computeRoutes",
     {
       body: JSON.stringify({
+        computeAlternativeRoutes: true,
         destination: {
           location: {
             latLng: {
@@ -126,19 +155,12 @@ async function computeRoutes(
   }
 
   const payload = (await response.json()) as {
-    routes?: Array<{
-      distanceMeters?: number;
-      duration?: string;
-      polyline?: { encodedPolyline?: string };
-    }>;
+    routes?: GoogleRoutesApiRoute[];
   };
 
-  const route = payload.routes?.[0];
+  const route = selectShortestGoogleRoute(payload.routes);
   return {
-    distanceMeters:
-      route?.distanceMeters != null && Number.isFinite(route.distanceMeters)
-        ? Number(route.distanceMeters)
-        : null,
+    distanceMeters: route ? routeDistanceMeters(route) : null,
     durationSeconds: parseDurationSeconds(route?.duration),
     polyline: route?.polyline?.encodedPolyline ?? null,
   };
