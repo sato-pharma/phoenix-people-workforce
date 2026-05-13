@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { sendJobOfferEmail } from "@/lib/offers/email";
 import { getOfferTemplate } from "@/lib/offers/templates";
+import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 
 export type OfferStatus = "draft" | "sent" | "accepted" | "rejected" | "expired";
 
@@ -885,13 +886,11 @@ export async function approveAcceptedOffer(
 
   const template = getOfferTemplate(offer.template_key);
   const monthlyPackage = Number(offer.salary_amount ?? template?.monthlyPackage ?? 0);
-  const extraCostOfLiving = Number(template?.costOfLivingAllowance ?? 0);
-  const fuelAllowance = Number(
-    template?.regionalTravelExpenses ??
-      template?.internalTransportationAllowance ??
-      template?.transportationAllowance ??
-      0,
-  );
+  const standardAllowances = resolveStandardSalaryAllowances({
+    jobTitle: offer.job_title,
+  });
+  const extraCostOfLiving = standardAllowances.extraCostOfLiving;
+  const fuelAllowance = standardAllowances.fuelAllowance;
 
   const rpcResult = await supabaseRpc<{
     employee_hr_id: string;

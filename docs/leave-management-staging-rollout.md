@@ -6,18 +6,19 @@ Supabase notes: tables created through SQL in `public` must have Row Level Secur
 
 ## Files
 
-- Backup script: `supabase/20260512_backup_leave_domain_before_rebuild.sql`
-- Rebuild migration: `supabase/20260512_leave_management_engine.sql`
+- Source backup SQL: `supabase/20260512_backup_leave_domain_before_rebuild.sql`
+- Source leave rebuild SQL: `supabase/20260512_leave_management_engine.sql`
+- Official Supabase backup migration: `supabase/migrations/20260512235939_backup_leave_domain_before_rebuild.sql`
+- Official Supabase leave rebuild migration: `supabase/migrations/20260512235948_leave_management_engine.sql`
 
 ## Preconditions
 
 - Confirm the target database is staging, dev, test, or local. Never use production values.
-- Confirm `.env.staging.rls.local` contains staging-only values if using local scripts.
-- Confirm `PHOENIX_CONFIRM_STAGING_RLS_RUN=YES_STAGING_ONLY` before any custom runner is used.
+- Confirm the linked Supabase project ref is the staging project.
 - Confirm the current app build passes locally.
 - Confirm staging can be restored from a full database backup if the leave-domain backup is not enough.
-- Confirm either `psql` or `dbmate` is available locally.
-- If using the dbmate fallback, confirm `node` can run from the repo because the rollout runner uses the existing `postgres` package for verification queries when `psql` is unavailable.
+- Confirm the Supabase CLI is authenticated and linked with `supabase link --project-ref <staging-project-ref>`.
+- Do not use dbmate, psql, the Supabase SQL editor, or manual SQL for this rollout.
 
 ## Rollout Checklist
 
@@ -25,52 +26,65 @@ Supabase notes: tables created through SQL in `public` must have Row Level Secur
 2. Check old leave/vacation tables before and after the backup.
 3. Check backup tables and manifest.
 4. Verify required private functions exist.
-5. Apply 20260512_leave_management_engine.sql.
-6. Verify new leave tables exist.
-7. Verify seed leave policy.
-8. Verify seed leave types.
-9. Verify public holidays.
-10. Verify permissions and RLS.
-11. Run app validation commands.
-12. Run the app against staging.
-13. Test `/employee-portals/leave`.
-14. Test `/employee-portals/leave-approvals`.
-15. Test `/admin/leave`.
-16. Confirm old `/api/vacation` routes are gone.
-17. Run the manual workflow checklist.
-18. Record backup manifest table names in the rollout notes.
+5. Dry-run the official Supabase migrations.
+6. Apply the official Supabase migrations only after the dry run and migration list are reviewed.
+7. Verify new leave tables exist.
+8. Verify seed leave policy.
+9. Verify seed leave types.
+10. Verify public holidays.
+11. Verify permissions and RLS.
+12. Run app validation commands.
+13. Run the app against staging.
+14. Test `/employee-portals/leave`.
+15. Test `/employee-portals/leave-approvals`.
+16. Test `/admin/leave`.
+17. Confirm old `/api/vacation` routes are gone.
+18. Run the manual workflow checklist.
+19. Record backup manifest table names in the rollout notes.
 
-## Apply Commands
+## Official Supabase CLI Rollout
 
-Use a staging-only database connection. The preferred path is the automated staging-only runner:
+This project now uses the official Supabase CLI migration flow only. The previous dbmate/psql rollout path is superseded for this leave rebuild.
 
-```powershell
-$env:PHOENIX_CONFIRM_STAGING_RLS_RUN="YES_STAGING_ONLY"
-$env:PHOENIX_STAGING_ENVIRONMENT="staging"
-$env:PHOENIX_STAGING_DATABASE_URL="<staging database url only>"
+Remote migration history was reconciled locally with `supabase migration fetch`. `supabase migration list` should show the 12 previously remote-only migrations matched locally, followed by these two local-only pending migrations:
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-leave-staging-rollout.ps1
-```
+- `20260512235939_backup_leave_domain_before_rebuild`
+- `20260512235948_leave_management_engine`
 
-The runner keeps `psql` as the first SQL executor. If `psql` is unavailable, it automatically falls back to `dbmate` for:
+Do not run `supabase migration repair` for the current state. The remote history was missing locally, so fetching the remote history into `supabase/migrations` is safer than changing remote migration history.
 
-- `supabase/20260512_backup_leave_domain_before_rebuild.sql`
-- `supabase/20260512_leave_management_engine.sql`
+Do not run `supabase db pull` unless you intentionally want an additional schema-drift snapshot before rollout. It is not required for the current migration-history mismatch after `supabase migration fetch`.
 
-When dbmate is used, the runner creates temporary timestamped dbmate migration wrappers with `transaction:false` so the SQL files keep their own transaction boundaries. Verification queries still run automatically through Node using the repo's existing `postgres` dependency.
-
-Manual `psql` fallback, if you need to run the SQL files without the automated script:
+### Preflight
 
 ```powershell
-$env:PHOENIX_CONFIRM_STAGING_RLS_RUN="YES_STAGING_ONLY"
-$env:PHOENIX_STAGING_ENVIRONMENT="staging"
-psql "$env:PHOENIX_STAGING_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/20260512_backup_leave_domain_before_rebuild.sql
-psql "$env:PHOENIX_STAGING_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/20260512_leave_management_engine.sql
+supabase migration list
+npm run test
+npm run typecheck
+npm run lint
+npm run build
 ```
 
-Manual dbmate fallback, if you cannot use `psql` and cannot use the automated script, should still be staging-only. Prefer the automated runner because it creates the dbmate wrappers and performs the verification gates. If using dbmate manually, create dbmate migration files from the two SQL files in order, include `-- migrate:up transaction:false`, run the backup migration first, verify the backup manifest, then run the leave engine migration.
+### Dry Run
 
-The Supabase Dashboard SQL editor remains an emergency staging-only option when neither `psql` nor dbmate can be used locally. Run the backup SQL first, verify backups, then run the migration SQL.
+Run this before any real push:
+
+```powershell
+supabase db push --dry-run
+```
+
+The dry run must list only these local pending migrations:
+
+- `20260512235939_backup_leave_domain_before_rebuild.sql`
+- `20260512235948_leave_management_engine.sql`
+
+### Apply To Staging
+
+Apply only after the dry run is reviewed and the linked project is confirmed as staging:
+
+```powershell
+supabase db push
+```
 
 ## SQL Verification Snippets
 

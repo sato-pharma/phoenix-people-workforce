@@ -62,9 +62,7 @@ function buildEmployeePortalSections({
         { href: "/employee-portals/sales", label: "My Performance", icon: LineChartIcon },
         { href: "/employee-portals/incentive", label: "Incentive", icon: Calculator },
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
-        ...(showTeamCoachingTab ? [{ href: "/employee-portals/coaching", label: "Team Coaching Reports", icon: ClipboardCheck }] : []),
         { href: "/payslips", label: "Payslips", icon: CircleDollarSign },
-        { href: "/employee-portals/leave", label: "Vacation / Leave", icon: CalendarClock },
         ...(showManagementTab ? [{ href: "/employee-portals/expense-dashboard", label: "Workload & Expense", icon: ReceiptText }] : []),
       ],
     },
@@ -72,6 +70,7 @@ function buildEmployeePortalSections({
       title: "Line Performance",
       items: [
         ...(showTeamPerformanceTab ? [{ href: "/employee-portals/team-performance", label: "Team Performance", icon: Trophy }] : []),
+        ...(showTeamCoachingTab ? [{ href: "/employee-portals/coaching", label: "Team Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showMedRepsPerformanceTab ? [{ href: "/employee-portals/med-reps-performance", label: "MRs Performance", icon: Users }] : []),
         ...(showDsmsPerformanceTab ? [{ href: "/employee-portals/dsms-performance", label: "DSMs Performance", icon: BriefcaseBusiness }] : []),
         ...(showTeamExpensesTab ? [{ href: "/employee-portals/team-expenses", label: "Team Expenses", icon: ReceiptText }] : []),
@@ -84,13 +83,14 @@ function buildEmployeePortalSections({
         ...(showVacanciesTab ? [{ href: "/employee-portals/vacancies", label: "Vacancies", icon: BriefcaseBusiness }] : []),
         ...(showProbationTab ? [{ href: "/employee-portals/probation", label: "Probation Tracker", icon: ClipboardCheck }] : []),
         ...(showOrganogramTab ? [{ href: "/employee-portals/organogram", label: "Organogram", icon: Building2 }] : []),
-        ...(showLeaveApprovalsTab ? [{ href: "/employee-portals/leave-approvals", label: "Leave Approvals", icon: CalendarClock }] : []),
       ],
     },
     {
       title: "Actions",
       items: [
         ...(showExpenseActionTab ? [{ href: "/employee/outstation/new", label: "Expense", icon: ReceiptText }] : []),
+        { href: "/employee-portals/leave", label: "Vacation / Leave", icon: CalendarClock },
+        ...(showLeaveApprovalsTab ? [{ href: "/employee-portals/leave-approvals", label: "Leave Approvals", icon: CalendarClock }] : []),
       ],
     },
     {

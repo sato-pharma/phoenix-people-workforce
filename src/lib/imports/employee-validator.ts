@@ -31,6 +31,7 @@ import {
   type OrgMappingSample,
   type OrgMappingWarning,
 } from "@/lib/imports/org-rule-engine";
+import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { calculateGrossSalary } from "@/lib/payroll/policy";
 
 type HeaderMapping = Map<EmployeeImportField, string>;
@@ -465,6 +466,41 @@ export function validateEmployeeImportRows(
     }
 
     if (record.rowType === "employee") {
+      const standardAllowances = resolveStandardSalaryAllowances({
+        departmentName: record.departmentName,
+        jobTitle: record.jobTitle,
+        lineName: record.lineName,
+        positionTitle: record.positionTitle,
+        teamName: record.teamName,
+      });
+
+      if (
+        record.compensation.extraCostOfLiving !== null &&
+        differs(record.compensation.extraCostOfLiving, standardAllowances.extraCostOfLiving)
+      ) {
+        validationWarnings.push({
+          rowNumber: record.rowNumber,
+          field: "extraCostOfLiving",
+          code: "extra_cost_of_living_policy_mismatch",
+          message: `Extra cost of living was normalized to ${moneyText(standardAllowances.extraCostOfLiving)} by position policy.`,
+        });
+      }
+
+      if (
+        record.compensation.fuelAllowance !== null &&
+        differs(record.compensation.fuelAllowance, standardAllowances.fuelAllowance)
+      ) {
+        validationWarnings.push({
+          rowNumber: record.rowNumber,
+          field: "fuelAllowance",
+          code: "fuel_allowance_policy_mismatch",
+          message: `Fuel allowance was normalized to ${moneyText(standardAllowances.fuelAllowance)} by payroll policy.`,
+        });
+      }
+
+      record.compensation.extraCostOfLiving = standardAllowances.extraCostOfLiving;
+      record.compensation.fuelAllowance = standardAllowances.fuelAllowance;
+
       const expectedGrossSalary = calculateGrossSalary({
         baseSalary: record.compensation.netSalary,
         employmentIncomeTax: record.compensation.taxes,

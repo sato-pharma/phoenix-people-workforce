@@ -4,6 +4,7 @@ import {
 } from "@/lib/payroll/policy";
 import { isDevelopment } from "@/lib/env";
 import { googleGeocodeAddress } from "@/lib/geo-intelligence/google";
+import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { generateNextHrIdForLine } from "./hr-id-helper";
 
@@ -564,6 +565,16 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     const employeesData = employeeRows.map((row) => {
       const compensation = compensationByHrId.get(row.hr_id);
       const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
+      const departmentName = row.department_id ? departmentNames.get(row.department_id) ?? null : null;
+      const lineName = row.line_id ? lineNames.get(row.line_id) ?? null : null;
+      const positionTitle = row.position_id ? positionTitles.get(row.position_id) ?? null : null;
+      const standardAllowances = resolveStandardSalaryAllowances({
+        departmentName,
+        jobTitle: row.job_title,
+        lineName,
+        positionTitle,
+      });
+
       return {
         areaId: row.area_id,
         areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
@@ -573,18 +584,18 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         crmId: row.crm_id,
         crmUsername: row.crm_username,
         departmentId: row.department_id,
-        departmentName: row.department_id ? departmentNames.get(row.department_id) ?? null : null,
+        departmentName,
         education: row.education,
         employmentStatus: row.employment_status,
-        extraCostOfLiving: compensation?.extra_cost_of_living ?? null,
+        extraCostOfLiving: standardAllowances.extraCostOfLiving,
         fullName: row.full_name,
-        fuelAllowance: compensation?.fuel_allowance ?? null,
+        fuelAllowance: standardAllowances.fuelAllowance,
         grossSalary: compensation?.gross_salary ?? null,
         hireDate: row.hire_date,
         hrId: row.hr_id,
         jobTitle: row.job_title,
         lineId: row.line_id,
-        lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
+        lineName,
         managerHrId: row.manager_hr_id,
         managerName: row.manager_hr_id ? managerNames.get(row.manager_hr_id) ?? null : null,
         medicalInsurance: compensation?.medical_insurance ?? null,
@@ -593,7 +604,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         netSalary: compensation?.net_salary ?? null,
         salaryPaymentMode: normalizePayrollPaymentMode(compensation?.payment_mode),
         positionId: row.position_id,
-        positionTitle: row.position_id ? positionTitles.get(row.position_id) ?? null : null,
+        positionTitle,
         residenceAddress: residence?.residence_address ?? null,
         residenceArea: residence?.residence_area ?? null,
         residenceCity: residence?.residence_city ?? null,
@@ -681,6 +692,16 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     const employeesData = employeeRows.map((row) => {
       const comp = compensationByHrId.get(row.hr_id);
       const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
+      const departmentName = row.department_id ? departmentNames.get(row.department_id) ?? null : null;
+      const lineName = row.line_id ? lineNames.get(row.line_id) ?? null : null;
+      const positionTitle = row.position_id ? positionTitles.get(row.position_id) ?? null : null;
+      const standardAllowances = resolveStandardSalaryAllowances({
+        departmentName,
+        jobTitle: row.job_title,
+        lineName,
+        positionTitle,
+      });
+
       return {
         areaId: row.area_id,
         areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
@@ -690,18 +711,18 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         crmId: row.crm_id,
         crmUsername: row.crm_username,
         departmentId: row.department_id,
-        departmentName: row.department_id ? departmentNames.get(row.department_id) ?? null : null,
+        departmentName,
         education: row.education,
         employmentStatus: row.employment_status,
-        extraCostOfLiving: comp?.extra_cost_of_living ?? null,
+        extraCostOfLiving: standardAllowances.extraCostOfLiving,
         fullName: row.full_name,
-        fuelAllowance: comp?.fuel_allowance ?? null,
+        fuelAllowance: standardAllowances.fuelAllowance,
         grossSalary: comp?.gross_salary ?? null,
         hireDate: row.hire_date,
         hrId: row.hr_id,
         jobTitle: row.job_title,
         lineId: row.line_id,
-        lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
+        lineName,
         managerHrId: row.manager_hr_id,
         managerName: row.manager_hr_id ? managerNames.get(row.manager_hr_id) ?? null : null,
         medicalInsurance: comp?.medical_insurance ?? null,
@@ -710,7 +731,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         netSalary: comp?.net_salary ?? null,
         salaryPaymentMode: normalizePayrollPaymentMode(comp?.payment_mode),
         positionId: row.position_id,
-        positionTitle: row.position_id ? positionTitles.get(row.position_id) ?? null : null,
+        positionTitle,
         residenceAddress: residence?.residence_address ?? null,
         residenceArea: residence?.residence_area ?? null,
         residenceCity: residence?.residence_city ?? null,
@@ -761,6 +782,19 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const employees = employeeRows.map((row) => {
     const compensation = compensationByHrId.get(row.hr_id);
     const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
+    const departmentName = row.department_id
+      ? departmentNames.get(row.department_id) ?? null
+      : null;
+    const lineName = row.line_id ? lineNames.get(row.line_id) ?? null : null;
+    const positionTitle = row.position_id
+      ? positionTitles.get(row.position_id) ?? null
+      : null;
+    const standardAllowances = resolveStandardSalaryAllowances({
+      departmentName,
+      jobTitle: row.job_title,
+      lineName,
+      positionTitle,
+    });
 
     return {
       areaId: row.area_id,
@@ -771,20 +805,18 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       crmId: row.crm_id,
       crmUsername: row.crm_username,
       departmentId: row.department_id,
-      departmentName: row.department_id
-        ? departmentNames.get(row.department_id) ?? null
-        : null,
+      departmentName,
       education: row.education,
       employmentStatus: row.employment_status,
-      extraCostOfLiving: compensation?.extra_cost_of_living ?? null,
+      extraCostOfLiving: standardAllowances.extraCostOfLiving,
       fullName: row.full_name,
-      fuelAllowance: compensation?.fuel_allowance ?? null,
+      fuelAllowance: standardAllowances.fuelAllowance,
       grossSalary: compensation?.gross_salary ?? null,
       hireDate: row.hire_date,
       hrId: row.hr_id,
       jobTitle: row.job_title,
       lineId: row.line_id,
-      lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
+      lineName,
       managerHrId: row.manager_hr_id,
       managerName: row.manager_hr_id
         ? managerNames.get(row.manager_hr_id) ?? null
@@ -795,9 +827,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       netSalary: compensation?.net_salary ?? null,
       salaryPaymentMode: normalizePayrollPaymentMode(compensation?.payment_mode),
       positionId: row.position_id,
-      positionTitle: row.position_id
-        ? positionTitles.get(row.position_id) ?? null
-        : null,
+      positionTitle,
       residenceAddress: residence?.residence_address ?? null,
       residenceArea: residence?.residence_area ?? null,
       residenceCity: residence?.residence_city ?? null,

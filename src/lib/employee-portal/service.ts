@@ -20,6 +20,7 @@ import {
 } from "@/lib/employee-portal/sales-scope";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
+import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
 import {
   calculateBaseSalary,
@@ -315,6 +316,11 @@ function toNumber(value: unknown) {
   if (value == null || value === "") return 0;
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
+}
+
+function positiveMoneyOrNull(value: number | null | undefined) {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? num : null;
 }
 
 function pickText(row: PortalPayrollSourceRow, keys: string[]) {
@@ -1753,18 +1759,32 @@ export async function getEmployeePortalData(
     },
   };
   const insights = computeInsights(insightInput);
-  const sourceNetSalary = calculateNetSalary({
-    baseSalary: employee.netSalary,
-    extraCostOfLiving: employee.extraCostOfLiving,
-    fuelAllowance: employee.fuelAllowance,
+  const fixedAllowances = resolveStandardSalaryAllowances({
+    departmentName: employee.departmentName,
+    jobTitle: employee.jobTitle,
+    lineName: employee.lineName,
+    positionTitle: employee.positionTitle,
   });
-  const sourceGrossSalary = calculateGrossSalary({
-    baseSalary: employee.netSalary,
-    extraCostOfLiving: employee.extraCostOfLiving,
-    fuelAllowance: employee.fuelAllowance,
+  const sourceBaseSalary =
+    positiveMoneyOrNull(employee.netSalary) ??
+    (latestRecord
+      ? calculateBaseSalary({
+          extraCostOfLiving: fixedAllowances.extraCostOfLiving,
+          fuelAllowance: fixedAllowances.fuelAllowance,
+          netSalary: latestRecord.netSalary,
+        })
+      : 0);
+  const sourceNetSalary = calculateNetSalary({
+    baseSalary: sourceBaseSalary,
+    extraCostOfLiving: fixedAllowances.extraCostOfLiving,
+    fuelAllowance: fixedAllowances.fuelAllowance,
+  });
+  const calculatedSourceGrossSalary = calculateGrossSalary({
+    baseSalary: sourceBaseSalary,
     socialInsurance: employee.socialInsurance,
     taxes: employee.taxes,
   });
+  const sourceGrossSalary = positiveMoneyOrNull(employee.grossSalary) ?? calculatedSourceGrossSalary;
 
   return {
     access: {
@@ -1809,8 +1829,8 @@ export async function getEmployeePortalData(
       otherDeductions: latestRecord?.otherDeductions ?? 0,
       socialInsurance: latestRecord?.socialInsurance ?? 0,
       incomeTax: latestRecord?.employmentIncomeTax ?? 0,
-      fuelAllowance: employee.fuelAllowance ?? 0,
-      extraCostOfLiving: employee.extraCostOfLiving ?? 0,
+      fuelAllowance: fixedAllowances.fuelAllowance,
+      extraCostOfLiving: fixedAllowances.extraCostOfLiving,
     },
     payslips: {
       latestBatchId: latestBatch?.id ?? null,
@@ -3205,17 +3225,23 @@ export async function getMedicalRepPortalData(
   
   if (!salesTrend.length) insights.push("Sales data has not been uploaded yet.");
   
+  const fixedAllowances = resolveStandardSalaryAllowances({
+    departmentName: employee.departmentName,
+    jobTitle: employee.jobTitle,
+    lineName: employee.lineName,
+    positionTitle: employee.positionTitle,
+  });
+  const fixedExtraCostOfLiving = fixedAllowances.extraCostOfLiving;
+  const fixedFuelAllowance = fixedAllowances.fuelAllowance;
   const fixedBaseSalary =
-    employee.netSalary ??
+    positiveMoneyOrNull(employee.netSalary) ??
     (latestRecord
       ? calculateBaseSalary({
-          extraCostOfLiving: latestRecord.extraCostOfLiving,
-          fuelAllowance: latestRecord.fuelAllowance,
+          extraCostOfLiving: fixedExtraCostOfLiving,
+          fuelAllowance: fixedFuelAllowance,
           netSalary: latestRecord.netSalary,
         })
       : 0);
-  const fixedExtraCostOfLiving = employee.extraCostOfLiving ?? latestRecord?.extraCostOfLiving ?? 0;
-  const fixedFuelAllowance = employee.fuelAllowance ?? latestRecord?.fuelAllowance ?? 0;
   const fixedSocialInsurance = employee.socialInsurance ?? latestRecord?.socialInsurance ?? 0;
   const fixedTaxes = employee.taxes ?? latestRecord?.employmentIncomeTax ?? 0;
   const fixedNetSalary = calculateNetSalary({
@@ -3231,17 +3257,9 @@ export async function getMedicalRepPortalData(
   const fixedGrossSalary =
     fixedSocialInsurance > 0 || fixedTaxes > 0
       ? calculatedFixedGrossSalary
-      : employee.grossSalary ?? latestRecord?.grossSalary ?? calculatedFixedGrossSalary;
-  const payslipBaseSalary = latestRecord
-    ? calculateBaseSalary({
-        extraCostOfLiving: latestRecord.extraCostOfLiving,
-        fuelAllowance: latestRecord.fuelAllowance,
-        netSalary: latestRecord.netSalary,
-      })
-    : fixedBaseSalary;
-  const payslipBasicSalary = latestRecord?.firstPart
-    ? latestRecord.firstPart
-    : calculateBasicSalary({ baseSalary: payslipBaseSalary });
+      : positiveMoneyOrNull(employee.grossSalary) ?? latestRecord?.grossSalary ?? calculatedFixedGrossSalary;
+  const payslipBaseSalary = fixedBaseSalary;
+  const payslipBasicSalary = calculateBasicSalary({ baseSalary: payslipBaseSalary });
   const latestPayslip = {
     baseSalary: payslipBaseSalary,
     basicSalary: payslipBasicSalary,
@@ -3252,8 +3270,8 @@ export async function getMedicalRepPortalData(
       latestRecord?.secondPart ??
       calculatePayrollParts({
         baseSalary: payslipBaseSalary,
-        extraCostOfLiving: latestRecord?.extraCostOfLiving ?? fixedExtraCostOfLiving,
-        fuelAllowance: latestRecord?.fuelAllowance ?? fixedFuelAllowance,
+        extraCostOfLiving: fixedExtraCostOfLiving,
+        fuelAllowance: fixedFuelAllowance,
       }).secondPart,
     totalAdditions: latestRecord?.totalAdditions ?? 0,
     totalDeductions: latestRecord?.totalDeductions ?? 0,

@@ -183,7 +183,7 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
         value: product.sales,
         contribution: totalSales > 0 ? (product.sales / totalSales) * 100 : 0,
       })),
-      ...(others > 0 ? [{ name: "Others", value: others, contribution: totalSales > 0 ? (others / totalSales) * 100 : 0 }] : []),
+      ...(others > 0 ? [{ name: "Remaining Products", value: others, contribution: totalSales > 0 ? (others / totalSales) * 100 : 0 }] : []),
     ];
 
     const insights: Array<{
@@ -1114,7 +1114,9 @@ function ProductMixChart({
                     key={`cell-${index}`}
                     fill={COLORS[index % COLORS.length]}
                     className="cursor-pointer hover:opacity-80 transition"
-                    onClick={() => entry.name !== "Others" && onSegmentClick(entry.name)}
+                onClick={() =>
+                  entry.name !== "Remaining Products" && onSegmentClick(entry.name)
+                }
                   />
                 ))}
               </Pie>
@@ -1144,7 +1146,9 @@ function ProductMixChart({
           {data.map((entry, index) => (
             <div
               key={entry.name}
-              onClick={() => entry.name !== "Others" && onSegmentClick(entry.name)}
+              onClick={() =>
+                entry.name !== "Remaining Products" && onSegmentClick(entry.name)
+              }
               className="flex cursor-pointer items-center justify-between rounded-2xl border border-transparent p-2 transition hover:border-[#FED7AA] hover:bg-[#FFF7ED]/70"
             >
               <div className="flex items-center gap-2">

@@ -1,4 +1,5 @@
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import {
   calculateGrossSalary,
   calculateNetSalary,
@@ -27,9 +28,15 @@ export async function getPayrollSalarySourcesByHrId() {
   const sources = new Map<string, PayrollSalarySource>();
 
   for (const employee of directory.employees) {
-    const baseSalary = numberOrNull(employee.netSalary);
-    const extraCostOfLiving = numberOrNull(employee.extraCostOfLiving);
-    const fuelAllowance = numberOrNull(employee.fuelAllowance);
+    const baseSalary = moneyOrNull(numberOrNull(employee.netSalary) ?? 0);
+    const standardAllowances = resolveStandardSalaryAllowances({
+      departmentName: employee.departmentName,
+      jobTitle: employee.jobTitle,
+      lineName: employee.lineName,
+      positionTitle: employee.positionTitle,
+    });
+    const extraCostOfLiving = standardAllowances.extraCostOfLiving;
+    const fuelAllowance = standardAllowances.fuelAllowance;
     const socialInsurance = numberOrNull(employee.socialInsurance);
     const employmentIncomeTax = numberOrNull(employee.taxes);
     const source: PayrollSalarySource = {
