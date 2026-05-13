@@ -228,6 +228,11 @@ function expensePeriodKey(row: { payoutMonth: number; payoutYear: number; date: 
 
 function payrollActivityDescription(row: OverviewSalaryBatchActivityRow) {
   const period = row.month && row.year ? `${row.month}/${row.year}` : "the selected period";
+  if (row.status === "part1_ready") return `Payroll Part 1 ready for ${period}`;
+  if (row.status === "part1_paid") return `Payroll Part 1 paid for ${period}`;
+  if (row.status === "adjustments_open") return `Payroll adjustments open for ${period}`;
+  if (row.status === "part2_ready") return `Payroll Part 2 ready for ${period}`;
+  if (row.status === "under_review") return `Payroll under review for ${period}`;
   if (row.status === "approved") return `Payroll approved for ${period}`;
   if (row.status === "locked") return `Payroll locked for ${period}`;
   if (row.status === "rejected") return `Payroll rejected for ${period}`;

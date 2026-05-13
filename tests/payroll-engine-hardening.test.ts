@@ -2,7 +2,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const migrationSource = readFileSync(
-  new URL("../supabase/20260512_payroll_engine_hardening.sql", import.meta.url),
+  new URL("../supabase/migrations/20260513100643_payroll_two_part_workflow.sql", import.meta.url),
+  "utf8",
+);
+
+const payrollTenMigrationSource = readFileSync(
+  new URL("../supabase/migrations/20260513091853_payroll_engine_10_10_hardening.sql", import.meta.url),
+  "utf8",
+);
+
+const adminPayslipCenterSource = readFileSync(
+  new URL("../app/admin/payslips-center/page.tsx", import.meta.url),
   "utf8",
 );
 
@@ -36,13 +46,18 @@ const payrollDashboardSource = readFileSync(
   "utf8",
 );
 
+const payslipCenterSource = readFileSync(
+  new URL("../src/lib/payroll/payslip-center.ts", import.meta.url),
+  "utf8",
+);
+
 const payrollServiceSource = readFileSync(
   new URL("../src/lib/payroll/service.ts", import.meta.url),
   "utf8",
 );
 
-const transactionalWorkflowSource = readFileSync(
-  new URL("../supabase/phoenix-transactional-workflows-phase-2.sql", import.meta.url),
+const templateRouteSource = readFileSync(
+  new URL("../app/api/payroll/template/route.ts", import.meta.url),
   "utf8",
 );
 
@@ -69,8 +84,13 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     migrationSource,
-    /status not in \('uploaded', 'under_review', 'rejected'\)/i,
-    "Payroll replacement RPC must block non-replaceable statuses.",
+    /status not in \('uploaded', 'part1_ready', 'rejected'\)/i,
+    "Payroll replacement RPC must block statuses after Part 1 starts.",
+  );
+  assert.match(
+    migrationSource,
+    /part1_paid_at is not null/i,
+    "Payroll replacement and destructive actions must block after Part 1 is paid.",
   );
   assert.match(
     migrationSource,
@@ -88,12 +108,52 @@ export function runPayrollEngineHardeningTests() {
     "Payroll replacement RPC must be callable only by service_role.",
   );
   assert.match(
+    payrollTenMigrationSource,
+    /create or replace function public\.phx_create_salary_batch/i,
+    "Payroll upload create RPC must exist.",
+  );
+  assert.match(
+    payrollTenMigrationSource,
+    /jsonb_array_length\(v_records\)\s*=\s*0/i,
+    "Payroll create RPC must reject empty uploads before inserting a batch.",
+  );
+  assert.match(
+    payrollTenMigrationSource,
+    /create unique index if not exists salary_batches_year_month_unique_idx/i,
+    "Payroll migration must add a unique period index covering all statuses.",
+  );
+  assert.match(
+    payrollTenMigrationSource,
+    /Cannot enforce unique payroll periods while duplicate salary_batches rows exist/i,
+    "Payroll migration must fail safely if historical duplicate periods exist.",
+  );
+  assert.match(
+    payrollTenMigrationSource,
+    /existing\.id is distinct from new\.id/i,
+    "Payroll duplicate trigger must block every duplicate period.",
+  );
+  assert.doesNotMatch(
+    payrollTenMigrationSource,
+    /status <> 'rejected'/i,
+    "Payroll duplicate guard must not allow rejected duplicate periods.",
+  );
+  assert.match(
+    payrollTenMigrationSource,
+    /revoke all on function public\.phx_create_salary_batch\(integer, integer, text, text, jsonb, jsonb, timestamptz\) from public, anon, authenticated/i,
+    "Payroll create RPC must not be callable by public, anon, or authenticated.",
+  );
+  assert.match(
+    payrollTenMigrationSource,
+    /grant execute on function public\.phx_create_salary_batch\(integer, integer, text, text, jsonb, jsonb, timestamptz\) to service_role/i,
+    "Payroll create RPC must be callable only by service_role.",
+  );
+  assert.match(
     migrationSource,
     /jsonb_array_length\(v_records\)\s*=\s*0/i,
     "Payroll replacement RPC must reject empty replacement payloads before deleting old records.",
   );
   assert.match(
-    migrationSource,
+    payrollTenMigrationSource,
     /phx_prevent_duplicate_salary_period/i,
     "Payroll migration must prevent duplicate active payroll periods.",
   );
@@ -114,13 +174,13 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     migrationSource,
-    /Payroll batch cannot import expenses while status is %/i,
-    "Payroll expense import RPC must block closed payroll batches.",
+    /Payroll batch cannot import expenses before Part 1 is paid or while status is %/i,
+    "Payroll expense import RPC must block imports before the Part 2 window.",
   );
   assert.match(
-    transactionalWorkflowSource,
-    /Payroll batch cannot import expenses while status is %/i,
-    "Base payroll expense import SQL must also include the closed-batch guard.",
+    migrationSource,
+    /second_part = coalesce\(sr\.second_part, 0\) - coalesce\(sr\.expenses, 0\) \+ coalesce\(at\.approved_expense, 0\)/i,
+    "Expense import must move expense changes into Second Part.",
   );
   assert.match(
     downloadRouteSource,
@@ -188,9 +248,54 @@ export function runPayrollEngineHardeningTests() {
     "Payroll UI must block normal confirmation while a duplicate-period decision is pending.",
   );
   assert.match(
+    payrollDashboardSource,
+    /Confirm Part 1 Paid/,
+    "Payroll UI must expose the Part 1 paid stage.",
+  );
+  assert.match(
+    payrollDashboardSource,
+    /Mark Part 2 Ready/,
+    "Payroll UI must expose the Part 2 ready stage.",
+  );
+  assert.match(
+    payrollServiceSource,
+    /part1PaidSalaryBatchStatuses/,
+    "Payroll service must know which statuses mean Part 1 is locked.",
+  );
+  assert.match(
     payrollServiceSource,
     /assertSalaryBatchDeletable/,
     "Payroll service must guard destructive delete actions by batch status.",
+  );
+  assert.match(
+    payrollServiceSource,
+    /"phx_create_salary_batch"/,
+    "Payroll service must use the atomic create RPC for first-time uploads.",
+  );
+  assert.doesNotMatch(
+    payrollServiceSource,
+    /\.from\("salary_batches"\)\s*\.insert/,
+    "Payroll service must not create first-time uploads with non-atomic batch inserts.",
+  );
+  assert.match(
+    templateRouteSource,
+    /resolveStandardSalaryAllowances/,
+    "Ready payroll template must use the global standard allowance policy.",
+  );
+  assert.doesNotMatch(
+    templateRouteSource,
+    /employee\.extraCostOfLiving|employee\.fuelAllowance/,
+    "Ready payroll template must not use raw employee allowance values.",
+  );
+  assert.match(
+    payslipCenterSource,
+    /\.in\("salary_batches\.status", publishedPayslipStatuses\)/,
+    "Admin payslip center queries must filter to published payroll batches.",
+  );
+  assert.doesNotMatch(
+    adminPayslipCenterSource,
+    /status === "posted"/,
+    "Admin payslip center must not depend on the obsolete posted status.",
   );
   assert.match(
     expensesImportRouteSource,

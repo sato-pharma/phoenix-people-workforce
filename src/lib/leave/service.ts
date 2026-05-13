@@ -7,6 +7,13 @@ import {
 } from "@/lib/auth/permissions";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
+  buildLeaveAnalytics,
+  buildLeaveCalendarItems,
+  buildTeamAvailability,
+  detectLeaveConflicts,
+  getLeaveCalendarRange,
+} from "@/lib/leave/insights";
+import {
   calculateCalendarLeaveDays,
   calculateLeaveBalanceFromParts,
   calculateMonthlyAccrual,
@@ -17,8 +24,13 @@ import {
 } from "@/lib/leave/calculations";
 import type {
   EmployeeLeaveBalance,
+  LeaveAccrualPreview,
   LeaveAdjustmentInput,
   LeaveApproval,
+  LeaveAuditLog,
+  LeaveAnalytics,
+  LeaveCalendarItem,
+  LeaveConflictResult,
   LeaveDecisionInput,
   LeavePolicy,
   LeaveRequest,
@@ -30,8 +42,11 @@ import type {
   LeaveWallet,
   PublicHoliday,
   SubmitLeaveRequestInput,
+  TeamAvailabilityDay,
 } from "@/lib/leave/types";
-import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { createLeaveCorrelationId, writeLeaveAuditLog } from "@/lib/leave/audit";
+import { getLeaveAttachmentUrl } from "@/lib/leave/attachments";
+import { emitLeaveNotification } from "@/lib/leave/notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type LeaveTypeRow = {
@@ -148,6 +163,18 @@ type PublicHolidayRow = {
   year: number;
   country: string;
   is_active: boolean;
+  created_at: string;
+};
+
+type LeaveAuditLogRow = {
+  id: string;
+  correlation_id: string;
+  event_type: string;
+  request_id: string | null;
+  employee_hr_id: string | null;
+  actor_hr_id: string | null;
+  actor_role: string | null;
+  metadata: Record<string, unknown> | null;
   created_at: string;
 };
 
@@ -604,6 +631,41 @@ async function accrueMonthlyForEmployee(
   return balance;
 }
 
+function mapAuditLog(row: LeaveAuditLogRow): LeaveAuditLog {
+  return {
+    actorHrId: row.actor_hr_id,
+    actorRole: row.actor_role,
+    correlationId: row.correlation_id,
+    createdAt: row.created_at,
+    employeeHrId: row.employee_hr_id,
+    eventType: row.event_type,
+    id: row.id,
+    metadata: row.metadata ?? {},
+    requestId: row.request_id,
+  };
+}
+
+function buildMonthlyAccrualEntries(employee: EmployeeDirectoryRow, policy: LeavePolicy, year: number, throughMonth: number) {
+  if (policy.accrualFrequency !== "monthly") return [];
+  const hireDate = employee.hireDate ? new Date(`${employee.hireDate}T00:00:00.000Z`) : null;
+  const firstMonth = hireDate && hireDate.getUTCFullYear() === year ? hireDate.getUTCMonth() + 1 : 1;
+  const entries: Array<{ accrual_date: string; amount: number; employee_hr_id: string; period: string }> = [];
+
+  for (let month = Math.max(1, firstMonth); month <= throughMonth; month += 1) {
+    const accrualDate = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+    const amount = calculateMonthlyAccrual(employee, policy, accrualDate);
+    if (amount <= 0) continue;
+    entries.push({
+      accrual_date: accrualDate,
+      amount,
+      employee_hr_id: cleanHrId(employee.hrId),
+      period: `${year}-${String(month).padStart(2, "0")}`,
+    });
+  }
+
+  return entries;
+}
+
 async function ensureCurrentAnnualBalance(employee: EmployeeDirectoryRow, actor: string | null) {
   const policy = await getDefaultLeavePolicy();
   const leaveType = await getAnnualLeaveType();
@@ -744,6 +806,32 @@ export async function listLeaveRequests(access: AccessContext, filters: LeaveReq
   return applyFilters(requests, filters);
 }
 
+async function listManagerHierarchyLeaveRequests(access: AccessContext, filters: LeaveRequestFilters = {}) {
+  const requests = await listLeaveRequests(access, filters);
+  if (isManageRole(access)) return requests;
+  const { employeeByHrId } = await loadDirectoryMaps();
+  return requests.filter(
+    (request) =>
+      hrIdsMatch(access.hrId, request.employeeHrId) ||
+      employeeIsUnderManager(access.hrId, request.employeeHrId, employeeByHrId),
+  );
+}
+
+async function loadAllLeaveRequestsForEngine(filters: LeaveRequestFilters = {}) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("leave_requests")
+    .select("*,leave_types(code,name,is_paid,affects_payroll)")
+    .order("requested_at", { ascending: false })
+    .limit(3000);
+  if (error) throw error;
+  const { employeeByHrId } = await loadDirectoryMaps();
+  return applyFilters(
+    ((data ?? []) as LeaveRequestRow[]).map((row) => mapLeaveRequest(row, employeeByHrId, [])),
+    filters,
+  );
+}
+
 export async function getLeaveRequestDetails(access: AccessContext, id: string) {
   const requests = await listLeaveRequests(access, {});
   const request = requests.find((item) => item.id === id);
@@ -751,9 +839,38 @@ export async function getLeaveRequestDetails(access: AccessContext, id: string) 
   return request;
 }
 
+export async function getLeaveAttachmentDownloadUrl(access: AccessContext, requestId: string) {
+  const request = await getLeaveRequestDetails(access, requestId);
+  if (!request.attachmentUrl) throw new Error("This leave request has no attachment.");
+  const url = await getLeaveAttachmentUrl(request.attachmentUrl);
+  if (!url) throw new Error("Attachment is not available for download.");
+  await writeLeaveAuditLog({
+    actorHrId: access.hrId,
+    actorRole: access.role,
+    employeeHrId: request.employeeHrId,
+    eventType: "leave.attachment.download_url.created",
+    metadata: { storageReference: request.attachmentUrl.startsWith("supabase://") ? "supabase" : "local" },
+    requestId,
+  });
+  return { url };
+}
+
+export async function listLeaveAuditLogs(access: AccessContext, limit = 80): Promise<LeaveAuditLog[]> {
+  await assertPermission(access, "leave", "read");
+  if (!isManageRole(access)) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("leave_audit_logs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(Math.min(Math.max(limit, 1), 200));
+  if (error) throw error;
+  return ((data ?? []) as LeaveAuditLogRow[]).map(mapAuditLog);
+}
+
 async function notifyLeaveSubmitted(request: LeaveRequest) {
   const employee = request.employee;
-  await safeSendNotificationEmail({
+  await emitLeaveNotification("request_submitted", {
     ctaHref: "/employee-portals/leave-approvals",
     ctaLabel: "Open leave approval",
     employeeHrId: request.employeeHrId,
@@ -770,7 +887,6 @@ async function notifyLeaveSubmitted(request: LeaveRequest) {
       { label: "Duration", value: `${request.totalWorkingDays} working days` },
       { label: "Reason", value: request.reason ?? "N/A" },
     ],
-    notificationType: "leave",
     recipientMode: "manager_chain",
     recipients: extraLeaveRecipients(),
     subject: `Leave approval needed - ${employee?.fullName ?? request.employeeHrId}`,
@@ -781,7 +897,16 @@ async function notifyLeaveSubmitted(request: LeaveRequest) {
 }
 
 async function notifyLeaveDecision(request: LeaveRequest, decision: string) {
-  await safeSendNotificationEmail({
+  const event = decision.includes("manager approved")
+    ? "manager_approved"
+    : decision.includes("manager rejected")
+      ? "manager_rejected"
+      : decision.includes("cancelled")
+        ? "cancelled"
+        : decision.includes("approved")
+          ? "hr_approved"
+          : "hr_rejected";
+  await emitLeaveNotification(event, {
     ctaHref: "/employee-portals/leave",
     ctaLabel: "Open leave report",
     employeeHrId: request.employeeHrId,
@@ -795,14 +920,38 @@ async function notifyLeaveDecision(request: LeaveRequest, decision: string) {
       { label: "Duration", value: `${request.totalWorkingDays} working days` },
       { label: "Status", value: decision },
     ],
-    notificationType: "leave",
     recipientMode: "employee",
     recipients: extraLeaveRecipients(),
     subject: `Leave request ${decision} - ${request.employee?.fullName ?? request.employeeHrId}`,
     summary: `Your leave request from ${request.startDate} to ${request.endDate} is now ${decision}.`,
     title: "Leave Request Updated",
-    tone: decision.includes("approved") ? "success" : "danger",
+    tone: decision.includes("approved") ? "success" : decision.includes("cancelled") ? "neutral" : "danger",
   });
+}
+
+export async function previewLeaveConflicts(
+  access: AccessContext,
+  input: Pick<SubmitLeaveRequestInput, "endDate" | "startDate">,
+): Promise<LeaveConflictResult> {
+  await assertPermission(access, "leave", "create");
+  if (!access.hrId) throw new Error("A linked employee HR_ID is required to preview leave conflicts.");
+  if (!input.startDate || !input.endDate) throw new Error("Start and end dates are required.");
+  calculateCalendarLeaveDays(input.startDate, input.endDate);
+  const employee = await getEmployeeOrThrow(access.hrId);
+  const result = detectLeaveConflicts({
+    employee,
+    endDate: input.endDate,
+    existingRequests: await loadAllLeaveRequestsForEngine(),
+    startDate: input.startDate,
+  });
+  const { employeeByHrId } = await loadDirectoryMaps();
+  const canApprove = await canAccess(access, "leave", "approve");
+  const visibleOverlappingRequests = isManageRole(access)
+    ? result.overlappingRequests
+    : canApprove
+      ? result.overlappingRequests.filter((request) => employeeIsUnderManager(access.hrId, request.employeeHrId, employeeByHrId))
+      : [];
+  return { ...result, overlappingRequests: visibleOverlappingRequests };
 }
 
 export async function submitLeaveRequest(access: AccessContext, input: SubmitLeaveRequestInput) {
@@ -826,57 +975,49 @@ export async function submitLeaveRequest(access: AccessContext, input: SubmitLea
 
   if (totalWorkingDays <= 0) throw new Error("The selected range contains no working leave days.");
   if (leaveType.requiresAttachment && !input.attachmentUrl) throw new Error(`${leaveType.name} requires an attachment.`);
+  await previewLeaveConflicts(access, input);
 
-  let balance: EmployeeLeaveBalance | null = null;
-  if (shouldConsumeBalance(leaveType)) {
-    balance = await accrueMonthlyForEmployee(
-      employee,
-      leaveType,
-      policy,
-      startYear,
-      new Date().getUTCFullYear() === startYear ? new Date().getUTCMonth() + 1 : 12,
-      access.hrId,
-    );
-    if (!policy.allowNegativeBalance && balance.availableBalance < totalWorkingDays) {
-      throw new Error(`Insufficient leave balance. Available: ${balance.availableBalance} days.`);
-    }
-  }
-
+  const shouldConsume = shouldConsumeBalance(leaveType);
+  const throughMonth = new Date().getUTCFullYear() === startYear ? new Date().getUTCMonth() + 1 : 12;
+  const accruals = shouldConsume ? buildMonthlyAccrualEntries(employee, policy, startYear, throughMonth) : [];
+  const correlationId = createLeaveCorrelationId();
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from("leave_requests")
-    .insert({
-      attachment_url: input.attachmentUrl ?? null,
-      employee_hr_id: cleanHrId(employee.hrId),
-      end_date: input.endDate,
-      hr_status: leaveType.requiresHrApproval ? "pending" : "not_required",
-      leave_type_id: leaveType.id,
-      manager_status: leaveType.requiresManagerApproval ? "pending" : "not_required",
-      payroll_status: leaveType.affectsPayroll ? "pending" : "not_required",
-      policy_id: policy.id,
-      reason: input.reason?.trim() || null,
-      start_date: input.startDate,
-      status: leaveType.requiresManagerApproval ? "pending_manager" : "pending_hr",
-      total_calendar_days: totalCalendarDays,
-      total_working_days: totalWorkingDays,
+    .rpc("phx_leave_submit_request_atomic", {
+      p_accruals: accruals,
+      p_actor_hr_id: access.hrId,
+      p_actor_role: access.role,
+      p_allow_negative_balance: policy.allowNegativeBalance,
+      p_attachment_url: input.attachmentUrl ?? null,
+      p_correlation_id: correlationId,
+      p_employee_hr_id: cleanHrId(employee.hrId),
+      p_end_date: input.endDate,
+      p_hr_status: leaveType.requiresHrApproval ? "pending" : "not_required",
+      p_leave_type_id: leaveType.id,
+      p_manager_status: leaveType.requiresManagerApproval ? "pending" : "not_required",
+      p_payroll_status: leaveType.affectsPayroll ? "pending" : "not_required",
+      p_policy_id: policy.id,
+      p_reason: input.reason?.trim() || null,
+      p_should_consume: shouldConsume,
+      p_start_date: input.startDate,
+      p_status: leaveType.requiresManagerApproval ? "pending_manager" : "pending_hr",
+      p_total_calendar_days: totalCalendarDays,
+      p_total_working_days: totalWorkingDays,
     })
-    .select("*,leave_types(code,name,is_paid,affects_payroll)")
     .single();
-  if (error) throw error;
-
-  if (balance) {
-    await recordBalanceTransaction({
-      amount: totalWorkingDays,
-      balance,
-      createdBy: access.hrId,
-      notes: "Request submitted",
-      requestId: (data as LeaveRequestRow).id,
-      transactionType: "pending",
+  if (error) {
+    await writeLeaveAuditLog({
+      actorHrId: access.hrId,
+      actorRole: access.role,
+      correlationId,
+      employeeHrId: employee.hrId,
+      eventType: "leave.request.submit.failed",
+      metadata: { error: error.message, leaveTypeId: leaveType.id, startDate: input.startDate, endDate: input.endDate },
     });
+    throw error;
   }
 
-  const { employeeByHrId } = await loadDirectoryMaps();
-  const request = mapLeaveRequest(data as LeaveRequestRow, employeeByHrId, []);
+  const request = await hydrateLeaveRequest(data as LeaveRequestRow);
   await notifyLeaveSubmitted(request).catch(() => undefined);
   return request;
 }
@@ -891,6 +1032,12 @@ async function loadRequestRow(id: string) {
   if (error) throw error;
   if (!data) throw new Error("Leave request was not found.");
   return data as LeaveRequestRow;
+}
+
+async function hydrateLeaveRequest(row: LeaveRequestRow) {
+  const { employeeByHrId } = await loadDirectoryMaps();
+  const approvalMap = await loadRequestApprovals([row.id]);
+  return mapLeaveRequest(row, employeeByHrId, approvalMap.get(row.id) ?? []);
 }
 
 async function requestHasTransaction(requestId: string, transactionType: LeaveTransactionType) {
@@ -926,52 +1073,6 @@ async function releasePendingIfNeeded(request: LeaveRequestRow, actor: string | 
   });
 }
 
-async function consumePendingRequest(request: LeaveRequestRow, actor: string | null) {
-  const leaveType = await getLeaveTypeById(request.leave_type_id);
-  if (!shouldConsumeBalance(leaveType)) return;
-  if (await requestHasTransaction(request.id, "consumed")) return;
-  const year = new Date(`${request.start_date}T00:00:00.000Z`).getUTCFullYear();
-  const balance = await getBalanceRow(request.employee_hr_id, request.leave_type_id, request.policy_id, year);
-  if (!balance) return;
-  const releasedBalance = balance.pending > 0
-    ? await recordBalanceTransaction({
-        amount: Math.min(balance.pending, n(request.total_working_days)),
-        balance,
-        createdBy: actor,
-        notes: "Pending request approved",
-        requestId: request.id,
-        transactionType: "pending_reversal",
-      })
-    : balance;
-  await recordBalanceTransaction({
-    amount: n(request.total_working_days),
-    balance: releasedBalance,
-    createdBy: actor,
-    notes: "HR approved leave",
-    requestId: request.id,
-    transactionType: "consumed",
-  });
-}
-
-async function writeApproval(input: {
-  access: AccessContext;
-  comment?: string | null;
-  requestId: string;
-  status: "approved" | "rejected";
-  step: "hr" | "manager";
-}) {
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase.from("leave_approvals").insert({
-    approval_step: input.step,
-    approver_hr_id: cleanHrId(input.access.hrId),
-    approver_role: input.access.role,
-    comment: input.comment?.trim() || null,
-    request_id: input.requestId,
-    status: input.status,
-  });
-  if (error) throw error;
-}
-
 export async function decideLeaveAsManager(access: AccessContext, requestId: string, input: LeaveDecisionInput) {
   await assertPermission(access, "leave", "approve");
   if (input.decision === "rejected" && !input.comment?.trim()) {
@@ -985,25 +1086,32 @@ export async function decideLeaveAsManager(access: AccessContext, requestId: str
   }
   if (row.status !== "pending_manager") throw new Error("This request is not pending manager approval.");
 
-  const status = input.decision === "approved" ? "pending_hr" : "manager_rejected";
+  const correlationId = createLeaveCorrelationId();
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from("leave_requests")
-    .update({
-      manager_comment: input.comment?.trim() || null,
-      manager_decision_at: new Date().toISOString(),
-      manager_status: input.decision,
-      status,
-      updated_at: new Date().toISOString(),
+    .rpc("phx_leave_manager_decision_atomic", {
+      p_actor_hr_id: access.hrId,
+      p_actor_role: access.role,
+      p_comment: input.comment?.trim() || null,
+      p_correlation_id: correlationId,
+      p_decision: input.decision,
+      p_request_id: requestId,
     })
-    .eq("id", requestId)
-    .select("*,leave_types(code,name,is_paid,affects_payroll)")
     .single();
-  if (error) throw error;
-  await writeApproval({ access, comment: input.comment, requestId, status: input.decision, step: "manager" });
-  if (input.decision === "rejected") await releasePendingIfNeeded(row, access.hrId);
+  if (error) {
+    await writeLeaveAuditLog({
+      actorHrId: access.hrId,
+      actorRole: access.role,
+      correlationId,
+      employeeHrId: row.employee_hr_id,
+      eventType: "leave.manager.decision.failed",
+      metadata: { decision: input.decision, error: error.message, requestId },
+      requestId,
+    });
+    throw error;
+  }
 
-  const request = mapLeaveRequest(data as LeaveRequestRow, employeeByHrId, []);
+  const request = await hydrateLeaveRequest(data as LeaveRequestRow);
   await notifyLeaveDecision(request, input.decision === "approved" ? "manager approved" : "manager rejected").catch(() => undefined);
   return request;
 }
@@ -1020,29 +1128,32 @@ export async function decideLeaveAsHr(access: AccessContext, requestId: string, 
     throw new Error("This request is not pending HR approval.");
   }
 
-  if (input.decision === "approved") await consumePendingRequest(row, access.hrId);
-  else await releasePendingIfNeeded(row, access.hrId);
-
-  const leaveType = await getLeaveTypeById(row.leave_type_id);
+  const correlationId = createLeaveCorrelationId();
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from("leave_requests")
-    .update({
-      hr_comment: input.comment?.trim() || null,
-      hr_decision_at: new Date().toISOString(),
-      hr_status: input.decision,
-      payroll_status: input.decision === "approved" && leaveType.affectsPayroll ? "pending" : row.payroll_status,
-      status: input.decision === "approved" ? "hr_approved" : "hr_rejected",
-      updated_at: new Date().toISOString(),
+    .rpc("phx_leave_hr_decision_atomic", {
+      p_actor_hr_id: access.hrId,
+      p_actor_role: access.role,
+      p_comment: input.comment?.trim() || null,
+      p_correlation_id: correlationId,
+      p_decision: input.decision,
+      p_request_id: requestId,
     })
-    .eq("id", requestId)
-    .select("*,leave_types(code,name,is_paid,affects_payroll)")
     .single();
-  if (error) throw error;
-  await writeApproval({ access, comment: input.comment, requestId, status: input.decision, step: "hr" });
+  if (error) {
+    await writeLeaveAuditLog({
+      actorHrId: access.hrId,
+      actorRole: access.role,
+      correlationId,
+      employeeHrId: row.employee_hr_id,
+      eventType: "leave.hr.decision.failed",
+      metadata: { decision: input.decision, error: error.message, requestId },
+      requestId,
+    });
+    throw error;
+  }
 
-  const { employeeByHrId } = await loadDirectoryMaps();
-  const request = mapLeaveRequest(data as LeaveRequestRow, employeeByHrId, []);
+  const request = await hydrateLeaveRequest(data as LeaveRequestRow);
   await notifyLeaveDecision(request, input.decision === "approved" ? "approved" : "rejected").catch(() => undefined);
   return request;
 }
@@ -1070,8 +1181,25 @@ export async function cancelLeaveRequest(access: AccessContext, requestId: strin
     .single();
   if (error) throw error;
 
+  await supabase.from("leave_approvals").insert({
+    approval_step: "system",
+    approver_hr_id: access.hrId ?? "SYSTEM",
+    approver_role: access.role,
+    comment: comment?.trim() || "Request cancelled",
+    request_id: requestId,
+    status: "cancelled",
+  }).throwOnError();
+
   const { employeeByHrId } = await loadDirectoryMaps();
   const request = mapLeaveRequest(data as LeaveRequestRow, employeeByHrId, []);
+  await writeLeaveAuditLog({
+    actorHrId: access.hrId,
+    actorRole: access.role,
+    employeeHrId: request.employeeHrId,
+    eventType: "leave.request.cancelled",
+    metadata: { comment: comment?.trim() || null, status: request.status },
+    requestId,
+  });
   await notifyLeaveDecision(request, "cancelled").catch(() => undefined);
   return request;
 }
@@ -1086,17 +1214,61 @@ export async function adjustLeaveBalance(access: AccessContext, input: LeaveAdju
   const employee = await getEmployeeOrThrow(input.employeeHrId);
   const leaveType = await getLeaveTypeById(input.leaveTypeId);
   const policy = await getDefaultLeavePolicy();
-  const balance = await ensureEmployeeBalance(employee, leaveType, policy, year);
-  return recordBalanceTransaction({
-    amount: input.amount,
-    balance,
-    createdBy: access.hrId,
-    notes: input.reason,
-    transactionType: "adjustment",
-  });
+  const correlationId = createLeaveCorrelationId();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .rpc("phx_leave_adjust_balance_atomic", {
+      p_actor_hr_id: access.hrId,
+      p_actor_role: access.role,
+      p_amount: input.amount,
+      p_correlation_id: correlationId,
+      p_employee_hr_id: employee.hrId,
+      p_leave_type_id: leaveType.id,
+      p_policy_id: policy.id,
+      p_reason: input.reason,
+      p_year: year,
+    })
+    .single();
+  if (error) {
+    await writeLeaveAuditLog({
+      actorHrId: access.hrId,
+      actorRole: access.role,
+      correlationId,
+      employeeHrId: employee.hrId,
+      eventType: "leave.balance.adjust.failed",
+      metadata: { amount: input.amount, error: error.message, leaveTypeId: leaveType.id, reason: input.reason, year },
+    });
+    throw error;
+  }
+  const adjustedBalance = mapBalance(data as EmployeeLeaveBalanceRow);
+  await emitLeaveNotification("balance_adjusted", {
+    ctaHref: "/admin/leave",
+    ctaLabel: "Open leave management",
+    employeeHrId: employee.hrId,
+    includeHrInbox: true,
+    metrics: [
+      { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
+      { label: "Leave Type", value: leaveType.name },
+      { label: "Amount", value: input.amount },
+      { label: "Reason", value: input.reason },
+      { label: "Available Balance", value: adjustedBalance.availableBalance },
+    ],
+    recipientMode: "hr_notifications",
+    subject: `Leave balance adjusted - ${employee.fullName}`,
+    summary: `${leaveType.name} balance for ${employee.fullName} was adjusted by ${input.amount} day(s).`,
+    title: "Leave Balance Adjusted",
+    tone: "neutral",
+  }).catch(() => undefined);
+  return adjustedBalance;
 }
 
-export async function runMonthlyLeaveAccrual(access: AccessContext, input: { month?: number; year?: number } = {}) {
+function nextAccrualPeriod(year: number, month: number) {
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  return `${nextYear}-${String(nextMonth).padStart(2, "0")}`;
+}
+
+export async function getLeaveAccrualPreview(access: AccessContext, input: { month?: number; year?: number } = {}): Promise<LeaveAccrualPreview> {
   await assertPermission(access, "leave", "update");
   if (!isManageRole(access)) throw new Error("Forbidden: leave accrual requires HR or Super Admin access.");
 
@@ -1106,21 +1278,182 @@ export async function runMonthlyLeaveAccrual(access: AccessContext, input: { mon
   const { directory } = await loadDirectoryMaps();
   const policy = await getDefaultLeavePolicy();
   const leaveType = await getAnnualLeaveType();
-  let processed = 0;
+  const period = `${year}-${String(month).padStart(2, "0")}`;
+  const notes = `monthly-accrual:${period}`;
+  const supabase = getSupabaseAdmin();
+  const activeEmployees = directory.employees.filter((employee) => (employee.employmentStatus ?? "active").toLowerCase() === "active");
+  const { data: existingRows, error: existingError } = await supabase
+    .from("leave_transactions")
+    .select("employee_hr_id,created_at")
+    .eq("leave_type_id", leaveType.id)
+    .eq("policy_id", policy.id)
+    .eq("transaction_type", "accrual")
+    .eq("notes", notes)
+    .limit(5000);
+  if (existingError) throw existingError;
+  const { data: lastRows, error: lastError } = await supabase
+    .from("leave_transactions")
+    .select("created_at")
+    .eq("leave_type_id", leaveType.id)
+    .eq("policy_id", policy.id)
+    .eq("transaction_type", "accrual")
+    .like("notes", "monthly-accrual:%")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (lastError) throw lastError;
+  const { data: balanceRows, error: balanceError } = await supabase
+    .from("employee_leave_balances")
+    .select("employee_hr_id,last_accrual_date")
+    .eq("leave_type_id", leaveType.id)
+    .eq("policy_id", policy.id)
+    .eq("year", year)
+    .limit(5000);
+  if (balanceError) throw balanceError;
+
+  const accruedEmployees = new Set(((existingRows ?? []) as Array<{ employee_hr_id: string }>).map((row) => cleanHrId(row.employee_hr_id)));
+  const lastAccrualByEmployee = new Map(
+    ((balanceRows ?? []) as Array<{ employee_hr_id: string; last_accrual_date: string | null }>).map((row) => [
+      cleanHrId(row.employee_hr_id),
+      row.last_accrual_date,
+    ]),
+  );
+  const employees = activeEmployees.map((employee) => {
+    const monthlyAccrual = calculateMonthlyAccrual(employee, policy, new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10));
+    return {
+      alreadyAccrued: accruedEmployees.has(cleanHrId(employee.hrId)),
+      employeeHrId: employee.hrId,
+      employeeName: employee.fullName,
+      lastAccrualDate: lastAccrualByEmployee.get(cleanHrId(employee.hrId)) ?? null,
+      lineName: employee.lineName,
+      monthlyAccrual,
+    };
+  });
+  const pendingEmployees = employees.filter((employee) => !employee.alreadyAccrued && employee.monthlyAccrual > 0);
+
+  return {
+    alreadyAccrued: employees.length - pendingEmployees.length,
+    employees,
+    lastRunAt: ((lastRows ?? [])[0] as { created_at?: string } | undefined)?.created_at ?? null,
+    month,
+    period,
+    totalAccrualDays: Math.round(pendingEmployees.reduce((sum, employee) => sum + employee.monthlyAccrual, 0) * 100) / 100,
+    upcomingPeriod: nextAccrualPeriod(year, month),
+    wouldAccrue: pendingEmployees.length,
+    year,
+  };
+}
+
+export async function runMonthlyLeaveAccrual(access: AccessContext, input: { month?: number; year?: number } = {}) {
+  const preview = await getLeaveAccrualPreview(access, input);
+  const year = preview.year;
+  const month = preview.month;
+  const { directory } = await loadDirectoryMaps();
+  const policy = await getDefaultLeavePolicy();
+  const leaveType = await getAnnualLeaveType();
+  const entries = [];
 
   for (const employee of directory.employees) {
     if ((employee.employmentStatus ?? "active").toLowerCase() !== "active") continue;
-    await accrueMonthlyForEmployee(employee, leaveType, policy, year, month, access.hrId);
-    processed += 1;
+    entries.push(...buildMonthlyAccrualEntries(employee, policy, year, month));
   }
 
-  return { month, processed, year };
+  const correlationId = createLeaveCorrelationId();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("phx_leave_run_accrual_atomic", {
+    p_actor_hr_id: access.hrId,
+    p_actor_role: access.role,
+    p_correlation_id: correlationId,
+    p_entries: entries,
+    p_leave_type_id: leaveType.id,
+    p_month: month,
+    p_policy_id: policy.id,
+    p_year: year,
+  });
+  if (error) {
+    await writeLeaveAuditLog({
+      actorHrId: access.hrId,
+      actorRole: access.role,
+      correlationId,
+      eventType: "leave.accrual.failed",
+      metadata: { error: error.message, month, period: preview.period, year },
+    });
+    throw error;
+  }
+  const result = (data ?? {}) as { processed?: number; skipped?: number; totalAmount?: number };
+
+  await emitLeaveNotification("accrual_completed", {
+    ctaHref: "/admin/leave",
+    ctaLabel: "Open accrual tools",
+    includeHrInbox: true,
+    metrics: [
+      { label: "Period", value: preview.period },
+      { label: "Employees Previewed", value: preview.employees.length },
+      { label: "Would Accrue", value: preview.wouldAccrue },
+      { label: "Estimated Days", value: preview.totalAccrualDays },
+      { label: "Processed Transactions", value: result.processed ?? 0 },
+    ],
+    recipientMode: "hr_notifications",
+    subject: `Leave accrual completed - ${preview.period}`,
+    summary: `Monthly leave accrual completed for ${preview.period}. The pre-run preview estimated ${preview.totalAccrualDays} day(s).`,
+    title: "Monthly Leave Accrual Completed",
+    tone: "success",
+  }).catch(() => undefined);
+  return { month, period: preview.period, processed: result.processed ?? 0, skipped: result.skipped ?? 0, totalAmount: result.totalAmount ?? 0, year };
+}
+
+export async function getLeaveCalendar(
+  access: AccessContext,
+  input: { area?: string; employeeHrId?: string; line?: string; month?: number; status?: string; year?: number } = {},
+): Promise<LeaveCalendarItem[]> {
+  await assertPermission(access, "leave", "read");
+  const month = input.month ?? new Date().getUTCMonth() + 1;
+  const year = input.year ?? new Date().getUTCFullYear();
+  const policy = await getDefaultLeavePolicy();
+  const hasApproveAccess = await canAccess(access, "leave", "approve");
+  const [requests, holidays] = await Promise.all([
+    hasApproveAccess && !isManageRole(access) ? listManagerHierarchyLeaveRequests(access, {}) : listLeaveRequests(access, {}),
+    getPublicHolidays(year, policy.country).catch(() => []),
+  ]);
+  return buildLeaveCalendarItems(requests, holidays, {
+    area: input.area,
+    employeeHrId: input.employeeHrId,
+    line: input.line,
+    month,
+    status: input.status,
+    year,
+  });
+}
+
+export async function getLeaveTeamAvailability(
+  access: AccessContext,
+  input: { area?: string; employeeHrId?: string; endDate?: string; line?: string; startDate?: string } = {},
+): Promise<TeamAvailabilityDay[]> {
+  await assertPermission(access, "leave", "read");
+  const startDate = input.startDate ?? isoToday();
+  const endDate = input.endDate ?? new Date(Date.now() + 13 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const year = new Date(`${startDate}T00:00:00.000Z`).getUTCFullYear();
+  const policy = await getDefaultLeavePolicy();
+  const hasApproveAccess = await canAccess(access, "leave", "approve");
+  const [requests, holidays] = await Promise.all([
+    hasApproveAccess && !isManageRole(access) ? listManagerHierarchyLeaveRequests(access, {}) : listLeaveRequests(access, {}),
+    getPublicHolidays(year, policy.country).catch(() => []),
+  ]);
+  return buildTeamAvailability(requests, holidays, {
+    area: input.area,
+    employeeHrId: input.employeeHrId,
+    endDate,
+    line: input.line,
+    startDate,
+  });
 }
 
 export async function getLeaveDashboard(access: AccessContext) {
   await assertPermission(access, "leave", "read");
   const requests = await listLeaveRequests(access);
   const today = isoToday();
+  const policy = await getDefaultLeavePolicy();
+  const holidays = await getPublicHolidays(new Date().getUTCFullYear(), policy.country).catch(() => []);
+  const analytics: LeaveAnalytics = buildLeaveAnalytics(requests, holidays);
   const approved = requests.filter((request) => request.status === "hr_approved");
   const pending = requests.filter((request) => request.status === "pending_manager" || request.status === "pending_hr");
   const byLine = new Map<string, number>();
@@ -1147,6 +1480,7 @@ export async function getLeaveDashboard(access: AccessContext) {
   }
 
   return {
+    analytics,
     approvedRequests: approved.length,
     employeesOnLeaveToday: approved.filter((request) => request.startDate <= today && request.endDate >= today).length,
     leaveBalanceUtilization: Array.from(balanceUtilization.entries()).map(([line, value]) => ({
@@ -1295,7 +1629,12 @@ export async function getEmployeeLeaveWorkspace(access: AccessContext) {
     listLeaveRequests(access, { employeeHrId: access.hrId }),
   ]);
   const holidays = await getPublicHolidays(new Date().getUTCFullYear(), policy.country).catch(() => []);
-  return { holidays, leaveTypes, policy, requests, wallet };
+  const calendarItems = buildLeaveCalendarItems(requests, holidays, {
+    employeeHrId: access.hrId,
+    month: new Date().getUTCMonth() + 1,
+    year: new Date().getUTCFullYear(),
+  });
+  return { calendarItems, holidays, leaveTypes, policy, requests, wallet };
 }
 
 export async function getManagerLeaveWorkspace(access: AccessContext) {
@@ -1303,14 +1642,19 @@ export async function getManagerLeaveWorkspace(access: AccessContext) {
   const policy = await getDefaultLeavePolicy();
   const [leaveTypes, requests] = await Promise.all([
     getLeaveTypes(false),
-    listLeaveRequests(access, {}),
+    listManagerHierarchyLeaveRequests(access, {}),
   ]);
   const holidays = await getPublicHolidays(new Date().getUTCFullYear(), policy.country).catch(() => []);
+  const month = new Date().getUTCMonth() + 1;
+  const year = new Date().getUTCFullYear();
+  const range = getLeaveCalendarRange(month, year);
   return {
+    calendarItems: buildLeaveCalendarItems(requests, holidays, { month, year }),
     holidays,
     leaveTypes,
     policy,
-    requests: requests.filter((request) => request.status === "pending_manager" || request.status === "pending_hr"),
+    requests,
+    teamAvailability: buildTeamAvailability(requests, holidays, range),
   };
 }
 
@@ -1318,13 +1662,35 @@ export async function getAdminLeaveWorkspace(access: AccessContext, filters: Lea
   if (!(await canAccess(access, "leave", "read"))) {
     throw new Error("Forbidden: cannot read leave management.");
   }
+  const canManageLeave = isManageRole(access);
+  const canExport = await canAccess(access, "leave", "export");
   const year = filters.year ?? new Date().getUTCFullYear();
   const [dashboard, leaveTypes, policies, holidays, requests] = await Promise.all([
     getLeaveDashboard(access),
     getLeaveTypes(true),
-    getLeavePolicies(true),
+    canManageLeave ? getLeavePolicies(true) : Promise.resolve([]),
     getPublicHolidays(year).catch(() => []),
     listLeaveRequests(access, filters),
   ]);
-  return { dashboard, holidays, leaveTypes, policies, requests };
+  const month = filters.month ?? new Date().getUTCMonth() + 1;
+  const range = getLeaveCalendarRange(month, year);
+  const [accrualPreview, activityLogs] = await Promise.all([
+    canManageLeave ? getLeaveAccrualPreview(access).catch(() => null) : Promise.resolve(null),
+    canManageLeave ? listLeaveAuditLogs(access).catch(() => []) : Promise.resolve([]),
+  ]);
+  return {
+    accrualPreview,
+    activityLogs,
+    calendarItems: buildLeaveCalendarItems(requests, holidays, { month, year }),
+    capabilities: {
+      canExport,
+      canManageLeave,
+    },
+    dashboard,
+    holidays,
+    leaveTypes,
+    policies,
+    requests,
+    teamAvailability: buildTeamAvailability(requests, holidays, range),
+  };
 }

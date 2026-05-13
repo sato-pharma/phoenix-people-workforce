@@ -1,4 +1,8 @@
 ﻿export type PayrollWorkflowAction =
+  | "mark_part1_ready"
+  | "mark_part1_paid"
+  | "open_adjustments"
+  | "mark_part2_ready"
   | "mark_review"
   | "approve"
   | "lock"
@@ -13,6 +17,10 @@ export type SalaryBatch = {
   id: string;
   lockedAt: string | null;
   month: number;
+  part1PaidAt: string | null;
+  part1PaidBy: string | null;
+  part2ReadyAt: string | null;
+  part2ReadyBy: string | null;
   rejectedReason: string | null;
   status: string;
   uploadedBy: string | null;

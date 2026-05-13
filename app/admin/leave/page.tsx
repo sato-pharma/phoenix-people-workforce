@@ -63,7 +63,7 @@ export default async function AdminLeavePage(props: {
           eyebrow="People Operations"
           icon={<CalendarDays className="h-3.5 w-3.5" />}
           title="Leave Management"
-          actions={
+          actions={data.capabilities?.canExport ? (
             <a
               className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-800 shadow-sm transition hover:bg-slate-50"
               href="/api/leave/export"
@@ -71,7 +71,7 @@ export default async function AdminLeavePage(props: {
               <ShieldCheck className="h-4 w-4 text-orange-600" />
               Export Report
             </a>
-          }
+          ) : null}
         />
         <AdminLeaveManagementWorkspace {...data} />
       </div>

@@ -23,6 +23,8 @@ import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.t
 import { runEmployeePortalPayslipSalaryTests } from "./employee-portal-payslip-salary.test.ts";
 import { runLeaveCalculationTests } from "./leave-calculations.test.ts";
 import { runLeaveMigrationTests } from "./leave-migration.test.ts";
+import { runLeavePhase2Tests } from "./leave-phase2.test.ts";
+import { runLeaveProductionReadinessTests } from "./leave-production-readiness.test.ts";
 import { runLeaveRolloutTests } from "./leave-rollout.test.ts";
 import { runLeaveServiceSafetyTests } from "./leave-service-safety.test.ts";
 
@@ -59,6 +61,8 @@ await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("employee portal payslip salary", runEmployeePortalPayslipSalaryTests);
 await runTest("leave calculations", runLeaveCalculationTests);
 await runTest("leave migration", runLeaveMigrationTests);
+await runTest("leave phase 2", runLeavePhase2Tests);
+await runTest("leave production readiness", runLeaveProductionReadinessTests);
 await runTest("leave staging rollout", runLeaveRolloutTests);
 await runTest("leave service safety", runLeaveServiceSafetyTests);
 await runTest("auth session", runAuthSessionTests);

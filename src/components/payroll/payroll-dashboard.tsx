@@ -41,6 +41,7 @@ import type {
   PayrollExpenseReport,
   PayrollDashboardData,
   PayrollPeriodConflict,
+  PayrollWorkflowAction,
   SalaryBatch,
   SalaryRecord,
 } from "@/lib/payroll/types";
@@ -202,8 +203,32 @@ const otherDeductionFields: Array<{ key: keyof SalaryRecord; label: string }> = 
 const interactiveCardClass = "phoenix-card-motion";
 const panelClassName =
   "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
-const replaceableBatchStatuses = new Set(["uploaded", "under_review", "rejected"]);
+const replaceableBatchStatuses = new Set(["uploaded", "part1_ready", "rejected"]);
+const deletableBatchStatuses = new Set(["uploaded", "part1_ready", "rejected"]);
 const publishedPayslipStatuses = new Set(["approved", "locked"]);
+
+const payrollStageOrder = [
+  "uploaded",
+  "part1_ready",
+  "part1_paid",
+  "adjustments_open",
+  "part2_ready",
+  "under_review",
+  "approved",
+  "locked",
+];
+
+function isPart1PaidBatch(batch: SalaryBatch) {
+  return Boolean(batch.part1PaidAt) || payrollStageOrder.indexOf(batch.status) >= payrollStageOrder.indexOf("part1_paid");
+}
+
+function isBatchReplaceable(batch: SalaryBatch) {
+  return replaceableBatchStatuses.has(batch.status) && !isPart1PaidBatch(batch);
+}
+
+function isBatchDeletable(batch: SalaryBatch) {
+  return deletableBatchStatuses.has(batch.status) && !isPart1PaidBatch(batch);
+}
 
 function PayrollPageShell({ children }: { children: ReactNode }) {
   return (
@@ -683,10 +708,18 @@ function median(values: number[]) {
 
 function statusBadge(status: string) {
   switch (status) {
+    case "adjustments_open":
+      return <Badge variant="warning">Adjustments Open</Badge>;
     case "approved":
       return <Badge variant="success">Approved</Badge>;
     case "locked":
       return <Badge variant="success">Locked</Badge>;
+    case "part1_paid":
+      return <Badge variant="success">Part 1 Paid</Badge>;
+    case "part1_ready":
+      return <Badge variant="warning">Part 1 Ready</Badge>;
+    case "part2_ready":
+      return <Badge variant="warning">Part 2 Ready</Badge>;
     case "rejected":
       return <Badge variant="danger">Rejected</Badge>;
     case "under_review":
@@ -1071,7 +1104,17 @@ function calculatePayrollHealthScore({
   const additionsScore = clamp(100 - additionsVariance * 140);
   const deductionsScore = clamp(100 - deductionsVariance * 140);
   const approvalScore = clamp(
-    (batchStatus === "approved" || batchStatus === "locked" ? 96 : batchStatus === "under_review" ? 78 : 62) -
+    (
+      batchStatus === "approved" || batchStatus === "locked"
+        ? 96
+        : batchStatus === "under_review" || batchStatus === "part2_ready"
+          ? 82
+          : batchStatus === "adjustments_open" || batchStatus === "part1_paid"
+            ? 72
+            : batchStatus === "part1_ready"
+              ? 66
+              : 62
+    ) -
       criticalFlags * 18 -
       warningFlags * 6,
   );
@@ -3456,6 +3499,126 @@ function TableHeaderMenu({
   );
 }
 
+type WorkflowActionOption = {
+  action: PayrollWorkflowAction;
+  description: string;
+  label: string;
+  tone?: "danger" | "primary" | "secondary";
+};
+
+function workflowActionsForStatus(status: string): WorkflowActionOption[] {
+  switch (status) {
+    case "uploaded":
+      return [{ action: "mark_part1_ready", description: "Freeze the uploaded file for Part 1 review.", label: "Mark Part 1 Ready" }];
+    case "part1_ready":
+      return [{ action: "mark_part1_paid", description: "Lock Base, Basic, and First Part values.", label: "Confirm Part 1 Paid", tone: "primary" }];
+    case "part1_paid":
+      return [{ action: "open_adjustments", description: "Open the monthly variable window for Part 2.", label: "Open Adjustments" }];
+    case "adjustments_open":
+      return [{ action: "mark_part2_ready", description: "Prepare Part 2 after additions and deductions are loaded.", label: "Mark Part 2 Ready", tone: "primary" }];
+    case "part2_ready":
+      return [{ action: "mark_review", description: "Send the batch into final payroll review.", label: "Send To Review", tone: "primary" }];
+    case "under_review":
+      return [
+        { action: "approve", description: "Publish payroll and payslips for this month.", label: "Approve Payroll", tone: "primary" },
+        { action: "reject", description: "Return the batch to adjustments with a reason.", label: "Reject", tone: "danger" },
+      ];
+    case "approved":
+      return [{ action: "lock", description: "Close the payroll period permanently.", label: "Lock Payroll", tone: "primary" }];
+    case "rejected":
+      return [{ action: "reopen", description: "Return rejected payroll to the Part 2 adjustment stage.", label: "Reopen Adjustments" }];
+    default:
+      return [];
+  }
+}
+
+function payrollStageLabel(status: string) {
+  return status
+    .replace(/^part(\d)/, "part $1")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function PayrollWorkflowPanel({
+  batch,
+  busyAction,
+  onAction,
+}: {
+  batch: SalaryBatch;
+  busyAction: PayrollWorkflowAction | null;
+  onAction: (action: PayrollWorkflowAction) => void;
+}) {
+  const actions = workflowActionsForStatus(batch.status);
+  const shownStages =
+    batch.status === "rejected"
+      ? [...payrollStageOrder.slice(0, payrollStageOrder.indexOf("under_review") + 1), "rejected"]
+      : payrollStageOrder.filter((stage) => stage !== "locked" || batch.status === "locked");
+  const activeIndex = shownStages.indexOf(batch.status);
+
+  return (
+    <Card className={`${panelClassName} p-5`}>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-bold text-[#0F172A]">Payroll Payment Stage</h2>
+            {statusBadge(batch.status)}
+          </div>
+          <p className="mt-1 text-sm text-[#64748B]">
+            {payrollPeriodLabel(batch.month, batch.year)} · Part 1 {batch.part1PaidAt ? `paid ${formatDateTimeValue(batch.part1PaidAt)}` : "not paid yet"}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {actions.map((item) => (
+            <Button
+              className={cn(
+                "h-9 rounded-xl px-3 py-2 text-xs",
+                item.tone === "danger" && "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100",
+                item.tone === "primary" && "bg-[#F97316] text-white hover:bg-[#EA580C]",
+              )}
+              disabled={Boolean(busyAction)}
+              key={item.action}
+              onClick={() => onAction(item.action)}
+              title={item.description}
+              type="button"
+              variant={item.tone === "danger" ? "destructive" : item.tone === "primary" ? "default" : "secondary"}
+            >
+              {busyAction === item.action ? (
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+              ) : item.tone === "danger" ? (
+                <AlertTriangle className="mr-2 h-3.5 w-3.5" />
+              ) : (
+                <ArrowRight className="mr-2 h-3.5 w-3.5" />
+              )}
+              {item.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-4 xl:grid-cols-8">
+        {shownStages.map((stage, index) => {
+          const complete = activeIndex >= index && activeIndex >= 0;
+          const current = batch.status === stage;
+          return (
+            <div
+              className={cn(
+                "rounded-2xl border px-3 py-2 text-xs font-semibold",
+                complete ? "border-orange-200 bg-orange-50 text-orange-800" : "border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B]",
+                current && "ring-2 ring-orange-300",
+              )}
+              key={stage}
+            >
+              <div className="flex items-center gap-2">
+                {complete ? <CheckCircle className="h-3.5 w-3.5" /> : <span className="h-2 w-2 rounded-full bg-[#CBD5E1]" />}
+                <span>{payrollStageLabel(stage)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 function PayrollHistory({
   activeBatchId,
   batches,
@@ -3649,7 +3812,7 @@ function PayrollHistory({
                     )}
                     <Button
                       className="px-3 py-1.5 text-xs"
-                      disabled={!replaceableBatchStatuses.has(batch.status) || replacingBatchId === batch.id}
+                      disabled={!isBatchReplaceable(batch) || replacingBatchId === batch.id}
                       onClick={() => onReplace(batch)}
                       variant="secondary"
                     >
@@ -3662,7 +3825,7 @@ function PayrollHistory({
                     </Button>
                     <Button
                       className="px-3 py-1.5 text-xs"
-                      disabled={publishedPayslipStatuses.has(batch.status) || deletingBatchId === batch.id}
+                      disabled={!isBatchDeletable(batch) || deletingBatchId === batch.id}
                       onClick={() => onDelete(batch.id)}
                       variant="secondary"
                     >
@@ -4366,6 +4529,8 @@ export function PayrollDashboard({
     text: string;
     type: "success" | "error";
   } | null>(null);
+  const [workflowActionBusy, setWorkflowActionBusy] =
+    useState<PayrollWorkflowAction | null>(null);
   const salaryFileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceFileInputRef = useRef<HTMLInputElement | null>(null);
   const expenseFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -4540,6 +4705,61 @@ export function PayrollDashboard({
     }
   }
 
+  async function handlePayrollWorkflowAction(action: PayrollWorkflowAction) {
+    if (!activeBatch) return;
+
+    const rejectedReason =
+      action === "reject"
+        ? window.prompt("Rejection reason")
+        : undefined;
+
+    if (action === "reject" && !rejectedReason?.trim()) {
+      setWorkflowMessage({ text: "Rejected reason is required.", type: "error" });
+      return;
+    }
+
+    const requiresConfirmation =
+      action === "mark_part1_paid" || action === "approve" || action === "lock";
+    if (requiresConfirmation) {
+      const confirmed = window.confirm(
+        action === "mark_part1_paid"
+          ? "Confirm Part 1 was paid? Base, Basic, and First Part values will be locked."
+          : action === "approve"
+            ? "Approve this payroll period and publish payslips?"
+            : "Lock this payroll period permanently?",
+      );
+
+      if (!confirmed) return;
+    }
+
+    setWorkflowActionBusy(action);
+    setWorkflowMessage(null);
+
+    try {
+      const response = await fetch(`/api/payroll/${activeBatch.id}/workflow`, {
+        body: JSON.stringify({ action, rejectedReason }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.success) {
+        setWorkflowMessage({
+          text: payload.error ?? "Payroll workflow action failed.",
+          type: "error",
+        });
+        return;
+      }
+
+      setWorkflowMessage({ text: "Payroll workflow updated.", type: "success" });
+      window.location.href = `/payroll?batchId=${payload.data?.id ?? activeBatch.id}`;
+    } catch {
+      setWorkflowMessage({ text: "Network error.", type: "error" });
+    } finally {
+      setWorkflowActionBusy(null);
+    }
+  }
+
   async function handleDeleteBatch(batchId: string) {
     const confirmed = window.confirm(
       "Delete this payroll upload? This removes the batch, salary records, and governance flags.",
@@ -4645,7 +4865,7 @@ export function PayrollDashboard({
     if (!selectedSalaryFile || !salaryPeriodConflict) return;
 
     if (!salaryPeriodConflict.replaceable) {
-      setSalaryUploadError("This payroll period is approved or locked and cannot be replaced.");
+      setSalaryUploadError("This payroll period cannot be replaced after Part 1 is paid or after final approval.");
       return;
     }
 
@@ -4846,11 +5066,12 @@ export function PayrollDashboard({
     setExpenseApprovalMessage(null);
 
     try {
+      const approvedRows = recordsToImport.filter((record) => record.hrApproved);
       const approvedWithHrId = recordsToImport.filter(
         (record) => record.hrApproved && record.hrId,
       );
 
-      if (recordsToImport.length > 0 && approvedWithHrId.length === 0) {
+      if (approvedRows.length > 0 && approvedWithHrId.length === 0) {
         setExpenseAnalysisError(
           "Choose approved expenses mapped to HR ID before importing to payroll. If rows are not mapped, update the employee name/CRM username in Employee Management or upload an expenses sheet with an HR ID column.",
         );
@@ -5264,6 +5485,14 @@ export function PayrollDashboard({
 
       {salaryValidation && <ValidationSummary result={salaryValidation} />}
 
+      {!isAllTimeScope && payrollSheetTab === "salary" && (
+        <PayrollWorkflowPanel
+          batch={batch}
+          busyAction={workflowActionBusy}
+          onAction={(action) => void handlePayrollWorkflowAction(action)}
+        />
+      )}
+
       {flags.length > 0 && (
         <Card className={`${panelClassName} p-5`}>
           <div className="mb-3 flex items-center gap-2">
@@ -5334,12 +5563,19 @@ export function PayrollDashboard({
                       Download
                     </Button>
                   </Link>
-                  <Link href={`/api/payroll/${salaryReportBatch.id}/payslips`} target="_blank">
-                    <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
+                  {publishedPayslipStatuses.has(salaryReportBatch.status) ? (
+                    <Link href={`/api/payroll/${salaryReportBatch.id}/payslips`} target="_blank">
+                      <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
+                        <FileCheck2 className="mr-2 h-3.5 w-3.5" />
+                        Payslips
+                      </Button>
+                    </Link>
+                  ) : (
+                    <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" disabled variant="secondary">
                       <FileCheck2 className="mr-2 h-3.5 w-3.5" />
                       Payslips
                     </Button>
-                  </Link>
+                  )}
                 </div>
               ) : null
             )}

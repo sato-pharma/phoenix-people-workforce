@@ -1999,7 +1999,7 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
       label: "Gross Salary",
       value: payslip.grossSalary,
     },
-  ];
+  ].sort((left, right) => left.value - right.value || left.label.localeCompare(right.label));
 
   return (
     <section id="payroll" className="space-y-4">

@@ -131,6 +131,18 @@ export type LeaveApproval = {
   createdAt: string;
 };
 
+export type LeaveAuditLog = {
+  id: string;
+  correlationId: string;
+  eventType: string;
+  requestId: string | null;
+  employeeHrId: string | null;
+  actorHrId: string | null;
+  actorRole: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
 export type PublicHoliday = {
   id: string;
   name: string;
@@ -165,6 +177,77 @@ export type LeaveRequestFilters = {
   year?: number;
   startDate?: string;
   endDate?: string;
+};
+
+export type LeaveCalendarItem = {
+  id: string;
+  kind: "holiday" | "request";
+  title: string;
+  employeeHrId?: string | null;
+  employeeName?: string | null;
+  lineName?: string | null;
+  areaName?: string | null;
+  leaveTypeName?: string | null;
+  startDate: string;
+  endDate: string;
+  status: LeaveStatus | "public_holiday";
+  totalWorkingDays: number;
+};
+
+export type TeamAvailabilityDay = {
+  date: string;
+  approved: LeaveRequest[];
+  pending: LeaveRequest[];
+  rejected: LeaveRequest[];
+  publicHolidays: PublicHoliday[];
+  conflictCount: number;
+};
+
+export type LeaveConflictWarning = {
+  code: "same_area_capacity" | "same_line_capacity" | "overlapping_employee";
+  message: string;
+  severity: "blocker" | "warning";
+  count: number;
+  threshold: number;
+};
+
+export type LeaveConflictResult = {
+  blocked: boolean;
+  warnings: LeaveConflictWarning[];
+  overlappingRequests: LeaveRequest[];
+  sameAreaCount: number;
+  sameLineCount: number;
+};
+
+export type LeaveAnalytics = {
+  requestsByStatus: Array<{ label: string; value: number }>;
+  consumptionByMonth: Array<{ label: string; value: number }>;
+  topLeaveTypes: Array<{ label: string; value: number }>;
+  usageByLine: Array<{ label: string; value: number }>;
+  pendingApprovalAging: Array<{ label: string; value: number }>;
+  upcomingApprovedLeave: LeaveRequest[];
+  publicHolidayImpact: Array<{ label: string; value: number }>;
+};
+
+export type LeaveAccrualPreviewEmployee = {
+  employeeHrId: string;
+  employeeName: string;
+  lineName: string | null;
+  monthlyAccrual: number;
+  alreadyAccrued: boolean;
+  lastAccrualDate: string | null;
+};
+
+export type LeaveAccrualPreview = {
+  alreadyAccrued: number;
+  employees: LeaveAccrualPreviewEmployee[];
+  lastRunAt: string | null;
+  month: number;
+  period: string;
+  totalAccrualDays: number;
+  upcomingPeriod: string;
+  wouldAccrue: number;
+  year: number;
 };
 
 export type SubmitLeaveRequestInput = {
