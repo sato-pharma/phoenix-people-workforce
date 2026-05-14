@@ -1,4 +1,4 @@
-﻿﻿﻿"use client";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿"use client";
 
 import {
   AlertCircle,
@@ -38,7 +38,7 @@ import type {
   EmployeeLookupOption,
   EmployeeMutationInput,
 } from "@/lib/employees/employee-directory";
-import { cn, formatEmployeeDisplayName } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 type EmployeeManagementProps = {
   initialData?: EmployeeDirectoryData | null;
@@ -131,16 +131,16 @@ const selectClassName =
 
 function EmployeePageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[#F8FAFC] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6 lg:p-8">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+        className="pointer-events-none absolute -right-24 -top-28 h-96 w-96 rounded-full bg-[#F97316]/5 blur-3xl"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+        className="pointer-events-none absolute bottom-10 left-1/4 h-80 w-80 rounded-full bg-[#3B82F6]/5 blur-3xl"
       />
-      <div className="relative z-10 space-y-6">{children}</div>
+      <div className="relative z-10 space-y-8 max-w-[1600px] mx-auto">{children}</div>
     </div>
   );
 }
@@ -624,7 +624,7 @@ export function EmployeeManagement({
             }
           : current,
       );
-      setNotice(`Resignation recorded for ${formatEmployeeDisplayName(resigningEmployee.fullName)}. Vacancy ${payload.data?.vacancyCode ?? "opened"} created and employee moved to ${resignationForm.employeeStatus}.`);
+      setNotice(`Resignation recorded for ${resigningEmployee.fullName}. Vacancy ${payload.data?.vacancyCode ?? "opened"} created and employee moved to ${resignationForm.employeeStatus}.`);
       closeResignation();
     } catch {
       setResignationError("Unable to process employee resignation.");
@@ -718,24 +718,28 @@ export function EmployeeManagement({
               description="Active workforce currently in system."
               icon={<Users className="h-4 w-4" />}
               label="Total Headcount"
+              tone="blue"
               value={formatNumberValue(data.summary.totalEmployees)}
             />
             <AdminStatCard
               description="Records flagged as active and available for payroll."
               icon={<UserCheck2 className="h-4 w-4" />}
               label="Active Workforce"
+              tone="emerald"
               value={formatNumberValue(data.summary.activeEmployees)}
             />
             <AdminStatCard
               description="Unique operating lines represented in the directory."
               icon={<CircleAlert className="h-4 w-4" />}
               label="Lines Coverage"
+              tone="violet"
               value={formatNumberValue(data.summary.uniqueLines)}
             />
             <AdminStatCard
               description="Employees missing direct manager linkage and require assignment."
               icon={<Building2 className="h-4 w-4" />}
               label="Pending Assignment"
+              tone="orange"
               value={formatNumberValue(data.summary.employeesWithoutManagers)}
             />
           </section>
@@ -743,7 +747,7 @@ export function EmployeeManagement({
           <AdminTableShell
             action={
               <div className="flex items-center gap-3">
-                <Badge className="bg-[#F1F5F9] text-[#475569] border-none" variant="outline">
+                <Badge className="bg-white text-[#475569] border-[#E2E8F0] shadow-sm" variant="neutral">
                   {formatNumberValue(filteredEmployees.length)} results
                 </Badge>
               </div>
@@ -751,6 +755,7 @@ export function EmployeeManagement({
             description="Access and manage comprehensive employee records with real-time filters."
             title="Workforce Directory"
           >
+            <div className="h-1 w-full bg-gradient-to-r from-[#F97316] via-[#3B82F6] to-[#8B5CF6] opacity-80" />
             <div className="flex flex-col gap-4 border-b border-[#E2E8F0] bg-[#F8FAFC]/50 p-4">
               <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
                 <label className="relative">
@@ -858,16 +863,21 @@ export function EmployeeManagement({
                       >
                         <td className="px-6 py-4">
                           <button
-                            className="flex flex-col text-left"
+                            className="flex flex-col text-left group/name"
                             onClick={() => startEdit(employee)}
                             type="button"
                           >
-                            <span className="font-bold text-[#0F172A] group-hover:text-[#F97316] transition-colors">
-                              {formatEmployeeDisplayName(employee.fullName)}
+                            <span className="font-bold text-[#0F172A] group-hover/name:text-[#F97316] transition-colors leading-tight">
+                              {employee.fullName}
                             </span>
-                            <span className="mt-0.5 font-mono text-[10px] font-bold tracking-tight text-[#64748B]">
-                              ID: {employee.hrId}
-                            </span>
+                            <div className="mt-1.5 flex items-center gap-2">
+                              <span className="font-mono text-[10px] font-black tracking-wider text-[#64748B] bg-slate-100 px-1.5 py-0.5 rounded uppercase">
+                                {employee.hrId}
+                              </span>
+                              {employee.employmentStatus === "active" && (
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              )}
+                            </div>
                           </button>
                         </td>
                         <td className="px-6 py-4">
@@ -904,7 +914,7 @@ export function EmployeeManagement({
                                 ? "bg-amber-100 text-amber-700"
                                 : "bg-emerald-100 text-emerald-700"
                             )}
-                            variant="outline"
+                            variant="neutral"
                           >
                             {employee.salaryPaymentMode === "two_parts"
                               ? "2 Parts"
@@ -929,7 +939,7 @@ export function EmployeeManagement({
                               statusBadgeVariant(employee.employmentStatus) === "warning" && "bg-amber-100 text-amber-700",
                               statusBadgeVariant(employee.employmentStatus) === "danger" && "bg-rose-100 text-rose-700"
                             )}
-                            variant="outline"
+                            variant="neutral"
                           >
                             {optionName(employee.employmentStatus ?? "active")}
                           </Badge>
@@ -965,251 +975,310 @@ export function EmployeeManagement({
       ) : null}
 
       {isFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0F172A]/60 px-4 py-6 backdrop-blur-md">
-          <Card className={`${panelClassName} w-full max-w-5xl overflow-hidden`}>
-            <AdminSectionHeader
-              action={
-                <Button
-                  className="h-9 rounded-xl px-3 text-xs"
-                  onClick={closeForm}
-                  variant="secondary"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              }
-              description="Manual entry uses the same employee master-data model as the bulk template. Salary payout mode controls automated payroll split."
-              title={editingHrId ? "Edit Employee" : "Add Employee"}
-            />
+        <div className="fixed inset-0 z-50 flex justify-end bg-[#0F172A]/40 backdrop-blur-sm transition-all duration-300">
+          <Card className="h-full w-full max-w-2xl overflow-hidden rounded-none border-l border-[#D8E0EA] bg-white shadow-[-20px_0_50px_rgba(15,23,42,0.1)] flex flex-col animate-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] bg-[#F8FAFC] px-6 py-5">
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-[#0F172A]">
+                  {editingHrId ? "Employee Profile" : "New Employee Onboarding"}
+                </h2>
+                <p className="mt-1 text-sm text-[#64748B]">
+                  {editingHrId ? `Editing master record for ${form.fullName}` : "Create a new workforce master data record."}
+                </p>
+              </div>
+              <Button
+                className="h-10 w-10 rounded-xl p-0 text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+                onClick={closeForm}
+                variant="ghost"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
 
-            <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
-              <TextField
-                disabled={Boolean(editingHrId)}
-                label="hr_id"
-                onChange={(value) => updateForm("hrId", value)}
-                placeholder="B-001"
-                value={form.hrId}
-              />
-              <TextField
-                label="full_name"
-                onChange={(value) => updateForm("fullName", value)}
-                placeholder="Employee full name"
-                value={form.fullName}
-              />
-              <SelectField
-                label="job_title"
-                onChange={(value) => {
-                  const selected = lookups.positions.find((p) => p.value === value);
-                  setForm((prev) => ({
-                    ...prev,
-                    positionId: value,
-                    jobTitle: selected?.label ?? prev.jobTitle,
-                  }));
-                }}
-                options={lookups.positions}
-                placeholder="Select job title"
-                value={form.positionId}
-              />
-              <TextField
-                label="hire_date"
-                onChange={(value) => updateForm("hireDate", value)}
-                type="date"
-                value={form.hireDate}
-              />
-              <SelectField
-                label="line"
-                onChange={(value) => {
-                  updateForm("lineId", value);
-                  updateForm("areaId", ""); // Reset area when line changes
-                }}
-                options={
-                  isManualMedicalRep
-                    ? Array.from(
-                        new Map(
-                          (lookups.medicalRepVacancies ?? [])
-                            .filter((vacancy) => vacancy.lineId !== null)
-                            .map((vacancy) => [
-                              String(vacancy.lineId),
-                              {
-                                label: vacancy.lineName ?? `Line ${vacancy.lineId}`,
-                                value: String(vacancy.lineId),
-                              },
-                            ]),
-                        ).values(),
-                      )
-                        .sort((a, b) => a.label.localeCompare(b.label))
-                    : lookups.lines
-                }
-                placeholder="Line"
-                value={form.lineId}
-              />
-              <SelectField
-                disabled={isManualMedicalRep && !form.lineId}
-                label="area"
-                onChange={(value) => {
-                  if (value === "empty") return;
-                  if (isManualMedicalRep) {
-                    const vacancy = (lookups.medicalRepVacancies ?? []).find(
-                      (v) =>
-                        String(v.areaId) === String(value) &&
-                        String(v.lineId) === String(form.lineId),
-                    );
-                    if (vacancy) {
+            <div className="flex-1 overflow-y-auto bg-white p-6 space-y-8">
+              {/* Section 1: Identity Information */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
+                  <div className="h-2 w-2 rounded-full bg-[#F97316]" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Identity Information</h3>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField
+                    disabled={Boolean(editingHrId)}
+                    label="Employee ID"
+                    onChange={(value) => updateForm("hrId", value)}
+                    placeholder="e.g. B-001"
+                    value={form.hrId}
+                  />
+                  <TextField
+                    label="Full Name (English)"
+                    onChange={(value) => updateForm("fullName", value)}
+                    placeholder="Enter full legal name"
+                    value={form.fullName}
+                  />
+                  <TextField
+                    label="Full Name (Arabic)"
+                    onChange={(value) => updateForm("nameAr", value)}
+                    placeholder="الاسم بالكامل"
+                    value={form.nameAr}
+                  />
+                  <TextField
+                    label="Education / Degree"
+                    onChange={(value) => updateForm("education", value)}
+                    placeholder="e.g. B.Sc. Pharmacy"
+                    value={form.education}
+                  />
+                </div>
+              </div>
+
+              {/* Section 2: Organizational Assignment */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
+                  <div className="h-2 w-2 rounded-full bg-[#3B82F6]" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Organizational Assignment</h3>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <SelectField
+                    label="Job Position"
+                    onChange={(value) => {
+                      const selected = lookups.positions.find((p) => p.value === value);
                       setForm((prev) => ({
                         ...prev,
-                        areaId: String(value),
-                        departmentId: String(vacancy.departmentId ?? prev.departmentId),
-                        jobTitle: vacancy.positionTitle || "Medical Representative",
-                        lineId: String(vacancy.lineId ?? prev.lineId),
-                        managerHrId: vacancy.managerHrId ?? prev.managerHrId,
-                        positionId: String(vacancy.positionId ?? prev.positionId),
+                        positionId: value,
+                        jobTitle: selected?.label ?? prev.jobTitle,
                       }));
-                    } else {
-                      updateForm("areaId", value);
+                    }}
+                    options={lookups.positions}
+                    placeholder="Select position"
+                    value={form.positionId}
+                  />
+                  <SelectField
+                    label="Department"
+                    onChange={(value) => updateForm("departmentId", value)}
+                    options={lookups.departments}
+                    placeholder="Select department"
+                    value={form.departmentId}
+                  />
+                  <SelectField
+                    label="Business Line"
+                    onChange={(value) => {
+                      updateForm("lineId", value);
+                      updateForm("areaId", "");
+                    }}
+                    options={
+                      isManualMedicalRep
+                        ? Array.from(
+                            new Map(
+                              (lookups.medicalRepVacancies ?? [])
+                                .filter((vacancy) => vacancy.lineId !== null)
+                                .map((vacancy) => [
+                                  String(vacancy.lineId),
+                                  {
+                                    label: vacancy.lineName ?? `Line ${vacancy.lineId}`,
+                                    value: String(vacancy.lineId),
+                                  },
+                                ]),
+                            ).values(),
+                          )
+                            .sort((a, b) => a.label.localeCompare(b.label))
+                        : lookups.lines
                     }
-                  } else {
-                    const selectedArea = lookups.areas.find((a) => String(a.value) === String(value));
-                    if (selectedArea) {
-                      setForm((prev) => ({
-                        ...prev,
-                        areaId: String(value),
-                        lineId: String(selectedArea.lineId ?? prev.lineId),
-                        managerHrId: selectedArea.managerHrId ?? prev.managerHrId,
-                        positionId: String(selectedArea.positionId ?? prev.positionId),
-                      }));
-                    } else {
-                      updateForm("areaId", value);
+                    placeholder="Select business line"
+                    value={form.lineId}
+                  />
+                  <SelectField
+                    disabled={isManualMedicalRep && !form.lineId}
+                    label="Operating Area"
+                    onChange={(value) => {
+                      if (value === "empty") return;
+                      if (isManualMedicalRep) {
+                        const vacancy = (lookups.medicalRepVacancies ?? []).find(
+                          (v) =>
+                            String(v.areaId) === String(value) &&
+                            String(v.lineId) === String(form.lineId),
+                        );
+                        if (vacancy) {
+                          setForm((prev) => ({
+                            ...prev,
+                            areaId: String(value),
+                            departmentId: String(vacancy.departmentId ?? prev.departmentId),
+                            jobTitle: vacancy.positionTitle || "Medical Representative",
+                            lineId: String(vacancy.lineId ?? prev.lineId),
+                            managerHrId: vacancy.managerHrId ?? prev.managerHrId,
+                            positionId: String(vacancy.positionId ?? prev.positionId),
+                          }));
+                        } else {
+                          updateForm("areaId", value);
+                        }
+                      } else {
+                        const selectedArea = lookups.areas.find((a) => String(a.value) === String(value));
+                        if (selectedArea) {
+                          setForm((prev) => ({
+                            ...prev,
+                            areaId: String(value),
+                            lineId: String(selectedArea.lineId ?? prev.lineId),
+                            managerHrId: selectedArea.managerHrId ?? prev.managerHrId,
+                            positionId: String(selectedArea.positionId ?? prev.positionId),
+                          }));
+                        } else {
+                          updateForm("areaId", value);
+                        }
+                      }
+                    }}
+                    options={
+                      isManualMedicalRep
+                        ? filteredManualVacantAreas.length > 0
+                          ? filteredManualVacantAreas.map((v) => ({
+                              label: v.managerName
+                                ? `${v.areaName} - ${v.positionTitle} - Manager: ${v.managerName}`
+                                : `${v.areaName} - ${v.positionTitle}`,
+                              value: String(v.areaId),
+                            }))
+                          : form.lineId
+                            ? [{ label: "No open vacancies for this line", value: "empty" }]
+                            : []
+                        : lookups.areas.filter((a) => !form.lineId || String(a.lineId) === String(form.lineId))
                     }
-                  }
-                }}
-                options={
-                  isManualMedicalRep
-                    ? filteredManualVacantAreas.length > 0
-                      ? filteredManualVacantAreas.map((v) => ({
-                          label: v.managerName
-                            ? `${v.areaName} - ${v.positionTitle} - Manager: ${v.managerName}`
-                            : `${v.areaName} - ${v.positionTitle}`,
-                          value: String(v.areaId),
-                        }))
-                      : form.lineId
-                        ? [{ label: "No open vacancies for this line", value: "empty" }]
-                        : []
-                    : lookups.areas.filter((a) => !form.lineId || String(a.lineId) === String(form.lineId))
-                }
-                placeholder={isManualMedicalRep && !form.lineId ? "Select line first" : "Area"}
-                value={form.areaId}
-              />
-              <TextField
-                label="email"
-                onChange={(value) => updateForm("workEmail", value)}
-                type="email"
-                value={form.workEmail}
-              />
-              <TextField
-                label="mobile_number"
-                onChange={(value) => updateForm("mobileNumber", value)}
-                value={form.mobileNumber}
-              />
-              <TextField
-                label="education"
-                onChange={(value) => updateForm("education", value)}
-                value={form.education}
-              />
-              <TextField
-                label="crm_username"
-                onChange={(value) => updateForm("crmUsername", value)}
-                value={form.crmUsername}
-              />
-              <TextField
-                label="crm_id"
-                onChange={(value) => updateForm("crmId", value)}
-                value={form.crmId}
-              />
-              <TextField
-                label="region"
-                onChange={() => undefined}
-                placeholder="Stored through template for vacancies"
-                value=""
-              />
-              <TextField
-                label="residence_address"
-                onChange={(value) => updateForm("residenceAddress", value)}
-                placeholder="Address from employee ID card"
-                value={form.residenceAddress}
-              />
-              <TextField
-                label="residence_city"
-                onChange={(value) => updateForm("residenceCity", value)}
-                placeholder="Cairo"
-                value={form.residenceCity}
-              />
-              <TextField
-                label="residence_area"
-                onChange={(value) => updateForm("residenceArea", value)}
-                placeholder="Nasr City"
-                value={form.residenceArea}
-              />
-              <TextField
-                label="name_ar"
-                onChange={(value) => updateForm("nameAr", value)}
-                value={form.nameAr}
-              />
-              <SelectField
-                label="manager_name"
-                onChange={(value) => updateForm("managerHrId", value)}
-                options={lookups.managers.filter(
-                  (manager) => manager.value !== form.hrId,
-                )}
-                value={form.managerHrId}
-              />
-              <TextField
-                label="manager_hr_id"
-                onChange={(value) => updateForm("managerHrId", value)}
-                value={form.managerHrId}
-              />
-              <SelectField
-                label="department"
-                onChange={(value) => updateForm("departmentId", value)}
-                options={lookups.departments}
-                value={form.departmentId}
-              />
-              <SelectField
-                label="employment_status"
-                onChange={(value) => updateForm("employmentStatus", value)}
-                options={lookups.statuses}
-                value={form.employmentStatus}
-              />
-              <SelectField
-                label="salary_payment_mode"
-                onChange={(value) => updateForm("salaryPaymentMode", value)}
-                options={salaryPaymentModeOptions}
-                value={form.salaryPaymentMode}
-              />
+                    placeholder={isManualMedicalRep && !form.lineId ? "Select line first" : "Select area"}
+                    value={form.areaId}
+                  />
+                  <SelectField
+                    label="Direct Manager"
+                    onChange={(value) => updateForm("managerHrId", value)}
+                    options={lookups.managers.filter(
+                      (manager) => manager.value !== form.hrId,
+                    )}
+                    placeholder="Select manager"
+                    value={form.managerHrId}
+                  />
+                  <TextField
+                    disabled
+                    label="Manager Employee ID"
+                    onChange={() => undefined}
+                    placeholder="Linked via manager selection"
+                    value={form.managerHrId}
+                  />
+                </div>
+              </div>
+
+              {/* Section 3: Employment Details */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
+                  <div className="h-2 w-2 rounded-full bg-[#10B981]" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Employment Details</h3>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField
+                    label="Official Hire Date"
+                    onChange={(value) => updateForm("hireDate", value)}
+                    type="date"
+                    value={form.hireDate}
+                  />
+                  <SelectField
+                    label="Employment Status"
+                    onChange={(value) => updateForm("employmentStatus", value)}
+                    options={lookups.statuses}
+                    value={form.employmentStatus}
+                  />
+                  <SelectField
+                    label="Salary Payout Mode"
+                    onChange={(value) => updateForm("salaryPaymentMode", value)}
+                    options={salaryPaymentModeOptions}
+                    value={form.salaryPaymentMode}
+                  />
+                </div>
+              </div>
+
+              {/* Section 4: Contact & CRM */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
+                  <div className="h-2 w-2 rounded-full bg-[#8B5CF6]" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Contact & System Access</h3>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField
+                    label="Work Email Address"
+                    onChange={(value) => updateForm("workEmail", value)}
+                    placeholder="employee@company.com"
+                    type="email"
+                    value={form.workEmail}
+                  />
+                  <TextField
+                    label="Mobile Number"
+                    onChange={(value) => updateForm("mobileNumber", value)}
+                    placeholder="+20..."
+                    value={form.mobileNumber}
+                  />
+                  <TextField
+                    label="CRM Username"
+                    onChange={(value) => updateForm("crmUsername", value)}
+                    placeholder="System username"
+                    value={form.crmUsername}
+                  />
+                  <TextField
+                    label="CRM System ID"
+                    onChange={(value) => updateForm("crmId", value)}
+                    placeholder="External system ID"
+                    value={form.crmId}
+                  />
+                </div>
+              </div>
+
+              {/* Section 5: Residence & Location */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
+                  <div className="h-2 w-2 rounded-full bg-[#F43F5E]" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Residence & Geography</h3>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField
+                    label="Residence Address"
+                    onChange={(value) => updateForm("residenceAddress", value)}
+                    placeholder="Full address as per ID"
+                    value={form.residenceAddress}
+                  />
+                  <TextField
+                    label="City"
+                    onChange={(value) => updateForm("residenceCity", value)}
+                    placeholder="e.g. Cairo"
+                    value={form.residenceCity}
+                  />
+                  <TextField
+                    label="Area / District"
+                    onChange={(value) => updateForm("residenceArea", value)}
+                    placeholder="e.g. Maadi"
+                    value={form.residenceArea}
+                  />
+                </div>
+                <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-[11px] leading-relaxed text-[#475569]">
+                  <p className="font-bold text-[#1E40AF] mb-1 uppercase tracking-tight">Geocoding Information</p>
+                  Residence address is automatically geocoded upon saving. Coordinates are used for distance-based expense validation and workforce heatmaps.
+                </div>
+              </div>
+
+              {/* Payroll Information Note */}
+              <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-4 text-[11px] leading-relaxed text-[#475569]">
+                <p className="font-bold text-[#92400E] mb-1 uppercase tracking-tight">Payroll Payout Structure</p>
+                <span className="font-bold text-[#92400E]">1 Part:</span> Net salary on Day 1, expenses on Day 10.<br/>
+                <span className="font-bold text-[#92400E]">2 Parts:</span> 70% Basic on Day 1. Remaining 30%, Cost of Living, Fuel, and Expenses on Day 10.
+              </div>
             </div>
 
-            <div className="mx-5 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
-              Residence address is geocoded through Google Maps on save, so Phoenix Workforce can store the latitude and longitude automatically for distance-based expense validation.
-            </div>
-
-            <div className="mx-5 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
-              One Part employees receive net salary on day 1 and any approved
-              previous-month expenses on day 10. Two Parts employees receive
-              70% of Adjusted Net on day 1 (Basic Salary), where Adjusted Net =
-              Net Salary minus Fuel and Cost of Living. Day 10 includes the
-              remaining 30%, cost of living, fuel, and approved previous-month
-              expenses.
-            </div>
-
-            <div className="flex justify-end gap-3 p-5">
-              <Button onClick={closeForm} variant="secondary">
-                Cancel
+            <div className="border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4 flex justify-end gap-3">
+              <Button
+                className="h-11 rounded-2xl px-6 text-sm font-semibold text-[#475569] hover:bg-[#E2E8F0]"
+                onClick={closeForm}
+                variant="ghost"
+              >
+                Discard Changes
               </Button>
               <Button
-                className="gap-2"
+                className="h-11 gap-2 rounded-2xl bg-[#0F172A] px-8 text-sm font-bold text-white shadow-lg transition hover:bg-[#1E293B] disabled:opacity-50"
                 disabled={isSaving}
                 onClick={() => void saveEmployee()}
               >
                 {isSaving ? <LoadingSpinner /> : <Check className="h-4 w-4" />}
-                {editingHrId ? "Save Changes" : "Create Employee"}
+                {editingHrId ? "Update Record" : "Create Master Record"}
               </Button>
             </div>
           </Card>
@@ -1245,7 +1314,7 @@ export function EmployeeManagement({
                 </div>
               ) : null}
               <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 md:col-span-2">
-                <p className="font-semibold text-rose-900">{formatEmployeeDisplayName(resigningEmployee.fullName)}</p>
+                <p className="font-semibold text-rose-900">{resigningEmployee.fullName}</p>
                 <p className="mt-1 text-sm text-rose-800">
                   {resigningEmployee.hrId} · {emptyText(resigningEmployee.positionTitle ?? resigningEmployee.jobTitle)} · {emptyText(resigningEmployee.areaName)}
                 </p>

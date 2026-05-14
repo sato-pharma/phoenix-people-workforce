@@ -101,8 +101,9 @@ function todayDate() {
 }
 
 function normalizeDate(value: string | null | undefined) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
+  if (value === null || value === undefined) return "";
+  const raw = String(value).trim();
+  if (!raw || raw.toLowerCase() === "null" || raw.toLowerCase() === "undefined") return "";
   return raw.slice(0, 10);
 }
 
@@ -133,6 +134,15 @@ function isMissingResignationRpc(error: unknown) {
     message.includes("could not find the function") ||
     (message.includes("function") && message.includes("does not exist")) ||
     message.includes("pgrst202")
+  );
+}
+
+function isLastWorkingDateConstraintError(error: unknown) {
+  const message = lowerErrorMessage(error);
+  return (
+    message.includes("last_working_date") &&
+    message.includes("null value") &&
+    message.includes("employee_resignations")
   );
 }
 
@@ -168,6 +178,17 @@ function normalizeEmployeeExitStatus(value: string | null | undefined) {
     throw new Error("Resignation employee status must be resigned, terminated, or inactive.");
   }
   return status;
+}
+
+function normalizeSubmittedDate(input: CreateResignationInput) {
+  return normalizeDate(input.submittedDate || input.submitted_date) || todayDate();
+}
+
+function normalizeLastWorkingDate(input: CreateResignationInput) {
+  return (
+    normalizeDate(input.lastWorkingDate || input.last_working_date || input.effectiveDate || input.effective_date) ||
+    todayDate()
+  );
 }
 
 function resolveSubmittedByHrId(
@@ -808,10 +829,11 @@ export async function createResignation(
   actor: string,
 ) {
   const employeeHrId = String(input.employeeHrId ?? "").trim();
-  const submittedDate = normalizeDate(input.submittedDate) || todayDate();
-  const effectiveDate = normalizeDate(input.effectiveDate);
+  const submittedDate = normalizeSubmittedDate(input);
+  const effectiveDate = normalizeLastWorkingDate(input);
+
   if (!employeeHrId) throw new Error("Employee HR ID is required.");
-  if (!effectiveDate) throw new Error("Effective resignation date is required.");
+
   if (effectiveDate < submittedDate) {
     throw new Error("Effective resignation date cannot be before the submitted date.");
   }
@@ -819,7 +841,12 @@ export async function createResignation(
   const directory = await getEmployeeDirectory();
   const employee = directory.employees.find((item) => item.hrId === employeeHrId);
   if (!employee) throw new Error("Employee was not found in the directory.");
-  return createResignationForEmployee(input, actor, employee);
+
+  return createResignationForEmployee({
+    ...input,
+    submittedDate,
+    effectiveDate,
+  }, actor, employee);
 }
 
 async function createResignationForEmployee(
@@ -827,8 +854,8 @@ async function createResignationForEmployee(
   actor: string,
   employee: DirectoryEmployee,
 ) {
-  const submittedDate = normalizeDate(input.submittedDate) || todayDate();
-  const effectiveDate = normalizeDate(input.effectiveDate);
+  const submittedDate = normalizeSubmittedDate(input);
+  const effectiveDate = normalizeLastWorkingDate(input);
   const directory = await getEmployeeDirectory();
   const submittedByHrId = resolveSubmittedByHrId(actor, directory);
   const supabase = getSupabaseAdmin();
@@ -877,16 +904,12 @@ export async function resignEmployeeAndOpenVacancy(
   }
 
   const supabase = getSupabaseAdmin();
-  const submittedDate = normalizeDate(input.submittedDate) || todayDate();
-  const effectiveDate = normalizeDate(input.effectiveDate);
+  const submittedDate = normalizeSubmittedDate(input);
+  const effectiveDate = normalizeLastWorkingDate(input);
   const employeeStatus = normalizeEmployeeExitStatus(input.employeeStatus);
   const directoryForActor = await getEmployeeDirectory();
   const submittedByHrId = resolveSubmittedByHrId(actor, directoryForActor);
   const vacancyCode = vacancyCodeFromEmployee(employeeHrId);
-
-  if (!effectiveDate) {
-    throw new Error("Effective resignation date is required.");
-  }
 
   if (effectiveDate < submittedDate) {
     throw new Error("Effective resignation date cannot be before the submitted date.");
@@ -913,7 +936,7 @@ export async function resignEmployeeAndOpenVacancy(
   };
 
   if (rpcResult.error) {
-    if (!isMissingResignationRpc(rpcResult.error)) {
+    if (!isMissingResignationRpc(rpcResult.error) && !isLastWorkingDateConstraintError(rpcResult.error)) {
       if (isMissingSchemaMessage(rpcResult.error)) {
         throw schemaReadinessError("calling phx_resign_employee_and_open_vacancy", rpcResult.error);
       }
