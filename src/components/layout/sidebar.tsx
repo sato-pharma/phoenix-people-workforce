@@ -131,7 +131,6 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
         { href: "/admin/outstation/requests", icon: MapPinned, label: "Outstation Requests", permissions: [{ resource: "outstation" }] },
         { href: "/admin/outstation/policy", icon: CalendarClock, label: "Outstation Policy", permissions: [{ resource: "outstation", action: "update" }] },
         { href: "/admin/outstation/heatmaps", icon: MapPinned, label: "Outstation Heatmaps", permissions: [{ resource: "outstation" }] },
-        { href: "/admin/geo-intelligence", icon: MapPinned, label: "Geo Intelligence", permissions: [{ resource: "geo_intelligence" }] },
       ],
       label: "Expenses & Outstation",
     },

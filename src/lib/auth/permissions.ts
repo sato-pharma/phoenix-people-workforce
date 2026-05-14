@@ -49,7 +49,6 @@ export type PermissionResource =
   | "contracts"
   | "coaching"
   | "hr_calendar"
-  | "geo_intelligence"
   | "outstation"
   | "leave"
   | "admin"
@@ -79,7 +78,6 @@ export const permissionResources: PermissionResource[] = [
   "organogram",
   "hr_calendar",
   "payslips",
-  "geo_intelligence",
   "outstation",
   "leave",
 ];
@@ -143,7 +141,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: allActions,
     employees: allActions,
     expenses: allActions,
-    geo_intelligence: allActions,
     hr_calendar: allActions,
     outstation: allActions,
     leave: allActions,
@@ -169,7 +166,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "export"],
     employees: ["read", "export"],
     expenses: ["read", "approve", "export"],
-    geo_intelligence: ["read", "export"],
     outstation: ["read", "approve", "export", "update"],
     leave: ["read", "approve", "export"],
     organogram: ["read", "export"],
@@ -193,7 +189,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: allActions,
     employees: allActions,
     expenses: allActions,
-    geo_intelligence: allActions,
     hr_calendar: allActions,
     outstation: allActions,
     leave: allActions,
@@ -212,7 +207,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: allActions,
-    geo_intelligence: ["read", "export"],
     outstation: ["read", "approve", "export", "update"],
     leave: ["read", "approve", "export", "update"],
     payroll: allActions,

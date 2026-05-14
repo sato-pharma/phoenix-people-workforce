@@ -62,7 +62,7 @@ await runTest("workforce classification", runWorkforceClassificationTests);
 await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);
 await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("employee portal payslip salary", runEmployeePortalPayslipSalaryTests);
-await runTest("google routes shortest", runGoogleRoutesShortestTests);
+  await runTest("google routes fastest", runGoogleRoutesShortestTests);
 await runTest("leave calculations", runLeaveCalculationTests);
 await runTest("leave migration", runLeaveMigrationTests);
 await runTest("leave phase 2", runLeavePhase2Tests);

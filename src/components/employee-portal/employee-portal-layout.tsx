@@ -3,7 +3,7 @@
 import { startTransition, useEffect, useEffectEvent, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, MapPinned, ChartColumnBig, FilePlus2 } from "lucide-react";
+import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2 } from "lucide-react";
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
@@ -51,7 +51,6 @@ function buildEmployeePortalSections({
   showDsmsPerformanceTab = false,
   showTeamExpensesTab = false,
   showLeaveApprovalsTab = false,
-  showBrickCoverageTab = false,
   showVacanciesTab = false,
   showProbationTab = false,
   showOrganogramTab = false,
@@ -89,7 +88,6 @@ function buildEmployeePortalSections({
         ...(showMedRepsPerformanceTab ? [{ href: "/employee-portals/med-reps-performance", label: "MRs Performance", icon: Users }] : []),
         ...(showDsmsPerformanceTab ? [{ href: "/employee-portals/dsms-performance", label: "DSMs Performance", icon: BriefcaseBusiness }] : []),
         ...(showTeamExpensesTab ? [{ href: "/employee-portals/team-expenses", label: "Team Expenses", icon: ReceiptText }] : []),
-        ...(showBrickCoverageTab ? [{ href: "/employee-portals/brick-coverage", label: "Brick Coverage", icon: MapPinned }] : []),
       ],
     },
     {

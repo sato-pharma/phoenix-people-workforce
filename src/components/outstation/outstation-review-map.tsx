@@ -10,7 +10,7 @@ import {
   type GoogleMarkerHandle,
   type GooglePolylineHandle,
 } from "@/lib/google-maps/browser";
-import type { OutstationExpenseRequest } from "@/lib/outstation/types";
+import type { OutstationExpenseRequest, OutstationRouteAlternative } from "@/lib/outstation/types";
 
 type GoogleMapsNamespace = GoogleMapsApi;
 
@@ -65,6 +65,37 @@ function coordinatesReady(request: OutstationExpenseRequest | null) {
   );
 }
 
+function formatMinutes(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "N/A";
+  return `${Math.round(value)} mins`;
+}
+
+function formatDistance(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "N/A";
+  return `${value.toFixed(2)} KM`;
+}
+
+function selectedRouteForSummary(request: OutstationExpenseRequest | null) {
+  return request?.routeAlternatives?.find((route) => route.isSelected) ?? null;
+}
+
+function routesForMap(request: OutstationExpenseRequest): OutstationRouteAlternative[] {
+  const alternatives = request.routeAlternatives?.filter((route) => route.encodedPolyline) ?? [];
+  if (alternatives.length > 0) return alternatives;
+
+  return request.routePolyline
+    ? [{
+        distanceKm: request.distanceFromResidenceKm,
+        durationInTrafficMinutes: null,
+        durationMinutes: request.durationMinutes,
+        encodedPolyline: request.routePolyline,
+        index: 0,
+        isSelected: true,
+        summary: null,
+      }]
+    : [];
+}
+
 export function OutstationReviewMap({
   request,
 }: {
@@ -74,10 +105,12 @@ export function OutstationReviewMap({
   const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "";
   const mapRef = useRef<HTMLDivElement | null>(null);
   const markersRef = useRef<GoogleMarkerHandle[]>([]);
-  const polylineRef = useRef<GooglePolylineHandle | null>(null);
+  const polylinesRef = useRef<GooglePolylineHandle[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [googleMaps, setGoogleMaps] = useState<GoogleMapsNamespace | null>(null);
+  const selectedRoute = selectedRouteForSummary(request);
+  const routeCount = request?.routeAlternatives?.length ?? (request?.routePolyline ? 1 : 0);
 
   useEffect(() => {
     if (!browserKey || !coordinatesReady(request)) {
@@ -164,10 +197,8 @@ export function OutstationReviewMap({
           }
         });
         markersRef.current = [];
-        if (typeof polylineRef.current?.setMap === "function") {
-          polylineRef.current.setMap(null);
-        }
-        polylineRef.current = null;
+        polylinesRef.current.forEach((polyline) => polyline.setMap?.(null));
+        polylinesRef.current = [];
 
         const map = new MapCtor(mapElement, {
           center: {
@@ -201,13 +232,16 @@ export function OutstationReviewMap({
           map.fitBounds(bounds, 72);
         }
 
-        if (!currentRequest.routePolyline || currentRequest.routePolyline.trim().length === 0) {
+        const routes = routesForMap(currentRequest);
+        if (routes.length === 0) {
           setError("Google Maps did not return a real driving route for this trip yet.");
           return;
         }
 
-        const path = decodePolyline(currentRequest.routePolyline);
-        path.forEach((point) => bounds?.extend(point));
+        routes.forEach((route) => {
+          if (!route.encodedPolyline) return;
+          decodePolyline(route.encodedPolyline).forEach((point) => bounds?.extend(point));
+        });
         if (bounds) {
           map.fitBounds(bounds, 72);
         }
@@ -217,19 +251,38 @@ export function OutstationReviewMap({
           return;
         }
 
-        const polyline = new PolylineCtor({
-          map,
-          path,
-          strokeColor:
-            currentRequest.approvalRecommendation === "reject"
-              ? "#dc2626"
-              : currentRequest.eligibilityStatus === "not_eligible"
-                ? "#f59e0b"
-                : "#f97316",
-          strokeOpacity: 0.9,
-          strokeWeight: 5,
+        routes
+          .filter((route) => !route.isSelected)
+          .forEach((route) => {
+            if (!route.encodedPolyline) return;
+            polylinesRef.current.push(new PolylineCtor({
+              map,
+              path: decodePolyline(route.encodedPolyline),
+              strokeColor: "#94a3b8",
+              strokeOpacity: 0.45,
+              strokeWeight: 4,
+              zIndex: 10,
+            }));
+          });
+
+        routes
+          .filter((route) => route.isSelected)
+          .forEach((route) => {
+            if (!route.encodedPolyline) return;
+            polylinesRef.current.push(new PolylineCtor({
+              map,
+              path: decodePolyline(route.encodedPolyline),
+              strokeColor:
+                currentRequest.approvalRecommendation === "reject"
+                  ? "#dc2626"
+                  : currentRequest.eligibilityStatus === "not_eligible"
+                    ? "#f59e0b"
+                    : "#f97316",
+              strokeOpacity: 0.95,
+              strokeWeight: 6,
+              zIndex: 20,
+            }));
         });
-        polylineRef.current = polyline;
         setError(null);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Google Maps could not render this route.");
@@ -262,10 +315,33 @@ export function OutstationReviewMap({
         <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-slate-950">
           Residence versus captured destination
         </h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Calculation is based on the fastest available route. Alternative routes are shown for reference only.
+        </p>
       </div>
 
       {coordinatesReady(request) ? (
         <div className="space-y-3">
+          {request ? (
+            <div className="grid gap-3 rounded-[22px] border border-[#E2E8F0] bg-[#F8FAFC] p-4 text-sm sm:grid-cols-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Fastest time</p>
+                <p className="mt-1 font-bold text-slate-950">
+                  {formatMinutes(selectedRoute?.durationInTrafficMinutes ?? selectedRoute?.durationMinutes ?? request.durationMinutes)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Fastest distance</p>
+                <p className="mt-1 font-bold text-slate-950">
+                  {formatDistance(selectedRoute?.distanceKm ?? request.distanceFromResidenceKm)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Routes found</p>
+                <p className="mt-1 font-bold text-slate-950">{routeCount.toLocaleString()}</p>
+              </div>
+            </div>
+          ) : null}
           <div className="h-[420px] rounded-[28px] border border-[#E2E8F0] bg-[#F8FAFC] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]" ref={mapRef} />
           {!ready ? <p className="text-sm text-slate-500">Loading Google Maps...</p> : null}
           {error ? <p className="text-sm text-amber-700">{error}</p> : null}

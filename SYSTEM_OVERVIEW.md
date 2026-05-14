@@ -1,6 +1,6 @@
 # Phoenix Workforce - System Overview
 
-Current workspace snapshot: 460 TypeScript/TSX files, 85 `app/api` route handlers, and the Next.js App Router under `app/`.
+Current workspace snapshot: 437 TypeScript/TSX files, 77 `app/api` route handlers, and the Next.js App Router under `app/`.
 
 ## Architecture
 
@@ -9,7 +9,8 @@ Current workspace snapshot: 460 TypeScript/TSX files, 85 `app/api` route handler
 - **Authentication**: Custom Phoenix session cookies backed by `app_auth_users`; dev preview auth is available only in local development.
 - **Authorization**: Role/action permission matrix in `src/lib/auth/permissions.ts`, optionally overlaid by `role_permission_overrides`.
 - **UI shell**: Admin and employee-portal navigation are handled by `AppShell`, `Sidebar`, and employee portal layout components.
-- **Imports/exports**: Excel workflows use `exceljs` or `xlsx`; file validation is centralized where practical in upload helpers and feature import services.
+- **Imports/exports**: Excel workflows use `exceljs` or `xlsx`; employee import validation is centralized in `src/lib/imports`.
+- **Maps and routing**: Outstation uses neutral Google Maps server helpers in `src/lib/google-maps/server.ts`.
 
 ## Roles And Permissions
 
@@ -36,7 +37,7 @@ Permission resources currently defined in code:
 - `admin`, `overview`, `admin_access`, `imports`, `sales`, `payroll`, `expenses`
 - `employees`, `team`, `offers`, `probation`, `resignations`, `contracts`, `coaching`
 - `user_admin`, `permission_admin`, `employee_documents`, `employee_profile`
-- `vacancies`, `organogram`, `hr_calendar`, `payslips`, `geo_intelligence`, `outstation`, `leave`
+- `vacancies`, `organogram`, `hr_calendar`, `payslips`, `outstation`, `leave`
 
 Permission actions are `read`, `create`, `update`, `delete`, `approve`, `export`, and `import`.
 
@@ -49,10 +50,6 @@ Current admin pages:
 - `/admin/data-health`
 - `/admin/email-notifications`
 - `/admin/email-reply-composer`
-- `/admin/geo-intelligence`
-- `/admin/geo-intelligence/anomalies`
-- `/admin/geo-intelligence/expense-routes`
-- `/admin/geo-intelligence/territory-map`
 - `/admin/leave`
 - `/admin/logs`
 - `/admin/monitoring`
@@ -71,7 +68,6 @@ Top-level admin/workforce pages:
 - `/contracts`
 - `/employees`
 - `/hr-calendar`
-- `/imports/bricks`
 - `/imports/employees`
 - `/login`
 - `/offers`, `/offers/[token]/accept`, `/offers/[token]/reject`
@@ -90,7 +86,6 @@ Employee-facing pages:
 
 - `/employee/outstation/new`
 - `/employee-portals`
-- `/employee-portals/brick-coverage`
 - `/employee-portals/coaching`, `/employee-portals/coaching/[id]`
 - `/employee-portals/contact-hr-support`
 - `/employee-portals/dsms-performance`
@@ -154,8 +149,6 @@ Employees and imports:
 - `/api/employees`
 - `/api/employees/[hrId]/resign`
 - `/api/employees/template`
-- `/api/imports/bricks/dry-run`
-- `/api/imports/bricks/confirm`
 - `/api/imports/employees/dry-run`
 - `/api/imports/employees/confirm`
 
@@ -179,6 +172,14 @@ Payroll and expenses:
 - `/api/payroll/expenses/analyze`
 - `/api/payroll/expenses/import`
 - `/api/payroll/expenses/reports/[id]`
+
+Outstation:
+
+- `/api/outstation/calculate`
+- `/api/outstation/capture-location`
+- `/api/outstation/policy`
+- `/api/outstation/submit`
+- `/api/outstation/sync-offline`
 
 Leave:
 
@@ -218,19 +219,8 @@ Coaching:
 - `/api/coaching/reports/[id]/acknowledge`
 - `/api/coaching/reports/[id]/submit`
 
-Geo, outstation, notifications, and employee portal helpers:
+Notifications:
 
-- `/api/geo/dashboard`
-- `/api/geo/geocode`
-- `/api/geo/import-bricks`
-- `/api/geo/import-expenses`
-- `/api/geo/validate-trip`
-- `/api/outstation/calculate`
-- `/api/outstation/capture-location`
-- `/api/outstation/policy`
-- `/api/outstation/submit`
-- `/api/outstation/sync-offline`
-- `/api/employee-portals/brick-coverage/geocode`
 - `/api/notifications/birthdays`
 - `/api/notifications/in-app`
 - `/api/notifications/process`
@@ -240,16 +230,17 @@ Geo, outstation, notifications, and employee portal helpers:
 
 - `src/lib/auth`: sessions, access contexts, role permissions, audit helpers.
 - `src/lib/admin`: admin dashboard, monitoring, audit, and access-control services.
-- `src/lib/employees`: employee directory and HR ID helpers.
+- `src/lib/employees`: employee directory, HR ID helpers, and residence location maintenance.
+- `src/lib/google-maps`: shared Google Maps server/browser helpers.
 - `src/lib/imports`: employee import validation, normalization, column mapping, and org rules.
 - `src/lib/sales`: monthly closing sheet parsing, validation, role mapping, import workflow, queue, and sales dashboard logic.
 - `src/lib/payroll`: salary import, payroll workflow, payslips, payroll expenses, salary source mapping, and policy logic.
+- `src/lib/outstation`: standalone outstation request capture, Google route validation, policy calculation, request storage, review data, and heatmap aggregation.
 - `src/lib/leave`: leave requests, accruals, settings, conflicts, exports, attachments, audit, and notifications.
 - `src/lib/probation`: probation row loading, workflow actions, notifications, and export generation.
 - `src/lib/contracts`, `src/lib/resignations`, `src/lib/offers`: employee lifecycle workflows.
 - `src/lib/coaching`: coaching reports, scoring, analytics, portal access, and Excel export.
-- `src/lib/geo-intelligence`, `src/lib/outstation`, `src/lib/bricks`: geography, brick coverage, trip validation, and outstation flows.
-- `src/lib/employee-portal`: employee portal data, navigation, sales scope, and period helpers.
+- `src/lib/employee-portal`: employee portal data, navigation, sales scope, expense dashboards, and period helpers.
 
 ## Current Business Workflows
 
@@ -261,6 +252,22 @@ Payroll:
 4. Run workflow actions on a batch.
 5. Download payroll/payslip outputs through batch-scoped API routes.
 
+Payroll Expenses:
+
+1. Upload/import expense data through payroll expense routes.
+2. Review expenses in `/payroll/expenses`.
+3. Inspect aggregated dashboard data in `/payroll/expenses/dashboard`.
+4. Employee portal managers review personal/team expense dashboards from employee portal routes.
+
+Outstation:
+
+1. Employee opens `/employee/outstation/new`.
+2. The system loads employee identity and residence location.
+3. Employee captures GPS location and enters trip details.
+4. Outstation APIs calculate route distance, eligibility, expected cost, variance, and approval recommendation.
+5. Employee submits or syncs an offline request.
+6. Admin users review requests, policy rules, and heatmaps from `/admin/outstation/*`.
+
 Sales:
 
 1. Open `/sales/queue`.
@@ -271,7 +278,7 @@ Sales:
 
 Imports:
 
-1. Upload employee or brick workbooks from `/imports/employees` or `/imports/bricks`.
+1. Upload employee workbooks from `/imports/employees`.
 2. Run dry-run validation.
 3. Confirm validated imports through the matching confirm API route.
 
@@ -298,7 +305,7 @@ The codebase currently references these major table groups:
 - Leave: leave types, policies, balances, requests, approvals, transactions, holidays, audit logs
 - Lifecycle: contracts, resignations, job offers, vacancies, employee probation, probation evaluations/history
 - Notifications and audit: notification events, notification delivery logs, audit logs
-- Geo/outstation/bricks: brick references, geo route/expense data, outstation requests and policy data
+- Outstation: employee residence locations, outstation policy rules, submitted outstation requests, and outstation location audit logs
 
 ## Validation And Tests
 

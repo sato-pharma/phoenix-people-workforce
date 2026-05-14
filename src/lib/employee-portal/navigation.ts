@@ -9,7 +9,6 @@ export type EmployeePortalNavVisibility = {
   showDsmsPerformanceTab?: boolean;
   showTeamExpensesTab?: boolean;
   showLeaveApprovalsTab?: boolean;
-  showBrickCoverageTab?: boolean;
   showVacanciesTab?: boolean;
   showProbationTab?: boolean;
   showOrganogramTab?: boolean;
@@ -55,7 +54,6 @@ export function resolveEmployeePortalNavVisibility(
     );
 
   return {
-    showBrickCoverageTab: isNationalSalesManager,
     showDashboardTab: !isTrainingManager,
     showDsmsPerformanceTab: isNationalSalesManager,
     showExpenseActionTab,
