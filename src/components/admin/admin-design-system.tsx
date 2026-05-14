@@ -80,21 +80,51 @@ export function AdminStatCard({
   icon,
   label,
   value,
+  tone = "orange",
 }: {
   description: string;
   icon: ReactNode;
   label: string;
   value: ReactNode;
+  tone?: "orange" | "blue" | "emerald" | "violet" | "rose";
 }) {
+  const toneClasses = {
+    orange: {
+      border: "hover:border-orange-300/80",
+      bg: "bg-orange-200/15",
+      icon: "from-orange-50 to-orange-100 text-orange-600 shadow-[0_8px_20px_rgba(249,115,22,0.15)] ring-orange-200",
+    },
+    blue: {
+      border: "hover:border-blue-300/80",
+      bg: "bg-blue-200/15",
+      icon: "from-blue-50 to-blue-100 text-blue-600 shadow-[0_8px_20px_rgba(59,130,246,0.15)] ring-blue-200",
+    },
+    emerald: {
+      border: "hover:border-emerald-300/80",
+      bg: "bg-emerald-200/15",
+      icon: "from-emerald-50 to-emerald-100 text-emerald-600 shadow-[0_8px_20px_rgba(16,185,129,0.15)] ring-emerald-200",
+    },
+    violet: {
+      border: "hover:border-violet-300/80",
+      bg: "bg-violet-200/15",
+      icon: "from-violet-50 to-violet-100 text-violet-600 shadow-[0_8px_20px_rgba(139,92,246,0.15)] ring-violet-200",
+    },
+    rose: {
+      border: "hover:border-rose-300/80",
+      bg: "bg-rose-200/15",
+      icon: "from-rose-50 to-rose-100 text-rose-600 shadow-[0_8px_20_rgba(244,63,94,0.15)] ring-rose-200",
+    },
+  }[tone];
+
   return (
-    <Card className="relative overflow-hidden rounded-[24px] border border-slate-200/90 bg-white/95 p-6 shadow-[0_16px_40px_rgba(15,23,42,0.06)] transition-all duration-300 ease-out hover:-translate-y-1 hover:border-orange-300/80 hover:bg-white hover:shadow-[0_24px_52px_rgba(15,23,42,0.14)] hover:scale-[1.02]">
-      <div className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-orange-200/15 blur-3xl" />
+    <Card className={cn("relative overflow-hidden rounded-[24px] border border-slate-200/90 bg-white/95 p-6 shadow-[0_16px_40px_rgba(15,23,42,0.06)] transition-all duration-300 ease-out hover:-translate-y-1 hover:bg-white hover:shadow-[0_24px_52px_rgba(15,23,42,0.14)] hover:scale-[1.02]", toneClasses.border)}>
+      <div className={cn("pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full blur-3xl", toneClasses.bg)} />
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-3">
           <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">{label}</p>
           <div className="text-3xl font-black tracking-tight text-slate-900">{value}</div>
         </div>
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-50 to-orange-100 p-3 text-orange-600 shadow-[0_8px_20px_rgba(249,115,22,0.15)] ring-1 ring-orange-200 transition-all duration-300 hover:scale-110">{icon}</div>
+        <div className={cn("flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br p-3 ring-1 transition-all duration-300 hover:scale-110", toneClasses.icon)}>{icon}</div>
       </div>
       <p className="mt-4 text-sm leading-6 text-slate-500">{description}</p>
     </Card>

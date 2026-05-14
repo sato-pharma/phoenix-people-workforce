@@ -161,9 +161,13 @@ begin
     line_name,
     submitted_date,
     effective_date,
+    resignation_date,
+    last_working_date,
     reason,
     workflow_notes,
     status,
+    exit_status,
+    notes,
     created_by,
     create_vacancy,
     vacancy_id,
@@ -178,6 +182,8 @@ begin
     v_line_name,
     p_submitted_date,
     p_effective_date,
+    p_submitted_date,
+    p_effective_date,
     p_reason,
     case
       when nullif(trim(coalesce(p_workflow_notes, '')), '') is null then
@@ -186,6 +192,8 @@ begin
         '[' || now()::text || '] ' || coalesce(p_actor, 'system') || ': submitted resignation - ' || p_workflow_notes
     end,
     'submitted',
+    'submitted',
+    coalesce(p_workflow_notes, p_reason),
     p_actor,
     true,
     v_vacancy_id,

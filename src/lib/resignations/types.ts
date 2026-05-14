@@ -85,6 +85,10 @@ export type CreateResignationInput = {
   employeeHrId: string;
   submittedDate: string;
   effectiveDate: string;
+  lastWorkingDate?: string | null;
+  last_working_date?: string | null;
+  submitted_date?: string | null;
+  effective_date?: string | null;
   reason?: string | null;
   workflowNotes?: string | null;
 };
