@@ -7,7 +7,6 @@ import {
   Brain,
   ChevronDown,
   FileSpreadsheet,
-  FileUp,
   Link2,
   MapPinned,
   Package,
@@ -1115,12 +1114,6 @@ function SalesDashboardContent({
                     <Button className="gap-2 rounded-xl bg-[#0B0B0B] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition-all duration-160 ease-out hover:bg-[#F97316] hover:shadow-md hover:-translate-y-px active:scale-95">
                       <FileSpreadsheet className="h-4 w-4" />
                       Uploaded Sheets
-                    </Button>
-                  </Link>
-                  <Link href="/sales/upload">
-                    <Button className="gap-2 rounded-xl border border-[#E2E8F0] bg-white text-[#0F172A] hover:bg-[#FFF7ED] hover:shadow-md hover:-translate-y-px transition-all duration-160 ease-out active:scale-95" variant="secondary">
-                      <FileUp className="h-4 w-4" />
-                      Upload Monthly Closing Sheet
                     </Button>
                   </Link>
                 </>
