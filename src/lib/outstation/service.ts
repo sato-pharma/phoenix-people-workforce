@@ -4,14 +4,13 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
-import { listBrickReferenceRows, normalizeBrickText } from "@/lib/bricks/service";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
   googleDirectionsRoute,
   googleDistanceMatrix,
   googleGeocodeAddress,
   googleReverseGeocode,
-} from "@/lib/geo-intelligence/google";
+} from "@/lib/google-maps/server";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   EmployeeResidenceLocation,
@@ -27,6 +26,7 @@ import type {
   OutstationHeatmapData,
   OutstationHeatmapMarker,
   OutstationPolicyRule,
+  OutstationRouteAlternative,
   OutstationTerritoryValidationStatus,
   OutstationTransportationType,
 } from "@/lib/outstation/types";
@@ -95,8 +95,12 @@ function roundMoney(value: number) {
   return Number(value.toFixed(2));
 }
 
+function minutesFromSeconds(value: number | null | undefined) {
+  return value != null ? Number((value / 60).toFixed(1)) : null;
+}
+
 function normalizeArea(value: string | null | undefined) {
-  return normalizeBrickText(value ?? "");
+  return text(value).toLowerCase();
 }
 
 function safeJsonParse<T>(value: unknown, fallback: T): T {
@@ -254,23 +258,27 @@ function recommendationForResult(params: {
 }
 
 async function getEmployeeIdentity(access: AccessContext) {
-  const hrId = resolveEmployeeIdentityId(access);
-  if (!hrId) {
+  const identityHrId = resolveEmployeeIdentityId(access);
+  if (!identityHrId) {
     throw new Error("Your employee profile is not linked yet. Please contact HR.");
   }
 
   const directory = await getEmployeeDirectory();
   const employee =
     directory.employees.find(
-      (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(hrId),
+      (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(identityHrId),
     ) ?? null;
+
+  if (!employee?.hrId) {
+    throw new Error("Your employee profile is not available in the employee directory. Please contact HR before submitting an outstation request.");
+  }
 
   return {
     employee,
     employeeArea: employee?.areaName ?? null,
-    employeeHrId: hrId,
+    employeeHrId: employee.hrId,
     employeeLine: employee?.lineName ?? null,
-    employeeName: employee?.fullName ?? hrId,
+    employeeName: employee?.fullName ?? employee.hrId,
     employeeRole: normalizeRole(access.role),
   };
 }
@@ -454,41 +462,11 @@ async function getCachedRoute(params: {
 async function validateTerritory(input: {
   capturedArea: string | null;
   capturedCity: string | null;
-  employee: EmployeeDirectoryRow | null;
   employeeArea: string | null;
-  employeeHrId: string;
-  employeeLine: string | null;
 }) {
   const normalizedCapturedArea = normalizeArea(input.capturedArea);
   const normalizedCapturedCity = normalizeArea(input.capturedCity);
   const employeeAreaKey = normalizeArea(input.employeeArea);
-  const brickRows = await listBrickReferenceRows(input.employeeLine);
-  const directRows = brickRows.filter(
-    (row) => normalizeHrIdForAccess(row.dsmHrId) === normalizeHrIdForAccess(input.employeeHrId),
-  );
-
-  if (directRows.length > 0) {
-    const matched = directRows.some((row) => {
-      const brickAreaKey = normalizeArea(row.area);
-      return Boolean(
-        normalizedCapturedArea &&
-          (brickAreaKey === normalizedCapturedArea || brickAreaKey === normalizedCapturedCity),
-      );
-    });
-
-    if (matched) {
-      return {
-        reason: "Captured destination matches the employee's assigned reference territory.",
-        status: "matched" as OutstationTerritoryValidationStatus,
-      };
-    }
-
-    return {
-      reason:
-        "Captured destination does not match the employee's assigned territory reference and needs manager review.",
-      status: "outside_expected_territory" as OutstationTerritoryValidationStatus,
-    };
-  }
 
   if (employeeAreaKey && normalizedCapturedArea && employeeAreaKey === normalizedCapturedArea) {
     return {
@@ -506,7 +484,7 @@ async function validateTerritory(input: {
   }
 
   return {
-    reason: "Territory reference data is not available for this employee.",
+    reason: "Employee area or captured destination area is not available for territory validation.",
     status: "not_available" as OutstationTerritoryValidationStatus,
   };
 }
@@ -661,69 +639,66 @@ async function validateCapturedLocation(
     fraudFlags.push("repeated_same_coordinates");
   }
 
-  const route = await getCachedRoute({
-    capturedLatitude: params.capturedLatitude,
-    capturedLongitude: params.capturedLongitude,
-    employeeHrId: identity.employeeHrId,
-    residenceLatitude: residence.residenceLatitude,
-    residenceLongitude: residence.residenceLongitude,
-  });
-
-  let polyline: string | null = route?.routePolyline ?? null;
-  let durationMinutes: number | null = route?.durationMinutes ?? null;
-  let distanceKm: number | null = route?.distanceKm ?? null;
+  let polyline: string | null = null;
+  let durationMinutes: number | null = null;
+  let distanceKm: number | null = null;
+  let routeAlternatives: OutstationRouteAlternative[] = [];
+  let selectedRouteIndex: number | null = null;
+  let selectedRouteReason: "fastest_duration" | null = null;
   let routeError: string | null = null;
 
-  if (distanceKm == null || durationMinutes == null || polyline == null) {
-    try {
-      const directions = await googleDirectionsRoute(
-        {
-          lat: residence.residenceLatitude,
-          lng: residence.residenceLongitude,
-        },
-        {
-          lat: params.capturedLatitude,
-          lng: params.capturedLongitude,
-        },
-      );
-      if (directions.distanceMeters != null) {
-        distanceKm = Number((directions.distanceMeters / 1000).toFixed(2));
-      }
-      if (directions.durationSeconds != null) {
-        durationMinutes = Number((directions.durationSeconds / 60).toFixed(1));
-      }
-      polyline = directions.polyline;
-    } catch (error) {
-      routeError =
-        error instanceof Error
-          ? error.message
-          : "Google Routes API failed to calculate the driving route.";
+  try {
+    const directions = await googleDirectionsRoute(
+      {
+        lat: residence.residenceLatitude,
+        lng: residence.residenceLongitude,
+      },
+      {
+        lat: params.capturedLatitude,
+        lng: params.capturedLongitude,
+      },
+    );
+    if (directions.distanceMeters != null) {
+      distanceKm = Number((directions.distanceMeters / 1000).toFixed(2));
     }
+    durationMinutes =
+      minutesFromSeconds(directions.durationInTrafficSeconds) ??
+      minutesFromSeconds(directions.durationSeconds);
+    polyline = directions.polyline;
+    selectedRouteIndex = directions.selectedRouteIndex;
+    selectedRouteReason = directions.selectedRouteIndex != null ? "fastest_duration" : null;
+    routeAlternatives = directions.alternatives.map((route) => ({
+      distanceKm:
+        route.distanceMeters != null ? Number((route.distanceMeters / 1000).toFixed(2)) : null,
+      durationInTrafficMinutes: minutesFromSeconds(route.durationInTrafficSeconds),
+      durationMinutes: minutesFromSeconds(route.durationSeconds),
+      encodedPolyline: route.encodedPolyline,
+      index: route.index,
+      isSelected: route.isSelected,
+      summary: route.summary,
+    }));
+  } catch (error) {
+    routeError =
+      error instanceof Error
+        ? error.message
+        : "Google Routes API failed to calculate the driving route.";
+  }
 
-    if ((distanceKm == null || durationMinutes == null) && !routeError) {
-      try {
-        const distance = await googleDistanceMatrix(
-          {
-            lat: residence.residenceLatitude,
-            lng: residence.residenceLongitude,
-          },
-          {
-            lat: params.capturedLatitude,
-            lng: params.capturedLongitude,
-          },
-        );
-        if (distanceKm == null && distance.distanceMeters != null) {
-          distanceKm = Number((distance.distanceMeters / 1000).toFixed(2));
-        }
-        if (durationMinutes == null && distance.durationSeconds != null) {
-          durationMinutes = Number((distance.durationSeconds / 60).toFixed(1));
-        }
-      } catch (error) {
-        routeError =
-          error instanceof Error
-            ? error.message
-            : "Google Routes API failed to calculate route distance.";
-      }
+  if (distanceKm == null || durationMinutes == null || polyline == null) {
+    const route = await getCachedRoute({
+      capturedLatitude: params.capturedLatitude,
+      capturedLongitude: params.capturedLongitude,
+      employeeHrId: identity.employeeHrId,
+      residenceLatitude: residence.residenceLatitude,
+      residenceLongitude: residence.residenceLongitude,
+    });
+
+    polyline = polyline ?? route?.routePolyline ?? null;
+    durationMinutes = durationMinutes ?? route?.durationMinutes ?? null;
+    distanceKm = distanceKm ?? route?.distanceKm ?? null;
+
+    if (distanceKm != null || durationMinutes != null || polyline != null) {
+      routeError = null;
     }
   }
 
@@ -782,10 +757,7 @@ async function validateCapturedLocation(
   const territory = await validateTerritory({
     capturedArea: reverse?.area ?? null,
     capturedCity: reverse?.city ?? null,
-    employee: identity.employee,
     employeeArea: identity.employeeArea,
-    employeeHrId: identity.employeeHrId,
-    employeeLine: identity.employeeLine,
   });
 
   if (territory.status === "outside_expected_territory") {
@@ -817,9 +789,12 @@ async function validateCapturedLocation(
     minimumRequiredDistanceKm: policy.minimumDistanceKm,
     residenceLatitude: residence.residenceLatitude,
     residenceLongitude: residence.residenceLongitude,
+    routeAlternatives,
     routePolyline: polyline,
     routeProvider: "google_maps",
     routeError,
+    selectedRouteIndex,
+    selectedRouteReason,
     submittedAt,
     suspiciousLocationScore,
     territoryValidationReason: territory.reason,

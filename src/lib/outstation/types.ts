@@ -35,6 +35,16 @@ export type OutstationTerritoryValidationStatus =
   | "outside_expected_territory"
   | "not_available";
 
+export type OutstationRouteAlternative = {
+  distanceKm: number | null;
+  durationInTrafficMinutes: number | null;
+  durationMinutes: number | null;
+  encodedPolyline: string | null;
+  index: number;
+  isSelected: boolean;
+  summary: string | null;
+};
+
 export type EmployeeResidenceLocation = {
   employeeHrId: string;
   geocodeStatus: string | null;
@@ -91,9 +101,12 @@ export type OutstationCaptureResult = {
   minimumRequiredDistanceKm: number;
   residenceLatitude: number | null;
   residenceLongitude: number | null;
+  routeAlternatives: OutstationRouteAlternative[];
   routePolyline: string | null;
   routeProvider: "google_maps";
   routeError: string | null;
+  selectedRouteIndex: number | null;
+  selectedRouteReason: "fastest_duration" | null;
   submittedAt: string;
   suspiciousLocationScore: number;
   territoryValidationReason: string;
@@ -188,8 +201,11 @@ export type OutstationExpenseRequest = {
   residenceCity: string | null;
   residenceLatitude: number | null;
   residenceLongitude: number | null;
+  routeAlternatives?: OutstationRouteAlternative[];
   routePolyline: string | null;
   routeError: string | null;
+  selectedRouteIndex?: number | null;
+  selectedRouteReason?: "fastest_duration" | null;
   sameDayTrip: boolean;
   status: string;
   submittedAt: string | null;

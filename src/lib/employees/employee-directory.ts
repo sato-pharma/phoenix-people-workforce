@@ -3,7 +3,7 @@ import {
   type PayrollPaymentMode,
 } from "@/lib/payroll/policy";
 import { isDevelopment } from "@/lib/env";
-import { googleGeocodeAddress } from "@/lib/geo-intelligence/google";
+import { googleGeocodeAddress } from "@/lib/google-maps/server";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { generateNextHrIdForLine } from "./hr-id-helper";
