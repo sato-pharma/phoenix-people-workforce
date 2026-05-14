@@ -88,7 +88,9 @@ export async function POST(request: Request) {
 
     await upsertEmployee(payload.employee);
 
-    return NextResponse.json(await getEmployeeDirectory());
+    return NextResponse.json(
+      filterEmployeeDirectoryForAccess(await getEmployeeDirectory(), access),
+    );
   } catch (error) {
     const { message, status } = employeeApiError(error);
     return NextResponse.json({ error: "employee_save_failed", message }, { status });

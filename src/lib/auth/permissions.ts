@@ -810,7 +810,9 @@ export function filterEmployeeDirectoryForAccess(
       managers: directory.lookups.managers.filter((manager) => visibleHrIds.has(normalizeHrId(manager.value))),
     },
     summary: {
-      activeEmployees: employees.filter((employee) => employee.employmentStatus === "active").length,
+      activeEmployees: employees.filter((employee) =>
+        ["active", "on_leave"].includes(String(employee.employmentStatus ?? "active").toLowerCase()),
+      ).length,
       employeesWithoutManagers: employees.filter((employee) => !employee.managerHrId).length,
       totalEmployees: employees.length,
       uniqueAreas: new Set(employees.map((employee) => employee.areaName).filter(Boolean)).size,

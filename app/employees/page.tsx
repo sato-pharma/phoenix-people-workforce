@@ -8,7 +8,7 @@ import {
   isEmployeeDirectorySchemaMissing,
   isEmployeeDirectoryTimeout,
 } from "@/lib/employees/employee-directory";
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccess, filterEmployeeDirectoryForAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +38,7 @@ export default async function EmployeesPage() {
   let initialError: string | null = null;
 
   try {
-    initialData = await getEmployeeDirectory();
+    initialData = filterEmployeeDirectoryForAccess(await getEmployeeDirectory(), access);
   } catch (error) {
     initialError = employeePageError(error);
   }

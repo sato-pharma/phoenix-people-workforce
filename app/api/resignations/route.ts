@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { isDevelopment } from "@/lib/env";
 import {
   createResignation,
   getResignationsDashboardData,
@@ -18,7 +19,10 @@ function resignationsApiError(error: unknown) {
     return { message: resignationErrorMessage(error), status: 403 };
   }
   if (isResignationsSchemaMissing(error)) {
-    return { message: "Resignations schema is not ready.", status: 409 };
+    return {
+      message: isDevelopment ? resignationErrorMessage(error) : "Resignations schema is not ready.",
+      status: 409,
+    };
   }
   return { message: resignationErrorMessage(error), status: 500 };
 }

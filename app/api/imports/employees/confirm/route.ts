@@ -3,6 +3,8 @@ import * as XLSX from "xlsx";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
+import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
 import type {
   EmployeeImportRecord,
@@ -418,6 +420,7 @@ function employeeValues(
       ? ids.departmentIds.get(record.codes.departmentCode) ?? null
       : null,
     education: truncate(record.education, 160),
+    employment_status: "active",
     full_name: truncate(record.fullName, 220) ?? record.hrId ?? "Unknown",
     hire_date: record.hireDate,
     hr_id: record.hrId as string,
@@ -428,6 +431,8 @@ function employeeValues(
     manager_hr_id: null,
     mobile_number: truncate(record.mobileNumber, 40),
     name_ar: truncate(record.nameAr, 220),
+    organogram_visible: true,
+    payroll_eligible: true,
     position_id: record.codes.positionCode
       ? ids.positionIds.get(record.codes.positionCode) ?? null
       : null,
@@ -442,15 +447,28 @@ function isMissingOptionalEmployeeColumn(error: unknown) {
 
   return (
     message.includes("birth_date") ||
+    message.includes("employment_status") ||
+    message.includes("organogram_visible") ||
+    message.includes("payroll_eligible") ||
     message.includes("region_name") ||
     message.includes("schema cache")
   );
 }
 
 function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues>) {
-  const { birth_date, region_name, ...rest } = values;
+  const {
+    birth_date,
+    employment_status,
+    organogram_visible,
+    payroll_eligible,
+    region_name,
+    ...rest
+  } = values;
 
   void birth_date;
+  void employment_status;
+  void organogram_visible;
+  void payroll_eligible;
   void region_name;
 
   return rest;
@@ -714,7 +732,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
 
-    const dryRunResult = createEmployeeImportPlan(parsed.rows);
+    const supabase = getSupabaseAdmin();
+    const existingState = await loadEmployeeImportExistingState(supabase);
+    const dryRunResult = createEmployeeImportPlan(parsed.rows, { existingState });
 
     if (shouldRejectImport(dryRunResult)) {
       return NextResponse.json(validationRejection(dryRunResult), {
@@ -722,7 +742,6 @@ export async function POST(request: Request) {
       });
     }
 
-    const supabase = getSupabaseAdmin();
     const importRecords = [
       ...dryRunResult.rowsToInsert,
       ...dryRunResult.rowsToUpdate,
@@ -806,6 +825,8 @@ export async function POST(request: Request) {
       title: "Employee Import Completed",
       tone: response.warnings.length > 0 ? "warning" : "success",
     });
+
+    invalidateEmployeeDirectoryCache();
 
     return NextResponse.json(response);
   } catch (error) {

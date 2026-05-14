@@ -542,6 +542,7 @@ export function validateEmployeeImportRows(
     .map(([hrId]) => hrId);
 
   const duplicateHrIdSet = new Set(duplicateHrIds);
+  const terminalEmployeeHrIds = options.existingState?.terminalEmployeeHrIds ?? new Set<string>();
 
   for (const record of records) {
     if (record.hrId && duplicateHrIdSet.has(record.hrId)) {
@@ -550,6 +551,15 @@ export function validateEmployeeImportRows(
         field: "hrId",
         code: "duplicate_hr_id",
         message: `Duplicate HR_ID detected: ${record.hrId}.`,
+      });
+    }
+
+    if (record.hrId && terminalEmployeeHrIds.has(record.hrId)) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "hrId",
+        code: "inactive_employee_update_blocked",
+        message: `HR_ID ${record.hrId} belongs to an inactive or resigned employee and cannot be reactivated by import.`,
       });
     }
   }
