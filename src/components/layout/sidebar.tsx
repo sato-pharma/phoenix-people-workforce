@@ -116,10 +116,16 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       label: "Sales & Performance",
     },
     {
-      id: "payroll-expenses",
+      id: "payroll",
       items: [
         { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }] },
         { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }] },
+      ],
+      label: "Payroll",
+    },
+    {
+      id: "expenses-outstation",
+      items: [
         { href: "/payroll/expenses", icon: FileSpreadsheet, label: "Expenses", permissions: [{ resource: "expenses" }] },
         { href: "/payroll/expenses/dashboard", icon: ChartColumnBig, label: "Expenses Dashboard", permissions: [{ resource: "expenses" }] },
         { href: "/admin/outstation/requests", icon: MapPinned, label: "Outstation Requests", permissions: [{ resource: "outstation" }] },
@@ -127,7 +133,7 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
         { href: "/admin/outstation/heatmaps", icon: MapPinned, label: "Outstation Heatmaps", permissions: [{ resource: "outstation" }] },
         { href: "/admin/geo-intelligence", icon: MapPinned, label: "Geo Intelligence", permissions: [{ resource: "geo_intelligence" }] },
       ],
-      label: "Payroll & Expenses",
+      label: "Expenses & Outstation",
     },
     {
       id: "access-communication",

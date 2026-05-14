@@ -1,540 +1,311 @@
-# Phoenix Workforce - Complete System Overview
-
-**305 TypeScript/TSX files | 63 API routes | 15+ major modules**
-
----
-
-## 1. AUTHENTICATION & AUTHORIZATION
-
-### Authentication System
-- **Login Flow**: Email/password authentication via Supabase
-- **Session Management**: JWT-based sessions with auth users table
-- **Password Setup**: Tokenized password setup flow for new users
-- **Logout**: Session termination and cleanup
-
-### Permission & Access Control
-- **Role-Based Access Control (RBAC)**: 15 Phoenix Roles defined
-  - Employee, Medical Rep, District Manager, Regional Manager, National Sales Manager
-  - Product Manager, Group Product Manager, SFE Manager, Training Manager
-  - Marketing Manager, Finance Manager, HR Specialist, Manager, CEO, Super Admin
-  
-- **Permission Resources** (23 types):
-  - admin, overview, admin_access, imports, sales, payroll, expenses
-  - employees, team, offers, probation, resignations, contracts, coaching
-  - user_admin, permission_admin, employee_documents, employee_profile
-  - vacancies, organogram, hr_calendar, payslips, geo_intelligence, outstation
-
-- **Permission Actions**: read, create, update, delete, approve, export, import
-
-- **Access Scopes**:
-  - `self`: Only own data
-  - `team`: Team members only
-  - `hierarchy`: All subordinates
-  - `line`: Same business line
-  - `company`: All company data
-  - `none`: No access
-  - `system`: Full system access
-
-### Key Functions
-- `getPhoenixAdminStats()` - Dashboard stats (employees, payroll, sales, vacancies)
-- `getAdminMonitoringStats()` - Auth/notification monitoring
-- `resolvePayrollAccessFilter()` - Determines payroll visibility by role/scope
-- `buildManagerMap()` - Creates manager-subordinate relationships
-- `collectPayrollHierarchy()` - Recursively maps reporting structure
-
----
-
-## 2. PAYROLL MANAGEMENT
-
-### Salary Batch Processing
-**Workflow**: Upload → Validate → Review → Approve → Lock → Export
-
-- `createSalaryBatch()` - Import salary records from file
-- `replaceSalaryBatch()` - Re-upload batch data
-- `runPayrollWorkflow()` - State transitions (mark_review, approve, lock, reject, reopen)
-- `getSalaryBatchExport()` - Export batch with access control
-- `deleteSalaryBatch()` - Remove batch
-
-### Salary Records
-- Tracks: gross salary, net salary, additions, deductions
-- Fields: HR_ID, employee code, full name, job title, line, area
-- Deductions: social insurance, income tax, CRM, fingerprint, medical insurance, loans
-- Additions: incentive, overtime, bonus, fuel allowance, cost of living, expenses
-
-### Payroll Dashboard
-- `getPayrollDashboard()` - Retrieves salary records with:
-  - Anomaly detection (>2.25x average net salary)
-  - Readiness rate calculation
-  - Total gross/net/additions/government deductions
-  - Access-controlled record visibility
-
-### Data Validation
-- `mapRecord()` - Normalizes salary record data types
-- `verifySalaryRecordPayloads()` - Ensures data persists correctly
-- Salary flags system for validation warnings
-
-### Access Control
-- Role-based payroll visibility
-- Manager hierarchy filtering
-- Line-based employee grouping
-- Normalized HR_ID matching (handles variations)
-
----
-
-## 3. EMPLOYEE MANAGEMENT
-
-### Employee Directory
-- `getEmployeeDirectory()` - Full employee hierarchy
-- Tracks: HR_ID, full name, email, job title, manager HR_ID, hire date
-- Supports Arabic name field
-
-### HR_ID Generation
-- `generateNextHrIdForLine()` - Auto-generate unique HR_IDs
-- Prefix system by business line: PH, AI, PD, CN, OF
-- Format: `PREFIX-NNNN` (e.g., PH-0001)
-- Race condition handling with retries
-
-### Employee Bulk Operations
-- Bulk import employees
-- Bulk update/delete
-- Setup link generation for new users
-- Resignation processing
-
----
-
-## 4. ADMIN DASHBOARD & MONITORING
-
-### Statistics & Reporting
-- **Total Employees**: Count of all employees
-- **Active Employees**: Current org chart count
-- **Payroll Eligible**: Employees in payroll scope
-- **Salary Records**: Total salary records
-- **Sales Records**: Sales team records
-- **Expenses Count**: Payroll expenses
-- **Salary Flags**: Data quality issues
-- **Data Health Issues**: Linkage problems
-- **Vacancies**: Open positions
-- **Job Offers**: In-flight offers
-
-### Monitoring
-- Auth bridge coverage rate
-- Broken accounts (missing access profiles)
-- Failed login attempts (24h)
-- Locked accounts & forced password resets
-- Notification delivery stats (sent/failed/pending)
-- Audit log tracking
-
-### Data Health
-- Employee linkage health
-- Sales employee linkage
-- Orphan audit records
-- Health rate percentage
-
----
-
-## 5. COMMUNICATIONS & NOTIFICATIONS
-
-### Email System
-- Email notification dispatch
-- Notification delivery logs
-- Notification event queue
-- Birthday notifications
-- Phoenix HR reply template system
-
-### Notification Management
-- Notification events creation
-- Status tracking (pending, sent, failed)
-- Retry logic
-- 24-hour statistics
-
----
-
-## 6. BUSINESS OPERATIONS
-
-### Sales Management
-- Sales records import
-- Sales employee linkage
-- Product assignment
-- Sales performance tracking
-
-### Geographic Intelligence
-- Location tracking
-- Territory mapping
-- Expense route analysis
-- Anomaly detection
-- Trip validation with Google Maps
-- Brick/location import
-- Outstation management
-
-### Organogram (Organization Chart)
-- Active employee hierarchy
-- Reporting structure
-- Department organization
-
-### HR Calendar
-- Holiday scheduling
-- Leave periods
-- HR events
-
-### Outstation Management
-- Request tracking
-- Heatmap analysis
-- Policy enforcement
-- Request approval workflow
-
----
-
-## 7. EMPLOYEE SELF-SERVICE
-
-### Employee Portal
-- View personal profile & documents
-- Access payslips
-- Request leave/outstation
-- View contracts
-- Career progression
-
-### Payslip Access
-- Period-based access (current/previous)
-- Salary record export
-- PDF generation
-
-### Documents
-- Store employee documents
-- Verification tracking
-- Document versioning
-
----
-
-## 8. HIRING & RECRUITMENT
-
-### Job Offers
-- Create offers
-- Track offer status
-- Acceptance/rejection workflow
-- Offer letter generation
-
-### Vacancies
-- Create position vacancies
-- Track applications
-- Publish openings
-
-### Probation Management
-- Track probation periods
-- Performance reviews
-- Completion/extension workflow
-
----
-
-## 9. EMPLOYEE LIFECYCLE
-
-### Resignations
-- Resignation requests
-- Exit interviews
-- Final settlement
-- Clearance tracking
-
-### Contracts
-- Contract storage
-- Renewal tracking
-- Workflow management
-
----
-
-## 10. IMPORTS & DATA MANAGEMENT
-
-### Bulk Import System
-- Employees: Import from CSV/Excel
-- Bricks: Location data import
-- Expenses: Expense data import
-- Payroll: Salary data import
-
-### Dry-Run & Validation
-- `dry-run` - Preview without saving
-- `confirm` - Save validated data
-- Validation warning capture
-- Error reporting
-
----
-
-## 11. API ROUTES (63 Total)
-
-### Authentication (4 routes)
-```
-POST /api/auth/login
-POST /api/auth/logout
-POST /api/auth/heartbeat
-POST /api/auth/password-setup/[token]
-```
-
-### Admin (18 routes)
-```
-GET /api/admin/profile
-GET /api/admin/email-notifications
-POST /api/admin/email-notifications
-POST /api/admin/email-reply/send
-GET /api/admin/logs
-GET /api/admin/monitoring
-GET /api/admin/permissions
-PATCH /api/admin/permissions
-GET/POST /api/admin/users
-GET/POST /api/admin/users/bulk
-POST /api/admin/users/bulk-action
-POST /api/admin/users/setup-link
-GET/PATCH/DELETE /api/admin/users/[id]
-GET/POST /api/admin/salary-flags
-GET/POST /api/admin/outstation/requests
-GET/POST /api/admin/outstation/heatmaps
-GET/PATCH/DELETE /api/admin/outstation/[id]
-```
-
-### Payroll (3 routes)
-```
-GET /api/payroll/dashboard
-GET /api/payroll/export
-POST /api/payroll/batch
-```
-
-### Employees (3 routes)
-```
-GET /api/employees
-POST /api/employees
-GET/POST /api/employees/template
-POST /api/employees/[hrId]/resign
-```
-
-### Sales (1 route)
-```
-GET /api/sales/dashboard
-```
-
-### Geo & Location (6 routes)
-```
-GET /api/geo/dashboard
-POST /api/geo/geocode
-POST /api/geo/validate-trip
-POST /api/geo/import-bricks
-POST /api/geo/import-expenses
-```
-
-### Imports (6 routes)
-```
-POST /api/imports/employees/dry-run
-POST /api/imports/employees/confirm
-POST /api/imports/bricks/dry-run
-POST /api/imports/bricks/confirm
-```
-
-### Notifications (2 routes)
-```
-POST /api/notifications/birthdays
-POST /api/notifications/process
-```
-
-### Contracts (2 routes)
-```
-GET /api/contracts
-POST /api/contracts/[id]/workflow
-```
-
----
-
-## 12. DATABASE SCHEMA
-
-### Core Tables
-- **employees**: All employees with HR_ID, names, dates
-- **organogram**: Active employee hierarchy
-- **user_access_profiles**: Role & permission mapping
-- **app_auth_users**: Authentication user records
-- **auth_login_attempts**: Login attempt tracking
-
-### Payroll
-- **salary_batches**: Batch metadata (status, dates)
-- **salary_records**: Individual salary records
-- **salary_flags**: Data quality warnings
-- **payroll_expenses**: Expense tracking
-
-### Business Data
-- **salary_records**: Salary records with all deductions/additions
-- **sales_records**: Sales transaction records
-- **position_vacancies**: Open positions
-- **job_offers**: Offer tracking
-- **employee_linkage_health**: Data quality metrics
-
-### Notifications
-- **notification_events**: Event queue
-- **notification_delivery_logs**: Delivery tracking
-
-### Audit & Logs
-- **audit_logs**: All system actions (create/update/delete/auth)
-- **auth_login_attempts**: Failed login tracking
-
----
-
-## 13. KEY WORKFLOWS
-
-### Payroll Workflow
-1. Upload file → Create batch
-2. Validate records → Generate flags
-3. Mark for review
-4. Review & approve
-5. Lock for finalization
-6. Export to accounting
-
-### Employee Onboarding
-1. Create employee record
-2. Assign to organogram
-3. Generate HR_ID
-4. Create access profile
-5. Send password setup link
-6. New hire confirmed
-
-### Resignation Workflow
-1. Submit resignation
-2. Generate exit interview
-3. Final settlement calculation
-4. Clearance checklist
-5. Data archival
-
-### Import Workflow
-1. Select file (CSV/Excel)
-2. Run dry-run validation
-3. Review warnings/errors
-4. Confirm import
-5. Verify data persistence
-
----
-
-## 14. UTILITIES & HELPERS
-
-### ID Normalization
-- `normalizeHrId()` - Standardizes HR_ID format
-- `normalizeHrIdForAccess()` - Creates canonical form for matching
-- `normalizeLineName()` - Business line name normalization
-
-### Data Mapping
-- `mapBatch()` - Salary batch data normalization
-- `mapRecord()` - Salary record normalization
-- `mapFlag()` - Salary flag normalization
-
-### Query Building
-- `buildPayrollIdentityOrClause()` - Dynamic OR filter generation
-- `filterPayrollQueryByAllowedHrIds()` - Apply access control
-- `filterPayrollRowsByAccess()` - Post-query filtering
-
-### Error Handling
-- `isPayrollSchemaMissing()` - Detect missing schema
-- `isMissingColumnError()` - Detect missing columns
-- `payrollErrorMessage()` - Error message extraction
-
----
-
-## 15. INTERNATIONALIZATION
-
-### Supported Languages
-- English (en)
-- Arabic (ar)
-- Multi-language support in UI
-
-### Locale-Aware Features
-- Employee names in Arabic (name_ar field)
-- Currency formatting
-- Date formatting
-- Number formatting
-
----
-
-## 16. SECURITY & COMPLIANCE
-
-### Access Control
-- Row-Level Security (RLS) via Supabase
-- Admin-only endpoints
-- Role-based resource access
-- Action-level permissions
-
-### Audit Trail
-- All modifications logged
-- User attribution
-- Timestamp tracking
-- Entity change history
-
-### Data Protection
-- Password hashing (Supabase Auth)
-- Secure token generation
-- Session expiration
-- Rate limiting (via Supabase)
-
----
-
-## 17. DEVELOPMENT SETUP
-
-### Environment Variables
-- `NEXT_PUBLIC_SUPABASE_URL`: Database URL
-- `SUPABASE_SERVICE_ROLE_KEY`: Admin API key
-- Database query timeout: 8 seconds
-
-### Key Dependencies
-- Next.js (app router)
-- Supabase (PostgreSQL + Auth)
-- TypeScript
-- React
-- TailwindCSS (styling)
-
-### Testing
-5 test suites covering:
-- Email notifications
-- i18n config
-- Incentive schemes
-- Payroll sheet mapping
-- Phoenix HR reply templates
-
----
-
-## 18. PAGES & UI STRUCTURE
-
-### Admin Pages
-- `/admin` - Dashboard
-- `/admin/profile` - Admin profile
-- `/admin/access` - Access control
-- `/admin/data-health` - Data quality
-- `/admin/email-notifications` - Email management
-- `/admin/email-reply-composer` - Email composer
-- `/admin/logs` - System logs
-- `/admin/monitoring` - Monitoring dashboard
-- `/admin/payslips-center` - Payslip management
-- `/admin/outstation/requests` - Outstation requests
-- `/admin/outstation/heatmaps` - Location heatmaps
-- `/admin/outstation/policy` - Policy settings
-- `/admin/geo-intelligence/*` - Geographic features
-- `/admin/geo-intelligence/territory-map` - Territory mapping
-- `/admin/geo-intelligence/expense-routes` - Route analysis
-- `/admin/geo-intelligence/anomalies` - Anomaly detection
-
-### Employee Pages
-- `/employee-portals` - Portal home
-- `/employees` - Employee directory
-- `/payslips` - Payslip access
-- `/contracts` - Contract management
-- `/probation` - Probation tracking
-- `/resignations` - Resignation management
-- `/offers` - Job offers
-- `/hr-calendar` - Calendar
-- `/organogram` - Organization chart
-- `/overview` - Dashboard
-- `/reports` - Reporting
-- `/sales` - Sales data
-
----
-
-## Testing Areas Before Production
-
-1. **Authentication**: Login, logout, session management
-2. **Payroll**: Batch upload, validation, approval workflow
-3. **Access Control**: Role-based visibility, data filtering
-4. **Employee Management**: Bulk import, HR_ID generation
-5. **Notifications**: Email delivery, event processing
-6. **Imports**: CSV/Excel validation, dry-run accuracy
-7. **Admin Functions**: Monitoring, audit logs, data health
-8. **Employee Portal**: Payslip access, personal data visibility
-9. **Integrations**: Google Maps, email system
-10. **Data Integrity**: Linkage health, orphan detection
-
+# Phoenix Workforce - System Overview
+
+Current workspace snapshot: 460 TypeScript/TSX files, 85 `app/api` route handlers, and the Next.js App Router under `app/`.
+
+## Architecture
+
+- **Runtime**: Next.js 16 App Router with React 19 and TypeScript.
+- **Data platform**: Supabase/Postgres through server-side helpers in `src/lib/supabase`.
+- **Authentication**: Custom Phoenix session cookies backed by `app_auth_users`; dev preview auth is available only in local development.
+- **Authorization**: Role/action permission matrix in `src/lib/auth/permissions.ts`, optionally overlaid by `role_permission_overrides`.
+- **UI shell**: Admin and employee-portal navigation are handled by `AppShell`, `Sidebar`, and employee portal layout components.
+- **Imports/exports**: Excel workflows use `exceljs` or `xlsx`; file validation is centralized where practical in upload helpers and feature import services.
+
+## Roles And Permissions
+
+Phoenix roles currently defined in code:
+
+- Employee
+- Medical Rep
+- District Manager
+- Regional Manager
+- National Sales Manager
+- Product Manager
+- Group Product Manager
+- SFE Manager
+- Training Manager
+- Marketing Manager
+- Finance Manager
+- HR Specialist
+- Manager
+- CEO
+- Super Admin
+
+Permission resources currently defined in code:
+
+- `admin`, `overview`, `admin_access`, `imports`, `sales`, `payroll`, `expenses`
+- `employees`, `team`, `offers`, `probation`, `resignations`, `contracts`, `coaching`
+- `user_admin`, `permission_admin`, `employee_documents`, `employee_profile`
+- `vacancies`, `organogram`, `hr_calendar`, `payslips`, `geo_intelligence`, `outstation`, `leave`
+
+Permission actions are `read`, `create`, `update`, `delete`, `approve`, `export`, and `import`.
+
+## Admin Routes
+
+Current admin pages:
+
+- `/admin`
+- `/admin/access`
+- `/admin/data-health`
+- `/admin/email-notifications`
+- `/admin/email-reply-composer`
+- `/admin/geo-intelligence`
+- `/admin/geo-intelligence/anomalies`
+- `/admin/geo-intelligence/expense-routes`
+- `/admin/geo-intelligence/territory-map`
+- `/admin/leave`
+- `/admin/logs`
+- `/admin/monitoring`
+- `/admin/outstation/heatmaps`
+- `/admin/outstation/policy`
+- `/admin/outstation/requests`
+- `/admin/payslips-center`
+- `/admin/profile`
+
+## Application Pages
+
+Top-level admin/workforce pages:
+
+- `/`
+- `/coaching`, `/coaching/new`, `/coaching/[id]`, `/coaching/analytics`
+- `/contracts`
+- `/employees`
+- `/hr-calendar`
+- `/imports/bricks`
+- `/imports/employees`
+- `/login`
+- `/offers`, `/offers/[token]/accept`, `/offers/[token]/reject`
+- `/organogram`
+- `/overview`
+- `/password-setup/[token]`
+- `/payroll`, `/payroll/expenses`, `/payroll/expenses/dashboard`
+- `/payslips`
+- `/probation`
+- `/reports/vacancies`
+- `/resignations`
+- `/sales`
+- `/sales/queue`
+
+Employee-facing pages:
+
+- `/employee/outstation/new`
+- `/employee-portals`
+- `/employee-portals/brick-coverage`
+- `/employee-portals/coaching`, `/employee-portals/coaching/[id]`
+- `/employee-portals/contact-hr-support`
+- `/employee-portals/dsms-performance`
+- `/employee-portals/expense-dashboard`
+- `/employee-portals/expenses`
+- `/employee-portals/incentive`
+- `/employee-portals/leave`
+- `/employee-portals/leave-approvals`
+- `/employee-portals/med-reps-performance`
+- `/employee-portals/organogram`
+- `/employee-portals/payroll`
+- `/employee-portals/payslips`
+- `/employee-portals/probation`
+- `/employee-portals/profile`
+- `/employee-portals/sales`
+- `/employee-portals/team-expenses`
+- `/employee-portals/team-performance`
+- `/employee-portals/training-manager`
+- `/employee-portals/training-manager/create-coaching-report`
+- `/employee-portals/training-manager/field-coaching`
+- `/employee-portals/training-manager/field-coaching/[id]`
+- `/employee-portals/vacancies`
+
+Development-only preview page:
+
+- `/dev/employee-portals`
+
+## API Routes
+
+Shared export:
+
+- `GET /api/exports?report=probation&format=xlsx`
+- `GET /api/exports?report=probation&format=pdf`
+
+Authentication:
+
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `POST /api/auth/heartbeat`
+- `POST /api/auth/password-setup/[token]`
+- `/api/dev-auth`
+
+Admin:
+
+- `/api/admin/email-notifications`
+- `/api/admin/email-reply/send`
+- `/api/admin/logs`
+- `/api/admin/outstation/[id]`
+- `/api/admin/outstation/heatmaps`
+- `/api/admin/outstation/requests`
+- `/api/admin/permissions`
+- `/api/admin/profile`
+- `/api/admin/salary-flags`
+- `/api/admin/users`
+- `/api/admin/users/bulk`
+- `/api/admin/users/bulk-action`
+- `/api/admin/users/setup-link`
+
+Employees and imports:
+
+- `/api/employees`
+- `/api/employees/[hrId]/resign`
+- `/api/employees/template`
+- `/api/imports/bricks/dry-run`
+- `/api/imports/bricks/confirm`
+- `/api/imports/employees/dry-run`
+- `/api/imports/employees/confirm`
+
+Sales:
+
+- `/api/sales/imports`
+- `/api/sales/imports/upload`
+- `/api/sales/imports/[id]/[action]`
+
+Payroll and expenses:
+
+- `/api/payroll/upload`
+- `/api/payroll/validate`
+- `/api/payroll/template`
+- `/api/payroll/[id]`
+- `/api/payroll/[id]/download`
+- `/api/payroll/[id]/payslips`
+- `/api/payroll/[id]/replace`
+- `/api/payroll/[id]/workflow`
+- `/api/payroll/expenses`
+- `/api/payroll/expenses/analyze`
+- `/api/payroll/expenses/import`
+- `/api/payroll/expenses/reports/[id]`
+
+Leave:
+
+- `/api/leave/accrual/run`
+- `/api/leave/adjustments`
+- `/api/leave/conflicts`
+- `/api/leave/export`
+- `/api/leave/requests`
+- `/api/leave/requests/[id]`
+- `/api/leave/requests/[id]/attachment`
+- `/api/leave/requests/[id]/hr-decision`
+- `/api/leave/requests/[id]/manager-decision`
+- `/api/leave/settings/holidays`
+- `/api/leave/settings/policies`
+- `/api/leave/settings/types`
+
+Lifecycle and HR workflows:
+
+- `/api/contracts`
+- `/api/contracts/[id]/workflow`
+- `/api/offers`
+- `/api/offers/[offerRef]/accept`
+- `/api/offers/[offerRef]/approve`
+- `/api/offers/[offerRef]/reject`
+- `/api/probation`
+- `/api/probation/[id]/workflow`
+- `/api/resignations`
+- `/api/resignations/[id]/workflow`
+- `/api/reports/vacancies`
+
+Coaching:
+
+- `/api/coaching/analytics`
+- `/api/coaching/reports`
+- `/api/coaching/reports/export`
+- `/api/coaching/reports/[id]`
+- `/api/coaching/reports/[id]/acknowledge`
+- `/api/coaching/reports/[id]/submit`
+
+Geo, outstation, notifications, and employee portal helpers:
+
+- `/api/geo/dashboard`
+- `/api/geo/geocode`
+- `/api/geo/import-bricks`
+- `/api/geo/import-expenses`
+- `/api/geo/validate-trip`
+- `/api/outstation/calculate`
+- `/api/outstation/capture-location`
+- `/api/outstation/policy`
+- `/api/outstation/submit`
+- `/api/outstation/sync-offline`
+- `/api/employee-portals/brick-coverage/geocode`
+- `/api/notifications/birthdays`
+- `/api/notifications/in-app`
+- `/api/notifications/process`
+- `/api/notifications/test`
+
+## Core Modules
+
+- `src/lib/auth`: sessions, access contexts, role permissions, audit helpers.
+- `src/lib/admin`: admin dashboard, monitoring, audit, and access-control services.
+- `src/lib/employees`: employee directory and HR ID helpers.
+- `src/lib/imports`: employee import validation, normalization, column mapping, and org rules.
+- `src/lib/sales`: monthly closing sheet parsing, validation, role mapping, import workflow, queue, and sales dashboard logic.
+- `src/lib/payroll`: salary import, payroll workflow, payslips, payroll expenses, salary source mapping, and policy logic.
+- `src/lib/leave`: leave requests, accruals, settings, conflicts, exports, attachments, audit, and notifications.
+- `src/lib/probation`: probation row loading, workflow actions, notifications, and export generation.
+- `src/lib/contracts`, `src/lib/resignations`, `src/lib/offers`: employee lifecycle workflows.
+- `src/lib/coaching`: coaching reports, scoring, analytics, portal access, and Excel export.
+- `src/lib/geo-intelligence`, `src/lib/outstation`, `src/lib/bricks`: geography, brick coverage, trip validation, and outstation flows.
+- `src/lib/employee-portal`: employee portal data, navigation, sales scope, and period helpers.
+
+## Current Business Workflows
+
+Payroll:
+
+1. Upload or validate salary workbook.
+2. Create or replace a salary batch.
+3. Review validation flags and payroll readiness.
+4. Run workflow actions on a batch.
+5. Download payroll/payslip outputs through batch-scoped API routes.
+
+Sales:
+
+1. Open `/sales/queue`.
+2. Upload a monthly closing workbook through `/api/sales/imports/upload`.
+3. Review validation, linkage, warning, and failure summaries.
+4. Approve, reject, replace, or delete queued imports through `/api/sales/imports/[id]/[action]`.
+5. View approved sales data on `/sales` or scoped employee portal sales pages.
+
+Imports:
+
+1. Upload employee or brick workbooks from `/imports/employees` or `/imports/bricks`.
+2. Run dry-run validation.
+3. Confirm validated imports through the matching confirm API route.
+
+Leave:
+
+1. Employees submit leave requests from employee portal routes.
+2. Managers and HR review through leave workspaces.
+3. Admins manage policies, holidays, accruals, adjustments, and exports from `/admin/leave`.
+
+Probation:
+
+1. `/probation` loads current probation rows from employee directory and probation workflow tables.
+2. HR/Admin users create evaluations and run manager, HR, approval, letter, completion, cancel, and reopen workflow actions.
+3. Export buttons use `/api/exports?report=probation&format=xlsx` and `/api/exports?report=probation&format=pdf`.
+
+## Database Areas
+
+The codebase currently references these major table groups:
+
+- Authentication and access: `app_auth_users`, `auth_login_attempts`, `user_access_profiles`, `role_permission_overrides`
+- People and org data: `employees`, `organogram`, employee linkage and directory-related data
+- Payroll: salary batches, salary records, salary flags, payslip outputs, payroll expenses
+- Sales: sales import batches and imported sales records
+- Leave: leave types, policies, balances, requests, approvals, transactions, holidays, audit logs
+- Lifecycle: contracts, resignations, job offers, vacancies, employee probation, probation evaluations/history
+- Notifications and audit: notification events, notification delivery logs, audit logs
+- Geo/outstation/bricks: brick references, geo route/expense data, outstation requests and policy data
+
+## Validation And Tests
+
+Current test coverage includes auth sessions, coaching, employee portal behavior, email notifications, Google routes, i18n, incentives, leave, payroll, role mapping, sales parsing/period logic, salary policy, and workforce classification.
+
+Safe local checks:
+
+- `npm run typecheck`
+- `npm run test`
+- Targeted Playwright checks where a UI flow needs browser verification
