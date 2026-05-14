@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isEmployeeDirectorySchemaMissing, employeeDirectoryErrorMessage } from "@/lib/employees/employee-directory";
+import { isDevelopment } from "@/lib/env";
 import {
   isResignationsSchemaMissing,
   resignationErrorMessage,
@@ -18,7 +19,12 @@ function apiError(error: unknown) {
     return { message: resignationErrorMessage(error), status: 403 };
   }
   if (isResignationsSchemaMissing(error) || isEmployeeDirectorySchemaMissing(error)) {
-    return { message: "Resignations or employee schema is not ready.", status: 409 };
+    return {
+      message: isDevelopment
+        ? resignationErrorMessage(error)
+        : "Resignations or employee schema is not ready.",
+      status: 409,
+    };
   }
   return {
     message: error instanceof Error ? error.message : employeeDirectoryErrorMessage(error),

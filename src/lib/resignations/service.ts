@@ -1,4 +1,4 @@
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -13,31 +13,49 @@ import type {
   ResignationWorkflowAction,
 } from "./types";
 
+type SupabaseClient = ReturnType<typeof getSupabaseAdmin>;
+type DirectoryEmployee = Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"][number];
+const terminalEmployeeStatuses = [
+  "inactive",
+  "Inactive",
+  "INACTIVE",
+  "resigned",
+  "Resigned",
+  "RESIGNED",
+  "terminated",
+  "Terminated",
+  "TERMINATED",
+];
+
 type ResignationRow = {
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  completed_at?: string | null;
+  completed_by?: string | null;
+  created_at: string;
+  created_by: string | null;
+  effective_date?: string | null;
   id: string;
   employee_hr_id: string;
   employee_name: string;
+  exit_status?: string | null;
   job_title: string | null;
+  last_working_date?: string | null;
   line_name: string | null;
-  submitted_date: string;
-  effective_date: string;
+  notes?: string | null;
   reason: string | null;
-  workflow_notes: string | null;
-  status: ResignationStatus;
-  created_at: string;
+  resignation_date?: string | null;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
+  approved_at?: string | null;
+  approved_by?: string | null;
+  rejected_at?: string | null;
+  rejected_by?: string | null;
+  rejected_reason?: string | null;
+  status?: ResignationStatus | null;
+  submitted_date?: string | null;
   updated_at: string;
-  created_by: string | null;
-  reviewed_at: string | null;
-  reviewed_by: string | null;
-  approved_at: string | null;
-  approved_by: string | null;
-  rejected_at: string | null;
-  rejected_by: string | null;
-  rejected_reason: string | null;
-  completed_at: string | null;
-  completed_by: string | null;
-  cancelled_at: string | null;
-  cancelled_by: string | null;
+  workflow_notes?: string | null;
 };
 
 type PayrollResignationCandidateRow = {
@@ -59,6 +77,21 @@ type PayrollResignationCandidateRow = {
   updated_at: string;
 };
 
+type HistoricalResignedEmployeeRow = {
+  created_at: string | null;
+  employment_status: string | null;
+  exit_reason?: string | null;
+  exit_status?: string | null;
+  full_name: string;
+  hr_id: string;
+  job_title: string | null;
+  last_working_date?: string | null;
+  lines?: { name: string | null } | Array<{ name: string | null }> | null;
+  positions?: { title: string | null } | Array<{ title: string | null }> | null;
+  resignation_date?: string | null;
+  updated_at: string | null;
+};
+
 function asIso(value: string | null | undefined) {
   return value ? new Date(value).toISOString() : null;
 }
@@ -76,6 +109,65 @@ function normalizeDate(value: string | null | undefined) {
 function cleanText(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   return text ? text : null;
+}
+
+function lowerErrorMessage(error: unknown) {
+  return resignationErrorMessage(error).toLowerCase();
+}
+
+function isMissingSchemaMessage(error: unknown) {
+  const message = lowerErrorMessage(error);
+  return (
+    message.includes("could not find the table") ||
+    message.includes("could not find the") ||
+    message.includes("schema cache") ||
+    (message.includes("relation") && message.includes("does not exist")) ||
+    (message.includes("column") && message.includes("does not exist"))
+  );
+}
+
+function isMissingResignationRpc(error: unknown) {
+  const message = lowerErrorMessage(error);
+  return (
+    message.includes("phx_resign_employee_and_open_vacancy") ||
+    message.includes("could not find the function") ||
+    (message.includes("function") && message.includes("does not exist")) ||
+    message.includes("pgrst202")
+  );
+}
+
+function isMissingColumn(error: unknown, column: string) {
+  return lowerErrorMessage(error).includes(column.toLowerCase());
+}
+
+function missingColumnFromError(error: unknown, columns: string[]) {
+  return columns.find((column) => isMissingColumn(error, column)) ?? null;
+}
+
+function schemaReadinessError(scope: string, error: unknown) {
+  const message = resignationErrorMessage(error);
+  return new Error(`Missing or outdated resignation schema item while ${scope}: ${message}`);
+}
+
+function dateOnly(value: string | null | undefined) {
+  const text = cleanText(value);
+  return text ? text.slice(0, 10) : null;
+}
+
+function firstRelationName(
+  relation: { name?: string | null; title?: string | null } | Array<{ name?: string | null; title?: string | null }> | null | undefined,
+  key: "name" | "title",
+) {
+  const row = Array.isArray(relation) ? relation[0] : relation;
+  return row?.[key] ?? null;
+}
+
+function normalizeEmployeeExitStatus(value: string | null | undefined) {
+  const status = cleanText(value)?.toLowerCase() ?? "resigned";
+  if (!["resigned", "terminated", "inactive"].includes(status)) {
+    throw new Error("Resignation employee status must be resigned, terminated, or inactive.");
+  }
+  return status;
 }
 
 function resolveSubmittedByHrId(
@@ -96,31 +188,42 @@ function appendWorkflowNote(
 }
 
 function mapResignation(row: ResignationRow): ResignationRecord {
+  const submittedDate =
+    dateOnly(row.submitted_date) ??
+    dateOnly(row.resignation_date) ??
+    dateOnly(row.created_at) ??
+    todayDate();
+  const effectiveDate =
+    dateOnly(row.effective_date) ??
+    dateOnly(row.last_working_date) ??
+    submittedDate;
+  const status = (cleanText(row.status) ?? cleanText(row.exit_status) ?? "submitted") as ResignationStatus;
+
   return {
     id: row.id,
     employeeHrId: row.employee_hr_id,
     employeeName: row.employee_name,
     jobTitle: row.job_title,
     lineName: row.line_name,
-    submittedDate: row.submitted_date,
-    effectiveDate: row.effective_date,
+    submittedDate,
+    effectiveDate,
     reason: row.reason,
-    workflowNotes: row.workflow_notes,
-    status: row.status,
+    workflowNotes: row.workflow_notes ?? row.notes ?? null,
+    status,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
-    createdBy: row.created_by,
+    createdBy: row.created_by ?? null,
     reviewedAt: asIso(row.reviewed_at),
-    reviewedBy: row.reviewed_by,
+    reviewedBy: row.reviewed_by ?? null,
     approvedAt: asIso(row.approved_at),
-    approvedBy: row.approved_by,
+    approvedBy: row.approved_by ?? null,
     rejectedAt: asIso(row.rejected_at),
-    rejectedBy: row.rejected_by,
-    rejectedReason: row.rejected_reason,
+    rejectedBy: row.rejected_by ?? null,
+    rejectedReason: row.rejected_reason ?? null,
     completedAt: asIso(row.completed_at),
-    completedBy: row.completed_by,
+    completedBy: row.completed_by ?? null,
     cancelledAt: asIso(row.cancelled_at),
-    cancelledBy: row.cancelled_by,
+    cancelledBy: row.cancelled_by ?? null,
   };
 }
 
@@ -143,6 +246,84 @@ function mapPayrollResignationCandidate(row: PayrollResignationCandidateRow): Pa
     sourceRow: row.source_row === null || row.source_row === undefined ? null : Number(row.source_row),
     updatedAt: new Date(row.updated_at).toISOString(),
   };
+}
+
+function mapLegacyResignationEmployee(row: HistoricalResignedEmployeeRow): ResignationRecord {
+  const submittedDate =
+    dateOnly(row.resignation_date) ??
+    dateOnly(row.last_working_date) ??
+    dateOnly(row.updated_at) ??
+    todayDate();
+  const effectiveDate =
+    dateOnly(row.last_working_date) ??
+    dateOnly(row.resignation_date) ??
+    submittedDate;
+  const status = cleanText(row.exit_status) === "cancelled" ? "cancelled" : "completed";
+  const updatedAt = row.updated_at ? new Date(row.updated_at).toISOString() : new Date(0).toISOString();
+  const createdAt = row.created_at ? new Date(row.created_at).toISOString() : updatedAt;
+
+  return {
+    approvedAt: null,
+    approvedBy: null,
+    cancelledAt: status === "cancelled" ? updatedAt : null,
+    cancelledBy: null,
+    completedAt: status === "completed" ? updatedAt : null,
+    completedBy: null,
+    createdAt,
+    createdBy: null,
+    effectiveDate,
+    employeeHrId: row.hr_id,
+    employeeName: row.full_name,
+    id: `legacy:${row.hr_id}`,
+    jobTitle: row.job_title ?? firstRelationName(row.positions, "title"),
+    lineName: firstRelationName(row.lines, "name"),
+    reason:
+      row.exit_reason ??
+      `Historical lifecycle status: ${row.employment_status ?? "resigned"}.`,
+    rejectedAt: null,
+    rejectedBy: null,
+    rejectedReason: null,
+    reviewedAt: null,
+    reviewedBy: null,
+    status,
+    submittedDate,
+    updatedAt,
+    workflowNotes: "Compatibility record generated from employee lifecycle data because no resignation workflow record exists.",
+  };
+}
+
+async function loadHistoricalResignedEmployees(supabase: SupabaseClient) {
+  // Compatibility path for databases where the backfill migration has not run yet.
+  // It intentionally reads terminal employees directly without changing the active Employees directory.
+  const joinedResult = await supabase
+    .from("employees")
+    .select(
+      "hr_id,full_name,job_title,employment_status,resignation_date,last_working_date,exit_reason,exit_status,created_at,updated_at,lines(name),positions(title)",
+    )
+    .in("employment_status", terminalEmployeeStatuses)
+    .order("updated_at", { ascending: false });
+
+  let data: unknown[] | null = joinedResult.data;
+  let error = joinedResult.error;
+
+  if (error && (error.message.toLowerCase().includes("relationship") || isMissingSchemaMessage(error))) {
+    const fallbackResult = await supabase
+      .from("employees")
+      .select(
+        "hr_id,full_name,job_title,employment_status,created_at,updated_at",
+      )
+      .in("employment_status", terminalEmployeeStatuses)
+      .order("updated_at", { ascending: false });
+
+    data = fallbackResult.data;
+    error = fallbackResult.error;
+  }
+
+  if (error) {
+    throw schemaReadinessError("loading historical resigned employees from employees", error);
+  }
+
+  return (data ?? []) as HistoricalResignedEmployeeRow[];
 }
 
 async function notifyResignationWorkflow(
@@ -185,9 +366,9 @@ export function isResignationsSchemaMissing(error: unknown) {
   return (
     message.includes("employee_resignations") ||
     message.includes("payroll_resignation_candidates") ||
-    message.includes("could not find the table") ||
-    message.includes("schema cache") ||
-    (message.includes("relation") && message.includes("does not exist"))
+    message.includes("position_vacancies") ||
+    message.includes("phx_resign_employee_and_open_vacancy") ||
+    isMissingSchemaMessage(error)
   );
 }
 
@@ -270,7 +451,7 @@ export async function upsertPayrollResignationCandidates(input: {
 export async function getResignationsDashboardData(): Promise<ResignationDashboardData> {
   const supabase = getSupabaseAdmin();
   const directory = await getEmployeeDirectory();
-  const [resignationsResult, candidatesResult] = await Promise.all([
+  const [resignationsResult, candidatesResult, historicalEmployees] = await Promise.all([
     supabase
       .from("employee_resignations")
       .select("*")
@@ -282,12 +463,21 @@ export async function getResignationsDashboardData(): Promise<ResignationDashboa
       .order("last_payout_year", { ascending: false })
       .order("last_payout_month", { ascending: false })
       .order("updated_at", { ascending: false }),
+    loadHistoricalResignedEmployees(supabase),
   ]);
 
   if (resignationsResult.error) throw resignationsResult.error;
   if (candidatesResult.error) throw candidatesResult.error;
 
-  const records = (resignationsResult.data ?? []).map((row) => mapResignation(row as ResignationRow));
+  const workflowRecords = (resignationsResult.data ?? []).map((row) => mapResignation(row as ResignationRow));
+  const workflowHrIds = new Set(workflowRecords.map((record) => record.employeeHrId.trim().toUpperCase()));
+  const legacyRecords = historicalEmployees
+    .filter((employee) => !workflowHrIds.has(employee.hr_id.trim().toUpperCase()))
+    .map(mapLegacyResignationEmployee);
+  const records = [...workflowRecords, ...legacyRecords].sort((left, right) => {
+    const dateCompare = right.submittedDate.localeCompare(left.submittedDate);
+    return dateCompare || left.employeeName.localeCompare(right.employeeName);
+  });
   const payrollCandidates = (candidatesResult.data ?? []).map((row) =>
     mapPayrollResignationCandidate(row as PayrollResignationCandidateRow),
   );
@@ -312,6 +502,307 @@ export async function getResignationsDashboardData(): Promise<ResignationDashboa
   return { employees, payrollCandidates, records, summary };
 }
 
+async function assertResignationRuntimeSchema(
+  supabase: SupabaseClient,
+  options: { requireVacancies?: boolean } = {},
+) {
+  const checks = [
+    {
+      label: "employees.hr_id/full_name/employment_status",
+      query: supabase
+        .from("employees")
+        .select("hr_id,full_name,employment_status")
+        .limit(1),
+    },
+    ...(options.requireVacancies
+      ? [
+          {
+            label: "position_vacancies core columns",
+            query: supabase
+              .from("position_vacancies")
+              .select("id,vacancy_code,status")
+              .limit(1),
+          },
+        ]
+      : []),
+  ];
+
+  for (const check of checks) {
+    const { error } = await check.query;
+    if (error) {
+      throw schemaReadinessError(`checking ${check.label}`, error);
+    }
+  }
+
+  const modernResignationSchema = await supabase
+    .from("employee_resignations")
+    .select("id,employee_hr_id,employee_name,submitted_date,effective_date,status")
+    .limit(1);
+  if (!modernResignationSchema.error) {
+    return;
+  }
+
+  const legacyResignationSchema = await supabase
+    .from("employee_resignations")
+    .select("id,employee_hr_id,resignation_date,last_working_date,exit_status")
+    .limit(1);
+  if (!legacyResignationSchema.error) {
+    return;
+  }
+
+  throw schemaReadinessError("checking employee_resignations modern/legacy columns", modernResignationSchema.error);
+}
+
+async function insertResignationRecord(
+  supabase: SupabaseClient,
+  input: {
+    actor: string;
+    effectiveDate: string;
+    employee: DirectoryEmployee;
+    reason: string | null;
+    submittedByHrId: string | null;
+    submittedDate: string;
+    workflowNotes: string | null;
+    vacancyId?: number | null;
+  },
+) {
+  const now = new Date().toISOString();
+  const workflowNotes = appendWorkflowNote(
+    null,
+    input.actor,
+    "submitted resignation",
+    input.workflowNotes,
+  );
+  const basePayload = {
+    created_at: now,
+    created_by: input.actor,
+    effective_date: input.effectiveDate,
+    employee_hr_id: input.employee.hrId,
+    employee_name: input.employee.fullName,
+    job_title: input.employee.positionTitle ?? input.employee.jobTitle ?? null,
+    line_name: input.employee.lineName ?? null,
+    reason: input.reason,
+    status: "submitted" as const,
+    submitted_date: input.submittedDate,
+    updated_at: now,
+    workflow_notes: workflowNotes,
+  };
+  const payload: Record<string, unknown> = {
+    ...basePayload,
+    create_vacancy: Boolean(input.vacancyId),
+    exit_status: "submitted" as const,
+    last_working_date: input.effectiveDate,
+    notes: input.workflowNotes ?? input.reason,
+    resignation_date: input.submittedDate,
+    submitted_by_hr_id: input.submittedByHrId,
+    vacancy_id: input.vacancyId ?? null,
+  };
+  const optionalColumns = [
+    "create_vacancy",
+    "effective_date",
+    "exit_status",
+    "notes",
+    "resignation_date",
+    "submitted_by_hr_id",
+    "submitted_date",
+    "vacancy_id",
+    "workflow_notes",
+  ];
+
+  for (let attempt = 0; attempt <= optionalColumns.length; attempt++) {
+    const { data, error } = await supabase
+      .from("employee_resignations")
+      .insert(payload)
+      .select("id")
+      .single();
+
+    if (!error) {
+      return String((data as { id: string }).id);
+    }
+
+    const missingColumn = missingColumnFromError(error, optionalColumns);
+    if (missingColumn) {
+      delete payload[missingColumn];
+      continue;
+    }
+
+    throw schemaReadinessError("writing employee_resignations", error);
+  }
+
+  throw new Error("Unable to insert resignation after removing unsupported optional columns.");
+}
+
+async function insertFallbackVacancy(
+  supabase: SupabaseClient,
+  employee: DirectoryEmployee,
+  effectiveDate: string,
+  vacancyCode: string,
+) {
+  const now = new Date().toISOString();
+  const payload = {
+    area_id: employee.areaId,
+    created_at: now,
+    department_id: employee.departmentId,
+    job_title: employee.jobTitle ?? employee.positionTitle ?? null,
+    line_id: employee.lineId,
+    manager_hr_id: employee.managerHrId,
+    manager_name: employee.managerName ?? null,
+    note: `Auto-opened from resignation of ${employee.fullName} (${employee.hrId}). Effective ${effectiveDate}.`,
+    position_id: employee.positionId,
+    region_name: employee.regionName ?? null,
+    status: "open",
+    updated_at: now,
+    vacancy_code: vacancyCode,
+  };
+
+  const fullResult = await supabase
+    .from("position_vacancies")
+    .insert(payload)
+    .select("id")
+    .single();
+
+  if (!fullResult.error) {
+    return Number((fullResult.data as { id: number }).id);
+  }
+
+  if (!isMissingSchemaMessage(fullResult.error)) {
+    throw fullResult.error;
+  }
+
+  const minimalResult = await supabase
+    .from("position_vacancies")
+    .insert({
+      job_title: payload.job_title,
+      status: "open",
+      updated_at: now,
+      vacancy_code: vacancyCode,
+    })
+    .select("id")
+    .single();
+
+  if (minimalResult.error) {
+    throw schemaReadinessError("writing position_vacancies", minimalResult.error);
+  }
+
+  return Number((minimalResult.data as { id: number }).id);
+}
+
+async function updateEmployeeLifecycleFallback(
+  supabase: SupabaseClient,
+  employeeHrId: string,
+  input: {
+    effectiveDate: string;
+    employeeStatus: string;
+    reason: string | null;
+    submittedDate: string;
+  },
+) {
+  const optionalColumns = [
+    "exit_reason",
+    "exit_status",
+    "last_working_date",
+    "organogram_visible",
+    "payroll_eligible",
+    "resignation_date",
+  ];
+  const payload: Record<string, unknown> = {
+    employment_status: input.employeeStatus,
+    exit_reason: input.reason,
+    exit_status: "submitted",
+    last_working_date: input.effectiveDate,
+    organogram_visible: false,
+    payroll_eligible: false,
+    resignation_date: input.submittedDate,
+    updated_at: new Date().toISOString(),
+  };
+
+  for (let attempt = 0; attempt <= optionalColumns.length; attempt++) {
+    const { error } = await supabase
+      .from("employees")
+      .update(payload)
+      .eq("hr_id", employeeHrId);
+
+    if (!error) {
+      return;
+    }
+
+    const missingColumn = optionalColumns.find((column) => isMissingColumn(error, column));
+    if (missingColumn) {
+      delete payload[missingColumn];
+      continue;
+    }
+
+    throw schemaReadinessError("updating employees lifecycle columns", error);
+  }
+
+  throw new Error("Unable to update employee lifecycle after removing unsupported optional columns.");
+}
+
+async function deactivateEmployeeAccessIfSupported(supabase: SupabaseClient, employeeHrId: string) {
+  const { error } = await supabase
+    .from("app_auth_users")
+    .update({
+      is_active: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("hr_id", employeeHrId);
+
+  if (error && !isMissingSchemaMessage(error)) {
+    throw error;
+  }
+}
+
+async function resignEmployeeWithFallback(
+  supabase: SupabaseClient,
+  input: {
+    actor: string;
+    effectiveDate: string;
+    employee: DirectoryEmployee;
+    employeeStatus: string;
+    reason: string | null;
+    submittedByHrId: string | null;
+    submittedDate: string;
+    vacancyCode: string;
+    workflowNotes: string | null;
+  },
+) {
+  // Fallback is intentionally non-RPC for environments where the migration has not been applied.
+  // Keep it conservative and schema-tolerant, then rely on the migration/RPC for transactionality.
+  await assertResignationRuntimeSchema(supabase, { requireVacancies: true });
+  const vacancyId = await insertFallbackVacancy(
+    supabase,
+    input.employee,
+    input.effectiveDate,
+    input.vacancyCode,
+  );
+  const resignationId = await insertResignationRecord(supabase, {
+    actor: input.actor,
+    effectiveDate: input.effectiveDate,
+    employee: input.employee,
+    reason: input.reason,
+    submittedByHrId: input.submittedByHrId,
+    submittedDate: input.submittedDate,
+    vacancyId,
+    workflowNotes: input.workflowNotes,
+  });
+
+  await updateEmployeeLifecycleFallback(supabase, input.employee.hrId, {
+    effectiveDate: input.effectiveDate,
+    employeeStatus: input.employeeStatus,
+    reason: input.reason,
+    submittedDate: input.submittedDate,
+  });
+  await deactivateEmployeeAccessIfSupported(supabase, input.employee.hrId);
+
+  return {
+    employeeHrId: input.employee.hrId,
+    employeeStatus: input.employeeStatus,
+    resignationId,
+    usedFallback: true,
+    vacancyCode: input.vacancyCode,
+  };
+}
+
 export async function createResignation(
   input: CreateResignationInput,
   actor: string,
@@ -334,42 +825,23 @@ export async function createResignation(
 async function createResignationForEmployee(
   input: CreateResignationInput,
   actor: string,
-  employee: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"][number],
+  employee: DirectoryEmployee,
 ) {
   const submittedDate = normalizeDate(input.submittedDate) || todayDate();
   const effectiveDate = normalizeDate(input.effectiveDate);
   const directory = await getEmployeeDirectory();
   const submittedByHrId = resolveSubmittedByHrId(actor, directory);
-
   const supabase = getSupabaseAdmin();
-  const now = new Date().toISOString();
-  const payload = {
-    create_vacancy: true,
-    created_at: now,
-    created_by: actor,
-    effective_date: effectiveDate,
-    employee_hr_id: employee.hrId,
-    employee_name: employee.fullName,
-    exit_status: "submitted" as const,
-    job_title: employee.positionTitle ?? employee.jobTitle ?? null,
-    last_working_date: effectiveDate,
-    line_name: employee.lineName ?? null,
-    notes: cleanText(input.workflowNotes) ?? cleanText(input.reason),
+  const resignationId = await insertResignationRecord(supabase, {
+    actor,
+    effectiveDate,
+    employee,
     reason: cleanText(input.reason),
-    resignation_date: submittedDate,
-    status: "submitted" as const,
-    submitted_date: submittedDate,
-    submitted_by_hr_id: submittedByHrId,
-    workflow_notes: appendWorkflowNote(null, actor, "submitted resignation", cleanText(input.workflowNotes)),
-    updated_at: now,
-  };
+    submittedByHrId,
+    submittedDate,
+    workflowNotes: cleanText(input.workflowNotes),
+  });
 
-  const { data, error } = await supabase
-    .from("employee_resignations")
-    .insert(payload)
-    .select("id")
-    .single();
-  if (error) throw error;
   await notifyResignationWorkflow(
     {
       effectiveDate,
@@ -380,7 +852,7 @@ async function createResignationForEmployee(
     "Resignation Submitted",
     "warning",
   );
-  return String((data as { id: string }).id);
+  return resignationId;
 }
 
 function vacancyCodeFromEmployee(hrId: string) {
@@ -404,90 +876,97 @@ export async function resignEmployeeAndOpenVacancy(
     throw new Error("Employee was not found in the directory.");
   }
 
-  const resignationId = await createResignationForEmployee(
+  const supabase = getSupabaseAdmin();
+  const submittedDate = normalizeDate(input.submittedDate) || todayDate();
+  const effectiveDate = normalizeDate(input.effectiveDate);
+  const employeeStatus = normalizeEmployeeExitStatus(input.employeeStatus);
+  const directoryForActor = await getEmployeeDirectory();
+  const submittedByHrId = resolveSubmittedByHrId(actor, directoryForActor);
+  const vacancyCode = vacancyCodeFromEmployee(employeeHrId);
+
+  if (!effectiveDate) {
+    throw new Error("Effective resignation date is required.");
+  }
+
+  if (effectiveDate < submittedDate) {
+    throw new Error("Effective resignation date cannot be before the submitted date.");
+  }
+
+  const rpcResult = await supabase.rpc("phx_resign_employee_and_open_vacancy", {
+    p_actor: actor,
+    p_effective_date: effectiveDate,
+    p_employee_hr_id: employeeHrId,
+    p_employee_status: employeeStatus,
+    p_reason: cleanText(input.reason),
+    p_submitted_by_hr_id: submittedByHrId,
+    p_submitted_date: submittedDate,
+    p_vacancy_code: vacancyCode,
+    p_workflow_notes: cleanText(input.workflowNotes),
+  });
+
+  let result: {
+    employee_hr_id?: string;
+    employee_status?: string;
+    resignation_id?: string;
+    used_fallback?: boolean;
+    vacancy_code?: string;
+  };
+
+  if (rpcResult.error) {
+    if (!isMissingResignationRpc(rpcResult.error)) {
+      if (isMissingSchemaMessage(rpcResult.error)) {
+        throw schemaReadinessError("calling phx_resign_employee_and_open_vacancy", rpcResult.error);
+      }
+      throw new Error(rpcResult.error.message);
+    }
+
+    const fallbackResult = await resignEmployeeWithFallback(supabase, {
+      actor,
+      effectiveDate,
+      employee,
+      employeeStatus,
+      reason: cleanText(input.reason),
+      submittedByHrId,
+      submittedDate,
+      vacancyCode,
+      workflowNotes: cleanText(input.workflowNotes),
+    });
+
+    result = {
+      employee_hr_id: fallbackResult.employeeHrId,
+      employee_status: fallbackResult.employeeStatus,
+      resignation_id: fallbackResult.resignationId,
+      used_fallback: true,
+      vacancy_code: fallbackResult.vacancyCode,
+    };
+  } else {
+    result = (rpcResult.data ?? {}) as {
+      employee_hr_id?: string;
+      employee_status?: string;
+      resignation_id?: string;
+      vacancy_code?: string;
+    };
+  }
+
+  await notifyResignationWorkflow(
     {
-      employeeHrId,
-      effectiveDate: input.effectiveDate,
-      reason: input.reason,
-      submittedDate: input.submittedDate,
-      workflowNotes: input.workflowNotes,
+      effectiveDate,
+      employeeHrId: employee.hrId,
+      employeeName: employee.fullName,
+      status: "submitted",
     },
-    actor,
-    employee,
+    "Resignation Submitted",
+    "warning",
   );
 
-  const supabase = getSupabaseAdmin();
-  const now = new Date().toISOString();
-  const employeeStatus = cleanText(input.employeeStatus) ?? "terminated";
-
-  const { error: employeeError } = await supabase
-    .from("employees")
-    .update({
-      employment_status: employeeStatus,
-      exit_reason: cleanText(input.reason),
-      exit_status: "submitted",
-      last_working_date: input.effectiveDate,
-      resignation_date: input.submittedDate,
-      updated_at: now,
-    })
-    .eq("hr_id", employeeHrId);
-
-  if (employeeError) {
-    throw new Error(employeeError.message);
-  }
-
-  const vacancyPayload = {
-    area_id: employee.areaId,
-    created_at: now,
-    department_id: employee.departmentId,
-    job_title: employee.jobTitle ?? employee.positionTitle ?? null,
-    line_id: employee.lineId,
-    manager_hr_id: employee.managerHrId,
-    manager_name: employee.managerName ?? null,
-    note: `Auto-opened from resignation of ${employee.fullName} (${employee.hrId}). Effective ${input.effectiveDate}.`,
-    position_id: employee.positionId,
-    region_name: employee.regionName ?? null,
-    status: "open",
-    updated_at: now,
-    vacancy_code: vacancyCodeFromEmployee(employeeHrId),
-  };
-
-  const { data: vacancyRow, error: vacancyError } = await supabase
-    .from("position_vacancies")
-    .insert(vacancyPayload)
-    .select("id")
-    .single();
-
-  if (vacancyError) {
-    throw new Error(vacancyError.message);
-  }
-
-  const vacancyId =
-    vacancyRow && typeof vacancyRow === "object"
-      ? Number((vacancyRow as { id?: unknown }).id ?? 0)
-      : null;
-
-  const resignationUpdates: Record<string, unknown> = {
-    updated_at: now,
-  };
-  if (vacancyId) {
-    resignationUpdates.vacancy_id = vacancyId;
-  }
-
-  const { error: resignationUpdateError } = await supabase
-    .from("employee_resignations")
-    .update(resignationUpdates)
-    .eq("id", resignationId);
-
-  if (resignationUpdateError) {
-    throw new Error(resignationUpdateError.message);
-  }
+  invalidateEmployeeDirectoryCache();
 
   return {
-    employeeHrId,
-    employeeStatus,
-    resignationId,
-    vacancyCode: String(vacancyPayload.vacancy_code),
+    employeeHrId: result.employee_hr_id ?? employeeHrId,
+    employeeStatus: result.employee_status ?? employeeStatus,
+    resignationId: result.resignation_id ?? "",
+    usedFallback: result.used_fallback ?? false,
+    vacancyCode: result.vacancy_code ?? vacancyCode,
   };
 }
 
@@ -509,9 +988,10 @@ export async function runResignationWorkflow(
   if (!data) return null;
 
   const row = data as ResignationRow;
+  const currentStatus = (cleanText(row.status) ?? cleanText(row.exit_status) ?? "submitted") as ResignationStatus;
   const now = new Date().toISOString();
   const updates: Record<string, unknown> = {
-    exit_status: row.status,
+    exit_status: currentStatus,
     notes: note ? appendWorkflowNote(row.reason, actor, action, note) : row.reason,
     updated_at: now,
     workflow_notes: appendWorkflowNote(row.workflow_notes, actor, action, note),
@@ -519,7 +999,7 @@ export async function runResignationWorkflow(
 
   switch (action) {
     case "mark_review":
-      if (row.status === "completed") throw new Error("Completed resignations cannot be reviewed again.");
+      if (currentStatus === "completed") throw new Error("Completed resignations cannot be reviewed again.");
       updates.status = "under_review";
       updates.exit_status = "submitted";
       updates.reviewed_at = now;
@@ -527,7 +1007,7 @@ export async function runResignationWorkflow(
       updates.rejected_reason = null;
       break;
     case "approve":
-      if (!["submitted", "under_review"].includes(row.status)) {
+      if (!["submitted", "under_review"].includes(currentStatus)) {
         throw new Error("Only submitted or under-review resignations can be approved.");
       }
       updates.status = "approved";
@@ -537,7 +1017,7 @@ export async function runResignationWorkflow(
       updates.rejected_reason = null;
       break;
     case "reject":
-      if (row.status === "completed") throw new Error("Completed resignations cannot be rejected.");
+      if (currentStatus === "completed") throw new Error("Completed resignations cannot be rejected.");
       updates.status = "rejected";
       updates.exit_status = "cancelled";
       updates.rejected_at = now;
@@ -545,7 +1025,7 @@ export async function runResignationWorkflow(
       updates.rejected_reason = cleanText(rejectedReason) ?? "No reason provided.";
       break;
     case "complete":
-      if (row.status !== "approved") {
+      if (currentStatus !== "approved") {
         throw new Error("Only approved resignations can be completed.");
       }
       updates.status = "completed";
@@ -554,14 +1034,14 @@ export async function runResignationWorkflow(
       updates.completed_by = actor;
       break;
     case "cancel":
-      if (row.status === "completed") throw new Error("Completed resignations cannot be cancelled.");
+      if (currentStatus === "completed") throw new Error("Completed resignations cannot be cancelled.");
       updates.status = "cancelled";
       updates.exit_status = "cancelled";
       updates.cancelled_at = now;
       updates.cancelled_by = actor;
       break;
     case "reopen":
-      if (!["rejected", "cancelled", "approved"].includes(row.status)) {
+      if (!["rejected", "cancelled", "approved"].includes(currentStatus)) {
         throw new Error("Only rejected, cancelled, or approved resignations can be reopened.");
       }
       updates.status = "under_review";

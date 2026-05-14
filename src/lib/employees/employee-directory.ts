@@ -8,6 +8,11 @@ import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy"
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { generateNextHrIdForLine } from "./hr-id-helper";
 
+const hrIdPattern = /^[A-Z0-9][A-Z0-9_-]*$/;
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const activeLifecycleStatuses = new Set(["active", "on_leave"]);
+const statusOptions = ["active", "inactive", "on_leave", "terminated", "resigned"];
+
 export type EmployeeDirectoryRow = {
   areaId: number | null;
   areaName: string | null;
@@ -35,6 +40,8 @@ export type EmployeeDirectoryRow = {
   mobileNumber: string | null;
   nameAr: string | null;
   netSalary: number | null;
+  organogramVisible: boolean;
+  payrollEligible: boolean;
   salaryPaymentMode: PayrollPaymentMode;
   positionId: number | null;
   positionTitle: string | null;
@@ -100,6 +107,7 @@ export type EmployeeMutationInput = {
   managerHrId?: string | null;
   mobileNumber?: string | null;
   nameAr?: string | null;
+  originalHrId?: string | null;
   positionId?: number | null;
   residenceAddress?: string | null;
   residenceArea?: string | null;
@@ -125,6 +133,8 @@ type EmployeeDbRow = {
   manager_hr_id: string | null;
   mobile_number: string | null;
   name_ar: string | null;
+  organogram_visible?: boolean | null;
+  payroll_eligible?: boolean | null;
   position_id: number | null;
   region_name?: string | null;
   team_id: number | null;
@@ -184,10 +194,49 @@ let directoryCache: {
 } | null = null;
 
 const CACHE_TTL = 30000; // 30 seconds
-const statusOptions = ["active", "inactive", "on_leave", "terminated", "resigned"];
 
 function isClassifiedActiveEmployee(employee: EmployeeDirectoryRow) {
   return classifyEmployeeNode(employee).eligible_for_headcount;
+}
+
+export function invalidateEmployeeDirectoryCache() {
+  directoryCache = null;
+}
+
+function normalizeHrId(value: string | null | undefined) {
+  return compact(value)?.toUpperCase() ?? null;
+}
+
+function normalizeLifecycleStatus(value: string | null | undefined) {
+  return compact(value)?.toLowerCase() ?? "active";
+}
+
+function isActiveLifecycleStatus(value: string | null | undefined) {
+  return activeLifecycleStatuses.has(normalizeLifecycleStatus(value));
+}
+
+function isActiveDirectoryEmployee(employee: EmployeeDirectoryRow) {
+  return (
+    isActiveLifecycleStatus(employee.employmentStatus) &&
+    employee.payrollEligible !== false &&
+    employee.organogramVisible !== false &&
+    isClassifiedActiveEmployee(employee)
+  );
+}
+
+function activeStatusOptions(employees: EmployeeDirectoryRow[]) {
+  const statuses = new Set(
+    employees
+      .map((employee) => normalizeLifecycleStatus(employee.employmentStatus))
+      .filter((status) => activeLifecycleStatuses.has(status)),
+  );
+
+  return Array.from(statuses.size ? statuses : activeLifecycleStatuses)
+    .sort()
+    .map((status) => ({
+      label: status.replace(/_/g, " "),
+      value: status,
+    }));
 }
 
 function getRequiredEnv(name: string) {
@@ -483,7 +532,7 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
 async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const baseEmployeeSelect =
-    "hr_id,full_name,name_ar,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,created_at,updated_at";
+    "hr_id,full_name,name_ar,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
 
   // Try to join compensation and other lookups in a single query to reduce N+1 and massive IN filters
   const joinedSelect = `${baseEmployeeSelect},region_name,birth_date,
@@ -602,6 +651,8 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         mobileNumber: row.mobile_number,
         nameAr: row.name_ar,
         netSalary: compensation?.net_salary ?? null,
+        organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
+        payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
         salaryPaymentMode: normalizePayrollPaymentMode(compensation?.payment_mode),
         positionId: row.position_id,
         positionTitle,
@@ -621,15 +672,15 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       };
     });
 
-    const activeEmployees = employeesData.filter(isClassifiedActiveEmployee);
+    const activeEmployees = employeesData.filter(isActiveDirectoryEmployee);
 
     return {
-      employees: employeesData,
+      employees: activeEmployees,
       lookups: {
         areas,
         departments,
         lines,
-        managers: employeesData
+        managers: activeEmployees
           .map((employee) => ({
             label: employee.fullName,
             value: employee.hrId,
@@ -637,15 +688,12 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
           .sort((left, right) => left.label.localeCompare(right.label)),
         medicalRepVacancies,
         positions,
-        statuses: statusOptions.map((status) => ({
-          label: status.replace(/_/g, " "),
-          value: status,
-        })),
+        statuses: activeStatusOptions(activeEmployees),
       },
       summary: {
         activeEmployees: activeEmployees.length,
-        employeesWithoutManagers: employeesData.filter((employee) => !employee.managerHrId).length,
-        totalEmployees: employeesData.length,
+        employeesWithoutManagers: activeEmployees.filter((employee) => !employee.managerHrId).length,
+        totalEmployees: activeEmployees.length,
         uniqueAreas: new Set(activeEmployees.map((employee) => employee.areaId).filter(Boolean)).size,
         uniqueLines: new Set(activeEmployees.map((employee) => employee.lineId).filter(Boolean)).size,
       },
@@ -729,6 +777,8 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         mobileNumber: row.mobile_number,
         nameAr: row.name_ar,
         netSalary: comp?.net_salary ?? null,
+        organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
+        payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
         salaryPaymentMode: normalizePayrollPaymentMode(comp?.payment_mode),
         positionId: row.position_id,
         positionTitle,
@@ -748,15 +798,15 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       };
     });
 
-    const activeEmployees = employeesData.filter(isClassifiedActiveEmployee);
+    const activeEmployees = employeesData.filter(isActiveDirectoryEmployee);
 
     return {
-      employees: employeesData,
+      employees: activeEmployees,
       lookups: {
         areas,
         departments,
         lines,
-        managers: employeesData
+        managers: activeEmployees
           .map((employee) => ({
             label: employee.fullName,
             value: employee.hrId,
@@ -764,15 +814,12 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
           .sort((left, right) => left.label.localeCompare(right.label)),
         medicalRepVacancies,
         positions,
-        statuses: statusOptions.map((status) => ({
-          label: status.replace(/_/g, " "),
-          value: status,
-        })),
+        statuses: activeStatusOptions(activeEmployees),
       },
       summary: {
         activeEmployees: activeEmployees.length,
-        employeesWithoutManagers: employeesData.filter((employee) => !employee.managerHrId).length,
-        totalEmployees: employeesData.length,
+        employeesWithoutManagers: activeEmployees.filter((employee) => !employee.managerHrId).length,
+        totalEmployees: activeEmployees.length,
         uniqueAreas: new Set(activeEmployees.map((employee) => employee.areaId).filter(Boolean)).size,
         uniqueLines: new Set(activeEmployees.map((employee) => employee.lineId).filter(Boolean)).size,
       },
@@ -825,6 +872,8 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       mobileNumber: row.mobile_number,
       nameAr: row.name_ar,
       netSalary: compensation?.net_salary ?? null,
+      organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
+      payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
       salaryPaymentMode: normalizePayrollPaymentMode(compensation?.payment_mode),
       positionId: row.position_id,
       positionTitle,
@@ -843,17 +892,15 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       workEmail: row.work_email,
     };
   });
-  const activeEmployees = employees.filter(
-    (employee) => (employee.employmentStatus ?? "active") === "active",
-  );
+  const activeEmployees = employees.filter(isActiveDirectoryEmployee);
 
   return {
-    employees,
+    employees: activeEmployees,
     lookups: {
       areas,
       departments,
       lines,
-      managers: employees
+      managers: activeEmployees
         .map((employee) => ({
           label: employee.fullName,
           value: employee.hrId,
@@ -861,17 +908,14 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         .sort((left, right) => left.label.localeCompare(right.label)),
       medicalRepVacancies: [],
       positions,
-      statuses: statusOptions.map((status) => ({
-        label: status.replace(/_/g, " "),
-        value: status,
-      })),
+      statuses: activeStatusOptions(activeEmployees),
     },
     summary: {
       activeEmployees: activeEmployees.length,
-      employeesWithoutManagers: employees.filter(
+      employeesWithoutManagers: activeEmployees.filter(
         (employee) => !employee.managerHrId,
       ).length,
-      totalEmployees: employees.length,
+      totalEmployees: activeEmployees.length,
       uniqueAreas: new Set(activeEmployees.map((employee) => employee.areaId).filter(Boolean)).size,
       uniqueLines: new Set(activeEmployees.map((employee) => employee.lineId).filter(Boolean)).size,
     },
@@ -880,7 +924,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
 export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]> {
   const baseEmployeeSelect =
-    "hr_id,full_name,name_ar,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,created_at,updated_at";
+    "hr_id,full_name,name_ar,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
   const employeeParams = new URLSearchParams({
     select: `${baseEmployeeSelect},region_name,birth_date`,
     order: "full_name.asc",
@@ -950,7 +994,9 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       mobileNumber: row.mobile_number,
       nameAr: row.name_ar,
       netSalary: null,
-      salaryPaymentMode: "two_parts",
+      organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
+      payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
+      salaryPaymentMode: "two_parts" as PayrollPaymentMode,
       positionId: row.position_id,
       positionTitle: row.position_id
         ? positionTitles.get(row.position_id) ?? null
@@ -969,7 +1015,33 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       updatedAt: row.updated_at,
       workEmail: row.work_email,
     };
-  });
+  }).filter(isActiveDirectoryEmployee);
+}
+
+async function ensureManagerIsValid(managerHrId: string | null, employeeHrId: string) {
+  if (!managerHrId) {
+    return;
+  }
+
+  if (managerHrId === employeeHrId) {
+    throw new Error("An employee cannot be assigned as their own manager.");
+  }
+
+  const managers = await supabaseRest<EmployeeDbRow[]>(
+    `employees?hr_id=eq.${encodeURIComponent(managerHrId)}&select=hr_id,employment_status,payroll_eligible,organogram_visible,full_name,name_ar,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,created_at,updated_at`,
+  );
+
+  if (managers.length === 0) {
+    throw new Error(`Manager HR_ID ${managerHrId} was not found.`);
+  }
+
+  const manager = managers[0];
+  if (
+    !isActiveLifecycleStatus(manager.employment_status) ||
+    manager.organogram_visible === false
+  ) {
+    throw new Error(`Manager HR_ID ${managerHrId} is not active for hierarchy assignment.`);
+  }
 }
 
 async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) {
@@ -979,7 +1051,25 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
   }
 
   const lineId = numberOrNull(input.lineId);
-  let hrId = compact(input.hrId)?.toUpperCase();
+  let hrId = normalizeHrId(input.hrId);
+  const employmentStatus = normalizeLifecycleStatus(input.employmentStatus);
+  const workEmail = compact(input.workEmail)?.toLowerCase();
+
+  if (!statusOptions.includes(employmentStatus)) {
+    throw new Error(`Employment status ${employmentStatus} is not allowed.`);
+  }
+
+  if (employmentStatus === "resigned" || employmentStatus === "terminated") {
+    throw new Error("Use the resignation workflow for resigned or terminated employees.");
+  }
+
+  if (hrId && !hrIdPattern.test(hrId)) {
+    throw new Error(`Invalid HR_ID format: ${hrId}.`);
+  }
+
+  if (workEmail && !emailPattern.test(workEmail)) {
+    throw new Error("Work email format is invalid.");
+  }
 
   // 1. Handle HR_ID based on operation type
   if (isUpdate) {
@@ -1003,26 +1093,35 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
     }
   }
 
+  if (!hrId) {
+    throw new Error("HR_ID is required.");
+  }
+
+  const managerHrId = normalizeHrId(input.managerHrId);
+  await ensureManagerIsValid(managerHrId, hrId);
+
+  const lifecycleActive = isActiveLifecycleStatus(employmentStatus);
+
   return {
     area_id: numberOrNull(input.areaId),
     crm_id: compact(input.crmId),
     crm_username: compact(input.crmUsername),
     department_id: numberOrNull(input.departmentId),
     education: compact(input.education),
-    employment_status: compact(input.employmentStatus) ?? "active",
+    employment_status: employmentStatus,
     full_name: fullName,
     hire_date: compact(input.hireDate),
     hr_id: hrId,
     job_title: compact(input.jobTitle),
     line_id: lineId,
-    manager_hr_id: compact(input.managerHrId),
+    manager_hr_id: managerHrId,
     mobile_number: compact(input.mobileNumber),
     name_ar: compact(input.nameAr),
-    organogram_visible: true, // Requirement: Ensure employee appears in organogram
-    payroll_eligible: true, // Requirement: Ensure employee is payroll eligible
+    organogram_visible: lifecycleActive,
+    payroll_eligible: lifecycleActive,
     position_id: numberOrNull(input.positionId),
     updated_at: new Date().toISOString(),
-    work_email: compact(input.workEmail)?.toLowerCase(),
+    work_email: workEmail,
   };
 }
 
@@ -1114,14 +1213,32 @@ async function upsertEmployeeResidenceLocation(
 }
 
 export async function upsertEmployee(input: EmployeeMutationInput) {
-  const hrId = compact(input.hrId)?.toUpperCase();
-  let isUpdate = false;
+  const hrId = normalizeHrId(input.hrId);
+  const originalHrId = normalizeHrId(input.originalHrId);
+  const isUpdate = Boolean(originalHrId);
 
-  if (hrId) {
+  if (isUpdate) {
+    if (!hrId) {
+      throw new Error("HR_ID is required for updates.");
+    }
+
+    if (hrId !== originalHrId) {
+      throw new Error("HR_ID is immutable after employee creation. Use a governed HR_ID rename workflow.");
+    }
+
     const existing = await supabaseRest<Array<{ hr_id: string }>>(
-      `employees?hr_id=eq.${hrId}&select=hr_id`,
+      `employees?hr_id=eq.${encodeURIComponent(originalHrId as string)}&select=hr_id`,
     );
-    isUpdate = existing.length > 0;
+    if (existing.length === 0) {
+      throw new Error(`Employee ${originalHrId} was not found.`);
+    }
+  } else if (hrId) {
+    const existing = await supabaseRest<Array<{ hr_id: string }>>(
+      `employees?hr_id=eq.${encodeURIComponent(hrId)}&select=hr_id`,
+    );
+    if (existing.length > 0) {
+      throw new Error(`HR_ID ${hrId} already exists. Open the employee record before editing.`);
+    }
   }
 
   const payload = await employeePayload(input, isUpdate);
@@ -1156,6 +1273,8 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
 
   await Promise.all(actions);
 
+  invalidateEmployeeDirectoryCache();
+
   return rows;
 }
 
@@ -1177,17 +1296,29 @@ export async function bulkUpdateEmployees(
     throw new Error("Select at least one employee.");
   }
 
+  const employmentStatus = values.employmentStatus === undefined
+    ? undefined
+    : normalizeLifecycleStatus(values.employmentStatus);
+
+  if (employmentStatus !== undefined && !statusOptions.includes(employmentStatus)) {
+    throw new Error(`Employment status ${employmentStatus} is not allowed.`);
+  }
+
   const payload = {
     ...(values.areaId !== undefined ? { area_id: numberOrNull(values.areaId) } : {}),
     ...(values.departmentId !== undefined
       ? { department_id: numberOrNull(values.departmentId) }
       : {}),
-    ...(values.employmentStatus !== undefined
-      ? { employment_status: compact(values.employmentStatus) }
+    ...(employmentStatus !== undefined
+      ? {
+          employment_status: employmentStatus,
+          organogram_visible: isActiveLifecycleStatus(employmentStatus),
+          payroll_eligible: isActiveLifecycleStatus(employmentStatus),
+        }
       : {}),
     ...(values.lineId !== undefined ? { line_id: numberOrNull(values.lineId) } : {}),
     ...(values.managerHrId !== undefined
-      ? { manager_hr_id: compact(values.managerHrId) }
+      ? { manager_hr_id: normalizeHrId(values.managerHrId) }
       : {}),
     ...(values.positionId !== undefined
       ? { position_id: numberOrNull(values.positionId) }
@@ -1195,7 +1326,7 @@ export async function bulkUpdateEmployees(
     updated_at: new Date().toISOString(),
   };
 
-  return supabaseRest<EmployeeDbRow[]>(
+  const rows = await supabaseRest<EmployeeDbRow[]>(
     `employees?hr_id=${encodeURIComponent(textInFilter(cleanedHrIds))}`,
     {
       body: JSON.stringify(payload),
@@ -1205,4 +1336,8 @@ export async function bulkUpdateEmployees(
       method: "PATCH",
     },
   );
+
+  invalidateEmployeeDirectoryCache();
+
+  return rows;
 }

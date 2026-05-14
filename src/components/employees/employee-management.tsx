@@ -1,4 +1,4 @@
-﻿﻿"use client";
+﻿﻿﻿"use client";
 
 import {
   AlertCircle,
@@ -214,12 +214,14 @@ function SelectField({
 }
 
 function TextField({
+  disabled = false,
   label,
   onChange,
   placeholder,
   type = "text",
   value,
 }: {
+  disabled?: boolean;
   label: string;
   onChange: (value: string) => void;
   placeholder?: string;
@@ -232,7 +234,8 @@ function TextField({
         {label}
       </span>
       <Input
-        className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 shadow-sm"
+        className={cn("h-11 rounded-2xl border-[#D7E0EA] bg-white/95 shadow-sm", disabled && "bg-[#F8FAFC] text-[#64748B]")}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         type={type}
@@ -277,7 +280,7 @@ function employeeRowKey(employee: EmployeeDirectoryRow, index: number) {
   ].join(":");
 }
 
-function formToPayload(form: EmployeeFormState): EmployeeMutationInput {
+function formToPayload(form: EmployeeFormState, originalHrId: string | null): EmployeeMutationInput {
   const optionalNumber = (value: string) => (value ? Number(value) : null);
   const optionalText = (value: string) => value.trim() || null;
 
@@ -296,6 +299,7 @@ function formToPayload(form: EmployeeFormState): EmployeeMutationInput {
     managerHrId: optionalText(form.managerHrId),
     mobileNumber: optionalText(form.mobileNumber),
     nameAr: optionalText(form.nameAr),
+    originalHrId,
     positionId: optionalNumber(form.positionId),
     residenceAddress: optionalText(form.residenceAddress),
     residenceArea: optionalText(form.residenceArea),
@@ -519,7 +523,7 @@ export function EmployeeManagement({
 
     try {
       const response = await fetch("/api/employees", {
-        body: JSON.stringify({ employee: formToPayload(form) }),
+        body: JSON.stringify({ employee: formToPayload(form, editingHrId) }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -616,15 +620,7 @@ export function EmployeeManagement({
         current
           ? {
               ...current,
-              employees: current.employees.map((employee) =>
-                employee.hrId === resigningEmployee.hrId
-                  ? {
-                      ...employee,
-                      employmentStatus: resignationForm.employeeStatus,
-                      updatedAt: new Date().toISOString(),
-                    }
-                  : employee,
-              ),
+              employees: current.employees.filter((employee) => employee.hrId !== resigningEmployee.hrId),
             }
           : current,
       );
@@ -642,54 +638,58 @@ export function EmployeeManagement({
     <div className="space-y-6">
       <AdminPageHero
         actions={
-          <div className="grid w-full grid-cols-1 gap-2 sm:min-w-[560px] sm:grid-cols-2 xl:grid-cols-1">
-            <a
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-xs font-semibold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
-              href="/api/employees/template"
-            >
-              <Download className="h-3.5 w-3.5 text-[#F97316]" />
-              Download Template
-            </a>
-            <label className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-xs font-semibold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]">
-              {isImportingTemplate ? (
-                <LoadingSpinner />
-              ) : (
-                <Upload className="h-3.5 w-3.5 text-[#F97316]" />
-              )}
-              Upload Template
-              <input
-                accept=".xlsx,.xls"
-                className="sr-only"
-                onChange={(event) => void uploadTemplate(event.target.files?.[0] ?? null)}
-                ref={templateInputRef}
-                type="file"
-              />
-            </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white p-1 shadow-sm">
+              <a
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-xl px-4 text-xs font-semibold text-[#475569] transition hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+                href="/api/employees/template"
+                title="Download bulk upload template"
+              >
+                <Download className="h-3.5 w-3.5 text-[#F97316]" />
+                Template
+              </a>
+              <div className="h-4 w-px bg-[#E2E8F0]" />
+              <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-xs font-semibold text-[#475569] transition hover:bg-[#F8FAFC] hover:text-[#0F172A]">
+                {isImportingTemplate ? (
+                  <LoadingSpinner />
+                ) : (
+                  <Upload className="h-3.5 w-3.5 text-[#F97316]" />
+                )}
+                Upload
+                <input
+                  accept=".xlsx,.xls"
+                  className="sr-only"
+                  onChange={(event) => void uploadTemplate(event.target.files?.[0] ?? null)}
+                  ref={templateInputRef}
+                  type="file"
+                />
+              </label>
+            </div>
             <Button
-              className="h-11 rounded-2xl px-3 text-xs shadow-sm"
+              className="h-11 gap-2 rounded-2xl border-[#D7E0EA] bg-white px-4 text-xs font-semibold text-[#475569] shadow-sm transition hover:border-[#FDBA74] hover:bg-[#FFF7ED] hover:text-[#0F172A]"
               disabled={isLoading}
               onClick={() => void loadEmployees()}
-              variant="secondary"
+              variant="outline"
             >
               {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-3.5 w-3.5" />}
-              Refresh
+              Sync
             </Button>
-            <Button className="h-11 rounded-2xl px-3 text-xs shadow-[0_14px_30px_rgba(249,115,22,0.22)]" onClick={startCreate}>
-              <UserPlus className="mr-1 h-3.5 w-3.5" />
+            <Button className="h-11 gap-2 rounded-2xl bg-[#0F172A] px-6 text-xs font-bold text-white shadow-[0_14px_30px_rgba(15,23,42,0.22)] transition hover:bg-[#1E293B]" onClick={startCreate}>
+              <UserPlus className="h-4 w-4" />
               Add Employee
             </Button>
           </div>
         }
         badges={
           <div className="flex flex-wrap gap-2 text-xs text-[#475569]">
-            <AdminInsightChip>Single-record editing and bulk template workflows stay aligned.</AdminInsightChip>
-            <AdminInsightChip tone="orange">Salary payout mode remains visible for downstream payroll automation.</AdminInsightChip>
+            <AdminInsightChip>Master Data Governance</AdminInsightChip>
+            <AdminInsightChip tone="orange">Payroll Aligned</AdminInsightChip>
           </div>
         }
-        description="Manage employee master data with structured filters, single-record editing, salary payout mode, and safer bulk operations."
-        eyebrow="People Ops / Employees"
+        description="Enterprise employee master data center for workforce management, lifecycle tracking, and payroll-ready record governance."
+        eyebrow="Workforce Intelligence"
         icon={<Building2 className="h-3.5 w-3.5" />}
-        title="Employee directory"
+        title="Employee Master Data"
       />
 
       {error ? (
@@ -713,224 +713,244 @@ export function EmployeeManagement({
 
       {data ? (
         <>
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <AdminStatCard
               description="Active workforce currently in system."
               icon={<Users className="h-4 w-4" />}
-              label="Total Employees"
+              label="Total Headcount"
               value={formatNumberValue(data.summary.totalEmployees)}
             />
             <AdminStatCard
               description="Records flagged as active and available for payroll."
               icon={<UserCheck2 className="h-4 w-4" />}
-              label="Active Employees"
+              label="Active Workforce"
               value={formatNumberValue(data.summary.activeEmployees)}
             />
             <AdminStatCard
               description="Unique operating lines represented in the directory."
               icon={<CircleAlert className="h-4 w-4" />}
-              label="Lines Covered"
+              label="Lines Coverage"
               value={formatNumberValue(data.summary.uniqueLines)}
             />
             <AdminStatCard
               description="Employees missing direct manager linkage and require assignment."
               icon={<Building2 className="h-4 w-4" />}
-              label="No Manager Set"
+              label="Pending Assignment"
               value={formatNumberValue(data.summary.employeesWithoutManagers)}
             />
           </section>
 
           <AdminTableShell
-            action={<Badge variant="neutral">{formatNumberValue(filteredEmployees.length)} visible</Badge>}
-            description={`Showing ${filteredEmployees.length} of ${employees.length} employees.`}
-            title="Employee Directory"
+            action={
+              <div className="flex items-center gap-3">
+                <Badge className="bg-[#F1F5F9] text-[#475569] border-none" variant="outline">
+                  {formatNumberValue(filteredEmployees.length)} results
+                </Badge>
+              </div>
+            }
+            description="Access and manage comprehensive employee records with real-time filters."
+            title="Workforce Directory"
           >
-            <div className="grid gap-3 border-b border-[#E2E8F0] bg-[linear-gradient(135deg,#F8FAFC_0%,#FFF7ED_100%)] p-4 xl:grid-cols-[minmax(0,1.5fr)_repeat(7,minmax(0,1fr))_auto]">
-              <label className="relative">
-                <span className="sr-only">Search employees</span>
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
-                <Input
-                  className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 pl-9 shadow-sm"
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search name, HR_ID, email, manager..."
-                  value={query}
+            <div className="flex flex-col gap-4 border-b border-[#E2E8F0] bg-[#F8FAFC]/50 p-4">
+              <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
+                <label className="relative">
+                  <span className="sr-only">Search employees</span>
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
+                  <Input
+                    className="h-12 w-full rounded-2xl border-[#E2E8F0] bg-white pl-11 text-sm shadow-sm transition focus:border-[#F97316] focus:ring-1 focus:ring-[#F97316]"
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search by name, ID, email, or manager..."
+                    value={query}
+                  />
+                </label>
+                <Button
+                  className="h-12 gap-2 rounded-2xl border-[#E2E8F0] bg-white px-6 text-sm font-semibold text-[#475569] shadow-sm transition hover:bg-[#F8FAFC]"
+                  disabled={!hasActiveFilters}
+                  onClick={clearFilters}
+                  variant="outline"
+                >
+                  <X className="h-4 w-4" />
+                  Reset Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
+                </Button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+                <SelectField
+                  label="Department"
+                  onChange={setDepartmentFilter}
+                  options={lookups.departments}
+                  placeholder="All Departments"
+                  value={departmentFilter}
                 />
-              </label>
-              <SelectField
-                label="Department"
-                onChange={setDepartmentFilter}
-                options={lookups.departments}
-                placeholder="Department"
-                value={departmentFilter}
-              />
-              <SelectField
-                label="Line"
-                onChange={setLineFilter}
-                options={lookups.lines}
-                placeholder="Line"
-                value={lineFilter}
-              />
-              <SelectField
-                label="Area"
-                onChange={setAreaFilter}
-                options={lookups.areas}
-                placeholder="Area"
-                value={areaFilter}
-              />
-              <SelectField
-                label="Position"
-                onChange={setPositionFilter}
-                options={lookups.positions}
-                placeholder="Position"
-                value={positionFilter}
-              />
-              <SelectField
-                label="Manager"
-                onChange={setManagerFilter}
-                options={lookups.managers}
-                placeholder="Manager"
-                value={managerFilter}
-              />
-              <SelectField
-                label="Status"
-                onChange={setStatusFilter}
-                options={lookups.statuses}
-                placeholder="Status"
-                value={statusFilter}
-              />
-              <SelectField
-                label="Pay Mode"
-                onChange={setSalaryPaymentModeFilter}
-                options={salaryPaymentModeOptions}
-                placeholder="Pay Mode"
-                value={salaryPaymentModeFilter}
-              />
-              <Button
-                className="h-11 gap-2 whitespace-nowrap rounded-2xl shadow-sm"
-                disabled={!hasActiveFilters}
-                onClick={clearFilters}
-                variant="secondary"
-              >
-                <X className="h-4 w-4" />
-                Clear {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
-              </Button>
+                <SelectField
+                  label="Business Line"
+                  onChange={setLineFilter}
+                  options={lookups.lines}
+                  placeholder="All Lines"
+                  value={lineFilter}
+                />
+                <SelectField
+                  label="Operating Area"
+                  onChange={setAreaFilter}
+                  options={lookups.areas}
+                  placeholder="All Areas"
+                  value={areaFilter}
+                />
+                <SelectField
+                  label="Job Position"
+                  onChange={setPositionFilter}
+                  options={lookups.positions}
+                  placeholder="All Positions"
+                  value={positionFilter}
+                />
+                <SelectField
+                  label="Direct Manager"
+                  onChange={setManagerFilter}
+                  options={lookups.managers}
+                  placeholder="All Managers"
+                  value={managerFilter}
+                />
+                <SelectField
+                  label="Employment Status"
+                  onChange={setStatusFilter}
+                  options={lookups.statuses}
+                  placeholder="All Statuses"
+                  value={statusFilter}
+                />
+                <SelectField
+                  label="Payout Mode"
+                  onChange={setSalaryPaymentModeFilter}
+                  options={salaryPaymentModeOptions}
+                  placeholder="All Modes"
+                  value={salaryPaymentModeFilter}
+                />
+              </div>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1380px] text-left text-sm">
+              <table className="w-full min-w-[1200px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs uppercase tracking-[0.16em] text-[#64748B]">
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Employee</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Position</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Department</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Line</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Area</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Pay Mode</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Manager</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Contact</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Status</th>
-                    <th className="sticky top-0 z-10 px-4 py-3 font-semibold">Actions</th>
+                  <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                    <th className="sticky top-0 z-10 px-6 py-4">Employee Information</th>
+                    <th className="sticky top-0 z-10 px-6 py-4">Organization</th>
+                    <th className="sticky top-0 z-10 px-6 py-4">Direct Manager</th>
+                    <th className="sticky top-0 z-10 px-6 py-4 text-center">Payout</th>
+                    <th className="sticky top-0 z-10 px-6 py-4">Contact Details</th>
+                    <th className="sticky top-0 z-10 px-6 py-4">Status</th>
+                    <th className="sticky top-0 z-10 px-6 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-[#F1F5F9]">
                   {filteredEmployees.length === 0 ? (
                     <tr>
                       <td
-                        className="px-4 py-10 text-center text-sm text-text-secondary"
-                        colSpan={10}
+                        className="px-6 py-12 text-center text-sm text-[#94A3B8]"
+                        colSpan={7}
                       >
-                        No employees match the current filters.
+                        No employee records match your current filter criteria.
                       </td>
                     </tr>
                   ) : (
                     filteredEmployees.map((employee, index) => (
                       <tr
-                        className="transition-colors hover:bg-[#FFF7ED]/65"
+                        className="group transition-colors hover:bg-[#F8FAFC]"
                         key={employeeRowKey(employee, index)}
                       >
-                        <td className="px-4 py-4">
+                        <td className="px-6 py-4">
                           <button
-                            className="text-left"
+                            className="flex flex-col text-left"
                             onClick={() => startEdit(employee)}
                             type="button"
                           >
-                            <p className="font-medium text-text">
+                            <span className="font-bold text-[#0F172A] group-hover:text-[#F97316] transition-colors">
                               {formatEmployeeDisplayName(employee.fullName)}
-                            </p>
-                            <p className="mt-1 font-mono text-xs text-text-secondary">
-                              {employee.hrId}
-                            </p>
+                            </span>
+                            <span className="mt-0.5 font-mono text-[10px] font-bold tracking-tight text-[#64748B]">
+                              ID: {employee.hrId}
+                            </span>
                           </button>
                         </td>
-                        <td className="px-4 py-4 text-text-secondary">
-                          {emptyText(employee.positionTitle ?? employee.jobTitle)}
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-xs font-semibold text-[#334155]">
+                              {emptyText(employee.positionTitle ?? employee.jobTitle)}
+                            </span>
+                            <span className="text-[10px] text-[#64748B]">
+                              {emptyText(employee.departmentName)} · {emptyText(employee.lineName)}
+                            </span>
+                          </div>
                         </td>
-                        <td className="px-4 py-4 text-text-secondary">
-                          {emptyText(employee.departmentName)}
+                        <td className="px-6 py-4">
+                          {employee.managerHrId ? (
+                            <div className="flex flex-col">
+                              <span className="text-xs font-medium text-[#334155]">
+                                {emptyText(employee.managerName)}
+                              </span>
+                              <span className="text-[10px] text-[#94A3B8]">
+                                {employee.managerHrId}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] font-bold uppercase tracking-tighter text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+                              Unassigned
+                            </span>
+                          )}
                         </td>
-                        <td className="px-4 py-4 text-text-secondary">
-                          {emptyText(employee.lineName)}
-                        </td>
-                        <td className="px-4 py-4 text-text-secondary">
-                          {emptyText(employee.areaName)}
-                        </td>
-                        <td className="px-4 py-4">
+                        <td className="px-6 py-4 text-center">
                           <Badge
-                            variant={
+                            className={cn(
+                              "border-none px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight",
                               employee.salaryPaymentMode === "two_parts"
-                                ? "warning"
-                                : "success"
-                            }
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-emerald-100 text-emerald-700"
+                            )}
+                            variant="outline"
                           >
                             {employee.salaryPaymentMode === "two_parts"
-                              ? "Two parts"
-                              : "One part"}
+                              ? "2 Parts"
+                              : "1 Part"}
                           </Badge>
                         </td>
-                        <td className="px-4 py-4">
-                          <p className="text-text-secondary">
-                            {emptyText(employee.managerName)}
-                          </p>
-                          {employee.managerHrId ? (
-                            <p className="mt-1 text-xs text-text-secondary">
-                              {employee.managerHrId}
-                            </p>
-                          ) : null}
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="text-xs text-[#334155]">
+                              {emptyText(employee.workEmail)}
+                            </span>
+                            <span className="text-[10px] text-[#64748B]">
+                              {emptyText(employee.mobileNumber)}
+                            </span>
+                          </div>
                         </td>
-                        <td className="px-4 py-4">
-                          <p className="text-text-secondary">
-                            {emptyText(employee.workEmail)}
-                          </p>
-                          <p className="mt-1 text-xs text-text-secondary">
-                            {emptyText(employee.mobileNumber)}
-                          </p>
-                        </td>
-                        <td className="px-4 py-4">
+                        <td className="px-6 py-4">
                           <Badge
-                            variant={statusBadgeVariant(
-                              employee.employmentStatus,
+                            className={cn(
+                              "border-none px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight",
+                              statusBadgeVariant(employee.employmentStatus) === "success" && "bg-emerald-100 text-emerald-700",
+                              statusBadgeVariant(employee.employmentStatus) === "warning" && "bg-amber-100 text-amber-700",
+                              statusBadgeVariant(employee.employmentStatus) === "danger" && "bg-rose-100 text-rose-700"
                             )}
+                            variant="outline"
                           >
                             {optionName(employee.employmentStatus ?? "active")}
                           </Badge>
                         </td>
-                        <td className="px-4 py-4">
-                          <div className="flex flex-wrap gap-2">
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             <Button
-                              className="h-9 gap-2 rounded-xl px-3 text-xs"
+                              className="h-8 w-8 rounded-lg p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
                               onClick={() => startEdit(employee)}
-                              variant="secondary"
+                              title="Edit Record"
+                              variant="ghost"
                             >
                               <Pencil className="h-3.5 w-3.5" />
-                              Edit
                             </Button>
                             <Button
-                              className="h-9 gap-2 rounded-xl px-3 text-xs"
+                              className="h-8 w-8 rounded-lg p-0 text-[#64748B] hover:bg-rose-50 hover:text-rose-600"
                               onClick={() => startResignation(employee)}
-                              variant="destructive"
+                              title="Mark as Resigned"
+                              variant="ghost"
                             >
                               <UserX className="h-3.5 w-3.5" />
-                              Resigned
                             </Button>
                           </div>
                         </td>
@@ -963,6 +983,7 @@ export function EmployeeManagement({
 
             <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
               <TextField
+                disabled={Boolean(editingHrId)}
                 label="hr_id"
                 onChange={(value) => updateForm("hrId", value)}
                 placeholder="B-001"

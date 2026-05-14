@@ -168,6 +168,7 @@ export type VacantPositionImportRecord = EmployeeImportRecord & {
 export type ExistingImportState = {
   employeeHrIds?: Set<string>;
   managerHrIds?: Set<string>;
+  terminalEmployeeHrIds?: Set<string>;
   departmentCodes?: Set<string>;
   lineCodes?: Set<string>;
   areaCodes?: Set<string>;

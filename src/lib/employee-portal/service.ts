@@ -1586,6 +1586,8 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     mobileNumber: null,
     nameAr: null,
     netSalary: null,
+    organogramVisible: true,
+    payrollEligible: true,
     salaryPaymentMode: "two_parts",
     positionId: null,
     positionTitle: null,

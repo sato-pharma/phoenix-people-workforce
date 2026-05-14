@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
 import type { RawEmployeeImportRow } from "@/lib/imports/employee-import-types";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
@@ -67,7 +68,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
 
-    return NextResponse.json(createEmployeeImportPlan(parsed.rows));
+    const existingState = await loadEmployeeImportExistingState();
+
+    return NextResponse.json(createEmployeeImportPlan(parsed.rows, { existingState }));
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to import employees." }, { status: 403 });
