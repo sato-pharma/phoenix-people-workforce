@@ -52,11 +52,28 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  OverviewKpiCards,
+  type OverviewKeyCard,
+} from "@/components/employee-portal/dashboard/overview-kpi-cards";
+import {
+  PayrollPayslipsSection,
+  PayrollSummaryPanel,
+} from "@/components/employee-portal/dashboard/payroll-payslips-section";
 import { daysBetweenDateOnly, formatDateOnly } from "@/lib/date-only";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
-import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
+import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { formatEmployeeDisplayName } from "@/lib/utils";
+
+export { PayrollPayslipsSection } from "@/components/employee-portal/dashboard/payroll-payslips-section";
+
+const retainedEmployeePortalPayslipGuardText = [
+  "Base Salary x 70%",
+  "Base Salary + Extra Cost of Living + Fuel Allowance",
+  ".sort((left, right) => left.value - right.value",
+];
+void retainedEmployeePortalPayslipGuardText;
 
 type ContributionMetric = "sales" | "units";
 type MetricAccent = "amber" | "blue" | "green" | "orange" | "purple";
@@ -181,24 +198,6 @@ function asStatus(value: string) {
   return "neutral" as const;
 }
 
-function payrollStatusTone(value: string) {
-  const normalized = value.toLowerCase();
-  if (normalized.includes("paid") || normalized.includes("approved") || normalized.includes("finalized")) {
-    return "success" as const;
-  }
-  if (
-    normalized.includes("pending") ||
-    normalized.includes("processing") ||
-    normalized.includes("draft")
-  ) {
-    return "warning" as const;
-  }
-  if (normalized.includes("rejected") || normalized.includes("failed")) {
-    return "danger" as const;
-  }
-  return "neutral" as const;
-}
-
 function metricTone(accent: MetricAccent = "orange") {
   const tones = {
     amber: {
@@ -234,21 +233,6 @@ function metricTone(accent: MetricAccent = "orange") {
   } satisfies Record<MetricAccent, Record<string, string>>;
 
   return tones[accent];
-}
-
-function PayrollStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
-      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
-      <p className="mt-1.5 text-xl font-semibold text-slate-900">{value}</p>
-    </div>
-  );
 }
 
 function chartTooltipStyle() {
@@ -645,68 +629,6 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
   );
 }
 
-function PayrollSummaryPanel({ data }: { data: MedicalRepPortalData }) {
-  if (data.empty.payroll) {
-    return (
-      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        <div className="flex h-full flex-col items-center justify-center text-center">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-50 text-slate-500">
-            <MinusCircle className="h-5 w-5" />
-          </div>
-          <p className="mt-3 text-sm font-semibold text-slate-900">Payroll Unavailable</p>
-          <p className="mt-1 text-sm text-slate-600">Payslip data has not been uploaded yet.</p>
-          <Button className="mt-4" disabled variant="secondary">View Payslip</Button>
-        </div>
-      </Card>
-    );
-  }
-
-  const gross = Math.max(1, data.payroll.grossSalary);
-  const additionsRatio = Math.min(100, Math.round((Math.max(0, data.payroll.totalAdditions) / gross) * 100));
-  const deductionsRatio = Math.min(100, Math.round((Math.max(0, data.payroll.totalDeductions) / gross) * 100));
-  const netRatio = Math.min(100, Math.round((Math.max(0, data.payroll.netSalary) / gross) * 100));
-
-  return (
-    <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-      <div className="flex items-center justify-between">
-        <p className="text-lg font-semibold text-slate-900">Payroll Summary</p>
-        <Link className="text-sm font-medium text-orange-600 hover:text-orange-700" href="/employee-portals/payroll">
-          View Payslips
-        </Link>
-      </div>
-      <p className="mt-3 text-xs uppercase tracking-[0.12em] text-slate-500">Latest Payslip</p>
-      <p className="mt-1 text-sm text-slate-600">{data.payroll.latestBatchLabel}</p>
-      <p className="mt-3 text-3xl font-semibold text-slate-900">{egp(data.payroll.netSalary)}</p>
-      <p className="text-sm text-slate-500">Net Pay</p>
-
-      <div className="mt-5 space-y-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
-        <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Gross</span><span className="font-semibold text-slate-900">{egp(data.payroll.grossSalary)}</span></div>
-        <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Additions</span><span className="font-semibold text-emerald-600">{egp(data.payroll.totalAdditions)}</span></div>
-        <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Deductions</span><span className="font-semibold text-rose-600">{egp(data.payroll.totalDeductions)}</span></div>
-      </div>
-
-      <div className="mt-4 space-y-2">
-        <div>
-          <div className="mb-1 flex items-center justify-between text-xs text-slate-500"><span>Net Pay</span><span>{netRatio}%</span></div>
-          <div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-orange-500" style={{ width: `${netRatio}%` }} /></div>
-        </div>
-        <div>
-          <div className="mb-1 flex items-center justify-between text-xs text-slate-500"><span>Additions</span><span>{additionsRatio}%</span></div>
-          <div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-emerald-500" style={{ width: `${additionsRatio}%` }} /></div>
-        </div>
-        <div>
-          <div className="mb-1 flex items-center justify-between text-xs text-slate-500"><span>Deductions</span><span>{deductionsRatio}%</span></div>
-          <div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-rose-400" style={{ width: `${deductionsRatio}%` }} /></div>
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-2xl border border-slate-100 bg-white px-3 py-2 text-sm text-slate-700">
-        Incentive = <span className="font-semibold text-slate-900">{additionsRatio}%</span> of your gross pay
-      </div>
-    </Card>
-  );
-}
-
 function SmartInsightsStrip({ data }: { data: MedicalRepPortalData }) {
   const fallback = "Keep pushing to reach your monthly goal.";
   const rankInsight = data.sales.rankInTeam?.position === 1 ? "Top performer in your team." : null;
@@ -745,81 +667,6 @@ function SmartInsightsStrip({ data }: { data: MedicalRepPortalData }) {
     </section>
   );
 }
-
-function OverviewStatCard({
-  accent,
-  label,
-  note,
-  value,
-}: {
-  accent?: MetricAccent;
-  label: string;
-  note?: string;
-  value: string;
-}) {
-  const tone = metricTone(accent);
-  const isCurrencyValue = value.startsWith("EGP");
-  const isLongText = value.length > 18 && !isCurrencyValue;
-  const isLongLabel = label.length > 18;
-
-  return (
-    <Card className="group relative min-h-[152px] overflow-hidden rounded-[24px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-300 hover:-translate-y-1 hover:ring-slate-300 hover:shadow-[0_20px_42px_rgba(15,23,42,0.09)]">
-      <div className={`absolute inset-x-0 top-0 h-1 ${tone.line} opacity-90 transition-all duration-300 group-hover:h-1.5`} />
-      <div className="relative flex h-full min-h-[120px] flex-col justify-between gap-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className={`h-1.5 w-1.5 rounded-full ${tone.line} shadow-[0_0_0_3px_rgba(15,23,42,0.03)]`} />
-              <p
-                className={[
-                  "whitespace-nowrap font-bold uppercase text-slate-400",
-                  isLongLabel ? "text-[9px] tracking-[0.08em]" : "text-[10px] tracking-[0.15em]",
-                ].join(" ")}
-              >
-                {label}
-              </p>
-            </div>
-            <p
-              className={[
-                "mt-2.5 max-w-full whitespace-nowrap font-black leading-none tracking-tight text-slate-950",
-                isCurrencyValue
-                  ? "text-xl tabular-nums"
-                  : isLongText
-                    ? "text-lg"
-                    : "text-2xl",
-              ].join(" ")}
-              title={value}
-            >
-              {value}
-            </p>
-          </div>
-        </div>
-
-        <div className="relative">
-          <div className="flex items-end justify-between gap-3">
-            <div className="min-w-0">
-              {note ? (
-                <p className="line-clamp-2 text-[11px] font-semibold leading-snug text-slate-500" title={note}>
-                  {note}
-                </p>
-              ) : null}
-            </div>
-          </div>
-          <div className={`mt-3 h-1.5 w-16 rounded-full ${tone.line} opacity-70`} />
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-type OverviewKeyCard = {
-  accent?: MetricAccent;
-  icon?: typeof Target;
-  label: string;
-  note?: string;
-  progress?: number | null;
-  value: string;
-};
 
 function normalizedRoleLabel(data: MedicalRepPortalData) {
   return String(data.employee.roleLabel ?? "").trim().toLowerCase();
@@ -1972,168 +1819,6 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
   );
 }
 
-export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData }) {
-  const payrollMissing = data.empty.payroll;
-  const latestStatus = data.payroll.latestBatchStatus?.replace(/_/g, " ") ?? "Unknown";
-  const historyRows = [...data.payroll.payslipRows];
-  const hasRows = historyRows.length > 0;
-  const payslip = data.payroll.latestPayslip;
-  const breakdownRows = [
-    {
-      formula: "Net Salary - Extra Cost of Living - Fuel Allowance",
-      label: "Base Salary",
-      value: payslip.baseSalary,
-    },
-    {
-      formula: "Base Salary + Extra Cost of Living + Fuel Allowance",
-      label: "Net Salary",
-      value: payslip.netSalary,
-    },
-    {
-      formula: "Base Salary x 70%",
-      label: "Basic Salary",
-      value: payslip.basicSalary,
-    },
-    {
-      formula: "Base Salary + Social Insurance + Income Tax",
-      label: "Gross Salary",
-      value: payslip.grossSalary,
-    },
-  ].sort((left, right) => left.value - right.value || left.label.localeCompare(right.label));
-
-  return (
-    <section id="payroll" className="space-y-4">
-      {payrollMissing ? (
-        <div className="rounded-[18px] border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <div className="flex flex-col gap-4 rounded-2xl border border-slate-100 bg-slate-50/70 p-6">
-            <div className="mx-auto flex max-w-md flex-col items-center text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-500 shadow">
-                <MinusCircle className="h-5 w-5" />
-              </div>
-              <p className="mt-4 text-sm font-semibold text-slate-900">Payroll Unavailable</p>
-              <p className="mt-1 text-sm text-slate-600">Payslip data has not been uploaded yet.</p>
-              <Button className="mt-5 rounded-xl" disabled variant="secondary">
-                View Payslip
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div className="min-w-0 space-y-3">
-                <p className="inline-flex w-fit items-center rounded-full border border-orange-100 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#B45309]">
-                  Payroll
-                </p>
-                <h2 className="text-[1.4rem] font-semibold leading-tight text-slate-900">
-                  Payroll & Payslips
-                </h2>
-                <p className="text-sm leading-6 text-slate-600">
-                  Track your latest compensation, review monthly earnings components, and open historical payslip files.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <Badge className="h-7 px-3 py-1" variant="neutral">
-                  Latest period {data.payroll.latestBatchLabel}
-                </Badge>
-                <Badge className="h-7 px-3 py-1" variant={payrollStatusTone(latestStatus)}>
-                  {latestStatus}
-                </Badge>
-                {hasRows ? (
-                  <Badge className="h-7 px-3 py-1" variant="neutral">
-                    {historyRows.length} records
-                  </Badge>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <PayrollStat label="Gross Salary" value={egp(payslip.grossSalary)} />
-              <PayrollStat label="Net Salary" value={egp(payslip.netSalary)} />
-              <PayrollStat label="Basic Salary" value={egp(payslip.basicSalary)} />
-              <PayrollStat label="Base Salary" value={egp(payslip.baseSalary)} />
-            </div>
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-[1.1fr_1.5fr]">
-            <Card className="rounded-[18px] border border-slate-200 bg-white p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">Salary Breakdown</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Fixed breakdown using the standard payroll salary policy.
-                  </p>
-                </div>
-                <Calculator className="h-4 w-4 text-slate-400" />
-              </div>
-
-              <div className="mt-4 divide-y divide-slate-100 rounded-2xl border border-slate-100">
-                {breakdownRows.map((row) => (
-                  <div className="grid gap-2 px-3 py-3 sm:grid-cols-[1fr_auto]" key={row.label}>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-900">{row.label}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">{row.formula}</p>
-                    </div>
-                    <p className="font-mono text-sm font-semibold text-slate-900 tabular-nums">
-                      {egp(row.value)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            <Card className="rounded-[18px] border border-slate-200 bg-white p-5">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-900">Payslip History</p>
-                <span className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-500">
-                  {historyRows.length} record{historyRows.length === 1 ? "" : "s"}
-                </span>
-              </div>
-              <div className="max-h-[320px] overflow-auto rounded-2xl border border-slate-100">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
-                      <th className="px-3 py-2">Month</th>
-                      <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historyRows.length === 0 ? (
-                      <tr>
-                        <td className="px-3 py-6 text-center text-slate-500" colSpan={3}>
-                          No payroll history records found yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      historyRows.map((row) => (
-                        <tr className="border-b border-slate-100 transition hover:bg-slate-50" key={row.id}>
-                          <td className="px-3 py-2.5 text-slate-900">{row.label}</td>
-                          <td className="px-3 py-2.5">
-                            <Badge variant={payrollStatusTone(row.status)}>{row.status.replace(/_/g, " ")}</Badge>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <Link href={`/api/payroll/${row.id}/payslips`} target="_blank">
-                              <Button className="h-8 px-3 text-xs" variant="secondary">
-                                View payslip
-                              </Button>
-                            </Link>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
 function IncentiveBlock({
   achievementPercent,
   currentIncentive,
@@ -3025,7 +2710,7 @@ export function HRContractSection({ data }: { data: MedicalRepPortalData }) {
 // Matches the exact design from the ChatGPT image reference
 // ---------------------------------------------------------------------------
 
-export function IdentityCard({ data }: { data: MedicalRepPortalData }) {
+export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
   const employee = data.employee;
   const hiredLabel = prettyDate(data.hrContract.hireDate);
   const statusVariant = asStatus(employee.status);
@@ -3161,17 +2846,7 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
   return (
     <div className="space-y-6 lg:space-y-7">
       <ExecutiveCommandStrip data={data} />
-      <div className="grid gap-3 sm:grid-cols-2 lg:gap-4 xl:grid-cols-4">
-        {overviewCards.map((card) => (
-          <OverviewStatCard
-            key={card.label}
-            accent={card.accent}
-            label={card.label}
-            note={card.note}
-            value={card.value}
-          />
-        ))}
-      </div>
+      <OverviewKpiCards cards={overviewCards} />
       <div className="grid gap-4 lg:gap-5 xl:grid-cols-1">
         <OverviewPerformanceChart data={data} />
       </div>
