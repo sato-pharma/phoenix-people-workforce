@@ -16,12 +16,21 @@ import {
   statusVariant,
 } from "./leave-ui-primitives";
 
+function paymentStatusLabel(status: LeaveRequest["paymentStatus"]) {
+  if (status === "paid") return "Paid";
+  if (status === "unpaid") return "Unpaid";
+  if (status === "non_deducted") return "Non-Deducted";
+  return "In Review";
+}
+
 export function LeaveRequestHistory({
   actions,
+  detailActions,
   requests,
   title = "Leave Requests",
 }: {
   actions?: (request: LeaveRequest) => ReactNode;
+  detailActions?: (request: LeaveRequest) => ReactNode;
   requests: LeaveRequest[];
   title?: string;
 }) {
@@ -45,10 +54,10 @@ export function LeaveRequestHistory({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1040px] text-left text-sm">
+            <table className="w-full min-w-[1180px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
-                  {["Request Date", "Employee", "Leave Type", "From", "To", "Duration", "Status", "Manager", "HR", "Updated", "Actions"].map((column) => (
+                  {["Request Date", "Employee", "Leave Type", "From", "To", "Duration", "Payment", "Status", "Manager", "HR", "Updated", "Actions"].map((column) => (
                     <th className="px-4 py-3" key={column}>{column}</th>
                   ))}
                 </tr>
@@ -64,7 +73,8 @@ export function LeaveRequestHistory({
                     <td className="px-4 py-4 font-semibold text-slate-700">{request.leaveType?.name ?? "Leave"}</td>
                     <td className="px-4 py-4 text-slate-600">{formatDate(request.startDate)}</td>
                     <td className="px-4 py-4 text-slate-600">{formatDate(request.endDate)}</td>
-                    <td className="px-4 py-4 font-black text-slate-950">{request.totalWorkingDays}</td>
+                    <td className="px-4 py-4 font-black text-slate-950">{request.totalWorkingDays} <span className="text-xs font-bold text-slate-500">{request.durationUnit === "full_day" ? "" : request.durationUnit.toUpperCase()}</span></td>
+                    <td className="px-4 py-4"><Badge variant={request.paymentStatus === "unpaid" ? "danger" : request.paymentStatus === "paid" ? "success" : "warning"}>{paymentStatusLabel(request.paymentStatus)}</Badge></td>
                     <td className="px-4 py-4"><Badge variant={statusVariant(request.status)}>{prettyStatus(request.status)}</Badge></td>
                     <td className="px-4 py-4"><Badge variant={statusVariant(request.managerStatus)}>{prettyStatus(request.managerStatus)}</Badge></td>
                     <td className="px-4 py-4"><Badge variant={statusVariant(request.hrStatus)}>{prettyStatus(request.hrStatus)}</Badge></td>
@@ -84,7 +94,7 @@ export function LeaveRequestHistory({
           </div>
         )}
       </Panel>
-      <LeaveDetailModal onClose={() => setSelected(null)} request={selected} />
+      <LeaveDetailModal actions={selected ? detailActions?.(selected) : null} onClose={() => setSelected(null)} request={selected} />
     </>
   );
 }

@@ -80,6 +80,7 @@ export type CoachingAnalyticsPayload = {
 
 type CoachingAnalyticsDashboardProps = {
   canCreate: boolean;
+  createHref?: string;
   filterOptions: CoachingAnalyticsFilterOptions;
   initialData: CoachingAnalyticsPayload;
 };
@@ -240,9 +241,13 @@ function ChartPanel({
   title: string;
 }) {
   return (
-    <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
+    <Card className={cn(adminPanelClassName, "min-w-0 overflow-hidden p-0")}>
       <AdminSectionHeader description={description} title={title} />
-      <div className="h-[320px] p-4">{children}</div>
+      <div className="h-[320px] min-h-[320px] min-w-0 p-4">
+        <div className="h-full min-h-0 min-w-0">
+          {children}
+        </div>
+      </div>
     </Card>
   );
 }
@@ -360,6 +365,7 @@ async function fetchAnalytics(filters: FilterState) {
 
 export function CoachingAnalyticsDashboard({
   canCreate,
+  createHref = "/coaching/new",
   filterOptions,
   initialData,
 }: CoachingAnalyticsDashboardProps) {
@@ -491,7 +497,7 @@ export function CoachingAnalyticsDashboard({
             {canCreate ? (
               <Link
                 className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-[#EA580C]"
-                href="/coaching/new"
+                href={createHref}
               >
                 <Plus className="h-4 w-4" />
                 Create Coaching Report
@@ -517,7 +523,7 @@ export function CoachingAnalyticsDashboard({
       <div className="grid gap-5 xl:grid-cols-2">
         <ChartPanel description="Distribution of completed reports by performance zone." title="Reports by Performance Zone">
           {zoneData.length ? (
-            <ResponsiveContainer height="100%" width="100%">
+            <ResponsiveContainer height="100%" minWidth={0} width="100%">
               <PieChart>
                 <Pie data={zoneData} dataKey="value" innerRadius={65} outerRadius={105} paddingAngle={3}>
                   {zoneData.map((entry) => <Cell fill={zoneColors[entry.key]} key={entry.key} />)}
@@ -530,7 +536,7 @@ export function CoachingAnalyticsDashboard({
 
         <ChartPanel description="Quarterly average coaching score by employee summary rows." title="Average Score by Quarter">
           {quarterTrend.length ? (
-            <ResponsiveContainer height="100%" width="100%">
+            <ResponsiveContainer height="100%" minWidth={0} width="100%">
               <LineChart data={quarterTrend}>
                 <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
                 <XAxis dataKey="label" stroke="#64748B" tickLine={false} />
@@ -544,7 +550,7 @@ export function CoachingAnalyticsDashboard({
 
         <ChartPanel description="Average coaching score grouped by line." title="Average Score by Line">
           {lineAverages.length ? (
-            <ResponsiveContainer height="100%" width="100%">
+            <ResponsiveContainer height="100%" minWidth={0} width="100%">
               <BarChart data={lineAverages}>
                 <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
                 <XAxis dataKey="label" stroke="#64748B" tickLine={false} />
@@ -558,7 +564,7 @@ export function CoachingAnalyticsDashboard({
 
         <ChartPanel description="Average coaching score grouped by area." title="Average Score by Area">
           {areaAverages.length ? (
-            <ResponsiveContainer height="100%" width="100%">
+            <ResponsiveContainer height="100%" minWidth={0} width="100%">
               <BarChart data={areaAverages} layout="vertical" margin={{ left: 24, right: 16 }}>
                 <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
                 <XAxis domain={[0, 100]} stroke="#64748B" tickLine={false} type="number" />
@@ -572,7 +578,7 @@ export function CoachingAnalyticsDashboard({
 
         <ChartPanel description="Employee acknowledgment split for completed coaching reports." title="Acknowledgment Status Split">
           {acknowledgmentSplit.length ? (
-            <ResponsiveContainer height="100%" width="100%">
+            <ResponsiveContainer height="100%" minWidth={0} width="100%">
               <PieChart>
                 <Pie data={acknowledgmentSplit} dataKey="value" innerRadius={65} outerRadius={105} paddingAngle={3}>
                   {acknowledgmentSplit.map((entry) => <Cell fill={entry.key === "acknowledged" ? "#10B981" : "#CBD5E1"} key={entry.key} />)}
@@ -585,7 +591,7 @@ export function CoachingAnalyticsDashboard({
 
         <ChartPanel description="Most frequent strongest scoring parameter across completed reports." title="Strongest Parameters Distribution">
           {strongestParameterData.length ? (
-            <ResponsiveContainer height="100%" width="100%">
+            <ResponsiveContainer height="100%" minWidth={0} width="100%">
               <BarChart data={strongestParameterData} layout="vertical" margin={{ left: 24, right: 16 }}>
                 <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
                 <XAxis allowDecimals={false} stroke="#64748B" tickLine={false} type="number" />
@@ -599,7 +605,7 @@ export function CoachingAnalyticsDashboard({
 
         <ChartPanel description="Most frequent priority development focus by report-level category averages." title="Top Development Areas">
           {keyDevelopmentAreaData.length ? (
-            <ResponsiveContainer height="100%" width="100%">
+            <ResponsiveContainer height="100%" minWidth={0} width="100%">
               <BarChart data={keyDevelopmentAreaData} layout="vertical" margin={{ left: 24, right: 16 }}>
                 <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
                 <XAxis allowDecimals={false} stroke="#64748B" tickLine={false} type="number" />

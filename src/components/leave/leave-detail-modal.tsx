@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { FileText, X } from "lucide-react";
 
@@ -13,10 +14,19 @@ import {
   statusVariant,
 } from "./leave-ui-primitives";
 
+function paymentStatusLabel(status: LeaveRequest["paymentStatus"]) {
+  if (status === "paid") return "Paid";
+  if (status === "unpaid") return "Unpaid";
+  if (status === "non_deducted") return "Non-Deducted";
+  return "In Review";
+}
+
 export function LeaveDetailModal({
+  actions,
   onClose,
   request,
 }: {
+  actions?: ReactNode;
   onClose: () => void;
   request: LeaveRequest | null;
 }) {
@@ -61,6 +71,8 @@ export function LeaveDetailModal({
               ["From", formatDate(selectedRequest.startDate)],
               ["To", formatDate(selectedRequest.endDate)],
               ["Working Days", selectedRequest.totalWorkingDays],
+              ["Day Portion", selectedRequest.durationUnit === "full_day" ? "Full Day" : selectedRequest.durationUnit.toUpperCase()],
+              ["Payment", paymentStatusLabel(selectedRequest.paymentStatus)],
               ["Manager", prettyStatus(selectedRequest.managerStatus)],
               ["HR", prettyStatus(selectedRequest.hrStatus)],
               ["Payroll", prettyStatus(selectedRequest.payrollStatus)],
@@ -75,6 +87,9 @@ export function LeaveDetailModal({
           <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
             <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Reason / Comment</p>
             <p className="mt-2 text-sm leading-6 text-slate-700">{selectedRequest.reason || "No reason provided."}</p>
+            {selectedRequest.paymentReason ? (
+              <p className="mt-3 rounded-xl border border-orange-100 bg-orange-50 px-3 py-2 text-sm font-bold text-orange-700">{selectedRequest.paymentReason}</p>
+            ) : null}
             {selectedRequest.attachmentUrl ? (
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <button className="inline-flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-black text-orange-700 hover:bg-orange-100" disabled={isOpeningAttachment} onClick={openAttachment} type="button">
@@ -82,13 +97,19 @@ export function LeaveDetailModal({
                   {isOpeningAttachment ? "Preparing..." : "Open attachment"}
                 </button>
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-500">
-                  {hasPrivateAttachment ? "Private signed link" : "Local managed file"}
+                  {hasPrivateAttachment ? "Private File" : "Local File"}
                 </span>
               </div>
             ) : null}
             {attachmentError ? <p className="mt-2 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">{attachmentError}</p> : null}
             {hasPrivateAttachment ? <p className="mt-3 text-sm font-bold text-slate-500">Attachment is stored privately; Phoenix creates a short-lived signed URL after access validation.</p> : null}
           </div>
+          {actions ? (
+            <div className="mt-4 rounded-xl border border-orange-100 bg-orange-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-orange-600">Decision Controls</p>
+              <div className="mt-3 flex flex-wrap gap-2">{actions}</div>
+            </div>
+          ) : null}
           <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
             <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Approval History</p>
             <div className="mt-3 space-y-3">

@@ -42,7 +42,7 @@ export default async function CoachingReportDetailPage({ params }: PageProps) {
 
   const { id } = await params;
   if (access.role === "Training Manager") {
-    redirect("/employee-portals/training-manager/field-coaching");
+    redirect(`/employee-portals/training-manager/field-coaching/${id}`);
   }
   if (isEmployeePortalRole(access)) {
     redirect(`/employee-portals/coaching/${id}`);

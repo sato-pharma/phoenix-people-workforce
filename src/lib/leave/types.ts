@@ -12,6 +12,8 @@ export type LeaveStatus =
 
 export type LeaveApprovalStatus = "pending" | "approved" | "rejected" | "not_required";
 export type LeavePayrollStatus = "not_required" | "pending" | "processed" | "blocked";
+export type LeavePaymentStatus = "paid" | "unpaid" | "in_review" | "non_deducted";
+export type LeaveDurationUnit = "full_day" | "am" | "pm";
 export type LeaveTransactionType =
   | "opening_balance"
   | "accrual"
@@ -31,6 +33,7 @@ export type LeaveType = {
   requiresAttachment: boolean;
   requiresManagerApproval: boolean;
   requiresHrApproval: boolean;
+  employeeSelectable: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -42,12 +45,8 @@ export type LeavePolicy = {
   country: string;
   annualDaysFirstYear: number;
   annualDaysAfterFirstYear: number;
-  annualDaysSenior: number;
-  annualDaysDisability: number;
-  seniorAfterYears: number;
-  seniorAfterAge: number;
-  accrualMethod: "manual" | "monthly" | "prorated";
-  accrualFrequency: "annual" | "manual" | "monthly";
+  accrualMethod: "monthly";
+  accrualFrequency: "monthly";
   allowNegativeBalance: boolean;
   carryForwardEnabled: boolean;
   carryForwardLimit: number;
@@ -88,6 +87,11 @@ export type LeaveRequest = {
   totalWorkingDays: number;
   reason: string | null;
   attachmentUrl: string | null;
+  balanceLeaveTypeId: string | null;
+  durationUnit: LeaveDurationUnit;
+  hrBalanceDecision: "deduct" | "no_deduct" | null;
+  paymentReason: string | null;
+  paymentStatus: LeavePaymentStatus;
   status: LeaveStatus;
   managerStatus: LeaveApprovalStatus;
   hrStatus: LeaveApprovalStatus;
@@ -173,7 +177,9 @@ export type LeaveRequestFilters = {
   managerHrId?: string;
   status?: string;
   leaveTypeId?: string;
+  limit?: number;
   month?: number;
+  offset?: number;
   year?: number;
   startDate?: string;
   endDate?: string;
@@ -254,11 +260,13 @@ export type SubmitLeaveRequestInput = {
   leaveTypeId: string;
   startDate: string;
   endDate: string;
+  durationUnit?: LeaveDurationUnit;
   reason?: string | null;
   attachmentUrl?: string | null;
 };
 
 export type LeaveDecisionInput = {
+  balanceDecision?: "deduct" | "no_deduct" | null;
   decision: "approved" | "rejected";
   comment?: string | null;
 };

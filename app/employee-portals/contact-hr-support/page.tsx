@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { ContactHRSupportPage } from "@/components/employee-portal/employee-portal-dashboard";
+import { ContactHRSupportPage } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
 import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,

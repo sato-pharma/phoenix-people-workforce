@@ -18,6 +18,59 @@ Employees can review wallet cards for annual entitlement, accrued, used, pending
 
 Employees can cancel requests that are still pending manager or HR processing. Cancellation writes an approval-history entry, updates the request status, emits a non-blocking notification hook, and records audit metadata.
 
+Employee-facing leave choices are limited to:
+
+- `annual_leave`
+- `emergency_leave`
+- `sick_leave`
+- `other`
+
+Employees cannot select `casual_leave` or `unpaid_leave`. Those codes may remain in the database for legacy compatibility, reporting, or internal/system-controlled workflows.
+
+## Business policy rules
+
+Annual Leave and Emergency Leave are the only employee-submitted leave types that normally reserve and consume the annual leave balance. Sick Leave is tracked through the approval workflow but does not automatically consume annual balance. Other Leave starts in review; HR/Admin must decide at approval whether to deduct from annual balance or approve as non-deducted.
+
+The system automatically marks Annual/Emergency leave as unpaid when the employee is within the first 6 months from `hire_date`, or when available annual balance is insufficient. Employees see a warning before submit explaining whether the reason is probation period, insufficient balance, or both. This is metadata only; payroll deduction logic is intentionally excluded.
+
+Payment status appears in history, manager/admin views, exports, details, and audit metadata:
+
+- `Paid`: normally Annual/Emergency leave with enough eligible balance.
+- `Unpaid`: automatic unpaid classification, or HR-approved non-deducted treatment where unpaid terminology applies.
+- `In Review`: Sick Leave and Other Leave before HR final treatment.
+- `Non-Deducted`: HR-approved Other Leave that does not consume annual balance.
+
+Sick Leave requires an attachment before submission. The employee helper text is:
+
+- Arabic: شهادة مرضية مختومة من مستشفى حكومي
+- English: Medical certificate stamped by a governmental hospital
+
+HR/Admin may reject Sick Leave when documents are invalid or non-matching; rejection requires a comment.
+
+Other Leave requires a detailed reason. If HR/Admin approves it, they must choose either `deduct from leave balance` or `do not deduct from leave balance`. Deduct creates balance transactions; no-deduct does not mutate balance.
+
+The approval flow is Employee -> Direct Manager -> HR/Admin. Manager's manager is not an approval step; they can only be notified or copied if notification configuration exists.
+
+## Duration and date rules
+
+Date ranges are inclusive. Full Day uses calculated working days. AM only and PM only are valid only for single-day leave and count as 0.5 day. Multi-day leave must use Full Day.
+
+Working-week logic is title-aware:
+
+- Medical/sales field titles (`Medical Rep`, `Medical Representative`, `MR`, `DSM`, `District Sales Manager`, `NSM`, `National Sales Manager`) work Saturday through Thursday, with Friday off only.
+- All other employees use Friday and Saturday as weekly off days.
+
+Public holidays are excluded from working-day duration, availability, conflict, analytics, and reporting calculations.
+
+Leave type date behavior:
+
+- Emergency Leave: From Date must be today. To Date cannot be before From Date.
+- Annual Leave: From Date must be tomorrow or later; today and past dates are disabled.
+- Sick Leave: today is allowed, and backdated leave is allowed within the configured `LEAVE_SICK_BACKDATE_DAYS` window. Future Sick Leave is rejected.
+- Other Leave: today and future dates are allowed; past dates are rejected.
+
+Annual entitlement is intentionally simple: employees with less than 1 year of service receive 15 days annually, and employees with 1 year or more of service receive 21 days annually. Monthly accrual is `15 / 12` before the first service anniversary and `21 / 12` from the first anniversary onward.
+
 ## Manager guide
 
 Managers use `/employee-portals/leave-approvals` to review only in-hierarchy requests. The page includes pending approval actions, mandatory rejection comments, a team calendar, availability by date range, and conflict indicators. Managers cannot approve requests outside their hierarchy; the UI and service layer both enforce this.

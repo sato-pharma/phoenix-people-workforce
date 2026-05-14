@@ -81,10 +81,13 @@ Expected roles:
 
 Before running the full E2E suite, staging should have predictable data for the selected dates:
 
-1. Employee has enough annual leave balance for the requested working days.
+1. Employee has enough annual leave balance for the requested working days, unless the test is intentionally validating automatic unpaid classification.
 2. At least one existing `pending_manager` request exists for the employee, so the manager rejection path has a target after the employee submit test creates another request.
 3. At least one existing `pending_hr` request exists for the employee, so the HR rejection path has a target after the manager approval creates another HR-pending request.
 4. A same-team or same-area overlapping leave request exists for `E2E_LEAVE_CONFLICT_START_DATE` to `E2E_LEAVE_CONFLICT_END_DATE`, so the conflict warning appears.
+5. The employee account should use a stable title for working-week assertions. Use a medical/sales field title such as `Medical Representative` when validating Saturday-as-working-day behavior; use a non-field title when validating Friday/Saturday weekends.
+6. If Sick Leave is included in E2E, prepare a small valid upload file and assert that the UI shows both helper lines: `شهادة مرضية مختومة من مستشفى حكومي` and `Medical certificate stamped by a governmental hospital`.
+7. If Other Leave is included in E2E, the HR user must choose either `Deduct Balance` or `Do Not Deduct` in the HR decision controls before approving.
 
 Recommended default dates:
 
@@ -118,7 +121,10 @@ $env:E2E_LEAVE_START_DATE="2026-12-13"
 $env:E2E_LEAVE_END_DATE="2026-12-14"
 $env:E2E_LEAVE_CONFLICT_START_DATE="2026-12-13"
 $env:E2E_LEAVE_CONFLICT_END_DATE="2026-12-14"
+$env:E2E_LEAVE_DURATION_UNIT="full_day"
 ```
+
+For AM/PM checks, use a single-day date and set the duration selector to `am` or `pm`. Multi-day AM/PM requests are expected to be rejected by the UI and API.
 
 ## Execution
 

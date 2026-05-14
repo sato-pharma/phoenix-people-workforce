@@ -13,12 +13,14 @@ function request(input: Partial<LeaveRequest> & Pick<LeaveRequest, "employeeHrId
   return {
     approvalHistory: [],
     attachmentUrl: null,
+    balanceLeaveTypeId: "type-annual",
     createdAt: "2026-05-01T08:00:00.000Z",
+    durationUnit: input.durationUnit ?? "full_day",
     employee: {
       areaName: input.employee?.areaName ?? "Cairo",
       fullName: input.employee?.fullName ?? input.employeeHrId,
       hrId: input.employeeHrId,
-      jobTitle: "Medical Representative",
+      jobTitle: input.employee?.jobTitle ?? "Medical Representative",
       lineName: input.employee?.lineName ?? "Line A",
       managerHrId: "M-001",
       managerName: "Manager One",
@@ -26,6 +28,7 @@ function request(input: Partial<LeaveRequest> & Pick<LeaveRequest, "employeeHrId
     employeeHrId: input.employeeHrId,
     endDate: input.endDate,
     hrComment: null,
+    hrBalanceDecision: null,
     hrDecisionAt: null,
     hrStatus: "pending",
     id: input.id,
@@ -35,6 +38,8 @@ function request(input: Partial<LeaveRequest> & Pick<LeaveRequest, "employeeHrId
     managerDecisionAt: null,
     managerStatus: "pending",
     payrollStatus: "not_required",
+    paymentReason: null,
+    paymentStatus: input.paymentStatus ?? "paid",
     policyId: "policy",
     reason: null,
     requestedAt: input.requestedAt ?? "2026-05-01T08:00:00.000Z",
@@ -84,6 +89,20 @@ export function runLeavePhase2Tests() {
   assert.equal(conflictDay?.pending.length, 1);
   assert.equal(conflictDay?.conflictCount, 1);
   assert.equal(availability.find((day) => day.date === "2026-05-07")?.publicHolidays.length, 1);
+  const saturdayRequests = [
+    request({ employeeHrId: "E-010", endDate: "2026-05-23", id: "field-saturday", startDate: "2026-05-23", status: "hr_approved" }),
+    request({
+      employee: { areaName: "Cairo", fullName: "Office User", hrId: "E-011", jobTitle: "Office Coordinator", lineName: "Line A", managerHrId: "M-001", managerName: "Manager One" },
+      employeeHrId: "E-011",
+      endDate: "2026-05-23",
+      id: "office-saturday",
+      startDate: "2026-05-23",
+      status: "hr_approved",
+    }),
+  ];
+  const saturdayAvailability = buildTeamAvailability(saturdayRequests, [], { endDate: "2026-05-23", line: "Line A", startDate: "2026-05-23" });
+  assert.equal(saturdayAvailability[0]?.approved.some((item) => item.employeeHrId === "E-010"), true, "Field roles should appear available-conflicted on Saturday leave.");
+  assert.equal(saturdayAvailability[0]?.approved.some((item) => item.employeeHrId === "E-011"), false, "Office roles should not appear on Saturday leave availability.");
 
   const conflicts = detectLeaveConflicts(
     {
@@ -97,6 +116,16 @@ export function runLeavePhase2Tests() {
   assert.equal(conflicts.blocked, false);
   assert.equal(conflicts.sameLineCount, 2);
   assert.equal(conflicts.warnings.some((warning) => warning.code === "same_line_capacity"), true);
+  const saturdayConflicts = detectLeaveConflicts(
+    {
+      employee: { areaName: "Cairo", fullName: "Requester", hrId: "E-012", jobTitle: "Medical Representative", lineName: "Line A" },
+      endDate: "2026-05-23",
+      existingRequests: saturdayRequests,
+      startDate: "2026-05-23",
+    },
+    { sameLineWarningThreshold: 1 },
+  );
+  assert.equal(saturdayConflicts.sameLineCount, 1, "Conflict detection should use dynamic weekend rules by title.");
 
   const analytics = buildLeaveAnalytics(requests, holidays, "2026-05-10");
   assert.equal(analytics.requestsByStatus.some((row) => row.label === "hr approved"), true);

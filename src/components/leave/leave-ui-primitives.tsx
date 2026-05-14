@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import type { LeaveRequest, PublicHoliday } from "@/lib/leave/types";
+import type { LeaveDurationUnit, LeaveRequest, PublicHoliday } from "@/lib/leave/types";
 import { cn } from "@/lib/utils";
 
 export const fieldClassName =
@@ -106,10 +106,11 @@ export function isRenderableLeaveAttachmentReference(reference: string | null | 
   return Boolean(reference?.startsWith("/uploads/leave/"));
 }
 
-export function calculateWorkingDaysPreview(startDate: string, endDate: string, holidays?: PublicHoliday[], weekendDays = [5, 6]) {
+export function calculateWorkingDaysPreview(startDate: string, endDate: string, holidays?: PublicHoliday[], weekendDays = [5, 6], durationUnit: LeaveDurationUnit = "full_day") {
   if (!startDate || !endDate || endDate < startDate) return 0;
   const start = new Date(`${startDate}T00:00:00.000Z`);
   const end = new Date(`${endDate}T00:00:00.000Z`);
+  if (durationUnit !== "full_day" && startDate !== endDate) return 0;
   const weekends = new Set(weekendDays);
   const holidaySet = holidayDates(holidays);
   let total = 0;
@@ -119,7 +120,7 @@ export function calculateWorkingDaysPreview(startDate: string, endDate: string, 
     if (weekends.has(cursor.getUTCDay()) || holidaySet.has(dateKey)) continue;
     total += 1;
   }
-  return total;
+  return durationUnit === "full_day" ? total : total > 0 ? 0.5 : 0;
 }
 
 export function todayIso() {

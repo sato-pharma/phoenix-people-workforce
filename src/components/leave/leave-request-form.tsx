@@ -4,7 +4,7 @@ import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { AlertTriangle, CalendarCheck, Upload } from "lucide-react";
 
-import type { LeaveConflictResult, LeavePolicy, LeaveType, PublicHoliday } from "@/lib/leave/types";
+import type { LeaveConflictResult, LeaveDurationUnit, LeavePolicy, LeaveType, LeaveWallet, PublicHoliday } from "@/lib/leave/types";
 import { cn } from "@/lib/utils";
 
 import {
@@ -48,24 +48,59 @@ function ConflictWarning({
   );
 }
 
+function addDaysIso(date: string, days: number) {
+  const source = new Date(`${date}T00:00:00.000Z`);
+  source.setUTCDate(source.getUTCDate() + days);
+  return source.toISOString().slice(0, 10);
+}
+
 export function LeaveRequestForm({
+  employeePolicy,
   holidays,
   leaveTypes,
   onToast,
   policy,
+  sickBackdateDays = 7,
+  wallet,
+  weekendDays,
 }: {
+  employeePolicy?: { hireDate: string | null; jobTitle: string | null; positionTitle: string | null };
   holidays?: PublicHoliday[];
   leaveTypes: LeaveType[];
   onToast: (message: string | null) => void;
   policy?: LeavePolicy;
+  sickBackdateDays?: number;
+  wallet?: LeaveWallet;
+  weekendDays?: number[];
 }) {
-  const [formState, setFormState] = useState({ endDate: "", leaveTypeId: leaveTypes[0]?.id ?? "", reason: "", startDate: "" });
+  const [formState, setFormState] = useState<{ durationUnit: LeaveDurationUnit; endDate: string; leaveTypeId: string; reason: string; startDate: string }>({ durationUnit: "full_day", endDate: "", leaveTypeId: leaveTypes[0]?.id ?? "", reason: "", startDate: "" });
+  const [today] = useState(() => new Date().toISOString().slice(0, 10));
   const [conflicts, setConflicts] = useState<LeaveConflictResult | null>(null);
   const [isCheckingConflicts, setIsCheckingConflicts] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const workingDays = calculateWorkingDaysPreview(formState.startDate, formState.endDate, holidays, policy?.weekendDays);
+  const selectedLeaveType = leaveTypes.find((type) => type.id === formState.leaveTypeId);
+  const tomorrow = addDaysIso(today, 1);
+  const sickMinDate = addDaysIso(today, -sickBackdateDays);
+  const workingDays = calculateWorkingDaysPreview(formState.startDate, formState.endDate, holidays, weekendDays ?? policy?.weekendDays, formState.durationUnit);
   const invalidRange = Boolean(formState.startDate && formState.endDate && formState.endDate < formState.startDate);
+  const invalidDurationUnit = formState.durationUnit !== "full_day" && formState.startDate !== formState.endDate;
   const canCheckConflicts = Boolean(formState.startDate && formState.endDate && !invalidRange && workingDays > 0);
+  const sixMonthsAfterHire = employeePolicy?.hireDate ? new Date(`${employeePolicy.hireDate}T00:00:00.000Z`) : null;
+  if (sixMonthsAfterHire) sixMonthsAfterHire.setUTCMonth(sixMonthsAfterHire.getUTCMonth() + 6);
+  const inProbation = Boolean(sixMonthsAfterHire && formState.startDate && new Date(`${formState.startDate}T00:00:00.000Z`) < sixMonthsAfterHire);
+  const balanceConsumingType = selectedLeaveType?.code === "annual_leave" || selectedLeaveType?.code === "emergency_leave";
+  const insufficientBalance = Boolean(balanceConsumingType && wallet && workingDays > 0 && wallet.available < workingDays);
+  const automaticUnpaidReasons = [
+    inProbation ? "Probation period: this leave will be treated as unpaid because the employee is within first 6 months from hire date." : "",
+    insufficientBalance ? `Insufficient balance: this leave will be treated as unpaid because available balance is ${wallet?.available ?? 0} day(s).` : "",
+  ].filter(Boolean);
+  const dateRule = selectedLeaveType?.code === "emergency_leave"
+    ? { max: today, min: today }
+    : selectedLeaveType?.code === "annual_leave"
+      ? { min: tomorrow }
+      : selectedLeaveType?.code === "sick_leave"
+        ? { max: today, min: sickMinDate }
+        : { min: today };
 
   useEffect(() => {
     if (!canCheckConflicts) return;
@@ -129,36 +164,74 @@ export function LeaveRequestForm({
       <form className="grid gap-4 p-4 sm:p-5 lg:grid-cols-12" data-testid="leave-submit-form" onSubmit={submit}>
         <label className="lg:col-span-3">
           <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Leave Type</span>
-          <select className={fieldClassName} data-testid="leave-type-select" name="leaveTypeId" onChange={(event) => setFormState((current) => ({ ...current, leaveTypeId: event.target.value }))} value={formState.leaveTypeId}>
+          <select
+            className={fieldClassName}
+            data-testid="leave-type-select"
+            name="leaveTypeId"
+            onChange={(event) => {
+              const nextType = leaveTypes.find((type) => type.id === event.target.value);
+              setFormState((current) => ({
+                ...current,
+                leaveTypeId: event.target.value,
+                startDate: nextType?.code === "emergency_leave" ? today : current.startDate,
+              }));
+            }}
+            value={formState.leaveTypeId}
+          >
             {leaveTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
           </select>
         </label>
         <label className="lg:col-span-2">
           <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">From Date</span>
-          <input className={fieldClassName} data-testid="leave-start-date-input" min={new Date().toISOString().slice(0, 10)} name="startDate" onChange={(event) => setFormState((current) => ({ ...current, startDate: event.target.value }))} required type="date" value={formState.startDate} />
+          <input className={fieldClassName} data-testid="leave-start-date-input" max={dateRule.max} min={dateRule.min} name="startDate" onChange={(event) => setFormState((current) => ({ ...current, startDate: event.target.value }))} required type="date" value={formState.startDate} />
         </label>
         <label className="lg:col-span-2">
           <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">To Date</span>
-          <input className={fieldClassName} data-testid="leave-end-date-input" min={formState.startDate || new Date().toISOString().slice(0, 10)} name="endDate" onChange={(event) => setFormState((current) => ({ ...current, endDate: event.target.value }))} required type="date" value={formState.endDate} />
+          <input className={fieldClassName} data-testid="leave-end-date-input" min={formState.startDate || dateRule.min} name="endDate" onChange={(event) => setFormState((current) => ({ ...current, endDate: event.target.value }))} required type="date" value={formState.endDate} />
         </label>
         <div className="lg:col-span-2">
           <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Duration</span>
-          <div className={cn(fieldClassName, "flex items-center bg-slate-50 text-slate-950")}>{invalidRange ? "Invalid range" : `${workingDays} working day${workingDays === 1 ? "" : "s"}`}</div>
+          <div className={cn(fieldClassName, "flex items-center bg-slate-50 text-slate-950")}>{invalidRange || invalidDurationUnit ? "Invalid range" : `${workingDays} working day${workingDays === 1 ? "" : "s"}`}</div>
         </div>
+        <label className="lg:col-span-3">
+          <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Day Portion</span>
+          <select className={fieldClassName} data-testid="leave-duration-unit-select" name="durationUnit" onChange={(event) => setFormState((current) => ({ ...current, durationUnit: event.target.value as LeaveDurationUnit }))} value={formState.durationUnit}>
+            <option value="full_day">Full Day</option>
+            <option value="am">AM only</option>
+            <option value="pm">PM only</option>
+          </select>
+        </label>
         <label className="lg:col-span-3">
           <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Attachment</span>
           <div className="flex h-11 items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 text-sm font-semibold text-slate-500">
             <Upload className="h-4 w-4" />
             <input className="min-w-0 flex-1 text-xs" data-testid="leave-attachment-input" name="attachment" type="file" />
           </div>
+          {selectedLeaveType?.code === "sick_leave" ? (
+            <span className="mt-2 block text-xs font-bold leading-5 text-orange-700">
+              {"\u0634\u0647\u0627\u062f\u0629 \u0645\u0631\u0636\u064a\u0629 \u0645\u062e\u062a\u0648\u0645\u0629 \u0645\u0646 \u0645\u0633\u062a\u0634\u0641\u0649 \u062d\u0643\u0648\u0645\u064a"}
+              <br />
+              Medical certificate stamped by a governmental hospital
+            </span>
+          ) : null}
         </label>
+        {automaticUnpaidReasons.length ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700 lg:col-span-12" data-testid="leave-unpaid-warning">
+            <p className="font-black">This leave will be treated as unpaid.</p>
+            {automaticUnpaidReasons.map((reason) => <p className="mt-1" key={reason}>{reason}</p>)}
+          </div>
+        ) : selectedLeaveType?.code === "other" || selectedLeaveType?.code === "sick_leave" ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-600 lg:col-span-12">
+            Payment status: In Review. HR will confirm the final treatment during approval.
+          </div>
+        ) : null}
         <ConflictWarning conflicts={canCheckConflicts ? conflicts : null} isLoading={canCheckConflicts && isCheckingConflicts} />
         <label className="lg:col-span-9">
           <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Reason / Comment</span>
           <textarea className={textAreaClassName} data-testid="leave-reason-input" name="reason" onChange={(event) => setFormState((current) => ({ ...current, reason: event.target.value }))} value={formState.reason} />
         </label>
         <div className="flex items-end lg:col-span-3">
-          <button className={cn(buttonClassName, "w-full bg-orange-600 text-white shadow-[0_14px_30px_rgba(249,115,22,0.24)] hover:bg-orange-700")} data-testid="leave-request-submit-button" disabled={isSubmitting || invalidRange || workingDays <= 0 || Boolean(canCheckConflicts && conflicts?.blocked)} type="submit">
+          <button className={cn(buttonClassName, "w-full bg-orange-600 text-white shadow-[0_14px_30px_rgba(249,115,22,0.24)] hover:bg-orange-700")} data-testid="leave-request-submit-button" disabled={isSubmitting || invalidRange || invalidDurationUnit || workingDays <= 0 || Boolean(canCheckConflicts && conflicts?.blocked)} type="submit">
             <CalendarCheck className="h-4 w-4" />
             {isSubmitting ? "Submitting..." : "Submit Request"}
           </button>

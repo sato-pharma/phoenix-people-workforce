@@ -15,11 +15,12 @@ import {
 } from "@/lib/leave/insights";
 import {
   calculateCalendarLeaveDays,
+  calculateLeaveDuration,
   calculateLeaveBalanceFromParts,
   calculateMonthlyAccrual,
-  calculateProratedEntitlement,
-  calculateWorkingLeaveDays,
+  getWeekendDaysForEmployee,
   getAnnualEntitlement,
+  isWithinFirstSixMonths,
   summarizeLeaveLedger,
 } from "@/lib/leave/calculations";
 import type {
@@ -31,6 +32,8 @@ import type {
   LeaveAnalytics,
   LeaveCalendarItem,
   LeaveConflictResult,
+  LeaveDurationUnit,
+  LeavePaymentStatus,
   LeaveDecisionInput,
   LeavePolicy,
   LeaveRequest,
@@ -58,6 +61,7 @@ type LeaveTypeRow = {
   requires_attachment: boolean;
   requires_manager_approval: boolean;
   requires_hr_approval: boolean;
+  employee_selectable: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -69,10 +73,6 @@ type LeavePolicyRow = {
   country: string;
   annual_days_first_year: number | string;
   annual_days_after_first_year: number | string;
-  annual_days_senior: number | string;
-  annual_days_disability: number | string;
-  senior_after_years: number;
-  senior_after_age: number;
   accrual_method: LeavePolicy["accrualMethod"];
   accrual_frequency: LeavePolicy["accrualFrequency"];
   allow_negative_balance: boolean;
@@ -115,6 +115,11 @@ type LeaveRequestRow = {
   total_working_days: number | string;
   reason: string | null;
   attachment_url: string | null;
+  balance_leave_type_id: string | null;
+  duration_unit: LeaveDurationUnit;
+  hr_balance_decision: LeaveRequest["hrBalanceDecision"];
+  payment_reason: string | null;
+  payment_status: LeavePaymentStatus;
   status: LeaveStatus;
   manager_status: LeaveRequest["managerStatus"];
   hr_status: LeaveRequest["hrStatus"];
@@ -179,6 +184,13 @@ type LeaveAuditLogRow = {
 };
 
 const annualLeaveCode = "annual_leave";
+const emergencyLeaveCode = "emergency_leave";
+const otherLeaveCode = "other";
+const sickLeaveCode = "sick_leave";
+const unpaidLeaveCode = "unpaid_leave";
+const employeeSelectableLeaveCodes = new Set([annualLeaveCode, emergencyLeaveCode, sickLeaveCode, otherLeaveCode]);
+const balanceConsumingSubmitLeaveCodes = new Set([annualLeaveCode, emergencyLeaveCode]);
+const sickLeaveCertificateText = "\u0634\u0647\u0627\u062f\u0629 \u0645\u0631\u0636\u064a\u0629 \u0645\u062e\u062a\u0648\u0645\u0629 \u0645\u0646 \u0645\u0633\u062a\u0634\u0641\u0649 \u062d\u0643\u0648\u0645\u064a\nMedical certificate stamped by a governmental hospital";
 
 function n(value: number | string | null | undefined) {
   const numeric = Number(value ?? 0);
@@ -187,6 +199,12 @@ function n(value: number | string | null | undefined) {
 
 function isoToday() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysIso(date: string, days: number) {
+  const source = new Date(`${date}T00:00:00.000Z`);
+  source.setUTCDate(source.getUTCDate() + days);
+  return source.toISOString().slice(0, 10);
 }
 
 function cleanHrId(value: string | null | undefined) {
@@ -205,11 +223,32 @@ function payrollCanRead(context: AccessContext) {
   return isManageRole(context) || context.role === "Finance Manager";
 }
 
+function sickBackdateDays() {
+  const configured = Number(process.env.LEAVE_SICK_BACKDATE_DAYS ?? 7);
+  return Number.isFinite(configured) && configured >= 0 ? Math.trunc(configured) : 7;
+}
+
+function normalizeDurationUnit(value: LeaveDurationUnit | string | null | undefined): LeaveDurationUnit {
+  return value === "am" || value === "pm" ? value : "full_day";
+}
+
+function paymentStatusLabel(status: LeavePaymentStatus) {
+  if (status === "paid") return "Paid";
+  if (status === "unpaid") return "Unpaid";
+  if (status === "non_deducted") return "Non-Deducted";
+  return "In Review";
+}
+
+function paymentReasonText(reasons: string[]) {
+  return reasons.filter(Boolean).join("; ") || null;
+}
+
 function mapLeaveType(row: LeaveTypeRow): LeaveType {
   return {
     affectsPayroll: row.affects_payroll,
     code: row.code,
     createdAt: row.created_at,
+    employeeSelectable: row.employee_selectable ?? true,
     id: row.id,
     isActive: row.is_active,
     isPaid: row.is_paid,
@@ -227,9 +266,7 @@ function mapLeavePolicy(row: LeavePolicyRow): LeavePolicy {
     accrualMethod: row.accrual_method,
     allowNegativeBalance: row.allow_negative_balance,
     annualDaysAfterFirstYear: n(row.annual_days_after_first_year),
-    annualDaysDisability: n(row.annual_days_disability),
     annualDaysFirstYear: n(row.annual_days_first_year),
-    annualDaysSenior: n(row.annual_days_senior),
     carryForwardEnabled: row.carry_forward_enabled,
     carryForwardExpiryMonths: row.carry_forward_expiry_months,
     carryForwardLimit: n(row.carry_forward_limit),
@@ -239,8 +276,6 @@ function mapLeavePolicy(row: LeavePolicyRow): LeavePolicy {
     isActive: row.is_active,
     isDefault: row.is_default,
     name: row.name,
-    seniorAfterAge: row.senior_after_age,
-    seniorAfterYears: row.senior_after_years,
     updatedAt: row.updated_at,
     weekendDays: row.weekend_days?.length ? row.weekend_days.map(Number) : [5, 6],
   };
@@ -318,7 +353,9 @@ function mapLeaveRequest(
   return {
     approvalHistory: approvals,
     attachmentUrl: row.attachment_url,
+    balanceLeaveTypeId: row.balance_leave_type_id,
     createdAt: row.created_at,
+    durationUnit: row.duration_unit ?? "full_day",
     employee: employee
       ? {
           areaName: employee.areaName,
@@ -333,6 +370,7 @@ function mapLeaveRequest(
     employeeHrId: row.employee_hr_id,
     endDate: row.end_date,
     hrComment: row.hr_comment,
+    hrBalanceDecision: row.hr_balance_decision,
     hrDecisionAt: row.hr_decision_at,
     hrStatus: row.hr_status,
     id: row.id,
@@ -349,6 +387,8 @@ function mapLeaveRequest(
     managerDecisionAt: row.manager_decision_at,
     managerStatus: row.manager_status,
     payrollStatus: row.payroll_status,
+    paymentReason: row.payment_reason,
+    paymentStatus: row.payment_status ?? "in_review",
     policyId: row.policy_id,
     reason: row.reason,
     requestedAt: row.requested_at,
@@ -574,8 +614,12 @@ async function recordBalanceTransaction(input: {
   return mapBalance(updated as EmployeeLeaveBalanceRow);
 }
 
-function shouldConsumeBalance(leaveType: LeaveType) {
+function isAnnualBalanceType(leaveType: LeaveType) {
   return leaveType.code === annualLeaveCode;
+}
+
+function shouldReserveBalanceOnSubmit(leaveType: LeaveType, paymentStatus: LeavePaymentStatus) {
+  return paymentStatus === "paid" && balanceConsumingSubmitLeaveCodes.has(leaveType.code);
 }
 
 async function accrueMonthlyForEmployee(
@@ -586,7 +630,7 @@ async function accrueMonthlyForEmployee(
   throughMonth: number,
   actor: string | null,
 ) {
-  if (!shouldConsumeBalance(leaveType) || policy.accrualFrequency !== "monthly") {
+  if (!isAnnualBalanceType(leaveType) || policy.accrualFrequency !== "monthly") {
     return ensureEmployeeBalance(employee, leaveType, policy, year);
   }
 
@@ -727,10 +771,7 @@ export async function getEmployeeLeaveWallet(access: AccessContext, employeeHrId
   const employee = await getEmployeeOrThrow(employeeHrId);
   const policy = await getDefaultLeavePolicy();
   const balance = await ensureCurrentAnnualBalance(employee, access.hrId);
-  const annualEntitlement =
-    policy.accrualMethod === "prorated"
-      ? calculateProratedEntitlement(employee, policy, new Date().getUTCFullYear())
-      : getAnnualEntitlement(employee, policy, new Date());
+  const annualEntitlement = getAnnualEntitlement(employee, policy, new Date());
 
   return {
     accrued: balance.accrued,
@@ -786,11 +827,13 @@ function applyFilters(requests: LeaveRequest[], filters: LeaveRequestFilters) {
 export async function listLeaveRequests(access: AccessContext, filters: LeaveRequestFilters = {}) {
   await assertPermission(access, "leave", "read");
   const supabase = getSupabaseAdmin();
+  const limit = Math.min(1000, Math.max(1, Math.trunc(Number(filters.limit ?? 1000))));
+  const offset = Math.max(0, Math.trunc(Number(filters.offset ?? 0)));
   const { data, error } = await supabase
     .from("leave_requests")
     .select("*,leave_types(code,name,is_paid,affects_payroll)")
     .order("requested_at", { ascending: false })
-    .limit(1000);
+    .range(offset, offset + limit - 1);
   if (error) throw error;
 
   const { employeeByHrId } = await loadDirectoryMaps();
@@ -938,11 +981,23 @@ export async function previewLeaveConflicts(
   if (!input.startDate || !input.endDate) throw new Error("Start and end dates are required.");
   calculateCalendarLeaveDays(input.startDate, input.endDate);
   const employee = await getEmployeeOrThrow(access.hrId);
+  const policy = await getDefaultLeavePolicy();
+  const startYear = new Date(`${input.startDate}T00:00:00.000Z`).getUTCFullYear();
+  const endYear = new Date(`${input.endDate}T00:00:00.000Z`).getUTCFullYear();
+  const holidays = startYear === endYear
+    ? await getPublicHolidays(startYear, policy.country)
+    : [
+        ...(await getPublicHolidays(startYear, policy.country)),
+        ...(await getPublicHolidays(endYear, policy.country)),
+      ];
   const result = detectLeaveConflicts({
     employee,
     endDate: input.endDate,
     existingRequests: await loadAllLeaveRequestsForEngine(),
     startDate: input.startDate,
+  }, {
+    publicHolidayDates: holidays.map((holiday) => holiday.date),
+    weekendDays: getWeekendDaysForEmployee(employee, policy.weekendDays),
   });
   const { employeeByHrId } = await loadDirectoryMaps();
   const canApprove = await canAccess(access, "leave", "approve");
@@ -958,26 +1013,80 @@ export async function submitLeaveRequest(access: AccessContext, input: SubmitLea
   await assertPermission(access, "leave", "create");
   if (!access.hrId) throw new Error("A linked employee HR_ID is required to submit leave.");
   if (!input.leaveTypeId || !input.startDate || !input.endDate) throw new Error("Leave type and date range are required.");
-  if (input.startDate < isoToday() && !isManageRole(access)) throw new Error("Leave requests cannot start in the past.");
 
   const employee = await getEmployeeOrThrow(access.hrId);
   const leaveType = await getLeaveTypeById(input.leaveTypeId);
+  if (!employeeSelectableLeaveCodes.has(leaveType.code) || leaveType.code === unpaidLeaveCode || !leaveType.employeeSelectable) {
+    throw new Error("This leave type is not available for employee self-service.");
+  }
+
   const policy = await getDefaultLeavePolicy();
   const startYear = new Date(`${input.startDate}T00:00:00.000Z`).getUTCFullYear();
-  const holidays = await getPublicHolidays(startYear, policy.country);
+  const endYear = new Date(`${input.endDate}T00:00:00.000Z`).getUTCFullYear();
+  const holidays = startYear === endYear
+    ? await getPublicHolidays(startYear, policy.country)
+    : [
+        ...(await getPublicHolidays(startYear, policy.country)),
+        ...(await getPublicHolidays(endYear, policy.country)),
+      ];
+  const durationUnit = normalizeDurationUnit(input.durationUnit);
+  const today = isoToday();
+
+  if (leaveType.code === emergencyLeaveCode && input.startDate !== today) {
+    throw new Error("Emergency Leave must start today.");
+  }
+  if (leaveType.code === annualLeaveCode && input.startDate <= today) {
+    throw new Error("Annual Leave must start from tomorrow or a future date.");
+  }
+  if (leaveType.code === sickLeaveCode && input.startDate < addDaysIso(today, -sickBackdateDays())) {
+    throw new Error(`Sick Leave can only be backdated ${sickBackdateDays()} day(s).`);
+  }
+  if (leaveType.code === sickLeaveCode && input.startDate > today) {
+    throw new Error("Sick Leave cannot start in the future.");
+  }
+  if (leaveType.code === otherLeaveCode && input.startDate < today) {
+    throw new Error("Other Leave cannot start in the past.");
+  }
+
   const totalCalendarDays = calculateCalendarLeaveDays(input.startDate, input.endDate);
-  const totalWorkingDays = calculateWorkingLeaveDays(
+  const weekendDays = getWeekendDaysForEmployee(employee, policy.weekendDays);
+  const totalWorkingDays = calculateLeaveDuration(
     input.startDate,
     input.endDate,
     holidays.map((holiday) => holiday.date),
-    policy.weekendDays,
+    weekendDays,
+    durationUnit,
   );
 
   if (totalWorkingDays <= 0) throw new Error("The selected range contains no working leave days.");
+  if (leaveType.code === sickLeaveCode && !input.attachmentUrl) throw new Error(sickLeaveCertificateText);
   if (leaveType.requiresAttachment && !input.attachmentUrl) throw new Error(`${leaveType.name} requires an attachment.`);
   await previewLeaveConflicts(access, input);
 
-  const shouldConsume = shouldConsumeBalance(leaveType);
+  const annualLeaveType = await getAnnualLeaveType();
+  const balanceCandidate = balanceConsumingSubmitLeaveCodes.has(leaveType.code) || leaveType.code === otherLeaveCode;
+  const balanceLeaveTypeId = balanceCandidate ? annualLeaveType.id : null;
+  const currentAnnualBalance = balanceCandidate ? await ensureCurrentAnnualBalance(employee, access.hrId) : null;
+  const unpaidReasons: string[] = [];
+  if (balanceConsumingSubmitLeaveCodes.has(leaveType.code) && isWithinFirstSixMonths(employee.hireDate, input.startDate)) {
+    unpaidReasons.push("Probation period: employee is within first 6 months from hire date.");
+  }
+  if (balanceConsumingSubmitLeaveCodes.has(leaveType.code) && currentAnnualBalance && currentAnnualBalance.availableBalance < totalWorkingDays) {
+    unpaidReasons.push(`Insufficient available leave balance. Available: ${currentAnnualBalance.availableBalance} day(s).`);
+  }
+  const paymentStatus: LeavePaymentStatus = balanceConsumingSubmitLeaveCodes.has(leaveType.code)
+    ? unpaidReasons.length ? "unpaid" : "paid"
+    : leaveType.code === sickLeaveCode || leaveType.code === otherLeaveCode
+      ? "in_review"
+      : leaveType.isPaid ? "paid" : "unpaid";
+  const paymentReason = paymentStatus === "unpaid"
+    ? paymentReasonText(unpaidReasons)
+    : leaveType.code === sickLeaveCode
+      ? "Sick leave document pending HR review."
+      : leaveType.code === otherLeaveCode
+        ? "HR deduction decision required."
+        : null;
+  const shouldConsume = shouldReserveBalanceOnSubmit(leaveType, paymentStatus);
   const throughMonth = new Date().getUTCFullYear() === startYear ? new Date().getUTCMonth() + 1 : 12;
   const accruals = shouldConsume ? buildMonthlyAccrualEntries(employee, policy, startYear, throughMonth) : [];
   const correlationId = createLeaveCorrelationId();
@@ -989,13 +1098,17 @@ export async function submitLeaveRequest(access: AccessContext, input: SubmitLea
       p_actor_role: access.role,
       p_allow_negative_balance: policy.allowNegativeBalance,
       p_attachment_url: input.attachmentUrl ?? null,
+      p_balance_leave_type_id: balanceLeaveTypeId,
       p_correlation_id: correlationId,
+      p_duration_unit: durationUnit,
       p_employee_hr_id: cleanHrId(employee.hrId),
       p_end_date: input.endDate,
       p_hr_status: leaveType.requiresHrApproval ? "pending" : "not_required",
       p_leave_type_id: leaveType.id,
       p_manager_status: leaveType.requiresManagerApproval ? "pending" : "not_required",
       p_payroll_status: leaveType.affectsPayroll ? "pending" : "not_required",
+      p_payment_reason: paymentReason,
+      p_payment_status: paymentStatus,
       p_policy_id: policy.id,
       p_reason: input.reason?.trim() || null,
       p_should_consume: shouldConsume,
@@ -1012,12 +1125,12 @@ export async function submitLeaveRequest(access: AccessContext, input: SubmitLea
       correlationId,
       employeeHrId: employee.hrId,
       eventType: "leave.request.submit.failed",
-      metadata: { error: error.message, leaveTypeId: leaveType.id, startDate: input.startDate, endDate: input.endDate },
+      metadata: { durationUnit, error: error.message, leaveTypeId: leaveType.id, paymentStatus, startDate: input.startDate, endDate: input.endDate },
     });
     throw error;
   }
 
-  const request = await hydrateLeaveRequest(data as LeaveRequestRow);
+  const request = await getLeaveRequestDetails(access, (data as LeaveRequestRow).id);
   await notifyLeaveSubmitted(request).catch(() => undefined);
   return request;
 }
@@ -1038,39 +1151,6 @@ async function hydrateLeaveRequest(row: LeaveRequestRow) {
   const { employeeByHrId } = await loadDirectoryMaps();
   const approvalMap = await loadRequestApprovals([row.id]);
   return mapLeaveRequest(row, employeeByHrId, approvalMap.get(row.id) ?? []);
-}
-
-async function requestHasTransaction(requestId: string, transactionType: LeaveTransactionType) {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("leave_transactions")
-    .select("id")
-    .eq("request_id", requestId)
-    .eq("transaction_type", transactionType)
-    .maybeSingle();
-  if (error) throw error;
-  return Boolean(data);
-}
-
-async function releasePendingIfNeeded(request: LeaveRequestRow, actor: string | null) {
-  const leaveType = await getLeaveTypeById(request.leave_type_id);
-  if (!shouldConsumeBalance(leaveType)) return;
-  if (await requestHasTransaction(request.id, "pending_reversal")) return;
-  const balance = await getBalanceRow(
-    request.employee_hr_id,
-    request.leave_type_id,
-    request.policy_id,
-    new Date(`${request.start_date}T00:00:00.000Z`).getUTCFullYear(),
-  );
-  if (!balance || balance.pending <= 0) return;
-  await recordBalanceTransaction({
-    amount: Math.min(balance.pending, n(request.total_working_days)),
-    balance,
-    createdBy: actor,
-    notes: "Pending request released",
-    requestId: request.id,
-    transactionType: "pending_reversal",
-  });
 }
 
 export async function decideLeaveAsManager(access: AccessContext, requestId: string, input: LeaveDecisionInput) {
@@ -1127,6 +1207,18 @@ export async function decideLeaveAsHr(access: AccessContext, requestId: string, 
   if (row.status !== "pending_hr" && row.status !== "manager_approved") {
     throw new Error("This request is not pending HR approval.");
   }
+  const leaveType = await getLeaveTypeById(row.leave_type_id);
+  if (input.decision === "approved" && leaveType.code === otherLeaveCode && input.balanceDecision !== "deduct" && input.balanceDecision !== "no_deduct") {
+    throw new Error("HR must choose whether Other leave deducts from balance.");
+  }
+  if (input.decision === "approved" && leaveType.code === otherLeaveCode && input.balanceDecision === "deduct") {
+    if (!row.balance_leave_type_id) throw new Error("Other leave cannot deduct balance because no balance leave type is linked.");
+    const requestYear = new Date(`${row.start_date}T00:00:00.000Z`).getUTCFullYear();
+    const availableBalance = await calculateAvailableBalance(row.employee_hr_id, row.balance_leave_type_id, requestYear);
+    if (availableBalance < n(row.total_working_days)) {
+      throw new Error(`Insufficient available balance to deduct Other leave. Available: ${availableBalance} day(s).`);
+    }
+  }
 
   const correlationId = createLeaveCorrelationId();
   const supabase = getSupabaseAdmin();
@@ -1134,6 +1226,7 @@ export async function decideLeaveAsHr(access: AccessContext, requestId: string, 
     .rpc("phx_leave_hr_decision_atomic", {
       p_actor_hr_id: access.hrId,
       p_actor_role: access.role,
+      p_balance_decision: input.balanceDecision ?? null,
       p_comment: input.comment?.trim() || null,
       p_correlation_id: correlationId,
       p_decision: input.decision,
@@ -1147,7 +1240,7 @@ export async function decideLeaveAsHr(access: AccessContext, requestId: string, 
       correlationId,
       employeeHrId: row.employee_hr_id,
       eventType: "leave.hr.decision.failed",
-      metadata: { decision: input.decision, error: error.message, requestId },
+      metadata: { balanceDecision: input.balanceDecision ?? null, decision: input.decision, error: error.message, requestId },
       requestId,
     });
     throw error;
@@ -1166,40 +1259,32 @@ export async function cancelLeaveRequest(access: AccessContext, requestId: strin
   if (row.status === "hr_approved" && !isManageRole(access)) {
     throw new Error("Approved leave requires HR to cancel.");
   }
-  await releasePendingIfNeeded(row, access.hrId);
 
+  const correlationId = createLeaveCorrelationId();
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from("leave_requests")
-    .update({
-      hr_comment: comment?.trim() || row.hr_comment,
-      status: "cancelled",
-      updated_at: new Date().toISOString(),
+    .rpc("phx_leave_cancel_request_atomic", {
+      p_actor_hr_id: access.hrId,
+      p_actor_role: access.role,
+      p_comment: comment?.trim() || null,
+      p_correlation_id: correlationId,
+      p_request_id: requestId,
     })
-    .eq("id", requestId)
-    .select("*,leave_types(code,name,is_paid,affects_payroll)")
     .single();
-  if (error) throw error;
+  if (error) {
+    await writeLeaveAuditLog({
+      actorHrId: access.hrId,
+      actorRole: access.role,
+      correlationId,
+      employeeHrId: row.employee_hr_id,
+      eventType: "leave.request.cancel.failed",
+      metadata: { comment: comment?.trim() || null, error: error.message, requestId },
+      requestId,
+    });
+    throw error;
+  }
 
-  await supabase.from("leave_approvals").insert({
-    approval_step: "system",
-    approver_hr_id: access.hrId ?? "SYSTEM",
-    approver_role: access.role,
-    comment: comment?.trim() || "Request cancelled",
-    request_id: requestId,
-    status: "cancelled",
-  }).throwOnError();
-
-  const { employeeByHrId } = await loadDirectoryMaps();
-  const request = mapLeaveRequest(data as LeaveRequestRow, employeeByHrId, []);
-  await writeLeaveAuditLog({
-    actorHrId: access.hrId,
-    actorRole: access.role,
-    employeeHrId: request.employeeHrId,
-    eventType: "leave.request.cancelled",
-    metadata: { comment: comment?.trim() || null, status: request.status },
-    requestId,
-  });
+  const request = await hydrateLeaveRequest(data as LeaveRequestRow);
   await notifyLeaveDecision(request, "cancelled").catch(() => undefined);
   return request;
 }
@@ -1513,6 +1598,9 @@ export async function exportLeaveRequestsToExcel(access: AccessContext, filters:
     { header: "From Date", key: "from", width: 14 },
     { header: "To Date", key: "to", width: 14 },
     { header: "Duration", key: "duration", width: 12 },
+    { header: "Duration Unit", key: "durationUnit", width: 14 },
+    { header: "Payment Status", key: "paymentStatus", width: 18 },
+    { header: "Payment Reason", key: "paymentReason", width: 34 },
     { header: "Status", key: "status", width: 18 },
     { header: "Manager Decision", key: "managerStatus", width: 18 },
     { header: "HR Decision", key: "hrStatus", width: 18 },
@@ -1524,6 +1612,7 @@ export async function exportLeaveRequestsToExcel(access: AccessContext, filters:
     worksheet.addRow({
       area: request.employee?.areaName ?? "",
       duration: request.totalWorkingDays,
+      durationUnit: request.durationUnit,
       employeeHrId: request.employeeHrId,
       employeeName: request.employee?.fullName ?? "",
       from: request.startDate,
@@ -1531,6 +1620,8 @@ export async function exportLeaveRequestsToExcel(access: AccessContext, filters:
       line: request.employee?.lineName ?? "",
       manager: request.employee?.managerName ?? "",
       managerStatus: request.managerStatus,
+      paymentReason: request.paymentReason ?? "",
+      paymentStatus: paymentStatusLabel(request.paymentStatus),
       status: request.status,
       submittedAt: request.requestedAt,
       title: request.employee?.jobTitle ?? "",
@@ -1549,11 +1640,13 @@ export async function upsertLeaveType(access: AccessContext, input: Partial<Leav
   await assertPermission(access, "leave", "update");
   if (!isManageRole(access)) throw new Error("Forbidden: leave type settings require HR or Super Admin access.");
   const supabase = getSupabaseAdmin();
+  const code = input.code.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
   const { data, error } = await supabase
     .from("leave_types")
     .upsert({
       affects_payroll: input.affectsPayroll ?? false,
-      code: input.code.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+      code,
+      employee_selectable: input.employeeSelectable ?? employeeSelectableLeaveCodes.has(code),
       is_active: input.isActive ?? true,
       is_paid: input.isPaid ?? true,
       name: input.name.trim(),
@@ -1573,13 +1666,11 @@ export async function upsertLeavePolicy(access: AccessContext, input: Partial<Le
   if (!isManageRole(access)) throw new Error("Forbidden: leave policy settings require HR or Super Admin access.");
   const supabase = getSupabaseAdmin();
   const payload = {
-    accrual_frequency: input.accrualFrequency ?? "monthly",
-    accrual_method: input.accrualMethod ?? "prorated",
+    accrual_frequency: "monthly",
+    accrual_method: "monthly",
     allow_negative_balance: input.allowNegativeBalance ?? false,
     annual_days_after_first_year: input.annualDaysAfterFirstYear ?? 21,
-    annual_days_disability: input.annualDaysDisability ?? 45,
     annual_days_first_year: input.annualDaysFirstYear ?? 15,
-    annual_days_senior: input.annualDaysSenior ?? 30,
     carry_forward_enabled: input.carryForwardEnabled ?? false,
     carry_forward_expiry_months: input.carryForwardExpiryMonths ?? 0,
     carry_forward_limit: input.carryForwardLimit ?? 0,
@@ -1587,8 +1678,6 @@ export async function upsertLeavePolicy(access: AccessContext, input: Partial<Le
     is_active: input.isActive ?? true,
     is_default: input.isDefault ?? false,
     name: input.name.trim(),
-    senior_after_age: input.seniorAfterAge ?? 50,
-    senior_after_years: input.seniorAfterYears ?? 10,
     updated_at: new Date().toISOString(),
     weekend_days: input.weekendDays?.length ? input.weekendDays : [5, 6],
   };
@@ -1622,6 +1711,7 @@ export async function upsertPublicHoliday(access: AccessContext, input: { countr
 
 export async function getEmployeeLeaveWorkspace(access: AccessContext) {
   if (!access.hrId) throw new Error("A linked employee HR_ID is required.");
+  const employee = await getEmployeeOrThrow(access.hrId);
   const policy = await getDefaultLeavePolicy();
   const [wallet, leaveTypes, requests] = await Promise.all([
     getEmployeeLeaveWallet(access),
@@ -1634,7 +1724,21 @@ export async function getEmployeeLeaveWorkspace(access: AccessContext) {
     month: new Date().getUTCMonth() + 1,
     year: new Date().getUTCFullYear(),
   });
-  return { calendarItems, holidays, leaveTypes, policy, requests, wallet };
+  return {
+    calendarItems,
+    employeePolicy: {
+      hireDate: employee.hireDate,
+      jobTitle: employee.jobTitle,
+      positionTitle: employee.positionTitle,
+    },
+    holidays,
+    leaveTypes: leaveTypes.filter((type) => type.employeeSelectable && employeeSelectableLeaveCodes.has(type.code)),
+    policy,
+    requests,
+    sickBackdateDays: sickBackdateDays(),
+    wallet,
+    weekendDays: getWeekendDaysForEmployee(employee, policy.weekendDays),
+  };
 }
 
 export async function getManagerLeaveWorkspace(access: AccessContext) {

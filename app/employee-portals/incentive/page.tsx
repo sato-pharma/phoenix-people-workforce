@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { EmployeePortalIncentivePage } from "@/components/employee-portal/employee-portal-dashboard";
+import { EmployeePortalIncentivePage } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
 import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,

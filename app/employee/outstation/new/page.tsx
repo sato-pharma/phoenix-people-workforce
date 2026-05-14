@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalSidebar, EmployeePortalTopNav } from "@/components/employee-portal/employee-portal-layout";
-import { IdentityCard } from "@/components/employee-portal/employee-portal-dashboard";
+import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { MobileOutstationWizard } from "@/components/outstation/mobile-outstation-wizard";
 import { Card } from "@/components/ui/card";
 import { PageTransition } from "@/components/ui/page-transition";

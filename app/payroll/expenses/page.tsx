@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/layout/app-shell";
-import { PayrollDashboard } from "@/components/payroll/payroll-dashboard";
+import { PayrollDashboard } from "@/components/payroll/payroll-dashboard-dynamic";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import { getPayrollDashboard } from "@/lib/payroll/service";

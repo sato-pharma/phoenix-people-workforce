@@ -63,7 +63,10 @@ type WorkspaceCommon = {
 };
 
 type EmployeeLeaveWorkspaceProps = WorkspaceCommon & {
+  employeePolicy?: { hireDate: string | null; jobTitle: string | null; positionTitle: string | null };
+  sickBackdateDays?: number;
   wallet: LeaveWallet;
+  weekendDays?: number[];
 };
 
 type AdminLeaveWorkspaceProps = WorkspaceCommon & {
@@ -89,11 +92,14 @@ type AdminLeaveWorkspaceProps = WorkspaceCommon & {
 
 export function EmployeeLeaveWorkspace({
   calendarItems,
+  employeePolicy,
   holidays,
   leaveTypes,
   policy,
   requests,
+  sickBackdateDays,
   wallet,
+  weekendDays,
 }: EmployeeLeaveWorkspaceProps) {
   const [toast, setToast] = useState<string | null>(null);
 
@@ -122,7 +128,16 @@ export function EmployeeLeaveWorkspace({
         <MetricCard icon={<Gauge className="h-5 w-5" />} label="Available" value={wallet.available} />
       </div>
 
-      <LeaveRequestForm holidays={holidays} leaveTypes={leaveTypes} onToast={setToast} policy={policy} />
+      <LeaveRequestForm
+        employeePolicy={employeePolicy}
+        holidays={holidays}
+        leaveTypes={leaveTypes}
+        onToast={setToast}
+        policy={policy}
+        sickBackdateDays={sickBackdateDays}
+        wallet={wallet}
+        weekendDays={weekendDays}
+      />
 
       <LeaveCalendarView
         holidays={holidays}
@@ -270,14 +285,10 @@ function AdminSettings({
             const data = new FormData(event.currentTarget);
             post("/api/leave/settings/policies", {
               annualDaysAfterFirstYear: Number(data.get("annualDaysAfterFirstYear")),
-              annualDaysDisability: Number(data.get("annualDaysDisability")),
               annualDaysFirstYear: Number(data.get("annualDaysFirstYear")),
-              annualDaysSenior: Number(data.get("annualDaysSenior")),
               id: defaultPolicy?.id,
               isDefault: true,
               name: String(data.get("name")),
-              seniorAfterAge: Number(data.get("seniorAfterAge")),
-              seniorAfterYears: Number(data.get("seniorAfterYears")),
               weekendDays: String(data.get("weekendDays")).split(",").map((item) => Number(item.trim())).filter(Number.isFinite),
             }).catch((error) => setToast(error instanceof Error ? error.message : "Unable to save policy."));
           }}
@@ -286,10 +297,6 @@ function AdminSettings({
           <div className="grid grid-cols-2 gap-3">
             <input className={fieldClassName} defaultValue={defaultPolicy?.annualDaysFirstYear ?? 15} name="annualDaysFirstYear" type="number" step="0.25" />
             <input className={fieldClassName} defaultValue={defaultPolicy?.annualDaysAfterFirstYear ?? 21} name="annualDaysAfterFirstYear" type="number" step="0.25" />
-            <input className={fieldClassName} defaultValue={defaultPolicy?.annualDaysSenior ?? 30} name="annualDaysSenior" type="number" step="0.25" />
-            <input className={fieldClassName} defaultValue={defaultPolicy?.annualDaysDisability ?? 45} name="annualDaysDisability" type="number" step="0.25" />
-            <input className={fieldClassName} defaultValue={defaultPolicy?.seniorAfterYears ?? 10} name="seniorAfterYears" type="number" />
-            <input className={fieldClassName} defaultValue={defaultPolicy?.seniorAfterAge ?? 50} name="seniorAfterAge" type="number" />
           </div>
           <input className={fieldClassName} defaultValue={(defaultPolicy?.weekendDays ?? [5, 6]).join(",")} name="weekendDays" />
           <button className={cn(buttonClassName, "w-full bg-orange-600 text-white hover:bg-orange-700")} type="submit">Save Policy</button>
@@ -380,6 +387,51 @@ function AdminSettings({
   );
 }
 
+type HrBalanceDecision = "deduct" | "no_deduct";
+
+function HrDecisionActions({
+  onDecision,
+  request,
+}: {
+  onDecision: (request: LeaveRequest, decision: "approved" | "rejected", balanceDecision?: HrBalanceDecision | null) => void;
+  request: LeaveRequest;
+}) {
+  const [balanceDecision, setBalanceDecision] = useState<HrBalanceDecision>("deduct");
+  const needsBalanceDecision = request.leaveType?.code === "other";
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {needsBalanceDecision ? (
+        <select
+          className="h-9 rounded-xl border border-orange-200 bg-white px-3 text-xs font-black text-slate-800 outline-none focus:border-orange-400"
+          data-testid="hr-other-balance-decision-select"
+          onChange={(event) => setBalanceDecision(event.target.value as HrBalanceDecision)}
+          value={balanceDecision}
+        >
+          <option value="deduct">Deduct Balance</option>
+          <option value="no_deduct">Do Not Deduct</option>
+        </select>
+      ) : null}
+      <button
+        className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700"
+        data-testid="hr-leave-approve-button"
+        onClick={() => onDecision(request, "approved", needsBalanceDecision ? balanceDecision : null)}
+        type="button"
+      >
+        HR Approve
+      </button>
+      <button
+        className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white hover:bg-rose-700"
+        data-testid="hr-leave-reject-button"
+        onClick={() => onDecision(request, "rejected", null)}
+        type="button"
+      >
+        HR Reject
+      </button>
+    </div>
+  );
+}
+
 export function AdminLeaveManagementWorkspace({
   accrualPreview,
   activityLogs,
@@ -397,11 +449,14 @@ export function AdminLeaveManagementWorkspace({
   const canManageLeave = capabilities?.canManageLeave ?? true;
   const canExport = capabilities?.canExport ?? true;
 
-  async function hrDecision(request: LeaveRequest, decision: "approved" | "rejected") {
+  async function hrDecision(request: LeaveRequest, decision: "approved" | "rejected", balanceDecision?: HrBalanceDecision | null) {
     const comment = decision === "rejected" ? window.prompt("HR rejection comment") : window.prompt("HR comment (optional)");
     if (decision === "rejected" && !comment?.trim()) return setToast("A rejection comment is required.");
+    if (decision === "approved" && request.leaveType?.code === "other" && balanceDecision !== "deduct" && balanceDecision !== "no_deduct") {
+      return setToast("Choose whether Other leave deducts from balance before HR approval.");
+    }
     const response = await fetch(`/api/leave/requests/${request.id}/hr-decision`, {
-      body: JSON.stringify({ comment, decision }),
+      body: JSON.stringify({ balanceDecision, comment, decision }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
     });
@@ -513,10 +568,10 @@ export function AdminLeaveManagementWorkspace({
 
       <LeaveRequestHistory
         actions={(request) => canManageLeave && request.status === "pending_hr" ? (
-          <>
-            <button className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700" data-testid="hr-leave-approve-button" onClick={() => hrDecision(request, "approved")} type="button">HR Approve</button>
-            <button className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white hover:bg-rose-700" data-testid="hr-leave-reject-button" onClick={() => hrDecision(request, "rejected")} type="button">HR Reject</button>
-          </>
+          <HrDecisionActions onDecision={hrDecision} request={request} />
+        ) : null}
+        detailActions={(request) => canManageLeave && request.status === "pending_hr" ? (
+          <HrDecisionActions onDecision={hrDecision} request={request} />
         ) : null}
         requests={requests}
         title="Admin Leave Requests Report"

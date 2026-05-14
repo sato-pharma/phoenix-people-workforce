@@ -35,6 +35,8 @@ export type CoachingReportsFilterOptions = {
 type CoachingReportsCenterProps = {
   canCreate: boolean;
   canExport: boolean;
+  createHref?: string;
+  detailHrefBase?: string;
   filterOptions: CoachingReportsFilterOptions;
   initialReports: CoachingReportSummaryRow[];
   lockedCoachHrId?: string | null;
@@ -238,9 +240,15 @@ function filenameFromDisposition(value: string | null) {
   return match?.[1] ?? `phoenix-coaching-reports-${new Date().toISOString().slice(0, 10)}.xlsx`;
 }
 
+function detailHrefFor(base: string, reportId: string) {
+  return `${base.replace(/\/+$/g, "")}/${reportId}`;
+}
+
 export function CoachingReportsCenter({
   canCreate,
   canExport,
+  createHref = "/coaching/new",
+  detailHrefBase = "/coaching",
   filterOptions,
   initialReports,
   lockedCoachHrId,
@@ -482,7 +490,7 @@ export function CoachingReportsCenter({
             {canCreate ? (
               <Link
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-4 py-2 text-sm font-black text-white shadow-[0_14px_34px_rgba(249,115,22,0.20)] transition hover:bg-[#EA580C]"
-                href="/coaching/new"
+                href={createHref}
               >
                 <Plus className="h-4 w-4" />
                 Create New Coaching Report
@@ -506,7 +514,7 @@ export function CoachingReportsCenter({
               {canCreate ? (
                 <Link
                   className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-[#EA580C]"
-                  href="/coaching/new"
+                  href={createHref}
                 >
                   <Plus className="h-4 w-4" />
                   Create Coaching Report
@@ -562,7 +570,7 @@ export function CoachingReportsCenter({
                     <td className="px-5 py-4">
                       <Link
                         className="inline-flex items-center gap-2 rounded-full border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-black text-[#0F172A] shadow-sm transition hover:border-[#F97316]/50 hover:text-[#F97316]"
-                        href={`/coaching/${report.reportId}`}
+                        href={detailHrefFor(detailHrefBase, report.reportId)}
                       >
                         View Report
                         <ArrowUpRight className="h-3.5 w-3.5" />
