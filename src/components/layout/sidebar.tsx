@@ -28,12 +28,13 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Fragment, useState } from "react";
+import { Fragment, useId, useMemo, useState, useSyncExternalStore } from "react";
 
 import { type NavigationMode, type PermissionAction, type PermissionResource, type PhoenixRole } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 
 type SidebarSection = {
+  id: string;
   items: SidebarSectionItem[];
   label: string;
 };
@@ -52,6 +53,10 @@ type SidebarSectionItem = {
   roles?: PhoenixRole[];
   permissions?: SidebarPermission[];
 };
+
+const SIDEBAR_COLLAPSED_STORAGE_PREFIX = "phoenix-sidebar-collapsed";
+const SIDEBAR_COLLAPSED_STORAGE_EVENT = "phoenix-sidebar-collapsed-change";
+const EMPTY_PERMISSION_LOOKUP: PermissionLookup = {};
 
 function permissionAllowed(permissionLookup: PermissionLookup | undefined, permission?: SidebarPermission | SidebarPermission[]) {
   if (!permission) return true;
@@ -77,26 +82,41 @@ function roleNotExcluded(currentRole: PhoenixRole | undefined, excludedRoles?: P
 function getAdminSections(permissionLookup: PermissionLookup, currentRole?: PhoenixRole): SidebarSection[] {
   const sections: SidebarSection[] = [
     {
+      id: "command-center",
       items: [
         { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }] },
         { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }] },
         { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }] },
-        { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
         { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }] },
-        { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "admin" }] },
-        { href: "/admin/email-notifications", icon: BellRing, label: "Email Governance", permissions: [{ resource: "admin" }] },
-        { href: "/imports/employees", icon: FileUp, label: "Bulk Import", permissions: [{ resource: "imports" }] },
       ],
-      label: "Core Admin",
+      label: "Command Center",
     },
     {
+      id: "people-management",
+      items: [
+        { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }] },
+        { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
+        { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
+        { href: "/offers", icon: IdCard, label: "Offer Lifecycle", permissions: [{ resource: "offers" }] },
+        { href: "/admin/leave", icon: CalendarDays, label: "Leave Management", permissions: [{ resource: "leave" }] },
+        { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },
+        { href: "/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
+        { href: "/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
+      ],
+      label: "People Management",
+    },
+    {
+      id: "sales-performance",
       items: [
         { href: "/sales/queue", icon: FileUp, label: "Monthly Sales", permissions: [{ resource: "sales" }] },
         { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }] },
+        { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
+        { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }] },
       ],
-      label: "Sales",
+      label: "Sales & Performance",
     },
     {
+      id: "payroll-expenses",
       items: [
         { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }] },
         { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }] },
@@ -110,25 +130,21 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       label: "Payroll & Expenses",
     },
     {
+      id: "access-communication",
       items: [
-        { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
-        { href: "/offers", icon: IdCard, label: "Offer Lifecycle", permissions: [{ resource: "offers" }] },
-        { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }] },
-        { href: "/admin/leave", icon: CalendarDays, label: "Leave Management", permissions: [{ resource: "leave" }] },
-        { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
-        { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }] },
-        { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
+        { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
+        { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "admin" }] },
+        { href: "/admin/email-notifications", icon: BellRing, label: "Email Governance", permissions: [{ resource: "admin" }] },
+        { href: "/imports/employees", icon: FileUp, label: "Bulk Import", permissions: [{ resource: "imports" }] },
       ],
-      label: "People Ops",
+      label: "Access & Communication",
     },
     {
+      id: "calendar-operations",
       items: [
-        { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },
-        { href: "/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
-        { href: "/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
         { href: "/hr-calendar", icon: CalendarDays, label: "HR Calendar", permissions: [{ resource: "hr_calendar" }] },
       ],
-      label: "Tracking",
+      label: "Calendar & Operations",
     },
   ];
 
@@ -143,6 +159,7 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
 function getEmployeePortalSections(permissionLookup: PermissionLookup, currentRole?: PhoenixRole): SidebarSection[] {
   const sections: SidebarSection[] = [
     {
+      id: "employee-portal",
       items: [
         { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }] },
         { href: "/employee-portals/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales", excludedRoles: ["Training Manager"], permissions: [{ resource: "sales" }] },
@@ -151,7 +168,7 @@ function getEmployeePortalSections(permissionLookup: PermissionLookup, currentRo
         { href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
         { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "My Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["Medical Rep"] },
         { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Team Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["District Manager", "National Sales Manager"] },
-        { href: "/employee-portals/payroll", icon: ChartColumnBig, label: "Payroll & Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }] },
+        { href: "/payslips", icon: ChartColumnBig, label: "Payroll & Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }] },
         { href: "/employee/outstation/new", icon: MapPinned, label: "Outstation", permissions: [{ resource: "outstation" }] },
         { href: "/employee-portals/leave", icon: CalendarDays, label: "Vacation / Leave", permissions: [{ resource: "leave" }] },
         { href: "/employee-portals/leave-approvals", icon: CalendarClock, label: "Leave Approvals", excludedRoles: ["Training Manager"], permissions: [{ resource: "leave", action: "approve" }] },
@@ -187,7 +204,7 @@ function isActivePath(pathname: string, href: string, activeTab: string | null) 
   if (baseHref === "/sales") return pathname === "/sales";
   if (baseHref === "/employee-portals/sales") return pathname === "/employee-portals/sales";
   if (baseHref === "/payroll") return pathname === "/payroll";
-  if (baseHref === "/employee-portals/payroll") return pathname === "/employee-portals/payroll";
+  if (baseHref === "/payslips") return pathname === "/payslips";
   if (baseHref === "/payroll/expenses") return pathname === "/payroll/expenses";
   return pathname === baseHref || pathname.startsWith(`${baseHref}/`);
 }
@@ -201,10 +218,66 @@ function getActiveHref(pathname: string, sections: SidebarSection[], activeTab: 
   return matches[0]?.href ?? null;
 }
 
+function getCollapsedStorageKey(mode: NavigationMode) {
+  return `${SIDEBAR_COLLAPSED_STORAGE_PREFIX}:${mode}`;
+}
+
+function parseCollapsedSectionIds(rawValue: string, validSectionIds: Set<string>) {
+  const collapsed = new Set<string>();
+
+  try {
+    const parsedValue: unknown = JSON.parse(rawValue);
+    if (!Array.isArray(parsedValue)) return collapsed;
+
+    for (const value of parsedValue) {
+      if (typeof value === "string" && validSectionIds.has(value)) {
+        collapsed.add(value);
+      }
+    }
+  } catch {
+    return new Set<string>();
+  }
+
+  return collapsed;
+}
+
+function getCollapsedSectionSnapshot(storageKey: string) {
+  if (typeof window === "undefined") return "[]";
+
+  try {
+    return window.localStorage.getItem(storageKey) ?? "[]";
+  } catch {
+    return "[]";
+  }
+}
+
+function subscribeToCollapsedSectionChanges(onStoreChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(SIDEBAR_COLLAPSED_STORAGE_EVENT, onStoreChange);
+
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(SIDEBAR_COLLAPSED_STORAGE_EVENT, onStoreChange);
+  };
+}
+
+function writeCollapsedSectionIds(storageKey: string, collapsedSectionIds: Set<string>) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(Array.from(collapsedSectionIds)));
+    window.dispatchEvent(new Event(SIDEBAR_COLLAPSED_STORAGE_EVENT));
+  } catch {
+    // Sidebar preferences are optional. Private browsing/storage failures should not block navigation.
+  }
+}
+
 function SidebarNav({
   mode = "admin",
   onNavigate,
-  permissionLookup = {},
+  permissionLookup = EMPTY_PERMISSION_LOOKUP,
   currentRole,
 }: {
   currentRole?: PhoenixRole;
@@ -212,10 +285,48 @@ function SidebarNav({
   onNavigate?: () => void;
   permissionLookup?: PermissionLookup;
 }) {
-  const sections = getSections(mode, permissionLookup, currentRole);
+  const sections = useMemo(
+    () => getSections(mode, permissionLookup, currentRole),
+    [currentRole, mode, permissionLookup],
+  );
   const pathname = usePathname();
+  const navInstanceId = useId();
   const [activeTab, setActiveTab] = useState<string | null>(pathname === "/payroll" ? "governance" : null);
   const activeHref = getActiveHref(pathname, sections, activeTab);
+  const sectionIds = useMemo(() => sections.map((section) => section.id), [sections]);
+  const activeSectionId = sections.find((section) => section.items.some((item) => item.href === activeHref))?.id ?? null;
+  const collapsedStorageKey = getCollapsedStorageKey(mode);
+  const collapsedSectionSnapshot = useSyncExternalStore(
+    subscribeToCollapsedSectionChanges,
+    () => getCollapsedSectionSnapshot(collapsedStorageKey),
+    () => "[]",
+  );
+  const collapsedSectionIds = useMemo(() => {
+    const validSectionIds = new Set(sectionIds);
+    const nextCollapsedSectionIds = parseCollapsedSectionIds(collapsedSectionSnapshot, validSectionIds);
+
+    if (activeSectionId) {
+      nextCollapsedSectionIds.delete(activeSectionId);
+    }
+
+    return nextCollapsedSectionIds;
+  }, [activeSectionId, collapsedSectionSnapshot, sectionIds]);
+
+  function toggleSection(sectionId: string) {
+    const nextCollapsedSectionIds = new Set(collapsedSectionIds);
+
+    if (nextCollapsedSectionIds.has(sectionId)) {
+      nextCollapsedSectionIds.delete(sectionId);
+    } else {
+      nextCollapsedSectionIds.add(sectionId);
+    }
+
+    if (activeSectionId) {
+      nextCollapsedSectionIds.delete(activeSectionId);
+    }
+
+    writeCollapsedSectionIds(collapsedStorageKey, nextCollapsedSectionIds);
+  }
 
   return (
     <>
@@ -223,6 +334,8 @@ function SidebarNav({
         {sections.map((section, sectionIndex) => {
           const hasActive = section.items.some((item) => item.href === activeHref);
           const adminSection = mode === "admin";
+          const collapsed = collapsedSectionIds.has(section.id) && !hasActive;
+          const sectionContentId = `${navInstanceId}-${section.id}-items`;
 
           return (
             <Fragment key={section.label}>
@@ -232,81 +345,103 @@ function SidebarNav({
                   sectionIndex > 0 && "mt-6",
                 )}
               >
-                <div className={cn("flex items-center gap-2", adminSection && "border-t border-[#333333] px-2 pt-4")}>
+                <button
+                  aria-controls={sectionContentId}
+                  aria-expanded={!collapsed}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-lg text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#000000]",
+                    adminSection && "border-t border-[#333333] px-2 pt-4",
+                  )}
+                  onClick={() => toggleSection(section.id)}
+                  type="button"
+                >
                   <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#FFF7ED]", adminSection && "bg-[#000000] ring-1 ring-[#333333]")}>
                     <ChevronRight
                       className={cn(
-                        "h-3 w-3 shrink-0 transition-transform duration-200 text-[#F97316]",
+                        "h-3 w-3 shrink-0 text-[#F97316] transition-transform duration-300 ease-out",
                         adminSection && "text-[#F59E0B]",
                         hasActive && "text-[#FB923C]",
+                        !collapsed && "rotate-90",
                       )}
                     />
                   </span>
-                  <span className={cn("text-[11px] font-black uppercase tracking-[0.18em] text-[#F97316]", adminSection && "text-[#F8B56B]")}>
+                  <span className={cn("min-w-0 flex-1 truncate text-[11px] font-black uppercase tracking-[0.18em] text-[#F97316]", adminSection && "text-[#F8B56B]")}>
                     {section.label}
                   </span>
-                </div>
+                </button>
               </div>
 
               <div
+                aria-hidden={collapsed}
                 className={cn(
-                  "mt-2 space-y-1.5 px-1",
-                  adminSection && "p-1",
+                  "grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                  collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
                 )}
+                id={sectionContentId}
               >
-                {section.items.map((item) => {
-                  const active = item.href === activeHref;
-                  return (
-                    <Link
-                      className={cn(
-                        "group relative flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-[13px] font-semibold transition-all duration-150",
-                        adminSection
-                          ? active
-                            ? "bg-[linear-gradient(180deg,#1a1a1a_0%,#000000_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_24px_rgba(0,0,0,0.24)]"
-                            : "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-white"
-                          : active
-                            ? "bg-[#FFF7ED] text-[#0F172A]"
-                            : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]",
-                      )}
-                      href={item.href}
-                      key={item.label}
-                      prefetch={false}
-                      onClick={() => {
-                        if (item.href.includes("tab=generate")) setActiveTab("generate");
-                        else if (item.href.includes("tab=governance")) setActiveTab("governance");
-                        else setActiveTab(null);
-                        onNavigate?.();
-                      }}
-                    >
-                        {adminSection && (
-                          <span
-                            className={cn(
-                              "absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full bg-[#F97316] transition-opacity",
-                              active ? "opacity-100" : "opacity-0",
-                            )}
-                          />
-                        )}
-                        <span
+                <div className="min-h-0 overflow-hidden">
+                  <div
+                    className={cn(
+                      "mt-2 space-y-1.5 px-1",
+                      adminSection && "p-1",
+                    )}
+                  >
+                    {section.items.map((item) => {
+                      const active = item.href === activeHref;
+                      return (
+                        <Link
                           className={cn(
-                            "flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] transition-colors duration-150",
+                            "group relative flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-[13px] font-semibold transition-all duration-150",
                             adminSection
                               ? active
-                                ? "bg-[linear-gradient(180deg,#FF8A1C_0%,#F97316_100%)] text-white shadow-[0_10px_18px_rgba(249,115,22,0.28)]"
-                                : "bg-[#000000] text-[#94A3B8] ring-1 ring-[#333333] group-hover:border-[#3A475C] group-hover:text-[#F8B56B]"
+                                ? "bg-[linear-gradient(180deg,#1a1a1a_0%,#000000_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_24px_rgba(0,0,0,0.24)]"
+                                : "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-white"
                               : active
-                                ? "bg-[#F97316] text-white"
-                                : "bg-[#F8FAFC] text-[#64748B] ring-1 ring-[#E2E8F0] group-hover:bg-white group-hover:text-[#F97316]",
+                                ? "bg-[#FFF7ED] text-[#0F172A]"
+                                : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]",
                           )}
+                          href={item.href}
+                          key={`${item.href}-${item.label}`}
+                          prefetch={false}
+                          tabIndex={collapsed ? -1 : undefined}
+                          onClick={() => {
+                            if (item.href.includes("tab=generate")) setActiveTab("generate");
+                            else if (item.href.includes("tab=governance")) setActiveTab("governance");
+                            else setActiveTab(null);
+                            onNavigate?.();
+                          }}
                         >
-                          <item.icon className="h-4 w-4" />
-                        </span>
-                      <span className={cn("min-w-0 flex-1 truncate", adminSection && "tracking-[-0.01em]")}>{item.label}</span>
-                      {active && (
-                        <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#F59E0B] shadow-[0_0_10px_rgba(245,158,11,0.7)]" />
-                      )}
-                    </Link>
-                  );
-                })}
+                          {adminSection && (
+                            <span
+                              className={cn(
+                                "absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full bg-[#F97316] transition-opacity",
+                                active ? "opacity-100" : "opacity-0",
+                              )}
+                            />
+                          )}
+                          <span
+                            className={cn(
+                              "flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] transition-colors duration-150",
+                              adminSection
+                                ? active
+                                  ? "bg-[linear-gradient(180deg,#FF8A1C_0%,#F97316_100%)] text-white shadow-[0_10px_18px_rgba(249,115,22,0.28)]"
+                                  : "bg-[#000000] text-[#94A3B8] ring-1 ring-[#333333] group-hover:border-[#3A475C] group-hover:text-[#F8B56B]"
+                                : active
+                                  ? "bg-[#F97316] text-white"
+                                  : "bg-[#F8FAFC] text-[#64748B] ring-1 ring-[#E2E8F0] group-hover:bg-white group-hover:text-[#F97316]",
+                            )}
+                          >
+                            <item.icon className="h-4 w-4" />
+                          </span>
+                          <span className={cn("min-w-0 flex-1 truncate", adminSection && "tracking-[-0.01em]")}>{item.label}</span>
+                          {active && (
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#F59E0B] shadow-[0_0_10px_rgba(245,158,11,0.7)]" />
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </Fragment>
           );
@@ -417,7 +552,7 @@ function SidebarFooter({ mode = "admin" }: { mode?: NavigationMode }) {
 
 export function Sidebar({
   navigationMode = "admin",
-  permissionLookup = {},
+  permissionLookup = EMPTY_PERMISSION_LOOKUP,
   currentRole,
 }: {
   currentRole?: PhoenixRole;
@@ -438,7 +573,7 @@ export function MobileSidebar({
   onClose,
   open,
   navigationMode = "admin",
-  permissionLookup = {},
+  permissionLookup = EMPTY_PERMISSION_LOOKUP,
   currentRole,
 }: {
   currentRole?: PhoenixRole;
@@ -454,6 +589,7 @@ export function MobileSidebar({
         "fixed inset-0 z-50 lg:hidden",
         open ? "pointer-events-auto" : "pointer-events-none",
       )}
+      inert={!open}
     >
       <button
         aria-label="Close menu"
