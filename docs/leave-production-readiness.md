@@ -8,13 +8,15 @@ For the final user, manager, and admin operating guide, also review `docs/leave-
 
 1. Confirm staging has the Phase 1 and Phase 2 leave migrations applied and no pending unrelated migrations.
 2. Review `supabase/migrations/20260513100825_leave_production_readiness.sql` for the transactional RPCs, audit tables, private attachment bucket preparation, and indexes.
-3. Run `supabase db push --dry-run` against staging first and confirm only the expected leave production-readiness migration appears.
-4. Apply to staging with the official Supabase CLI only after the dry run is clean.
-5. Run `npm run test`, `npm run typecheck`, `npm run lint`, and `npm run build`.
-6. Run the leave E2E suite with `npm run test:e2e:leave` after browser binaries and test credentials are configured.
-7. Manually verify `/employee-portals/leave`, `/employee-portals/leave-approvals`, and `/admin/leave`.
-8. Confirm audit rows are written to `leave_audit_logs` for submit, manager decision, HR decision, accrual, adjustment, failed notification, and attachment download URL events.
-9. Confirm no payroll behavior changed.
+3. Review `supabase/migrations/20260514135726_leave_business_policy_corrections.sql` for employee-selectable leave types, payment status metadata, AM/PM duration support, and transactional cancellation.
+4. Review `supabase/migrations/20260514163534_simplify_leave_entitlement_policy.sql` for the final 15/21 annual entitlement policy cleanup.
+5. Run `supabase db push --dry-run` against staging first and confirm only expected leave migrations appear.
+6. Apply to staging with the official Supabase CLI only after the dry run is clean.
+7. Run `npm run test`, `npm run typecheck`, `npm run lint`, and `npm run build`.
+8. Run the leave E2E suite with `npm run test:e2e:leave` after browser binaries and test credentials are configured.
+9. Manually verify `/employee-portals/leave`, `/employee-portals/leave-approvals`, and `/admin/leave`.
+10. Confirm audit rows are written to `leave_audit_logs` for submit, manager decision, HR decision, cancellation, accrual, adjustment, failed notification, and attachment download URL events.
+11. Confirm no payroll behavior changed.
 
 ## Rollback checklist
 
@@ -51,6 +53,13 @@ For the final user, manager, and admin operating guide, also review `docs/leave-
 10. Attachment upload works in local mode; private Supabase Storage mode creates signed URLs only after access validation.
 11. Analytics render for HR/Admin and are not visible to normal employees.
 12. Admin audit log renders submit, approval, cancellation, adjustment, accrual, notification, and attachment events where present.
+13. Employee dropdown shows only Annual, Emergency, Sick, and Other leave.
+14. Sick Leave requires an attachment and shows the bilingual governmental-hospital certificate helper text.
+15. Annual Leave cannot start today; Emergency Leave must start today; Sick Leave rejects dates outside the configured backdate window and future dates.
+16. AM/PM leave counts as 0.5 day and is rejected for multi-day ranges.
+17. Medical/sales field titles count Saturday as a working day; non-field titles do not.
+18. Annual/Emergency leave during the first 6 months or with insufficient balance is marked unpaid without touching payroll.
+19. HR approval of Other Leave requires the deduct/no-deduct decision and records the payment status.
 
 ## Leave E2E configuration
 
@@ -68,7 +77,9 @@ Set these variables before running `npm run test:e2e:leave` against a QA or stag
 ## Known risks
 
 1. The production-readiness migration introduces new RPCs and audit tables. It must be dry-run checked before staging or production push.
-2. Existing local attachments under `public/uploads/leave` are not migrated to Supabase Storage in this phase.
-3. Playwright is installed in this repo, but browser binaries still need to be installed in CI or QA machines with `npx playwright install chromium`.
-4. Failed transactional RPC calls should be investigated through app logs and `leave_audit_logs` failed events.
-5. Production deployment should wait until the production-readiness migration has passed an official Supabase dry run against staging and the E2E suite has run with real test users.
+2. The business-policy correction migration adds backward-compatible columns to `leave_types` and `leave_requests`; confirm downstream reports tolerate the new metadata.
+3. The entitlement simplification migration drops obsolete leave entitlement columns and the unused leave-specific employee flag if present.
+4. Existing local attachments under `public/uploads/leave` are not migrated to Supabase Storage in this phase.
+5. Playwright is installed in this repo, but browser binaries still need to be installed in CI or QA machines with `npx playwright install chromium`.
+6. Failed transactional RPC calls should be investigated through app logs and `leave_audit_logs` failed events.
+7. Production deployment should wait until all leave migrations have passed an official Supabase dry run against staging and the E2E suite has run with real test users.

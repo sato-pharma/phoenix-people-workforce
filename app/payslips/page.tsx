@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 
-import { MedicalRepPayrollPage } from "@/components/employee-portal/employee-portal-dashboard";
+import { MedicalRepPayrollPage } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
 import {
   EmployeePortalSidebar,
   EmployeePortalTopNav,
 } from "@/components/employee-portal/employee-portal-layout";
-import { IdentityCard } from "@/components/employee-portal/employee-portal-dashboard";
+import { IdentityCard } from "@/components/employee-portal/identity-card";
 import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,

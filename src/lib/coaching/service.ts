@@ -80,12 +80,25 @@ const lineRoles = new Set<AccessContext["role"]>([
   "Product Manager",
   "Group Product Manager",
   "SFE Manager",
-  "Training Manager",
 ]);
+const defaultCoachingReportLimit = 500;
+const maxCoachingReportLimit = 1000;
 
 function cleanText(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   return text ? text : null;
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function coachingRange(filters: CoachingReportFilters) {
+  const limit = Math.min(normalizePositiveInteger(filters.limit, defaultCoachingReportLimit), maxCoachingReportLimit);
+  const page = normalizePositiveInteger(filters.page, 1);
+  const from = (page - 1) * limit;
+  return { from, to: from + limit - 1 };
 }
 
 function normalizeDate(value: string | null | undefined) {
@@ -164,7 +177,7 @@ function isInHierarchy(rows: EmployeeDirectoryRow[], managerHrId: string, employ
   return false;
 }
 
-function canAccessCoachingEmployee(
+export function canAccessCoachingEmployee(
   access: AccessContext,
   employee: EmployeeDirectoryRow,
   directory: EmployeeDirectoryRow[],
@@ -174,6 +187,9 @@ function canAccessCoachingEmployee(
   const currentHrId = normalizeHrId(access.hrId);
   if (!currentHrId) return false;
   if (idsMatch(currentHrId, employee.hrId)) return true;
+  if (access.role === "Training Manager") {
+    return Boolean(coach && idsMatch(currentHrId, coach.hrId));
+  }
   if (idsMatch(currentHrId, employee.managerHrId)) return true;
   if (access.role === "Regional Manager" || access.role === "Manager") {
     return isInHierarchy(directory, currentHrId, employee.hrId);
@@ -602,6 +618,11 @@ export async function getCoachingReportById(id: string, access: AccessContext): 
 
 async function filterSummariesForAccess(rows: CoachingReportSummaryRow[], access: AccessContext) {
   if (access.scope === "system" || companyRoles.has(access.role)) return rows;
+  if (access.role === "Training Manager") {
+    const coachHrId = normalizeHrId(access.hrId);
+    if (!coachHrId) return [];
+    return rows.filter((row) => idsMatch(coachHrId, row.coachHrId));
+  }
   const directory = await getEmployeeDirectoryRows();
   const coach = access.hrId ? findEmployee(directory, access.hrId) : null;
   return rows.filter((row) => {
@@ -631,6 +652,8 @@ export async function getCoachingReports(filters: CoachingReportFilters, access:
   query = query
     .order("coaching_date", { ascending: false })
     .order("created_at", { ascending: false });
+  const { from, to } = coachingRange(filters);
+  query = query.range(from, to);
 
   const { data, error } = await query;
   if (error) throw error;

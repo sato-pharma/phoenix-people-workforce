@@ -1,14 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
   CartesianGrid,
   Cell,
   Pie,
@@ -27,7 +25,6 @@ import {
   CalendarClock,
   CalendarDays,
   Car,
-  ChartLine as LineChartIcon,
   CircleDashed,
   CircleDollarSign,
   FileText,
@@ -58,8 +55,8 @@ import {
 } from "@/components/employee-portal/dashboard/overview-kpi-cards";
 import {
   PayrollPayslipsSection,
-  PayrollSummaryPanel,
 } from "@/components/employee-portal/dashboard/payroll-payslips-section";
+import { SalesPerformanceSection } from "@/components/employee-portal/dashboard/sales-performance-section";
 import { daysBetweenDateOnly, formatDateOnly } from "@/lib/date-only";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
@@ -67,6 +64,7 @@ import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employ
 import { formatEmployeeDisplayName } from "@/lib/utils";
 
 export { PayrollPayslipsSection } from "@/components/employee-portal/dashboard/payroll-payslips-section";
+export { SalesPerformanceSection } from "@/components/employee-portal/dashboard/sales-performance-section";
 
 const retainedEmployeePortalPayslipGuardText = [
   "Base Salary x 70%",
@@ -150,12 +148,6 @@ function formatContributionValue(metric: ContributionMetric, value: number) {
 
 function getContributionValue(row: ContributionRow, metric: ContributionMetric) {
   return metric === "sales" ? row.sales : row.units;
-}
-
-function getContributionPercentage(row: ContributionRow, metric: ContributionMetric) {
-  return metric === "sales"
-    ? Number(row.salesPercentage ?? 0)
-    : Number(row.unitsPercentage ?? 0);
 }
 
 function sortContributionRows(rows: ContributionRow[], metric: ContributionMetric) {
@@ -274,6 +266,35 @@ function chartLegendStyle() {
     fontSize: 12,
     fontWeight: 700,
   };
+}
+
+function StableChartFrame({
+  children,
+  className,
+  height,
+}: {
+  children: ReactElement;
+  className: string;
+  height: number;
+}) {
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setIsReady(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  return (
+    <div className={`${className} min-w-0 overflow-hidden`}>
+      {isReady ? (
+        <ResponsiveContainer height={height} minHeight={height} minWidth={0} width="100%">
+          {children}
+        </ResponsiveContainer>
+      ) : (
+        <div style={{ height }} />
+      )}
+    </div>
+  );
 }
 
 function computeGapToTarget(sales: number, target: number) {
@@ -1635,8 +1656,10 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
       <OverviewPagePanel
         title="Performance Overview"
       >
-        <div className="h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
-          <ResponsiveContainer width="100%" height="100%">
+        <StableChartFrame
+          className="h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
+          height={232}
+        >
             <AreaChart data={data.sales.trend} margin={chartMargin}>
               <defs>
                 <linearGradient id="overviewSalesFill" x1="0" y1="0" x2="0" y2="1">
@@ -1656,166 +1679,9 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
               <Area activeDot={{ r: 5, stroke: "#ffffff", strokeWidth: 3 }} dataKey="sales" dot={false} fill="url(#overviewSalesFill)" name="Achievement" stroke="#f97316" strokeWidth={3} type="monotone" />
               <Area dataKey="target" dot={false} fillOpacity={0} name="Target" stroke="#64748b" strokeDasharray="5 5" strokeWidth={2.25} type="monotone" />
             </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        </StableChartFrame>
       </OverviewPagePanel>
     </div>
-  );
-}
-
-export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }) {
-  const [productMetric, setProductMetric] = useState<ContributionMetric>("sales");
-  const chartColors = ["#f97316", "#f59e0b", "#fdba74", "#94a3b8", "#cbd5e1"];
-  const trendData = data.sales.trend;
-  const salesMissing = data.empty.sales;
-  const productRows = sortContributionRows(data.sales.productContribution, productMetric);
-  const productChartRows = productRows.map((row) => ({
-    ...row,
-    value: getContributionValue(row, productMetric),
-  }));
-
-  return (
-    <section id="sales" className="space-y-4">
-      {sectionTitle("Sales Performance", "Sales Engine")}
-
-      {salesMissing ? (
-        <EmptyStateCard title="Sales Unavailable" message="Sales data has not been uploaded yet." />
-      ) : (
-        <div className="grid gap-4 xl:grid-cols-[1.55fr_0.85fr]">
-          <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-              <MetricCard label="Sales Value" value={egp(data.sales.currentMonthSales)} tooltip="Current month sales value" />
-              <MetricCard label="Target Value" value={egp(data.sales.currentMonthTarget)} tooltip="Current month target" />
-              <MetricCard label="Achievement %" value={`${data.sales.achievementPercent.toFixed(1)}%`} tooltip="Current month achievement" />
-              <MetricCard label="Units" value={formatUnits(data.sales.units)} />
-              <MetricCard label="Rank" value={data.sales.rankInTeam ? `#${data.sales.rankInTeam.position}/${data.sales.rankInTeam.total}` : "N/A"} />
-              <MetricCard label="Top Product" value={data.sales.topProduct ?? "N/A"} />
-            </div>
-
-            <div className="grid gap-4 xl:grid-cols-2">
-              <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
-                      <LineChartIcon className="h-4 w-4" />
-                    </span>
-                    <p className="text-sm font-black tracking-tight text-slate-900">Sales Trend</p>
-                  </div>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Monthly</span>
-                </div>
-                <div className="h-64 w-full min-w-0 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
-                  {trendData && trendData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={trendData} margin={chartMargin}>
-                        <defs>
-                          <linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} vertical={false} />
-                        <XAxis {...chartAxisProps()} dataKey="period" tickFormatter={periodLabel} />
-                        <YAxis {...chartAxisProps()} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
-                        <Tooltip
-                          contentStyle={chartTooltipStyle()}
-                          cursor={chartCursor}
-                          formatter={(value: unknown) => tooltipCurrency(value)}
-                          labelFormatter={(value) => `Period: ${periodLabel(String(value))}`}
-                        />
-                        <Area dataKey="target" dot={false} fill="none" name="Target" stroke="#64748b" strokeDasharray="5 5" strokeWidth={2.25} type="monotone" />
-                        <Area activeDot={{ r: 5, stroke: "#ffffff", strokeWidth: 3 }} dataKey="sales" dot={false} fill="url(#salesFill)" name="Sales" stroke="#f97316" strokeWidth={3} type="monotone" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex h-full items-center justify-center">
-                      <p className="text-sm text-slate-500">No trend data available</p>
-                    </div>
-                  )}
-                </div>
-              </Card>
-
-              <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <p className="text-sm font-black tracking-tight text-slate-900">Sales vs Target</p>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Variance</span>
-                </div>
-                <div className="h-64 w-full min-w-0 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
-                  {trendData && trendData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={trendData} margin={chartMargin}>
-                        <defs>
-                          <linearGradient id="salesBarFill" x1="0" x2="0" y1="0" y2="1">
-                            <stop offset="0%" stopColor="#fb923c" />
-                            <stop offset="100%" stopColor="#ea580c" />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} vertical={false} />
-                        <XAxis {...chartAxisProps()} dataKey="period" tickFormatter={periodLabel} />
-                        <YAxis {...chartAxisProps()} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
-                        <Tooltip contentStyle={chartTooltipStyle()} cursor={chartCursor} formatter={(value: unknown) => tooltipCurrency(value)} />
-                        <Bar dataKey="sales" fill="url(#salesBarFill)" name="Sales" radius={[8, 8, 0, 0]} />
-                        <Bar dataKey="target" fill="#cbd5e1" name="Target" radius={[8, 8, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex h-full items-center justify-center">
-                      <p className="text-sm text-slate-500">No trend data available</p>
-                    </div>
-                  )}
-                </div>
-              </Card>
-            </div>
-
-            <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <p className="text-sm font-black tracking-tight text-slate-900">Product Mix & Contribution</p>
-                <ContributionMetricToggle metric={productMetric} onChange={setProductMetric} />
-              </div>
-              <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
-                <div className="h-56 w-full min-w-0 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                      <Pie
-                        cornerRadius={7}
-                        data={productChartRows}
-                        dataKey="value"
-                        innerRadius={54}
-                        outerRadius={84}
-                        paddingAngle={2}
-                        nameKey="name"
-                        stroke="#ffffff"
-                        strokeWidth={3}
-                      >
-                        {productChartRows.map((entry, index) => (
-                          <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip contentStyle={chartTooltipStyle()} cursor={false} formatter={(value: unknown) => formatContributionValue(productMetric, Number(value ?? 0))} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex flex-col justify-center space-y-2">
-                  {productRows.slice(0, 5).map((p, i) => (
-                    <div key={p.name} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs shadow-[0_5px_14px_rgba(15,23,42,0.03)]">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: chartColors[i % chartColors.length] }} />
-                        <span className="max-w-[120px] truncate font-bold text-slate-700" title={p.name}>{p.name}</span>
-                      </div>
-                      <div className="flex gap-3">
-                        <span className="font-mono font-black text-slate-900 tabular-nums">{getContributionPercentage(p, productMetric).toFixed(1)}%</span>
-                        <span className="font-mono text-slate-400 tabular-nums">{formatContributionValue(productMetric, getContributionValue(p, productMetric))}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          <PayrollSummaryPanel data={data} />
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -2367,8 +2233,10 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               </div>
             ))}
           </div>
-          <div className="mt-6 h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
-            <ResponsiveContainer height="100%" width="100%">
+          <StableChartFrame
+            className="mt-6 h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
+            height={232}
+          >
               <AreaChart data={tripsVsDistanceTrend} margin={chartMargin}>
                 <defs>
                   <linearGradient id="tripsGradient" x1="0" y1="0" x2="0" y2="1">
@@ -2384,8 +2252,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
                 <Area dataKey="distance" dot={false} fill="none" name="Distance (km)" stroke="#64748b" strokeDasharray="5 5" strokeWidth={2.25} type="monotone" />
                 <Legend iconType="circle" wrapperStyle={chartLegendStyle()} />
               </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          </StableChartFrame>
         </Card>
 
         <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-6 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
@@ -2394,8 +2261,10 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             <p className="text-lg font-black tracking-tight text-slate-900">Workload Distribution</p>
           </div>
           <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
-            <div className="h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
-              <ResponsiveContainer height="100%" width="100%">
+            <StableChartFrame
+              className="h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
+              height={232}
+            >
                 <PieChart>
                   <Pie
                     cornerRadius={7}
@@ -2414,8 +2283,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
                   </Pie>
                   <Tooltip contentStyle={chartTooltipStyle()} cursor={false} />
                 </PieChart>
-              </ResponsiveContainer>
-            </div>
+            </StableChartFrame>
             <div className="flex flex-col justify-center space-y-3">
               {workloadDistribution.map((item) => (
                 <div key={item.name} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white px-3 py-2 shadow-[0_5px_14px_rgba(15,23,42,0.03)]">
@@ -2548,8 +2416,10 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               </div>
             ))}
           </div>
-          <div className="mt-6 h-48 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
-            <ResponsiveContainer height="100%" width="100%">
+          <StableChartFrame
+            className="mt-6 h-48 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
+            height={168}
+          >
               <AreaChart data={expenseTrend} margin={chartMargin}>
                 <defs>
                   <linearGradient id="expenseTrendGradient" x1="0" y1="0" x2="0" y2="1">
@@ -2563,8 +2433,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
                 <Tooltip contentStyle={chartTooltipStyle()} cursor={chartCursor} formatter={(value) => egp(Number(value))} />
                 <Area activeDot={{ r: 5, stroke: "#ffffff", strokeWidth: 3 }} dataKey="expenses" dot={false} fill="url(#expenseTrendGradient)" name="Expenses" stroke="#f97316" strokeWidth={3} type="monotone" />
               </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          </StableChartFrame>
         </Card>
 
         <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">

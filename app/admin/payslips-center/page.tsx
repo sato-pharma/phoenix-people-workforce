@@ -44,7 +44,7 @@ export default async function AdminPayslipsCenterPage(
 ) {
   const access = await resolveAccessContextFromPage();
   if (getPayrollScope(access) !== "COMPANY") {
-    redirect("/employee-portals/payroll");
+    redirect("/payslips");
   }
   if (!await canAccess(access, "payslips", "read")) {
     redirect("/employee-portals");

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { MedicalRepOverviewPage } from "@/components/employee-portal/employee-portal-dashboard";
+import { MedicalRepOverviewPage } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
 import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,

@@ -10,6 +10,8 @@ Supabase notes: tables created through SQL in `public` must have Row Level Secur
 - Source leave rebuild SQL: `supabase/20260512_leave_management_engine.sql`
 - Official Supabase backup migration: `supabase/migrations/20260512235939_backup_leave_domain_before_rebuild.sql`
 - Official Supabase leave rebuild migration: `supabase/migrations/20260512235948_leave_management_engine.sql`
+- Official Supabase business-policy correction migration: `supabase/migrations/20260514135726_leave_business_policy_corrections.sql`
+- Official Supabase entitlement simplification migration: `supabase/migrations/20260514163534_simplify_leave_entitlement_policy.sql`
 
 ## Preconditions
 
@@ -46,10 +48,15 @@ Supabase notes: tables created through SQL in `public` must have Row Level Secur
 
 This project now uses the official Supabase CLI migration flow only. The previous dbmate/psql rollout path is superseded for this leave rebuild.
 
-Remote migration history was reconciled locally with `supabase migration fetch`. `supabase migration list` should show the 12 previously remote-only migrations matched locally, followed by these two local-only pending migrations:
+Remote migration history was reconciled locally with `supabase migration fetch`. `supabase migration list` should show the previously remote-only migrations matched locally, followed only by reviewed local pending leave migrations for the current rollout.
+
+Expected leave migration order:
 
 - `20260512235939_backup_leave_domain_before_rebuild`
 - `20260512235948_leave_management_engine`
+- `20260513100825_leave_production_readiness`
+- `20260514135726_leave_business_policy_corrections`
+- `20260514163534_simplify_leave_entitlement_policy`
 
 Do not run `supabase migration repair` for the current state. The remote history was missing locally, so fetching the remote history into `supabase/migrations` is safer than changing remote migration history.
 
@@ -73,10 +80,10 @@ Run this before any real push:
 supabase db push --dry-run
 ```
 
-The dry run must list only these local pending migrations:
+The dry run must list only the reviewed local pending leave migrations that are not already applied to staging. If Phase 1/production-readiness migrations are already applied, the current expected pending set is:
 
-- `20260512235939_backup_leave_domain_before_rebuild.sql`
-- `20260512235948_leave_management_engine.sql`
+- `20260514135726_leave_business_policy_corrections.sql`
+- `20260514163534_simplify_leave_entitlement_policy.sql`
 
 ### Apply To Staging
 
@@ -215,10 +222,6 @@ select
   country,
   annual_days_first_year,
   annual_days_after_first_year,
-  annual_days_senior,
-  annual_days_disability,
-  senior_after_years,
-  senior_after_age,
   accrual_method,
   accrual_frequency,
   weekend_days,
@@ -228,7 +231,7 @@ from public.leave_policies
 where name = 'Egypt Annual Leave Policy';
 ```
 
-Expected values: `15`, `21`, `30`, `45`, senior years `10`, senior age `50`, `monthly` accrual frequency, weekend days `{5,6}`.
+Expected values: `15`, `21`, `monthly` accrual frequency, weekend days `{5,6}`.
 
 ### Check Seed Leave Types
 

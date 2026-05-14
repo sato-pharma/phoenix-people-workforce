@@ -13,9 +13,11 @@ function searchFilters(url: string): LeaveRequestFilters {
     employeeHrId: params.get("employeeHrId") || undefined,
     endDate: params.get("endDate") || undefined,
     leaveTypeId: params.get("leaveTypeId") || undefined,
+    limit: params.get("limit") ? Number(params.get("limit")) : undefined,
     line: params.get("line") || undefined,
     managerHrId: params.get("managerHrId") || undefined,
     month: params.get("month") ? Number(params.get("month")) : undefined,
+    offset: params.get("offset") ? Number(params.get("offset")) : undefined,
     startDate: params.get("startDate") || undefined,
     status: params.get("status") || undefined,
     year: params.get("year") ? Number(params.get("year")) : undefined,
@@ -41,6 +43,7 @@ export async function POST(request: Request) {
       const attachment = formData.get("attachment");
       const requestRecord = await submitLeaveRequest(access, {
         attachmentUrl: await uploadLeaveAttachment(attachment instanceof File ? attachment : null, access.hrId ?? "UNKNOWN"),
+        durationUnit: String(formData.get("durationUnit") ?? "full_day") as "full_day" | "am" | "pm",
         endDate: String(formData.get("endDate") ?? ""),
         leaveTypeId: String(formData.get("leaveTypeId") ?? ""),
         reason: String(formData.get("reason") ?? ""),
@@ -51,6 +54,7 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const requestRecord = await submitLeaveRequest(access, {
+      durationUnit: String(body.durationUnit ?? "full_day") as "full_day" | "am" | "pm",
       endDate: String(body.endDate ?? ""),
       leaveTypeId: String(body.leaveTypeId ?? ""),
       reason: typeof body.reason === "string" ? body.reason : null,

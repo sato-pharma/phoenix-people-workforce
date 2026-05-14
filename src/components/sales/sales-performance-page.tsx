@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   TrendingUp,
@@ -94,6 +94,18 @@ const chartSurfaceClassName =
 
 const mixColors = ["#f97316", "#0ea5e9", "#10b981", "#f59e0b", "#e11d48", "#64748b"];
 
+const productTableColumns = [
+  { key: "product", label: "Product Name" },
+  { key: "sales", label: "Sales EGP" },
+  { key: "target", label: "Target EGP" },
+  { key: "achievementRate", label: "Achievement %" },
+  { key: "contribution", label: "Contribution %" },
+];
+
+function parseQueryList(values: string[]) {
+  return [...new Set(values.flatMap((value) => value.split(",")).map((item) => item.trim()).filter(Boolean))];
+}
+
 function formatCompactCurrency(value: number) {
   const safe = Number.isFinite(value) ? value : 0;
   const abs = Math.abs(safe);
@@ -130,9 +142,6 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
   const [comparisonPeriod, setComparisonPeriod] = useState<ComparisonPeriod>("none");
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" }>({ key: "sales", direction: "desc" });
   const [showMoreFilters, setShowMoreFilters] = useState(false);
-  const parseQueryList = (values: string[]) => {
-    return [...new Set(values.flatMap((value) => value.split(",")).map((item) => item.trim()).filter(Boolean))];
-  };
   const selectedPeriods = useMemo(
     () => parseQueryList(searchParams.getAll("period")),
     [searchParams],
@@ -146,7 +155,7 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
   const contextMonth = searchParams.get("month");
 
   // Update URL when filters change to trigger server-side refetch
-  const updateFilters = (newPeriods: string[], newFamily: string, newProducts: string[]) => {
+  const updateFilters = useCallback((newPeriods: string[], newFamily: string, newProducts: string[]) => {
     const params = new URLSearchParams(searchParams.toString());
     
     // Remove context params when filters change
@@ -174,19 +183,21 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
     
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     router.push(newUrl);
-  };
+  }, [router, searchParams]);
 
-  const handlePeriodsChange = (periods: string[]) => {
+  const handlePeriodsChange = useCallback((periods: string[]) => {
     updateFilters(periods, selectedFamily, selectedProducts);
-  };
+  }, [selectedFamily, selectedProducts, updateFilters]);
 
-  const handleFamilyChange = (family: string) => {
+  const handleFamilyChange = useCallback((family: string) => {
     updateFilters(selectedPeriods, family, selectedProducts);
-  };
+  }, [selectedPeriods, selectedProducts, updateFilters]);
 
-  const handleProductsChange = (products: string[]) => {
+  const handleProductsChange = useCallback((products: string[]) => {
     updateFilters(selectedPeriods, selectedFamily, products);
-  };
+  }, [selectedFamily, selectedPeriods, updateFilters]);
+
+  const normalizedSearchQuery = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
 
   // Filter data based on selections (client-side only for search query)
   const filteredData = useMemo<FilteredSalesData | null>(() => {
@@ -196,9 +207,9 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
     const filteredTrend = data.trend;
 
     // Only apply search query filter (other filters handled by backend)
-    if (searchQuery) {
+    if (normalizedSearchQuery) {
       filteredProducts = filteredProducts.filter((p) =>
-        p.product.toLowerCase().includes(searchQuery.toLowerCase())
+        p.product.toLowerCase().includes(normalizedSearchQuery)
       );
     }
 
@@ -207,7 +218,7 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
       productPerformance: filteredProducts,
       trend: filteredTrend,
     };
-  }, [data, searchQuery]);
+  }, [data, normalizedSearchQuery]);
 
   const salesAnalytics = useMemo(() => {
     if (!filteredData) return null;
@@ -392,25 +403,33 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
     });
   }, [filteredData, sortConfig]);
 
-  const handleSort = (key: string) => {
+  const handleSort = useCallback((key: string) => {
     setSortConfig((current) => ({
       key,
       direction: current.key === key && current.direction === "desc" ? "asc" : "desc",
     }));
-  };
+  }, []);
 
-  const handleResetFilters = () => {
+  const handleResetFilters = useCallback(() => {
     setComparisonPeriod("none");
     setSearchQuery("");
     updateFilters([], "", []);
-  };
+  }, [updateFilters]);
 
-  const handleProductClick = (product: string) => {
+  const handleProductClick = useCallback((product: string) => {
     const nextProducts = selectedProducts.includes(product)
       ? selectedProducts.filter((p) => p !== product)
       : [...selectedProducts, product];
     updateFilters(selectedPeriods, selectedFamily, nextProducts);
-  };
+  }, [selectedFamily, selectedPeriods, selectedProducts, updateFilters]);
+
+  const handleClearContext = useCallback(() => {
+    updateFilters(selectedPeriods, selectedFamily, selectedProducts);
+  }, [selectedFamily, selectedPeriods, selectedProducts, updateFilters]);
+
+  const handleToggleMoreFilters = useCallback(() => {
+    setShowMoreFilters((current) => !current);
+  }, []);
 
   if (isLoading) {
     return <LoadingState />;
@@ -427,7 +446,7 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
           hasActiveFilters={selectedProducts.length > 0 || selectedPeriods.length > 0 || !!selectedFamily}
           contextSource={contextSource}
           contextMonth={contextMonth}
-          onClearContext={() => updateFilters(selectedPeriods, selectedFamily, selectedProducts)}
+          onClearContext={handleClearContext}
         />
 
         <FilterBar
@@ -443,7 +462,7 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
           onFamilyChange={handleFamilyChange}
           onComparisonChange={setComparisonPeriod}
           showMoreFilters={showMoreFilters}
-          onToggleMoreFilters={() => setShowMoreFilters(!showMoreFilters)}
+          onToggleMoreFilters={handleToggleMoreFilters}
         />
 
         {kpis && (
@@ -897,29 +916,35 @@ function TrendTooltip({
   );
 }
 
-function TrendChart({
+const TrendChart = memo(function TrendChart({
   trend,
 }: {
   trend: Array<{ period: string; sales: number; target: number; achievementRate: number }>;
 }) {
-  const chartData: TrendChartDatum[] = trend.map((t) => ({
-    label: formatPeriodLabel(t.period),
-    period: t.period,
-    sales: t.sales,
-    target: t.target,
-    achievement: t.achievementRate * 100,
-    gap: t.sales - t.target,
-  }));
+  const chartData = useMemo<TrendChartDatum[]>(() => trend.map((t) => ({
+      label: formatPeriodLabel(t.period),
+      period: t.period,
+      sales: t.sales,
+      target: t.target,
+      achievement: t.achievementRate * 100,
+      gap: t.sales - t.target,
+    })),
+    [trend],
+  );
   const hasData = chartData.length > 0;
-  const totalSales = chartData.reduce((sum, item) => sum + item.sales, 0);
-  const totalTarget = chartData.reduce((sum, item) => sum + item.target, 0);
+  const totalSales = useMemo(() => chartData.reduce((sum, item) => sum + item.sales, 0), [chartData]);
+  const totalTarget = useMemo(() => chartData.reduce((sum, item) => sum + item.target, 0), [chartData]);
   const blendedAchievement = totalTarget > 0 ? (totalSales / totalTarget) * 100 : 0;
   const latest = chartData[chartData.length - 1] ?? null;
-  const best = chartData.reduce<TrendChartDatum | null>((current, item) => {
-    if (!current || item.achievement > current.achievement) return item;
-    return current;
-  }, null);
-  const riskMonths = chartData.filter((item) => item.achievement < 80).length;
+  const best = useMemo(
+    () =>
+      chartData.reduce<TrendChartDatum | null>((current, item) => {
+        if (!current || item.achievement > current.achievement) return item;
+        return current;
+      }, null),
+    [chartData],
+  );
+  const riskMonths = useMemo(() => chartData.filter((item) => item.achievement < 80).length, [chartData]);
 
   return (
     <div className={chartPanelClassName}>
@@ -1067,10 +1092,10 @@ function TrendChart({
       </div>
     </div>
   );
-}
+});
 
 // Product Table Component
-function ProductTable({
+const ProductTable = memo(function ProductTable({
   products,
   searchQuery,
   onSearchChange,
@@ -1093,15 +1118,7 @@ function ProductTable({
   onProductClick: (product: string) => void;
   selectedProducts: string[];
 }) {
-  const totalSales = products.reduce((sum, p) => sum + p.sales, 0);
-
-  const columns = [
-    { key: "product", label: "Product Name" },
-    { key: "sales", label: "Sales EGP" },
-    { key: "target", label: "Target EGP" },
-    { key: "achievementRate", label: "Achievement %" },
-    { key: "contribution", label: "Contribution %" },
-  ];
+  const totalSales = useMemo(() => products.reduce((sum, p) => sum + p.sales, 0), [products]);
 
   return (
     <div className="overflow-hidden rounded-[28px] border border-white/80 bg-white/95 shadow-[0_22px_58px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/5">
@@ -1128,7 +1145,7 @@ function ProductTable({
         <table className="w-full min-w-[860px]">
           <thead className="bg-slate-50/90">
             <tr>
-              {columns.map((column) => (
+              {productTableColumns.map((column) => (
                 <th
                   key={column.key}
                   onClick={() => onSort(column.key)}
@@ -1225,7 +1242,7 @@ function ProductTable({
       </div>
     </div>
   );
-}
+});
 
 // Top/Bottom Products Component
 function TopBottomProducts({

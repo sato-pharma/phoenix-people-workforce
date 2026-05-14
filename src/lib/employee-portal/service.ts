@@ -2039,6 +2039,48 @@ export type MedicalRepPortalData = {
   };
 };
 
+export type EmployeePortalShellData = Pick<MedicalRepPortalData, "employee" | "hrContract">;
+
+export async function getEmployeePortalShellData(access: AccessContext): Promise<EmployeePortalShellData> {
+  const currentUser = await resolvePortalCurrentUser(access);
+  const currentHrId = normalizeHrId(currentUser.hrId);
+  const directory = await getEmployeeDirectory();
+  const employee = currentHrId
+    ? directory.employees.find((row) => normalizeHrId(row.hrId) === currentHrId) ?? fallbackEmployee(access)
+    : fallbackEmployee(access);
+  const employmentJourney = computeEmploymentJourney(employee);
+  const daysUntilProbationEnd = daysFromToday(addDays(employee.hireDate ?? null, 90));
+  const probationStatus: MedicalRepPortalData["hrContract"]["probationStatus"] =
+    daysUntilProbationEnd === null
+      ? "Not Started"
+      : daysUntilProbationEnd > 0
+        ? "On Probation"
+        : "Completed";
+
+  return {
+    employee: {
+      area: employee.areaName,
+      fullName: employee.fullName,
+      hrId: employee.hrId,
+      line: employee.lineName,
+      manager: employee.managerName,
+      roleLabel: employee.jobTitle || employee.positionTitle || currentUser.role || "Employee",
+      status: employee.employmentStatus ?? "active",
+      territory: employee.regionName ?? employee.areaName,
+    },
+    hrContract: {
+      contractRenewalDate: employmentJourney.contractRenewalDate,
+      contractSignedDate: employmentJourney.contractSignedDate,
+      daysUntilRenewal: employmentJourney.daysUntilRenewal,
+      employmentStatus: employee.employmentStatus ?? "active",
+      hireDate: employee.hireDate,
+      payrollEligibility: employee.netSalary || employee.grossSalary ? "Eligible" : "Pending",
+      probationStatus,
+      serviceDurationText: serviceDurationText(employmentJourney.serviceDurationDays),
+    },
+  };
+}
+
 export function toPeriodLabel(value: string) {
   const [yearText, monthText] = value.split("-");
   const year = Number(yearText);

@@ -8,6 +8,7 @@ import type {
   PublicHoliday,
   TeamAvailabilityDay,
 } from "@/lib/leave/types";
+import { getWeekendDaysForEmployee } from "./calculations.ts";
 
 const dayMs = 24 * 60 * 60 * 1000;
 const pendingStatuses = new Set(["pending_manager", "pending_hr", "manager_approved"]);
@@ -39,6 +40,38 @@ function eachIsoDate(startDate: string, endDate: string) {
     dates.push(cursor.toISOString().slice(0, 10));
   }
   return dates;
+}
+
+function isWorkingDateForEmployee(
+  employee: Partial<Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">> | null | undefined,
+  date: string,
+  publicHolidayDates: Set<string>,
+  fallbackWeekendDays: number[] = [5, 6],
+) {
+  const weekends = new Set(getWeekendDaysForEmployee(employee, fallbackWeekendDays));
+  return !weekends.has(toUtcDate(date).getUTCDay()) && !publicHolidayDates.has(date);
+}
+
+function requestIncludesWorkingDate(request: LeaveRequest, date: string, publicHolidayDates: Set<string>, fallbackWeekendDays: number[] = [5, 6]) {
+  return request.startDate <= date && request.endDate >= date && isWorkingDateForEmployee(request.employee, date, publicHolidayDates, fallbackWeekendDays);
+}
+
+function requestsOverlapOnWorkingDays(
+  request: LeaveRequest,
+  input: {
+    employee: Partial<Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">> | null | undefined;
+    endDate: string;
+    startDate: string;
+  },
+  publicHolidayDates: Set<string>,
+  fallbackWeekendDays: number[] = [5, 6],
+) {
+  const startDate = request.startDate > input.startDate ? request.startDate : input.startDate;
+  const endDate = request.endDate < input.endDate ? request.endDate : input.endDate;
+  return eachIsoDate(startDate, endDate).some((date) =>
+    isWorkingDateForEmployee(input.employee, date, publicHolidayDates, fallbackWeekendDays) &&
+    requestIncludesWorkingDate(request, date, publicHolidayDates, fallbackWeekendDays)
+  );
 }
 
 function monthKey(value: string) {
@@ -129,9 +162,10 @@ export function buildTeamAvailability(
     .filter((request) => !options.line || request.employee?.lineName === options.line)
     .filter((request) => !options.area || request.employee?.areaName === options.area);
   const activeHolidays = holidays.filter((holiday) => holiday.isActive && holiday.date >= options.startDate && holiday.date <= options.endDate);
+  const publicHolidayDates = new Set(activeHolidays.map((holiday) => holiday.date));
 
   return eachIsoDate(options.startDate, options.endDate).map((date) => {
-    const dayRequests = filtered.filter((request) => request.startDate <= date && request.endDate >= date);
+    const dayRequests = filtered.filter((request) => requestIncludesWorkingDate(request, date, publicHolidayDates));
     const approved = dayRequests.filter((request) => request.status === "hr_approved");
     const pending = dayRequests.filter((request) => pendingStatuses.has(request.status));
     const rejected = dayRequests.filter((request) => rejectedStatuses.has(request.status));
@@ -143,20 +177,22 @@ export function buildTeamAvailability(
 
 export function detectLeaveConflicts(
   input: {
-    employee: Pick<EmployeeDirectoryRow, "areaName" | "fullName" | "hrId" | "lineName">;
+    employee: Pick<EmployeeDirectoryRow, "areaName" | "fullName" | "hrId" | "lineName"> & Partial<Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">>;
     endDate: string;
     existingRequests: LeaveRequest[];
     startDate: string;
   },
-  options: { blockOnConflict?: boolean; sameAreaWarningThreshold?: number; sameLineWarningThreshold?: number } = {},
+  options: { blockOnConflict?: boolean; publicHolidayDates?: string[]; sameAreaWarningThreshold?: number; sameLineWarningThreshold?: number; weekendDays?: number[] } = {},
 ): LeaveConflictResult {
   const sameLineThreshold = options.sameLineWarningThreshold ?? 2;
   const sameAreaThreshold = options.sameAreaWarningThreshold ?? 4;
   const requesterHrId = cleanHrId(input.employee.hrId);
+  const publicHolidayDates = new Set(options.publicHolidayDates ?? []);
   const activeRequests = input.existingRequests.filter((request) => request.status === "hr_approved" || pendingStatuses.has(request.status));
   const overlappingRequests = activeRequests.filter((request) =>
     cleanHrId(request.employeeHrId) !== requesterHrId &&
-    overlaps(request.startDate, request.endDate, input.startDate, input.endDate)
+    overlaps(request.startDate, request.endDate, input.startDate, input.endDate) &&
+    requestsOverlapOnWorkingDays(request, input, publicHolidayDates, options.weekendDays)
   );
   const sameLinePeople = new Set(
     overlappingRequests

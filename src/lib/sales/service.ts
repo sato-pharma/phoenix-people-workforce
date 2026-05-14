@@ -514,7 +514,12 @@ function dashboardBatchSortValue(batch: SalesBatch) {
 async function readAllSupabaseRows(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   table: string,
-  options?: { select?: string; orderBy?: string; ascending?: boolean }
+  options?: {
+    ascending?: boolean;
+    inFilters?: Array<{ column: string; values: unknown[] }>;
+    orderBy?: string;
+    select?: string;
+  }
 ) {
   const pageSize = 1000;
   const rows: Array<Record<string, unknown>> = [];
@@ -522,9 +527,78 @@ async function readAllSupabaseRows(
 
   while (true) {
     let query = supabase.from(table).select(options?.select ?? "*");
+    options?.inFilters?.forEach((filter) => {
+      query = query.in(filter.column, filter.values);
+    });
     if (options?.orderBy) {
       query = query.order(options.orderBy, { ascending: options.ascending ?? true });
     }
+    const result = await query.range(from, from + pageSize - 1);
+    if (result.error) throw result.error;
+    const page = toSafeArray(result.data) as unknown as Array<Record<string, unknown>>;
+    rows.push(...page);
+    if (page.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return rows;
+}
+
+function parseSalesPeriods(filters: SalesDashboardFilters) {
+  return [
+    ...toFilterStringList(filters.period),
+    ...toFilterStringList(filters.periods),
+  ]
+    .map((period) => {
+      const [year, month] = period.split("-").map(Number);
+      return Number.isInteger(year) && Number.isInteger(month) ? { month, period, year } : null;
+    })
+    .filter((period): period is { month: number; period: string; year: number } => Boolean(period));
+}
+
+type SalesRecordQuery = {
+  eq(column: string, value: unknown): SalesRecordQuery;
+  in(column: string, values: unknown[]): SalesRecordQuery;
+};
+
+function applyDashboardRecordFilters<TQuery extends SalesRecordQuery>(query: TQuery, filters: SalesDashboardFilters): TQuery {
+  let q: SalesRecordQuery = query;
+  if (filters.line) q = q.eq("line", filters.line);
+  if (filters.salesType) q = q.eq("sales_type", filters.salesType);
+  if (filters.territory) q = q.eq("territory", filters.territory);
+  if (filters.family) q = q.eq("family", filters.family);
+
+  const productFilter = [
+    ...toFilterStringList(filters.product),
+    ...toFilterStringList(filters.products),
+  ].filter(Boolean);
+  if (productFilter.length === 1) q = q.eq("product", productFilter[0]);
+  if (productFilter.length > 1) q = q.in("product", productFilter);
+
+  const periods = parseSalesPeriods(filters);
+  if (periods.length === 1) {
+    q = q.eq("year", periods[0].year).eq("month", periods[0].month);
+  } else if (periods.length > 1) {
+    const years = Array.from(new Set(periods.map((period) => period.year)));
+    const months = Array.from(new Set(periods.map((period) => period.month)));
+    q = q.in("year", years).in("month", months);
+  }
+
+  return q as TQuery;
+}
+
+async function readDashboardSalesRecordRows(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  activeBatchIds: string[],
+  filters: SalesDashboardFilters,
+) {
+  const pageSize = 1000;
+  const rows: Array<Record<string, unknown>> = [];
+  let from = 0;
+
+  while (true) {
+    let query = supabase.from("sales_records").select("*").in("batch_id", activeBatchIds);
+    query = applyDashboardRecordFilters(query, filters);
     const result = await query.range(from, from + pageSize - 1);
     if (result.error) throw result.error;
     const page = toSafeArray(result.data) as unknown as Array<Record<string, unknown>>;
@@ -552,12 +626,20 @@ async function readSalesData(options?: { batchId?: string; approvedOnly?: boolea
     batchesQuery = batchesQuery.eq("status", "approved").is("replaced_by_batch_id", null);
   }
 
-  const [batchResult, recordResult] = await Promise.all([
-    options?.batchId ? batchesQuery : readAllSupabaseRows(supabase, "sales_import_batches", { orderBy: "created_at", ascending: false }),
-    includeRecords ? (options?.batchId ? recordsQuery : readAllSupabaseRows(supabase, "sales_records")) : Promise.resolve({ data: [] as DbRow[] }),
-  ]);
-
+  const batchResult = options?.batchId
+    ? await batchesQuery
+    : await readAllSupabaseRows(supabase, "sales_import_batches", { orderBy: "created_at", ascending: false });
   const batchRows = (Array.isArray(batchResult) ? batchResult : toSafeArray(batchResult.data)) as DbRow[];
+  const batchIds = batchRows.map((row) => String(row.id)).filter(Boolean);
+  const recordResult = includeRecords
+    ? options?.batchId
+      ? await recordsQuery
+      : batchIds.length > 0
+        ? await readAllSupabaseRows(supabase, "sales_records", {
+            inFilters: [{ column: "batch_id", values: batchIds }],
+          })
+        : []
+    : { data: [] as DbRow[] };
   const recordRows = (Array.isArray(recordResult) ? recordResult : toSafeArray(recordResult.data)) as DbRow[];
 
   const batches = batchRows.map((row) => {
@@ -784,12 +866,12 @@ export async function getSalesDashboard(
     };
   }
 
-  // 2. Get every active record with pagination. Supabase's default select page is 1,000 rows,
-  // and each monthly sales sheet can exceed that by itself.
-  const allRecordRows = await readAllSupabaseRows(supabase, "sales_records");
-  const activeBatchIdSet = new Set(activeBatchIds);
+  // 2. Fetch only records that can contribute to this dashboard. Supabase's
+  // default select page is 1,000 rows, so keep pagination while pushing the
+  // active-batch and request filters into PostgREST.
+  const allRecordRows = await readDashboardSalesRecordRows(supabase, activeBatchIds, filters);
 
-  let records: ScopedRecord[] = allRecordRows.filter((row) => activeBatchIdSet.has(String(row.batch_id))).map((row) => ({
+  let records: ScopedRecord[] = allRecordRows.map((row) => ({
     batchId: String(row.batch_id),
     period: `${row.year}-${String(row.month).padStart(2, "0")}`,
     rowNumber: Number(row.row_number),

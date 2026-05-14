@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, MapPinned, ChartColumnBig, FilePlus2 } from "lucide-react";
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
-import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
+import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 
 function navItemClass(active: boolean) {
@@ -24,7 +24,7 @@ function isEmployeePortalNavItemActive(pathname: string, href: string) {
 
 type EmployeePortalNavProps = {
   activePathOverride?: string;
-  data: MedicalRepPortalData;
+  data: EmployeePortalShellData;
   disableSessionGuard?: boolean;
   visibility: EmployeePortalNavVisibility;
 };

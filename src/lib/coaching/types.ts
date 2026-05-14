@@ -140,8 +140,10 @@ export type CoachingReportFilters = {
   dateFrom?: string | null;
   dateTo?: string | null;
   lineId?: number | string | null;
+  limit?: number | string | null;
   medicalRepHrId?: string | null;
   month?: number | string | null;
+  page?: number | string | null;
   performanceZone?: CoachingPerformanceZone | string | null;
   quarter?: number | string | null;
   status?: CoachingReportStatus | string | null;

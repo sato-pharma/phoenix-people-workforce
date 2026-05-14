@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
 const migrationPath = "supabase/migrations/20260513100825_leave_production_readiness.sql";
+const businessPolicyMigrationPath = "supabase/migrations/20260514135726_leave_business_policy_corrections.sql";
+const simplifiedEntitlementMigrationPath = "supabase/migrations/20260514163534_simplify_leave_entitlement_policy.sql";
 const docsPath = "docs/leave-production-readiness.md";
 const moduleOverviewDocsPath = "docs/leave-module-overview.md";
 const e2eUsersDocsPath = "docs/leave-e2e-staging-test-users.md";
@@ -9,6 +11,8 @@ const e2ePath = "tests/e2e/leave-management.spec.ts";
 
 export function runLeaveProductionReadinessTests() {
   assert.equal(existsSync(migrationPath), true, "production readiness migration should exist");
+  assert.equal(existsSync(businessPolicyMigrationPath), true, "business-policy correction migration should exist");
+  assert.equal(existsSync(simplifiedEntitlementMigrationPath), true, "simplified entitlement migration should exist");
   assert.equal(existsSync(docsPath), true, "production readiness docs should exist");
   assert.equal(existsSync(moduleOverviewDocsPath), true, "leave module overview docs should exist");
   assert.equal(existsSync(e2eUsersDocsPath), true, "leave E2E staging test-user runbook should exist");
@@ -34,6 +38,37 @@ export function runLeaveProductionReadinessTests() {
     assert.match(migration, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.doesNotMatch(migration, /drop table/i, "production readiness migration must not drop tables");
+  const businessPolicyMigration = readFileSync(businessPolicyMigrationPath, "utf8");
+  for (const expected of [
+    "employee_selectable",
+    "balance_leave_type_id",
+    "payment_status",
+    "duration_unit",
+    "hr_balance_decision",
+    "phx_leave_cancel_request_atomic",
+    "p_balance_decision",
+    "sick_leave",
+    "requires_attachment = case when code = 'sick_leave' then true else requires_attachment end",
+    "employee_selectable = code in ('annual_leave', 'emergency_leave', 'sick_leave', 'other')",
+  ]) {
+    assert.match(businessPolicyMigration, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  const simplifiedEntitlementMigration = readFileSync(simplifiedEntitlementMigrationPath, "utf8");
+  for (const expected of [
+    "annual_days_first_year = 15",
+    "annual_days_after_first_year = 21",
+    "accrual_method = 'monthly'",
+    "accrual_frequency = 'monthly'",
+    "check (accrual_method = 'monthly')",
+    "check (accrual_frequency = 'monthly')",
+    "drop column if exists annual_days_senior",
+    "drop column if exists annual_days_disability",
+    "drop column if exists senior_after_years",
+    "drop column if exists senior_after_age",
+    "drop column if exists has_disability",
+  ]) {
+    assert.match(simplifiedEntitlementMigration, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
 
   const service = readFileSync("src/lib/leave/service.ts", "utf8");
   for (const rpc of [
@@ -42,14 +77,19 @@ export function runLeaveProductionReadinessTests() {
     "phx_leave_hr_decision_atomic",
     "phx_leave_adjust_balance_atomic",
     "phx_leave_run_accrual_atomic",
+    "phx_leave_cancel_request_atomic",
   ]) {
     assert.match(service, new RegExp(`\\.rpc\\("${rpc}"`));
   }
   assert.match(service, /createLeaveCorrelationId/);
+  assert.match(service, /employeeSelectableLeaveCodes/);
+  assert.match(service, /balanceConsumingSubmitLeaveCodes/);
+  assert.match(service, /isWithinFirstSixMonths/);
+  assert.match(service, /Sick Leave cannot start in the future/);
   assert.match(service, /writeLeaveAuditLog/);
   assert.match(service, /getLeaveAttachmentDownloadUrl/);
   assert.match(service, /listLeaveAuditLogs/);
-  assert.match(service, /leave\.request\.cancelled/);
+  assert.match(businessPolicyMigration, /leave\.request\.cancelled/);
 
   const attachmentRoute = readFileSync("app/api/leave/requests/[id]/attachment/route.ts", "utf8");
   assert.match(attachmentRoute, /getLeaveAttachmentDownloadUrl/);

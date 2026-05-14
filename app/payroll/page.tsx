@@ -1,4 +1,4 @@
-import { PayrollDashboard } from "@/components/payroll/payroll-dashboard";
+import { PayrollDashboard } from "@/components/payroll/payroll-dashboard-dynamic";
 import { AppShell } from "@/components/layout/app-shell";
 import { assertPermission, getPayrollScope } from "@/lib/auth/permissions";
 import { getPayrollDashboard } from "@/lib/payroll/service";
@@ -10,7 +10,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const access = await resolveAccessContextFromPage();
   const scope = getPayrollScope(access);
   if (scope !== "COMPANY") {
-    redirect("/employee-portals/payroll");
+    redirect("/payslips");
   }
   await assertPermission(access, "payroll", "read");
   let data = null;

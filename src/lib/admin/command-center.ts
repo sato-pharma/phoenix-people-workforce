@@ -1,8 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
-import { getDataHealthStats } from "@/lib/admin/service";
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
 import { getPayrollDashboard } from "@/lib/payroll/service";
-import { getSalesDashboard } from "@/lib/sales/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ---------------------------------------------------------------------------
@@ -74,47 +72,76 @@ function safeNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+async function readAllRows<T = Record<string, unknown>>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  buildQuery: () => any,
+  pageSize = 1000,
+): Promise<T[]> {
+  const rows: T[] = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const pageRows = (Array.isArray(data) ? data : []) as T[];
+    rows.push(...pageRows);
+    if (pageRows.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  return rows;
+}
+
 // ---------------------------------------------------------------------------
 // Data health queries (uses Supabase JS client — safe)
 // ---------------------------------------------------------------------------
 
-async function fetchDataHealth(): Promise<{ health: DataHealthMetrics; errors: string[] }> {
-  const errors: string[] = [];
+async function fetchSalesHealthCounts(): Promise<{
+  error: string | null;
+  linkedRows: number;
+  totalRows: number;
+}> {
+  const supabase = getSupabaseAdmin();
   try {
-    const stats = await getDataHealthStats();
-    const totalSalesRows = Object.values(stats.salesClassification).reduce((sum, item) => sum + item.records, 0);
-    const salesLinkageRate =
-      totalSalesRows > 0
-        ? ((totalSalesRows - stats.summary.unresolvedSalesExceptions) / totalSalesRows) * 100
-        : 100;
-
+    const [totalResult, linkedResult] = await Promise.all([
+      supabase.from("sales_records").select("*", { count: "exact", head: true }),
+      supabase.from("sales_records").select("*", { count: "exact", head: true }).eq("link_status", "linked"),
+    ]);
+    if (totalResult.error) throw totalResult.error;
+    if (linkedResult.error) throw linkedResult.error;
     return {
-      health: {
-        employeeHealthRate: stats.summary.healthRate,
-        healthyEmployees: stats.summary.healthyEmployees,
-        missingJobTitle: stats.employeeIssues.filter((issue) => issue.health_status === "missing_job_title").length,
-        missingManager: stats.employeeIssues.filter((issue) => issue.health_status === "missing_manager").length,
-        salesLinkageBatch: null,
-        salesLinkageRate,
-        totalEmployees: stats.summary.activeEmployees,
-      },
-      errors,
+      error: null,
+      linkedRows: linkedResult.count ?? 0,
+      totalRows: totalResult.count ?? 0,
     };
   } catch {
-    errors.push("Classified data health data unavailable.");
-    return {
-      health: {
-        employeeHealthRate: 0,
-        healthyEmployees: 0,
-        missingJobTitle: 0,
-        missingManager: 0,
-        salesLinkageBatch: null,
-        salesLinkageRate: 0,
-        totalEmployees: 0,
-      },
-      errors,
-    };
+    return { error: "Sales linkage data unavailable.", linkedRows: 0, totalRows: 0 };
   }
+}
+
+function buildDataHealth(
+  directory: EmployeeDirectoryData | null,
+  salesCounts: { linkedRows: number; totalRows: number },
+): DataHealthMetrics {
+  const employees = directory?.employees ?? [];
+  const activeEmployees = employees.filter((employee) =>
+    String(employee.employmentStatus ?? "").trim().toLowerCase() !== "inactive"
+  );
+  const missingManager = activeEmployees.filter((employee) => !employee.managerHrId).length;
+  const missingJobTitle = activeEmployees.filter((employee) => !employee.jobTitle && !employee.positionTitle).length;
+  const healthyEmployees = Math.max(0, activeEmployees.length - missingManager - missingJobTitle);
+  const employeeHealthRate = activeEmployees.length > 0 ? (healthyEmployees / activeEmployees.length) * 100 : 100;
+  const salesLinkageRate = salesCounts.totalRows > 0 ? (salesCounts.linkedRows / salesCounts.totalRows) * 100 : 100;
+
+  return {
+    employeeHealthRate,
+    healthyEmployees,
+    missingJobTitle,
+    missingManager,
+    salesLinkageBatch: null,
+    salesLinkageRate,
+    totalEmployees: activeEmployees.length,
+  };
 }
 
 async function fetchPayrollEligibleCount(): Promise<{ count: number; error: string | null }> {
@@ -127,6 +154,160 @@ async function fetchPayrollEligibleCount(): Promise<{ count: number; error: stri
     return { count: count ?? 0, error: null };
   } catch {
     return { count: 0, error: "Payroll eligible count unavailable." };
+  }
+}
+
+async function fetchPayrollSummary(): Promise<AdminCommandCenterData["overview"]["payroll"] & {
+  batch: { month: number; year: number } | null;
+  error: string | null;
+}> {
+  const supabase = getSupabaseAdmin();
+  const empty = { batch: null, batchLabel: "—", employees: 0, error: null, flags: 0, gross: 0, net: 0 };
+
+  try {
+    const { data: batch, error: batchError } = await supabase
+      .from("salary_batches")
+      .select("id,month,year")
+      .order("year", { ascending: false })
+      .order("month", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (batchError) throw batchError;
+    if (!batch?.id) return empty;
+
+    const batchId = String(batch.id);
+    const [records, flagsResult] = await Promise.all([
+      readAllRows<Record<string, unknown>>(() =>
+        supabase
+          .from("salary_records")
+          .select("gross_salary,net_salary")
+          .eq("batch_id", batchId),
+      ),
+      supabase
+        .from("salary_flags")
+        .select("*", { count: "exact", head: true })
+        .eq("batch_id", batchId),
+    ]);
+    if (flagsResult.error) throw flagsResult.error;
+
+    return {
+      batch: {
+        month: safeNumber(batch.month),
+        year: safeNumber(batch.year),
+      },
+      batchLabel: `${safeNumber(batch.month)}/${safeNumber(batch.year)}`,
+      employees: records.length,
+      error: null,
+      flags: flagsResult.count ?? 0,
+      gross: records.reduce((sum, row) => sum + safeNumber(row.gross_salary), 0),
+      net: records.reduce((sum, row) => sum + safeNumber(row.net_salary), 0),
+    };
+  } catch {
+    return { ...empty, error: "Payroll data unavailable." };
+  }
+}
+
+function canUseCompanyPayrollSummary(accessContext: AccessContext) {
+  return (
+    accessContext.scope === "system" ||
+    accessContext.scope === "company" ||
+    accessContext.role === "Super Admin" ||
+    accessContext.role === "CEO" ||
+    accessContext.role === "HR Specialist" ||
+    accessContext.role === "Finance Manager"
+  );
+}
+
+async function fetchScopedPayrollSummary(accessContext: AccessContext): Promise<AdminCommandCenterData["overview"]["payroll"] & {
+  batch: { month: number; year: number } | null;
+  error: string | null;
+}> {
+  try {
+    const dashboard = await getPayrollDashboard(undefined, accessContext);
+    return {
+      batch: dashboard.batch ? { month: dashboard.batch.month, year: dashboard.batch.year } : null,
+      batchLabel: dashboard.batch ? `${dashboard.batch.month}/${dashboard.batch.year}` : "—",
+      employees: dashboard.summary.totalEmployees,
+      error: null,
+      flags: dashboard.flags.length,
+      gross: dashboard.summary.totalGross,
+      net: dashboard.summary.totalNet,
+    };
+  } catch {
+    return { batch: null, batchLabel: "—", employees: 0, error: "Payroll data unavailable.", flags: 0, gross: 0, net: 0 };
+  }
+}
+
+function salesBatchSortValue(row: Record<string, unknown>) {
+  const statusPriority: Record<string, number> = {
+    approved: 3,
+    validated: 2,
+    needs_review: 1,
+    staged: 0,
+  };
+  return [
+    String(statusPriority[String(row.status)] ?? 0).padStart(2, "0"),
+    String(row.approved_at ?? ""),
+    String(row.created_at ?? ""),
+    String(row.version ?? 0).padStart(6, "0"),
+  ].join("|");
+}
+
+async function fetchSalesSummary(): Promise<AdminCommandCenterData["overview"]["sales"] & { error: string | null }> {
+  const supabase = getSupabaseAdmin();
+  const empty = { achievementRate: 0, activeProducts: 0, error: null, salesValue: 0, targetValue: 0 };
+
+  try {
+    const batchRows = await readAllRows<Record<string, unknown>>(() =>
+      supabase
+        .from("sales_import_batches")
+        .select("id,line,month,year,status,approved_at,created_at,version,replaced_by_batch_id")
+        .is("replaced_by_batch_id", null),
+    );
+    const activeBatches = batchRows.filter((batch) => {
+      const status = String(batch.status ?? "");
+      return status !== "rejected" && status !== "replaced" && !batch.replaced_by_batch_id;
+    });
+    const activeBatchIds = activeBatches.map((batch) => String(batch.id)).filter(Boolean);
+    if (activeBatchIds.length === 0) return empty;
+
+    const records = await readAllRows<Record<string, unknown>>(() =>
+      supabase
+        .from("sales_records")
+        .select("batch_id,line,month,year,product,sales_value,target_value,validation_state")
+        .in("batch_id", activeBatchIds),
+    );
+    const activeBatchMap = new Map(activeBatches.map((batch) => [String(batch.id), batch] as const));
+    const latestBatchByRecordPeriod = new Map<string, Record<string, unknown>>();
+
+    records.forEach((record) => {
+      const batch = activeBatchMap.get(String(record.batch_id));
+      if (!batch || record.validation_state === "failed") return;
+      const key = `${String(batch.line || record.line)}::${safeNumber(record.year)}::${safeNumber(record.month)}`;
+      const current = latestBatchByRecordPeriod.get(key);
+      if (!current || salesBatchSortValue(batch) > salesBatchSortValue(current)) {
+        latestBatchByRecordPeriod.set(key, batch);
+      }
+    });
+
+    const approvedRecords = records.filter((record) => {
+      const batch = activeBatchMap.get(String(record.batch_id));
+      if (!batch || record.validation_state === "failed") return false;
+      const key = `${String(batch.line || record.line)}::${safeNumber(record.year)}::${safeNumber(record.month)}`;
+      return latestBatchByRecordPeriod.get(key)?.id === batch.id;
+    });
+    const salesValue = approvedRecords.reduce((sum, row) => sum + safeNumber(row.sales_value), 0);
+    const targetValue = approvedRecords.reduce((sum, row) => sum + safeNumber(row.target_value), 0);
+
+    return {
+      achievementRate: targetValue > 0 ? salesValue / targetValue : 0,
+      activeProducts: new Set(approvedRecords.map((row) => String(row.product ?? "")).filter(Boolean)).size,
+      error: null,
+      salesValue,
+      targetValue,
+    };
+  } catch {
+    return { ...empty, error: "Sales data unavailable." };
   }
 }
 
@@ -256,15 +437,17 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   const dataUnavailable: string[] = [];
 
   // Run all fetches in parallel — each is isolated so a single failure doesn't cascade
-  const [payrollResult, salesResult, employeesResult, expensesResult, recruitmentResult, riskResult, healthResult, eligibleResult] =
+  const [payrollResult, salesResult, employeesResult, expensesResult, recruitmentResult, riskResult, salesHealthResult, eligibleResult] =
     await Promise.allSettled([
-      getPayrollDashboard(undefined, accessContext),
-      getSalesDashboard(),
+      canUseCompanyPayrollSummary(accessContext)
+        ? fetchPayrollSummary()
+        : fetchScopedPayrollSummary(accessContext),
+      fetchSalesSummary(),
       getEmployeeDirectory(),
       fetchExpenseSummary(),
       fetchRecruitmentSummary(),
       fetchRiskSummary(),
-      fetchDataHealth(),
+      fetchSalesHealthCounts(),
       fetchPayrollEligibleCount(),
     ]);
 
@@ -278,12 +461,13 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   };
   if (payrollResult.status === "fulfilled") {
     const p = payrollResult.value;
+    if (p.error) dataUnavailable.push(p.error);
     payroll = {
       batchLabel: p.batch ? `${p.batch.month}/${p.batch.year}` : "—",
-      employees: p.summary.totalEmployees,
-      gross: p.summary.totalGross,
-      net: p.summary.totalNet,
-      flags: p.flags.length,
+      employees: p.employees,
+      gross: p.gross,
+      net: p.net,
+      flags: p.flags,
     };
   } else {
     dataUnavailable.push("Payroll data unavailable.");
@@ -297,12 +481,13 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     activeProducts: 0,
   };
   if (salesResult.status === "fulfilled") {
-    const s = salesResult.value.summary as Record<string, unknown>;
+    const s = salesResult.value;
+    if (s.error) dataUnavailable.push(s.error);
     sales = {
-      salesValue: safeNumber(s.totalApprovedSales),
-      targetValue: safeNumber(s.totalApprovedTarget),
-      achievementRate: safeNumber(s.achievementRate),
-      activeProducts: safeNumber(s.activeProducts),
+      salesValue: s.salesValue,
+      targetValue: s.targetValue,
+      achievementRate: s.achievementRate,
+      activeProducts: s.activeProducts,
     };
   } else {
     dataUnavailable.push("Sales data unavailable.");
@@ -374,15 +559,14 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   }
 
   // ── Health ───────────────────────────────────────────────────────────────
-  const health =
-    healthResult.status === "fulfilled"
-      ? healthResult.value.health
-      : buildEmptyHealth();
-  if (healthResult.status === "fulfilled") {
-    dataUnavailable.push(...healthResult.value.errors);
-  } else {
-    dataUnavailable.push("Health data unavailable.");
-  }
+  const salesHealth = salesHealthResult.status === "fulfilled"
+    ? salesHealthResult.value
+    : { error: "Sales linkage data unavailable.", linkedRows: 0, totalRows: 0 };
+  if (salesHealth.error) dataUnavailable.push(salesHealth.error);
+  const health = buildDataHealth(
+    employeesResult.status === "fulfilled" ? employeesResult.value : null,
+    salesHealth,
+  );
 
   // ── Payroll eligible count ────────────────────────────────────────────────
   const payrollEligibleCount =
@@ -401,18 +585,3 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   };
 }
 
-// ---------------------------------------------------------------------------
-// Empty fallbacks
-// ---------------------------------------------------------------------------
-
-function buildEmptyHealth(): DataHealthMetrics {
-  return {
-    employeeHealthRate: 0,
-    healthyEmployees: 0,
-    totalEmployees: 0,
-    missingManager: 0,
-    missingJobTitle: 0,
-    salesLinkageRate: 0,
-    salesLinkageBatch: null,
-  };
-}

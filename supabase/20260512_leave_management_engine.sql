@@ -43,11 +43,7 @@ create table public.leave_policies (
   country text not null default 'EG',
   annual_days_first_year numeric(8, 2) not null default 15,
   annual_days_after_first_year numeric(8, 2) not null default 21,
-  annual_days_senior numeric(8, 2) not null default 30,
-  annual_days_disability numeric(8, 2) not null default 45,
-  senior_after_years integer not null default 10,
-  senior_after_age integer not null default 50,
-  accrual_method text not null default 'prorated',
+  accrual_method text not null default 'monthly',
   accrual_frequency text not null default 'monthly',
   allow_negative_balance boolean not null default false,
   carry_forward_enabled boolean not null default false,
@@ -59,9 +55,9 @@ create table public.leave_policies (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint leave_policies_accrual_method_check
-    check (accrual_method in ('monthly', 'prorated', 'manual')),
+    check (accrual_method = 'monthly'),
   constraint leave_policies_accrual_frequency_check
-    check (accrual_frequency in ('monthly', 'annual', 'manual')),
+    check (accrual_frequency = 'monthly'),
   constraint leave_policies_weekend_days_check
     check (weekend_days <@ array[0, 1, 2, 3, 4, 5, 6])
 );
@@ -221,10 +217,6 @@ insert into public.leave_policies (
   country,
   annual_days_first_year,
   annual_days_after_first_year,
-  annual_days_senior,
-  annual_days_disability,
-  senior_after_years,
-  senior_after_age,
   accrual_method,
   accrual_frequency,
   allow_negative_balance,
@@ -240,11 +232,7 @@ values (
   'EG',
   15,
   21,
-  30,
-  45,
-  10,
-  50,
-  'prorated',
+  'monthly',
   'monthly',
   false,
   false,

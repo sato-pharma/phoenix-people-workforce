@@ -44,6 +44,9 @@ test.describe("Leave Management staging E2E", () => {
     await expect(page.getByTestId("leave-submit-form")).toBeVisible();
     await page.getByTestId("leave-start-date-input").fill(process.env.E2E_LEAVE_START_DATE ?? "2026-12-13");
     await page.getByTestId("leave-end-date-input").fill(process.env.E2E_LEAVE_END_DATE ?? "2026-12-14");
+    if (process.env.E2E_LEAVE_DURATION_UNIT) {
+      await page.getByTestId("leave-duration-unit-select").selectOption(process.env.E2E_LEAVE_DURATION_UNIT);
+    }
     await page.getByTestId("leave-reason-input").fill("Playwright employee submit flow");
     await page.getByTestId("leave-attachment-input").setInputFiles({
       buffer: Buffer.from("Phoenix Leave E2E attachment"),

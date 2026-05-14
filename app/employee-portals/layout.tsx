@@ -2,10 +2,10 @@ import {
   EmployeePortalTopNav,
   EmployeePortalSidebar,
 } from "@/components/employee-portal/employee-portal-layout";
-import { IdentityCard } from "@/components/employee-portal/employee-portal-dashboard";
+import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
-import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
+import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { PageTransition } from "@/components/ui/page-transition";
@@ -22,7 +22,7 @@ export default async function EmployeePortalLayout({
 
   let data = null;
   try {
-    data = await getMedicalRepPortalData(access);
+    data = await getEmployeePortalShellData(access);
   } catch {
     data = null;
   }

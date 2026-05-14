@@ -1,11 +1,12 @@
 import { ClipboardCheck } from "lucide-react";
 import { redirect } from "next/navigation";
 
-import { CoachingReportForm } from "@/components/coaching/coaching-report-form";
 import {
-  EmployeePortalEmptyState,
-  EmployeePortalPageShell,
-} from "@/components/employee-portal/enterprise-shell";
+  AdminInsightChip,
+  AdminPageHero,
+} from "@/components/admin/admin-design-system";
+import { CoachingReportForm } from "@/components/coaching/coaching-report-form";
+import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import {
   canAccess,
   canManageCoachingReports,
@@ -66,25 +67,29 @@ export default async function TrainingManagerCreateCoachingReportPage() {
     }));
 
   return (
-    <EmployeePortalPageShell
-      badge="Training Manager"
-      description="Create field coaching reports for employees, save drafts, and submit completed reports for employee acknowledgment."
-      title="Create Coaching Report"
-    >
-      <div className="rounded-[28px] border border-white/80 bg-white/90 p-3 shadow-[0_18px_46px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70 sm:p-4">
-        <div className="mb-4 flex items-center gap-2 rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3 text-sm font-bold text-orange-700">
-          <ClipboardCheck className="h-4 w-4" />
-          <span>Coach identity is locked to your Training Manager account.</span>
-        </div>
-        <CoachingReportForm
-          coach={{
-            hrId: access.hrId,
-            name: viewer.displayName,
-            role: viewer.roleLabel || access.role,
-          }}
-          employees={activeEmployees}
-        />
-      </div>
-    </EmployeePortalPageShell>
+    <div className="space-y-6">
+      <AdminPageHero
+        badges={
+          <div className="flex flex-wrap gap-2">
+            <AdminInsightChip>Field Excellence</AdminInsightChip>
+            <AdminInsightChip tone="orange">Structured 120-point score</AdminInsightChip>
+            <AdminInsightChip tone="slate">Employee acknowledgment workflow</AdminInsightChip>
+          </div>
+        }
+        description="Create a field coaching report with structured scoring, development feedback, and employee acknowledgment workflow."
+        eyebrow="Coaching"
+        icon={<ClipboardCheck className="h-3.5 w-3.5" />}
+        title="Coaching Report"
+      />
+
+      <CoachingReportForm
+        coach={{
+          hrId: access.hrId,
+          name: viewer.displayName,
+          role: viewer.roleLabel || access.role,
+        }}
+        employees={activeEmployees}
+      />
+    </div>
   );
 }

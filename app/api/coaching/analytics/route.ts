@@ -23,6 +23,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const completedStatuses = new Set(["submitted", "reviewed_by_employee", "locked"]);
+const defaultAnalyticsReportLimit = 500;
 
 function average(values: number[]) {
   if (values.length === 0) return 0;
@@ -61,10 +62,14 @@ function filterQuarterlyByReports(
 }
 
 function enforceAnalyticsScope(filters: ReturnType<typeof filtersFromRequest>, access: AccessContext) {
-  if (access.role !== "Training Manager") return filters;
+  const scopedFilters = {
+    ...filters,
+    limit: filters.limit ?? defaultAnalyticsReportLimit,
+  };
+  if (access.role !== "Training Manager") return scopedFilters;
   const coachHrId = normalizeHrId(access.hrId);
   return {
-    ...filters,
+    ...scopedFilters,
     coachHrId: coachHrId ?? "__no_training_manager_hr_id__",
   };
 }

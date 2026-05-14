@@ -1,10 +1,8 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
-import {
-  IdentityCard,
-  MedicalRepOverviewPage,
-} from "@/components/employee-portal/employee-portal-dashboard";
+import { MedicalRepOverviewPage } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
+import { IdentityCard } from "@/components/employee-portal/identity-card";
 import {
   EmployeePortalTopNav,
   EmployeePortalSidebar,
