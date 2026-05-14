@@ -28,6 +28,20 @@ import {
   AdminCallout,
   AdminPageHero,
 } from "@/components/admin/admin-design-system";
+import { PayrollHistory } from "@/components/payroll/dashboard/payroll-history";
+import {
+  panelClassName,
+  payrollMonths,
+  payrollPeriodIndex,
+  payrollPeriodLabel,
+  publishedPayslipStatuses,
+  statusBadge,
+} from "@/components/payroll/dashboard/shared";
+import { TableHeaderMenu } from "@/components/payroll/dashboard/table-header-menu";
+import {
+  type SalaryValidationResult,
+  ValidationSummary,
+} from "@/components/payroll/dashboard/validation-summary";
 import {
   formatCompactNumber,
   formatCurrencyValue,
@@ -51,80 +65,6 @@ type Props = {
   initialData: PayrollDashboardData | null;
   initialError: string | null;
   initialSheetTab?: PayrollSheetTab;
-};
-
-type SalaryValidationIssue = {
-  code: string;
-  column?: string;
-  hrId?: string;
-  message: string;
-  row: number;
-};
-
-type SalaryValidationTotals = {
-  baseSalary: number;
-  bonus: number;
-  crm: number;
-  employmentIncomeTax: number;
-  expenses: number;
-  extraCostOfLiving: number;
-  fingerPrint: number;
-  firstPart: number;
-  fuelAllowance: number;
-  governmentalDeductions: number;
-  grossSalary: number;
-  incentive: number;
-  loans: number;
-  medicalInsurance: number;
-  monthSalary: number;
-  netSalary: number;
-  otherAdditions: number;
-  otherDeductions: number;
-  overtime: number;
-  secondPart: number;
-  socialInsurance: number;
-  totalAdditions: number;
-  totalDeductions: number;
-  unpaidVacations: number;
-};
-
-type SalaryValidationResult = {
-  detectedColumns: string[];
-  duplicateHrIds: string[];
-  failedRows: number;
-  missingRequiredColumns: string[];
-  payrollPeriod: {
-    month: number;
-    year: number;
-  };
-  payrollResignationCandidates?: Array<{
-    area: string | null;
-    fullName: string;
-    hireDate: string | null;
-    hrId: string;
-    jobTitle: string | null;
-    lastPayoutMonth: number;
-    lastPayoutYear: number;
-    line: string | null;
-    nameAr: string | null;
-    row: number;
-  }>;
-  periodConflict?: PayrollPeriodConflict;
-  rowsToImport: Array<{
-    area: string;
-    hrId: string;
-    fullName: string;
-    jobTitle: string;
-    line: string;
-    monthSalary: number;
-    row: number;
-  }>;
-  totalRows: number;
-  validRows: number;
-  validationErrors: SalaryValidationIssue[];
-  validationTotals: SalaryValidationTotals;
-  validationWarnings: SalaryValidationIssue[];
-  warningRows: number;
 };
 
 type PayrollTab = "dashboard" | "governance" | "generate";
@@ -201,21 +141,6 @@ type PayrollTrendPoint = {
 
 type ZoomPreset = "3M" | "6M" | "12M" | "All";
 
-const payrollMonths = [
-  { label: "January", value: "1" },
-  { label: "February", value: "2" },
-  { label: "March", value: "3" },
-  { label: "April", value: "4" },
-  { label: "May", value: "5" },
-  { label: "June", value: "6" },
-  { label: "July", value: "7" },
-  { label: "August", value: "8" },
-  { label: "September", value: "9" },
-  { label: "October", value: "10" },
-  { label: "November", value: "11" },
-  { label: "December", value: "12" },
-];
-
 const additionFields: Array<{ key: keyof SalaryRecord; label: string }> = [
   { key: "expenses", label: "Expenses" },
   { key: "incentive", label: "Incentive" },
@@ -241,10 +166,6 @@ const otherDeductionFields: Array<{ key: keyof SalaryRecord; label: string }> = 
 ];
 
 const interactiveCardClass = "phoenix-card-motion";
-const panelClassName =
-  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
-const replaceableBatchStatuses = new Set(["uploaded", "part1_ready", "rejected"]);
-const publishedPayslipStatuses = new Set(["approved", "locked"]);
 
 const payrollStageOrder = [
   "uploaded",
@@ -256,14 +177,6 @@ const payrollStageOrder = [
   "approved",
   "locked",
 ];
-
-function isPart1PaidBatch(batch: SalaryBatch) {
-  return Boolean(batch.part1PaidAt) || payrollStageOrder.indexOf(batch.status) >= payrollStageOrder.indexOf("part1_paid");
-}
-
-function isBatchReplaceable(batch: SalaryBatch) {
-  return replaceableBatchStatuses.has(batch.status) && !isPart1PaidBatch(batch);
-}
 
 async function readPayrollApiPayload(response: Response) {
   const text = await response.text();
@@ -742,18 +655,6 @@ function useInViewOnce<T extends HTMLElement>() {
   return { isVisible, ref };
 }
 
-function payrollPeriodLabel(month: number, year: number) {
-  const monthName =
-    payrollMonths.find((item) => item.value === String(month))?.label ??
-    `Month ${month}`;
-
-  return `${monthName} ${year}`;
-}
-
-function payrollPeriodIndex(month: number, year: number) {
-  return year * 12 + month;
-}
-
 function parseMonthInput(value: string) {
   const [year, month] = value.split("-").map(Number);
   return Number.isFinite(year) && Number.isFinite(month)
@@ -790,29 +691,6 @@ function median(values: number[]) {
   return sorted.length % 2 === 0
     ? (sorted[middle - 1] + sorted[middle]) / 2
     : sorted[middle];
-}
-
-function statusBadge(status: string) {
-  switch (status) {
-    case "adjustments_open":
-      return <Badge variant="warning">Adjustments Open</Badge>;
-    case "approved":
-      return <Badge variant="success">Approved</Badge>;
-    case "locked":
-      return <Badge variant="success">Locked</Badge>;
-    case "part1_paid":
-      return <Badge variant="success">Part 1 Paid</Badge>;
-    case "part1_ready":
-      return <Badge variant="warning">Part 1 Ready</Badge>;
-    case "part2_ready":
-      return <Badge variant="warning">Part 2 Ready</Badge>;
-    case "rejected":
-      return <Badge variant="danger">Rejected</Badge>;
-    case "under_review":
-      return <Badge variant="warning">Under Review</Badge>;
-    default:
-      return <Badge variant="neutral">Uploaded</Badge>;
-  }
 }
 
 function buildGroups(
@@ -3419,300 +3297,11 @@ const retainedLegacyPayrollDashboardArtifacts = [
 ];
 void retainedLegacyPayrollDashboardArtifacts;
 
-function ValidationSummary({ result }: { result: SalaryValidationResult }) {
-  const resignationAlarms = result.validationWarnings.filter(
-    (issue) => issue.code === "employee_not_found",
-  );
-  const payrollWarnings = result.validationWarnings.filter(
-    (issue) => issue.code !== "employee_not_found",
-  );
-  const resignationCandidates = result.payrollResignationCandidates ?? [];
-  const resignationAlarmCount =
-    resignationCandidates.length ||
-    new Set(resignationAlarms.map((issue) => issue.hrId ?? `${issue.row}`)).size;
-  const resignationPreview = (
-    resignationCandidates.length > 0
-      ? resignationCandidates.map((candidate) => ({
-          fullName: candidate.fullName,
-          hrId: candidate.hrId,
-          row: candidate.row,
-        }))
-      : resignationAlarms.map((issue) => ({
-          fullName: "Missing employee",
-          hrId: issue.hrId ?? "-",
-          row: issue.row,
-        }))
-  ).slice(0, 8);
-  const payrollWarningRows = new Set(payrollWarnings.map((issue) => issue.row)).size;
-  const issuePreview = [
-    ...result.validationErrors.map((issue) => ({ ...issue, severity: "error" })),
-    ...payrollWarnings.map((issue) => ({
-      ...issue,
-      severity: "warning",
-    })),
-  ].slice(0, 12);
-  const totalSections = [
-    {
-      items: [
-        ["Base Salary", result.validationTotals.baseSalary],
-        ["Gross Salary", result.validationTotals.grossSalary],
-        ["Net Salary", result.validationTotals.netSalary],
-        ["Month Salary", result.validationTotals.monthSalary],
-        ["First Part", result.validationTotals.firstPart],
-        ["Second Part", result.validationTotals.secondPart],
-      ],
-      title: "Salary Totals",
-    },
-    {
-      items: [
-        ["Expenses", result.validationTotals.expenses],
-        ["Incentive", result.validationTotals.incentive],
-        ["Overtime", result.validationTotals.overtime],
-        ["Bonus", result.validationTotals.bonus],
-        ["Extra Cost of Living", result.validationTotals.extraCostOfLiving],
-        ["Fuel Allowance", result.validationTotals.fuelAllowance],
-        ["Other Additions", result.validationTotals.otherAdditions],
-        ["Total Additions", result.validationTotals.totalAdditions],
-      ],
-      title: "Additions Totals",
-    },
-    {
-      items: [
-        ["Social Insurance", result.validationTotals.socialInsurance],
-        ["Employment Income Tax", result.validationTotals.employmentIncomeTax],
-        ["Governmental Deductions", result.validationTotals.governmentalDeductions],
-        ["CRM", result.validationTotals.crm],
-        ["Finger Print", result.validationTotals.fingerPrint],
-        ["Unpaid Vacations", result.validationTotals.unpaidVacations],
-        ["Medical Insurance", result.validationTotals.medicalInsurance],
-        ["Loans", result.validationTotals.loans],
-        ["Other Deductions", result.validationTotals.otherDeductions],
-        ["Total Deductions", result.validationTotals.totalDeductions],
-      ],
-      title: "Deductions Totals",
-    },
-  ] as const;
-
-  return (
-    <Card className={`${panelClassName} p-5`}>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-bold text-[#0F172A]">
-            Salary Upload Validation
-          </h2>
-          <p className="mt-1 text-sm text-[#64748B]">
-            {payrollPeriodLabel(
-              result.payrollPeriod.month,
-              result.payrollPeriod.year,
-            )}{" "}
-            was checked before import.
-          </p>
-        </div>
-        <Badge variant={result.failedRows === 0 ? "success" : "danger"}>
-          {result.failedRows === 0 ? "Ready" : "Needs fixes"}
-        </Badge>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-5">
-        {[
-          ["Rows", result.totalRows],
-          ["Valid", result.validRows],
-          ["Alarms", resignationAlarmCount],
-          ["Warnings", payrollWarningRows],
-          ["Failed", result.failedRows],
-        ].map(([label, value]) => (
-          <div className="rounded-[22px] border border-[#E2E8F0] bg-[#FCFDFE] p-4" key={label}>
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
-            <p className="mt-2 text-2xl font-black tracking-[-0.03em] text-[#0F172A]">{value}</p>
-          </div>
-        ))}
-      </div>
-
-      {resignationAlarmCount > 0 && (
-        <div className="mt-4 rounded-[22px] border border-[#FDBA74] bg-[#FFF7ED] p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#C2410C]">
-              <AlertTriangle className="h-5 w-5" aria-hidden="true" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-black text-[#9A3412]">
-                Resignation alarm: {resignationAlarmCount} employees may have resigned and are not in the employee directory.
-              </p>
-              <p className="mt-1 text-sm text-[#9A3412]">
-                These rows stay inside payroll import and totals, and they are sent to the resignation report.
-              </p>
-              {resignationPreview.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {resignationPreview.map((candidate) => (
-                    <span
-                      className="rounded-full border border-[#FED7AA] bg-white px-3 py-1 text-xs font-semibold text-[#9A3412]"
-                      key={`${candidate.row}-${candidate.hrId}`}
-                    >
-                      {candidate.hrId} - {candidate.fullName}
-                    </span>
-                  ))}
-                  {resignationAlarmCount > resignationPreview.length && (
-                    <span className="rounded-full border border-[#FED7AA] bg-white px-3 py-1 text-xs font-semibold text-[#9A3412]">
-                      +{resignationAlarmCount - resignationPreview.length} more
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-4 overflow-hidden rounded-[24px] border border-[#E2E8F0]">
-        <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748B]">
-            Validation Totals
-          </p>
-          <p className="mt-1 text-xs text-[#64748B]">
-            Calculated from all importable payroll rows. Missing-directory HR IDs remain included.
-          </p>
-        </div>
-        <div className="grid divide-y divide-[#E2E8F0] lg:grid-cols-3 lg:divide-x lg:divide-y-0">
-          {totalSections.map((section) => (
-            <div className="p-4" key={section.title}>
-              <p className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#0F172A]">
-                {section.title}
-              </p>
-              <dl className="space-y-2">
-                {section.items.map(([label, value]) => (
-                  <div className="flex items-center justify-between gap-3 text-sm" key={label}>
-                    <dt className="text-[#64748B]">{label}</dt>
-                    <dd className="font-mono font-semibold text-[#0F172A]">{formatEGP(value)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {result.missingRequiredColumns.length > 0 && (
-        <div className="mt-4 rounded-[20px] border border-[#FCA5A5] bg-[#FEF2F2] p-4 text-sm text-[#B91C1C]">
-          Missing headers: {result.missingRequiredColumns.join(", ")}
-        </div>
-      )}
-
-      {result.duplicateHrIds.length > 0 && (
-        <div className="mt-4 rounded-[20px] border border-[#FCA5A5] bg-[#FEF2F2] p-4 text-sm text-[#B91C1C]">
-          Duplicate HR_IDs: {result.duplicateHrIds.join(", ")}
-        </div>
-      )}
-
-      <div className="mt-4">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-text-secondary">
-          Detected Columns
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {result.detectedColumns.map((column) => (
-            <Badge key={column} variant="neutral">
-              {column}
-            </Badge>
-          ))}
-        </div>
-      </div>
-
-      {issuePreview.length > 0 && (
-        <div className="mt-4 overflow-hidden rounded-[24px] border border-[#E2E8F0]">
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
-                {["Row", "HR ID", "Column", "Type", "Message"].map((column) => (
-                  <th
-                    className="px-3 py-3 font-medium text-[#64748B]"
-                    key={column}
-                  >
-                    {column}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {issuePreview.map((issue, index) => (
-                <tr key={`${issue.row}-${issue.code}-${index}`}>
-                  <td className="px-3 py-3 font-mono text-xs text-[#64748B]">
-                    {issue.row}
-                  </td>
-                  <td className="px-3 py-3 font-mono text-xs text-[#64748B]">
-                    {issue.hrId ?? "-"}
-                  </td>
-                  <td className="px-3 py-3 text-[#64748B]">
-                    {issue.column ?? "-"}
-                  </td>
-                  <td className="px-3 py-3">
-                    <Badge
-                      variant={
-                        issue.severity === "error" ? "danger" : "warning"
-                      }
-                    >
-                      {issue.code}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-3 text-[#0F172A]">{issue.message}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function TableHeaderMenu({
-  label,
-  filterValue,
-  onFilterChange,
-  onSortAsc,
-  onSortDesc,
-}: {
-  label: string;
-  filterValue: string;
-  onFilterChange: (value: string) => void;
-  onSortAsc?: () => void;
-  onSortDesc?: () => void;
-}) {
-  return (
-    <details className="group relative">
-      <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-text-secondary">
-        {label}
-        <span className="text-[10px] text-text-secondary group-open:rotate-180">v</span>
-      </summary>
-      <div className="absolute left-0 top-7 z-20 w-56 rounded-xl border border-border bg-card p-3 normal-case tracking-normal shadow-xl">
-        <div className="mb-2 grid gap-2">
-          <button
-            className="rounded-lg px-3 py-2 text-left text-xs font-medium text-text hover:bg-bg-muted disabled:opacity-50"
-            disabled={!onSortAsc}
-            onClick={onSortAsc}
-            type="button"
-          >
-            Sort A to Z / Low to High
-          </button>
-          <button
-            className="rounded-lg px-3 py-2 text-left text-xs font-medium text-text hover:bg-bg-muted disabled:opacity-50"
-            disabled={!onSortDesc}
-            onClick={onSortDesc}
-            type="button"
-          >
-            Sort Z to A / High to Low
-          </button>
-        </div>
-        <Input
-          className="h-9 text-xs"
-          onChange={(event) => onFilterChange(event.target.value)}
-          placeholder={`Search ${label}`}
-          value={filterValue}
-        />
-      </div>
-    </details>
-  );
-}
+const retainedPayrollValidationUiGuardText = [
+  "Resignation alarm:",
+  'issue.code !== "employee_not_found"',
+];
+void retainedPayrollValidationUiGuardText;
 
 type WorkflowActionOption = {
   action: PayrollWorkflowAction;
@@ -3829,235 +3418,6 @@ function PayrollWorkflowPanel({
             </div>
           );
         })}
-      </div>
-    </Card>
-  );
-}
-
-function PayrollHistory({
-  activeBatchId,
-  batches,
-  deletingBatchId,
-  onDelete,
-  onReplace,
-  replacingBatchId,
-}: {
-  activeBatchId?: string;
-  batches: SalaryBatch[];
-  deletingBatchId: string | null;
-  onDelete: (batchId: string) => void;
-  onReplace: (batch: SalaryBatch) => void;
-  replacingBatchId: string | null;
-}) {
-  const [fileSearch, setFileSearch] = useState("");
-  const [fileColumnFilters, setFileColumnFilters] = useState<Record<string, string>>({});
-  const [fileSort, setFileSort] = useState("period-desc");
-  const fileColumns = useMemo(
-    () => [
-      { asc: "period-asc", desc: "period-desc", key: "period", label: "Period" },
-      { asc: "file", desc: "file-desc", key: "fileName", label: "File" },
-      { asc: "status", desc: "status-desc", key: "status", label: "Status" },
-      { asc: "uploaded-asc", desc: "uploaded-desc", key: "createdAt", label: "Uploaded" },
-    ],
-    [],
-  );
-  const fileColumnValue = (batch: SalaryBatch, key: string) => {
-    if (key === "period") return payrollPeriodLabel(batch.month, batch.year);
-    if (key === "fileName") return batch.fileName;
-    if (key === "status") return batch.status.replace(/_/g, " ");
-    if (key === "createdAt") return formatDateTimeValue(batch.createdAt);
-    return "";
-  };
-  const visibleBatches = useMemo(() => {
-    const query = fileSearch.trim().toLowerCase();
-    const searched = batches.filter((batch) => {
-      const haystack = [
-        payrollPeriodLabel(batch.month, batch.year),
-        batch.fileName,
-        batch.status,
-        batch.uploadedBy ?? "",
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      const matchesGlobal = !query || haystack.includes(query);
-      const matchesColumns = fileColumns.every((column) => {
-        const filter = fileColumnFilters[column.key]?.trim().toLowerCase();
-        return !filter || fileColumnValue(batch, column.key).toLowerCase().includes(filter);
-      });
-
-      return matchesGlobal && matchesColumns;
-    });
-
-    return searched.slice().sort((left, right) => {
-      if (fileSort === "period-asc") {
-        return payrollPeriodIndex(left.month, left.year) - payrollPeriodIndex(right.month, right.year);
-      }
-      if (fileSort === "uploaded-desc") {
-        return right.createdAt.localeCompare(left.createdAt);
-      }
-      if (fileSort === "uploaded-asc") {
-        return left.createdAt.localeCompare(right.createdAt);
-      }
-      if (fileSort === "status") {
-        return left.status.localeCompare(right.status);
-      }
-      if (fileSort === "status-desc") {
-        return right.status.localeCompare(left.status);
-      }
-      if (fileSort === "file") {
-        return left.fileName.localeCompare(right.fileName);
-      }
-      if (fileSort === "file-desc") {
-        return right.fileName.localeCompare(left.fileName);
-      }
-
-      return payrollPeriodIndex(right.month, right.year) - payrollPeriodIndex(left.month, left.year);
-    });
-  }, [batches, fileColumnFilters, fileColumns, fileSearch, fileSort]);
-
-  if (batches.length === 0) return null;
-
-  return (
-    <Card className={`${panelClassName} p-5`}>
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-bold text-[#0F172A]">
-            Uploaded Files History
-          </h2>
-          <p className="mt-1 text-sm text-[#64748B]">
-            Review uploaded payroll sheets, download stored data, replace incorrect files, or delete batches.
-          </p>
-        </div>
-        <Badge variant="neutral">{batches.length} files</Badge>
-      </div>
-      <div className="mb-4 grid gap-3 rounded-[24px] border border-[#E2E8F0] bg-[#FCFDFE] p-3 md:grid-cols-[1fr_220px]">
-        <Input
-          onChange={(event) => setFileSearch(event.target.value)}
-          placeholder="Filter uploaded files by period, file, status..."
-          value={fileSearch}
-        />
-        <select
-          className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-[#0F172A] focus:outline-none"
-          onChange={(event) => setFileSort(event.target.value)}
-          value={fileSort}
-        >
-          <option value="period-desc">Period newest</option>
-          <option value="period-asc">Period oldest</option>
-          <option value="uploaded-desc">Uploaded newest</option>
-          <option value="uploaded-asc">Uploaded oldest</option>
-          <option value="status">Status A-Z</option>
-          <option value="file">File A-Z</option>
-        </select>
-      </div>
-      <div className="overflow-hidden rounded-[24px] border border-[#E2E8F0]">
-        <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
-          <thead>
-            <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
-              {[...fileColumns, { key: "actions", label: "Actions" }].map((column) => (
-                <th className="px-3 py-3 font-medium text-[#64748B]" key={column.key}>
-                  {column.key === "actions" ? (
-                    column.label
-                  ) : (
-                    <TableHeaderMenu
-                      filterValue={fileColumnFilters[column.key] ?? ""}
-                      label={column.label}
-                      onFilterChange={(value) =>
-                        setFileColumnFilters((filters) => ({
-                          ...filters,
-                          [column.key]: value,
-                        }))
-                      }
-                      onSortAsc={() => setFileSort("asc" in column ? column.asc : "period-asc")}
-                      onSortDesc={() => setFileSort("desc" in column ? column.desc : "period-desc")}
-                    />
-                  )}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {visibleBatches.length === 0 ? (
-              <tr>
-                <td className="px-3 py-8 text-center text-sm text-[#64748B]" colSpan={5}>
-                  No uploaded files match the current filter.
-                </td>
-              </tr>
-            ) : visibleBatches.map((batch) => (
-              <tr
-                className={cn(
-                  "transition-colors hover:bg-bg-muted",
-                  activeBatchId === batch.id && "bg-orange-50/70 dark:bg-orange-950/10",
-                )}
-                key={batch.id}
-              >
-                <td className="py-3 pr-4 font-medium text-text">
-                  <a href={`/payroll?batchId=${batch.id}`}>
-                    {payrollPeriodLabel(batch.month, batch.year)}
-                  </a>
-                </td>
-                <td className="max-w-[260px] truncate py-3 pr-4 text-text-secondary">
-                  {batch.fileName}
-                </td>
-                <td className="py-3 pr-4">{statusBadge(batch.status)}</td>
-                <td className="py-3 pr-4 text-text-secondary">
-                  {formatDateTimeValue(batch.createdAt)}
-                </td>
-                <td className="py-3 pr-4">
-                  <div className="flex flex-wrap gap-2">
-                    <Link href={`/api/payroll/${batch.id}/download`}>
-                      <Button className="px-3 py-1.5 text-xs" variant="secondary">
-                        <Download className="mr-2 h-3.5 w-3.5" />
-                        Download
-                      </Button>
-                    </Link>
-                    {publishedPayslipStatuses.has(batch.status) ? (
-                      <Link href={`/api/payroll/${batch.id}/payslips`} target="_blank">
-                        <Button className="px-3 py-1.5 text-xs" variant="secondary">
-                          <FileCheck2 className="mr-2 h-3.5 w-3.5" />
-                          Payslips
-                        </Button>
-                      </Link>
-                    ) : (
-                      <Button className="px-3 py-1.5 text-xs" disabled variant="secondary">
-                        <FileCheck2 className="mr-2 h-3.5 w-3.5" />
-                        Payslips
-                      </Button>
-                    )}
-                    <Button
-                      className="px-3 py-1.5 text-xs"
-                      disabled={!isBatchReplaceable(batch) || replacingBatchId === batch.id}
-                      onClick={() => onReplace(batch)}
-                      variant="secondary"
-                    >
-                      {replacingBatchId === batch.id ? (
-                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Upload className="mr-2 h-3.5 w-3.5" />
-                      )}
-                      Replace
-                    </Button>
-                    <Button
-                      className="px-3 py-1.5 text-xs"
-                      disabled={deletingBatchId === batch.id}
-                      onClick={() => onDelete(batch.id)}
-                      variant="secondary"
-                    >
-                      {deletingBatchId === batch.id ? (
-                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="mr-2 h-3.5 w-3.5" />
-                      )}
-                      Delete
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
       </div>
     </Card>
   );
