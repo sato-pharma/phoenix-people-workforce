@@ -66,6 +66,7 @@ export type EmployeeDirectoryRow = {
   socialInsuranceStatus: string | null;
   socialInsuranceNumber: string | null;
   teamId: number | null;
+  teamName: string | null;
   taxes: number | null;
   updatedAt: string;
   workEmail: string | null;
@@ -82,6 +83,7 @@ export type EmployeeLookupOption = {
   id?: number;
   label: string;
   value: string;
+  areaId?: number | null;
   lineId?: number | null;
   positionId?: number | null;
   managerHrId?: string | null;
@@ -96,6 +98,7 @@ export type EmployeeDirectoryData = {
     lines: EmployeeLookupOption[];
     managers: EmployeeLookupOption[];
     positions: EmployeeLookupOption[];
+    teams: EmployeeLookupOption[];
     statuses: EmployeeLookupOption[];
     medicalRepVacancies: VacancyLookupRow[];
     workforceVacancies: VacancyLookupRow[];
@@ -151,6 +154,7 @@ export type EmployeeMutationInput = {
   socialInsuranceStatus?: string | null;
   socialInsuranceNumber?: string | null;
   taxes?: number | null;
+  teamId?: number | null;
   workEmail?: string | null;
 };
 
@@ -241,6 +245,7 @@ type JoinedEmployeeDbRow = EmployeeDbRow & {
   employee_compensation?: EmployeeCompensationDbRow | EmployeeCompensationDbRow[] | null;
   lines?: { name: string | null } | null;
   positions?: { title: string | null } | null;
+  teams?: { name: string | null } | null;
 };
 
 const databaseQueryTimeoutMs = 15000;
@@ -506,19 +511,45 @@ async function loadAllOptions(table: string, label = "name") {
     }
   }
 
-  const select = table === "areas" ? `id,${label},line_id` : `id,${label}`;
+  const select =
+    table === "areas"
+      ? `id,${label},line_id`
+      : table === "teams"
+        ? `id,${label},area_id,is_active`
+        : `id,${label}`;
   const params = new URLSearchParams({
     select,
     order: `${label}.asc`,
   });
-  const rows = await supabaseRest<LookupRow[]>(`${table}?${params}`);
+  let rows: Array<LookupRow & { area_id?: number | null; is_active?: boolean | null }>;
 
-  return rows.map((row) => ({
-    id: row.id,
-    label: String(label === "title" ? row.title ?? "" : row.name ?? ""),
-    lineId: row.line_id ?? null,
-    value: String(row.id),
-  }));
+  try {
+    rows = await supabaseRest<Array<LookupRow & { area_id?: number | null; is_active?: boolean | null }>>(`${table}?${params}`);
+  } catch (error) {
+    const message = employeeDirectoryErrorMessage(error).toLowerCase();
+    if (
+      table !== "teams" ||
+      (!message.includes("is_active") && !message.includes("area_id") && !message.includes("schema cache"))
+    ) {
+      throw error;
+    }
+
+    const fallbackParams = new URLSearchParams({
+      select: `id,${label}`,
+      order: `${label}.asc`,
+    });
+    rows = await supabaseRest<LookupRow[]>(`${table}?${fallbackParams}`);
+  }
+
+  return rows
+    .filter((row) => row.is_active !== false)
+    .map((row) => ({
+      areaId: row.area_id ?? null,
+      id: row.id,
+      label: String(label === "title" ? row.title ?? "" : row.name ?? ""),
+      lineId: row.line_id ?? null,
+      value: String(row.id),
+    }));
 }
 
 async function loadManagerNames(hrIds: string[]) {
@@ -635,7 +666,8 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     departments(name),
     lines(name),
     areas(name),
-    positions(title)`;
+    positions(title),
+    teams(name)`;
 
   const employeeParams = new URLSearchParams({
     select: joinedSelect,
@@ -670,6 +702,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   let lines: EmployeeLookupOption[];
   let areas: EmployeeLookupOption[];
   let positions: EmployeeLookupOption[];
+  let teams: EmployeeLookupOption[] = [];
 
   if (hasJoinedData) {
     // Extract lookups from joined data to avoid extra requests
@@ -677,6 +710,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     lineNames = new Map();
     areaNames = new Map();
     positionTitles = new Map();
+    const teamNames = new Map<number, string>();
     compensationByHrId = new Map();
 
     employeeRows.forEach(row => {
@@ -684,6 +718,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       if (row.lines && row.line_id !== null) lineNames.set(row.line_id, row.lines.name ?? "");
       if (row.areas && row.area_id !== null) areaNames.set(row.area_id, row.areas.name ?? "");
       if (row.positions && row.position_id !== null) positionTitles.set(row.position_id, row.positions.title ?? "");
+      if (row.teams && row.team_id !== null) teamNames.set(row.team_id, row.teams.name ?? "");
       if (row.employee_compensation) {
         const comp = Array.isArray(row.employee_compensation) ? row.employee_compensation[0] : row.employee_compensation;
         if (comp) compensationByHrId.set(row.hr_id, comp);
@@ -691,12 +726,13 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     });
 
     // Still need these for the filter dropdowns, but these are small tables usually
-    const [managerNamesResult, departmentsResult, linesResult, areasResult, positionsResult, medicalRepVacancies, workforceVacancies] = await Promise.all([
+    const [managerNamesResult, departmentsResult, linesResult, areasResult, positionsResult, teamsResult, medicalRepVacancies, workforceVacancies] = await Promise.all([
       loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
       loadAllOptions("departments"),
       loadAllOptions("lines"),
       loadAllOptions("areas"),
       loadAllOptions("positions", "title"),
+      loadAllOptions("teams"),
       getOpenMedicalRepVacancies(),
       getOpenWorkforceVacancies(),
     ]);
@@ -706,6 +742,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     lines = linesResult;
     areas = areasResult;
     positions = positionsResult;
+    teams = teamsResult;
 
     const employeesData = employeeRows.map((row) => {
       const compensation = compensationByHrId.get(row.hr_id);
@@ -773,6 +810,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         socialInsuranceNumber: row.social_insurance_number ?? null,
         taxes: row.taxes ?? compensation?.taxes ?? null,
         teamId: row.team_id,
+        teamName: row.team_id ? teamNames.get(row.team_id) ?? null : null,
         updatedAt: row.updated_at,
         workEmail: row.work_email,
       };
@@ -798,6 +836,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         medicalRepVacancies,
         positions,
         statuses: activeStatusOptions(activeEmployees),
+        teams,
         workforceVacancies,
       },
       summary: {
@@ -815,12 +854,14 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       lineNamesRes,
       areaNamesRes,
       positionTitlesRes,
+      teamNamesRes,
       managerNamesRes,
       compensationByHrIdRes,
       departmentsRes,
       linesRes,
       areasRes,
       positionsRes,
+      teamsRes,
       medicalRepVacancies,
       workforceVacancies
     ] = await Promise.all([
@@ -828,12 +869,14 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       loadLookup("lines", uniqueNumberValues(employeeRows, "line_id")),
       loadLookup("areas", uniqueNumberValues(employeeRows, "area_id")),
       loadLookup("positions", uniqueNumberValues(employeeRows, "position_id"), "title"),
+      loadLookup("teams", uniqueNumberValues(employeeRows, "team_id")),
       loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
       loadCompensationByHrId(uniqueTextValues(employeeRows, "hr_id")),
       loadAllOptions("departments"),
       loadAllOptions("lines"),
       loadAllOptions("areas"),
       loadAllOptions("positions", "title"),
+      loadAllOptions("teams"),
       getOpenMedicalRepVacancies(),
       getOpenWorkforceVacancies(),
     ]);
@@ -842,12 +885,14 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     lineNames = lineNamesRes;
     areaNames = areaNamesRes;
     positionTitles = positionTitlesRes;
+    const teamNames = teamNamesRes;
     managerNames = managerNamesRes;
     compensationByHrId = compensationByHrIdRes;
     departments = departmentsRes;
     lines = linesRes;
     areas = areasRes;
     positions = positionsRes;
+    teams = teamsRes;
 
     const employeesData = employeeRows.map((row) => {
       const comp = compensationByHrId.get(row.hr_id);
@@ -915,6 +960,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         socialInsuranceNumber: row.social_insurance_number ?? null,
         taxes: row.taxes ?? comp?.taxes ?? null,
         teamId: row.team_id,
+        teamName: row.team_id ? teamNames.get(row.team_id) ?? null : null,
         updatedAt: row.updated_at,
         workEmail: row.work_email,
       };
@@ -940,6 +986,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         medicalRepVacancies,
         positions,
         statuses: activeStatusOptions(activeEmployees),
+        teams,
         workforceVacancies,
       },
       summary: {
@@ -1024,6 +1071,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       socialInsuranceNumber: row.social_insurance_number ?? null,
       taxes: row.taxes ?? compensation?.taxes ?? null,
       teamId: row.team_id,
+      teamName: null,
       updatedAt: row.updated_at,
       workEmail: row.work_email,
     };
@@ -1048,6 +1096,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       medicalRepVacancies: [],
       positions,
       statuses: activeStatusOptions(activeEmployees),
+      teams,
       workforceVacancies: [],
     },
     summary: {
@@ -1087,12 +1136,13 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
     );
   }
 
-  const [departmentNames, lineNames, areaNames, positionTitles, managerNames] =
+  const [departmentNames, lineNames, areaNames, positionTitles, teamNames, managerNames] =
     await Promise.all([
       loadLookup("departments", uniqueNumberValues(employeeRows, "department_id")),
       loadLookup("lines", uniqueNumberValues(employeeRows, "line_id")),
       loadLookup("areas", uniqueNumberValues(employeeRows, "area_id")),
       loadLookup("positions", uniqueNumberValues(employeeRows, "position_id"), "title"),
+      loadLookup("teams", uniqueNumberValues(employeeRows, "team_id")),
       loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
     ]);
 
@@ -1160,6 +1210,7 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       socialInsuranceNumber: row.social_insurance_number ?? null,
       taxes: row.taxes ?? null,
       teamId: row.team_id,
+      teamName: row.team_id ? teamNames.get(row.team_id) ?? null : null,
       updatedAt: row.updated_at,
       workEmail: row.work_email,
     };
@@ -1312,6 +1363,7 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
     social_insurance_status: normalizeEnrollmentStatus(input.socialInsuranceStatus),
     social_insurance_number: compact(input.socialInsuranceNumber),
     taxes: numberOrNull(input.taxes),
+    team_id: numberOrNull(input.teamId),
     updated_at: new Date().toISOString(),
     work_email: workEmail,
   };

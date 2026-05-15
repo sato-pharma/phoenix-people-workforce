@@ -321,6 +321,60 @@ async function upsertAreas(
   };
 }
 
+async function upsertTeams(
+  supabase: SupabaseClient,
+  entities: OrganizationEntityToCreate[],
+  areaIds: IdMap,
+) {
+  if (entities.length === 0) {
+    return { created: 0, ids: new Map<string, number>() };
+  }
+
+  const codes = codesFor(entities);
+  const existingCodes = await existingCodeSet(supabase, "teams", codes);
+  const existingIds = await idsForCodes(supabase, "teams", codes);
+  const now = new Date().toISOString();
+  let created = 0;
+
+  for (const entity of entities) {
+    const areaId = entity.parentCode ? areaIds.get(entity.parentCode) ?? null : null;
+    const payload = {
+      area_id: areaId,
+      code: entity.code,
+      is_active: true,
+      name: truncate(entity.name, 160) ?? entity.code,
+      updated_at: now,
+    };
+    const existingId = existingIds.get(entity.code);
+
+    if (existingId) {
+      const { error } = await supabase
+        .from("teams")
+        .update(payload)
+        .eq("id", existingId);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      continue;
+    }
+
+    const { error } = await supabase.from("teams").insert(payload);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    created += existingCodes.has(entity.code) ? 0 : 1;
+  }
+
+  return {
+    created,
+    ids: await idsForCodes(supabase, "teams", codes),
+  };
+}
+
 function positionScopeByCode(records: EmployeeImportRecord[]) {
   const scope = new Map<
     string,
@@ -426,6 +480,7 @@ function employeeValues(
     departmentIds: IdMap;
     lineIds: IdMap;
     positionIds: IdMap;
+    teamIds: IdMap;
   },
 ) {
   const values = {
@@ -446,6 +501,9 @@ function employeeValues(
       : {}),
     ...(record.codes.positionCode && ids.positionIds.has(record.codes.positionCode)
       ? { position_id: ids.positionIds.get(record.codes.positionCode) }
+      : {}),
+    ...(record.codes.teamCode && ids.teamIds.has(record.codes.teamCode)
+      ? { team_id: ids.teamIds.get(record.codes.teamCode) }
       : {}),
     ...(record.crmId ? { crm_id: truncate(record.crmId, 80) } : {}),
     ...(record.crmUsername ? { crm_username: truncate(record.crmUsername, 160) } : {}),
@@ -507,6 +565,20 @@ function departmentCodesForRecords(records: EmployeeImportRecord[]) {
   );
 }
 
+function recordCodesFor(
+  records: EmployeeImportRecord[],
+  key: keyof EmployeeImportRecord["codes"],
+) {
+  return Array.from(
+    new Set(
+      records.flatMap((record) => {
+        const code = record.codes[key];
+        return code ? [code] : [];
+      }),
+    ),
+  );
+}
+
 function hasResidence(record: EmployeeImportRecord) {
   return Boolean(record.residenceAddress || record.residenceCity || record.residenceArea);
 }
@@ -551,6 +623,7 @@ function isMissingOptionalEmployeeColumn(error: unknown) {
     message.includes("social_insurance") ||
     message.includes("social_insurance_number") ||
     message.includes("taxes") ||
+    message.includes("team_id") ||
     message.includes("schema cache")
   );
 }
@@ -582,6 +655,7 @@ function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues
     social_insurance,
     social_insurance_number,
     taxes,
+    team_id,
     ...rest
   } = values;
 
@@ -610,6 +684,7 @@ function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues
   void social_insurance;
   void social_insurance_number;
   void taxes;
+  void team_id;
 
   return rest;
 }
@@ -622,6 +697,7 @@ async function upsertEmployees(
     departmentIds: IdMap;
     lineIds: IdMap;
     positionIds: IdMap;
+    teamIds: IdMap;
   },
 ) {
   const employeeRecords = records.filter((record) => record.hrId);
@@ -939,29 +1015,55 @@ export async function POST(request: Request) {
       dryRunResult.organizationEntitiesToCreate.lines,
       departmentIds,
     );
+    const lineIds = await idsForCodes(
+      supabase,
+      "lines",
+      recordCodesFor(importRecords, "lineCode"),
+    );
     const areaResult = await upsertAreas(
       supabase,
       dryRunResult.organizationEntitiesToCreate.areas,
-      lineResult.ids,
+      lineIds,
+    );
+    const areaIds = await idsForCodes(
+      supabase,
+      "areas",
+      recordCodesFor(importRecords, "areaCode"),
+    );
+    const teamResult = await upsertTeams(
+      supabase,
+      dryRunResult.organizationEntitiesToCreate.teams,
+      areaIds,
+    );
+    const teamIds = await idsForCodes(
+      supabase,
+      "teams",
+      recordCodesFor(importRecords, "teamCode"),
     );
     const positionResult = await upsertPositions(
       supabase,
       dryRunResult.organizationEntitiesToCreate.positions,
       importRecords,
       {
-        areaIds: areaResult.ids,
+        areaIds,
         departmentIds,
-        lineIds: lineResult.ids,
+        lineIds,
       },
+    );
+    const positionIds = await idsForCodes(
+      supabase,
+      "positions",
+      recordCodesFor(importRecords, "positionCode"),
     );
     const employeeResult = await upsertEmployees(
       supabase,
       [...dryRunResult.rowsToInsert, ...dryRunResult.rowsToUpdate],
       {
-        areaIds: areaResult.ids,
+        areaIds,
         departmentIds,
-        lineIds: lineResult.ids,
-        positionIds: positionResult.ids,
+        lineIds,
+        positionIds,
+        teamIds,
       },
     );
     const compensationResult = await upsertEmployeeCompensation(
@@ -976,10 +1078,10 @@ export async function POST(request: Request) {
       supabase,
       dryRunResult.vacantPositionsToCreate,
       {
-        areaIds: areaResult.ids,
+        areaIds,
         departmentIds,
-        lineIds: lineResult.ids,
-        positionIds: positionResult.ids,
+        lineIds,
+        positionIds,
       },
     );
 
@@ -988,6 +1090,7 @@ export async function POST(request: Request) {
       createdDepartments: departmentResult.created,
       createdLines: lineResult.created,
       createdPositions: positionResult.created,
+      createdTeams: teamResult.created,
       createdVacancies: vacancyResult.created,
       importedEmployees: employeeResult.imported,
       importedCompensationRows: compensationResult.upserted,

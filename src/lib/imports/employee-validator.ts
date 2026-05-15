@@ -446,6 +446,10 @@ function normalizeCrmIdKey(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function teamAreaKey(name: string, areaCode: string | null) {
+  return `${normalizeDepartmentLookupKey(name)}::${areaCode ?? ""}`;
+}
+
 function resolveGlobalDepartment(
   record: EmployeeImportRecord,
   options: EmployeeImportPlanOptions,
@@ -476,6 +480,74 @@ function resolveGlobalDepartment(
   record.codes.departmentCode = code;
   record.departmentName = codeToName?.get(code) ?? record.departmentName;
   record.normalizedOrganizationNames.department = normalizeDepartmentLookupKey(record.departmentName);
+
+  return null;
+}
+
+function resolveGlobalTeam(
+  record: EmployeeImportRecord,
+  options: EmployeeImportPlanOptions,
+) {
+  const teamText = normalizeTextValue(record.rawOrganizationValues.team ?? record.teamName);
+
+  if (!teamText) {
+    return null;
+  }
+
+  const existingState = options.existingState;
+  const areaCode = record.codes.areaCode;
+  const normalizedTeamName = normalizeDepartmentLookupKey(teamText);
+  const exactAreaTeam =
+    existingState?.teamNameAreaToTeam?.get(teamAreaKey(teamText, areaCode)) ??
+    existingState?.teamNameAreaToTeam?.get(teamAreaKey(record.teamName ?? teamText, areaCode));
+
+  if (exactAreaTeam) {
+    record.codes.teamCode = exactAreaTeam.code;
+    record.teamName = exactAreaTeam.name;
+    record.normalizedOrganizationNames.team = normalizeDepartmentLookupKey(exactAreaTeam.name);
+    return null;
+  }
+
+  const candidates = existingState?.teamNameToTeams?.get(normalizedTeamName) ?? [];
+  const unscopedCandidates = candidates.filter((team) => !team.areaCode);
+
+  if (areaCode && unscopedCandidates.length === 1) {
+    const team = unscopedCandidates[0];
+    record.codes.teamCode = team.code;
+    record.teamName = team.name;
+    record.normalizedOrganizationNames.team = normalizeDepartmentLookupKey(team.name);
+    return null;
+  }
+
+  if (!areaCode && candidates.length > 1) {
+    return {
+      rowNumber: record.rowNumber,
+      field: "team" as const,
+      code: "ambiguous_team_area",
+      message: `Team "${teamText}" exists under multiple areas. Provide Area so the import can map the correct team.`,
+    };
+  }
+
+  if (candidates.length === 1 && !areaCode) {
+    const team = candidates[0];
+    record.codes.teamCode = team.code;
+    record.teamName = team.name;
+    record.normalizedOrganizationNames.team = normalizeDepartmentLookupKey(team.name);
+    return null;
+  }
+
+  if (candidates.length > 0 && areaCode) {
+    return {
+      rowNumber: record.rowNumber,
+      field: "team" as const,
+      code: "invalid_team_area",
+      message: `Team "${teamText}" exists under a different area. Use the matching Area or create a distinct team name.`,
+    };
+  }
+
+  if (areaCode) {
+    record.codes.teamCode = createOrgCode(`${areaCode}_${normalizedTeamName}`);
+  }
 
   return null;
 }
@@ -560,6 +632,11 @@ export function validateEmployeeImportRows(
     const departmentError = resolveGlobalDepartment(record, options);
     if (departmentError) {
       validationErrors.push(departmentError);
+    }
+
+    const teamError = resolveGlobalTeam(record, options);
+    if (teamError) {
+      validationErrors.push(teamError);
     }
 
     for (const [field, value] of [

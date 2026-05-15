@@ -104,6 +104,7 @@ type EmployeeFormState = {
   socialInsuranceNumber: string;
   socialInsuranceStatus: string;
   taxes: string;
+  teamId: string;
   workEmail: string;
 };
 
@@ -148,6 +149,7 @@ const emptyForm: EmployeeFormState = {
   socialInsuranceNumber: "",
   socialInsuranceStatus: "",
   taxes: "",
+  teamId: "",
   workEmail: "",
 };
 
@@ -390,6 +392,7 @@ function employeeToForm(employee: EmployeeDirectoryRow): EmployeeFormState {
     socialInsuranceNumber: employee.socialInsuranceNumber ?? "",
     socialInsuranceStatus: employee.socialInsuranceStatus ?? "",
     taxes: numberToText(employee.taxes),
+    teamId: employee.teamId ? String(employee.teamId) : "",
     workEmail: employee.workEmail ?? "",
   };
 }
@@ -450,6 +453,7 @@ function formToPayload(form: EmployeeFormState, originalHrId: string | null): Em
     socialInsuranceNumber: optionalText(form.socialInsuranceNumber),
     socialInsuranceStatus: optionalText(form.socialInsuranceStatus),
     taxes: optionalNumber(form.taxes),
+    teamId: optionalNumber(form.teamId),
     workEmail: optionalText(form.workEmail),
   };
 }
@@ -501,6 +505,7 @@ export function EmployeeManagement({
         medicalRepVacancies: [],
         positions: [],
         statuses: [],
+        teams: [],
         workforceVacancies: [],
       },
     [data?.lookups],
@@ -557,6 +562,12 @@ export function EmployeeManagement({
 
     return vacancyLines.length ? vacancyLines : lookups.lines;
   }, [filteredWorkforceVacancies, lookups.lines, selectedPositionRequiresVacancy]);
+
+  const filteredTeamOptions = React.useMemo(() => {
+    return (lookups.teams ?? []).filter(
+      (team) => !form.areaId || !team.areaId || String(team.areaId) === form.areaId,
+    );
+  }, [form.areaId, lookups.teams]);
 
   const regionOptions = React.useMemo(() => {
     return Array.from(
@@ -701,6 +712,7 @@ export function EmployeeManagement({
       areaId: "",
       lineId: value,
       managerHrId: "",
+      teamId: "",
     }));
 
     if (!editingHrId) {
@@ -727,6 +739,7 @@ export function EmployeeManagement({
       managerHrId: vacancy.managerHrId ?? prev.managerHrId,
       positionId: String(vacancy.positionId ?? prev.positionId),
       regionName: vacancy.regionName ?? prev.regionName,
+      teamId: "",
     }));
   }
 
@@ -1409,7 +1422,7 @@ export function EmployeeManagement({
                     ["Department", masterDetailsEmployee.departmentName],
                     ["Line", masterDetailsEmployee.lineName],
                     ["Area", masterDetailsEmployee.areaName],
-                    ["Team", masterDetailsEmployee.teamId],
+                    ["Team", masterDetailsEmployee.teamName],
                     ["Title", masterDetailsEmployee.jobTitle],
                     ["Position", masterDetailsEmployee.positionTitle],
                     ["Direct Manager", masterDetailsEmployee.managerName],
@@ -1625,9 +1638,10 @@ export function EmployeeManagement({
                             lineId: String(selectedArea.lineId ?? prev.lineId),
                             managerHrId: selectedArea.managerHrId ?? prev.managerHrId,
                             positionId: String(selectedArea.positionId ?? prev.positionId),
+                            teamId: "",
                           }));
                         } else {
-                          updateForm("areaId", value);
+                          setForm((prev) => ({ ...prev, areaId: value, teamId: "" }));
                         }
                       }
                     }}
@@ -1647,6 +1661,13 @@ export function EmployeeManagement({
                     }
                     placeholder={selectedPositionRequiresVacancy && !form.lineId ? "Select line first" : "Select area"}
                     value={form.areaId}
+                  />
+                  <SelectField
+                    label="Team"
+                    onChange={(value) => updateForm("teamId", value)}
+                    options={filteredTeamOptions}
+                    placeholder={form.areaId ? "Select team" : "Select area first or choose a global team"}
+                    value={form.teamId}
                   />
                   <SelectField
                     label="Direct Manager"

@@ -1612,6 +1612,7 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     socialInsuranceNumber: null,
     taxes: null,
     teamId: null,
+    teamName: null,
     updatedAt: new Date(0).toISOString(),
     workEmail: null,
   };
