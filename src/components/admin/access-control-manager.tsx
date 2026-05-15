@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import {
   AlertCircle,
+  ArrowRight,
   Ban,
   CheckCircle2,
   ChevronDown,
@@ -18,6 +20,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  ScrollText,
   Upload,
   Users,
 } from "lucide-react";
@@ -360,21 +363,6 @@ function PasswordBadge({ forcePasswordReset, user }: { forcePasswordReset: boole
   );
 }
 
-function auditReason(log: AuditLogRow) {
-  const reason = log.newValues?.reason;
-  return typeof reason === "string" && reason.trim() ? reason.trim() : null;
-}
-
-function auditActionLabel(log: AuditLogRow) {
-  const action = log.newValues?.action;
-  if (action === "password_setup_link_generated") return "Token-safe setup/reset event";
-  if (log.entityType === "permission_override") return "Permission override";
-  if (/deactivated/i.test(log.summary)) return "Access revoked";
-  if (/activated/i.test(log.summary)) return "Access restored";
-  if (/role/i.test(log.summary)) return "Role governance";
-  return "User governance";
-}
-
 export function AccessControlManager({
   capabilities = {
     canBulkImportUsers: false,
@@ -400,7 +388,6 @@ export function AccessControlManager({
   const [setupLinkMessage, setSetupLinkMessage] = React.useState<string | null>(null);
   const [setupLinkSending, setSetupLinkSending] = React.useState<string | null>(null);
   const [showPermissions, setShowPermissions] = React.useState(false);
-  const [showAudit, setShowAudit] = React.useState(false);
   const [pendingGovernanceAction, setPendingGovernanceAction] = React.useState<{
     body: string;
     confirmLabel: string;
@@ -1709,51 +1696,27 @@ export function AccessControlManager({
             )}
           </Card>
 
-          <Card className={`${panelClassName} overflow-hidden p-0`}>
-            <button
-              className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-stone-50"
-              onClick={() => setShowAudit((current) => !current)}
-              type="button"
-            >
-              <AdminSectionHeader
-                action={null}
-                description="Recent governed changes, actor, target, and reason where captured."
-                title="Audit log"
-              />
-              {showAudit ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-            </button>
-            {showAudit && (
-              <div className="space-y-2 border-t border-slate-200/80 p-5">
-                {(data?.auditLogs ?? []).map((log) => {
-                  const reason = auditReason(log);
-                  return (
-                    <div
-                      className="rounded-lg border border-slate-200 bg-stone-50 p-4 transition-colors hover:bg-stone-100 hover:shadow-sm"
-                      key={log.id}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={badgeClassName(log.entityType === "permission_override" ? "orange" : "slate")}>{auditActionLabel(log)}</span>
-                          <p className="text-sm font-medium text-slate-900">{log.summary}</p>
-                        </div>
-                        <span className="text-xs text-slate-500">{formatDate(log.createdAt)}</span>
-                      </div>
-                      <div className="mt-2 grid gap-1 text-xs text-slate-500 sm:grid-cols-3">
-                        <span>Actor: <span className="font-semibold text-slate-700">{log.actorLoginId ?? "system"}</span></span>
-                        <span>Target: <span className="font-semibold text-slate-700">{log.entityId ?? "-"}</span></span>
-                        <span>Type: <span className="font-semibold text-slate-700">{log.entityType}</span></span>
-                      </div>
-                      <p className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                        Reason: {reason ?? "No reason captured."}
-                      </p>
-                    </div>
-                  );
-                })}
-                {(data?.auditLogs ?? []).length === 0 && (
-                  <p className="py-8 text-center text-sm text-slate-400">No audit logs found.</p>
-                )}
+          <Card className={`${panelClassName} p-5`}>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
+                  <ScrollText className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-black tracking-tight text-slate-900">Audit detail</h2>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
+                    Access-control audit detail now lives in the master report with cross-module filters and export.
+                  </p>
+                </div>
               </div>
-            )}
+              <Link
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-xs font-black text-white shadow-sm transition hover:bg-orange-600"
+                href="/admin/logs?module=access"
+              >
+                Open Access Audit
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
           </Card>
         </>
       ) : (

@@ -10,11 +10,13 @@ This guide covers the final Leave Management module for Phoenix Workforce. Payro
 - API namespace: `/api/leave/**`
 - Database domain: `leave_*`, `employee_leave_balances`, and `public_holidays`
 
-The module uses HR_ID as the employee identifier, policy-driven entitlement rules, ledger-based balances, transactional RPCs for critical balance mutations, non-blocking notification hooks, and audit logs for lifecycle visibility.
+The module uses HR_ID as the employee identifier, policy-driven entitlement rules, ledger-based balances, transactional RPCs for critical balance mutations, non-blocking notification hooks, centralized master audit logs for lifecycle visibility, and a Vacation Report layer for business reporting.
 
 ## Employee guide
 
-Employees can review wallet cards for annual entitlement, accrued, used, pending, and available days. They can submit leave with a leave type, inclusive start/end date range, working-day calculation, reason, optional or required attachment, and conflict warning. Submitted leave starts in manager review and appears in the request history with status badges and a detail timeline.
+Employees can use the Vacation Request tab to review wallet cards for annual entitlement, accrued, used, pending, and available days. They can submit leave with a leave type, inclusive start/end date range, working-day calculation, reason, optional or required attachment, and conflict warning. Submitted leave starts in manager review and appears in the request history with status badges and a detail timeline.
+
+Employees can use My Vacation Report to review their own vacation/leave records only. Managers with reporting hierarchy also see Team Vacation Report. HR/Admin users see Company Vacation Report.
 
 Employees can cancel requests that are still pending manager or HR processing. Cancellation writes an approval-history entry, updates the request status, emits a non-blocking notification hook, and records audit metadata.
 
@@ -60,7 +62,7 @@ Working-week logic is title-aware:
 - Medical/sales field titles (`Medical Rep`, `Medical Representative`, `MR`, `DSM`, `District Sales Manager`, `NSM`, `National Sales Manager`) work Saturday through Thursday, with Friday off only.
 - All other employees use Friday and Saturday as weekly off days.
 
-Public holidays are excluded from working-day duration, availability, conflict, analytics, and reporting calculations.
+National vacations are excluded from working-day duration, availability, conflict, analytics, and reporting calculations.
 
 Leave type date behavior:
 
@@ -75,9 +77,36 @@ Annual entitlement is intentionally simple: employees with less than 1 year of s
 
 Managers use `/employee-portals/leave-approvals` to review only in-hierarchy requests. The page includes pending approval actions, mandatory rejection comments, a team calendar, availability by date range, and conflict indicators. Managers cannot approve requests outside their hierarchy; the UI and service layer both enforce this.
 
+## Vacation reports
+
+Vacation Reports are business reports, not an audit log. The tabs are:
+
+- My Vacation Report: every linked employee, scoped to the current employee only.
+- Team Vacation Report: managers with direct or indirect reporting employees, scoped to their hierarchy only.
+- Company Vacation Report: HR/Admin only, scoped to the full company.
+
+Exports are XLSX files with styled headers, frozen header rows, filters, report title, generated date, and scope label. Balance Before and Balance After are derived from reliable leave transactions where available and otherwise shown as unavailable.
+
+## Historical vacation template and upload
+
+HR/Admin users can download the Historical Vacation Template Download from `/api/leave/historical-vacations/template`. The workbook has an Instructions sheet and a Historical Vacation Data sheet with columns required to reconstruct old vacation history, approval state, paid/unpaid behavior, deduct/no-deduct behavior, and ledger rows.
+
+Historical upload is for old records only. It does not change the current new-request rules. Uploaded historical rows preserve the HR decision that happened at the time:
+
+- `Payment_Status = unpaid` and `Balance_Deduction = no_deduct` does not consume balance.
+- `Payment_Status = paid` and `Balance_Deduction = deduct` consumes balance even if the leave date was inside the employee's first 6 months.
+
+Dry-run validates the workbook before confirmation and does not create leave requests, leave transactions, balances, or payroll records. Confirmation re-validates the same workbook server-side, writes accepted historical leave records, records rejected rows in historical import tracking tables, and writes centralized master audit entries. No payroll tables are mutated.
+
+The historical import tracking migration is `supabase/migrations/20260515160000_leave_historical_vacation_import_tracking.sql`. It must be applied only through the controlled Supabase migration process after review.
+
 ## Admin guide
 
-HR/Admin users use `/admin/leave` to manage the full leave domain. The page includes executive KPI cards, calendar, availability, analytics, accrual controls, filters, Excel export, HR approve/reject actions, manual audited adjustments, policy settings, leave type settings, holiday management, and the Leave Activity & Audit Trail.
+HR/Admin users use `/admin/leave` to manage the full leave domain. The information architecture is separated into Vacation Request, Vacation Reports, and HR/Admin-only Leave Management. Leave Management includes Active Employees Accrual, approval queue, analytics, accrual controls, policies, leave types, national vacations, adjustments, and Historical Vacation Upload.
+
+Active Employees Accrual is read-only. It shows active employees, entitlement, monthly accrual, accrued to date, used/consumed, pending, carry forward, adjustments, available balance, service duration, last accrual month, and last leave transaction date.
+
+National Vacations can be maintained manually or synced by HR/Admin from Google Calendar. The sync updates `public_holidays`, which is the same table used by working-day calculations, leave request previews, conflict checks, calendars, availability, and analytics. The default Egypt source is `en.egyptian#holiday@group.v.calendar.google.com`; set `GOOGLE_HOLIDAY_CALENDAR_ID_EG` to override it, `GOOGLE_HOLIDAY_ICAL_URL_EG` for a private iCal feed, or `GOOGLE_CALENDAR_API_KEY` to use the Google Calendar API instead of public iCal. If Google public iCal returns an upstream error and no API key/private iCal is configured, the sync falls back to Nager.Date public holidays for continuity and reports that fallback in the UI.
 
 Accrual dry run previews the current period without mutation. Safe Run uses transactional database functions and idempotency checks to prevent duplicate accrual transactions.
 
@@ -93,7 +122,7 @@ The workflow calls non-blocking notification hooks for request submitted, manage
 
 - Employee: own leave requests and wallet only.
 - Manager: own requests plus hierarchy requests for approval and team availability.
-- HR/Admin: full leave scope, settings, accrual, adjustments, analytics, and audit logs.
+- HR/Admin: full leave scope, settings, accrual, adjustments, analytics, historical upload, and centralized master audit logs.
 - Finance: payroll-impact leave visibility only where existing permissions allow it; no payroll integration is implemented here.
 
 ## Known risks
@@ -101,6 +130,7 @@ The workflow calls non-blocking notification hooks for request submitted, manage
 - Private Supabase Storage is prepared but existing local files are not migrated.
 - E2E tests require staging credentials and predictable employee-manager-HR test data.
 - Production rollout must use official Supabase CLI dry-run and push flow only.
+- Historical Vacation Upload requires the tracking migration before confirmation can succeed in staging or production.
 - Large analytics/reporting datasets may need server-side pagination as leave history grows.
 
 ## Testing checklist
@@ -117,6 +147,9 @@ The workflow calls non-blocking notification hooks for request submitted, manage
 10. HR records a balance adjustment with a reason.
 11. HR runs accrual dry run and confirms no transactions are created.
 12. HR runs accrual execution twice and confirms the second run skips duplicates.
-13. Admin analytics, calendar, availability, settings, holidays, export, and audit log render correctly.
-14. Normal employee access cannot reach admin analytics, settings, accrual, adjustments, or audit logs.
-15. Run `npm run test`, `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run test:e2e:leave` when E2E env vars are present.
+13. Admin analytics, calendar, availability, settings, national vacations, export, and master audit link render correctly.
+14. Normal employee access cannot reach admin analytics, settings, accrual, adjustments, historical upload, or audit logs.
+15. HR/Admin downloads Historical Vacation Template Download and verifies Instructions plus Historical Vacation Data sheets.
+16. HR/Admin dry-runs historical upload and sees accepted, rejected, duplicate, warning, affected employee, and projected balance impact summaries.
+17. HR/Admin confirms only after dry-run validation; paid/deduct historical rows consume balance and unpaid/no_deduct rows do not.
+18. Run `npm run test`, `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run test:e2e:leave` when E2E env vars are present.

@@ -14,6 +14,7 @@ import {
   PanelHeader,
   prettyStatus,
   statusVariant,
+  SyncedTableContainer,
 } from "./leave-ui-primitives";
 
 function paymentStatusLabel(status: LeaveRequest["paymentStatus"]) {
@@ -53,7 +54,7 @@ export function LeaveRequestHistory({
             <p className="mt-1 text-sm text-slate-500">Submitted leave requests will appear here.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <SyncedTableContainer>
             <table className="w-full min-w-[1180px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
@@ -91,7 +92,7 @@ export function LeaveRequestHistory({
                 ))}
               </tbody>
             </table>
-          </div>
+          </SyncedTableContainer>
         )}
       </Panel>
       <LeaveDetailModal actions={selected ? detailActions?.(selected) : null} onClose={() => setSelected(null)} request={selected} />

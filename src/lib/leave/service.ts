@@ -18,13 +18,23 @@ import {
   calculateLeaveDuration,
   calculateLeaveBalanceFromParts,
   calculateMonthlyAccrual,
+  defaultWeekendDaysForTitle,
   getWeekendDaysForEmployee,
+  normalizeLeaveTitleKey,
   getAnnualEntitlement,
   isWithinFirstSixMonths,
   summarizeLeaveLedger,
 } from "@/lib/leave/calculations";
 import type {
+  ActiveEmployeeAccrualReport,
+  ActiveEmployeeAccrualRow,
   EmployeeLeaveBalance,
+  HistoricalVacationAcceptedRow,
+  HistoricalVacationConfirmResult,
+  HistoricalVacationDryRunResult,
+  HistoricalVacationRejectedRow,
+  HistoricalVacationUploadRow,
+  HistoricalVacationUploadValue,
   LeaveAccrualPreview,
   LeaveAdjustmentInput,
   LeaveApproval,
@@ -39,17 +49,24 @@ import type {
   LeaveRequest,
   LeaveRequestFilters,
   LeaveStatus,
+  LeaveTitleWeekendRule,
   LeaveTransaction,
   LeaveTransactionType,
   LeaveType,
   LeaveWallet,
   PublicHoliday,
+  PublicHolidaySyncResult,
   SubmitLeaveRequestInput,
   TeamAvailabilityDay,
+  VacationReportData,
+  VacationReportRow,
+  VacationReportScope,
+  VacationReportWorkspace,
 } from "@/lib/leave/types";
 import { createLeaveCorrelationId, writeLeaveAuditLog } from "@/lib/leave/audit";
 import { getLeaveAttachmentUrl } from "@/lib/leave/attachments";
 import { emitLeaveNotification } from "@/lib/leave/notifications";
+import { enqueueInAppNotification } from "@/lib/notifications/in-app";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type LeaveTypeRow = {
@@ -81,6 +98,15 @@ type LeavePolicyRow = {
   carry_forward_expiry_months: number;
   weekend_days: number[] | null;
   is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type LeaveTitleWeekendRuleRow = {
+  title_key: string;
+  title: string;
+  weekend_days: number[] | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -165,6 +191,8 @@ type PublicHolidayRow = {
   id: string;
   name: string;
   date: string;
+  end_date?: string | null;
+  duration_days?: number | string | null;
   year: number;
   country: string;
   is_active: boolean;
@@ -191,6 +219,48 @@ const unpaidLeaveCode = "unpaid_leave";
 const employeeSelectableLeaveCodes = new Set([annualLeaveCode, emergencyLeaveCode, sickLeaveCode, otherLeaveCode]);
 const balanceConsumingSubmitLeaveCodes = new Set([annualLeaveCode, emergencyLeaveCode]);
 const sickLeaveCertificateText = "\u0634\u0647\u0627\u062f\u0629 \u0645\u0631\u0636\u064a\u0629 \u0645\u062e\u062a\u0648\u0645\u0629 \u0645\u0646 \u0645\u0633\u062a\u0634\u0641\u0649 \u062d\u0643\u0648\u0645\u064a\nMedical certificate stamped by a governmental hospital";
+const historicalLeaveTypeCodes = new Set([annualLeaveCode, emergencyLeaveCode, sickLeaveCode, otherLeaveCode, "casual_leave", unpaidLeaveCode]);
+const historicalDurationUnits = new Set(["full_day", "am", "pm"]);
+const historicalPaymentStatuses = new Set(["paid", "unpaid", "in_review", "non_deducted"]);
+const historicalBalanceDecisions = new Set(["deduct", "no_deduct"]);
+const historicalFinalStatuses = new Set(["hr_approved", "hr_rejected", "cancelled", "pending_manager", "pending_hr", "manager_rejected"]);
+const historicalApprovalStatuses = new Set(["pending", "approved", "rejected", "not_required"]);
+const historicalTemplateSheetName = "Historical Vacation Data";
+const historicalTemplateInstructionSheetName = "Instructions";
+
+const historicalVacationColumns = [
+  { header: "HR_ID", key: "HR_ID", width: 16, required: true },
+  { header: "Employee_Name", key: "Employee_Name", width: 28, required: false },
+  { header: "Title", key: "Title", width: 24, required: false },
+  { header: "Line", key: "Line", width: 22, required: false },
+  { header: "Area", key: "Area", width: 22, required: false },
+  { header: "Direct_Manager_HR_ID", key: "Direct_Manager_HR_ID", width: 24, required: false },
+  { header: "Hiring_Date", key: "Hiring_Date", width: 16, required: true },
+  { header: "Leave_Type", key: "Leave_Type", width: 20, required: true },
+  { header: "Request_Date", key: "Request_Date", width: 18, required: true },
+  { header: "From_Date", key: "From_Date", width: 16, required: true },
+  { header: "To_Date", key: "To_Date", width: 16, required: true },
+  { header: "Duration", key: "Duration", width: 12, required: true },
+  { header: "Duration_Unit", key: "Duration_Unit", width: 18, required: true },
+  { header: "Reason", key: "Reason", width: 34, required: false },
+  { header: "Notes", key: "Notes", width: 34, required: false },
+  { header: "Manager_Approval_Status", key: "Manager_Approval_Status", width: 26, required: true },
+  { header: "Manager_Approved_By", key: "Manager_Approved_By", width: 22, required: false },
+  { header: "Manager_Decision_Date", key: "Manager_Decision_Date", width: 22, required: false },
+  { header: "HR_Approval_Status", key: "HR_Approval_Status", width: 22, required: true },
+  { header: "HR_Approved_By", key: "HR_Approved_By", width: 18, required: false },
+  { header: "HR_Decision_Date", key: "HR_Decision_Date", width: 20, required: false },
+  { header: "Final_Status", key: "Final_Status", width: 20, required: true },
+  { header: "Payment_Status", key: "Payment_Status", width: 18, required: true },
+  { header: "Balance_Deduction", key: "Balance_Deduction", width: 20, required: true },
+  { header: "Balance_Before", key: "Balance_Before", width: 18, required: false },
+  { header: "Balance_After", key: "Balance_After", width: 18, required: false },
+  { header: "Historical_Adjustment", key: "Historical_Adjustment", width: 22, required: false },
+  { header: "Carry_Forward_At_That_Time", key: "Carry_Forward_At_That_Time", width: 28, required: false },
+  { header: "External_Reference", key: "External_Reference", width: 24, required: false },
+  { header: "Legacy_System", key: "Legacy_System", width: 20, required: false },
+  { header: "Import_Notes", key: "Import_Notes", width: 36, required: false },
+] as const;
 
 function n(value: number | string | null | undefined) {
   const numeric = Number(value ?? 0);
@@ -217,6 +287,10 @@ function hrIdsMatch(left: string | null | undefined, right: string | null | unde
 
 function isManageRole(context: AccessContext) {
   return context.scope === "system" || context.role === "Super Admin" || context.role === "HR Specialist";
+}
+
+function canViewCompanyVacationReport(context: AccessContext) {
+  return isManageRole(context);
 }
 
 function payrollCanRead(context: AccessContext) {
@@ -281,6 +355,42 @@ function mapLeavePolicy(row: LeavePolicyRow): LeavePolicy {
   };
 }
 
+function mapTitleWeekendRule(row: LeaveTitleWeekendRuleRow, employeeCount = 0): LeaveTitleWeekendRule {
+  return {
+    employeeCount,
+    isConfigured: true,
+    title: row.title,
+    titleKey: row.title_key,
+    weekendDays: normalizeWeekendDaysForStorage(row.weekend_days),
+  };
+}
+
+function normalizeWeekendDaysForStorage(value: number[] | null | undefined) {
+  const allowed = new Set([0, 1, 2, 3, 4, 5, 6]);
+  const days = Array.from(new Set((value ?? []).map(Number).filter((day) => allowed.has(day)))).sort((left, right) => left - right);
+  return days.length ? days : [5];
+}
+
+function employeePrimaryLeaveTitle(employee: EmployeeDirectoryRow) {
+  return String(employee.positionTitle || employee.jobTitle || "").trim();
+}
+
+function collectLeaveTitleCounts(employees: EmployeeDirectoryRow[]) {
+  const counts = new Map<string, { count: number; title: string; titleKey: string }>();
+  for (const employee of employees) {
+    const title = employeePrimaryLeaveTitle(employee);
+    const titleKey = normalizeLeaveTitleKey(title);
+    if (!titleKey) continue;
+    const current = counts.get(titleKey);
+    if (current) {
+      current.count += 1;
+    } else {
+      counts.set(titleKey, { count: 1, title, titleKey });
+    }
+  }
+  return counts;
+}
+
 function mapBalance(row: EmployeeLeaveBalanceRow): EmployeeLeaveBalance {
   return {
     accrued: n(row.accrued),
@@ -333,10 +443,13 @@ function mapApproval(row: LeaveApprovalRow): LeaveApproval {
 }
 
 function mapHoliday(row: PublicHolidayRow): PublicHoliday {
+  const endDate = row.end_date ?? row.date;
   return {
     country: row.country,
     createdAt: row.created_at,
     date: row.date,
+    durationDays: row.duration_days == null ? holidayDurationDays(row.date, endDate) : n(row.duration_days),
+    endDate,
     id: row.id,
     isActive: row.is_active,
     name: row.name,
@@ -464,6 +577,86 @@ export async function getDefaultLeavePolicy() {
   return policy;
 }
 
+export async function getLeaveTitleWeekendRules(): Promise<LeaveTitleWeekendRule[]> {
+  const { directory } = await loadDirectoryMaps();
+  const titleCounts = collectLeaveTitleCounts(directory.employees);
+  const supabase = getSupabaseAdmin();
+  const configured = new Map<string, LeaveTitleWeekendRule>();
+
+  try {
+    const { data, error } = await supabase
+      .from("leave_title_weekend_rules")
+      .select("*")
+      .eq("is_active", true)
+      .order("title", { ascending: true });
+    if (error) throw error;
+    for (const row of (data ?? []) as LeaveTitleWeekendRuleRow[]) {
+      const titleKey = normalizeLeaveTitleKey(row.title_key || row.title);
+      configured.set(titleKey, mapTitleWeekendRule(row, titleCounts.get(titleKey)?.count ?? 0));
+    }
+  } catch (error) {
+    if (!isMissingLeaveTitleWeekendRulesSchemaError(error)) throw error;
+  }
+
+  const rules: LeaveTitleWeekendRule[] = [];
+  for (const item of titleCounts.values()) {
+    const existing = configured.get(item.titleKey);
+    rules.push(existing ?? {
+      employeeCount: item.count,
+      isConfigured: false,
+      title: item.title,
+      titleKey: item.titleKey,
+      weekendDays: defaultWeekendDaysForTitle(item.title, [5, 6]),
+    });
+  }
+
+  return rules.sort((left, right) => left.title.localeCompare(right.title));
+}
+
+export async function updateLeaveTitleWeekendRules(
+  access: AccessContext,
+  input: { rules: Array<{ title: string; weekendDays: number[] }> },
+) {
+  await assertPermission(access, "leave", "update");
+  if (!isManageRole(access)) throw new Error("Forbidden: title weekend settings require HR or Super Admin access.");
+
+  const rows = input.rules
+    .map((rule) => {
+      const title = String(rule.title ?? "").trim();
+      const titleKey = normalizeLeaveTitleKey(title);
+      if (!title || !titleKey) return null;
+      return {
+        is_active: true,
+        title,
+        title_key: titleKey,
+        updated_at: new Date().toISOString(),
+        weekend_days: normalizeWeekendDaysForStorage(rule.weekendDays),
+      };
+    })
+    .filter(Boolean);
+
+  if (!rows.length) throw new Error("At least one title weekend rule is required.");
+
+  const { error } = await getSupabaseAdmin()
+    .from("leave_title_weekend_rules")
+    .upsert(rows, { onConflict: "title_key" });
+  if (error) {
+    if (isMissingLeaveTitleWeekendRulesSchemaError(error)) {
+      throw new Error("Title weekend settings need the leave_title_weekend_rules table. Apply migration 20260515195759_leave_title_weekend_rules.sql, then save again.");
+    }
+    throw error;
+  }
+
+  await writeLeaveAuditLog({
+    actorHrId: access.hrId,
+    actorRole: access.role,
+    eventType: "leave.title_weekend_rules.updated",
+    metadata: { ruleCount: rows.length },
+  });
+
+  return getLeaveTitleWeekendRules();
+}
+
 export async function getPublicHolidays(year: number, country = "EG") {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -475,6 +668,379 @@ export async function getPublicHolidays(year: number, country = "EG") {
     .order("date", { ascending: true });
   if (error) throw error;
   return ((data ?? []) as PublicHolidayRow[]).map(mapHoliday);
+}
+
+type GoogleHolidayEvent = {
+  endDate: string;
+  name: string;
+  startDate: string;
+};
+
+function googleHolidayCalendarId(country: string) {
+  const normalizedCountry = country.trim().toUpperCase() || "EG";
+  const envKey = `GOOGLE_HOLIDAY_CALENDAR_ID_${normalizedCountry}`;
+  const configured = process.env[envKey] ?? process.env.GOOGLE_HOLIDAY_CALENDAR_ID;
+  if (configured?.trim()) return configured.trim();
+  if (normalizedCountry === "EG") return "en.eg#holiday@group.v.calendar.google.com";
+  throw new Error(`Google holiday calendar ID is not configured for country ${normalizedCountry}. Set ${envKey}.`);
+}
+
+function googleHolidayIcalUrl(country: string) {
+  const normalizedCountry = country.trim().toUpperCase() || "EG";
+  const envKey = `GOOGLE_HOLIDAY_ICAL_URL_${normalizedCountry}`;
+  const configured = process.env[envKey] ?? process.env.GOOGLE_HOLIDAY_ICAL_URL;
+  return configured?.trim() || null;
+}
+
+function parseGoogleDate(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = new Date(value.includes("T") ? value : `${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function expandHolidayDateRange(startDate: string, endDate: string | null | undefined) {
+  const dates: string[] = [];
+  const cursor = new Date(`${startDate}T00:00:00.000Z`);
+  const inclusiveEnd = endDate ? new Date(`${endDate}T00:00:00.000Z`) : cursor;
+  for (let date = cursor; date <= inclusiveEnd; date = new Date(date.getTime() + 86_400_000)) {
+    dates.push(date.toISOString().slice(0, 10));
+  }
+  return dates.length ? dates : [startDate];
+}
+
+function previousIsoDate(date: string) {
+  const source = new Date(`${date}T00:00:00.000Z`);
+  source.setUTCDate(source.getUTCDate() - 1);
+  return source.toISOString().slice(0, 10);
+}
+
+function inclusiveGoogleEndDate(startDate: string, googleEndDate: string | null | undefined) {
+  if (!googleEndDate) return startDate;
+  const inclusiveEndDate = previousIsoDate(googleEndDate);
+  return inclusiveEndDate < startDate ? startDate : inclusiveEndDate;
+}
+
+function holidayOverlapsYear(startDate: string, endDate: string, year: number) {
+  return startDate <= `${year}-12-31` && endDate >= `${year}-01-01`;
+}
+
+function holidayDurationDays(startDate: string, endDate: string | null | undefined) {
+  return expandHolidayDateRange(startDate, endDate ?? startDate).length;
+}
+
+function publicHolidayDateList(holidays: PublicHoliday[]) {
+  return Array.from(new Set(holidays.flatMap((holiday) => expandHolidayDateRange(holiday.date, holiday.endDate ?? holiday.date))));
+}
+
+function cleanGoogleHolidayName(name: string) {
+  return name
+    .replace(/\s*\([^)]*\)\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function googleHolidayGroupKey(name: string) {
+  const cleaned = cleanGoogleHolidayName(name).toLowerCase();
+  if (cleaned.includes("arafat") || cleaned.includes("eid al-adha") || cleaned.includes("eid el-adha")) return "eid al-adha";
+  if (cleaned.includes("eid el fitr") || cleaned.includes("eid al-fitr")) return "eid el fitr";
+  return cleaned.replace(/^day off for\s+/, "").replace(/\s+holiday$/, "").trim();
+}
+
+function googleHolidayDisplayName(groupKey: string, fallbackName: string) {
+  if (groupKey === "eid al-adha") return "Eid al-Adha";
+  if (groupKey === "eid el fitr") return "Eid el Fitr";
+  return cleanGoogleHolidayName(fallbackName);
+}
+
+function mergeAdjacentGoogleHolidayEvents(events: GoogleHolidayEvent[]) {
+  const merged: GoogleHolidayEvent[] = [];
+  const sorted = [...events].sort((left, right) => left.startDate.localeCompare(right.startDate) || left.name.localeCompare(right.name));
+  for (const event of sorted) {
+    const groupKey = googleHolidayGroupKey(event.name);
+    const previous = merged[merged.length - 1];
+    if (
+      previous &&
+      googleHolidayGroupKey(previous.name) === groupKey &&
+      event.startDate <= addDaysIso(previous.endDate, 1)
+    ) {
+      previous.endDate = previous.endDate > event.endDate ? previous.endDate : event.endDate;
+      previous.name = googleHolidayDisplayName(groupKey, previous.name);
+      continue;
+    }
+    merged.push({
+      ...event,
+      name: googleHolidayDisplayName(groupKey, event.name),
+    });
+  }
+  return merged;
+}
+
+function collapseGoogleHolidayEventsByStartDate(events: GoogleHolidayEvent[]) {
+  const byStartDate = new Map<string, GoogleHolidayEvent>();
+  for (const event of events) {
+    const existing = byStartDate.get(event.startDate);
+    if (!existing) {
+      byStartDate.set(event.startDate, { ...event });
+      continue;
+    }
+    existing.endDate = existing.endDate > event.endDate ? existing.endDate : event.endDate;
+    if (existing.name !== event.name && !existing.name.includes(event.name)) {
+      existing.name = `${existing.name} / ${event.name}`;
+    }
+  }
+  return Array.from(byStartDate.values());
+}
+
+function isMissingNationalVacationRangeSchemaError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const values = Object.values(error as Record<string, unknown>).map((value) => String(value ?? "").toLowerCase());
+  return values.some((value) =>
+    (value.includes("end_date") || value.includes("duration_days")) &&
+    (value.includes("column") || value.includes("schema cache") || value.includes("could not find"))
+  );
+}
+
+function missingNationalVacationRangeSchemaMessage() {
+  return "National Vacation sync needs the public_holidays.end_date and public_holidays.duration_days columns. Apply migration 20260515173000_public_holidays_duration_columns.sql, then sync again.";
+}
+
+function isMissingLeaveTitleWeekendRulesSchemaError(error: unknown) {
+  const text = JSON.stringify(error).toLowerCase();
+  return text.includes("leave_title_weekend_rules") && (
+    text.includes("does not exist") ||
+    text.includes("could not find") ||
+    text.includes("schema cache") ||
+    text.includes("relation")
+  );
+}
+
+function unfoldIcsLines(raw: string) {
+  const lines: string[] = [];
+  for (const line of raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n")) {
+    if ((line.startsWith(" ") || line.startsWith("\t")) && lines.length) {
+      lines[lines.length - 1] += line.slice(1);
+    } else {
+      lines.push(line);
+    }
+  }
+  return lines;
+}
+
+function unescapeIcsText(value: string) {
+  return value
+    .replace(/\\n/gi, " ")
+    .replace(/\\,/g, ",")
+    .replace(/\\;/g, ";")
+    .replace(/\\\\/g, "\\")
+    .trim();
+}
+
+function icsDateToIso(value: string | null | undefined) {
+  if (!value) return null;
+  const datePart = value.trim().slice(0, 8);
+  if (!/^\d{8}$/.test(datePart)) return null;
+  return `${datePart.slice(0, 4)}-${datePart.slice(4, 6)}-${datePart.slice(6, 8)}`;
+}
+
+function parseGoogleHolidayIcs(raw: string, year: number): GoogleHolidayEvent[] {
+  const events: GoogleHolidayEvent[] = [];
+  let current: Record<string, string> | null = null;
+  for (const line of unfoldIcsLines(raw)) {
+    if (line === "BEGIN:VEVENT") {
+      current = {};
+      continue;
+    }
+    if (line === "END:VEVENT") {
+      if (current) {
+        const startDate = icsDateToIso(current.DTSTART);
+        const endDate = inclusiveGoogleEndDate(startDate ?? "", icsDateToIso(current.DTEND));
+        const name = unescapeIcsText(current.SUMMARY ?? "");
+        if (startDate && name && holidayOverlapsYear(startDate, endDate, year)) {
+          events.push({ endDate, name, startDate });
+        }
+      }
+      current = null;
+      continue;
+    }
+    if (!current) continue;
+    const separator = line.indexOf(":");
+    if (separator === -1) continue;
+    const key = line.slice(0, separator).split(";")[0];
+    current[key] = line.slice(separator + 1);
+  }
+  return events;
+}
+
+async function fetchGoogleCalendarHolidays(year: number, country: string): Promise<{ calendarId: string; events: GoogleHolidayEvent[]; source: PublicHolidaySyncResult["source"] }> {
+  const calendarId = googleHolidayCalendarId(country);
+  const configuredIcalUrl = googleHolidayIcalUrl(country);
+  if (configuredIcalUrl) {
+    const response = await fetch(configuredIcalUrl, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Configured Google Calendar iCal returned ${response.status}.`);
+    const events = parseGoogleHolidayIcs(await response.text(), year);
+    if (!events.length) throw new Error(`Configured Google Calendar returned no national vacations for ${country} ${year}.`);
+    return { calendarId: configuredIcalUrl, events, source: "google_calendar_ical" };
+  }
+
+  const apiKey = process.env.GOOGLE_CALENDAR_API_KEY;
+  if (apiKey?.trim()) {
+    const params = new URLSearchParams({
+      key: apiKey.trim(),
+      maxResults: "250",
+      orderBy: "startTime",
+      singleEvents: "true",
+      timeMax: `${year + 1}-01-01T00:00:00Z`,
+      timeMin: `${year}-01-01T00:00:00Z`,
+    });
+    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Google Calendar API returned ${response.status}.`);
+    const payload = await response.json() as {
+      items?: Array<{
+        end?: { date?: string; dateTime?: string };
+        start?: { date?: string; dateTime?: string };
+        status?: string;
+        summary?: string;
+      }>;
+    };
+    const events: GoogleHolidayEvent[] = [];
+    for (const item of payload.items ?? []) {
+      if (item.status === "cancelled") continue;
+      const startDate = parseGoogleDate(item.start?.date ?? item.start?.dateTime);
+      const endDate = inclusiveGoogleEndDate(startDate ?? "", parseGoogleDate(item.end?.date ?? item.end?.dateTime));
+      const name = item.summary?.trim();
+      if (!startDate || !name) continue;
+      if (holidayOverlapsYear(startDate, endDate, year)) events.push({ endDate, name, startDate });
+    }
+    if (!events.length) throw new Error(`Google Calendar API returned no national vacations for ${country} ${year}.`);
+    return { calendarId, events, source: "google_calendar_api" };
+  }
+
+  const icalUrl = `https://calendar.google.com/calendar/ical/${encodeURIComponent(calendarId)}/public/basic.ics`;
+  const response = await fetch(icalUrl, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Google Calendar iCal returned ${response.status}. Set GOOGLE_CALENDAR_API_KEY if public iCal access is unavailable.`);
+  const events = parseGoogleHolidayIcs(await response.text(), year);
+  if (!events.length) throw new Error(`Google Calendar iCal returned no national vacations for ${country} ${year}.`);
+  return { calendarId, events, source: "google_calendar_ical" };
+}
+
+async function fetchFallbackNationalVacations(year: number, country: string, warning: string): Promise<{ calendarId: string; events: GoogleHolidayEvent[]; source: PublicHolidaySyncResult["source"]; warning: string }> {
+  const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${encodeURIComponent(country)}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`${warning} Fallback national vacation API returned ${response.status}.`);
+  const payload = await response.json() as Array<{
+    date?: string;
+    global?: boolean;
+    localName?: string;
+    name?: string;
+    types?: string[];
+  }>;
+  const events = payload
+    .filter((item) => item.date && (item.global ?? true) && (item.types ?? []).some((type) => type.toLowerCase() === "public"))
+    .map((item) => ({
+      endDate: String(item.date),
+      name: String(item.localName || item.name || "National Vacation"),
+      startDate: String(item.date),
+    }));
+  return {
+    calendarId: `nager-date:${country}`,
+    events,
+    source: "nager_date_fallback",
+    warning,
+  };
+}
+
+export async function syncPublicHolidaysFromGoogleCalendar(access: AccessContext, input: { country?: string; year?: number } = {}): Promise<PublicHolidaySyncResult> {
+  await assertPermission(access, "leave", "update");
+  if (!isManageRole(access)) throw new Error("Forbidden: public holiday sync requires HR or Super Admin access.");
+  const country = (input.country ?? "EG").trim().toUpperCase();
+  const year = input.year ?? new Date().getUTCFullYear();
+  let warning: string | undefined;
+  let calendarId: string;
+  let events: GoogleHolidayEvent[];
+  let source: PublicHolidaySyncResult["source"];
+  try {
+    const googleResult = await fetchGoogleCalendarHolidays(year, country);
+    calendarId = googleResult.calendarId;
+    events = googleResult.events;
+    source = googleResult.source;
+  } catch (error) {
+    warning = error instanceof Error ? error.message : "Google Calendar sync failed.";
+    const fallbackResult = await fetchFallbackNationalVacations(year, country, warning);
+    calendarId = fallbackResult.calendarId;
+    events = fallbackResult.events;
+    source = fallbackResult.source;
+    warning = fallbackResult.warning;
+  }
+  const groupedEvents = collapseGoogleHolidayEventsByStartDate(mergeAdjacentGoogleHolidayEvents(events));
+  const uniqueEvents = Array.from(new Map(groupedEvents.map((event) => [`${event.startDate}:${event.endDate}:${event.name}`, event])).values())
+    .sort((left, right) => left.startDate.localeCompare(right.startDate) || left.name.localeCompare(right.name));
+  if (uniqueEvents.length === 0) throw new Error(`No national vacations were found for ${country} ${year}.`);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("public_holidays")
+    .upsert(
+      uniqueEvents.map((event) => ({
+        country,
+        date: event.startDate,
+        duration_days: holidayDurationDays(event.startDate, event.endDate),
+        end_date: event.endDate,
+        is_active: true,
+        name: event.name,
+        year,
+      })),
+      { onConflict: "country,date" },
+    )
+    .select("*");
+  if (error) {
+    if (isMissingNationalVacationRangeSchemaError(error)) throw new Error(missingNationalVacationRangeSchemaMessage());
+    throw error;
+  }
+  const activeGoogleStartDates = uniqueEvents.map((event) => event.startDate);
+  if (activeGoogleStartDates.length) {
+    const { error: nonGoogleCleanupError } = await supabase
+      .from("public_holidays")
+      .update({ is_active: false })
+      .eq("country", country)
+      .eq("year", year)
+      .eq("is_active", true)
+      .not("date", "in", `(${activeGoogleStartDates.join(",")})`);
+    if (nonGoogleCleanupError) throw nonGoogleCleanupError;
+  }
+  for (const event of uniqueEvents.filter((item) => holidayDurationDays(item.startDate, item.endDate) > 1)) {
+    const { error: cleanupError } = await supabase
+      .from("public_holidays")
+      .update({ is_active: false })
+      .eq("country", country)
+      .eq("is_active", true)
+      .gt("date", event.startDate)
+      .lte("date", event.endDate);
+    if (cleanupError) throw cleanupError;
+  }
+  const holidays = ((data ?? []) as PublicHolidayRow[]).map(mapHoliday).sort((left, right) => left.date.localeCompare(right.date));
+  await writeLeaveAuditLog({
+    actorHrId: access.hrId,
+    actorRole: access.role,
+    correlationId: createLeaveCorrelationId(),
+    employeeHrId: null,
+    eventType: "leave.public_holidays.google_calendar_sync",
+    metadata: {
+      calendarId,
+      country,
+      source,
+      synced: holidays.length,
+      warning,
+      year,
+    },
+  }).catch(() => undefined);
+  return {
+    calendarId,
+    country,
+    holidays,
+    source,
+    synced: holidays.length,
+    warning,
+    year,
+  };
 }
 
 async function getLeaveTypeById(id: string) {
@@ -814,6 +1380,7 @@ function applyFilters(requests: LeaveRequest[], filters: LeaveRequestFilters) {
     if (filters.line && employee?.lineName !== filters.line) return false;
     if (filters.area && employee?.areaName !== filters.area) return false;
     if (filters.managerHrId && !hrIdsMatch(employee?.managerHrId, filters.managerHrId)) return false;
+    if (filters.paymentStatus && request.paymentStatus !== filters.paymentStatus) return false;
     if (filters.status && request.status !== filters.status) return false;
     if (filters.leaveTypeId && request.leaveTypeId !== filters.leaveTypeId) return false;
     if (filters.year && new Date(`${request.startDate}T00:00:00.000Z`).getUTCFullYear() !== filters.year) return false;
@@ -831,7 +1398,7 @@ export async function listLeaveRequests(access: AccessContext, filters: LeaveReq
   const offset = Math.max(0, Math.trunc(Number(filters.offset ?? 0)));
   const { data, error } = await supabase
     .from("leave_requests")
-    .select("*,leave_types(code,name,is_paid,affects_payroll)")
+    .select("*,leave_types:leave_types!leave_requests_leave_type_id_fkey(code,name,is_paid,affects_payroll)")
     .order("requested_at", { ascending: false })
     .range(offset, offset + limit - 1);
   if (error) throw error;
@@ -860,11 +1427,134 @@ async function listManagerHierarchyLeaveRequests(access: AccessContext, filters:
   );
 }
 
+async function hasReportingEmployees(access: AccessContext) {
+  if (!access.hrId) return false;
+  const { directory, employeeByHrId } = await loadDirectoryMaps();
+  return directory.employees.some(
+    (employee) =>
+      !hrIdsMatch(employee.hrId, access.hrId) &&
+      employeeIsUnderManager(access.hrId, employee.hrId, employeeByHrId),
+  );
+}
+
+async function listTeamVacationReportRequests(access: AccessContext, filters: LeaveRequestFilters = {}) {
+  if (!access.hrId) throw new Error("A linked employee HR_ID is required for team vacation reports.");
+  const requests = await listLeaveRequests(access, filters);
+  const { employeeByHrId } = await loadDirectoryMaps();
+  return requests.filter((request) => employeeIsUnderManager(access.hrId, request.employeeHrId, employeeByHrId));
+}
+
+async function loadRequestTransactions(requestIds: string[]) {
+  if (requestIds.length === 0) return new Map<string, LeaveTransaction[]>();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("leave_transactions")
+    .select("*")
+    .in("request_id", requestIds)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  const grouped = new Map<string, LeaveTransaction[]>();
+  for (const transaction of ((data ?? []) as LeaveTransactionRow[]).map(mapTransaction)) {
+    if (!transaction.requestId) continue;
+    grouped.set(transaction.requestId, [...(grouped.get(transaction.requestId) ?? []), transaction]);
+  }
+  return grouped;
+}
+
+function latestApproval(request: LeaveRequest, step: LeaveApproval["approvalStep"]) {
+  return (request.approvalHistory ?? []).filter((approval) => approval.approvalStep === step).at(-1) ?? null;
+}
+
+function mapVacationReportRow(request: LeaveRequest, transactions: LeaveTransaction[]): VacationReportRow {
+  const managerApproval = latestApproval(request, "manager");
+  const hrApproval = latestApproval(request, "hr");
+  const firstTransaction = transactions[0] ?? null;
+  const lastTransaction = transactions.at(-1) ?? null;
+
+  return {
+    area: request.employee?.areaName ?? null,
+    attachmentStatus: request.attachmentUrl ? "attached" : "missing",
+    balanceAfter: lastTransaction?.balanceAfter ?? null,
+    balanceBefore: firstTransaction?.balanceBefore ?? null,
+    createdAt: request.createdAt,
+    directManager: request.employee?.managerName ?? request.employee?.managerHrId ?? null,
+    directManagerHrId: request.employee?.managerHrId ?? null,
+    duration: request.totalWorkingDays,
+    durationUnit: request.durationUnit,
+    employeeHrId: request.employeeHrId,
+    employeeName: request.employee?.fullName ?? null,
+    finalStatus: request.status,
+    fromDate: request.startDate,
+    hrApprovalStatus: request.hrStatus,
+    hrApprovedBy: hrApproval?.approverHrId ?? null,
+    hrDecisionDate: request.hrDecisionAt ?? hrApproval?.actionDate ?? null,
+    id: request.id,
+    leaveType: request.leaveType?.name ?? null,
+    line: request.employee?.lineName ?? null,
+    managerApprovalStatus: request.managerStatus,
+    managerApprovedBy: managerApproval?.approverHrId ?? null,
+    managerDecisionDate: request.managerDecisionAt ?? managerApproval?.actionDate ?? null,
+    paymentStatus: request.paymentStatus,
+    reason: request.reason,
+    requestDate: request.requestedAt,
+    title: request.employee?.jobTitle ?? null,
+    toDate: request.endDate,
+  };
+}
+
+function vacationReportTitle(scope: VacationReportScope) {
+  if (scope === "team") return "Team Vacation Report";
+  if (scope === "company") return "Company Vacation Report";
+  return "My Vacation Report";
+}
+
+export async function getVacationReport(access: AccessContext, scope: VacationReportScope, filters: LeaveRequestFilters = {}): Promise<VacationReportData> {
+  await assertPermission(access, "leave", "read");
+
+  let requests: LeaveRequest[];
+  if (scope === "my") {
+    if (!access.hrId) throw new Error("A linked employee HR_ID is required for my vacation report.");
+    requests = await listLeaveRequests(access, { ...filters, employeeHrId: access.hrId });
+  } else if (scope === "team") {
+    if (canViewCompanyVacationReport(access)) throw new Error("Forbidden: HR/Admin users must use the company vacation report scope.");
+    if (!(await hasReportingEmployees(access))) throw new Error("Forbidden: no reporting hierarchy is available for team vacation reports.");
+    requests = await listTeamVacationReportRequests(access, filters);
+  } else {
+    if (!canViewCompanyVacationReport(access)) throw new Error("Forbidden: company vacation reports require HR or Super Admin access.");
+    requests = await listLeaveRequests(access, filters);
+  }
+
+  const transactionMap = await loadRequestTransactions(requests.map((request) => request.id));
+  return {
+    canExport: scope === "my" || await canAccess(access, "leave", "export"),
+    filters,
+    rows: requests.map((request) => mapVacationReportRow(request, transactionMap.get(request.id) ?? [])),
+    scope,
+    title: vacationReportTitle(scope),
+  };
+}
+
+export async function getVacationReportWorkspace(access: AccessContext, filters: LeaveRequestFilters = {}): Promise<VacationReportWorkspace> {
+  const [myReport, teamReport, companyReport] = await Promise.all([
+    access.hrId ? getVacationReport(access, "my", filters).catch(() => null) : Promise.resolve(null),
+    !canViewCompanyVacationReport(access)
+      ? hasReportingEmployees(access).then((hasTeam) => hasTeam ? getVacationReport(access, "team", filters).catch(() => null) : null)
+      : Promise.resolve(null),
+    canViewCompanyVacationReport(access) ? getVacationReport(access, "company", filters).catch(() => null) : Promise.resolve(null),
+  ]);
+
+  return {
+    companyReport,
+    myReport,
+    teamReport,
+  };
+}
+
 async function loadAllLeaveRequestsForEngine(filters: LeaveRequestFilters = {}) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("leave_requests")
-    .select("*,leave_types(code,name,is_paid,affects_payroll)")
+    .select("*,leave_types:leave_types!leave_requests_leave_type_id_fkey(code,name,is_paid,affects_payroll)")
     .order("requested_at", { ascending: false })
     .limit(3000);
   if (error) throw error;
@@ -982,6 +1672,7 @@ export async function previewLeaveConflicts(
   calculateCalendarLeaveDays(input.startDate, input.endDate);
   const employee = await getEmployeeOrThrow(access.hrId);
   const policy = await getDefaultLeavePolicy();
+  const titleWeekendRules = await getLeaveTitleWeekendRules();
   const startYear = new Date(`${input.startDate}T00:00:00.000Z`).getUTCFullYear();
   const endYear = new Date(`${input.endDate}T00:00:00.000Z`).getUTCFullYear();
   const holidays = startYear === endYear
@@ -996,8 +1687,9 @@ export async function previewLeaveConflicts(
     existingRequests: await loadAllLeaveRequestsForEngine(),
     startDate: input.startDate,
   }, {
-    publicHolidayDates: holidays.map((holiday) => holiday.date),
-    weekendDays: getWeekendDaysForEmployee(employee, policy.weekendDays),
+    publicHolidayDates: publicHolidayDateList(holidays),
+    titleWeekendRules,
+    weekendDays: getWeekendDaysForEmployee(employee, policy.weekendDays, titleWeekendRules),
   });
   const { employeeByHrId } = await loadDirectoryMaps();
   const canApprove = await canAccess(access, "leave", "approve");
@@ -1021,6 +1713,7 @@ export async function submitLeaveRequest(access: AccessContext, input: SubmitLea
   }
 
   const policy = await getDefaultLeavePolicy();
+  const titleWeekendRules = await getLeaveTitleWeekendRules();
   const startYear = new Date(`${input.startDate}T00:00:00.000Z`).getUTCFullYear();
   const endYear = new Date(`${input.endDate}T00:00:00.000Z`).getUTCFullYear();
   const holidays = startYear === endYear
@@ -1049,11 +1742,11 @@ export async function submitLeaveRequest(access: AccessContext, input: SubmitLea
   }
 
   const totalCalendarDays = calculateCalendarLeaveDays(input.startDate, input.endDate);
-  const weekendDays = getWeekendDaysForEmployee(employee, policy.weekendDays);
+  const weekendDays = getWeekendDaysForEmployee(employee, policy.weekendDays, titleWeekendRules);
   const totalWorkingDays = calculateLeaveDuration(
     input.startDate,
     input.endDate,
-    holidays.map((holiday) => holiday.date),
+    publicHolidayDateList(holidays),
     weekendDays,
     durationUnit,
   );
@@ -1139,7 +1832,7 @@ async function loadRequestRow(id: string) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("leave_requests")
-    .select("*,leave_types(code,name,is_paid,affects_payroll)")
+    .select("*,leave_types:leave_types!leave_requests_leave_type_id_fkey(code,name,is_paid,affects_payroll)")
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
@@ -1468,7 +2161,7 @@ export async function runMonthlyLeaveAccrual(access: AccessContext, input: { mon
 
   await emitLeaveNotification("accrual_completed", {
     ctaHref: "/admin/leave",
-    ctaLabel: "Open accrual tools",
+    ctaLabel: "Open leave management",
     includeHrInbox: true,
     metrics: [
       { label: "Period", value: preview.period },
@@ -1484,6 +2177,169 @@ export async function runMonthlyLeaveAccrual(access: AccessContext, input: { mon
     tone: "success",
   }).catch(() => undefined);
   return { month, period: preview.period, processed: result.processed ?? 0, skipped: result.skipped ?? 0, totalAmount: result.totalAmount ?? 0, year };
+}
+
+type AutomaticAccrualNotificationSummary = {
+  failed: number;
+  sent: number;
+  skipped: number;
+  totalRecipients: number;
+};
+
+type AutomaticAccrualPeriodResult = {
+  month: number;
+  notification?: AutomaticAccrualNotificationSummary | null;
+  period: string;
+  processed: number;
+  skipped: number;
+  status: "processed" | "skipped";
+  totalAmount: number;
+  wouldAccrue: number;
+  year: number;
+};
+
+const automaticAccrualAccess: AccessContext = {
+  hrId: null,
+  role: "Super Admin",
+  scope: "system",
+  source: "system",
+};
+
+function normalizeAccrualMonth(value: number | undefined, fallback: number) {
+  const month = Number(value ?? fallback);
+  if (!Number.isFinite(month)) return fallback;
+  return Math.max(1, Math.min(12, Math.trunc(month)));
+}
+
+async function notifyEmployeesAboutAutomaticAccrual(input: {
+  period: string;
+  processed: number;
+  totalAmount: number;
+  year: number;
+}): Promise<AutomaticAccrualNotificationSummary> {
+  const { directory } = await loadDirectoryMaps();
+  const activeEmployees = directory.employees.filter(
+    (employee) => (employee.employmentStatus ?? "active").toLowerCase() === "active" && cleanHrId(employee.hrId),
+  );
+  const summary: AutomaticAccrualNotificationSummary = {
+    failed: 0,
+    sent: 0,
+    skipped: 0,
+    totalRecipients: activeEmployees.length,
+  };
+
+  for (const employee of activeEmployees) {
+    try {
+      const notification = await enqueueInAppNotification({
+        category: "leave",
+        dedupeKey: `leave:automatic-accrual:${input.period}:${cleanHrId(employee.hrId)}`,
+        href: "/employee-portals/leave",
+        message: `Monthly vacation accrual for ${input.period} has been posted to employee leave balances.`,
+        metadata: {
+          period: input.period,
+          processedTransactions: input.processed,
+          source: "automatic_monthly_accrual",
+          totalAmount: input.totalAmount,
+          year: input.year,
+        },
+        recipientHrId: employee.hrId,
+        title: "Vacation Balance Updated",
+      });
+      if (notification.skipped) {
+        summary.skipped += 1;
+      } else {
+        summary.sent += 1;
+      }
+    } catch {
+      summary.failed += 1;
+    }
+  }
+
+  await writeLeaveAuditLog({
+    actorRole: automaticAccrualAccess.role,
+    eventType: "leave.accrual.employee_notifications.completed",
+    metadata: {
+      ...summary,
+      period: input.period,
+      processedTransactions: input.processed,
+      source: "automatic_monthly_accrual",
+      totalAmount: input.totalAmount,
+    },
+  });
+
+  return summary;
+}
+
+export async function runAutomaticMonthlyLeaveAccrual(input: {
+  notifyEmployees?: boolean;
+  throughMonth?: number;
+  year?: number;
+} = {}) {
+  const now = new Date();
+  const year = Number.isFinite(Number(input.year)) ? Number(input.year) : now.getUTCFullYear();
+  const throughMonth = normalizeAccrualMonth(input.throughMonth, now.getUTCMonth() + 1);
+  const notifyEmployees = input.notifyEmployees !== false;
+  const periods: AutomaticAccrualPeriodResult[] = [];
+
+  for (let month = 1; month <= throughMonth; month += 1) {
+    const preview = await getLeaveAccrualPreview(automaticAccrualAccess, { month, year });
+    if (preview.wouldAccrue <= 0) {
+      periods.push({
+        month,
+        notification: null,
+        period: preview.period,
+        processed: 0,
+        skipped: preview.alreadyAccrued,
+        status: "skipped",
+        totalAmount: 0,
+        wouldAccrue: preview.wouldAccrue,
+        year,
+      });
+      continue;
+    }
+
+    const run = await runMonthlyLeaveAccrual(automaticAccrualAccess, { month, year });
+    const notification = notifyEmployees && run.processed > 0
+      ? await notifyEmployeesAboutAutomaticAccrual({
+        period: run.period,
+        processed: run.processed,
+        totalAmount: run.totalAmount,
+        year: run.year,
+      })
+      : null;
+
+    periods.push({
+      month: run.month,
+      notification,
+      period: run.period,
+      processed: run.processed,
+      skipped: run.skipped,
+      status: run.processed > 0 ? "processed" : "skipped",
+      totalAmount: run.totalAmount,
+      wouldAccrue: preview.wouldAccrue,
+      year: run.year,
+    });
+  }
+
+  const result = {
+    generatedAt: new Date().toISOString(),
+    notificationMode: notifyEmployees ? "all_active_employees" : "disabled",
+    periods,
+    processedPeriods: periods.filter((period) => period.processed > 0).length,
+    skippedPeriods: periods.filter((period) => period.processed <= 0).length,
+    throughMonth,
+    totalAmount: Math.round(periods.reduce((sum, period) => sum + period.totalAmount, 0) * 100) / 100,
+    totalProcessed: periods.reduce((sum, period) => sum + period.processed, 0),
+    year,
+  };
+
+  await writeLeaveAuditLog({
+    actorRole: automaticAccrualAccess.role,
+    eventType: "leave.accrual.automatic.completed",
+    metadata: result,
+  });
+
+  return result;
 }
 
 export async function getLeaveCalendar(
@@ -1519,9 +2375,10 @@ export async function getLeaveTeamAvailability(
   const year = new Date(`${startDate}T00:00:00.000Z`).getUTCFullYear();
   const policy = await getDefaultLeavePolicy();
   const hasApproveAccess = await canAccess(access, "leave", "approve");
-  const [requests, holidays] = await Promise.all([
+  const [requests, holidays, titleWeekendRules] = await Promise.all([
     hasApproveAccess && !isManageRole(access) ? listManagerHierarchyLeaveRequests(access, {}) : listLeaveRequests(access, {}),
     getPublicHolidays(year, policy.country).catch(() => []),
+    getLeaveTitleWeekendRules().catch(() => []),
   ]);
   return buildTeamAvailability(requests, holidays, {
     area: input.area,
@@ -1529,6 +2386,7 @@ export async function getLeaveTeamAvailability(
     endDate,
     line: input.line,
     startDate,
+    titleWeekendRules,
   });
 }
 
@@ -1550,16 +2408,28 @@ export async function getLeaveDashboard(access: AccessContext) {
   }
 
   const annualType = await getAnnualLeaveType().catch(() => null);
-  const { directory } = await loadDirectoryMaps();
+  const { directory, employeeByHrId } = await loadDirectoryMaps();
   if (annualType) {
+    const year = new Date().getUTCFullYear();
+    const supabase = getSupabaseAdmin();
+    const { data: balanceRows } = await supabase
+      .from("employee_leave_balances")
+      .select("employee_hr_id,available_balance,consumed")
+      .eq("leave_type_id", annualType.id)
+      .eq("year", year);
+
+    const balancesByHrId = new Map((balanceRows ?? []).map((b) => [cleanHrId(b.employee_hr_id), b]));
+
     for (const employee of directory.employees) {
-      if (!canSeeLeaveEmployee(access, employee.hrId, new Map(directory.employees.map((row) => [cleanHrId(row.hrId), row])))) continue;
-      const wallet = await getEmployeeLeaveWallet({ ...access, hrId: access.hrId }, employee.hrId).catch(() => null);
+      if (!canSeeLeaveEmployee(access, employee.hrId, employeeByHrId)) continue;
+      const wallet = balancesByHrId.get(cleanHrId(employee.hrId));
       if (!wallet) continue;
-      const line = employee.lineName ?? "Unassigned";
+
+      const line = employee.lineName?.trim();
+      if (!line) continue;
       const current = balanceUtilization.get(line) ?? { available: 0, used: 0 };
-      current.available += wallet.available;
-      current.used += wallet.used;
+      current.available += n(wallet.available_balance);
+      current.used += n(wallet.consumed);
       balanceUtilization.set(line, current);
     }
   }
@@ -1636,6 +2506,1104 @@ export async function exportLeaveRequestsToExcel(access: AccessContext, filters:
   return workbook.xlsx.writeBuffer();
 }
 
+function paymentStatusLabelForReport(status: LeavePaymentStatus) {
+  return paymentStatusLabel(status);
+}
+
+function reportStatusText(status: string | null | undefined) {
+  return status ? prettyReportStatus(status) : "";
+}
+
+function prettyReportStatus(status: string) {
+  return status.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function reportDate(value: string | null | undefined) {
+  return value ? value.slice(0, 10) : "";
+}
+
+function reportDateTime(value: string | null | undefined) {
+  return value ? new Date(value).toISOString().replace("T", " ").slice(0, 16) : "";
+}
+
+function reportNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : "Unavailable";
+}
+
+const vacationReportColumns = [
+  { header: "Employee HR ID", key: "employeeHrId", width: 18 },
+  { header: "Employee Name", key: "employeeName", width: 28 },
+  { header: "Title", key: "title", width: 24 },
+  { header: "Line", key: "line", width: 20 },
+  { header: "Area", key: "area", width: 20 },
+  { header: "Direct Manager", key: "directManager", width: 26 },
+  { header: "Direct Manager HR ID", key: "directManagerHrId", width: 22 },
+  { header: "Request Date", key: "requestDate", width: 16 },
+  { header: "Leave Type", key: "leaveType", width: 20 },
+  { header: "From Date", key: "fromDate", width: 16 },
+  { header: "To Date", key: "toDate", width: 16 },
+  { header: "Duration", key: "duration", width: 12 },
+  { header: "Duration Unit", key: "durationUnit", width: 16 },
+  { header: "Balance Before", key: "balanceBefore", width: 18 },
+  { header: "Balance After", key: "balanceAfter", width: 18 },
+  { header: "Payment Status", key: "paymentStatus", width: 18 },
+  { header: "Manager Approval Status", key: "managerApprovalStatus", width: 24 },
+  { header: "Manager Approved By", key: "managerApprovedBy", width: 22 },
+  { header: "Manager Decision Date", key: "managerDecisionDate", width: 22 },
+  { header: "HR Approval Status", key: "hrApprovalStatus", width: 20 },
+  { header: "HR Approved By", key: "hrApprovedBy", width: 18 },
+  { header: "HR Decision Date", key: "hrDecisionDate", width: 20 },
+  { header: "Final Status", key: "finalStatus", width: 18 },
+  { header: "Reason", key: "reason", width: 36 },
+  { header: "Attachment Status", key: "attachmentStatus", width: 20 },
+  { header: "Created At", key: "createdAt", width: 22 },
+];
+
+function addVacationReportWorksheet(workbook: ExcelJS.Workbook, report: VacationReportData) {
+  const worksheet = workbook.addWorksheet(report.title.slice(0, 31));
+  worksheet.mergeCells("A1:Z1");
+  worksheet.getCell("A1").value = "Phoenix Workforce Vacation Report";
+  worksheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 16 };
+  worksheet.getCell("A1").fill = { fgColor: { argb: "FF0F172A" }, pattern: "solid", type: "pattern" };
+  worksheet.getCell("A1").alignment = { horizontal: "center" };
+
+  worksheet.mergeCells("A2:Z2");
+  worksheet.getCell("A2").value = `${report.title} | Generated ${new Date().toISOString().slice(0, 10)} | Scope: ${report.scope.toUpperCase()}`;
+  worksheet.getCell("A2").font = { bold: true, color: { argb: "FF9A3412" } };
+  worksheet.getCell("A2").fill = { fgColor: { argb: "FFFFEDD5" }, pattern: "solid", type: "pattern" };
+  worksheet.getCell("A2").alignment = { horizontal: "center" };
+
+  worksheet.columns = vacationReportColumns.map(({ key, width }) => ({ key, width }));
+  worksheet.spliceRows(3, 0, vacationReportColumns.map((column) => column.header));
+  worksheet.getRow(3).height = 24;
+  worksheet.getRow(3).eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { fgColor: { argb: "FFF97316" }, pattern: "solid", type: "pattern" };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.border = {
+      bottom: { color: { argb: "FFEA580C" }, style: "thin" },
+      left: { color: { argb: "FFFFEDD5" }, style: "thin" },
+      right: { color: { argb: "FFFFEDD5" }, style: "thin" },
+      top: { color: { argb: "FFFFEDD5" }, style: "thin" },
+    };
+  });
+
+  for (const row of report.rows) {
+    worksheet.addRow({
+      area: row.area ?? "",
+      attachmentStatus: row.attachmentStatus === "attached" ? "Attached" : "Missing",
+      balanceAfter: reportNumber(row.balanceAfter),
+      balanceBefore: reportNumber(row.balanceBefore),
+      createdAt: reportDateTime(row.createdAt),
+      directManager: row.directManager ?? "",
+      directManagerHrId: row.directManagerHrId ?? "",
+      duration: row.duration,
+      durationUnit: row.durationUnit === "full_day" ? "Full Day" : row.durationUnit.toUpperCase(),
+      employeeHrId: row.employeeHrId,
+      employeeName: row.employeeName ?? "",
+      finalStatus: reportStatusText(row.finalStatus),
+      fromDate: reportDate(row.fromDate),
+      hrApprovalStatus: reportStatusText(row.hrApprovalStatus),
+      hrApprovedBy: row.hrApprovedBy ?? "",
+      hrDecisionDate: reportDateTime(row.hrDecisionDate),
+      leaveType: row.leaveType ?? "",
+      line: row.line ?? "",
+      managerApprovalStatus: reportStatusText(row.managerApprovalStatus),
+      managerApprovedBy: row.managerApprovedBy ?? "",
+      managerDecisionDate: reportDateTime(row.managerDecisionDate),
+      paymentStatus: paymentStatusLabelForReport(row.paymentStatus),
+      reason: row.reason ?? "",
+      requestDate: reportDateTime(row.requestDate),
+      title: row.title ?? "",
+      toDate: reportDate(row.toDate),
+    });
+  }
+
+  worksheet.views = [{ state: "frozen", ySplit: 3 }];
+  worksheet.autoFilter = { from: "A3", to: `Z${Math.max(3, report.rows.length + 3)}` };
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber <= 3) return;
+    row.eachCell((cell) => {
+      cell.alignment = { vertical: "top", wrapText: true };
+      cell.border = { bottom: { color: { argb: "FFE2E8F0" }, style: "thin" } };
+    });
+  });
+  return worksheet;
+}
+
+export async function exportVacationReportToExcel(access: AccessContext, scope: VacationReportScope, filters: LeaveRequestFilters = {}) {
+  await assertPermission(access, "leave", scope === "my" ? "read" : "export");
+  const report = await getVacationReport(access, scope, filters);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Phoenix Workforce";
+  workbook.created = new Date();
+  addVacationReportWorksheet(workbook, report);
+  return workbook.xlsx.writeBuffer();
+}
+
+function excelDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function excelNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
+}
+
+async function getAllActiveEmployeesAccrualRows(access: AccessContext, year: number, filters: LeaveRequestFilters) {
+  const rows: ActiveEmployeeAccrualRow[] = [];
+  let offset = 0;
+  const limit = 100;
+  let totalRows = 0;
+  do {
+    const page = await getActiveEmployeesAccrualReport(access, year, { ...filters, limit, offset });
+    rows.push(...page.rows);
+    totalRows = page.pagination.totalRows;
+    offset += limit;
+  } while (rows.length < totalRows);
+  return rows;
+}
+
+function styleActiveAccrualWorksheet(worksheet: ExcelJS.Worksheet, lastRow: number) {
+  worksheet.getRow(4).height = 30;
+  worksheet.getRow(4).eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { fgColor: { argb: "FFF97316" }, pattern: "solid", type: "pattern" };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.border = {
+      bottom: { color: { argb: "FFEA580C" }, style: "thin" },
+      left: { color: { argb: "FFFFEDD5" }, style: "thin" },
+      right: { color: { argb: "FFFFEDD5" }, style: "thin" },
+      top: { color: { argb: "FFFFEDD5" }, style: "thin" },
+    };
+  });
+  worksheet.views = [{ state: "frozen", ySplit: 4 }];
+  worksheet.autoFilter = { from: "A4", to: `W${Math.max(4, lastRow)}` };
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber <= 4) return;
+    row.eachCell((cell) => {
+      cell.alignment = { vertical: "top", wrapText: true };
+      cell.border = { bottom: { color: { argb: "FFE2E8F0" }, style: "thin" } };
+    });
+  });
+  for (const column of ["G", "V"]) worksheet.getColumn(column).numFmt = "dd mmm yyyy";
+  for (const column of ["J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T"]) worksheet.getColumn(column).numFmt = "0.00";
+  for (let row = 5; row <= lastRow; row += 1) {
+    worksheet.getCell(`T${row}`).fill = { fgColor: { argb: "FFF8FAFC" }, pattern: "solid", type: "pattern" };
+    worksheet.getCell(`T${row}`).font = { bold: true, color: { argb: "FF475569" } };
+  }
+}
+
+export async function exportActiveEmployeesAccrualToExcel(access: AccessContext, filters: LeaveRequestFilters = {}) {
+  await assertPermission(access, "leave", "export");
+  if (!isManageRole(access)) throw new Error("Forbidden: active employee accrual export requires HR or Super Admin access.");
+  const year = filters.year ?? new Date().getUTCFullYear();
+  const [policy, rows] = await Promise.all([
+    getDefaultLeavePolicy(),
+    getAllActiveEmployeesAccrualRows(access, year, filters),
+  ]);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Phoenix Workforce";
+  workbook.created = new Date();
+  workbook.calcProperties.fullCalcOnLoad = true;
+
+  const inputs = workbook.addWorksheet("Formula Inputs");
+  inputs.columns = [{ width: 34 }, { width: 22 }, { width: 54 }];
+  inputs.addRows([
+    ["Phoenix Workforce Employees Accrual Sheet Export", "", "Formula source sheet. Values here drive workbook formulas."],
+    ["Generated Date", new Date(), "Used by service-duration and policy-basis formulas."],
+    ["Report Year", { formula: `${year}`, result: year }, ""],
+    ["Annual Entitlement - Less Than 1 Year", { formula: `${policy.annualDaysFirstYear}`, result: policy.annualDaysFirstYear }, ""],
+    ["Annual Entitlement - 1 Year Or More", { formula: `${policy.annualDaysAfterFirstYear}`, result: policy.annualDaysAfterFirstYear }, ""],
+    ["Monthly Accrual Divisor", { formula: "12", result: 12 }, "Monthly Accrual = Annual Entitlement / 12."],
+  ]);
+  inputs.getCell("B2").numFmt = "dd mmm yyyy";
+  inputs.getColumn(1).font = { bold: true, color: { argb: "FF0F172A" } };
+  inputs.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" }, size: 14 };
+  inputs.getRow(1).fill = { fgColor: { argb: "FF0F172A" }, pattern: "solid", type: "pattern" };
+
+  const source = workbook.addWorksheet("Accrual Source Data");
+  source.state = "veryHidden";
+  source.columns = [
+    { key: "employeeHrId", width: 16 },
+    { key: "employeeName", width: 28 },
+    { key: "title", width: 24 },
+    { key: "line", width: 20 },
+    { key: "area", width: 20 },
+    { key: "directManager", width: 26 },
+    { key: "hiringDate", width: 16 },
+    { key: "serviceDuration", width: 24 },
+    { key: "policyBasis", width: 26 },
+    { key: "annualEntitlement", width: 18 },
+    { key: "monthlyAccrual", width: 18 },
+    { key: "openingBalance", width: 18 },
+    { key: "accruedToDate", width: 18 },
+    { key: "usedConsumed", width: 18 },
+    { key: "pending", width: 14 },
+    { key: "carryForward", width: 18 },
+    { key: "adjustments", width: 16 },
+    { key: "availableBalanceFormula", width: 22 },
+    { key: "systemAvailableBalance", width: 24 },
+    { key: "variance", width: 14 },
+    { key: "lastAccrualMonth", width: 18 },
+    { key: "lastLeaveTransactionDate", width: 24 },
+    { key: "status", width: 16 },
+  ];
+  source.spliceRows(4, 0, [
+    "HR ID",
+    "Employee Name",
+    "Title",
+    "Line",
+    "Area",
+    "Direct Manager",
+    "Hiring Date",
+    "Service Duration",
+    "Policy Basis",
+    "Annual Entitlement",
+    "Monthly Accrual",
+    "Opening Balance",
+    "Accrued To Date",
+    "Used / Consumed",
+    "Pending",
+    "Carry Forward",
+    "Adjustments",
+    "Formula Available Balance",
+    "System Available Balance",
+    "Variance",
+    "Last Accrual Month",
+    "Last Leave Transaction Date",
+    "Status",
+  ]);
+  rows.forEach((row) => {
+    source.addRow({
+      accruedToDate: String(excelNumber(row.accruedToDate)),
+      adjustments: String(excelNumber(row.adjustments)),
+      area: row.area ?? "",
+      availableBalanceFormula: String(excelNumber(row.availableBalance)),
+      carryForward: String(excelNumber(row.carryForward)),
+      directManager: row.directManager ?? "",
+      employeeHrId: row.employeeHrId,
+      employeeName: row.employeeName,
+      hiringDate: excelDate(row.hiringDate),
+      lastAccrualMonth: row.lastAccrualMonth ?? "",
+      lastLeaveTransactionDate: excelDate(row.lastLeaveTransactionDate),
+      line: row.line ?? "",
+      monthlyAccrual: String(excelNumber(row.monthlyAccrual)),
+      openingBalance: String(excelNumber(row.openingBalance)),
+      pending: String(excelNumber(row.pending)),
+      policyBasis: row.policyBasis,
+      serviceDuration: row.serviceDuration,
+      status: row.status,
+      systemAvailableBalance: String(excelNumber(row.availableBalance)),
+      title: row.title ?? "",
+      usedConsumed: String(excelNumber(row.usedConsumed)),
+      variance: "0",
+    });
+  });
+
+  const worksheet = workbook.addWorksheet("Employees Accrual");
+  worksheet.mergeCells("A1:W1");
+  worksheet.getCell("A1").value = "Phoenix Workforce - Employees Accrual";
+  worksheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 16 };
+  worksheet.getCell("A1").fill = { fgColor: { argb: "FF0F172A" }, pattern: "solid", type: "pattern" };
+  worksheet.getCell("A1").alignment = { horizontal: "center" };
+  worksheet.mergeCells("A2:W2");
+  worksheet.getCell("A2").value = `Generated ${new Date().toISOString().slice(0, 10)} | Year ${year} | Formula-driven entitlement, accrual, available balance, and variance checks`;
+  worksheet.getCell("A2").font = { bold: true, color: { argb: "FF9A3412" } };
+  worksheet.getCell("A2").fill = { fgColor: { argb: "FFFFEDD5" }, pattern: "solid", type: "pattern" };
+  worksheet.getCell("A2").alignment = { horizontal: "center" };
+
+  worksheet.columns = [
+    { key: "employeeHrId", width: 16 },
+    { key: "employeeName", width: 28 },
+    { key: "title", width: 24 },
+    { key: "line", width: 20 },
+    { key: "area", width: 20 },
+    { key: "directManager", width: 26 },
+    { key: "hiringDate", width: 16 },
+    { key: "serviceDuration", width: 24 },
+    { key: "policyBasis", width: 26 },
+    { key: "annualEntitlement", width: 18 },
+    { key: "monthlyAccrual", width: 18 },
+    { key: "openingBalance", width: 18 },
+    { key: "accruedToDate", width: 18 },
+    { key: "usedConsumed", width: 18 },
+    { key: "pending", width: 14 },
+    { key: "carryForward", width: 18 },
+    { key: "adjustments", width: 16 },
+    { key: "availableBalanceFormula", width: 22 },
+    { key: "systemAvailableBalance", width: 24 },
+    { key: "variance", width: 14 },
+    { key: "lastAccrualMonth", width: 18 },
+    { key: "lastLeaveTransactionDate", width: 24 },
+    { key: "status", width: 16 },
+  ];
+  worksheet.spliceRows(4, 0, [
+    "HR ID",
+    "Employee Name",
+    "Title",
+    "Line",
+    "Area",
+    "Direct Manager",
+    "Hiring Date",
+    "Service Duration",
+    "Policy Basis",
+    "Annual Entitlement",
+    "Monthly Accrual",
+    "Opening Balance",
+    "Accrued To Date",
+    "Used / Consumed",
+    "Pending",
+    "Carry Forward",
+    "Adjustments",
+    "Formula Available Balance",
+    "System Available Balance",
+    "Variance",
+    "Last Accrual Month",
+    "Last Leave Transaction Date",
+    "Status",
+  ]);
+
+  const formulaLastRow = Math.max(rows.length + 4, 1004);
+  for (let rowNumber = 5; rowNumber <= formulaLastRow; rowNumber += 1) {
+    const row = rows[rowNumber - 5];
+    worksheet.addRow({});
+    worksheet.getCell(`A${rowNumber}`).value = { formula: `IF('Accrual Source Data'!A${rowNumber}="","",'Accrual Source Data'!A${rowNumber})`, result: row?.employeeHrId ?? "" };
+    worksheet.getCell(`B${rowNumber}`).value = { formula: `IF('Accrual Source Data'!B${rowNumber}="","",'Accrual Source Data'!B${rowNumber})`, result: row?.employeeName ?? "" };
+    worksheet.getCell(`C${rowNumber}`).value = { formula: `IF('Accrual Source Data'!C${rowNumber}="","",'Accrual Source Data'!C${rowNumber})`, result: row?.title ?? "" };
+    worksheet.getCell(`D${rowNumber}`).value = { formula: `IF('Accrual Source Data'!D${rowNumber}="","",'Accrual Source Data'!D${rowNumber})`, result: row?.line ?? "" };
+    worksheet.getCell(`E${rowNumber}`).value = { formula: `IF('Accrual Source Data'!E${rowNumber}="","",'Accrual Source Data'!E${rowNumber})`, result: row?.area ?? "" };
+    worksheet.getCell(`F${rowNumber}`).value = { formula: `IF('Accrual Source Data'!F${rowNumber}="","",'Accrual Source Data'!F${rowNumber})`, result: row?.directManager ?? "" };
+    worksheet.getCell(`G${rowNumber}`).value = { formula: `IF('Accrual Source Data'!G${rowNumber}="","",'Accrual Source Data'!G${rowNumber})`, result: row ? excelDate(row.hiringDate) ?? undefined : undefined };
+    worksheet.getCell(`H${rowNumber}`).value = {
+      formula: `IF(G${rowNumber}="","Unavailable",DATEDIF(G${rowNumber},'Formula Inputs'!$B$2,"Y")&" year"&IF(DATEDIF(G${rowNumber},'Formula Inputs'!$B$2,"Y")=1,"","s")&", "&DATEDIF(G${rowNumber},'Formula Inputs'!$B$2,"YM")&" month"&IF(DATEDIF(G${rowNumber},'Formula Inputs'!$B$2,"YM")=1,"","s"))`,
+      result: row?.serviceDuration ?? "Unavailable",
+    };
+    worksheet.getCell(`I${rowNumber}`).value = {
+      formula: `IF(G${rowNumber}="","Unavailable",IF(DATEDIF(G${rowNumber},'Formula Inputs'!$B$2,"Y")>=1,"1 year or more of service","Less than 1 year of service"))`,
+      result: row?.policyBasis ?? "Unavailable",
+    };
+    worksheet.getCell(`J${rowNumber}`).value = {
+      formula: `IF(G${rowNumber}="","",IF(DATEDIF(G${rowNumber},'Formula Inputs'!$B$2,"Y")>=1,'Formula Inputs'!$B$5,'Formula Inputs'!$B$4))`,
+      result: row ? excelNumber(row.annualEntitlement) : 0,
+    };
+    worksheet.getCell(`K${rowNumber}`).value = {
+      formula: `IF(J${rowNumber}="","",ROUND(J${rowNumber}/'Formula Inputs'!$B$6,2))`,
+      result: row ? excelNumber(row.monthlyAccrual) : 0,
+    };
+    worksheet.getCell(`L${rowNumber}`).value = { formula: `IF(G${rowNumber}="","",IFERROR(VALUE('Accrual Source Data'!L${rowNumber}),0))`, result: row ? excelNumber(row.openingBalance) : 0 };
+    worksheet.getCell(`M${rowNumber}`).value = {
+      formula: `IF(G${rowNumber}="","",ROUND(K${rowNumber}*MAX(0,DATEDIF(MAX(G${rowNumber},DATE('Formula Inputs'!$B$3,1,1)),'Formula Inputs'!$B$2,"M")+1),2))`,
+      result: row ? excelNumber(row.accruedToDate) : 0,
+    };
+    worksheet.getCell(`N${rowNumber}`).value = { formula: `IF(G${rowNumber}="","",IFERROR(VALUE('Accrual Source Data'!N${rowNumber}),0))`, result: row ? excelNumber(row.usedConsumed) : 0 };
+    worksheet.getCell(`O${rowNumber}`).value = { formula: `IF(G${rowNumber}="","",IFERROR(VALUE('Accrual Source Data'!O${rowNumber}),0))`, result: row ? excelNumber(row.pending) : 0 };
+    worksheet.getCell(`P${rowNumber}`).value = { formula: `IF(G${rowNumber}="","",IFERROR(VALUE('Accrual Source Data'!P${rowNumber}),0))`, result: row ? excelNumber(row.carryForward) : 0 };
+    worksheet.getCell(`Q${rowNumber}`).value = { formula: `IF(G${rowNumber}="","",IFERROR(VALUE('Accrual Source Data'!Q${rowNumber}),0))`, result: row ? excelNumber(row.adjustments) : 0 };
+    worksheet.getCell(`R${rowNumber}`).value = {
+      formula: `IF(G${rowNumber}="","",ROUND(L${rowNumber}+M${rowNumber}+P${rowNumber}+Q${rowNumber}-N${rowNumber}-O${rowNumber},2))`,
+      result: row ? excelNumber(row.availableBalance) : 0,
+    };
+    worksheet.getCell(`S${rowNumber}`).value = { formula: `IF(G${rowNumber}="","",IFERROR(VALUE('Accrual Source Data'!S${rowNumber}),R${rowNumber}))`, result: row ? excelNumber(row.availableBalance) : 0 };
+    worksheet.getCell(`T${rowNumber}`).value = {
+      formula: `IF(G${rowNumber}="","",ROUND(R${rowNumber}-S${rowNumber},2))`,
+      result: 0,
+    };
+    worksheet.getCell(`U${rowNumber}`).value = { formula: `IF('Accrual Source Data'!U${rowNumber}="","",'Accrual Source Data'!U${rowNumber})`, result: row?.lastAccrualMonth ?? "" };
+    worksheet.getCell(`V${rowNumber}`).value = { formula: `IF('Accrual Source Data'!V${rowNumber}="","",'Accrual Source Data'!V${rowNumber})`, result: row ? excelDate(row.lastLeaveTransactionDate) ?? undefined : undefined };
+    worksheet.getCell(`W${rowNumber}`).value = { formula: `IF(A${rowNumber}="","","active")`, result: row?.status ?? "" };
+  }
+  const lastRow = formulaLastRow;
+  styleActiveAccrualWorksheet(worksheet, lastRow);
+
+  const summary = workbook.addWorksheet("Summary");
+  summary.columns = [{ width: 34 }, { width: 22 }, { width: 52 }];
+  summary.addRows([
+    ["Phoenix Workforce - Employees Accrual Summary", "", ""],
+    ["Metric", "Formula Value", "Notes"],
+    ["Active Employees", { formula: `COUNTIF('Employees Accrual'!G5:G${lastRow},"<>")`, result: rows.length }, "Count of rows with a hiring date."],
+    ["Formula Available Balance Total", { formula: `SUM('Employees Accrual'!R5:R${lastRow})`, result: rows.reduce((sum, row) => sum + row.availableBalance, 0) }, "Uses workbook formula balance column."],
+    ["System Available Balance Total", { formula: `SUM('Employees Accrual'!S5:S${lastRow})`, result: rows.reduce((sum, row) => sum + row.availableBalance, 0) }, "Source value from Phoenix ledger/balance rows."],
+    ["Variance Total", { formula: `SUM('Employees Accrual'!T5:T${lastRow})`, result: 0 }, "Should be 0.00 when formulas reconcile to system balance."],
+    ["Variance Rows", { formula: `COUNTIF('Employees Accrual'!T5:T${lastRow},"<>0")`, result: 0 }, "Rows where workbook formula differs from system balance."],
+  ]);
+  summary.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" }, size: 14 };
+  summary.getRow(1).fill = { fgColor: { argb: "FF0F172A" }, pattern: "solid", type: "pattern" };
+  summary.getRow(2).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  summary.getRow(2).fill = { fgColor: { argb: "FFF97316" }, pattern: "solid", type: "pattern" };
+  summary.getColumn(2).numFmt = "0.00";
+
+  return workbook.xlsx.writeBuffer();
+}
+
+function assertHistoricalVacationManageAccess(access: AccessContext) {
+  if (!isManageRole(access)) throw new Error("Forbidden: historical vacation upload requires HR or Super Admin access.");
+}
+
+function styleHistoricalHeader(row: ExcelJS.Row) {
+  row.height = 26;
+  row.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { fgColor: { argb: "FFF97316" }, pattern: "solid", type: "pattern" };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.border = {
+      bottom: { color: { argb: "FFEA580C" }, style: "thin" },
+      left: { color: { argb: "FFFFEDD5" }, style: "thin" },
+      right: { color: { argb: "FFFFEDD5" }, style: "thin" },
+      top: { color: { argb: "FFFFEDD5" }, style: "thin" },
+    };
+  });
+}
+
+function addValidationList(worksheet: ExcelJS.Worksheet, column: string, values: string[]) {
+  for (let row = 4; row <= 1000; row += 1) {
+    worksheet.getCell(`${column}${row}`).dataValidation = {
+      allowBlank: true,
+      formulae: [`"${values.join(",")}"`],
+      showErrorMessage: true,
+      type: "list",
+    };
+  }
+}
+
+export async function exportHistoricalVacationTemplateToExcel(access: AccessContext) {
+  await assertPermission(access, "leave", "export");
+  assertHistoricalVacationManageAccess(access);
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Phoenix Workforce";
+  workbook.created = new Date();
+
+  const instructions = workbook.addWorksheet(historicalTemplateInstructionSheetName);
+  instructions.mergeCells("A1:D1");
+  instructions.getCell("A1").value = "Historical Vacation Template Download";
+  instructions.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 18 };
+  instructions.getCell("A1").fill = { fgColor: { argb: "FF0F172A" }, pattern: "solid", type: "pattern" };
+  instructions.getCell("A1").alignment = { horizontal: "center" };
+  instructions.columns = [
+    { key: "topic", width: 30 },
+    { key: "details", width: 90 },
+    { key: "allowed", width: 54 },
+    { key: "required", width: 18 },
+  ];
+  instructions.addRow(["Purpose", "Use this workbook for historical leave/vacation records only. It does not change current new-request business logic, entitlement, accrual, approval, attachments, or payroll.", "", ""]);
+  instructions.addRow(["Historical payment behavior", "Uploaded historical rows preserve the HR decision that happened at the time. Paid + deduct consumes balance. Unpaid or non_deducted + no_deduct does not consume balance. The current automatic unpaid policy is not reapplied to old rows.", "paid, unpaid, in_review, non_deducted", "Yes"]);
+  instructions.addRow(["Dry-run first", "Upload is validated in dry-run before confirmation. Dry-run does not mutate leave requests, leave balances, leave transactions, or payroll.", "", ""]);
+  instructions.addRow(["Confirmation", "Confirmation imports accepted rows only after validation, records rejected rows and warnings, and writes centralized master audit events. No payroll tables are mutated.", "", ""]);
+  instructions.addRow(["Duplicates", "Rows can be rejected as duplicates when the same employee, dates, leave type, and external reference already exist or repeat in the same workbook.", "", ""]);
+  instructions.addRow(["AM/PM rules", "Duration_Unit am or pm is allowed for a single day only and should use Duration 0.5. full_day can span multiple dates.", "full_day, am, pm", "Yes"]);
+  instructions.addRow(["Date rules", "Request_Date, From_Date, To_Date, Hiring_Date, Manager_Decision_Date, and HR_Decision_Date must be valid dates. To_Date cannot be before From_Date. Decision dates cannot be before Request_Date.", "", "Yes"]);
+  instructions.addRow(["Approval statuses", "Manager and HR status show the reconstructed approval step. Final_Status is the final workflow state to preserve historically.", "pending, approved, rejected, not_required", "Yes"]);
+  instructions.addRow(["Final statuses", "Use hr_approved only for records that should be considered finally approved. Deducting balance is only valid for hr_approved rows.", Array.from(historicalFinalStatuses).join(", "), "Yes"]);
+  instructions.addRow(["Leave types", "Use active system leave types where possible. casual_leave and unpaid_leave are accepted only for historical compatibility.", Array.from(historicalLeaveTypeCodes).join(", "), "Yes"]);
+  instructions.addRow(["Balance fields", "Balance_Before and Balance_After are required when Balance_Deduction is deduct. Do not invent values; leave no_deduct rows blank if ledger values are not available.", "", "Conditional"]);
+  instructions.addRow(["Import traceability", "External_Reference and Legacy_System help duplicate detection and audit traceability.", "", "Recommended"]);
+  instructions.getRow(2).font = { bold: true };
+  instructions.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    row.eachCell((cell) => {
+      cell.alignment = { vertical: "top", wrapText: true };
+      cell.border = { bottom: { color: { argb: "FFE2E8F0" }, style: "thin" } };
+    });
+  });
+  instructions.views = [{ state: "frozen", ySplit: 1 }];
+
+  const worksheet = workbook.addWorksheet(historicalTemplateSheetName);
+  worksheet.mergeCells("A1:AE1");
+  worksheet.getCell("A1").value = "Historical Vacation Template Download";
+  worksheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 16 };
+  worksheet.getCell("A1").fill = { fgColor: { argb: "FF0F172A" }, pattern: "solid", type: "pattern" };
+  worksheet.getCell("A1").alignment = { horizontal: "center" };
+  worksheet.mergeCells("A2:AE2");
+  worksheet.getCell("A2").value = "Historical data only. Preserve uploaded paid/unpaid and deduct/no-deduct decisions. Dry-run and confirmation are required before import.";
+  worksheet.getCell("A2").font = { bold: true, color: { argb: "FF9A3412" } };
+  worksheet.getCell("A2").fill = { fgColor: { argb: "FFFFEDD5" }, pattern: "solid", type: "pattern" };
+  worksheet.columns = historicalVacationColumns.map(({ key, width }) => ({ key, width }));
+  worksheet.spliceRows(3, 0, historicalVacationColumns.map((column) => column.header));
+  worksheet.addRow({
+    HR_ID: "EMP001",
+    Employee_Name: "Sample Employee",
+    Title: "Medical Rep",
+    Line: "Example Line",
+    Area: "Example Area",
+    Direct_Manager_HR_ID: "MGR001",
+    Hiring_Date: "2025-01-01",
+    Leave_Type: "annual_leave",
+    Request_Date: "2025-02-10",
+    From_Date: "2025-02-15",
+    To_Date: "2025-02-15",
+    Duration: 1,
+    Duration_Unit: "full_day",
+    Reason: "Historical approved annual leave",
+    Notes: "Sample row. Replace with real historical data.",
+    Manager_Approval_Status: "approved",
+    Manager_Approved_By: "MGR001",
+    Manager_Decision_Date: "2025-02-11",
+    HR_Approval_Status: "approved",
+    HR_Approved_By: "HR001",
+    HR_Decision_Date: "2025-02-12",
+    Final_Status: "hr_approved",
+    Payment_Status: "paid",
+    Balance_Deduction: "deduct",
+    Balance_Before: 15,
+    Balance_After: 14,
+    Historical_Adjustment: 0,
+    Carry_Forward_At_That_Time: 0,
+    External_Reference: "LEGACY-0001",
+    Legacy_System: "Old HR Sheet",
+    Import_Notes: "Paid historical leave during first six months still deducts because uploaded HR decision says paid + deduct.",
+  });
+  worksheet.addRow({
+    HR_ID: "EMP002",
+    Employee_Name: "Sample Employee 2",
+    Title: "Medical Rep",
+    Line: "Example Line",
+    Area: "Example Area",
+    Direct_Manager_HR_ID: "MGR002",
+    Hiring_Date: "2025-01-01",
+    Leave_Type: "annual_leave",
+    Request_Date: "2025-02-10",
+    From_Date: "2025-02-15",
+    To_Date: "2025-02-15",
+    Duration: 1,
+    Duration_Unit: "full_day",
+    Reason: "Historical unpaid annual leave",
+    Notes: "Sample row. Replace with real historical data.",
+    Manager_Approval_Status: "approved",
+    Manager_Approved_By: "MGR002",
+    Manager_Decision_Date: "2025-02-11",
+    HR_Approval_Status: "approved",
+    HR_Approved_By: "HR001",
+    HR_Decision_Date: "2025-02-12",
+    Final_Status: "hr_approved",
+    Payment_Status: "unpaid",
+    Balance_Deduction: "no_deduct",
+    Balance_Before: "",
+    Balance_After: "",
+    Historical_Adjustment: 0,
+    Carry_Forward_At_That_Time: 0,
+    External_Reference: "LEGACY-0002",
+    Legacy_System: "Old HR Sheet",
+    Import_Notes: "Unpaid historical leave during first six months does not deduct balance.",
+  });
+  styleHistoricalHeader(worksheet.getRow(3));
+  worksheet.views = [{ state: "frozen", ySplit: 3 }];
+  worksheet.autoFilter = { from: "A3", to: `AE${worksheet.rowCount}` };
+  addValidationList(worksheet, "H", Array.from(historicalLeaveTypeCodes));
+  addValidationList(worksheet, "M", Array.from(historicalDurationUnits));
+  addValidationList(worksheet, "P", Array.from(historicalApprovalStatuses));
+  addValidationList(worksheet, "S", Array.from(historicalApprovalStatuses));
+  addValidationList(worksheet, "V", Array.from(historicalFinalStatuses));
+  addValidationList(worksheet, "W", Array.from(historicalPaymentStatuses));
+  addValidationList(worksheet, "X", Array.from(historicalBalanceDecisions));
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber <= 3) return;
+    row.eachCell((cell) => {
+      cell.alignment = { vertical: "top", wrapText: true };
+      cell.border = { bottom: { color: { argb: "FFE2E8F0" }, style: "thin" } };
+    });
+  });
+
+  return workbook.xlsx.writeBuffer();
+}
+
+export async function exportVacationReportTemplateToExcel(access: AccessContext) {
+  return exportHistoricalVacationTemplateToExcel(access);
+}
+
+function workbookCellValue(value: ExcelJS.CellValue): HistoricalVacationUploadValue {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === "number" || typeof value === "string") return value;
+  if (typeof value === "object" && "text" in value && typeof value.text === "string") return value.text;
+  if (typeof value === "object" && "result" in value) return workbookCellValue(value.result as ExcelJS.CellValue);
+  return String(value);
+}
+
+function normalizeHistoricalText(value: HistoricalVacationUploadValue) {
+  return String(value ?? "").trim();
+}
+
+function normalizeHistoricalCode(value: HistoricalVacationUploadValue) {
+  return normalizeHistoricalText(value).toLowerCase().replace(/\s+/g, "_");
+}
+
+function parseHistoricalDate(value: HistoricalVacationUploadValue) {
+  if (value === null || value === "") return null;
+  if (typeof value === "number") {
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    excelEpoch.setUTCDate(excelEpoch.getUTCDate() + value);
+    return excelEpoch.toISOString().slice(0, 10);
+  }
+  const source = normalizeHistoricalText(value);
+  const parsed = new Date(source.includes("T") ? source : `${source}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function parseHistoricalNumber(value: HistoricalVacationUploadValue) {
+  if (value === null || value === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function daysBetweenInclusive(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00.000Z`).getTime();
+  const end = new Date(`${endDate}T00:00:00.000Z`).getTime();
+  return Math.max(1, Math.round((end - start) / 86_400_000) + 1);
+}
+
+function mapHistoricalFinalToApprovalStatus(finalStatus: string): LeaveStatus {
+  if (finalStatus === "hr_approved") return "hr_approved";
+  if (finalStatus === "hr_rejected") return "hr_rejected";
+  if (finalStatus === "cancelled") return "cancelled";
+  if (finalStatus === "pending_hr") return "pending_hr";
+  if (finalStatus === "manager_rejected") return "manager_rejected";
+  return "pending_manager";
+}
+
+function mapHistoricalApprovalStepStatus(status: string) {
+  if (status === "approved") return "approved" as const;
+  if (status === "rejected") return "rejected" as const;
+  return null;
+}
+
+function getHistoricalHeaderMap(worksheet: ExcelJS.Worksheet) {
+  for (let rowNumber = 1; rowNumber <= Math.min(10, worksheet.rowCount); rowNumber += 1) {
+    const row = worksheet.getRow(rowNumber);
+    const headers = new Map<string, number>();
+    row.eachCell((cell, colNumber) => {
+      const header = normalizeHistoricalText(workbookCellValue(cell.value)).toLowerCase();
+      if (header) headers.set(header, colNumber);
+    });
+    if (headers.has("hr_id") && headers.has("leave_type") && headers.has("from_date")) {
+      return { headerRow: rowNumber, headers };
+    }
+  }
+  throw new Error("Historical Vacation Data sheet is missing the required header row.");
+}
+
+async function readHistoricalVacationWorkbook(file: File) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await file.arrayBuffer());
+  const worksheet = workbook.getWorksheet(historicalTemplateSheetName) ?? workbook.worksheets.find((sheet) => sheet.name !== historicalTemplateInstructionSheetName) ?? workbook.worksheets[0];
+  if (!worksheet) throw new Error("Workbook does not contain a readable historical vacation sheet.");
+  const { headerRow, headers } = getHistoricalHeaderMap(worksheet);
+  const rows: Array<{ row: HistoricalVacationUploadRow; rowNumber: number }> = [];
+  for (let rowNumber = headerRow + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+    const excelRow = worksheet.getRow(rowNumber);
+    const row: HistoricalVacationUploadRow = {};
+    let hasValue = false;
+    for (const column of historicalVacationColumns) {
+      const index = headers.get(column.header.toLowerCase());
+      const value = index ? workbookCellValue(excelRow.getCell(index).value) : null;
+      row[column.key] = typeof value === "string" ? value.trim() : value;
+      if (value !== null && String(value).trim().length > 0) hasValue = true;
+    }
+    if (hasValue) rows.push({ row, rowNumber });
+  }
+  return rows;
+}
+
+async function detectExistingHistoricalDuplicate(input: {
+  employeeHrId: string;
+  externalReference: string | null;
+  fromDate: string;
+  leaveTypeId: string;
+  legacySystem: string | null;
+  toDate: string;
+}) {
+  const supabase = getSupabaseAdmin();
+  if (input.externalReference) {
+    let query = supabase
+      .from("leave_historical_import_rows")
+      .select("id")
+      .eq("employee_hr_id", input.employeeHrId)
+      .eq("external_reference", input.externalReference)
+      .limit(1);
+    query = input.legacySystem ? query.eq("legacy_system", input.legacySystem) : query.is("legacy_system", null);
+    const { data, error } = await query;
+    if (!error && (data ?? []).length > 0) return true;
+  }
+  const { data: existingRequests, error: requestError } = await supabase
+    .from("leave_requests")
+    .select("id")
+    .eq("employee_hr_id", input.employeeHrId)
+    .eq("leave_type_id", input.leaveTypeId)
+    .eq("start_date", input.fromDate)
+    .eq("end_date", input.toDate)
+    .limit(1);
+  if (requestError) throw requestError;
+  return (existingRequests ?? []).length > 0;
+}
+
+async function validateHistoricalVacationRows(
+  fileName: string,
+  rows: Array<{ row: HistoricalVacationUploadRow; rowNumber: number }>,
+): Promise<HistoricalVacationDryRunResult> {
+  const { employeeByHrId } = await loadDirectoryMaps();
+  const leaveTypes = await getLeaveTypes(true);
+  const leaveTypeByCode = new Map(leaveTypes.map((type) => [type.code, type]));
+  const seenKeys = new Set<string>();
+  const acceptedRows: HistoricalVacationAcceptedRow[] = [];
+  const rejectedRows: HistoricalVacationRejectedRow[] = [];
+  const warnings: string[] = [];
+
+  for (const item of rows) {
+    const row = item.row;
+    const errors: string[] = [];
+    const rowWarnings: string[] = [];
+    const employeeHrId = cleanHrId(normalizeHistoricalText(row.HR_ID));
+    const employee = employeeByHrId.get(employeeHrId);
+    const leaveTypeCode = normalizeHistoricalCode(row.Leave_Type);
+    const leaveType = leaveTypeByCode.get(leaveTypeCode);
+    const requestDate = parseHistoricalDate(row.Request_Date);
+    const fromDate = parseHistoricalDate(row.From_Date);
+    const toDate = parseHistoricalDate(row.To_Date);
+    const hiringDate = parseHistoricalDate(row.Hiring_Date);
+    const duration = parseHistoricalNumber(row.Duration);
+    const durationUnit = normalizeHistoricalCode(row.Duration_Unit);
+    const managerStatus = normalizeHistoricalCode(row.Manager_Approval_Status);
+    const hrStatus = normalizeHistoricalCode(row.HR_Approval_Status);
+    const finalStatus = normalizeHistoricalCode(row.Final_Status);
+    const paymentStatus = normalizeHistoricalCode(row.Payment_Status);
+    const balanceDecision = normalizeHistoricalCode(row.Balance_Deduction);
+    const managerDecisionDate = parseHistoricalDate(row.Manager_Decision_Date);
+    const hrDecisionDate = parseHistoricalDate(row.HR_Decision_Date);
+    const balanceBefore = parseHistoricalNumber(row.Balance_Before);
+    const balanceAfter = parseHistoricalNumber(row.Balance_After);
+    const externalReference = normalizeHistoricalText(row.External_Reference) || null;
+    const legacySystem = normalizeHistoricalText(row.Legacy_System) || null;
+
+    for (const column of historicalVacationColumns.filter((column) => column.required)) {
+      if (!normalizeHistoricalText(row[column.key])) errors.push(`${column.header} is required.`);
+    }
+    if (!employee) errors.push(`HR_ID ${employeeHrId || "(blank)"} was not found in the employee directory.`);
+    if (!employee?.hireDate && !hiringDate) errors.push("Hiring_Date is required because employee hire date is missing.");
+    if (hiringDate && employee?.hireDate && hiringDate !== employee.hireDate) {
+      rowWarnings.push(`Uploaded Hiring_Date ${hiringDate} differs from employee directory hire date ${employee.hireDate}. Directory value remains authoritative.`);
+    }
+    if (!leaveType || !historicalLeaveTypeCodes.has(leaveTypeCode)) errors.push(`Leave_Type ${leaveTypeCode || "(blank)"} is not allowed.`);
+    if (!requestDate) errors.push("Request_Date is not a valid date.");
+    if (!fromDate) errors.push("From_Date is not a valid date.");
+    if (!toDate) errors.push("To_Date is not a valid date.");
+    if (fromDate && toDate && toDate < fromDate) errors.push("To_Date cannot be before From_Date.");
+    if (duration === null || duration <= 0) errors.push("Duration must be a positive number.");
+    if (!historicalDurationUnits.has(durationUnit)) errors.push(`Duration_Unit must be one of ${Array.from(historicalDurationUnits).join(", ")}.`);
+    if ((durationUnit === "am" || durationUnit === "pm") && fromDate && toDate && fromDate !== toDate) errors.push("AM/PM historical rows must be single-day rows.");
+    if ((durationUnit === "am" || durationUnit === "pm") && duration !== null && duration !== 0.5) rowWarnings.push("AM/PM rows normally use Duration 0.5.");
+    if (!historicalApprovalStatuses.has(managerStatus)) errors.push(`Manager_Approval_Status must be one of ${Array.from(historicalApprovalStatuses).join(", ")}.`);
+    if (!historicalApprovalStatuses.has(hrStatus)) errors.push(`HR_Approval_Status must be one of ${Array.from(historicalApprovalStatuses).join(", ")}.`);
+    if (!historicalFinalStatuses.has(finalStatus)) errors.push(`Final_Status must be one of ${Array.from(historicalFinalStatuses).join(", ")}.`);
+    if (!historicalPaymentStatuses.has(paymentStatus)) errors.push(`Payment_Status must be one of ${Array.from(historicalPaymentStatuses).join(", ")}.`);
+    if (!historicalBalanceDecisions.has(balanceDecision)) errors.push("Balance_Deduction must be deduct or no_deduct.");
+    if (requestDate && managerDecisionDate && managerDecisionDate < requestDate) errors.push("Manager_Decision_Date cannot be before Request_Date.");
+    if (requestDate && hrDecisionDate && hrDecisionDate < requestDate) errors.push("HR_Decision_Date cannot be before Request_Date.");
+    if (managerDecisionDate && hrDecisionDate && hrDecisionDate < managerDecisionDate) errors.push("HR_Decision_Date cannot be before Manager_Decision_Date.");
+    if ((managerStatus === "approved" || managerStatus === "rejected") && !normalizeHistoricalText(row.Manager_Approved_By)) {
+      errors.push("Manager_Approved_By is required when Manager_Approval_Status is approved or rejected.");
+    }
+    if ((managerStatus === "approved" || managerStatus === "rejected") && !managerDecisionDate) {
+      errors.push("Manager_Decision_Date is required when Manager_Approval_Status is approved or rejected.");
+    }
+    if ((hrStatus === "approved" || hrStatus === "rejected") && !normalizeHistoricalText(row.HR_Approved_By)) {
+      errors.push("HR_Approved_By is required when HR_Approval_Status is approved or rejected.");
+    }
+    if ((hrStatus === "approved" || hrStatus === "rejected") && !hrDecisionDate) {
+      errors.push("HR_Decision_Date is required when HR_Approval_Status is approved or rejected.");
+    }
+    if (paymentStatus === "paid" && balanceDecision !== "deduct") errors.push("Payment_Status paid must use Balance_Deduction deduct for historical reconstruction.");
+    if ((paymentStatus === "unpaid" || paymentStatus === "non_deducted") && balanceDecision !== "no_deduct") {
+      errors.push("Payment_Status unpaid/non_deducted must use Balance_Deduction no_deduct.");
+    }
+    if (balanceDecision === "deduct" && finalStatus !== "hr_approved") errors.push("Only hr_approved historical rows can deduct balance.");
+    if (balanceDecision === "deduct" && (balanceBefore === null || balanceAfter === null)) {
+      errors.push("Balance_Before and Balance_After are required when Balance_Deduction is deduct.");
+    }
+    if (balanceDecision === "deduct" && duration !== null && balanceBefore !== null && balanceAfter !== null) {
+      const expectedAfter = Math.round((balanceBefore - duration) * 100) / 100;
+      if (Math.abs(expectedAfter - balanceAfter) > 0.01) {
+        rowWarnings.push(`Balance_After does not equal Balance_Before minus Duration (${expectedAfter}). Uploaded values will be preserved in the ledger.`);
+      }
+    }
+
+    const duplicateKey = [
+      employeeHrId,
+      leaveTypeCode,
+      fromDate,
+      toDate,
+      externalReference ?? "",
+      legacySystem ?? "",
+    ].join("|");
+    if (seenKeys.has(duplicateKey)) errors.push("Duplicate row inside this workbook.");
+    seenKeys.add(duplicateKey);
+    if (employee && leaveType && fromDate && toDate && await detectExistingHistoricalDuplicate({
+      employeeHrId,
+      externalReference,
+      fromDate,
+      leaveTypeId: leaveType.id,
+      legacySystem,
+      toDate,
+    })) {
+      errors.push("Duplicate row already exists in leave history or historical import tracking.");
+    }
+
+    if (errors.length > 0) {
+      rejectedRows.push({ errors, row, rowNumber: item.rowNumber, warnings: rowWarnings });
+      continue;
+    }
+
+    const projectedBalanceImpact = balanceDecision === "deduct" && paymentStatus === "paid" && finalStatus === "hr_approved" ? duration ?? 0 : 0;
+    acceptedRows.push({
+      employeeHrId,
+      externalReference,
+      legacySystem,
+      projectedBalanceImpact,
+      row,
+      rowNumber: item.rowNumber,
+      warnings: rowWarnings,
+    });
+  }
+
+  const affectedEmployees = new Set(acceptedRows.map((row) => row.employeeHrId));
+  const duplicateRows = rejectedRows.filter((row) => row.errors.some((error) => error.toLowerCase().includes("duplicate"))).length;
+  return {
+    acceptedRows,
+    fileName,
+    rejectedRows,
+    summary: {
+      acceptedRows: acceptedRows.length,
+      affectedEmployees: affectedEmployees.size,
+      duplicateRows,
+      projectedBalanceImpact: Math.round(acceptedRows.reduce((sum, row) => sum + row.projectedBalanceImpact, 0) * 100) / 100,
+      rejectedRows: rejectedRows.length,
+      totalRows: rows.length,
+    },
+    warnings,
+  };
+}
+
+export async function dryRunHistoricalVacationImport(access: AccessContext, file: File): Promise<HistoricalVacationDryRunResult> {
+  await assertPermission(access, "leave", "update");
+  assertHistoricalVacationManageAccess(access);
+  const rows = await readHistoricalVacationWorkbook(file);
+  const result = await validateHistoricalVacationRows(file.name || "historical-vacations.xlsx", rows);
+  await writeLeaveAuditLog({
+    actorHrId: access.hrId,
+    actorRole: access.role,
+    correlationId: createLeaveCorrelationId(),
+    employeeHrId: null,
+    eventType: "leave.historical_import.dry_run",
+    metadata: {
+      fileName: result.fileName,
+      summary: result.summary,
+    },
+  }).catch(() => undefined);
+  return result;
+}
+
+async function insertHistoricalImportRow(batchId: string, row: HistoricalVacationAcceptedRow | HistoricalVacationRejectedRow, status: string, leaveRequestId?: string | null) {
+  const supabase = getSupabaseAdmin();
+  const accepted = "employeeHrId" in row ? row : null;
+  const { error } = await supabase.from("leave_historical_import_rows").insert({
+    batch_id: batchId,
+    employee_hr_id: accepted?.employeeHrId ?? (cleanHrId(normalizeHistoricalText(row.row.HR_ID)) || null),
+    external_reference: normalizeHistoricalText(row.row.External_Reference) || null,
+    legacy_system: normalizeHistoricalText(row.row.Legacy_System) || null,
+    leave_request_id: leaveRequestId ?? null,
+    row_data: row.row,
+    row_number: row.rowNumber,
+    row_status: status,
+    validation_errors: "errors" in row ? row.errors : [],
+    warnings: row.warnings,
+  });
+  if (error) throw error;
+}
+
+async function applyHistoricalBalanceTransaction(input: {
+  access: AccessContext;
+  employee: EmployeeDirectoryRow;
+  leaveType: LeaveType;
+  policy: LeavePolicy;
+  requestId: string;
+  row: HistoricalVacationUploadRow;
+}) {
+  const duration = parseHistoricalNumber(input.row.Duration) ?? 0;
+  const paymentStatus = normalizeHistoricalCode(input.row.Payment_Status);
+  const balanceDecision = normalizeHistoricalCode(input.row.Balance_Deduction);
+  const finalStatus = normalizeHistoricalCode(input.row.Final_Status);
+  if (paymentStatus !== "paid" || balanceDecision !== "deduct" || finalStatus !== "hr_approved" || duration <= 0) return null;
+  const balanceBefore = parseHistoricalNumber(input.row.Balance_Before);
+  const balanceAfter = parseHistoricalNumber(input.row.Balance_After);
+  if (balanceBefore === null || balanceAfter === null) throw new Error("Deducting historical rows require Balance_Before and Balance_After.");
+  const year = new Date(`${parseHistoricalDate(input.row.From_Date)}T00:00:00.000Z`).getUTCFullYear();
+  const balance = await ensureEmployeeBalance(input.employee, input.leaveType, input.policy, year);
+  const supabase = getSupabaseAdmin();
+  const { error: transactionError } = await supabase.from("leave_transactions").insert({
+    amount: duration,
+    balance_after: balanceAfter,
+    balance_before: balanceBefore,
+    created_by: input.access.hrId,
+    employee_hr_id: cleanHrId(input.employee.hrId),
+    leave_type_id: input.leaveType.id,
+    notes: `historical-vacation-import:${normalizeHistoricalText(input.row.External_Reference) || input.requestId}`,
+    policy_id: input.policy.id,
+    request_id: input.requestId,
+    transaction_type: "consumed",
+  });
+  if (transactionError) throw transactionError;
+  const next = applyBalanceDelta(balance, "consumed", duration);
+  const { error: balanceError } = await supabase
+    .from("employee_leave_balances")
+    .update({
+      accrued: next.accrued,
+      adjusted: next.adjusted,
+      available_balance: next.availableBalance,
+      carry_forward: next.carryForward,
+      consumed: next.consumed,
+      opening_balance: next.openingBalance,
+      pending: next.pending,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", balance.id);
+  if (balanceError) throw balanceError;
+  return { balanceAfter, balanceBefore, duration };
+}
+
+export async function confirmHistoricalVacationImport(access: AccessContext, file: File): Promise<HistoricalVacationConfirmResult> {
+  await assertPermission(access, "leave", "update");
+  assertHistoricalVacationManageAccess(access);
+  const dryRun = await validateHistoricalVacationRows(file.name || "historical-vacations.xlsx", await readHistoricalVacationWorkbook(file));
+  const supabase = getSupabaseAdmin();
+  const { employeeByHrId } = await loadDirectoryMaps();
+  const leaveTypes = await getLeaveTypes(true);
+  const leaveTypeByCode = new Map(leaveTypes.map((type) => [type.code, type]));
+  const policy = await getDefaultLeavePolicy();
+  const { data: batch, error: batchError } = await supabase
+    .from("leave_historical_import_batches")
+    .insert({
+      accepted_rows: dryRun.summary.acceptedRows,
+      affected_employees: dryRun.summary.affectedEmployees,
+      duplicate_rows: dryRun.summary.duplicateRows,
+      metadata: { summary: dryRun.summary },
+      rejected_rows: dryRun.summary.rejectedRows,
+      source_filename: dryRun.fileName,
+      status: "confirmed",
+      total_rows: dryRun.summary.totalRows,
+      uploaded_by_hr_id: access.hrId,
+      uploaded_by_role: access.role,
+    })
+    .select("id")
+    .single();
+  if (batchError) throw new Error(`Historical import tracking tables are not ready: ${batchError.message}`);
+  const batchId = (batch as { id: string }).id;
+
+  for (const rejected of dryRun.rejectedRows) {
+    await insertHistoricalImportRow(batchId, rejected, "rejected");
+  }
+
+  let importedRows = 0;
+  for (const accepted of dryRun.acceptedRows) {
+    const row = accepted.row;
+    const employee = employeeByHrId.get(accepted.employeeHrId);
+    const leaveType = leaveTypeByCode.get(normalizeHistoricalCode(row.Leave_Type));
+    if (!employee || !leaveType) {
+      await insertHistoricalImportRow(batchId, { ...accepted, errors: ["Employee or leave type disappeared before confirmation."] }, "rejected");
+      continue;
+    }
+    const requestDate = parseHistoricalDate(row.Request_Date) ?? isoToday();
+    const fromDate = parseHistoricalDate(row.From_Date) ?? requestDate;
+    const toDate = parseHistoricalDate(row.To_Date) ?? fromDate;
+    const managerStatus = normalizeHistoricalCode(row.Manager_Approval_Status) as LeaveRequest["managerStatus"];
+    const hrStatus = normalizeHistoricalCode(row.HR_Approval_Status) as LeaveRequest["hrStatus"];
+    const finalStatus = mapHistoricalFinalToApprovalStatus(normalizeHistoricalCode(row.Final_Status));
+    const duration = parseHistoricalNumber(row.Duration) ?? 0;
+    const paymentStatus = normalizeHistoricalCode(row.Payment_Status) as LeavePaymentStatus;
+    const balanceDecision = normalizeHistoricalCode(row.Balance_Deduction) as LeaveRequest["hrBalanceDecision"];
+    const { data: request, error: requestError } = await supabase
+      .from("leave_requests")
+      .insert({
+        attachment_url: null,
+        balance_leave_type_id: balanceDecision === "deduct" ? leaveType.id : null,
+        duration_unit: normalizeHistoricalCode(row.Duration_Unit) as LeaveDurationUnit,
+        employee_hr_id: accepted.employeeHrId,
+        end_date: toDate,
+        hr_balance_decision: balanceDecision,
+        hr_comment: normalizeHistoricalText(row.Notes) || null,
+        hr_decision_at: parseHistoricalDate(row.HR_Decision_Date),
+        hr_status: hrStatus,
+        leave_type_id: leaveType.id,
+        manager_comment: null,
+        manager_decision_at: parseHistoricalDate(row.Manager_Decision_Date),
+        manager_status: managerStatus,
+        payment_reason: `Historical import preserved uploaded ${paymentStatus}/${balanceDecision} decision.`,
+        payment_status: paymentStatus,
+        payroll_status: "not_required",
+        policy_id: policy.id,
+        reason: normalizeHistoricalText(row.Reason) || null,
+        requested_at: requestDate,
+        start_date: fromDate,
+        status: finalStatus,
+        total_calendar_days: daysBetweenInclusive(fromDate, toDate),
+        total_working_days: duration,
+      })
+      .select("id")
+      .single();
+    if (requestError) throw requestError;
+    const requestId = (request as { id: string }).id;
+    const managerApprovalStatus = mapHistoricalApprovalStepStatus(managerStatus);
+    const hrApprovalStatus = mapHistoricalApprovalStepStatus(hrStatus);
+    if (managerApprovalStatus) {
+      const { error } = await supabase.from("leave_approvals").insert({
+        action_date: parseHistoricalDate(row.Manager_Decision_Date) ?? requestDate,
+        approval_step: "manager",
+        approver_hr_id: cleanHrId(normalizeHistoricalText(row.Manager_Approved_By)),
+        approver_role: "manager",
+        comment: "Historical vacation import",
+        request_id: requestId,
+        status: managerApprovalStatus,
+      });
+      if (error) throw error;
+    }
+    if (hrApprovalStatus) {
+      const { error } = await supabase.from("leave_approvals").insert({
+        action_date: parseHistoricalDate(row.HR_Decision_Date) ?? requestDate,
+        approval_step: "hr",
+        approver_hr_id: cleanHrId(normalizeHistoricalText(row.HR_Approved_By)),
+        approver_role: "hr",
+        comment: "Historical vacation import",
+        request_id: requestId,
+        status: hrApprovalStatus,
+      });
+      if (error) throw error;
+    }
+    await applyHistoricalBalanceTransaction({ access, employee, leaveType, policy, requestId, row });
+    await insertHistoricalImportRow(batchId, accepted, "imported", requestId);
+    importedRows += 1;
+  }
+
+  await writeLeaveAuditLog({
+    actorHrId: access.hrId,
+    actorRole: access.role,
+    correlationId: createLeaveCorrelationId(),
+    employeeHrId: null,
+    eventType: "leave.historical_import.confirmed",
+    metadata: {
+      batchId,
+      fileName: dryRun.fileName,
+      importedRows,
+      summary: dryRun.summary,
+    },
+  });
+
+  return {
+    ...dryRun,
+    batchId,
+    importedRows,
+  };
+}
+
 export async function upsertLeaveType(access: AccessContext, input: Partial<LeaveType> & { code: string; name: string }) {
   await assertPermission(access, "leave", "update");
   if (!isManageRole(access)) throw new Error("Forbidden: leave type settings require HR or Super Admin access.");
@@ -1689,14 +3657,17 @@ export async function upsertLeavePolicy(access: AccessContext, input: Partial<Le
   return mapLeavePolicy(data as LeavePolicyRow);
 }
 
-export async function upsertPublicHoliday(access: AccessContext, input: { country?: string; date: string; id?: string; isActive?: boolean; name: string }) {
+export async function upsertPublicHoliday(access: AccessContext, input: { country?: string; date: string; durationDays?: number; endDate?: string; id?: string; isActive?: boolean; name: string }) {
   await assertPermission(access, "leave", "update");
   if (!isManageRole(access)) throw new Error("Forbidden: public holiday settings require HR or Super Admin access.");
   const year = new Date(`${input.date}T00:00:00.000Z`).getUTCFullYear();
+  const endDate = input.endDate && input.endDate >= input.date ? input.endDate : input.date;
   const supabase = getSupabaseAdmin();
   const payload = {
     country: input.country ?? "EG",
     date: input.date,
+    duration_days: input.durationDays ?? holidayDurationDays(input.date, endDate),
+    end_date: endDate,
     is_active: input.isActive ?? true,
     name: input.name.trim(),
     year,
@@ -1705,18 +3676,22 @@ export async function upsertPublicHoliday(access: AccessContext, input: { countr
     ? supabase.from("public_holidays").update(payload).eq("id", input.id)
     : supabase.from("public_holidays").upsert(payload, { onConflict: "country,date" });
   const { data, error } = await query.select("*").single();
-  if (error) throw error;
+  if (error) {
+    if (isMissingNationalVacationRangeSchemaError(error)) throw new Error(missingNationalVacationRangeSchemaMessage());
+    throw error;
+  }
   return mapHoliday(data as PublicHolidayRow);
 }
 
-export async function getEmployeeLeaveWorkspace(access: AccessContext) {
+async function getEmployeeLeaveRequestWorkspace(access: AccessContext) {
   if (!access.hrId) throw new Error("A linked employee HR_ID is required.");
   const employee = await getEmployeeOrThrow(access.hrId);
   const policy = await getDefaultLeavePolicy();
-  const [wallet, leaveTypes, requests] = await Promise.all([
+  const [wallet, leaveTypes, requests, titleWeekendRules] = await Promise.all([
     getEmployeeLeaveWallet(access),
     getLeaveTypes(false),
     listLeaveRequests(access, { employeeHrId: access.hrId }),
+    getLeaveTitleWeekendRules(),
   ]);
   const holidays = await getPublicHolidays(new Date().getUTCFullYear(), policy.country).catch(() => []);
   const calendarItems = buildLeaveCalendarItems(requests, holidays, {
@@ -1737,16 +3712,28 @@ export async function getEmployeeLeaveWorkspace(access: AccessContext) {
     requests,
     sickBackdateDays: sickBackdateDays(),
     wallet,
-    weekendDays: getWeekendDaysForEmployee(employee, policy.weekendDays),
+    weekendDays: getWeekendDaysForEmployee(employee, policy.weekendDays, titleWeekendRules),
+  };
+}
+
+export async function getEmployeeLeaveWorkspace(access: AccessContext, filters: LeaveRequestFilters = {}) {
+  const [workspace, vacationReports] = await Promise.all([
+    getEmployeeLeaveRequestWorkspace(access),
+    getVacationReportWorkspace(access, filters),
+  ]);
+  return {
+    ...workspace,
+    vacationReports,
   };
 }
 
 export async function getManagerLeaveWorkspace(access: AccessContext) {
   await assertPermission(access, "leave", "approve");
   const policy = await getDefaultLeavePolicy();
-  const [leaveTypes, requests] = await Promise.all([
+  const [leaveTypes, requests, titleWeekendRules] = await Promise.all([
     getLeaveTypes(false),
     listManagerHierarchyLeaveRequests(access, {}),
+    getLeaveTitleWeekendRules().catch(() => []),
   ]);
   const holidays = await getPublicHolidays(new Date().getUTCFullYear(), policy.country).catch(() => []);
   const month = new Date().getUTCMonth() + 1;
@@ -1758,7 +3745,157 @@ export async function getManagerLeaveWorkspace(access: AccessContext) {
     leaveTypes,
     policy,
     requests,
-    teamAvailability: buildTeamAvailability(requests, holidays, range),
+    teamAvailability: buildTeamAvailability(requests, holidays, { ...range, titleWeekendRules }),
+  };
+}
+
+function serviceDurationText(hireDate: string | null) {
+  if (!hireDate) return "Unavailable";
+  const start = new Date(`${hireDate}T00:00:00.000Z`);
+  const now = new Date();
+  if (Number.isNaN(start.getTime())) return "Unavailable";
+  const months = Math.max(0, (now.getUTCFullYear() - start.getUTCFullYear()) * 12 + now.getUTCMonth() - start.getUTCMonth());
+  const years = Math.floor(months / 12);
+  const remainingMonths = months % 12;
+  if (years <= 0) return `${remainingMonths} month${remainingMonths === 1 ? "" : "s"}`;
+  return `${years} year${years === 1 ? "" : "s"}, ${remainingMonths} month${remainingMonths === 1 ? "" : "s"}`;
+}
+
+function policyBasisText(employee: EmployeeDirectoryRow, policy: LeavePolicy) {
+  const referenceDate = isoToday();
+  const entitlement = getAnnualEntitlement(employee, policy, referenceDate);
+  return entitlement === policy.annualDaysAfterFirstYear
+    ? "1 year or more of service"
+    : "Less than 1 year of service";
+}
+
+export async function getActiveEmployeesAccrualReport(
+  access: AccessContext,
+  year = new Date().getUTCFullYear(),
+  filters: LeaveRequestFilters = {},
+): Promise<ActiveEmployeeAccrualReport> {
+  await assertPermission(access, "leave", "read");
+  assertHistoricalVacationManageAccess(access);
+  const { directory } = await loadDirectoryMaps();
+  const policy = await getDefaultLeavePolicy();
+  const leaveType = await getAnnualLeaveType();
+  const supabase = getSupabaseAdmin();
+
+  let activeEmployees = directory.employees.filter(
+    (employee) => (employee.employmentStatus ?? "active").toLowerCase() === "active",
+  );
+
+  // Apply filters
+  if (filters.employeeHrId) {
+    const hrId = cleanHrId(filters.employeeHrId);
+    activeEmployees = activeEmployees.filter((e) => cleanHrId(e.hrId).includes(hrId));
+  }
+  if (filters.employee) {
+    const needle = filters.employee.toLowerCase();
+    activeEmployees = activeEmployees.filter((e) => e.fullName.toLowerCase().includes(needle));
+  }
+  if (filters.line) {
+    const needle = filters.line.toLowerCase();
+    activeEmployees = activeEmployees.filter((e) => (e.lineName ?? "").toLowerCase().includes(needle));
+  }
+  if (filters.area) {
+    const needle = filters.area.toLowerCase();
+    activeEmployees = activeEmployees.filter((e) => (e.areaName ?? "").toLowerCase().includes(needle));
+  }
+
+  const allActiveHrIds = activeEmployees.map((e) => cleanHrId(e.hrId));
+  const [{ data: balanceRows, error: balanceError }, { data: transactionRows, error: transactionError }] =
+    await Promise.all([
+      supabase
+        .from("employee_leave_balances")
+        .select("*")
+        .eq("leave_type_id", leaveType.id)
+        .eq("policy_id", policy.id)
+        .eq("year", year)
+        .in("employee_hr_id", allActiveHrIds.length ? allActiveHrIds : ["__none__"])
+        .limit(5000),
+      supabase
+        .from("leave_transactions")
+        .select("employee_hr_id,created_at")
+        .eq("leave_type_id", leaveType.id)
+        .eq("policy_id", policy.id)
+        .in("employee_hr_id", allActiveHrIds.length ? allActiveHrIds : ["__none__"])
+        .order("created_at", { ascending: false })
+        .limit(10000),
+    ]);
+  if (balanceError) throw balanceError;
+  if (transactionError) throw transactionError;
+
+  const balanceByEmployee = new Map(
+    ((balanceRows ?? []) as EmployeeLeaveBalanceRow[]).map((row) => [
+      cleanHrId(row.employee_hr_id),
+      mapBalance(row),
+    ]),
+  );
+  const lastTransactionByEmployee = new Map<string, string>();
+  for (const row of (transactionRows ?? []) as Array<{ employee_hr_id: string; created_at: string }>) {
+    const hrId = cleanHrId(row.employee_hr_id);
+    if (!lastTransactionByEmployee.has(hrId)) lastTransactionByEmployee.set(hrId, row.created_at);
+  }
+
+  // Map to accrual rows with actual data
+  const allRows: ActiveEmployeeAccrualRow[] = activeEmployees.map((employee) => {
+    const balance = balanceByEmployee.get(cleanHrId(employee.hrId));
+    const referenceDate = isoToday();
+    return {
+      accruedToDate: balance?.accrued ?? 0,
+      adjustments: balance?.adjusted ?? 0,
+      annualEntitlement: getAnnualEntitlement(employee, policy, referenceDate),
+      area: employee.areaName,
+      availableBalance: balance?.availableBalance ?? 0,
+      carryForward: balance?.carryForward ?? 0,
+      directManager: employee.managerName ?? employee.managerHrId,
+      employeeHrId: employee.hrId,
+      employeeName: employee.fullName,
+      hiringDate: employee.hireDate,
+      lastAccrualMonth: balance?.lastAccrualDate ? balance.lastAccrualDate.slice(0, 7) : null,
+      lastLeaveTransactionDate: lastTransactionByEmployee.get(cleanHrId(employee.hrId)) ?? null,
+      line: employee.lineName,
+      monthlyAccrual: calculateMonthlyAccrual(employee, policy, referenceDate),
+      openingBalance: balance?.openingBalance ?? 0,
+      pending: balance?.pending ?? 0,
+      policyBasis: policyBasisText(employee, policy),
+      serviceDuration: serviceDurationText(employee.hireDate),
+      status: employee.employmentStatus ?? "active",
+      title: employee.jobTitle ?? employee.positionTitle,
+      usedConsumed: balance?.consumed ?? 0,
+    };
+  });
+
+  // Apply sorting
+  if (filters.sortBy) {
+    const field = filters.sortBy as keyof ActiveEmployeeAccrualRow;
+    const order = filters.sortOrder === "desc" ? -1 : 1;
+    allRows.sort((a, b) => {
+      const valA = a[field];
+      const valB = b[field];
+      if (valA === null || valA === undefined) return 1;
+      if (valB === null || valB === undefined) return -1;
+      if (valA < valB) return -order;
+      if (valA > valB) return order;
+      return 0;
+    });
+  }
+
+  const totalRows = allRows.length;
+  const limit = Math.min(100, Math.max(1, Number(filters.limit ?? 25)));
+  const offset = Math.max(0, Number(filters.offset ?? 0));
+  const pageRows = allRows.slice(offset, offset + limit);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    pagination: {
+      limit,
+      offset,
+      totalRows,
+    },
+    rows: pageRows,
+    year,
   };
 }
 
@@ -1778,12 +3915,17 @@ export async function getAdminLeaveWorkspace(access: AccessContext, filters: Lea
   ]);
   const month = filters.month ?? new Date().getUTCMonth() + 1;
   const range = getLeaveCalendarRange(month, year);
-  const [accrualPreview, activityLogs] = await Promise.all([
-    canManageLeave ? getLeaveAccrualPreview(access).catch(() => null) : Promise.resolve(null),
+  const [activeEmployeesAccrual, activityLogs, titleWeekendRules] = await Promise.all([
+    canManageLeave ? getActiveEmployeesAccrualReport(access, year, filters).catch(() => null) : Promise.resolve(null),
     canManageLeave ? listLeaveAuditLogs(access).catch(() => []) : Promise.resolve([]),
+    canManageLeave ? getLeaveTitleWeekendRules().catch(() => []) : Promise.resolve([]),
+  ]);
+  const [employeeRequestWorkspace, vacationReports] = await Promise.all([
+    access.hrId ? getEmployeeLeaveRequestWorkspace(access).catch(() => null) : Promise.resolve(null),
+    getVacationReportWorkspace(access, filters),
   ]);
   return {
-    accrualPreview,
+    activeEmployeesAccrual,
     activityLogs,
     calendarItems: buildLeaveCalendarItems(requests, holidays, { month, year }),
     capabilities: {
@@ -1791,10 +3933,13 @@ export async function getAdminLeaveWorkspace(access: AccessContext, filters: Lea
       canManageLeave,
     },
     dashboard,
+    employeeRequestWorkspace,
     holidays,
     leaveTypes,
     policies,
     requests,
-    teamAvailability: buildTeamAvailability(requests, holidays, range),
+    teamAvailability: buildTeamAvailability(requests, holidays, { ...range, titleWeekendRules }),
+    titleWeekendRules,
+    vacationReports,
   };
 }

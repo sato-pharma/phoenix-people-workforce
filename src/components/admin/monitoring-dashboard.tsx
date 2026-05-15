@@ -1,6 +1,7 @@
 "use client";
 
-import { Activity, AlertTriangle, BellRing, Lock, Radar, ShieldAlert, UserRoundCog } from "lucide-react";
+import Link from "next/link";
+import { Activity, AlertTriangle, ArrowRight, BellRing, Lock, Radar, ScrollText, ShieldAlert, UserRoundCog } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import type { AdminMonitoringStats } from "@/lib/admin/service";
@@ -149,32 +150,26 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
         </Card>
       </div>
 
-      <Card className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
-        <div className="border-b border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 px-6 py-5">
-          <h2 className="flex items-center gap-2.5 text-xs font-black uppercase tracking-[0.2em] text-slate-700">
-            <span className="h-2 w-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_8px_rgba(249,115,22,0.5)]" />
-            Recent Security Activity
-          </h2>
-        </div>
-        <div className="divide-y divide-slate-100/80">
-          {stats.recentEvents.length === 0 ? (
-            <div className="p-8 text-sm font-medium text-slate-400">No recent auth or user-admin events were recorded.</div>
-          ) : (
-            stats.recentEvents.map((event, index) => (
-              <div key={`${event.entityType}-${event.createdAt ?? index}`} className="flex items-start justify-between gap-4 px-6 py-4.5 transition-all duration-200 hover:bg-orange-50/40">
-                <div>
-                  <p className="text-sm font-bold text-slate-900">{event.summary}</p>
-                  <p className="mt-1 text-xs font-medium text-slate-500">{event.entityType}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs font-bold text-slate-700">{event.actor}</p>
-                  <p className="mt-1 text-[11px] font-medium text-slate-400">
-                    {event.createdAt ? new Date(event.createdAt).toLocaleString() : "Unknown time"}
-                  </p>
-                </div>
-              </div>
-            ))
-          )}
+      <Card className="rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
+              <ScrollText className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-700">Security Audit Detail</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
+                Monitoring keeps health counters here. Detailed auth and user-administration events are centralized in the master audit report.
+              </p>
+            </div>
+          </div>
+          <Link
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-xs font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-orange-600"
+            href="/admin/logs?module=auth"
+          >
+            Open Auth Audit
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </div>
       </Card>
       </div>

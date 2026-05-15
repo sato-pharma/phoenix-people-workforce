@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getAuditLogs } from "@/lib/admin/audit";
+import { AUDIT_MODULES, AUDIT_SOURCE_TABLES, getAuditLogs } from "@/lib/admin/audit";
 import { canAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 
@@ -19,11 +19,15 @@ export async function GET(request: Request) {
     const filter = {
       actor: url.searchParams.get("actor") || null,
       action: url.searchParams.get("action") || null,
+      entityId: url.searchParams.get("entityId") || null,
       entityType: url.searchParams.get("entityType") || null,
       dateFrom: url.searchParams.get("dateFrom") || null,
       dateTo: url.searchParams.get("dateTo") || null,
+      module: AUDIT_MODULES.find((module) => module === url.searchParams.get("module")) ?? null,
       page: Number(url.searchParams.get("page") ?? "1"),
       pageSize: Number(url.searchParams.get("pageSize") ?? "50"),
+      source: AUDIT_SOURCE_TABLES.find((source) => source === url.searchParams.get("source")) ?? null,
+      status: url.searchParams.get("status") || null,
     };
 
     const result = await getAuditLogs(filter);

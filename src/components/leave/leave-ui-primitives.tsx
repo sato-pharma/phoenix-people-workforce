@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { LeaveDurationUnit, LeaveRequest, PublicHoliday } from "@/lib/leave/types";
@@ -45,6 +46,65 @@ export function PanelHeader({
         </div>
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+}
+
+export function SyncedTableContainer({ children }: { children: ReactNode }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const [contentWidth, setContentWidth] = useState(0);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const topScroll = topScrollRef.current;
+    if (!container || !topScroll) return;
+
+    const syncTop = () => {
+      if (topScroll.scrollLeft !== container.scrollLeft) {
+        topScroll.scrollLeft = container.scrollLeft;
+      }
+    };
+    const syncBottom = () => {
+      if (container.scrollLeft !== topScroll.scrollLeft) {
+        container.scrollLeft = topScroll.scrollLeft;
+      }
+    };
+
+    container.addEventListener("scroll", syncTop);
+    topScroll.addEventListener("scroll", syncBottom);
+
+    const updateWidth = () => {
+      if (container.firstChild instanceof HTMLElement) {
+        setContentWidth(container.firstChild.scrollWidth);
+      }
+    };
+
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    if (container.firstChild instanceof HTMLElement) {
+      observer.observe(container.firstChild);
+    }
+
+    return () => {
+      container.removeEventListener("scroll", syncTop);
+      topScroll.removeEventListener("scroll", syncBottom);
+      observer.disconnect();
+    };
+  }, []);
+
+  return (
+    <div className="flex flex-col">
+      <div
+        className="overflow-x-auto overflow-y-hidden border-b border-slate-100 bg-slate-50/50"
+        ref={topScrollRef}
+        style={{ height: "12px" }}
+      >
+        <div style={{ height: "1px", width: `${contentWidth}px` }} />
+      </div>
+      <div className="overflow-x-auto" ref={containerRef}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -99,7 +159,15 @@ export function formatDate(value: string | null | undefined) {
 }
 
 export function holidayDates(holidays?: PublicHoliday[]) {
-  return new Set((holidays ?? []).map((holiday) => holiday.date));
+  const dates: string[] = [];
+  for (const holiday of holidays ?? []) {
+    const start = new Date(`${holiday.date}T00:00:00.000Z`);
+    const end = new Date(`${holiday.endDate ?? holiday.date}T00:00:00.000Z`);
+    for (let cursor = start; cursor <= end; cursor = new Date(cursor.getTime() + 86_400_000)) {
+      dates.push(cursor.toISOString().slice(0, 10));
+    }
+  }
+  return new Set(dates);
 }
 
 export function isRenderableLeaveAttachmentReference(reference: string | null | undefined) {

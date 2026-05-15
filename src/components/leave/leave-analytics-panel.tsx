@@ -27,7 +27,7 @@ export function LeaveAnalyticsPanel({
   return (
     <Panel>
       <PanelHeader
-        description="Executive leave analytics for demand, utilization, aging, upcoming absences, and public holiday impact."
+        description="Executive leave analytics for demand, utilization, aging, upcoming absences, and national vacation impact."
         icon={<BarChart3 className="h-5 w-5" />}
         title="Executive Leave Analytics"
       />
@@ -53,7 +53,7 @@ export function LeaveAnalyticsPanel({
           <MiniBars rows={resolved.pendingApprovalAging} />
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          <p className="mb-4 text-sm font-black text-slate-950">Public Holiday Impact</p>
+          <p className="mb-4 text-sm font-black text-slate-950">National Vacation Impact</p>
           <MiniBars rows={resolved.publicHolidayImpact} />
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 xl:col-span-3">

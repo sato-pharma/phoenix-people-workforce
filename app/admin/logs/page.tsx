@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { AuditLogViewer } from "@/components/admin/audit-log-viewer";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
-import { getAuditLogs, type AuditLogFilter } from "@/lib/admin/audit";
+import { AUDIT_MODULES, AUDIT_SOURCE_TABLES, getAuditLogs, type AuditLogFilter } from "@/lib/admin/audit";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
@@ -25,11 +25,15 @@ export default async function AdminLogsPage({
   const filters: AuditLogFilter = {
     actor: params.actor ?? null,
     action: params.action ?? null,
+    entityId: params.entityId ?? null,
     entityType: params.entityType ?? null,
     dateFrom: params.dateFrom ?? null,
     dateTo: params.dateTo ?? null,
+    module: AUDIT_MODULES.find((module) => module === params.module) ?? null,
     page: Number(params.page ?? "1"),
-    pageSize: 50,
+    pageSize: Number(params.pageSize ?? "50"),
+    source: AUDIT_SOURCE_TABLES.find((source) => source === params.source) ?? null,
+    status: params.status ?? null,
   };
 
   let data = null;
@@ -65,7 +69,7 @@ export default async function AdminLogsPage({
                   </div>
                   <div>
                     <h1 className="text-3xl font-black tracking-tight text-slate-950">Audit Logs</h1>
-                    <p className="mt-1 text-sm text-slate-500">Full system audit trail, searchable and exportable.</p>
+                    <p className="mt-1 text-sm text-slate-500">Master system audit report across access, auth, leave, sales, recruitment, coaching, and outstation.</p>
                   </div>
                 </div>
               </div>

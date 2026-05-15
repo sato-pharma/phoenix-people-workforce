@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Activity,
   ArrowRight,
@@ -22,7 +23,6 @@ import { InsightCard } from "@/components/cards/insight-card";
 import { StackedChart } from "@/components/charts/stacked-chart";
 import { MultiLayerChart } from "@/components/charts/multi-layer-chart";
 import { FilterChip } from "@/components/ui/filter-chip";
-import { StatusBadge } from "@/components/ui/status-badge";
 import type { OverviewDashboardData } from "@/lib/overview/service";
 import { cn } from "@/lib/utils";
 
@@ -252,39 +252,24 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
           />
         </div>
 
-        {/* Recent Admin Activities */}
+        {/* Master audit access */}
         <div className="grid grid-cols-1 gap-6">
-           <ChartCard title="Recent Admin System Logs" className="w-full" headerClassName="mb-6">
-              <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-slate-100">
-                      <th className="pb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Activity</th>
-                      <th className="pb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Module</th>
-                      <th className="pb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">User</th>
-                      <th className="pb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Time</th>
-                      <th className="pb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {data.activity.recent.map((a, i) => (
-                      <tr key={i} className="group hover:bg-slate-50/50 transition-colors cursor-pointer">
-                        <td className="py-4 text-[11px] font-bold text-slate-900 group-hover:text-orange-600 transition-colors">{a.description}</td>
-                        <td className="py-4 text-[11px] font-bold text-slate-400 uppercase tracking-tighter">{a.module}</td>
-                        <td className="py-4 text-[11px] font-bold text-slate-600">{a.userName}</td>
-                        <td className="py-4 text-[11px] font-black text-slate-300 text-right">{a.timestamp}</td>
-                        <td className="py-4 text-right">
-                           <StatusBadge status={a.status} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+           <ChartCard title="Master Audit Report" className="w-full" headerClassName="mb-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-bold text-slate-900">Detailed admin activity has moved to one governed report.</p>
+                  <p className="mt-1 max-w-2xl text-xs font-medium leading-5 text-slate-500">
+                    Use the master audit report for sales, recruitment, access, auth, leave, coaching, and outstation logs.
+                  </p>
+                </div>
+                <Link
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-orange-600"
+                  href="/admin/logs"
+                >
+                  View Detailed Logs
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
               </div>
-              
-              <button className="mt-6 flex w-full items-center justify-center text-[10px] font-black text-orange-600 uppercase tracking-widest hover:underline">
-                View Detailed Logs <ArrowRight className="ml-1 h-3 w-3" />
-              </button>
            </ChartCard>
         </div>
 

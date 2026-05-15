@@ -50,12 +50,6 @@ export type AdminMonitoringStats = {
     totalLogs: number;
     totalQueuedEvents: number;
   };
-  recentEvents: Array<{
-    actor: string;
-    createdAt: string | null;
-    entityType: string;
-    summary: string;
-  }>;
 };
 
 export async function getPhoenixAdminStats(): Promise<PhoenixAdminStats> {
@@ -118,7 +112,6 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
     forcedPasswordResets,
     failedAttempts,
     authAuditCount,
-    recentAuthEvents,
     notificationLogCount,
     notificationLogs24h,
     notificationEvents24h,
@@ -130,12 +123,6 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
     supabase.from("app_auth_users").select("*", { count: "exact", head: true }).eq("force_password_reset", true),
     supabase.from("auth_login_attempts").select("ip,success,attempted_at").eq("success", false).gte("attempted_at", since24h),
     supabase.from("audit_logs").select("*", { count: "exact", head: true }).eq("entity_type", "auth_session").gte("created_at", since24h),
-    supabase
-      .from("audit_logs")
-      .select("actor_login_id,entity_type,summary,created_at")
-      .or("entity_type.eq.auth_session,entity_type.eq.user")
-      .order("created_at", { ascending: false })
-      .limit(12),
     supabase.from("notification_delivery_logs").select("*", { count: "exact", head: true }),
     supabase
       .from("notification_delivery_logs")
@@ -190,12 +177,6 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
       totalLogs: notificationLogCount.count ?? 0,
       totalQueuedEvents: notificationEventRows.length,
     },
-    recentEvents: (recentAuthEvents.data ?? []).map((row) => ({
-      actor: row.actor_login_id ?? "System",
-      createdAt: row.created_at ?? null,
-      entityType: row.entity_type ?? "unknown",
-      summary: row.summary ?? "No summary",
-    })),
   };
 }
 

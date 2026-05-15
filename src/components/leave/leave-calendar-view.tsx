@@ -65,7 +65,7 @@ export function LeaveCalendarView({
             <button className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700 hover:bg-slate-50" onClick={() => setPeriod((current) => shiftPeriod(current, 1))} type="button">Next</button>
           </div>
         }
-        description="Month timeline with approved, pending, rejected, and public holiday entries."
+        description="Month timeline with approved, pending, rejected, and national vacation entries."
         icon={<CalendarRange className="h-5 w-5" />}
         title={title}
       />
@@ -90,7 +90,7 @@ export function LeaveCalendarView({
         </div>
 
         {displayItems.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">No leave or public holiday entries for this view.</p>
+          <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">No leave or national vacation entries for this view.</p>
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {displayItems.map((item) => (
@@ -100,7 +100,7 @@ export function LeaveCalendarView({
                     <p className="truncate text-sm font-black text-slate-950">{item.title}</p>
                     <p className="mt-1 text-xs font-semibold text-slate-500">{formatDate(item.startDate)} - {formatDate(item.endDate)}</p>
                   </div>
-                  <Badge variant={item.kind === "holiday" ? "neutral" : statusVariant(item.status)}>{item.kind === "holiday" ? "holiday" : prettyStatus(item.status)}</Badge>
+                  <Badge variant={item.kind === "holiday" ? "neutral" : statusVariant(item.status)}>{item.kind === "holiday" ? "national vacation" : prettyStatus(item.status)}</Badge>
                 </div>
                 {item.kind === "request" ? (
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-slate-600">

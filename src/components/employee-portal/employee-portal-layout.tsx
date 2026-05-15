@@ -2,7 +2,7 @@
 
 import { startTransition, useEffect, useEffectEvent, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2 } from "lucide-react";
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -15,8 +15,14 @@ function navItemClass(active: boolean) {
     : "border border-transparent text-slate-500 hover:border-slate-200 hover:bg-white/90 hover:text-slate-950 hover:shadow-[0_8px_18px_rgba(15,23,42,0.05)]";
 }
 
-function isEmployeePortalNavItemActive(pathname: string, href: string) {
-  const hrefPath = href.split("#")[0];
+function isEmployeePortalNavItemActive(pathname: string, currentQuery: string, href: string) {
+  const hrefPath = href.split("#")[0].split("?")[0];
+  const hrefQuery = href.split("?")[1]?.split("#")[0] ?? "";
+  if (hrefQuery) {
+    const currentParams = new URLSearchParams(currentQuery);
+    const hrefParams = new URLSearchParams(hrefQuery);
+    return pathname === hrefPath && Array.from(hrefParams.entries()).every(([key, value]) => currentParams.get(key) === value);
+  }
   if (hrefPath === "/employee-portals") return pathname === hrefPath;
   if (hrefPath === "/employee-portals/training-manager") return pathname === hrefPath;
   return pathname === hrefPath || pathname.startsWith(`${hrefPath}/`);
@@ -102,7 +108,8 @@ function buildEmployeePortalSections({
       title: "Actions",
       items: [
         ...(showExpenseActionTab ? [{ href: "/employee/outstation/new", label: "Expense", icon: ReceiptText }] : []),
-        { href: "/employee-portals/leave", label: "Vacation / Leave", icon: CalendarClock },
+        { href: "/employee-portals/leave?section=request", label: "Vacation Request", icon: CalendarClock },
+        { href: "/employee-portals/leave?section=reports", label: "Vacation Reports", icon: CalendarClock },
         ...(showLeaveApprovalsTab ? [{ href: "/employee-portals/leave-approvals", label: "Leave Approvals", icon: CalendarClock }] : []),
       ],
     },
@@ -123,7 +130,9 @@ export function EmployeePortalTopNav({
 }: EmployeePortalNavProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const currentPathname = usePathname();
+  const searchParams = useSearchParams();
   const pathname = activePathOverride ?? currentPathname;
+  const currentQuery = searchParams.toString();
   const handlePathnameChange = useEffectEvent(() => {
     startTransition(() => {
       setIsMobileMenuOpen(false);
@@ -244,7 +253,7 @@ export function EmployeePortalTopNav({
               </p>
               <div className="space-y-1">
                 {section.items.map((item) => {
-                  const active = isEmployeePortalNavItemActive(pathname, item.href);
+                  const active = isEmployeePortalNavItemActive(pathname, currentQuery, item.href);
                   return (
                     <Link
                       key={item.label}
@@ -298,7 +307,9 @@ export function EmployeePortalSidebar({
   visibility: EmployeePortalNavVisibility;
 }) {
   const currentPathname = usePathname();
+  const searchParams = useSearchParams();
   const pathname = activePathOverride ?? currentPathname;
+  const currentQuery = searchParams.toString();
 
   const sections = buildEmployeePortalSections(visibility);
 
@@ -319,7 +330,7 @@ export function EmployeePortalSidebar({
               {section.title}
             </p>
             {section.items.map((item) => {
-              const active = isEmployeePortalNavItemActive(pathname, item.href);
+              const active = isEmployeePortalNavItemActive(pathname, currentQuery, item.href);
               return (
                 <Link
                   key={item.label}

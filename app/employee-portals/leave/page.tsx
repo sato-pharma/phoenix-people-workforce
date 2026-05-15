@@ -8,10 +8,36 @@ import { EmployeeLeaveWorkspace } from "@/components/leave/leave-workspaces";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeeLeaveWorkspace } from "@/lib/leave/service";
+import type { LeaveRequestFilters } from "@/lib/leave/types";
 
 export const dynamic = "force-dynamic";
 
-export default async function EmployeeLeavePage() {
+function firstValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function parseFilters(searchParams: Record<string, string | string[] | undefined>): LeaveRequestFilters {
+  const month = firstValue(searchParams.month);
+  const year = firstValue(searchParams.year);
+  return {
+    area: firstValue(searchParams.area),
+    employee: firstValue(searchParams.employee),
+    employeeHrId: firstValue(searchParams.employeeHrId),
+    endDate: firstValue(searchParams.endDate),
+    leaveTypeId: firstValue(searchParams.leaveTypeId),
+    line: firstValue(searchParams.line),
+    managerHrId: firstValue(searchParams.managerHrId),
+    month: month ? Number(month) : undefined,
+    paymentStatus: firstValue(searchParams.paymentStatus),
+    startDate: firstValue(searchParams.startDate),
+    status: firstValue(searchParams.status),
+    year: year ? Number(year) : undefined,
+  };
+}
+
+export default async function EmployeeLeavePage(props: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/admin/leave");
@@ -26,9 +52,12 @@ export default async function EmployeeLeavePage() {
     );
   }
 
+  const searchParams = await props.searchParams;
+  const section = firstValue(searchParams.section);
+  const viewMode = section === "reports" ? "reports" : "request";
   let data = null;
   try {
-    data = await getEmployeeLeaveWorkspace(access);
+    data = await getEmployeeLeaveWorkspace(access, parseFilters(searchParams));
   } catch {
     data = null;
   }
@@ -44,11 +73,20 @@ export default async function EmployeeLeavePage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Vacation / Leave"
-      description="Manage annual leave balance, submit requests, and review approval history."
-      title="Vacation / Leave Management"
+      badge={viewMode === "reports" ? "Vacation Reports" : "Vacation Request"}
+      description={
+        viewMode === "reports"
+          ? "Review your vacation history and approved, pending, or rejected leave records."
+          : "Review your leave balance, submit a vacation request, and track your request history."
+      }
+      title={viewMode === "reports" ? "My Vacation Reports" : "Vacation Request"}
     >
-      <EmployeeLeaveWorkspace {...data} />
+      <EmployeeLeaveWorkspace
+        {...data}
+        defaultVacationTab={viewMode === "reports" ? "my" : "request"}
+        key={viewMode === "reports" ? "employee-leave-reports" : "employee-leave-request"}
+        viewMode={viewMode}
+      />
     </EmployeePortalPageShell>
   );
 }

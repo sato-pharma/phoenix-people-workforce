@@ -88,7 +88,7 @@ export function LeaveAvailabilityView({
                   <Badge variant="success">{day.approved.length} approved</Badge>
                   <Badge variant="warning">{day.pending.length} pending</Badge>
                   <Badge variant="danger">{day.rejected.length} rejected</Badge>
-                  {day.publicHolidays.length ? <Badge variant="neutral">{day.publicHolidays.length} holiday</Badge> : null}
+                  {day.publicHolidays.length ? <Badge variant="neutral">{day.publicHolidays.length} national vacation</Badge> : null}
                 </div>
                 <div className="mt-3 space-y-2">
                   {[...day.approved, ...day.pending].slice(0, 5).map((request) => (

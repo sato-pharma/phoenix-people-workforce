@@ -6,6 +6,12 @@ export type LeaveEmployeeForPolicy = Pick<EmployeeDirectoryRow, "hireDate"> & {
   positionTitle?: string | null;
 };
 
+export type TitleWeekendRule = {
+  title: string;
+  titleKey?: string | null;
+  weekendDays: number[];
+};
+
 const dayMs = 24 * 60 * 60 * 1000;
 const defaultWeekendDays = [5, 6];
 const fieldWorkingTitlePatterns = [
@@ -31,6 +37,23 @@ function roundDays(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+export function normalizeLeaveTitleKey(value: string | null | undefined) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizeWeekendDays(value: number[] | null | undefined, fallbackWeekendDays: number[] = defaultWeekendDays) {
+  const days = Array.from(new Set((value ?? []).map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)));
+  return days.length ? days.sort((left, right) => left - right) : fallbackWeekendDays.map(Number);
+}
+
+export function defaultWeekendDaysForTitle(title: string | null | undefined, fallbackWeekendDays: number[] = defaultWeekendDays) {
+  const normalizedTitle = String(title ?? "").toLowerCase();
+  if (fieldWorkingTitlePatterns.some((pattern) => pattern.test(normalizedTitle))) {
+    return [5];
+  }
+  return normalizeWeekendDays(fallbackWeekendDays, defaultWeekendDays);
+}
+
 export function calculateYearsOfService(hiringDate: Date | string | null | undefined, asOfDate: Date | string = new Date()) {
   if (!hiringDate) return 0;
   const start = toUtcDate(hiringDate);
@@ -46,12 +69,20 @@ export function calculateYearsOfService(hiringDate: Date | string | null | undef
 export function getWeekendDaysForEmployee(
   employee: Partial<Pick<LeaveEmployeeForPolicy, "jobTitle" | "positionTitle">> | null | undefined,
   fallbackWeekendDays: number[] = defaultWeekendDays,
+  titleWeekendRules: TitleWeekendRule[] = [],
 ) {
-  const title = `${employee?.jobTitle ?? ""} ${employee?.positionTitle ?? ""}`.toLowerCase();
-  if (fieldWorkingTitlePatterns.some((pattern) => pattern.test(title))) {
-    return [5];
+  const ruleByTitleKey = new Map(
+    titleWeekendRules.map((rule) => [
+      rule.titleKey ? normalizeLeaveTitleKey(rule.titleKey) : normalizeLeaveTitleKey(rule.title),
+      normalizeWeekendDays(rule.weekendDays, fallbackWeekendDays),
+    ]),
+  );
+  const employeeTitles = [employee?.positionTitle, employee?.jobTitle].map(normalizeLeaveTitleKey).filter(Boolean);
+  for (const title of employeeTitles) {
+    const configured = ruleByTitleKey.get(title);
+    if (configured) return configured;
   }
-  return fallbackWeekendDays?.length ? fallbackWeekendDays.map(Number) : defaultWeekendDays;
+  return defaultWeekendDaysForTitle(`${employee?.jobTitle ?? ""} ${employee?.positionTitle ?? ""}`, fallbackWeekendDays);
 }
 
 export function isWithinFirstSixMonths(hiringDate: Date | string | null | undefined, asOfDate: Date | string = new Date()) {

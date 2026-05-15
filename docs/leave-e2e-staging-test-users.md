@@ -88,6 +88,7 @@ Before running the full E2E suite, staging should have predictable data for the 
 5. The employee account should use a stable title for working-week assertions. Use a medical/sales field title such as `Medical Representative` when validating Saturday-as-working-day behavior; use a non-field title when validating Friday/Saturday weekends.
 6. If Sick Leave is included in E2E, prepare a small valid upload file and assert that the UI shows both helper lines: `شهادة مرضية مختومة من مستشفى حكومي` and `Medical certificate stamped by a governmental hospital`.
 7. If Other Leave is included in E2E, the HR user must choose either `Deduct Balance` or `Do Not Deduct` in the HR decision controls before approving.
+8. If Historical Vacation Upload is included in staging QA, apply `supabase/migrations/20260515160000_leave_historical_vacation_import_tracking.sql` through the controlled staging migration process first. Use the HR account only, download Historical Vacation Template Download, run dry-run, then confirm with a workbook that includes one paid/deduct row and one unpaid/no_deduct row. Do not include payroll assertions because historical upload must not mutate payroll.
 
 Recommended default dates:
 

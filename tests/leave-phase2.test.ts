@@ -166,10 +166,15 @@ export function runLeavePhase2Tests() {
   const workspaceSource = readFileSync("src/components/leave/leave-workspaces.tsx", "utf8");
   assert.match(workspaceSource, /LeaveCalendarView/);
   assert.match(workspaceSource, /LeaveAvailabilityView/);
-  assert.match(workspaceSource, /LeaveAccrualPanel/);
+  assert.doesNotMatch(workspaceSource, /LeaveAccrualPanel/);
+  assert.doesNotMatch(workspaceSource, /Accrual Controls/);
   assert.match(workspaceSource, /LeaveAnalyticsPanel/);
   assert.match(workspaceSource, /LeaveRequestForm/);
   assert.match(workspaceSource, /LeaveRequestHistory/);
+
+  const automaticAccrualRouteSource = readFileSync("app/api/leave/accrual/monthly/route.ts", "utf8");
+  assert.match(automaticAccrualRouteSource, /CRON_SECRET/);
+  assert.match(automaticAccrualRouteSource, /runAutomaticMonthlyLeaveAccrual/);
 
   const detailModalSource = readFileSync("src/components/leave/leave-detail-modal.tsx", "utf8");
   assert.match(detailModalSource, /\/api\/leave\/requests\/\$\{selectedRequest\.id\}\/attachment/);

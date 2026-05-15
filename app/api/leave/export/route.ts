@@ -15,6 +15,7 @@ function filtersFromUrl(url: string): LeaveRequestFilters {
     line: params.get("line") || undefined,
     managerHrId: params.get("managerHrId") || undefined,
     month: params.get("month") ? Number(params.get("month")) : undefined,
+    paymentStatus: params.get("paymentStatus") || undefined,
     startDate: params.get("startDate") || undefined,
     status: params.get("status") || undefined,
     year: params.get("year") ? Number(params.get("year")) : undefined,

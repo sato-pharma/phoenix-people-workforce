@@ -4,12 +4,14 @@ import {
   BriefcaseBusiness,
   BellRing,
   CalendarClock,
+  CalendarCheck,
   CalendarDays,
   ChartNoAxesColumnIncreasing,
   ChevronRight,
   ChartColumnBig,
   ClipboardCheck,
   FileSpreadsheet,
+  FileText,
   FilePlus2,
   FileUp,
   Hourglass,
@@ -27,7 +29,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Fragment, useId, useMemo, useState, useSyncExternalStore } from "react";
 
 import { type NavigationMode, type PermissionAction, type PermissionResource, type PhoenixRole } from "@/lib/auth/permissions";
@@ -98,12 +100,20 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
         { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
         { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
         { href: "/offers", icon: IdCard, label: "Offer Lifecycle", permissions: [{ resource: "offers" }] },
-        { href: "/admin/leave", icon: CalendarDays, label: "Leave Management", permissions: [{ resource: "leave" }] },
         { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },
         { href: "/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
         { href: "/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
       ],
       label: "People Management",
+    },
+    {
+      id: "leave-management",
+      items: [
+        { href: "/admin/leave?section=management", icon: CalendarCheck, label: "Leave Management", permissions: [{ resource: "leave", action: "update" }], roles: ["Super Admin", "HR Specialist"] },
+        { href: "/admin/leave?section=request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave" }] },
+        { href: "/admin/leave?section=reports", icon: FileText, label: "Vacation Reports", permissions: [{ resource: "leave", action: "export" }] },
+      ],
+      label: "Leave Management",
     },
     {
       id: "sales-performance",
@@ -174,7 +184,8 @@ function getEmployeePortalSections(permissionLookup: PermissionLookup, currentRo
         { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Team Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["District Manager", "Regional Sales Manager", "National Sales Manager"] },
         { href: "/payslips", icon: ChartColumnBig, label: "Payroll & Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }] },
         { href: "/employee/outstation/new", icon: MapPinned, label: "Outstation", permissions: [{ resource: "outstation" }] },
-        { href: "/employee-portals/leave", icon: CalendarDays, label: "Vacation / Leave", permissions: [{ resource: "leave" }] },
+        { href: "/employee-portals/leave?section=request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave" }] },
+        { href: "/employee-portals/leave?section=reports", icon: FileSpreadsheet, label: "Vacation Reports", permissions: [{ resource: "leave" }] },
         { href: "/employee-portals/leave-approvals", icon: CalendarClock, label: "Leave Approvals", excludedRoles: ["Training Manager"], permissions: [{ resource: "leave", action: "approve" }] },
       ],
       label: "Medical Rep Portal",
@@ -200,8 +211,14 @@ function getHomePath(mode: NavigationMode) {
   return "/admin/access";
 }
 
-function isActivePath(pathname: string, href: string, activeTab: string | null) {
+function isActivePath(pathname: string, currentQuery: string, href: string, activeTab: string | null) {
   const baseHref = href.split("?")[0];
+  const hrefQuery = href.split("?")[1] ?? "";
+  if (hrefQuery) {
+    const currentParams = new URLSearchParams(currentQuery);
+    const hrefParams = new URLSearchParams(hrefQuery);
+    return pathname === baseHref && Array.from(hrefParams.entries()).every(([key, value]) => currentParams.get(key) === value);
+  }
   if (href.includes("tab=governance")) return pathname === baseHref && activeTab === "governance";
   if (href.includes("tab=generate")) return pathname === baseHref && activeTab === "generate";
   if (baseHref === "/employee-portals") return pathname === "/employee-portals";
@@ -213,10 +230,10 @@ function isActivePath(pathname: string, href: string, activeTab: string | null) 
   return pathname === baseHref || pathname.startsWith(`${baseHref}/`);
 }
 
-function getActiveHref(pathname: string, sections: SidebarSection[], activeTab: string | null) {
+function getActiveHref(pathname: string, currentQuery: string, sections: SidebarSection[], activeTab: string | null) {
   const matches = sections
     .flatMap((section) => section.items)
-    .filter((item) => isActivePath(pathname, item.href, activeTab))
+    .filter((item) => isActivePath(pathname, currentQuery, item.href, activeTab))
     .sort((left, right) => right.href.split("?")[0].length - left.href.split("?")[0].length);
 
   return matches[0]?.href ?? null;
@@ -294,9 +311,10 @@ function SidebarNav({
     [currentRole, mode, permissionLookup],
   );
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const navInstanceId = useId();
   const [activeTab, setActiveTab] = useState<string | null>(pathname === "/payroll" ? "governance" : null);
-  const activeHref = getActiveHref(pathname, sections, activeTab);
+  const activeHref = getActiveHref(pathname, searchParams.toString(), sections, activeTab);
   const sectionIds = useMemo(() => sections.map((section) => section.id), [sections]);
   const activeSectionId = sections.find((section) => section.items.some((item) => item.href === activeHref))?.id ?? null;
   const collapsedStorageKey = getCollapsedStorageKey(mode);
