@@ -90,7 +90,7 @@ export async function getAuditLogs(filter: AuditLogFilter = {}): Promise<AuditLo
 
 export async function writeAuditLog(input: AuditLogInput) {
   const supabase = getSupabaseAdmin();
-  await supabase.from("audit_logs").insert({
+  const { error } = await supabase.from("audit_logs").insert({
     actor_login_id: input.actorLoginId ?? "system",
     entity_id: input.entityId ?? null,
     entity_type: input.entityType,
@@ -98,6 +98,7 @@ export async function writeAuditLog(input: AuditLogInput) {
     old_values: input.oldValues ?? null,
     summary: input.summary,
   });
+  if (error) throw error;
 }
 
 export async function writeRequiredAuditLog(input: AuditLogInput) {

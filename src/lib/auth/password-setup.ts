@@ -144,6 +144,8 @@ export async function sendPasswordSetupLink(input: {
   const setupUrl = `${publicBaseUrl(input.origin)}/password-setup/${token}`;
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
+  let tokenInserted = false;
+  let deliveryMessage = `Password ${purpose === "setup" ? "setup" : "reset"} link generated for copy/paste.`;
 
   await invalidateOutstandingTokens(loginId);
 
@@ -162,75 +164,89 @@ export async function sendPasswordSetupLink(input: {
   if (insertError) {
     throw insertError;
   }
+  tokenInserted = true;
 
   const currentVersion = (() => {
     const version = Number((user as { session_version?: unknown }).session_version);
     return Number.isFinite(version) && version > 0 ? version : 1;
   })();
 
-  const { error: updateError } = await supabase
-    .from("app_auth_users")
-    .update({
-      force_password_reset: true,
-      session_version: currentVersion + 1,
-      updated_at: now,
-    })
-    .eq("login_id", loginId);
+  try {
+    const { error: updateError } = await supabase
+      .from("app_auth_users")
+      .update({
+        force_password_reset: true,
+        session_version: currentVersion + 1,
+        updated_at: now,
+      })
+      .eq("login_id", loginId);
 
-  if (updateError) {
-    throw updateError;
+    if (updateError) {
+      throw updateError;
+    }
+
+    const emailResult =
+      deliveryMode === "email"
+        ? await safeSendNotificationEmail({
+            ctaHref: setupUrl,
+            ctaLabel: "Set your password",
+            metrics: [
+              { label: "Login ID", value: loginId },
+              { label: "HR_ID", value: user.hr_id ?? loginId },
+              { label: "Expires", value: new Date(expiresAt).toLocaleString("en-US") },
+            ],
+            candidateEmail: user.email,
+            notificationType: purpose === "setup" ? "user_created" : "password_reset",
+            recipients: user.email ? [user.email] : [],
+            recipientMode: "candidate",
+            subject: purpose === "setup" ? "Phoenix Workforce account setup" : "Phoenix Workforce password reset",
+            summary:
+              purpose === "setup"
+                ? "Use this one-time link to create your Phoenix Workforce password. After that, sign in with your HR_ID and the password you choose."
+                : "Use this one-time link to reset your Phoenix Workforce password. After that, sign in with your HR_ID and the new password you choose.",
+            title: purpose === "setup" ? "Create your Phoenix Workforce password" : "Reset your Phoenix Workforce password",
+            tone: "warning",
+          })
+        : { skipped: true as const, reason: "Link generated for manual sharing." };
+    deliveryMessage = deliveryMode === "copy"
+      ? `Password ${purpose === "setup" ? "setup" : "reset"} link generated for copy/paste.`
+      : emailResult.skipped
+        ? `Link generated but email was not delivered: ${emailResult.reason}`
+        : `Password ${purpose === "setup" ? "setup" : "reset"} link sent to ${user.email}.`;
+
+    await writeRequiredAuditLog({
+      actorLoginId: input.actorLoginId ?? null,
+      entityId: loginId,
+      entityType: "user",
+      newValues: {
+        action: "password_setup_link_generated",
+        delivery: deliveryMode === "email" && !emailResult.skipped ? "email_sent" : "link_generated_only",
+        deliveryMode,
+        expiresAt,
+        reason: input.governanceReason ?? null,
+        purpose,
+        sentTo: deliveryMode === "email" ? user.email : null,
+        token: "[redacted]",
+        url: "[redacted]",
+      },
+      oldValues: null,
+      summary: `${deliveryMode === "email" ? "Sent" : "Generated"} ${purpose === "setup" ? "setup" : "reset"} link for ${loginId}`,
+    });
+  } catch (error) {
+    if (tokenInserted) {
+      await invalidateOutstandingTokens(loginId).catch((rollbackError) => {
+        console.error(JSON.stringify({
+          error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+          event: "password_setup_token_compensation_failed",
+          loginId,
+        }));
+      });
+    }
+    throw error;
   }
 
-  const emailResult =
-    deliveryMode === "email"
-      ? await safeSendNotificationEmail({
-          ctaHref: setupUrl,
-          ctaLabel: "Set your password",
-          metrics: [
-            { label: "Login ID", value: loginId },
-            { label: "HR_ID", value: user.hr_id ?? loginId },
-            { label: "Expires", value: new Date(expiresAt).toLocaleString("en-US") },
-          ],
-          candidateEmail: user.email,
-          notificationType: purpose === "setup" ? "user_created" : "password_reset",
-          recipients: user.email ? [user.email] : [],
-          recipientMode: "candidate",
-          subject: purpose === "setup" ? "Phoenix Workforce account setup" : "Phoenix Workforce password reset",
-          summary:
-            purpose === "setup"
-              ? "Use this one-time link to create your Phoenix Workforce password. After that, sign in with your HR_ID and the password you choose."
-              : "Use this one-time link to reset your Phoenix Workforce password. After that, sign in with your HR_ID and the new password you choose.",
-          title: purpose === "setup" ? "Create your Phoenix Workforce password" : "Reset your Phoenix Workforce password",
-          tone: "warning",
-        })
-      : { skipped: true as const, reason: "Link generated for manual sharing." };
-
-  await writeRequiredAuditLog({
-    actorLoginId: input.actorLoginId ?? null,
-    entityId: loginId,
-    entityType: "user",
-    newValues: {
-      action: "password_setup_link_generated",
-      delivery: deliveryMode === "email" && !emailResult.skipped ? "email_sent" : "link_generated_only",
-      deliveryMode,
-      expiresAt,
-      reason: input.governanceReason ?? null,
-      purpose,
-      sentTo: deliveryMode === "email" ? user.email : null,
-      token: "[redacted]",
-      url: "[redacted]",
-    },
-    oldValues: null,
-    summary: `${deliveryMode === "email" ? "Sent" : "Generated"} ${purpose === "setup" ? "setup" : "reset"} link for ${loginId}`,
-  });
-
   return {
-    deliveryMessage:
-      deliveryMode === "copy"
-        ? `Password ${purpose === "setup" ? "setup" : "reset"} link generated for copy/paste.`
-        : emailResult.skipped
-          ? `Link generated but email was not delivered: ${emailResult.reason}`
-          : `Password ${purpose === "setup" ? "setup" : "reset"} link sent to ${user.email}.`,
+    deliveryMessage,
     deliveryMode,
     expiresAt,
     loginId,

@@ -30,6 +30,7 @@ import { runLeaveProductionReadinessTests } from "./leave-production-readiness.t
 import { runLeaveRolloutTests } from "./leave-rollout.test.ts";
 import { runLeaveServiceSafetyTests } from "./leave-service-safety.test.ts";
 import { runAccessGovernanceHardeningTests } from "./access-governance-hardening.test.ts";
+import { runAccessBulkTests } from "./access-bulk.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -73,3 +74,4 @@ await runTest("leave service safety", runLeaveServiceSafetyTests);
 await runTest("auth session", runAuthSessionTests);
 await runTest("employee display name", runEmployeeDisplayNameTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
+await runTest("access bulk workflow", runAccessBulkTests);

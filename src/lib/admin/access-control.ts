@@ -31,6 +31,7 @@ export const phoenixLines = ["CNS", "Pedia", "Anti-Infective", "Office", "Other"
 export type PhoenixLine = (typeof phoenixLines)[number];
 
 export type AccessUserRow = {
+  accessState: "directory_only" | "provisioned";
   createdAt: string;
   email: string | null;
   forcePasswordReset: boolean;
@@ -153,6 +154,7 @@ function toUser(row: AccessUserDbRow, employee?: EmployeeDirectoryRow): AccessUs
   const name = row.name ?? employee?.fullName ?? row.login_id;
 
   return {
+    accessState: "provisioned",
     createdAt: row.created_at,
     email: row.email ?? employee?.workEmail ?? null,
     forcePasswordReset: Boolean(row.force_password_reset),
@@ -167,6 +169,27 @@ function toUser(row: AccessUserDbRow, employee?: EmployeeDirectoryRow): AccessUs
     salesScope: getSalesScope({ role, salesScopeOverride }),
     salesScopeOverride,
     updatedAt: row.updated_at,
+  };
+}
+
+function directoryEmployeeToUser(employee: EmployeeDirectoryRow): AccessUserRow {
+  const role: PhoenixRole = "Employee";
+  return {
+    accessState: "directory_only",
+    createdAt: employee.createdAt,
+    email: employee.workEmail,
+    forcePasswordReset: false,
+    hrId: employee.hrId,
+    isActive: true,
+    line: normalizeLine(employee.lineName),
+    loginId: employee.hrId,
+    managerHrId: employee.managerHrId,
+    name: employee.fullName,
+    payrollScope: getPayrollScope({ role }),
+    role,
+    salesScope: getSalesScope({ role }),
+    salesScopeOverride: null,
+    updatedAt: employee.updatedAt,
   };
 }
 
@@ -355,6 +378,20 @@ export async function getAccessControlDashboard() {
 
   const directory = await getEmployeeDirectory().catch(() => null);
   const employeeMap = employeeByHrId(directory?.employees ?? []);
+  const provisionedHrIds = new Set(
+    ((data ?? []) as AccessUserDbRow[])
+      .map((row) => row.hr_id?.trim().toLowerCase())
+      .filter((hrId): hrId is string => Boolean(hrId)),
+  );
+  const activeProvisionedRows = directory
+    ? ((data ?? []) as AccessUserDbRow[]).filter((row) => {
+        const hrId = row.hr_id?.trim().toLowerCase();
+        return !hrId || employeeMap.has(hrId);
+      })
+    : ((data ?? []) as AccessUserDbRow[]);
+  const directoryOnlyUsers = (directory?.employees ?? [])
+    .filter((employee) => !provisionedHrIds.has(employee.hrId.trim().toLowerCase()))
+    .map(directoryEmployeeToUser);
 
   return {
     auditLogs: await listAuditLogs(),
@@ -368,9 +405,12 @@ export async function getAccessControlDashboard() {
     permissions: await getPermissionMatrix(),
     permissionOverrides: await listPermissionOverrides(),
     roles: phoenixRoles,
-    users: ((data ?? []) as AccessUserDbRow[]).map((row) =>
-      toUser(row, row.hr_id ? employeeMap.get(row.hr_id.trim().toLowerCase()) : undefined),
-    ),
+    users: [
+      ...activeProvisionedRows.map((row) =>
+        toUser(row, row.hr_id ? employeeMap.get(row.hr_id.trim().toLowerCase()) : undefined),
+      ),
+      ...directoryOnlyUsers,
+    ].sort((left, right) => left.name.localeCompare(right.name) || left.loginId.localeCompare(right.loginId)),
   };
 }
 
@@ -756,6 +796,140 @@ async function supabaseUser(loginId: string) {
     .eq("login_id", loginId)
     .maybeSingle();
   return (data as AccessUserRecord | null) ?? null;
+}
+
+async function supabaseUserByEmployeeHrId(employeeHrId: string) {
+  const supabase = getSupabaseAdmin();
+  const normalized = employeeHrId.trim();
+  if (!normalized) return null;
+
+  const { data: byHrId, error: byHrIdError } = await supabase
+    .from("app_auth_users")
+    .select("login_id,role,hr_id,is_active,name,email,line,manager_hr_id,sales_scope_override,auth_user_id,auth_email,session_version,force_password_reset,password_hash")
+    .eq("hr_id", normalized)
+    .maybeSingle();
+
+  if (byHrIdError) throw byHrIdError;
+  if (byHrId) return byHrId as AccessUserRecord;
+
+  const { data: byLoginId, error: byLoginIdError } = await supabase
+    .from("app_auth_users")
+    .select("login_id,role,hr_id,is_active,name,email,line,manager_hr_id,sales_scope_override,auth_user_id,auth_email,session_version,force_password_reset,password_hash")
+    .eq("login_id", normalized)
+    .maybeSingle();
+
+  if (byLoginIdError) throw byLoginIdError;
+  return (byLoginId as AccessUserRecord | null) ?? null;
+}
+
+export async function deactivateAccessForEmployeeLifecycle(input: {
+  actorLoginId?: string | null;
+  employeeHrId: string;
+  reason: string;
+  source: "resignation_workflow" | "employee_lifecycle";
+}) {
+  const existing = await supabaseUserByEmployeeHrId(input.employeeHrId);
+  if (!existing?.login_id) {
+    return { changed: false, loginId: null };
+  }
+
+  const loginId = String(existing.login_id);
+  const wasActive = isStoredActive(existing);
+  const nextSessionVersion = wasActive
+    ? getStoredSessionVersion(existing) + 1
+    : getStoredSessionVersion(existing);
+  const supabase = getSupabaseAdmin();
+  let appStatusWritten = false;
+  let authStatusWritten = false;
+  let profileStatusWritten = false;
+
+  try {
+    const { error } = await supabase
+      .from("app_auth_users")
+      .update({
+        is_active: false,
+        session_version: nextSessionVersion,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("login_id", loginId);
+
+    if (error) throw error;
+    appStatusWritten = true;
+
+    if (typeof existing.auth_user_id === "string") {
+      await setSupabaseAuthIdentityAccess({
+        authUserId: existing.auth_user_id,
+        isActive: false,
+      });
+      authStatusWritten = true;
+
+      const { error: profileError } = await supabase
+        .from("user_access_profiles")
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq("auth_user_id", existing.auth_user_id);
+
+      if (profileError) throw profileError;
+      profileStatusWritten = true;
+    }
+
+    await auditUserChange({
+      actor: { loginId: input.actorLoginId ?? "system", role: "Super Admin" },
+      entityId: loginId,
+      oldValues: existing,
+      newValues: {
+        auth_identity_access: "banned",
+        employee_hr_id: input.employeeHrId,
+        is_active: false,
+        reason: input.reason,
+        session_version: nextSessionVersion,
+        source: input.source,
+      },
+      summary: `Lifecycle deactivated ${loginId}`,
+    });
+  } catch (mutationError) {
+    if (profileStatusWritten && typeof existing.auth_user_id === "string") {
+      try {
+        const { error: profileRollbackError } = await supabase
+          .from("user_access_profiles")
+          .update({ is_active: wasActive, updated_at: new Date().toISOString() })
+          .eq("auth_user_id", existing.auth_user_id);
+        if (profileRollbackError) throw profileRollbackError;
+      } catch (rollbackError) {
+        logCompensationFailure("lifecycle_profile_restore", rollbackError);
+      }
+    }
+
+    if (authStatusWritten && typeof existing.auth_user_id === "string") {
+      try {
+        await setSupabaseAuthIdentityAccess({
+          authUserId: existing.auth_user_id,
+          isActive: wasActive,
+        });
+      } catch (rollbackError) {
+        logCompensationFailure("lifecycle_auth_restore", rollbackError);
+      }
+    }
+
+    if (appStatusWritten) {
+      try {
+        const { error: userRollbackError } = await supabase
+          .from("app_auth_users")
+          .update({
+            is_active: wasActive,
+            session_version: getStoredSessionVersion(existing),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("login_id", loginId);
+        if (userRollbackError) throw userRollbackError;
+      } catch (rollbackError) {
+        logCompensationFailure("lifecycle_user_restore", rollbackError);
+      }
+    }
+
+    throw mutationError;
+  }
+
+  return { changed: wasActive || authStatusWritten || profileStatusWritten, loginId };
 }
 
 export async function updateAccessUserStatus(

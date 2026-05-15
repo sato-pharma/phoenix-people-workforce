@@ -1,3 +1,4 @@
+import { deactivateAccessForEmployeeLifecycle } from "@/lib/admin/access-control";
 import { getEmployeeDirectory, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
@@ -760,29 +761,99 @@ async function updateEmployeeLifecycleFallback(
   throw new Error("Unable to update employee lifecycle after removing unsupported optional columns.");
 }
 
-async function deactivateEmployeeAccessIfSupported(supabase: SupabaseClient, employeeHrId: string) {
-  const appAuthResult = await supabase
-    .from("app_auth_users")
-    .update({
-      is_active: false,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("hr_id", employeeHrId);
+async function completeEmployeeLifecycleForResignation(
+  supabase: SupabaseClient,
+  row: ResignationRow,
+  actor: string,
+) {
+  const employeeHrId = row.employee_hr_id.trim();
+  if (!employeeHrId) return;
 
-  if (appAuthResult.error && !isMissingSchemaMessage(appAuthResult.error)) {
-    throw appAuthResult.error;
+  const effectiveDate =
+    normalizeDate(row.effective_date || row.last_working_date || row.resignation_date || row.submitted_date) ||
+    todayDate();
+  const submittedDate = normalizeDate(row.submitted_date || row.resignation_date) || effectiveDate;
+  const optionalColumns = [
+    "exit_reason",
+    "exit_status",
+    "last_working_date",
+    "organogram_visible",
+    "payroll_eligible",
+    "resignation_date",
+  ];
+  const payload: Record<string, unknown> = {
+    employment_status: "resigned",
+    exit_reason: cleanText(row.reason),
+    exit_status: "completed",
+    last_working_date: effectiveDate,
+    organogram_visible: false,
+    payroll_eligible: false,
+    resignation_date: submittedDate,
+    updated_at: new Date().toISOString(),
+  };
+
+  let lifecycleUpdated = false;
+
+  for (let attempt = 0; attempt <= optionalColumns.length; attempt++) {
+    const { error } = await supabase
+      .from("employees")
+      .update(payload)
+      .eq("hr_id", employeeHrId);
+
+    if (!error) {
+      lifecycleUpdated = true;
+      break;
+    }
+
+    const missingColumn = optionalColumns.find((column) => isMissingColumn(error, column));
+    if (missingColumn) {
+      delete payload[missingColumn];
+      continue;
+    }
+
+    throw schemaReadinessError("finalizing employee resignation lifecycle", error);
   }
 
-  const accessProfileResult = await supabase
-    .from("user_access_profiles")
-    .update({
-      is_active: false,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("hr_id", employeeHrId);
+  if (!lifecycleUpdated) {
+    throw new Error("Unable to finalize employee resignation lifecycle.");
+  }
 
-  if (accessProfileResult.error && !isMissingSchemaMessage(accessProfileResult.error)) {
-    throw accessProfileResult.error;
+  await deactivateAccessForEmployeeLifecycle({
+    actorLoginId: actor,
+    employeeHrId,
+    reason: `Resignation completed for ${row.employee_name}. Effective ${effectiveDate}.`,
+    source: "resignation_workflow",
+  });
+}
+
+async function restoreResignationWorkflowAfterLifecycleFailure(
+  supabase: SupabaseClient,
+  row: ResignationRow,
+  cause: unknown,
+) {
+  const restorePayload: Record<string, unknown> = {
+    completed_at: row.completed_at ?? null,
+    completed_by: row.completed_by ?? null,
+    exit_status: row.exit_status ?? row.status ?? "approved",
+    notes: row.notes ?? row.reason ?? null,
+    status: row.status ?? "approved",
+    updated_at: row.updated_at,
+    workflow_notes: row.workflow_notes ?? null,
+  };
+
+  const { error } = await supabase
+    .from("employee_resignations")
+    .update(restorePayload)
+    .eq("id", row.id);
+
+  if (error) {
+    console.error(JSON.stringify({
+      employeeHrId: row.employee_hr_id,
+      error: error.message,
+      event: "resignation_lifecycle_compensation_failed",
+      originalError: cause instanceof Error ? cause.message : String(cause),
+      resignationId: row.id,
+    }));
   }
 }
 
@@ -826,7 +897,12 @@ async function resignEmployeeWithFallback(
     reason: input.reason,
     submittedDate: input.submittedDate,
   });
-  await deactivateEmployeeAccessIfSupported(supabase, input.employee.hrId);
+  await deactivateAccessForEmployeeLifecycle({
+    actorLoginId: input.actor,
+    employeeHrId: input.employee.hrId,
+    reason: `Payroll resignation created for ${input.employee.fullName}. Effective ${input.effectiveDate}.`,
+    source: "resignation_workflow",
+  });
 
   return {
     employeeHrId: input.employee.hrId,
@@ -1098,6 +1174,15 @@ export async function runResignationWorkflow(
     .single();
 
   if (updateError) throw updateError;
+  if (action === "complete") {
+    try {
+      await completeEmployeeLifecycleForResignation(supabase, row, actor);
+      invalidateEmployeeDirectoryCache();
+    } catch (lifecycleError) {
+      await restoreResignationWorkflowAfterLifecycleFailure(supabase, row, lifecycleError);
+      throw lifecycleError;
+    }
+  }
   const record = mapResignation(updated as ResignationRow);
   await notifyResignationWorkflow(
     record,

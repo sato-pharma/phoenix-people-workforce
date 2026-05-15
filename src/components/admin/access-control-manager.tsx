@@ -76,13 +76,27 @@ type PermissionOverrideMarker = {
 };
 
 type RowResult = {
-  row: number;
+  errorDetails?: Array<{
+    code: string;
+    field: string;
+    message: string;
+    recommendation?: string;
+  }>;
   hrId: string;
+  line: string;
   name: string;
   role: string;
-  line: string;
+  row: number;
   action: "created" | "updated" | "skipped" | "error";
   errors: string[];
+};
+
+type UploadSummary = {
+  created: number;
+  failed: number;
+  skipped: number;
+  total: number;
+  updated: number;
 };
 
 type Props = {
@@ -327,7 +341,17 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
   );
 }
 
-function PasswordBadge({ forcePasswordReset }: { forcePasswordReset: boolean }) {
+function AccessProvisioningBadge({ user }: { user: AccessUserRow }) {
+  if (user.accessState === "directory_only") {
+    return <span className={badgeClassName("slate")}>Not provisioned</span>;
+  }
+  return <span className={badgeClassName("emerald")}>Access profile</span>;
+}
+
+function PasswordBadge({ forcePasswordReset, user }: { forcePasswordReset: boolean; user?: AccessUserRow }) {
+  if (user?.accessState === "directory_only") {
+    return <span className={badgeClassName("slate")}>No password account</span>;
+  }
   return (
     <span className={badgeClassName(forcePasswordReset ? "amber" : "emerald")}>
       {forcePasswordReset ? "Setup pending" : "Password ready"}
@@ -370,6 +394,7 @@ export function AccessControlManager({
   const [lineFilter, setLineFilter] = React.useState("all");
   const [page, setPage] = React.useState(1);
   const [uploadResults, setUploadResults] = React.useState<RowResult[] | null>(null);
+  const [uploadSummary, setUploadSummary] = React.useState<UploadSummary | null>(null);
   const [permissionSaving, setPermissionSaving] = React.useState<string | null>(null);
   const [setupLinkMessage, setSetupLinkMessage] = React.useState<string | null>(null);
   const [setupLinkSending, setSetupLinkSending] = React.useState<string | null>(null);
@@ -384,9 +409,16 @@ export function AccessControlManager({
   } | null>(null);
   const [governanceReason, setGovernanceReason] = React.useState("");
   const [isConfirmingGovernanceAction, setIsConfirmingGovernanceAction] = React.useState(false);
+  const governanceReasonRef = React.useRef<HTMLTextAreaElement | null>(null);
 
   const canManageUsers = capabilities.canManageUsers;
   const canManagePermissions = capabilities.canManagePermissions;
+
+  React.useEffect(() => {
+    if (!pendingGovernanceAction) return;
+    const id = window.setTimeout(() => governanceReasonRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [pendingGovernanceAction]);
 
   function requestGovernanceConfirmation(input: {
     body: string;
@@ -554,23 +586,31 @@ export function AccessControlManager({
     if (!file) return;
     setError(null);
     setUploadResults(null);
+    setUploadSummary(null);
     const body = new FormData();
     body.append("file", file);
     try {
       const response = await fetch("/api/admin/users/bulk", { body, method: "POST" });
       const payload = await response.json();
+      const summary = {
+        created: Number(payload.created ?? 0),
+        failed: Number(payload.failed ?? 0),
+        skipped: Number(payload.skipped ?? 0),
+        total: Number(payload.total ?? 0),
+        updated: Number(payload.updated ?? 0),
+      };
+      setUploadSummary(summary);
       if (!response.ok) {
         setUploadResults(payload.rowResults || null);
-        const failedCount = payload.failed || 0;
-        const createdCount = payload.created || 0;
-        const updatedCount = payload.updated || 0;
+        if (payload.dashboard) setData(payload.dashboard);
         throw new Error(
-          `Bulk upload completed with errors: ${createdCount} created, ${updatedCount} updated, ${failedCount} failed. ` +
-            (payload.errors?.join(" ") || payload.message || "See details below."),
+          payload.message ||
+            `Bulk upload completed with row-level errors: ${summary.created} created, ${summary.updated} updated, ${summary.failed} failed.`,
         );
       }
       setData(payload.dashboard);
       setUploadResults(payload.rowResults || null);
+      setSetupLinkMessage(`Bulk upload completed: ${summary.created} created, ${summary.updated} updated, ${summary.skipped} skipped.`);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Bulk upload failed.");
     } finally {
@@ -701,11 +741,13 @@ export function AccessControlManager({
   });
   const pageCount = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
   const visibleUsers = filteredUsers.slice((page - 1) * pageSize, page * pageSize);
-  const activeUsers = users.filter((user) => user.isActive).length;
+  const provisionedUsers = users.filter((user) => user.accessState === "provisioned");
+  const directoryOnlyUserCount = users.length - provisionedUsers.length;
+  const activeProvisionedUsers = provisionedUsers.filter((user) => user.isActive).length;
+  const activeUsers = activeProvisionedUsers;
   const companyPayrollUsers = users.filter((user) => user.payrollScope === "COMPANY").length;
   const salesOverrides = users.filter((user) => user.salesScopeOverride).length;
-  const pendingSetupUsers = users.filter((user) => user.forcePasswordReset).length;
-  const inactiveUsers = users.length - activeUsers;
+  const inactiveUsers = provisionedUsers.length - activeProvisionedUsers;
   const auditEntries = data?.auditLogs.length ?? 0;
   const hasDashboard = data !== null;
   const hasUsers = filteredUsers.length > 0;
@@ -782,9 +824,9 @@ export function AccessControlManager({
         <button
           aria-label={`${user.forcePasswordReset ? "Email setup link" : "Email reset link"} for ${user.name}`}
           className={`${buttonBase} border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100`}
-          disabled={setupLinkSending !== null || !user.isActive}
+          disabled={setupLinkSending !== null || !user.isActive || user.accessState === "directory_only"}
           onClick={() => sendSetupLink(user, "email")}
-          title={!user.isActive ? "Inactive users cannot receive password links." : "Governed email delivery"}
+          title={user.accessState === "directory_only" ? "Save this employee in Users & Access before issuing password links." : !user.isActive ? "Inactive users cannot receive password links." : "Governed email delivery"}
           type="button"
         >
           {setupLinkSending === `${user.loginId}:email` ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
@@ -793,9 +835,9 @@ export function AccessControlManager({
         <button
           aria-label={`${user.forcePasswordReset ? "Copy setup link" : "Copy reset link"} for ${user.name}`}
           className={`${buttonBase} border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100`}
-          disabled={setupLinkSending !== null || !user.isActive}
+          disabled={setupLinkSending !== null || !user.isActive || user.accessState === "directory_only"}
           onClick={() => sendSetupLink(user, "copy")}
-          title={!user.isActive ? "Inactive users cannot receive password links." : "Governed copy workflow"}
+          title={user.accessState === "directory_only" ? "Save this employee in Users & Access before issuing password links." : !user.isActive ? "Inactive users cannot receive password links." : "Governed copy workflow"}
           type="button"
         >
           {setupLinkSending === `${user.loginId}:copy` ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -804,7 +846,9 @@ export function AccessControlManager({
         <button
           aria-label={`${user.isActive ? "Deactivate" : "Reactivate"} ${user.name}`}
           className={`${buttonBase} ${user.isActive ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100" : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
+          disabled={user.accessState === "directory_only"}
           onClick={() => toggleUser(user)}
+          title={user.accessState === "directory_only" ? "No access account exists yet. Edit and save first." : undefined}
           type="button"
         >
           {user.isActive ? <Ban className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
@@ -884,15 +928,16 @@ export function AccessControlManager({
                 href="/api/admin/users/bulk"
                 rel="noopener noreferrer"
                 target="_blank"
+                title="Download users_access_template_v1.xlsx with governed headers and Excel dropdowns."
               >
                 <Download className="h-3.5 w-3.5 text-slate-500" />
-                Download template
+                XLSX template
               </a>
             )}
-            <label className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-medium text-slate-700 shadow-sm transition-all duration-160 ease-out ${capabilities.canBulkImportUsers ? "cursor-pointer hover:border-slate-300 hover:bg-slate-50 hover:shadow-md hover:-translate-y-px" : "cursor-not-allowed opacity-60"}`} title={capabilities.canBulkImportUsers ? "Upload the validated Users & Access workbook." : "Bulk import requires user administration and import permission."}>
+            <label className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-medium text-slate-700 shadow-sm transition-all duration-160 ease-out ${capabilities.canBulkImportUsers ? "cursor-pointer hover:border-slate-300 hover:bg-slate-50 hover:shadow-md hover:-translate-y-px" : "cursor-not-allowed opacity-60"}`} title={capabilities.canBulkImportUsers ? "Upload .xlsx or .xls only. Rows are validated before access changes are applied." : "Bulk import requires user administration and import permission."}>
               <Upload className="h-3.5 w-3.5 text-slate-500" />
-              {capabilities.canBulkImportUsers ? "Bulk upload" : "Import restricted"}
-              <input accept=".xlsx,.xls" aria-label="Bulk upload user access workbook" className="sr-only" disabled={!capabilities.canBulkImportUsers} onChange={uploadBulkUsers} type="file" />
+              {capabilities.canBulkImportUsers ? "Upload XLSX" : "Import restricted"}
+              <input accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="Bulk upload user access workbook" className="sr-only" disabled={!capabilities.canBulkImportUsers} onChange={uploadBulkUsers} type="file" />
             </label>
             <Button
               aria-label="Refresh Users & Access data"
@@ -927,7 +972,10 @@ export function AccessControlManager({
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Bulk upload</p>
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              Use the template for HR_ID, name, role, line, email, manager HR_ID, active state, and scope override. Rows are validated before mutation.
+              Use <span className="font-semibold text-slate-800">users_access_template_v1.xlsx</span>. Required columns: HR_ID, Role, Line, Active. Optional: Name, Email, Manager_HR_ID, Sales_Scope, Notes.
+            </p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              Accepted files: .xlsx or .xls, max 10MB. Unknown columns, duplicate HR_ID, invalid roles, inactive employees, and unsafe spreadsheet formulas are rejected.
             </p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -942,11 +990,15 @@ export function AccessControlManager({
       {uploadResults && (
         <AdminTableShell
           action={
-            <Button className="h-9 rounded-xl px-3 text-xs" onClick={() => setUploadResults(null)} variant="secondary">
+            <Button className="h-9 rounded-xl px-3 text-xs" onClick={() => { setUploadResults(null); setUploadSummary(null); }} variant="secondary">
               Dismiss
             </Button>
           }
-          description={`${uploadResults.filter((r) => r.action === "created").length} created, ${uploadResults.filter((r) => r.action === "updated").length} updated, ${uploadResults.filter((r) => r.action === "skipped").length} skipped, ${uploadResults.filter((r) => r.action === "error").length} failed`}
+          description={
+            uploadSummary
+              ? `${uploadSummary.created} created, ${uploadSummary.updated} updated, ${uploadSummary.skipped} skipped, ${uploadSummary.failed} failed, ${uploadSummary.total} total rows`
+              : `${uploadResults.filter((r) => r.action === "created").length} created, ${uploadResults.filter((r) => r.action === "updated").length} updated, ${uploadResults.filter((r) => r.action === "skipped").length} skipped, ${uploadResults.filter((r) => r.action === "error").length} failed`
+          }
           title="Upload validation results"
         >
           <div className="max-h-96 overflow-y-auto">
@@ -959,12 +1011,12 @@ export function AccessControlManager({
                   <th className="px-4 py-3">Role</th>
                   <th className="px-4 py-3">Line</th>
                   <th className="px-4 py-3">Action</th>
-                  <th className="px-4 py-3">Errors</th>
+                  <th className="px-4 py-3">Validation detail</th>
                 </tr>
               </thead>
               <tbody>
-                {uploadResults.map((result) => (
-                  <tr className="border-b border-[#E2E8F0]" key={result.row}>
+                {uploadResults.map((result, index) => (
+                  <tr className="border-b border-[#E2E8F0]" key={`${result.row}-${result.hrId || index}`}>
                     <td className="px-4 py-2 font-mono text-xs">{result.row}</td>
                     <td className="px-4 py-2">{result.hrId}</td>
                     <td className="px-4 py-2">{result.name}</td>
@@ -983,8 +1035,21 @@ export function AccessControlManager({
                         {result.action}
                       </Badge>
                     </td>
-                    <td className="px-4 py-2 text-xs text-[#DC2626]">
-                      {result.errors.length > 0 ? result.errors.join(", ") : "-"}
+                    <td className="px-4 py-2 text-xs">
+                      {result.errorDetails?.length ? (
+                        <div className="grid gap-1.5">
+                          {result.errorDetails.map((detail) => (
+                            <div className="rounded-lg border border-rose-100 bg-rose-50 px-2 py-1.5 text-rose-700" key={`${result.row}-${detail.field}-${detail.code}`}>
+                              <span className="font-semibold">{detail.field}</span>: {detail.message}
+                              {detail.recommendation && <span className="block text-rose-600/80">{detail.recommendation}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      ) : result.errors.length > 0 ? (
+                        <span className="text-[#DC2626]">{result.errors.join(", ")}</span>
+                      ) : (
+                        <span className="text-slate-400">Validated</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1073,7 +1138,7 @@ export function AccessControlManager({
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
               <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Access health</p>
               <p className="mt-1 text-sm text-emerald-800">
-                {activeUsers} active, {inactiveUsers} inactive, {pendingSetupUsers} setup pending.
+                {activeProvisionedUsers} active accounts, {inactiveUsers} inactive, {directoryOnlyUserCount} not provisioned.
               </p>
             </div>
             <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
@@ -1104,6 +1169,7 @@ export function AccessControlManager({
                 </div>
               )}
 
+              {canManageUsers ? (
               <form className="grid gap-5 px-5 py-5" onSubmit={saveUser}>
                 <div className="space-y-4">
                   <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Identity</div>
@@ -1256,6 +1322,29 @@ export function AccessControlManager({
                   {canManageUsers ? "Save user" : "Read-only access"}
                 </Button>
               </form>
+              ) : (
+                <div className="grid gap-3 px-5 py-5">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-sm font-semibold text-slate-900">Read-only governance view</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      User creation, role assignment, deactivation, and password link generation are hidden for your current role.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border border-slate-200 bg-white p-3">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Allowed</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-800">Review users, scopes, and audit history</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Restricted</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-800">Mutations require user_admin:update</p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm leading-6 text-orange-800">
+                    Ask a Super Admin or authorized HR administrator to perform governed user changes.
+                  </div>
+                </div>
+              )}
             </Card>
 
             <Card className={`${panelClassName} overflow-hidden p-0`}>
@@ -1366,8 +1455,12 @@ export function AccessControlManager({
                                 <p className="text-sm font-semibold text-slate-900 transition-colors duration-160 ease-out group-hover:text-orange-950">{user.name}</p>
                                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600">
                                   <span className="font-mono text-slate-700">HR_ID {user.hrId ?? "-"}</span>
-                                  <span className="text-slate-400">/</span>
-                                  <span className="font-mono text-slate-700">{user.loginId}</span>
+                                  {user.loginId !== user.hrId && (
+                                    <>
+                                      <span className="text-slate-400">/</span>
+                                      <span className="font-mono text-slate-700">{user.loginId}</span>
+                                    </>
+                                  )}
                                   {user.email && (
                                     <>
                                       <span className="text-slate-400">-</span>
@@ -1389,11 +1482,12 @@ export function AccessControlManager({
                             <div className="flex flex-col gap-1.5">
                               <ScopeBadge label="Sales" scope={user.salesScope} />
                               <ScopeBadge label="Payroll" scope={user.payrollScope} />
+                              <AccessProvisioningBadge user={user} />
                               {user.salesScopeOverride && <span className={badgeClassName("orange")}>Scope override</span>}
                             </div>
                           </td>
                           <td className="px-3 py-3 align-top">
-                            <PasswordBadge forcePasswordReset={user.forcePasswordReset} />
+                            <PasswordBadge forcePasswordReset={user.forcePasswordReset} user={user} />
                           </td>
                           <td className="px-3 py-3 align-top">
                             <div className="flex flex-col gap-1.5">
@@ -1425,14 +1519,18 @@ export function AccessControlManager({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-base font-semibold text-slate-900">{user.name}</p>
-                          <p className="mt-1 font-mono text-xs text-slate-600">HR_ID {user.hrId ?? "-"} / {user.loginId}</p>
+                          <p className="mt-1 font-mono text-xs text-slate-600">
+                            HR_ID {user.hrId ?? "-"}
+                            {user.loginId !== user.hrId && ` / ${user.loginId}`}
+                          </p>
                           {user.email && <p className="mt-1 truncate text-xs text-slate-500">{user.email}</p>}
                         </div>
                         <StatusBadge isActive={user.isActive} />
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <RoleBadge role={user.role} />
-                        <PasswordBadge forcePasswordReset={user.forcePasswordReset} />
+                        <AccessProvisioningBadge user={user} />
+                        <PasswordBadge forcePasswordReset={user.forcePasswordReset} user={user} />
                         {user.salesScopeOverride && <span className={badgeClassName("orange")}>Scope override</span>}
                       </div>
                       <div className="mt-3 grid gap-2 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600">
@@ -1503,108 +1601,108 @@ export function AccessControlManager({
               )}
             </button>
             {showPermissions && (
-              <div className="border-t border-slate-200/80">
-                <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">Inherited</span>
-                  <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 font-semibold text-orange-700">Override</span>
-                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 font-semibold text-slate-500">Restricted</span>
-                  {!canManagePermissions && <span className="font-medium text-slate-500">Permission changes are locked to Super Admin governance.</span>}
+              <div className="border-t border-slate-200/80 bg-slate-50/60">
+                <div className="grid gap-3 border-b border-slate-200/80 bg-white px-4 py-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Permission overrides apply to every user in the selected role.</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">Inherited permissions come from the role baseline. Overrides are governed exceptions and require Super Admin confirmation.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <span className={badgeClassName("emerald")}>Inherited</span>
+                    <span className={badgeClassName("orange")}>Overridden</span>
+                    <span className={badgeClassName("slate")}>Restricted</span>
+                    {!canManagePermissions && <span className={badgeClassName("rose")}>Editing locked</span>}
+                  </div>
                 </div>
-                <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-xs">
-                  <thead className="bg-stone-50 text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">Role</th>
-                      <th className="px-4 py-3">Sales</th>
-                      <th className="px-4 py-3">Payroll</th>
-                      {permissionResources.map((resource) => (
-                        <th className="px-4 py-3" key={resource}>
-                          {resource}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {phoenixRoles.map((role) => (
-                      <tr className="border-b border-slate-100/80 transition-colors hover:bg-stone-50/50" key={role}>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium border ${
-                            role === "Super Admin" || role === "CEO"
-                              ? "bg-gradient-to-r from-rose-50 to-orange-50 text-rose-700 border-rose-200/60"
-                              : role === "HR Specialist" || role === "Finance Manager"
-                              ? "bg-gradient-to-r from-emerald-50 to-emerald-100/50 text-emerald-700 border-emerald-200/60"
-                              : "bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 border-violet-200/60"
-                          }`}>
-                            {role}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {(() => {
-                            const classes = getScopeSemanticClasses(getSalesScope({ role }));
-                            return (
-                              <span className={`inline-flex items-center rounded-md ${classes.bg} px-2 py-0.5 text-xs font-medium ${classes.text} border ${classes.border} ${classes.shadow}`}>
-                                {getSalesScope({ role })}
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-4 py-3">
-                          {(() => {
-                            const classes = getScopeSemanticClasses(getPayrollScope({ role }));
-                            return (
-                              <span className={`inline-flex items-center rounded-md ${classes.bg} px-2 py-0.5 text-xs font-medium ${classes.text} border ${classes.border} ${classes.shadow}`}>
-                                {getPayrollScope({ role })}
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        {permissionResources.map((resource) => {
-                          const allowedActions = data?.permissions?.[role]?.[resource] ?? [];
-                          return (
-                            <td className="border-l border-slate-100/80 px-4 py-3" key={`${role}-${resource}`}>
-                              <div className="flex flex-wrap gap-2">
-                                {permissionActions.map((action) => {
-                                  const isAllowed = allowedActions.includes(action);
-                                  const isAllowOverride = permissionOverrideSet.has(`${role}:${resource}:${action}:allow`);
-                                  const isDenyOverride = permissionOverrideSet.has(`${role}:${resource}:${action}:deny`);
-                                  const provenance = isAllowOverride || isDenyOverride
-                                    ? "Override"
-                                    : isAllowed
-                                      ? "Inherited"
-                                      : "Restricted";
-                                  return (
-                                    <label
-                                      className={`flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[10px] transition-colors ${
-                                        isAllowOverride || isDenyOverride
-                                          ? "border-orange-200 bg-orange-50 text-orange-700"
-                                          : isAllowed
-                                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                            : "border-slate-200 bg-white text-slate-500"
-                                      } ${canManagePermissions ? "cursor-pointer hover:text-slate-700" : "cursor-not-allowed opacity-70"}`}
-                                      key={`${role}-${resource}-${action}`}
-                                      title={`${provenance}: ${role} ${action} ${resource}`}
-                                    >
-                                      <input
-                                        checked={isAllowed}
-                                        className="h-3.5 w-3.5 accent-orange-500"
-                                        disabled={!canManagePermissions || permissionSaving === `${role}:${resource}:${action}`}
-                                        onChange={(event) =>
-                                          void updatePermission(role, resource, action, event.target.checked)
-                                        }
-                                        type="checkbox"
-                                      />
-                                      <span className="uppercase font-medium">{action}</span>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+                <div className="space-y-4 p-4">
+                  {visiblePermissionDomains.map((domain) => (
+                    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" key={domain.label}>
+                      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h3 className="text-sm font-semibold text-slate-900">{domain.label}</h3>
+                          <span className="text-xs font-medium text-slate-500">{domain.resources.length} permission area{domain.resources.length === 1 ? "" : "s"}</span>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{domain.description}</p>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-left text-xs">
+                          <thead className="bg-white text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            <tr>
+                              <th className="px-4 py-3">Role</th>
+                              <th className="px-4 py-3">Scope</th>
+                              <th className="px-4 py-3">Area</th>
+                              <th className="px-4 py-3">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {phoenixRoles.flatMap((role) =>
+                              domain.resources.map((resource) => {
+                                const allowedActions = data?.permissions?.[role]?.[resource] ?? [];
+                                return (
+                                  <tr className="align-top hover:bg-orange-50/30" key={`${domain.label}-${role}-${resource}`}>
+                                    <td className="px-4 py-3">
+                                      <RoleBadge role={role} />
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex flex-col gap-1.5">
+                                        <ScopeBadge label="Sales" scope={getSalesScope({ role })} />
+                                        <ScopeBadge label="Payroll" scope={getPayrollScope({ role })} />
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <p className="font-semibold text-slate-800">{resource}</p>
+                                      <p className="mt-1 max-w-xs text-[11px] leading-5 text-slate-500">{permissionResourceDescriptions[resource] ?? "Governed application capability."}</p>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex flex-wrap gap-2">
+                                        {permissionActions.map((action) => {
+                                          const isAllowed = allowedActions.includes(action);
+                                          const isAllowOverride = permissionOverrideSet.has(`${role}:${resource}:${action}:allow`);
+                                          const isDenyOverride = permissionOverrideSet.has(`${role}:${resource}:${action}:deny`);
+                                          const provenance = isAllowOverride || isDenyOverride
+                                            ? "Overridden"
+                                            : isAllowed
+                                              ? "Inherited"
+                                              : "Restricted";
+                                          return (
+                                            <label
+                                              className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] transition-colors ${
+                                                isAllowOverride || isDenyOverride
+                                                  ? "border-orange-200 bg-orange-50 text-orange-700"
+                                                  : isAllowed
+                                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                                    : "border-slate-200 bg-white text-slate-500"
+                                              } ${canManagePermissions ? "cursor-pointer hover:border-orange-300 hover:text-slate-800" : "cursor-not-allowed opacity-70"}`}
+                                              key={`${role}-${resource}-${action}`}
+                                              title={`${provenance}: ${role} ${action} ${resource}`}
+                                            >
+                                              <input
+                                                aria-label={`${provenance} ${action} permission for ${role} on ${resource}`}
+                                                checked={isAllowed}
+                                                className="h-3.5 w-3.5 accent-orange-500"
+                                                disabled={!canManagePermissions || permissionSaving === `${role}:${resource}:${action}`}
+                                                onChange={(event) =>
+                                                  void updatePermission(role, resource, action, event.target.checked)
+                                                }
+                                                type="checkbox"
+                                              />
+                                              <span className="uppercase font-semibold">{action}</span>
+                                              {(isAllowOverride || isDenyOverride) && <span className="text-[9px] font-bold uppercase tracking-wider">Override</span>}
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              }),
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  ))}
                 </div>
               </div>
             )}
@@ -1618,27 +1716,38 @@ export function AccessControlManager({
             >
               <AdminSectionHeader
                 action={null}
-                description="Recent access-control changes."
+                description="Recent governed changes, actor, target, and reason where captured."
                 title="Audit log"
               />
               {showAudit ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
             </button>
             {showAudit && (
               <div className="space-y-2 border-t border-slate-200/80 p-5">
-                {(data?.auditLogs ?? []).map((log) => (
-                  <div
-                    className="rounded-lg border border-slate-200 bg-stone-50 p-4 transition-colors hover:bg-stone-100 hover:shadow-sm"
-                    key={log.id}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-slate-900">{log.summary}</p>
-                      <span className="text-xs text-slate-500">{formatDate(log.createdAt)}</span>
+                {(data?.auditLogs ?? []).map((log) => {
+                  const reason = auditReason(log);
+                  return (
+                    <div
+                      className="rounded-lg border border-slate-200 bg-stone-50 p-4 transition-colors hover:bg-stone-100 hover:shadow-sm"
+                      key={log.id}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={badgeClassName(log.entityType === "permission_override" ? "orange" : "slate")}>{auditActionLabel(log)}</span>
+                          <p className="text-sm font-medium text-slate-900">{log.summary}</p>
+                        </div>
+                        <span className="text-xs text-slate-500">{formatDate(log.createdAt)}</span>
+                      </div>
+                      <div className="mt-2 grid gap-1 text-xs text-slate-500 sm:grid-cols-3">
+                        <span>Actor: <span className="font-semibold text-slate-700">{log.actorLoginId ?? "system"}</span></span>
+                        <span>Target: <span className="font-semibold text-slate-700">{log.entityId ?? "-"}</span></span>
+                        <span>Type: <span className="font-semibold text-slate-700">{log.entityType}</span></span>
+                      </div>
+                      <p className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                        Reason: {reason ?? "No reason captured."}
+                      </p>
                     </div>
-                    <p className="mt-1.5 text-xs text-slate-500">
-                      Actor: {log.actorLoginId ?? "system"} / Entity: {log.entityId ?? "-"}
-                    </p>
-                  </div>
-                ))}
+                  );
+                })}
                 {(data?.auditLogs ?? []).length === 0 && (
                   <p className="py-8 text-center text-sm text-slate-400">No audit logs found.</p>
                 )}
@@ -1653,12 +1762,22 @@ export function AccessControlManager({
               <ShieldAlert className="h-6 w-6" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-slate-900">Access restricted</h2>
+              <h2 className="text-xl font-semibold text-slate-900">{isLoading ? "Loading access dashboard" : "Access restricted"}</h2>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-                This account can open the route but does not currently have permission to read the access-control
-                dashboard. Request the <span className="font-medium text-slate-900">admin_access:read</span>{" "}
-                capability or sign in with an authorized role.
+                {isLoading
+                  ? "Refreshing user governance data and permission posture."
+                  : <>This account can open the route but does not currently have permission to read the access-control dashboard. Request the <span className="font-medium text-slate-900">admin_access:read</span> capability or sign in with an authorized role.</>}
               </p>
+              <Button
+                className="mt-5 h-9 rounded-lg px-3.5 text-xs"
+                disabled={isLoading}
+                onClick={loadUsers}
+                type="button"
+                variant="secondary"
+              >
+                {isLoading ? <LoadingSpinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+                Retry
+              </Button>
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Why this is hidden</p>
@@ -1680,25 +1799,30 @@ export function AccessControlManager({
       )}
       {pendingGovernanceAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+          <div aria-describedby="governance-action-description" aria-labelledby="governance-action-title" aria-modal="true" className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl" role="dialog">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-orange-200 bg-orange-50 text-orange-600">
                 <ShieldAlert className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h2 className="text-base font-semibold text-slate-900">{pendingGovernanceAction.title}</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{pendingGovernanceAction.body}</p>
+                <h2 className="text-base font-semibold text-slate-900" id="governance-action-title">{pendingGovernanceAction.title}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600" id="governance-action-description">{pendingGovernanceAction.body}</p>
               </div>
             </div>
-            <label className="mt-5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+            <label className="mt-5 block text-xs font-semibold uppercase tracking-wider text-slate-500" htmlFor="governance-reason">
               Governance reason
               <textarea
+                id="governance-reason"
                 className="mt-2 min-h-24 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-800 outline-none transition-all duration-160 ease-out placeholder:text-slate-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                 maxLength={500}
                 onChange={(event) => setGovernanceReason(event.target.value)}
                 placeholder={pendingGovernanceAction.reasonPlaceholder}
+                ref={governanceReasonRef}
                 value={governanceReason}
               />
+              <span className="mt-1 block text-[11px] font-medium normal-case tracking-normal text-slate-400">
+                Optional, max 500 characters. This reason is stored in the governance audit log.
+              </span>
             </label>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <Button
