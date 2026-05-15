@@ -25,41 +25,55 @@ type VacancyDbRow = {
   region_name?: string | null;
   source_row_number: number | null;
   status: string;
+  team_id?: number | null;
   vacancy_code: string;
 };
 
 export type VacancyReportRow = {
+  areaId: number | null;
   areaName: string | null;
   createdAt: string;
+  departmentId: number | null;
   departmentName: string | null;
   id: number;
   jobTitle: string | null;
+  lineId: number | null;
   lineName: string | null;
   managerHrId: string | null;
   managerName: string | null;
   note: string | null;
+  positionId: number | null;
   positionTitle: string | null;
   regionName: string | null;
   sourceRowNumber: number | null;
   status: string;
+  teamId: number | null;
+  teamName: string | null;
   vacancyCode: string;
 };
 
 export type OrganogramReportRow = {
+  areaId: number | null;
   areaName: string | null;
+  departmentId: number | null;
   departmentName: string | null;
   fullName: string;
   hireDate: string | null;
   hrId: string;
   jobTitle: string | null;
+  lineId: number | null;
   lineName: string | null;
   managerHrId: string | null;
   managerName: string | null;
+  positionId: number | null;
   positionTitle: string | null;
   regionName: string | null;
   sourceRowNumber: number | null;
   status: string;
+  teamId: number | null;
+  teamName: string | null;
   type: "employee" | "vacancy";
+  vacancyCode: string | null;
 };
 
 export type VacancyReportData = {
@@ -234,7 +248,8 @@ function isMissingManagerColumns(error: unknown) {
   return (
     message.includes("manager_hr_id") ||
     message.includes("manager_name") ||
-    message.includes("region_name")
+    message.includes("region_name") ||
+    message.includes("team_id")
   );
 }
 
@@ -242,7 +257,7 @@ async function loadVacancyRows() {
   const baseSelect =
     "id,vacancy_code,department_id,line_id,area_id,position_id,job_title,source_row_number,status,note,created_at";
   const params = new URLSearchParams({
-    select: `${baseSelect},manager_hr_id,manager_name,region_name`,
+    select: `${baseSelect},manager_hr_id,manager_name,region_name,team_id`,
     order: "created_at.desc",
   });
 
@@ -269,35 +284,42 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
     loadVacancyRows(),
     getEmployeeDirectory(),
   ]);
-  const [departmentNames, lineNames, areaNames, positionTitles, managerNames] =
+  const [departmentNames, lineNames, areaNames, positionTitles, teamNames, managerNames] =
     await Promise.all([
       loadLookup("departments", ids(vacancyRows, "department_id")),
       loadLookup("lines", ids(vacancyRows, "line_id")),
       loadLookup("areas", ids(vacancyRows, "area_id")),
       loadLookup("positions", ids(vacancyRows, "position_id"), "title"),
+      loadLookup("teams", ids(vacancyRows, "team_id")),
       loadEmployeeNames(textValues(vacancyRows, "manager_hr_id")),
     ]);
 
   const rows = vacancyRows.map((row) => ({
+    areaId: row.area_id,
     areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
     createdAt: row.created_at,
+    departmentId: row.department_id,
     departmentName: row.department_id
       ? departmentNames.get(row.department_id) ?? null
       : null,
     id: row.id,
     jobTitle: row.job_title,
+    lineId: row.line_id,
     lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
     managerHrId: row.manager_hr_id ?? null,
     managerName:
       row.manager_name ??
       (row.manager_hr_id ? managerNames.get(row.manager_hr_id) ?? null : null),
     note: row.note,
+    positionId: row.position_id,
     positionTitle: row.position_id
       ? positionTitles.get(row.position_id) ?? null
       : null,
     regionName: row.region_name ?? null,
     sourceRowNumber: row.source_row_number,
     status: row.status,
+    teamId: row.team_id ?? null,
+    teamName: row.team_id ? teamNames.get(row.team_id) ?? null : null,
     vacancyCode: row.vacancy_code,
   }));
   const openRows = rows.filter((row) => row.status === "open");
@@ -307,36 +329,50 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
         isEmployeeVisibleInOrganogram(employee.employmentStatus),
       )
       .map((employee) => ({
+        areaId: employee.areaId,
         areaName: employee.areaName,
+        departmentId: employee.departmentId,
         departmentName: employee.departmentName,
         fullName: employee.fullName,
         hireDate: employee.hireDate,
         hrId: employee.hrId,
         jobTitle: employee.jobTitle,
+        lineId: employee.lineId,
         lineName: employee.lineName,
         managerHrId: employee.managerHrId,
         managerName: employee.managerName,
+        positionId: employee.positionId,
         positionTitle: employee.positionTitle,
         regionName: employee.regionName,
         sourceRowNumber: null,
         status: employee.employmentStatus ?? "active",
+        teamId: employee.teamId,
+        teamName: employee.teamName,
         type: "employee",
+        vacancyCode: null,
       }));
   const vacancyOrganogramRows: OrganogramReportRow[] = openRows.map((row) => ({
+    areaId: row.areaId,
     areaName: row.areaName,
+    departmentId: row.departmentId,
     departmentName: row.departmentName,
     fullName: "Vacant",
     hireDate: null,
     hrId: vacancyLabelForReport(row.vacancyCode),
     jobTitle: row.jobTitle,
+    lineId: row.lineId,
     lineName: row.lineName,
     managerHrId: row.managerHrId,
     managerName: row.managerName,
+    positionId: row.positionId,
     positionTitle: row.positionTitle,
     regionName: row.regionName,
     sourceRowNumber: row.sourceRowNumber,
     status: row.status,
+    teamId: row.teamId,
+    teamName: row.teamName,
     type: "vacancy",
+    vacancyCode: row.vacancyCode,
   }));
 
   return {
@@ -351,6 +387,15 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
       ),
       totalVacancies: rows.length,
     },
+  };
+}
+
+export function vacancyReportWithoutOrganogramRows(
+  report: VacancyReportData,
+): VacancyReportData {
+  return {
+    ...report,
+    organogramRows: [],
   };
 }
 

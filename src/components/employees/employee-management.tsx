@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿"use client";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿"use client";
 
 import {
   Activity,
@@ -269,10 +269,27 @@ function isMedicalRepTitle(value: string | null | undefined) {
   );
 }
 
+function isRegionalSalesManagerTitle(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return (
+    normalized.includes("regional sales manager") ||
+    normalized === "rsm"
+  );
+}
+
+function isNationalSalesManagerTitle(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return (
+    normalized.includes("national sales manager") ||
+    normalized === "nsm"
+  );
+}
+
 function isSalesPositionTitle(value: string | null | undefined) {
   const normalized = String(value ?? "").trim().toLowerCase();
   return (
     isMedicalRepTitle(normalized) ||
+    isRegionalSalesManagerTitle(normalized) ||
     normalized.includes("district sales manager") ||
     normalized === "dsm" ||
     normalized.includes("sales")
@@ -586,6 +603,10 @@ export function EmployeeManagement({
     return lookups.positions.find((position) => position.value === form.positionId)?.label ?? "";
   }, [lookups.positions, form.positionId]);
 
+  const selectedPositionIsRegionalSalesManager = React.useMemo(() => {
+    return isRegionalSalesManagerTitle(selectedPositionTitle || form.jobTitle);
+  }, [form.jobTitle, selectedPositionTitle]);
+
   const openWorkforceVacancies = React.useMemo(
     () => lookups.workforceVacancies?.length ? lookups.workforceVacancies : (lookups.medicalRepVacancies ?? []),
     [lookups.medicalRepVacancies, lookups.workforceVacancies],
@@ -595,9 +616,28 @@ export function EmployeeManagement({
     return lookups.departments.find((department) => normalizeForMatch(department.label) === "sales")?.value ?? "";
   }, [lookups.departments]);
 
+  const isPediaLine = React.useCallback((lineId: string) => {
+    const line = lookups.lines.find((item) => String(item.value) === String(lineId));
+    return normalizeForMatch(line?.label).includes("pedia");
+  }, [lookups.lines]);
+
+  const defaultRegionalManagerForLine = React.useCallback((lineId: string) => {
+    if (!lineId || !isPediaLine(lineId)) {
+      return "";
+    }
+
+    return employees.find((employee) =>
+      String(employee.lineId ?? "") === String(lineId) &&
+      isNationalSalesManagerTitle(employee.positionTitle ?? employee.jobTitle),
+    )?.hrId ?? "";
+  }, [employees, isPediaLine]);
+
   const selectedPositionRequiresVacancy = React.useMemo(() => {
-    return Boolean(form.positionId || form.jobTitle || selectedPositionTitle);
-  }, [form.jobTitle, form.positionId, selectedPositionTitle]);
+    return Boolean(
+      (form.positionId || form.jobTitle || selectedPositionTitle) &&
+        !selectedPositionIsRegionalSalesManager,
+    );
+  }, [form.jobTitle, form.positionId, selectedPositionIsRegionalSalesManager, selectedPositionTitle]);
 
   const filteredWorkforceVacancies = React.useMemo(() => {
     const selectedTitle = normalizeForMatch(selectedPositionTitle || form.jobTitle);
@@ -778,13 +818,17 @@ export function EmployeeManagement({
   }
 
   function updateLine(value: string) {
-    setForm((current) => ({
-      ...current,
-      areaId: "",
-      lineId: value,
-      managerHrId: "",
-      teamId: "",
-    }));
+    setForm((current) => {
+      const isRsm = isRegionalSalesManagerTitle(selectedPositionTitle || current.jobTitle);
+
+      return {
+        ...current,
+        areaId: "",
+        lineId: value,
+        managerHrId: isRsm ? defaultRegionalManagerForLine(value) : "",
+        teamId: "",
+      };
+    });
 
     if (!editingHrId) {
       void generateEmployeeId(value);
@@ -1728,11 +1772,12 @@ export function EmployeeManagement({
                     onChange={(value) => {
                       const selected = lookups.positions.find((p) => p.value === value);
                       const nextJobTitle = selected?.label ?? form.jobTitle;
+                      const isRsm = isRegionalSalesManagerTitle(nextJobTitle);
                       setForm((prev) => ({
                         ...prev,
-                        areaId: "",
+                        areaId: isRsm ? prev.areaId : "",
                         departmentId: isSalesPositionTitle(nextJobTitle) && salesDepartmentId ? salesDepartmentId : prev.departmentId,
-                        managerHrId: "",
+                        managerHrId: isRsm ? defaultRegionalManagerForLine(prev.lineId) : "",
                         positionId: value,
                         jobTitle: nextJobTitle,
                       }));
@@ -1743,7 +1788,18 @@ export function EmployeeManagement({
                   />
                   <TextField
                     label="Title"
-                    onChange={(value) => updateForm("jobTitle", value)}
+                    onChange={(value) => {
+                      setForm((prev) => {
+                        const isRsm = isRegionalSalesManagerTitle(value);
+
+                        return {
+                          ...prev,
+                          departmentId: isSalesPositionTitle(value) && salesDepartmentId ? salesDepartmentId : prev.departmentId,
+                          jobTitle: value,
+                          managerHrId: isRsm ? defaultRegionalManagerForLine(prev.lineId) : prev.managerHrId,
+                        };
+                      });
+                    }}
                     placeholder="Auto-filled from selected position"
                     value={form.jobTitle}
                   />

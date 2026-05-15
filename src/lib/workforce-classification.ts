@@ -250,7 +250,7 @@ function hasSalesRole(employee: EmployeeNodeInput) {
       (normalized.includes("sales") ||
         normalized.includes("medical rep") ||
         normalized.includes("representative") ||
-        /\b(mr|dsm|nsm)\b/.test(normalized))
+        /\b(mr|dsm|rsm|nsm)\b/.test(normalized))
   );
 }
 

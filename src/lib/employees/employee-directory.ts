@@ -1243,6 +1243,94 @@ async function ensureManagerIsValid(managerHrId: string | null, employeeHrId: st
   }
 }
 
+function isRegionalSalesManagerTitle(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized.includes("regional sales manager") || normalized === "rsm";
+}
+
+function isNationalSalesManagerTitle(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized.includes("national sales manager") || normalized === "nsm";
+}
+
+async function loadPositionTitleById(positionId: number | null) {
+  if (!positionId) {
+    return null;
+  }
+
+  const rows = await supabaseRest<Array<{ title: string | null }>>(
+    `positions?id=eq.${positionId}&select=title&limit=1`,
+  );
+
+  return rows[0]?.title ?? null;
+}
+
+async function loadLineNameById(lineId: number | null) {
+  if (!lineId) {
+    return null;
+  }
+
+  const rows = await supabaseRest<Array<{ name: string | null }>>(
+    `lines?id=eq.${lineId}&select=name&limit=1`,
+  );
+
+  return rows[0]?.name ?? null;
+}
+
+async function findNationalSalesManagerForLine(lineId: number) {
+  type NsmCandidateRow = {
+    hr_id: string;
+    job_title: string | null;
+    positions?: { title: string | null } | null;
+  };
+  const params = new URLSearchParams({
+    employment_status: "in.(active,on_leave)",
+    line_id: `eq.${lineId}`,
+    organogram_visible: "is.true",
+    select: "hr_id,job_title,position_id,positions(title)",
+  });
+  let rows: NsmCandidateRow[];
+
+  try {
+    rows = await supabaseRest<NsmCandidateRow[]>(`employees?${params}`);
+  } catch (error) {
+    if (!isEmployeeDirectorySchemaMissing(error)) {
+      throw error;
+    }
+
+    const fallbackParams = new URLSearchParams({
+      employment_status: "in.(active,on_leave)",
+      line_id: `eq.${lineId}`,
+      organogram_visible: "is.true",
+      select: "hr_id,job_title,position_id",
+    });
+    rows = await supabaseRest<NsmCandidateRow[]>(`employees?${fallbackParams}`);
+  }
+
+  return rows.find((row) =>
+    isNationalSalesManagerTitle(`${row.job_title ?? ""} ${row.positions?.title ?? ""}`),
+  )?.hr_id ?? null;
+}
+
+async function defaultRegionalSalesManagerManager(input: EmployeeMutationInput, lineId: number | null) {
+  if (!lineId) {
+    return null;
+  }
+
+  const inputTitle = compact(input.jobTitle);
+  const positionTitle = inputTitle ?? await loadPositionTitleById(numberOrNull(input.positionId));
+  if (!isRegionalSalesManagerTitle(positionTitle)) {
+    return null;
+  }
+
+  const lineName = await loadLineNameById(lineId);
+  if (!lineName || !lineName.trim().toLowerCase().includes("pedia")) {
+    return null;
+  }
+
+  return findNationalSalesManagerForLine(lineId);
+}
+
 async function ensureCrmIdIsUnique(crmId: string | null, employeeHrId: string) {
   if (!crmId) {
     return;
@@ -1313,7 +1401,11 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
     throw new Error("HR_ID is required.");
   }
 
-  const managerHrId = normalizeHrId(input.managerHrId);
+  const requestedManagerHrId = normalizeHrId(input.managerHrId);
+  let managerHrId = requestedManagerHrId;
+  if (!managerHrId) {
+    managerHrId = await defaultRegionalSalesManagerManager(input, lineId);
+  }
   await ensureManagerIsValid(managerHrId, hrId);
   const crmId = compact(input.crmId);
   await ensureCrmIdIsUnique(crmId, hrId);

@@ -8,11 +8,11 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import {
   errorMessage,
-  getVacancyReport,
   isDatabaseSchemaMissing,
   isSupabaseEnvMissing,
   isSupabaseTimeout,
 } from "@/lib/reports/vacancies";
+import { getOrganogramReport } from "@/lib/reports/organogram";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +40,7 @@ export default async function EmployeePortalOrganogramPage() {
   let fixedLine: string | null = null;
 
   try {
-    initialReport = await getVacancyReport();
+    initialReport = await getOrganogramReport(access);
     const currentHrId = normalizeHrId(access.hrId);
     const currentEmployee = (initialReport?.organogramRows ?? []).find(
       (row) => row.type === "employee" && normalizeHrId(row.hrId) === currentHrId,

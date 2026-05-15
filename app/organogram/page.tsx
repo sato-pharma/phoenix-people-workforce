@@ -4,9 +4,9 @@ import { redirect } from "next/navigation";
 
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { getOrganogramReport } from "@/lib/reports/organogram";
 import {
   errorMessage,
-  getVacancyReport,
   isDatabaseSchemaMissing,
   isSupabaseEnvMissing,
   isSupabaseTimeout,
@@ -39,7 +39,7 @@ export default async function OrganogramPage() {
   let initialReport = null;
 
   try {
-    initialReport = await getVacancyReport();
+    initialReport = await getOrganogramReport(access);
   } catch (error) {
     initialError = organogramPageError(error);
   }

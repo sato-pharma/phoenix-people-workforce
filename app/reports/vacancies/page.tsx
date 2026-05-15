@@ -10,6 +10,7 @@ import {
   isDatabaseSchemaMissing,
   isSupabaseEnvMissing,
   isSupabaseTimeout,
+  vacancyReportWithoutOrganogramRows,
 } from "@/lib/reports/vacancies";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +40,7 @@ export default async function VacanciesPage() {
   let initialReport = null;
 
   try {
-    initialReport = await getVacancyReport();
+    initialReport = vacancyReportWithoutOrganogramRows(await getVacancyReport());
   } catch (error) {
     initialError = vacanciesPageError(error);
   }

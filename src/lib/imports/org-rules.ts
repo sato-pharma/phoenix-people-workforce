@@ -27,4 +27,7 @@ export const positionRules: Record<string, string> = {
   national_sales_manager: "National Sales Manager",
   nsm: "National Sales Manager",
   product_manager: "Product Manager",
+  regional_manager: "Regional Sales Manager",
+  regional_sales_manager: "Regional Sales Manager",
+  rsm: "Regional Sales Manager",
 };

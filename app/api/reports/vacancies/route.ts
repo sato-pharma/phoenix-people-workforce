@@ -8,6 +8,7 @@ import {
   isDatabaseSchemaMissing,
   isSupabaseEnvMissing,
   isSupabaseTimeout,
+  vacancyReportWithoutOrganogramRows,
 } from "@/lib/reports/vacancies";
 
 export const runtime = "nodejs";
@@ -46,7 +47,9 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "vacancies", "read");
 
-    return NextResponse.json(await getVacancyReport());
+    return NextResponse.json(
+      vacancyReportWithoutOrganogramRows(await getVacancyReport()),
+    );
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to vacancy reports." }, { status: 403 });

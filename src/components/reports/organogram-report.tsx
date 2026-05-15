@@ -1,8 +1,7 @@
-﻿"use client";
+"use client";
 
 import {
   AlertCircle,
-  BriefcaseBusiness,
   Building2,
   Crown,
   Network,
@@ -17,7 +16,6 @@ import {
   AdminInsightChip,
   AdminPageHero,
   AdminSectionHeader,
-  AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
@@ -25,8 +23,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { formatDateOnly } from "@/lib/date-only";
+import {
+  calculateOrganogramStructureKpis,
+  findOrganogramDiagnostics,
+  type OrganogramKpiBreakdown,
+} from "@/lib/reports/organogram-safety";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
-import { cn, formatEmployeeDisplayName } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 type OrganogramRow = VacancyReportData["organogramRows"][number];
 type MemberNode = {
@@ -40,10 +43,6 @@ type OrganogramReportProps = {
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
 };
-
-function emptyText(value: string | number | null | undefined) {
-  return value === null || value === undefined || value === "" ? "-" : String(value);
-}
 
 function groupBy<T>(items: T[], keyFor: (item: T) => string) {
   const groups = new Map<string, T[]>();
@@ -59,15 +58,14 @@ function groupBy<T>(items: T[], keyFor: (item: T) => string) {
 }
 
 const selectClassName =
-  "h-11 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+  "h-11 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12";
 
 const panelClassName =
-  "rounded-[28px] border border-white/75 bg-white/94 shadow-[0_28px_90px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/5";
+  "rounded-[24px] border border-[#D8E0EA] bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)]";
 
 function OrganogramPageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative overflow-hidden rounded-[34px] border border-[#FED7AA]/80 bg-[radial-gradient(circle_at_12%_0%,rgba(249,115,22,0.12),transparent_32%),linear-gradient(135deg,#FFF7ED_0%,#F8FAFC_42%,#FFFFFF_100%)] p-4 shadow-[0_30px_110px_rgba(15,23,42,0.10)] sm:p-5">
-      <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[#F97316]/45 to-transparent" />
+    <div className="relative overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.08),transparent_35%),linear-gradient(135deg,#FFF9F5_0%,#FFFFFF_50%,#F8FAFC_100%)] p-4 shadow-[0_20px_50px_rgba(15,23,42,0.08)] sm:p-5">
       <div className="relative space-y-6">{children}</div>
     </div>
   );
@@ -123,6 +121,19 @@ function isMarketingDepartment(row: OrganogramRow) {
   return row.departmentName?.trim().toLowerCase() === "marketing";
 }
 
+function isVacancyRow(row: OrganogramRow) {
+  return row.type === "vacancy";
+}
+
+function isOrganogramVisibleRow(row: OrganogramRow) {
+  return (
+    isVacancyRow(row) ||
+    isSalesDepartment(row) ||
+    isMarketingDepartment(row) ||
+    isOfficeLine(row)
+  );
+}
+
 function normalizeNameKey(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
 }
@@ -140,6 +151,26 @@ function managerIdentityKey(row: OrganogramRow) {
   if (hrId) return `hr:${hrId}`;
 
   return `name:${normalizeNameKey(row.fullName)}`;
+}
+
+function hasCircularManagerChain(
+  row: OrganogramRow,
+  rowsByHrId: Map<string, OrganogramRow>,
+) {
+  const rowHrId = normalizeHrIdKey(row.hrId);
+  const visited = new Set<string>();
+  let managerHrId = normalizeHrIdKey(row.managerHrId);
+
+  while (managerHrId) {
+    if (managerHrId === rowHrId || visited.has(managerHrId)) {
+      return true;
+    }
+
+    visited.add(managerHrId);
+    managerHrId = normalizeHrIdKey(rowsByHrId.get(managerHrId)?.managerHrId);
+  }
+
+  return false;
 }
 
 function isNationalSalesManager(row: OrganogramRow) {
@@ -166,6 +197,12 @@ function isDistrictSalesManager(row: OrganogramRow) {
     title.includes("district manager") ||
     title === "dsm"
   );
+}
+
+function isRegionalSalesManager(row: OrganogramRow) {
+  const title = titleText(row);
+
+  return title.includes("regional sales manager") || title === "rsm";
 }
 
 function isMedicalRep(row: OrganogramRow) {
@@ -209,6 +246,41 @@ function reportsUpTo(
   return false;
 }
 
+function reportsToManagerGroup(
+  row: OrganogramRow,
+  managerHrIdsForGroup: Set<string>,
+  managerNameKeysForGroup: Set<string>,
+) {
+  const managerHrId = normalizeHrIdKey(row.managerHrId);
+  const managerNameKey = normalizeNameKey(row.managerName);
+
+  if (managerHrId && managerHrIdsForGroup.has(managerHrId)) {
+    return true;
+  }
+
+  return row.type === "vacancy" && managerNameKey
+    ? managerNameKeysForGroup.has(managerNameKey)
+    : !managerHrId && managerNameKeysForGroup.has(managerNameKey);
+}
+
+function hierarchyMemberRank(row: OrganogramRow) {
+  if (isRegionalSalesManager(row)) return 0;
+  if (isDistrictSalesManager(row)) return 1;
+  if (row.type === "employee") return 2;
+  return 3;
+}
+
+function sortHierarchyMembers(left: OrganogramRow, right: OrganogramRow) {
+  const leftRank = hierarchyMemberRank(left);
+  const rightRank = hierarchyMemberRank(right);
+
+  if (leftRank !== rightRank) {
+    return leftRank - rightRank;
+  }
+
+  return left.fullName.localeCompare(right.fullName);
+}
+
 function formatDate(value: string | null | undefined) {
   return formatDateOnly(value, "en", {
     day: "2-digit",
@@ -219,26 +291,32 @@ function formatDate(value: string | null | undefined) {
 
 function HierarchyNode({
   className,
+  hireDate,
+  hrId,
   icon,
   label,
   name,
   tone = "default",
 }: {
   className?: string;
+  hireDate?: string | null;
+  hrId?: string;
   icon?: React.ReactNode;
   label: string;
   name: string;
   tone?: "dark" | "default" | "primary";
 }) {
+  const isDark = tone === "dark";
+  const isPrimary = tone === "primary";
   return (
     <div
       className={cn(
-        "group relative overflow-hidden w-full max-w-[220px] rounded-xl border px-3 py-2.5 text-center shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md",
-        tone === "dark"
-          ? "border-[#0F172A] bg-gradient-to-br from-[#0F172A] to-[#1E293B] text-white shadow-lg hover:shadow-[0_8px_20px_rgba(15,23,42,0.12)]"
-          : tone === "primary"
-            ? "border-orange-200/90 bg-gradient-to-br from-orange-50 to-orange-100/50 text-text shadow-md hover:shadow-lg hover:border-orange-300"
-            : "border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 text-[#0F172A] hover:border-slate-300",
+        "group relative w-full rounded-xl border px-3 py-2.5 transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md",
+        isDark
+          ? "max-w-[280px] border-slate-900 bg-slate-900 text-white shadow-lg"
+          : isPrimary
+            ? "max-w-[320px] border-orange-200 bg-orange-50 text-text shadow-sm"
+            : "max-w-[220px] border-slate-200 bg-white text-[#0F172A] shadow-sm",
         className,
       )}
     >
@@ -246,14 +324,29 @@ function HierarchyNode({
         {icon}
         {label}
       </div>
-      <p
+      <div
         className={cn(
-          "text-xs font-semibold leading-snug",
-          tone === "dark" ? "text-bg dark:text-white" : "text-text",
+          "flex flex-col items-center gap-1 text-xs font-semibold leading-snug",
+          isDark ? "text-white" : "text-text",
         )}
       >
-        {name}
-      </p>
+        <span className={cn(isDark || isPrimary ? "whitespace-normal text-center w-full" : "truncate")}>
+          {name}
+        </span>
+        {isPrimary && hireDate && (
+          <span className="text-[10px] font-medium opacity-70">
+            Hired {formatDate(hireDate)}
+          </span>
+        )}
+        {hrId && (
+          <span className={cn(
+            "font-mono text-[10px] font-medium opacity-60",
+            isDark ? "absolute right-2 top-2" : "mt-0.5"
+          )}>
+            {hrId}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -266,43 +359,56 @@ function TeamMemberCard({ row }: { row: OrganogramRow }) {
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-xl border px-2.5 py-2 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md",
+        "group relative rounded-lg border px-2.5 py-2 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md",
         isVacancy
-          ? "border-orange-200/90 bg-gradient-to-br from-orange-50 to-orange-100/50 hover:border-orange-300"
-          : "border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 hover:border-slate-300",
+          ? "border-orange-200 bg-orange-50"
+          : "border-slate-200 bg-white",
       )}
     >
       <span
         className={cn(
-          "absolute inset-y-0 left-0 w-1",
+          "absolute inset-y-0 left-0 w-1 rounded-l-lg",
           isVacancy ? "bg-[#F97316]" : "bg-slate-300",
         )}
       />
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="whitespace-normal break-words text-[11px] font-semibold leading-tight text-text">
-            {formatEmployeeDisplayName(row.fullName)}
-          </p>
+        <div className="w-full min-w-0">
+          <div className="flex items-center justify-between gap-2 text-text">
+            <span className="truncate text-[11px] font-semibold leading-tight">
+              {row.fullName}
+            </span>
+            <span className="shrink-0 font-mono text-[10px] font-medium opacity-60">
+              {row.hrId}
+            </span>
+          </div>
           <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-text-secondary">
-            <span className="font-mono font-medium">{row.hrId}</span>
             {title && !showRepFields ? (
-            <span className="break-words leading-snug text-text">{title}</span>
+              <span className="break-words leading-snug text-text">{title}</span>
             ) : null}
           </div>
         </div>
-        {isVacancy ? <Badge variant="warning">Vacant</Badge> : null}
       </div>
 
       {showRepFields ? (
-        <dl className="mt-2 grid grid-cols-[48px_minmax(0,1fr)] gap-y-0.5 text-[10px]">
-          <dt className="text-text-secondary">Hiring</dt>
-          <dd className="truncate text-right font-medium text-text">
-            {formatDate(row.hireDate)}
-          </dd>
-          <dt className="text-text-secondary">Area</dt>
-          <dd className="truncate text-right font-medium text-text">
-            {emptyText(row.areaName)}
-          </dd>
+        <dl className="mt-2.5 space-y-1 rounded-md bg-slate-50/50 p-1.5 ring-1 ring-slate-100">
+          <div className="flex items-center justify-between text-[10px]">
+            <dt className="font-medium text-slate-500">Area</dt>
+            <dd className="font-bold tracking-tight text-slate-700">
+              {row.areaName || "-"}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between text-[10px]">
+            <dt className="font-medium text-slate-500">Hiring</dt>
+            <dd className="font-semibold text-slate-600">
+              {formatDate(row.hireDate)}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between text-[9px] opacity-60">
+            <dt className="text-slate-400">Position</dt>
+            <dd className="truncate font-medium text-slate-500">
+              {title || "-"}
+            </dd>
+          </div>
         </dl>
       ) : null}
     </div>
@@ -310,7 +416,14 @@ function TeamMemberCard({ row }: { row: OrganogramRow }) {
 }
 
 function buildMemberTree(members: OrganogramRow[]) {
-  const memberIds = new Set(members.map((member) => member.hrId).filter(Boolean));
+  const memberIds = new Set(
+    members.map((member) => normalizeHrIdKey(member.hrId)).filter(Boolean),
+  );
+  const rowByHrId = new Map(
+    members
+      .map((member) => [normalizeHrIdKey(member.hrId), member] as const)
+      .filter(([hrId]) => Boolean(hrId)),
+  );
   const nodesByHrId = new Map<string, MemberNode[]>();
   const nodes = members.map((member, index) => ({
     children: [],
@@ -319,17 +432,25 @@ function buildMemberTree(members: OrganogramRow[]) {
   }) satisfies MemberNode);
 
   for (const node of nodes) {
-    nodesByHrId.set(node.row.hrId, [...(nodesByHrId.get(node.row.hrId) ?? []), node]);
+    const hrId = normalizeHrIdKey(node.row.hrId);
+    nodesByHrId.set(hrId, [...(nodesByHrId.get(hrId) ?? []), node]);
   }
 
   const roots: MemberNode[] = [];
 
   for (const node of nodes) {
     const member = node.row;
+    const memberHrId = normalizeHrIdKey(member.hrId);
+    const managerHrId = normalizeHrIdKey(member.managerHrId);
 
-    if (member.managerHrId && memberIds.has(member.managerHrId)) {
-      const managerNode = nodesByHrId.get(member.managerHrId)?.[0];
-      if (managerNode) {
+    if (
+      managerHrId &&
+      managerHrId !== memberHrId &&
+      memberIds.has(managerHrId) &&
+      !hasCircularManagerChain(member, rowByHrId)
+    ) {
+      const managerNode = nodesByHrId.get(managerHrId)?.[0];
+      if (managerNode && managerNode !== node) {
         managerNode.children.push(node);
       } else {
         roots.push(node);
@@ -358,8 +479,8 @@ function TeamMemberNode({ node }: { node: MemberNode }) {
       <TeamMemberCard row={node.row} />
 
       {node.children.length > 0 ? (
-        <div className="ml-3 mt-1.5 border-l border-[#F97316]/35 pl-2">
-          <div className="-ml-[13px] mb-1.5 h-2.5 w-2.5 rounded-bl-lg border-b border-l border-[#F97316]/35" />
+        <div className="ml-3 mt-1.5 border-l border-slate-300 pl-2">
+          <div className="-ml-[13px] mb-1.5 h-2.5 w-2.5 rounded-bl-lg border-b border-l border-slate-300" />
           <div className="space-y-1.5">
             {node.children.map((child) => (
               <TeamMemberNode key={child.key} node={child} />
@@ -371,6 +492,174 @@ function TeamMemberNode({ node }: { node: MemberNode }) {
   );
 }
 
+function StructureKpiCard({
+  breakdown,
+  title,
+}: {
+  breakdown: OrganogramKpiBreakdown;
+  title: string;
+  tone?: "medical" | "dsm" | "nsm" | "rsm" | "total";
+}) {
+  const isTotal = title.toLowerCase().includes("total");
+  const isMedicalRep = title.toLowerCase().includes("medical");
+  const isDsm = title.toLowerCase().includes("dsm");
+  const isNsm = title.toLowerCase().includes("nsm");
+  const isRsm = title.toLowerCase().includes("rsm");
+
+  const displayTitle = isNsm
+    ? "National Sales Managers"
+    : isDsm
+      ? "District Sales Managers"
+      : isRsm
+        ? "Regional Sales Managers"
+        : isMedicalRep
+          ? "Medical Sales Representatives"
+          : title;
+
+  return (
+    <div
+      className={cn(
+        "group relative overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 hover:shadow-xl",
+        isTotal
+          ? "border-slate-800 bg-slate-900 text-white shadow-2xl"
+          : "border-slate-200 bg-white shadow-sm",
+      )}
+    >
+      {/* Premium Glass Effect Header */}
+      <div
+        className={cn(
+          "flex items-center justify-between px-4 py-2 border-b",
+          isTotal ? "border-white/10 bg-white/5" : "border-slate-100 bg-slate-50/50",
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <div
+            className={cn(
+              "h-1.5 w-1.5 rounded-full animate-pulse",
+              isTotal
+                ? "bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.8)]"
+                : isMedicalRep
+                  ? "bg-blue-500"
+                  : isDsm
+                    ? "bg-purple-500"
+                    : "bg-orange-500",
+            )}
+          />
+          <p
+            className={cn(
+              "text-[9px] font-black uppercase tracking-[0.12em]",
+              isTotal ? "text-white" : "text-slate-600",
+            )}
+          >
+            {displayTitle}
+          </p>
+        </div>
+        {isTotal && (
+          <div className="rounded-full bg-orange-500/20 px-2 py-0.5 text-[7px] font-bold text-orange-400 ring-1 ring-orange-500/30">
+            ENTERPRISE
+          </div>
+        )}
+      </div>
+
+      <div className="p-3 pt-4">
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <p
+              className={cn(
+                "text-[8px] font-bold uppercase tracking-[0.05em]",
+                isTotal ? "text-slate-400" : "text-slate-400",
+              )}
+            >
+              Headcount
+            </p>
+            <p
+              className={cn(
+                "text-3xl font-black tracking-tighter",
+                isTotal ? "text-white" : "text-slate-900",
+              )}
+            >
+              {breakdown.total}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <div className="flex items-center justify-end gap-1">
+                <p
+                  className={cn(
+                    "text-[8px] font-bold uppercase tracking-wider",
+                    isTotal ? "text-slate-400" : "text-slate-500",
+                  )}
+                >
+                  Actual
+                </p>
+                <div className={cn("h-1 w-1 rounded-full", isTotal ? "bg-emerald-400" : "bg-emerald-500")} />
+              </div>
+              <p
+                className={cn(
+                  "text-3xl font-black tracking-tighter leading-none mt-0.5",
+                  isTotal ? "text-emerald-400" : "text-slate-800",
+                )}
+              >
+                {breakdown.actual}
+              </p>
+            </div>
+
+            <div className="text-right">
+              <div className="flex items-center justify-end gap-1">
+                <p
+                  className={cn(
+                    "text-[8px] font-bold uppercase tracking-wider",
+                    isTotal ? "text-orange-400/80" : "text-orange-600",
+                  )}
+                >
+                  Vacants
+                </p>
+                <div className={cn("h-1 w-1 rounded-full", isTotal ? "bg-orange-400" : "bg-orange-500")} />
+              </div>
+              <p
+                className={cn(
+                  "text-3xl font-black tracking-tighter leading-none mt-0.5",
+                  isTotal ? "text-orange-400" : "text-orange-700",
+                )}
+              >
+                {breakdown.vacant}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Progress Bar Visualizer */}
+        <div className="mt-4">
+          <div className={cn("h-1 w-full rounded-full overflow-hidden", isTotal ? "bg-white/10" : "bg-slate-100")}>
+            <div
+              className={cn(
+                "h-full rounded-full transition-all duration-1000 ease-out",
+                isTotal
+                  ? "bg-gradient-to-r from-orange-500 via-orange-400 to-amber-300"
+                  : isMedicalRep
+                    ? "bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-400"
+                    : isDsm
+                      ? "bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-400"
+                      : "bg-gradient-to-r from-slate-800 to-slate-600",
+              )}
+              style={{ width: `${(breakdown.actual / (breakdown.total || 1)) * 100}%` }}
+            />
+          </div>
+          <div className="mt-1.5 flex justify-end">
+            <span className={cn(
+              "text-[9px] font-black tracking-widest",
+              isTotal ? "text-orange-400" : "text-slate-600"
+            )}>
+              {Math.round((breakdown.actual / (breakdown.total || 1)) * 100)}%
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrganogramView({
   rows,
   selectedLine,
@@ -378,14 +667,19 @@ function OrganogramView({
   rows: OrganogramRow[];
   selectedLine: string | null;
 }) {
-  const employees = rows.filter((row) => row.type === "employee");
-  const vacancies = rows.filter((row) => row.type === "vacancy");
   const lineName = selectedLine ?? "Select Line";
   const chiefExecutive = rows.find((row) => isChiefExecutive(row)) ?? null;
   const lineLeader =
     rows.find((row) =>
       isNationalSalesManager(row),
     ) ?? null;
+  const rsmRows = rows
+    .filter((row) => isRegionalSalesManager(row))
+    .sort((left, right) => left.fullName.localeCompare(right.fullName));
+  const rsmHrIds = new Set(rsmRows.map((row) => normalizeHrIdKey(row.hrId)));
+  const rsmNameKeys = new Set(
+    rsmRows.map((row) => normalizeNameKey(row.fullName)),
+  );
   const dsmRows = rows
     .filter((row) => isDistrictSalesManager(row))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
@@ -397,43 +691,79 @@ function OrganogramView({
     (row) =>
       !isChiefExecutive(row) &&
       !isNationalSalesManager(row) &&
+      !isRegionalSalesManager(row) &&
       !isDistrictSalesManager(row),
   );
-  const assignedToDsm = new Set<string>();
-  const dsmGroups = groupBy(dsmRows, managerIdentityKey).map(([, dsms]) => {
+  const assignedToManager = new Set<string>();
+  const rsmGroups = groupBy(rsmRows, managerIdentityKey).map(([, rsms]) => {
+    const primaryRsm = [...rsms].sort((left, right) =>
+      left.fullName.localeCompare(right.fullName),
+    )[0];
+    const rsmHrIdsForGroup = new Set(rsms.map((row) => normalizeHrIdKey(row.hrId)));
+    const rsmNameKeysForGroup = new Set(rsms.map((row) => normalizeNameKey(row.fullName)));
+    const dsmsUnderRsm = dsmRows.filter((row) =>
+      reportsToManagerGroup(row, rsmHrIdsForGroup, rsmNameKeysForGroup),
+    );
+    const dsmHrIdsForGroup = new Set(dsmsUnderRsm.map((row) => normalizeHrIdKey(row.hrId)));
+    const dsmNameKeysForGroup = new Set(dsmsUnderRsm.map((row) => normalizeNameKey(row.fullName)));
+    const members = [
+      ...dsmsUnderRsm,
+      ...teamRows.filter((row) =>
+        reportsToManagerGroup(row, rsmHrIdsForGroup, rsmNameKeysForGroup) ||
+        reportsToManagerGroup(row, dsmHrIdsForGroup, dsmNameKeysForGroup) ||
+        rsms.some((rsm) => reportsUpTo(row, rsm, rows)),
+      ),
+    ].sort(sortHierarchyMembers);
+
+    for (const dsm of dsmsUnderRsm) {
+      assignedToManager.add(rowKey(dsm));
+    }
+    for (const member of members) {
+      assignedToManager.add(rowKey(member));
+    }
+
+    return {
+      dsm: primaryRsm,
+      hireDate: primaryRsm.hireDate,
+      hrId: primaryRsm.hrId,
+      members,
+      name: primaryRsm.fullName,
+      region: primaryRsm.regionName,
+      title: primaryRsm.positionTitle ?? primaryRsm.jobTitle ?? "Regional Sales Manager",
+    };
+  });
+  const dsmGroups = groupBy(
+    dsmRows.filter((row) => !assignedToManager.has(rowKey(row))),
+    managerIdentityKey,
+  ).map(([, dsms]) => {
     const primaryDsm = [...dsms].sort((left, right) =>
       left.fullName.localeCompare(right.fullName),
     )[0];
     const dsmHrIdsForGroup = new Set(dsms.map((row) => normalizeHrIdKey(row.hrId)));
     const dsmNameKeysForGroup = new Set(dsms.map((row) => normalizeNameKey(row.fullName)));
     const members = teamRows
-      .filter((row) => {
-        const managerHrId = normalizeHrIdKey(row.managerHrId);
-        return managerHrId
-          ? dsmHrIdsForGroup.has(managerHrId)
-          : dsmNameKeysForGroup.has(normalizeNameKey(row.managerName));
-      })
-      .sort((left, right) =>
-        left.type === right.type
-          ? left.fullName.localeCompare(right.fullName)
-          : left.type === "vacancy"
-            ? 1
-            : -1,
-    );
+      .filter((row) =>
+        !assignedToManager.has(rowKey(row)) &&
+        reportsToManagerGroup(row, dsmHrIdsForGroup, dsmNameKeysForGroup),
+      )
+      .sort(sortHierarchyMembers);
 
     for (const member of members) {
-      assignedToDsm.add(rowKey(member));
+      assignedToManager.add(rowKey(member));
     }
 
     return {
       dsm: primaryDsm,
+      hireDate: primaryDsm.hireDate,
+      hrId: primaryDsm.hrId,
       members,
       name: primaryDsm.fullName,
+      region: primaryDsm.regionName,
       title: primaryDsm.positionTitle ?? primaryDsm.jobTitle ?? "District Sales Manager",
     };
   });
   const marketingManagers = teamRows
-    .filter((row) => isMarketingManager(row))
+    .filter((row) => !assignedToManager.has(rowKey(row)) && isMarketingManager(row))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
   const marketingGroups = groupBy(marketingManagers, managerIdentityKey).map(([, managers]) => {
     const primaryManager = [...managers].sort((left, right) =>
@@ -448,17 +778,16 @@ function OrganogramView({
       .sort((left, right) => left.fullName.localeCompare(right.fullName));
 
     for (const manager of managers) {
-      assignedToDsm.add(rowKey(manager));
-    }
-
-    for (const member of members) {
-      assignedToDsm.add(rowKey(member));
+      assignedToManager.add(rowKey(manager));
     }
 
     return {
       dsm: null,
+      hireDate: primaryManager.hireDate,
+      hrId: primaryManager.hrId,
       members,
       name: primaryManager.fullName,
+      region: primaryManager.regionName,
       title: primaryManager.positionTitle ?? primaryManager.jobTitle ?? "Marketing Manager",
     };
   });
@@ -473,11 +802,13 @@ function OrganogramView({
           managerNameKey === normalizeNameKey(lineLeader?.fullName));
 
       return (
-        !assignedToDsm.has(key) &&
+        !assignedToManager.has(key) &&
         !reportsToLineLeader &&
         (managerHrId || row.managerName) &&
         (!managerHrId || !dsmHrIds.has(managerHrId)) &&
-        (!managerNameKey || !dsmNameKeys.has(managerNameKey))
+        (!managerHrId || !rsmHrIds.has(managerHrId)) &&
+        (!managerNameKey || !dsmNameKeys.has(managerNameKey)) &&
+        (!managerNameKey || !rsmNameKeys.has(managerNameKey))
       );
     }),
     (row) => {
@@ -503,52 +834,58 @@ function OrganogramView({
 
     return {
       dsm: null,
+      hireDate: firstMember?.hireDate,
+      hrId: firstMember?.managerHrId,
       members,
       name,
+      region: firstMember?.regionName,
       title: "Manager",
     };
   });
   const unassignedMembers = teamRows.filter((row) => {
     const key = rowKey(row);
 
-    return !assignedToDsm.has(key) && !row.managerHrId && !row.managerName;
+    return !assignedToManager.has(key) && !row.managerHrId;
   });
   const groups = [
+    ...rsmGroups,
     ...dsmGroups,
     ...marketingGroups,
     ...fallbackManagerGroups,
     ...(unassignedMembers.length > 0
-      ? [{ dsm: null, members: unassignedMembers, name: "Unassigned Manager", title: "Manager" }]
+      ? [
+          {
+            dsm: null,
+            hireDate: null,
+            hrId: null,
+            members: unassignedMembers,
+            name: "Unassigned Manager",
+            region: null,
+            title: "Manager",
+          },
+        ]
       : []),
   ].filter((group) => group.members.length > 0 || group.dsm);
   const filledLaneCount = groups.filter((group) => group.members.length > 0).length;
   const laneCount = Math.max(groups.length, 1);
+  const structureKpis = React.useMemo(
+    () => calculateOrganogramStructureKpis(rows),
+    [rows],
+  );
+
+  const displayedEmployees = rows.filter((row) => row.type === "employee");
+  const displayedVacancies = rows.filter((row) => row.type === "vacancy");
 
   return (
     <Card className={cn(panelClassName, "overflow-hidden p-0")}>
       <AdminSectionHeader
-        action={
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="neutral">{employees.length} employees</Badge>
-            <Badge variant={vacancies.length > 0 ? "warning" : "neutral"}>
-              {vacancies.length} vacancies
-            </Badge>
-            <Badge variant="neutral">{filledLaneCount} lanes</Badge>
-          </div>
-        }
+        action={null}
         description="Executive leadership, manager lanes, active employees, and open vacancies in one operational view."
         title={selectedLine ? `${selectedLine} structure` : "Select a line"}
       />
-      <div
-        className="overflow-hidden bg-[#F8FAFC] px-3 py-5 sm:px-4"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(226, 232, 240, 0.55) 1px, transparent 1px), linear-gradient(90deg, rgba(226, 232, 240, 0.55) 1px, transparent 1px)",
-          backgroundSize: "56px 56px",
-        }}
-      >
+      <div className="overflow-hidden bg-[#F8FAFC] px-3 py-5 sm:px-4">
         {!selectedLine ? (
-          <div className="rounded-3xl border border-dashed border-[#CBD5E1] bg-white/90 p-10 text-center shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+          <div className="rounded-3xl border border-dashed border-[#CBD5E1] bg-white/90 p-10 text-center shadow-sm">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-[#F97316]/10 text-[#F97316]">
               <Network className="h-5 w-5" />
             </div>
@@ -566,32 +903,40 @@ function OrganogramView({
           </div>
         ) : (
           <div className="w-full">
-            <div className="mb-5 grid w-full gap-2 md:grid-cols-3 xl:max-w-2xl">
-              <AdminStatCard
-                description="Active employees included in this scope."
-                icon={<UsersRound className="h-4 w-4" />}
-                label="Employees"
-                value={employees.length}
+            <div className="mb-5 grid w-full gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <StructureKpiCard
+                breakdown={structureKpis.medicalReps}
+                title="Medical Reps"
+                tone="medical"
               />
-              <AdminStatCard
-                description="Vacant positions tracked with active line visibility."
-                icon={<BriefcaseBusiness className="h-4 w-4" />}
-                label="Vacancies"
-                value={vacancies.length}
+              <StructureKpiCard
+                breakdown={structureKpis.dsms}
+                title="DSMs"
+                tone="dsm"
               />
-              <AdminStatCard
-                description="Combined records represented in the chart."
-                icon={<Network className="h-4 w-4" />}
-                label="Rows"
-                value={rows.length}
+              <StructureKpiCard
+                breakdown={structureKpis.nsms}
+                title="NSMs"
+                tone="nsm"
+              />
+              <StructureKpiCard
+                breakdown={structureKpis.rsms}
+                title="RSMs"
+                tone="rsm"
+              />
+              <StructureKpiCard
+                breakdown={structureKpis.totalLineStructure}
+                title="Total Line Structure"
+                tone="total"
               />
             </div>
 
             <div className="relative flex flex-col items-center">
               <HierarchyNode
+                hrId={chiefExecutive?.hrId}
                 icon={<Crown className="h-3.5 w-3.5" />}
                 label={chiefExecutive ? chiefExecutive.positionTitle ?? chiefExecutive.jobTitle ?? "CEO" : "CEO"}
-                name={chiefExecutive ? formatEmployeeDisplayName(chiefExecutive.fullName) : "Executive Leadership"}
+                name={chiefExecutive ? chiefExecutive.fullName : "Executive Leadership"}
                 tone="dark"
               />
               <div className="h-5 w-px bg-border" />
@@ -603,13 +948,15 @@ function OrganogramView({
               />
               <div className="h-5 w-px bg-border" />
               <HierarchyNode
+                hrId={lineLeader?.hrId}
+                hireDate={lineLeader?.hireDate}
                 icon={<UsersRound className="h-3.5 w-3.5" />}
                 label={lineLeader ? lineLeader.positionTitle ?? lineLeader.jobTitle ?? "Line Leadership" : "Line Leadership"}
-                name={lineLeader ? formatEmployeeDisplayName(lineLeader.fullName) : lineName}
+                name={lineLeader ? lineLeader.fullName : lineName}
                 tone="primary"
               />
               <div className="h-5 w-px bg-border" />
-              <div className="relative h-px w-[92%] bg-[#CBD5E1]">
+              <div className="relative h-px w-[92%] bg-slate-200">
                 <span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#F97316]" />
               </div>
             </div>
@@ -619,12 +966,13 @@ function OrganogramView({
                 No manager lanes found for this line.
               </div>
             ) : (
-              <div className="relative mt-6">
-                <div className="absolute left-0 right-0 top-0 h-px bg-[#CBD5E1]" />
+              <div className="relative mt-6 overflow-x-auto pb-2">
+                <div className="absolute left-0 right-0 top-0 h-px bg-slate-200" />
                 <div
-                  className="grid w-full gap-2 pt-5"
+                  className="grid min-w-full gap-3 pt-5"
                   style={{
-                    gridTemplateColumns: `repeat(${laneCount}, minmax(0, 1fr))`,
+                    gridTemplateColumns: `repeat(${laneCount}, minmax(250px, 1fr))`,
+                    minWidth: `${laneCount * 250}px`,
                   }}
                 >
                   {groups.map((group, groupIndex) => {
@@ -637,34 +985,46 @@ function OrganogramView({
 
                     return (
                       <div
-                        className={cn(
-                          "group relative min-w-0 overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-2 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300",
-                        )}
+                        className="group relative min-w-[250px] rounded-xl border border-slate-200 bg-white p-2 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md"
                         key={groupKey}
                       >
-                        <div className="absolute -top-5 left-1/2 h-5 w-px -translate-x-1/2 bg-[#CBD5E1]" />
-                        <div className="absolute left-3 right-3 top-0 h-1 rounded-b-full bg-[#F97316] ring-1 ring-orange-100" />
-                        <div className="rounded-xl bg-gradient-to-br from-[#0F172A] to-[#1E293B] px-2 py-2 text-white shadow-[0_4px_12px_rgba(15,23,42,0.15)]">
+                        <div className="absolute -top-5 left-1/2 h-5 w-px -translate-x-1/2 bg-slate-200" />
+                        <div className="absolute left-3 right-3 top-0 h-1 rounded-b-full bg-[#F97316]" />
+                        <div
+                          className={cn(
+                            "rounded-xl bg-slate-900 px-2 py-2 text-white shadow-md",
+                          )}
+                        >
                           <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 text-left">
-                              <div className="mb-1 flex h-5 w-5 items-center justify-center rounded-md bg-white/10 ring-1 ring-white/20">
-                                <BriefcaseBusiness className="h-3 w-3" />
+                            <div className="w-full min-w-0 text-left">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="truncate text-[10px] font-bold uppercase tracking-[0.08em] leading-3">
+                                  {group.name}
+                                </span>
+                                {group.hrId && (
+                                  <span className="shrink-0 font-mono text-[9px] font-medium opacity-60">
+                                    {group.hrId}
+                                  </span>
+                                )}
                               </div>
-                              <p className="break-words text-[10px] font-bold uppercase tracking-[0.08em] leading-3">
-                                {formatEmployeeDisplayName(group.name)}
-                              </p>
                               <p className="mt-1 break-words text-[9px] font-medium leading-3 opacity-80">
                                 {group.title}
                               </p>
-                            </div>
-                            <div className="shrink-0 rounded-md bg-white/10 ring-1 ring-white/20 px-1.5 py-1 text-center text-[9px] font-bold uppercase tracking-[0.06em]">
-                              <p className="text-[10px] leading-none">{group.members.length}</p>
-                              <p className="mt-0.5 opacity-70">rows</p>
+                              {group.hireDate && (
+                                <p className="mt-1 text-[9px] font-medium opacity-70">
+                                  Hired {formatDate(group.hireDate)}
+                                </p>
+                              )}
+                              {group.region && (
+                                <p className="mt-1 break-words text-[9px] font-bold text-[#FDBA74] opacity-90">
+                                  {group.region}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </div>
 
-                        <div className="mt-2 flex items-center justify-between gap-1.5 rounded-lg border border-slate-200/90 bg-gradient-to-br from-slate-50 to-slate-100/50 px-2 py-1.5 text-[9px] text-[#64748B]">
+                        <div className="mt-2 flex items-center justify-between gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[9px] text-[#64748B]">
                           <span className="truncate font-medium">{group.members.length} team rows</span>
                           {groupVacancies > 0 ? (
                             <span className="shrink-0 font-bold uppercase tracking-[0.06em] text-primary">
@@ -717,7 +1077,7 @@ export function OrganogramReport({
     setError(null);
 
     try {
-      const response = await fetch("/api/reports/vacancies", {
+      const response = await fetch("/api/reports/organogram", {
         cache: "no-store",
       });
       const payload = await response.json();
@@ -737,12 +1097,7 @@ export function OrganogramReport({
 
   const rows = React.useMemo(
     () =>
-      (report?.organogramRows ?? []).filter(
-        (row) =>
-          isSalesDepartment(row) ||
-          isMarketingDepartment(row) ||
-          isOfficeLine(row),
-      ),
+      (report?.organogramRows ?? []).filter(isOrganogramVisibleRow),
     [report],
   );
   const lineOptions = React.useMemo(() => {
@@ -753,7 +1108,7 @@ export function OrganogramReport({
         continue;
       }
 
-      if (isSalesDepartment(row) || isOfficeLine(row)) {
+      if (isVacancyRow(row) || isSalesDepartment(row) || isOfficeLine(row)) {
         options.add(row.lineName);
       }
     }
@@ -774,7 +1129,8 @@ export function OrganogramReport({
       ? rows.filter((row) =>
           isOfficeSelected
             ? row.lineName === effectiveLineFilter
-            : row.lineName === effectiveLineFilter && isSalesDepartment(row),
+            : row.lineName === effectiveLineFilter &&
+              (isVacancyRow(row) || isSalesDepartment(row)),
         )
       : rows;
 
@@ -787,13 +1143,15 @@ export function OrganogramReport({
         const nextFrontier: string[] = [];
 
         for (const managerHrId of frontier) {
-          if (managerHrIdsToKeep.has(managerHrId)) {
+          const normalizedManagerHrId = normalizeHrIdKey(managerHrId);
+
+          if (managerHrIdsToKeep.has(normalizedManagerHrId)) {
             continue;
           }
 
-          managerHrIdsToKeep.add(managerHrId);
+          managerHrIdsToKeep.add(normalizedManagerHrId);
 
-          const managerRow = rows.find((row) => row.hrId === managerHrId);
+          const managerRow = rows.find((row) => normalizeHrIdKey(row.hrId) === normalizedManagerHrId);
 
           if (managerRow?.managerHrId) {
             nextFrontier.push(managerRow.managerHrId);
@@ -807,7 +1165,7 @@ export function OrganogramReport({
         const officeManagerHrIds = new Set(
           rows
             .filter((row) => row.lineName === effectiveLineFilter && !isChiefExecutive(row))
-            .map((row) => row.hrId),
+            .map((row) => normalizeHrIdKey(row.hrId)),
         );
 
         for (const row of rows) {
@@ -819,17 +1177,19 @@ export function OrganogramReport({
           const visited = new Set<string>();
 
           while (managerHrId) {
-            if (officeManagerHrIds.has(managerHrId)) {
+            const normalizedManagerHrId = normalizeHrIdKey(managerHrId);
+
+            if (officeManagerHrIds.has(normalizedManagerHrId)) {
               officeDescendantHrIdsToKeep.add(row.hrId);
               break;
             }
 
-            if (visited.has(managerHrId)) {
+            if (visited.has(normalizedManagerHrId)) {
               break;
             }
 
-            visited.add(managerHrId);
-            managerHrId = rows.find((candidate) => candidate.hrId === managerHrId)?.managerHrId ?? null;
+            visited.add(normalizedManagerHrId);
+            managerHrId = rows.find((candidate) => normalizeHrIdKey(candidate.hrId) === normalizedManagerHrId)?.managerHrId ?? null;
           }
         }
       }
@@ -840,12 +1200,14 @@ export function OrganogramReport({
         Boolean(effectiveLineFilter) &&
         (isChiefExecutive(row) ||
           managerHrIdsToKeep.has(row.hrId) ||
+          managerHrIdsToKeep.has(normalizeHrIdKey(row.hrId)) ||
           officeDescendantHrIdsToKeep.has(row.hrId));
       const matchesSelectedLine =
         !effectiveLineFilter ||
         (isOfficeSelected
           ? row.lineName === effectiveLineFilter || officeDescendantHrIdsToKeep.has(row.hrId)
-          : row.lineName === effectiveLineFilter && isSalesDepartment(row));
+          : row.lineName === effectiveLineFilter &&
+            (isVacancyRow(row) || isSalesDepartment(row)));
 
       if (keepLeadershipChain) {
         return true;
@@ -854,6 +1216,10 @@ export function OrganogramReport({
       return matchesSelectedLine;
     });
   }, [effectiveLineFilter, rows]);
+  const diagnostics = React.useMemo(
+    () => findOrganogramDiagnostics(filteredRows),
+    [filteredRows],
+  );
   const hasActiveFilters = Boolean(effectiveLineFilter) && !fixedLine;
   const canShowChart = Boolean(effectiveLineFilter);
 
@@ -939,7 +1305,7 @@ export function OrganogramReport({
                 />
               ) : null}
               <div className="flex items-end">
-                <div className="rounded-2xl border border-[#E2E8F0] bg-white/80 px-4 py-3 text-sm text-text-secondary shadow-[0_12px_36px_rgba(15,23,42,0.06)]">
+                <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-text-secondary shadow-sm">
                   {effectiveLineFilter
                     ? `Showing ${filteredRows.length} rows inside ${effectiveLineFilter}.`
                     : "Pick a line to render the hierarchy in one focused view."}
@@ -947,6 +1313,31 @@ export function OrganogramReport({
               </div>
             </div>
           </AdminTableShell>
+
+          {diagnostics.length > 0 ? (
+            <AdminCallout tone="warning">
+              <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
+              <div>
+                <h2 className="text-base font-semibold text-text">
+                  Hierarchy data needs review
+                </h2>
+                <p className="mt-1 text-sm text-text-secondary">
+                  {diagnostics
+                    .map((diagnostic) => {
+                      const label = {
+                        circular_manager: "circular manager links",
+                        missing_manager: "missing or inactive managers",
+                        self_manager: "self-manager links",
+                      }[diagnostic.code];
+
+                      return `${diagnostic.count} ${label}`;
+                    })
+                    .join(", ")}
+                  . The Organogram is still read-only and renders defensively.
+                </p>
+              </div>
+            </AdminCallout>
+          ) : null}
 
           <OrganogramView
             rows={canShowChart ? filteredRows : []}
