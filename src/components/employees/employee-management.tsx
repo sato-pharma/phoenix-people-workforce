@@ -6,6 +6,7 @@ import {
   Check,
   CircleAlert,
   Download,
+  Info,
   Pencil,
   Users,
   RefreshCw,
@@ -53,49 +54,100 @@ type ResignationFormState = {
   workflowNotes: string;
 };
 
+type EmployeeImportPreview = {
+  failedRows?: number;
+  rowsToInsert?: unknown[];
+  rowsToUpdate?: unknown[];
+  validationErrors?: Array<{ message?: string; rowNumber?: number }>;
+  validationWarnings?: Array<{ message?: string; rowNumber?: number }>;
+  vacantPositionsToCreate?: unknown[];
+};
+
 type EmployeeFormState = {
   areaId: string;
+  bankAccount: string;
+  bankName: string;
+  baseSalary: string;
+  basicSalary: string;
+  birthDate: string;
+  contractType: string;
   crmId: string;
   crmUsername: string;
   departmentId: string;
   education: string;
   employmentStatus: string;
+  extraCostOfLiving: string;
+  fuelAllowance: string;
   fullName: string;
+  gender: string;
+  grossSalary: string;
+  hasBankAccount: string;
   hireDate: string;
   hrId: string;
   jobTitle: string;
   lineId: string;
   managerHrId: string;
+  medicalInsurance: string;
+  medicalInsuranceNumber: string;
+  medicalInsuranceStatus: string;
   mobileNumber: string;
   nameAr: string;
+  nationalId: string;
+  netSalary: string;
   positionId: string;
   residenceAddress: string;
   residenceArea: string;
   residenceCity: string;
+  regionName: string;
   salaryPaymentMode: string;
+  socialInsurance: string;
+  socialInsuranceNumber: string;
+  socialInsuranceStatus: string;
+  taxes: string;
   workEmail: string;
 };
 
 const emptyForm: EmployeeFormState = {
   areaId: "",
+  bankAccount: "",
+  bankName: "",
+  baseSalary: "",
+  basicSalary: "",
+  birthDate: "",
+  contractType: "",
   crmId: "",
   crmUsername: "",
   departmentId: "",
   education: "",
   employmentStatus: "active",
+  extraCostOfLiving: "",
+  fuelAllowance: "",
   fullName: "",
+  gender: "",
+  grossSalary: "",
+  hasBankAccount: "",
   hireDate: "",
   hrId: "",
   jobTitle: "",
   lineId: "",
   managerHrId: "",
+  medicalInsurance: "",
+  medicalInsuranceNumber: "",
+  medicalInsuranceStatus: "",
   mobileNumber: "",
   nameAr: "",
+  nationalId: "",
+  netSalary: "",
   positionId: "",
   residenceAddress: "",
   residenceArea: "",
   residenceCity: "",
+  regionName: "",
   salaryPaymentMode: "two_parts",
+  socialInsurance: "",
+  socialInsuranceNumber: "",
+  socialInsuranceStatus: "",
+  taxes: "",
   workEmail: "",
 };
 
@@ -108,6 +160,30 @@ const salaryPaymentModeOptions = [
     label: "Two Parts",
     value: "two_parts",
   },
+];
+
+const genderOptions = [
+  { label: "Male", value: "male" },
+  { label: "Female", value: "female" },
+  { label: "Other / Not specified", value: "other" },
+];
+
+const contractTypeOptions = [
+  { label: "Full Time", value: "full_time" },
+  { label: "Part Time", value: "part_time" },
+  { label: "Temporary", value: "temporary" },
+  { label: "Contractor", value: "contractor" },
+];
+
+const yesNoOptions = [
+  { label: "Yes", value: "yes" },
+  { label: "No", value: "no" },
+];
+
+const enrollmentStatusOptions = [
+  { label: "Yes", value: "yes" },
+  { label: "No", value: "no" },
+  { label: "Pending", value: "pending" },
 ];
 
 const resignationStatusOptions = [
@@ -149,6 +225,16 @@ function emptyText(value: string | number | null | undefined) {
   return value === null || value === undefined || value === "" ? "-" : String(value);
 }
 
+function masterText(value: string | number | boolean | null | undefined) {
+  if (value === null || value === undefined || value === "") return "Not provided";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
+function dateText(value: string | null | undefined) {
+  return value ? value.slice(0, 10) : "Not provided";
+}
+
 function statusBadgeVariant(status: string | null) {
   if (!status || status === "active") {
     return "success" as const;
@@ -172,6 +258,20 @@ function isMedicalRepTitle(value: string | null | undefined) {
     normalized.includes("medical rep") ||
     normalized === "mr"
   );
+}
+
+function isSalesPositionTitle(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return (
+    isMedicalRepTitle(normalized) ||
+    normalized.includes("district sales manager") ||
+    normalized === "dsm" ||
+    normalized.includes("sales")
+  );
+}
+
+function normalizeForMatch(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
 }
 
 function SelectField({
@@ -246,26 +346,50 @@ function TextField({
 }
 
 function employeeToForm(employee: EmployeeDirectoryRow): EmployeeFormState {
+  const numberToText = (value: number | null | undefined) =>
+    value === null || value === undefined ? "" : String(value);
+
   return {
     areaId: employee.areaId ? String(employee.areaId) : "",
+    bankAccount: employee.bankAccount ?? "",
+    bankName: employee.bankName ?? "",
+    baseSalary: numberToText(employee.baseSalary),
+    basicSalary: numberToText(employee.basicSalary),
+    birthDate: employee.birthDate ?? "",
+    contractType: employee.contractType ?? "",
     crmId: employee.crmId ?? "",
     crmUsername: employee.crmUsername ?? "",
     departmentId: employee.departmentId ? String(employee.departmentId) : "",
     education: employee.education ?? "",
     employmentStatus: employee.employmentStatus ?? "active",
+    extraCostOfLiving: numberToText(employee.extraCostOfLiving),
+    fuelAllowance: numberToText(employee.fuelAllowance),
     fullName: employee.fullName,
+    gender: employee.gender ?? "",
+    grossSalary: numberToText(employee.grossSalary),
+    hasBankAccount: employee.hasBankAccount ?? (employee.bankAccount ? "yes" : ""),
     hireDate: employee.hireDate ?? "",
     hrId: employee.hrId,
     jobTitle: employee.jobTitle ?? employee.positionTitle ?? "",
     lineId: employee.lineId ? String(employee.lineId) : "",
     managerHrId: employee.managerHrId ?? "",
+    medicalInsurance: numberToText(employee.medicalInsurance),
+    medicalInsuranceNumber: employee.medicalInsuranceNumber ?? "",
+    medicalInsuranceStatus: employee.medicalInsuranceStatus ?? "",
     mobileNumber: employee.mobileNumber ?? "",
     nameAr: employee.nameAr ?? "",
+    nationalId: employee.nationalId ?? "",
+    netSalary: numberToText(employee.netSalary),
     positionId: employee.positionId ? String(employee.positionId) : "",
     residenceAddress: employee.residenceAddress ?? "",
     residenceArea: employee.residenceArea ?? "",
     residenceCity: employee.residenceCity ?? "",
+    regionName: employee.regionName ?? "",
     salaryPaymentMode: employee.salaryPaymentMode,
+    socialInsurance: numberToText(employee.socialInsurance),
+    socialInsuranceNumber: employee.socialInsuranceNumber ?? "",
+    socialInsuranceStatus: employee.socialInsuranceStatus ?? "",
+    taxes: numberToText(employee.taxes),
     workEmail: employee.workEmail ?? "",
   };
 }
@@ -286,25 +410,46 @@ function formToPayload(form: EmployeeFormState, originalHrId: string | null): Em
 
   return {
     areaId: optionalNumber(form.areaId),
+    bankAccount: optionalText(form.bankAccount),
+    bankName: optionalText(form.bankName),
+    baseSalary: optionalNumber(form.baseSalary),
+    basicSalary: optionalNumber(form.basicSalary),
+    birthDate: optionalText(form.birthDate),
+    contractType: optionalText(form.contractType),
     crmId: optionalText(form.crmId),
     crmUsername: optionalText(form.crmUsername),
     departmentId: optionalNumber(form.departmentId),
     education: optionalText(form.education),
     employmentStatus: optionalText(form.employmentStatus),
+    extraCostOfLiving: optionalNumber(form.extraCostOfLiving),
+    fuelAllowance: optionalNumber(form.fuelAllowance),
     fullName: optionalText(form.fullName),
+    gender: optionalText(form.gender),
+    grossSalary: optionalNumber(form.grossSalary),
+    hasBankAccount: optionalText(form.hasBankAccount),
     hireDate: optionalText(form.hireDate),
     hrId: optionalText(form.hrId),
     jobTitle: optionalText(form.jobTitle),
     lineId: optionalNumber(form.lineId),
     managerHrId: optionalText(form.managerHrId),
+    medicalInsurance: optionalNumber(form.medicalInsurance),
+    medicalInsuranceNumber: optionalText(form.medicalInsuranceNumber),
+    medicalInsuranceStatus: optionalText(form.medicalInsuranceStatus),
     mobileNumber: optionalText(form.mobileNumber),
     nameAr: optionalText(form.nameAr),
+    nationalId: optionalText(form.nationalId),
+    netSalary: optionalNumber(form.netSalary),
     originalHrId,
     positionId: optionalNumber(form.positionId),
     residenceAddress: optionalText(form.residenceAddress),
     residenceArea: optionalText(form.residenceArea),
     residenceCity: optionalText(form.residenceCity),
+    regionName: optionalText(form.regionName),
     salaryPaymentMode: optionalText(form.salaryPaymentMode),
+    socialInsurance: optionalNumber(form.socialInsurance),
+    socialInsuranceNumber: optionalText(form.socialInsuranceNumber),
+    socialInsuranceStatus: optionalText(form.socialInsuranceStatus),
+    taxes: optionalNumber(form.taxes),
     workEmail: optionalText(form.workEmail),
   };
 }
@@ -322,18 +467,24 @@ export function EmployeeManagement({
   const [isSaving, setIsSaving] = React.useState(false);
   const [areaFilter, setAreaFilter] = React.useState("");
   const [departmentFilter, setDepartmentFilter] = React.useState("");
+  const [hasBankAccountFilter, setHasBankAccountFilter] = React.useState("");
+  const [medicalInsuranceStatusFilter, setMedicalInsuranceStatusFilter] = React.useState("");
   const [lineFilter, setLineFilter] = React.useState("");
-  const [managerFilter, setManagerFilter] = React.useState("");
   const [positionFilter, setPositionFilter] = React.useState("");
   const [query, setQuery] = React.useState("");
+  const [regionFilter, setRegionFilter] = React.useState("");
   const [salaryPaymentModeFilter, setSalaryPaymentModeFilter] = React.useState("");
-  const [statusFilter, setStatusFilter] = React.useState("");
+  const [socialInsuranceStatusFilter, setSocialInsuranceStatusFilter] = React.useState("");
   const [form, setForm] = React.useState<EmployeeFormState>(emptyForm);
+  const [autoGeneratedHrId, setAutoGeneratedHrId] = React.useState<string | null>(null);
   const [editingHrId, setEditingHrId] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = React.useState(false);
   const [isResigning, setIsResigning] = React.useState(false);
   const [isResignationOpen, setIsResignationOpen] = React.useState(false);
+  const [masterDetailsEmployee, setMasterDetailsEmployee] = React.useState<EmployeeDirectoryRow | null>(null);
+  const [pendingImportFile, setPendingImportFile] = React.useState<File | null>(null);
+  const [pendingImportPreview, setPendingImportPreview] = React.useState<EmployeeImportPreview | null>(null);
   const [resignationError, setResignationError] = React.useState<string | null>(null);
   const [resigningEmployee, setResigningEmployee] = React.useState<EmployeeDirectoryRow | null>(null);
   const [resignationForm, setResignationForm] = React.useState<ResignationFormState>(emptyResignationForm);
@@ -350,6 +501,7 @@ export function EmployeeManagement({
         medicalRepVacancies: [],
         positions: [],
         statuses: [],
+        workforceVacancies: [],
       },
     [data?.lookups],
   );
@@ -358,16 +510,61 @@ export function EmployeeManagement({
     return lookups.positions.find((position) => position.value === form.positionId)?.label ?? "";
   }, [lookups.positions, form.positionId]);
 
-  const isManualMedicalRep = React.useMemo(() => {
-    return isMedicalRepTitle(form.jobTitle) || isMedicalRepTitle(selectedPositionTitle);
-  }, [form.jobTitle, selectedPositionTitle]);
+  const openWorkforceVacancies = React.useMemo(
+    () => lookups.workforceVacancies?.length ? lookups.workforceVacancies : (lookups.medicalRepVacancies ?? []),
+    [lookups.medicalRepVacancies, lookups.workforceVacancies],
+  );
 
-  const filteredManualVacantAreas = React.useMemo(() => {
-    if (!isManualMedicalRep) return [];
-    return (lookups.medicalRepVacancies ?? []).filter(
-      (v) => String(v.lineId) === String(form.lineId),
-    );
-  }, [isManualMedicalRep, lookups.medicalRepVacancies, form.lineId]);
+  const salesDepartmentId = React.useMemo(() => {
+    return lookups.departments.find((department) => normalizeForMatch(department.label) === "sales")?.value ?? "";
+  }, [lookups.departments]);
+
+  const selectedPositionRequiresVacancy = React.useMemo(() => {
+    return Boolean(form.positionId || form.jobTitle || selectedPositionTitle);
+  }, [form.jobTitle, form.positionId, selectedPositionTitle]);
+
+  const filteredWorkforceVacancies = React.useMemo(() => {
+    const selectedTitle = normalizeForMatch(selectedPositionTitle || form.jobTitle);
+
+    return openWorkforceVacancies.filter((vacancy) => {
+      const positionMatches =
+        !form.positionId ||
+        String(vacancy.positionId) === String(form.positionId) ||
+        normalizeForMatch(vacancy.positionTitle) === selectedTitle ||
+        normalizeForMatch(vacancy.jobTitle) === selectedTitle;
+      const lineMatches = !form.lineId || String(vacancy.lineId) === String(form.lineId);
+
+      return positionMatches && lineMatches;
+    });
+  }, [form.jobTitle, form.lineId, form.positionId, openWorkforceVacancies, selectedPositionTitle]);
+
+  const filteredWorkforceLines = React.useMemo(() => {
+    if (!selectedPositionRequiresVacancy) return lookups.lines;
+
+    const vacancyLines = Array.from(
+      new Map(
+        filteredWorkforceVacancies
+          .filter((vacancy) => vacancy.lineId !== null)
+          .map((vacancy) => [
+            String(vacancy.lineId),
+            {
+              label: vacancy.lineName ?? `Line ${vacancy.lineId}`,
+              value: String(vacancy.lineId),
+            },
+          ]),
+      ).values(),
+    ).sort((a, b) => a.label.localeCompare(b.label));
+
+    return vacancyLines.length ? vacancyLines : lookups.lines;
+  }, [filteredWorkforceVacancies, lookups.lines, selectedPositionRequiresVacancy]);
+
+  const regionOptions = React.useMemo(() => {
+    return Array.from(
+      new Set(employees.map((employee) => employee.regionName).filter(Boolean)),
+    )
+      .sort((a, b) => String(a).localeCompare(String(b)))
+      .map((region) => ({ label: String(region), value: String(region) }));
+  }, [employees]);
 
   const loadEmployees = React.useCallback(async () => {
     setIsLoading(true);
@@ -409,6 +606,7 @@ export function EmployeeManagement({
         employee.managerHrId,
         employee.crmId,
         employee.crmUsername,
+        employee.regionName,
         employee.salaryPaymentMode === "two_parts" ? "two parts" : "one part",
       ]
         .filter(Boolean)
@@ -421,70 +619,175 @@ export function EmployeeManagement({
         (!lineFilter || String(employee.lineId ?? "") === lineFilter) &&
         (!areaFilter || String(employee.areaId ?? "") === areaFilter) &&
         (!positionFilter || String(employee.positionId ?? "") === positionFilter) &&
-        (!managerFilter || employee.managerHrId === managerFilter) &&
+        (!regionFilter || employee.regionName === regionFilter) &&
+        (!hasBankAccountFilter || employee.hasBankAccount === hasBankAccountFilter) &&
+        (!medicalInsuranceStatusFilter ||
+          employee.medicalInsuranceStatus === medicalInsuranceStatusFilter) &&
+        (!socialInsuranceStatusFilter ||
+          employee.socialInsuranceStatus === socialInsuranceStatusFilter) &&
         (!salaryPaymentModeFilter ||
-          employee.salaryPaymentMode === salaryPaymentModeFilter) &&
-        (!statusFilter ||
-          (employee.employmentStatus ?? "active") === statusFilter)
+          employee.salaryPaymentMode === salaryPaymentModeFilter)
       );
     });
   }, [
     areaFilter,
     departmentFilter,
     employees,
+    hasBankAccountFilter,
     lineFilter,
-    managerFilter,
+    medicalInsuranceStatusFilter,
     positionFilter,
     query,
+    regionFilter,
     salaryPaymentModeFilter,
-    statusFilter,
+    socialInsuranceStatusFilter,
   ]);
   const hasActiveFilters = Boolean(
     areaFilter ||
       departmentFilter ||
+      hasBankAccountFilter ||
       lineFilter ||
-      managerFilter ||
+      medicalInsuranceStatusFilter ||
       positionFilter ||
       query ||
+      regionFilter ||
       salaryPaymentModeFilter ||
-      statusFilter,
+      socialInsuranceStatusFilter,
   );
   const activeFilterCount = [
     areaFilter,
     departmentFilter,
+    hasBankAccountFilter,
     lineFilter,
-    managerFilter,
+    medicalInsuranceStatusFilter,
     positionFilter,
     query,
+    regionFilter,
     salaryPaymentModeFilter,
-    statusFilter,
+    socialInsuranceStatusFilter,
   ].filter(Boolean).length;
 
   function updateForm(key: keyof EmployeeFormState, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  async function generateEmployeeId(lineId: string, forceCreate = false) {
+    try {
+      const params = lineId ? `?lineId=${encodeURIComponent(lineId)}` : "";
+      const response = await fetch(`/api/employees/next-hr-id${params}`, { cache: "no-store" });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.hrId) {
+        setError(payload.message ?? "Unable to generate Employee ID.");
+        return;
+      }
+
+      setAutoGeneratedHrId(payload.hrId);
+      setForm((current) => {
+        if ((!forceCreate && editingHrId) || (current.hrId && current.hrId !== autoGeneratedHrId)) {
+          return current;
+        }
+
+        return { ...current, hrId: payload.hrId };
+      });
+    } catch {
+      setError("Unable to generate Employee ID.");
+    }
+  }
+
+  function updateLine(value: string) {
+    setForm((current) => ({
+      ...current,
+      areaId: "",
+      lineId: value,
+      managerHrId: "",
+    }));
+
+    if (!editingHrId) {
+      void generateEmployeeId(value);
+    }
+  }
+
+  function applyVacancySelection(areaId: string) {
+    const vacancy = filteredWorkforceVacancies.find(
+      (item) => String(item.areaId) === String(areaId),
+    );
+
+    if (!vacancy) {
+      updateForm("areaId", areaId);
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      areaId,
+      departmentId: String(vacancy.departmentId ?? prev.departmentId),
+      jobTitle: vacancy.positionTitle || vacancy.jobTitle || prev.jobTitle,
+      lineId: String(vacancy.lineId ?? prev.lineId),
+      managerHrId: vacancy.managerHrId ?? prev.managerHrId,
+      positionId: String(vacancy.positionId ?? prev.positionId),
+      regionName: vacancy.regionName ?? prev.regionName,
+    }));
+  }
+
+  function validateEmployeeForm() {
+    const numericFields: Array<[keyof EmployeeFormState, string]> = [
+      ["basicSalary", "Basic Salary"],
+      ["baseSalary", "Base Salary"],
+      ["grossSalary", "Gross Salary"],
+      ["netSalary", "Net Salary"],
+      ["fuelAllowance", "Fuel Allowance"],
+      ["extraCostOfLiving", "Extra Cost of Living"],
+      ["medicalInsurance", "Medical Insurance"],
+      ["socialInsurance", "Social Insurance"],
+      ["taxes", "Taxes"],
+    ];
+
+    if (!form.hrId.trim()) return "Employee ID is required.";
+    if (!form.fullName.trim()) return "Full Name is required.";
+    if (form.managerHrId && form.managerHrId.trim().toUpperCase() === form.hrId.trim().toUpperCase()) {
+      return "Direct Manager cannot be the same employee.";
+    }
+    if (form.workEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.workEmail)) {
+      return "Work email format is invalid.";
+    }
+
+    for (const [key, label] of numericFields) {
+      const value = form[key].trim();
+      if (value && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+        return `${label} must be a valid positive number.`;
+      }
+    }
+
+    return null;
+  }
+
   function clearFilters() {
     setAreaFilter("");
     setDepartmentFilter("");
+    setHasBankAccountFilter("");
     setLineFilter("");
-    setManagerFilter("");
+    setMedicalInsuranceStatusFilter("");
     setPositionFilter("");
     setQuery("");
+    setRegionFilter("");
     setSalaryPaymentModeFilter("");
-    setStatusFilter("");
+    setSocialInsuranceStatusFilter("");
   }
 
   function startCreate() {
     setEditingHrId(null);
     setForm(emptyForm);
+    setAutoGeneratedHrId(null);
     setNotice(null);
     setIsFormOpen(true);
+    void generateEmployeeId("", true);
   }
 
   function startEdit(employee: EmployeeDirectoryRow) {
     setEditingHrId(employee.hrId);
     setForm(employeeToForm(employee));
+    setAutoGeneratedHrId(null);
     setNotice(null);
     setIsFormOpen(true);
   }
@@ -522,6 +825,12 @@ export function EmployeeManagement({
     setNotice(null);
 
     try {
+      const validationError = validateEmployeeForm();
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+
       const response = await fetch("/api/employees", {
         body: JSON.stringify({ employee: formToPayload(form, editingHrId) }),
         headers: { "Content-Type": "application/json" },
@@ -554,9 +863,51 @@ export function EmployeeManagement({
     setIsImportingTemplate(true);
     setError(null);
     setNotice(null);
+    setPendingImportFile(null);
+    setPendingImportPreview(null);
 
     const formData = new FormData();
     formData.append("file", file);
+
+    try {
+      const response = await fetch("/api/imports/employees/dry-run", {
+        body: formData,
+        method: "POST",
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setError(payload.message ?? payload.error ?? "template_import_failed");
+        return;
+      }
+
+      setPendingImportFile(file);
+      setPendingImportPreview(payload);
+      setNotice(
+        `Import preview ready: ${payload.rowsToInsert?.length ?? 0} to create, ${
+          payload.rowsToUpdate?.length ?? 0
+        } to update, ${payload.failedRows ?? 0} blocked.`,
+      );
+    } catch {
+      setError("Unable to upload employee template.");
+    } finally {
+      if (templateInputRef.current) {
+        templateInputRef.current.value = "";
+      }
+
+      setIsImportingTemplate(false);
+    }
+  }
+
+  async function confirmPendingImport() {
+    if (!pendingImportFile) return;
+
+    setIsImportingTemplate(true);
+    setError(null);
+    setNotice(null);
+
+    const formData = new FormData();
+    formData.append("file", pendingImportFile);
 
     try {
       const response = await fetch("/api/imports/employees/confirm", {
@@ -570,6 +921,8 @@ export function EmployeeManagement({
         return;
       }
 
+      setPendingImportFile(null);
+      setPendingImportPreview(null);
       await loadEmployees();
       setNotice(
         `Template processed: ${payload.importedEmployees ?? 0} created, ${
@@ -577,12 +930,8 @@ export function EmployeeManagement({
         } updated.`,
       );
     } catch {
-      setError("Unable to upload employee template.");
+      setError("Unable to confirm employee import.");
     } finally {
-      if (templateInputRef.current) {
-        templateInputRef.current.value = "";
-      }
-
       setIsImportingTemplate(false);
     }
   }
@@ -643,10 +992,10 @@ export function EmployeeManagement({
               <a
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-xl px-4 text-xs font-semibold text-[#475569] transition hover:bg-[#F8FAFC] hover:text-[#0F172A]"
                 href="/api/employees/template"
-                title="Download bulk upload template"
+                title="Export active employee master data"
               >
                 <Download className="h-3.5 w-3.5 text-[#F97316]" />
-                Template
+                Export XLSX
               </a>
               <div className="h-4 w-px bg-[#E2E8F0]" />
               <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-xs font-semibold text-[#475569] transition hover:bg-[#F8FAFC] hover:text-[#0F172A]">
@@ -708,6 +1057,33 @@ export function EmployeeManagement({
         <AdminCallout tone="success">
             <Check className="h-5 w-5 text-success" />
             {notice}
+        </AdminCallout>
+      ) : null}
+
+      {pendingImportPreview ? (
+        <AdminCallout tone={pendingImportPreview.failedRows ? "danger" : "warning"}>
+          <Upload className="mt-0.5 h-5 w-5 text-[#F97316]" />
+          <div className="flex w-full flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-text">Employee import preview</h2>
+              <p className="mt-1 text-sm text-text-secondary">
+                {(pendingImportPreview.rowsToInsert?.length ?? 0)} create, {(pendingImportPreview.rowsToUpdate?.length ?? 0)} update, {(pendingImportPreview.vacantPositionsToCreate?.length ?? 0)} vacancy rows, {pendingImportPreview.failedRows ?? 0} blocked.
+              </p>
+              {(pendingImportPreview.validationErrors?.length ?? 0) > 0 ? (
+                <p className="mt-1 text-xs text-danger">
+                  {pendingImportPreview.validationErrors?.slice(0, 3).map((issue) => `Row ${issue.rowNumber ?? "-"}: ${issue.message ?? "Validation failed."}`).join(" ")}
+                </p>
+              ) : null}
+            </div>
+            <Button
+              className="h-9 rounded-xl px-4 text-xs"
+              disabled={isImportingTemplate || Boolean(pendingImportPreview.failedRows)}
+              onClick={() => void confirmPendingImport()}
+            >
+              {isImportingTemplate ? <LoadingSpinner /> : <Check className="h-3.5 w-3.5" />}
+              Confirm Import
+            </Button>
+          </div>
         </AdminCallout>
       ) : null}
 
@@ -779,7 +1155,7 @@ export function EmployeeManagement({
                 </Button>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
                 <SelectField
                   label="Department"
                   onChange={setDepartmentFilter}
@@ -809,18 +1185,32 @@ export function EmployeeManagement({
                   value={positionFilter}
                 />
                 <SelectField
-                  label="Direct Manager"
-                  onChange={setManagerFilter}
-                  options={lookups.managers}
-                  placeholder="All Managers"
-                  value={managerFilter}
+                  label="Region"
+                  onChange={setRegionFilter}
+                  options={regionOptions}
+                  placeholder="All Regions"
+                  value={regionFilter}
                 />
                 <SelectField
-                  label="Employment Status"
-                  onChange={setStatusFilter}
-                  options={lookups.statuses}
-                  placeholder="All Statuses"
-                  value={statusFilter}
+                  label="Has Bank Account"
+                  onChange={setHasBankAccountFilter}
+                  options={yesNoOptions}
+                  placeholder="All"
+                  value={hasBankAccountFilter}
+                />
+                <SelectField
+                  label="In Medical Insurance"
+                  onChange={setMedicalInsuranceStatusFilter}
+                  options={enrollmentStatusOptions}
+                  placeholder="All"
+                  value={medicalInsuranceStatusFilter}
+                />
+                <SelectField
+                  label="In Social Insurance"
+                  onChange={setSocialInsuranceStatusFilter}
+                  options={enrollmentStatusOptions}
+                  placeholder="All"
+                  value={socialInsuranceStatusFilter}
                 />
                 <SelectField
                   label="Payout Mode"
@@ -948,6 +1338,14 @@ export function EmployeeManagement({
                           <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             <Button
                               className="h-8 w-8 rounded-lg p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+                              onClick={() => setMasterDetailsEmployee(employee)}
+                              title="View Master Details"
+                              variant="ghost"
+                            >
+                              <Info className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              className="h-8 w-8 rounded-lg p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
                               onClick={() => startEdit(employee)}
                               title="Edit Record"
                               variant="ghost"
@@ -972,6 +1370,119 @@ export function EmployeeManagement({
             </div>
           </AdminTableShell>
         </>
+      ) : null}
+
+      {masterDetailsEmployee ? (
+        <div className="fixed inset-0 z-50 flex justify-end bg-[#0F172A]/40 backdrop-blur-sm">
+          <Card className="h-full w-full max-w-4xl overflow-hidden rounded-none border-l border-[#D8E0EA] bg-white shadow-[-20px_0_50px_rgba(15,23,42,0.1)]">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] bg-[#F8FAFC] px-6 py-5">
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-[#0F172A]">{masterDetailsEmployee.fullName}</h2>
+                <p className="mt-1 text-sm text-[#64748B]">
+                  {masterDetailsEmployee.hrId} · {masterText(masterDetailsEmployee.positionTitle ?? masterDetailsEmployee.jobTitle)}
+                </p>
+              </div>
+              <Button
+                className="h-10 w-10 rounded-xl p-0 text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+                onClick={() => setMasterDetailsEmployee(null)}
+                variant="ghost"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <div className="grid max-h-[calc(100vh-88px)] gap-5 overflow-y-auto p-6 lg:grid-cols-2">
+              {[
+                {
+                  title: "Identity",
+                  rows: [
+                    ["Employee ID", masterDetailsEmployee.hrId],
+                    ["Full Name", masterDetailsEmployee.fullName],
+                    ["Arabic Name", masterDetailsEmployee.nameAr],
+                    ["National ID", masterDetailsEmployee.nationalId],
+                    ["Gender", masterDetailsEmployee.gender],
+                    ["Birth Date", dateText(masterDetailsEmployee.birthDate)],
+                  ],
+                },
+                {
+                  title: "Organization",
+                  rows: [
+                    ["Department", masterDetailsEmployee.departmentName],
+                    ["Line", masterDetailsEmployee.lineName],
+                    ["Area", masterDetailsEmployee.areaName],
+                    ["Team", masterDetailsEmployee.teamId],
+                    ["Title", masterDetailsEmployee.jobTitle],
+                    ["Position", masterDetailsEmployee.positionTitle],
+                    ["Direct Manager", masterDetailsEmployee.managerName],
+                    ["Manager HR_ID", masterDetailsEmployee.managerHrId],
+                    ["Hiring Date", dateText(masterDetailsEmployee.hireDate)],
+                    ["Employment Status", optionName(masterDetailsEmployee.employmentStatus ?? "active")],
+                    ["Contract Type", optionName(masterDetailsEmployee.contractType ?? "")],
+                  ],
+                },
+                {
+                  title: "Contact & Residence",
+                  rows: [
+                    ["Email", masterDetailsEmployee.workEmail],
+                    ["Phone", masterDetailsEmployee.mobileNumber],
+                    ["Residence Address", masterDetailsEmployee.residenceAddress],
+                    ["Residence City", masterDetailsEmployee.residenceCity],
+                    ["Residence Area", masterDetailsEmployee.residenceArea],
+                  ],
+                },
+                {
+                  title: "CRM",
+                  rows: [
+                    ["CRM ID", masterDetailsEmployee.crmId],
+                    ["CRM Username", masterDetailsEmployee.crmUsername],
+                  ],
+                },
+                {
+                  title: "Payroll Reference",
+                  rows: [
+                    ["Basic Salary", masterDetailsEmployee.basicSalary],
+                    ["Base Salary", masterDetailsEmployee.baseSalary],
+                    ["Gross Salary", masterDetailsEmployee.grossSalary],
+                    ["Net Salary", masterDetailsEmployee.netSalary],
+                    ["Fuel Allowance", masterDetailsEmployee.fuelAllowance],
+                    ["Extra Cost of Living", masterDetailsEmployee.extraCostOfLiving],
+                    ["Medical Insurance", masterDetailsEmployee.medicalInsurance],
+                    ["In Medical Insurance", optionName(masterDetailsEmployee.medicalInsuranceStatus ?? "")],
+                    ["Social Insurance", masterDetailsEmployee.socialInsurance],
+                    ["In Social Insurance", optionName(masterDetailsEmployee.socialInsuranceStatus ?? "")],
+                    ["Taxes", masterDetailsEmployee.taxes],
+                    ["Payment Mode", masterDetailsEmployee.salaryPaymentMode],
+                    ["Has Bank Account", optionName(masterDetailsEmployee.hasBankAccount ?? "")],
+                    ["Bank Name", masterDetailsEmployee.bankName],
+                    ["Bank Account", masterDetailsEmployee.bankAccount],
+                    ["Medical Insurance Number", masterDetailsEmployee.medicalInsuranceNumber],
+                    ["Social Insurance Number", masterDetailsEmployee.socialInsuranceNumber],
+                  ],
+                },
+                {
+                  title: "Lifecycle/System",
+                  rows: [
+                    ["Payroll Eligible", masterDetailsEmployee.payrollEligible],
+                    ["Organogram Visible", masterDetailsEmployee.organogramVisible],
+                    ["Region", masterDetailsEmployee.regionName],
+                    ["Last Updated", dateText(masterDetailsEmployee.updatedAt)],
+                  ],
+                },
+              ].map((group) => (
+                <section className="rounded-2xl border border-[#E2E8F0] bg-white p-4" key={group.title}>
+                  <h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-[#475569]">{group.title}</h3>
+                  <dl className="grid gap-2">
+                    {group.rows.map(([label, value]) => (
+                      <div className="grid grid-cols-[150px_1fr] gap-3 border-b border-[#F1F5F9] py-2 last:border-0" key={String(label)}>
+                        <dt className="text-xs font-semibold text-[#64748B]">{label}</dt>
+                        <dd className="text-sm text-[#0F172A]">{masterText(value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              ))}
+            </div>
+          </Card>
+        </div>
       ) : null}
 
       {isFormOpen && (
@@ -1006,8 +1517,11 @@ export function EmployeeManagement({
                   <TextField
                     disabled={Boolean(editingHrId)}
                     label="Employee ID"
-                    onChange={(value) => updateForm("hrId", value)}
-                    placeholder="e.g. B-001"
+                    onChange={(value) => {
+                      setAutoGeneratedHrId(null);
+                      updateForm("hrId", value);
+                    }}
+                    placeholder="Auto-generated"
                     value={form.hrId}
                   />
                   <TextField
@@ -1021,6 +1535,25 @@ export function EmployeeManagement({
                     onChange={(value) => updateForm("nameAr", value)}
                     placeholder="الاسم بالكامل"
                     value={form.nameAr}
+                  />
+                  <TextField
+                    label="National ID"
+                    onChange={(value) => updateForm("nationalId", value)}
+                    placeholder="National identity number"
+                    value={form.nationalId}
+                  />
+                  <SelectField
+                    label="Gender"
+                    onChange={(value) => updateForm("gender", value)}
+                    options={genderOptions}
+                    placeholder="Select gender"
+                    value={form.gender}
+                  />
+                  <TextField
+                    label="Birth Date"
+                    onChange={(value) => updateForm("birthDate", value)}
+                    type="date"
+                    value={form.birthDate}
                   />
                   <TextField
                     label="Education / Degree"
@@ -1042,15 +1575,25 @@ export function EmployeeManagement({
                     label="Job Position"
                     onChange={(value) => {
                       const selected = lookups.positions.find((p) => p.value === value);
+                      const nextJobTitle = selected?.label ?? form.jobTitle;
                       setForm((prev) => ({
                         ...prev,
+                        areaId: "",
+                        departmentId: isSalesPositionTitle(nextJobTitle) && salesDepartmentId ? salesDepartmentId : prev.departmentId,
+                        managerHrId: "",
                         positionId: value,
-                        jobTitle: selected?.label ?? prev.jobTitle,
+                        jobTitle: nextJobTitle,
                       }));
                     }}
                     options={lookups.positions}
                     placeholder="Select position"
                     value={form.positionId}
+                  />
+                  <TextField
+                    label="Title"
+                    onChange={(value) => updateForm("jobTitle", value)}
+                    placeholder="Auto-filled from selected position"
+                    value={form.jobTitle}
                   />
                   <SelectField
                     label="Department"
@@ -1061,55 +1604,18 @@ export function EmployeeManagement({
                   />
                   <SelectField
                     label="Business Line"
-                    onChange={(value) => {
-                      updateForm("lineId", value);
-                      updateForm("areaId", "");
-                    }}
-                    options={
-                      isManualMedicalRep
-                        ? Array.from(
-                            new Map(
-                              (lookups.medicalRepVacancies ?? [])
-                                .filter((vacancy) => vacancy.lineId !== null)
-                                .map((vacancy) => [
-                                  String(vacancy.lineId),
-                                  {
-                                    label: vacancy.lineName ?? `Line ${vacancy.lineId}`,
-                                    value: String(vacancy.lineId),
-                                  },
-                                ]),
-                            ).values(),
-                          )
-                            .sort((a, b) => a.label.localeCompare(b.label))
-                        : lookups.lines
-                    }
+                    onChange={updateLine}
+                    options={filteredWorkforceLines}
                     placeholder="Select business line"
                     value={form.lineId}
                   />
                   <SelectField
-                    disabled={isManualMedicalRep && !form.lineId}
+                    disabled={selectedPositionRequiresVacancy && !form.lineId}
                     label="Operating Area"
                     onChange={(value) => {
                       if (value === "empty") return;
-                      if (isManualMedicalRep) {
-                        const vacancy = (lookups.medicalRepVacancies ?? []).find(
-                          (v) =>
-                            String(v.areaId) === String(value) &&
-                            String(v.lineId) === String(form.lineId),
-                        );
-                        if (vacancy) {
-                          setForm((prev) => ({
-                            ...prev,
-                            areaId: String(value),
-                            departmentId: String(vacancy.departmentId ?? prev.departmentId),
-                            jobTitle: vacancy.positionTitle || "Medical Representative",
-                            lineId: String(vacancy.lineId ?? prev.lineId),
-                            managerHrId: vacancy.managerHrId ?? prev.managerHrId,
-                            positionId: String(vacancy.positionId ?? prev.positionId),
-                          }));
-                        } else {
-                          updateForm("areaId", value);
-                        }
+                      if (selectedPositionRequiresVacancy) {
+                        applyVacancySelection(value);
                       } else {
                         const selectedArea = lookups.areas.find((a) => String(a.value) === String(value));
                         if (selectedArea) {
@@ -1126,20 +1632,20 @@ export function EmployeeManagement({
                       }
                     }}
                     options={
-                      isManualMedicalRep
-                        ? filteredManualVacantAreas.length > 0
-                          ? filteredManualVacantAreas.map((v) => ({
+                      selectedPositionRequiresVacancy
+                        ? filteredWorkforceVacancies.length > 0
+                          ? filteredWorkforceVacancies.map((v) => ({
                               label: v.managerName
                                 ? `${v.areaName} - ${v.positionTitle} - Manager: ${v.managerName}`
                                 : `${v.areaName} - ${v.positionTitle}`,
                               value: String(v.areaId),
                             }))
                           : form.lineId
-                            ? [{ label: "No open vacancies for this line", value: "empty" }]
+                            ? [{ label: "No open vacancy for this position and line", value: "empty" }]
                             : []
                         : lookups.areas.filter((a) => !form.lineId || String(a.lineId) === String(form.lineId))
                     }
-                    placeholder={isManualMedicalRep && !form.lineId ? "Select line first" : "Select area"}
+                    placeholder={selectedPositionRequiresVacancy && !form.lineId ? "Select line first" : "Select area"}
                     value={form.areaId}
                   />
                   <SelectField
@@ -1179,6 +1685,13 @@ export function EmployeeManagement({
                     onChange={(value) => updateForm("employmentStatus", value)}
                     options={lookups.statuses}
                     value={form.employmentStatus}
+                  />
+                  <SelectField
+                    label="Contract Type"
+                    onChange={(value) => updateForm("contractType", value)}
+                    options={contractTypeOptions}
+                    placeholder="Select contract type"
+                    value={form.contractType}
                   />
                   <SelectField
                     label="Salary Payout Mode"
@@ -1253,6 +1766,158 @@ export function EmployeeManagement({
                 <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-[11px] leading-relaxed text-[#475569]">
                   <p className="font-bold text-[#1E40AF] mb-1 uppercase tracking-tight">Geocoding Information</p>
                   Residence address is automatically geocoded upon saving. Coordinates are used for distance-based expense validation and workforce heatmaps.
+                </div>
+              </div>
+
+              {/* Section 6: Payroll Reference */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
+                  <div className="h-2 w-2 rounded-full bg-[#14B8A6]" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Payroll Reference</h3>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField
+                    label="Basic Salary"
+                    onChange={(value) => updateForm("basicSalary", value)}
+                    placeholder="0.00"
+                    type="number"
+                    value={form.basicSalary}
+                  />
+                  <TextField
+                    label="Base Salary"
+                    onChange={(value) => updateForm("baseSalary", value)}
+                    placeholder="0.00"
+                    type="number"
+                    value={form.baseSalary}
+                  />
+                  <TextField
+                    label="Gross Salary"
+                    onChange={(value) => updateForm("grossSalary", value)}
+                    placeholder="0.00"
+                    type="number"
+                    value={form.grossSalary}
+                  />
+                  <TextField
+                    label="Net Salary"
+                    onChange={(value) => updateForm("netSalary", value)}
+                    placeholder="0.00"
+                    type="number"
+                    value={form.netSalary}
+                  />
+                  <TextField
+                    label="Fuel Allowance"
+                    onChange={(value) => updateForm("fuelAllowance", value)}
+                    placeholder="0.00"
+                    type="number"
+                    value={form.fuelAllowance}
+                  />
+                  <TextField
+                    label="Extra Cost of Living"
+                    onChange={(value) => updateForm("extraCostOfLiving", value)}
+                    placeholder="0.00"
+                    type="number"
+                    value={form.extraCostOfLiving}
+                  />
+                  <TextField
+                    label="Medical Insurance"
+                    onChange={(value) => updateForm("medicalInsurance", value)}
+                    placeholder="0.00"
+                    type="number"
+                    value={form.medicalInsurance}
+                  />
+                  <SelectField
+                    label="In Medical Insurance"
+                    onChange={(value) => updateForm("medicalInsuranceStatus", value)}
+                    options={enrollmentStatusOptions}
+                    placeholder="Select status"
+                    value={form.medicalInsuranceStatus}
+                  />
+                  <TextField
+                    label="Social Insurance"
+                    onChange={(value) => updateForm("socialInsurance", value)}
+                    placeholder="0.00"
+                    type="number"
+                    value={form.socialInsurance}
+                  />
+                  <SelectField
+                    label="In Social Insurance"
+                    onChange={(value) => updateForm("socialInsuranceStatus", value)}
+                    options={enrollmentStatusOptions}
+                    placeholder="Select status"
+                    value={form.socialInsuranceStatus}
+                  />
+                  <TextField
+                    label="Taxes"
+                    onChange={(value) => updateForm("taxes", value)}
+                    placeholder="0.00"
+                    type="number"
+                    value={form.taxes}
+                  />
+                  <SelectField
+                    label="Has Bank Account"
+                    onChange={(value) => updateForm("hasBankAccount", value)}
+                    options={yesNoOptions}
+                    placeholder="Select"
+                    value={form.hasBankAccount}
+                  />
+                  <TextField
+                    label="Bank Name"
+                    onChange={(value) => updateForm("bankName", value)}
+                    placeholder="Bank name"
+                    value={form.bankName}
+                  />
+                  <TextField
+                    label="Bank Account"
+                    onChange={(value) => updateForm("bankAccount", value)}
+                    placeholder="Account or IBAN"
+                    value={form.bankAccount}
+                  />
+                  <TextField
+                    label="Medical Insurance Number"
+                    onChange={(value) => updateForm("medicalInsuranceNumber", value)}
+                    placeholder="Reference number"
+                    value={form.medicalInsuranceNumber}
+                  />
+                  <TextField
+                    label="Social Insurance Number"
+                    onChange={(value) => updateForm("socialInsuranceNumber", value)}
+                    placeholder="Reference number"
+                    value={form.socialInsuranceNumber}
+                  />
+                </div>
+              </div>
+
+              {/* Section 7: Lifecycle / System */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
+                  <div className="h-2 w-2 rounded-full bg-[#64748B]" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Lifecycle / System</h3>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField
+                    disabled
+                    label="Payroll Eligible"
+                    onChange={() => undefined}
+                    value={form.employmentStatus === "active" || form.employmentStatus === "on_leave" ? "Yes" : "No"}
+                  />
+                  <TextField
+                    disabled
+                    label="Organogram Visible"
+                    onChange={() => undefined}
+                    value={form.employmentStatus === "active" || form.employmentStatus === "on_leave" ? "Yes" : "No"}
+                  />
+                  <TextField
+                    label="Region"
+                    onChange={(value) => updateForm("regionName", value)}
+                    placeholder="Auto-filled from vacancy when available"
+                    value={form.regionName}
+                  />
+                  <TextField
+                    disabled
+                    label="Last Updated"
+                    onChange={() => undefined}
+                    value={editingHrId ? "Updated on save" : "Created on save"}
+                  />
                 </div>
               </div>
 

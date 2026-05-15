@@ -64,15 +64,34 @@ async function parseExcelRows(file: File) {
   }
 
   const firstSheet = workbook.Sheets[firstSheetName];
+  const range = XLSX.utils.decode_range(firstSheet["!ref"] ?? "A1:A1");
+  let headerRowIndex = range.s.r;
+  for (let rowIndex = range.s.r; rowIndex <= Math.min(range.e.r, range.s.r + 10); rowIndex += 1) {
+    const values: string[] = [];
+    for (let columnIndex = range.s.c; columnIndex <= range.e.c; columnIndex += 1) {
+      const cell = firstSheet[XLSX.utils.encode_cell({ c: columnIndex, r: rowIndex })];
+      values.push(String(cell?.v ?? "").trim().toLowerCase());
+    }
+
+    if (
+      values.some((value) => ["employee id", "hr_id", "hr id", "employee code"].includes(value)) &&
+      values.some((value) => value === "full name")
+    ) {
+      headerRowIndex = rowIndex;
+      break;
+    }
+  }
+
   const rows = XLSX.utils.sheet_to_json<RawEmployeeImportRow>(firstSheet, {
     defval: null,
+    range: headerRowIndex,
   });
 
   if (rows.length === 0) {
     return { error: "empty_worksheet" as const };
   }
 
-  return { rows };
+  return { firstDataRowNumber: headerRowIndex + 2, rows };
 }
 
 function shouldRejectImport(result: EmployeeImportValidationResult) {
@@ -409,36 +428,97 @@ function employeeValues(
     positionIds: IdMap;
   },
 ) {
-  return {
-    area_id: record.codes.areaCode
-      ? ids.areaIds.get(record.codes.areaCode) ?? null
-      : null,
-    birth_date: record.birthDate,
-    crm_id: truncate(record.crmId, 80),
-    crm_username: truncate(record.crmUsername, 160),
-    department_id: record.codes.departmentCode
-      ? ids.departmentIds.get(record.codes.departmentCode) ?? null
-      : null,
-    education: truncate(record.education, 160),
-    employment_status: "active",
+  const values = {
     full_name: truncate(record.fullName, 220) ?? record.hrId ?? "Unknown",
-    hire_date: record.hireDate,
     hr_id: record.hrId as string,
-    job_title: truncate(record.jobTitle, 160),
-    line_id: record.codes.lineCode
-      ? ids.lineIds.get(record.codes.lineCode) ?? null
-      : null,
-    manager_hr_id: null,
-    mobile_number: truncate(record.mobileNumber, 40),
-    name_ar: truncate(record.nameAr, 220),
     organogram_visible: true,
     payroll_eligible: true,
-    position_id: record.codes.positionCode
-      ? ids.positionIds.get(record.codes.positionCode) ?? null
-      : null,
-    region_name: truncate(record.regionName, 160),
     updated_at: new Date().toISOString(),
-    work_email: truncate(record.workEmail, 255),
+    ...(record.birthDate ? { birth_date: record.birthDate } : {}),
+    ...(record.codes.areaCode && ids.areaIds.has(record.codes.areaCode)
+      ? { area_id: ids.areaIds.get(record.codes.areaCode) }
+      : {}),
+    ...(record.codes.departmentCode && ids.departmentIds.has(record.codes.departmentCode)
+      ? { department_id: ids.departmentIds.get(record.codes.departmentCode) }
+      : {}),
+    ...(record.codes.lineCode && ids.lineIds.has(record.codes.lineCode)
+      ? { line_id: ids.lineIds.get(record.codes.lineCode) }
+      : {}),
+    ...(record.codes.positionCode && ids.positionIds.has(record.codes.positionCode)
+      ? { position_id: ids.positionIds.get(record.codes.positionCode) }
+      : {}),
+    ...(record.crmId ? { crm_id: truncate(record.crmId, 80) } : {}),
+    ...(record.crmUsername ? { crm_username: truncate(record.crmUsername, 160) } : {}),
+    ...(record.education ? { education: truncate(record.education, 160) } : {}),
+    ...(record.employmentStatus ? { employment_status: record.employmentStatus } : {}),
+    ...(record.hireDate ? { hire_date: record.hireDate } : {}),
+    ...(record.jobTitle ? { job_title: truncate(record.jobTitle, 160) } : {}),
+    ...(record.mobileNumber ? { mobile_number: truncate(record.mobileNumber, 40) } : {}),
+    ...(record.nameAr ? { name_ar: truncate(record.nameAr, 220) } : {}),
+    ...(record.regionName ? { region_name: truncate(record.regionName, 160) } : {}),
+    ...(record.workEmail ? { work_email: truncate(record.workEmail, 255) } : {}),
+  };
+
+  return {
+    ...values,
+    ...(record.hasBankAccount ? { has_bank_account: record.hasBankAccount } : {}),
+    ...(record.bankName ? { bank_name: truncate(record.bankName, 120) } : {}),
+    ...(record.bankAccount ? { bank_account: truncate(record.bankAccount, 120) } : {}),
+    ...(record.compensation.baseSalary !== null ? { base_salary: record.compensation.baseSalary } : {}),
+    ...(record.compensation.basicSalary !== null ? { basic_salary: record.compensation.basicSalary } : {}),
+    ...(record.compensation.extraCostOfLiving !== null
+      ? { extra_cost_of_living: record.compensation.extraCostOfLiving }
+      : {}),
+    ...(record.compensation.fuelAllowance !== null ? { fuel_allowance: record.compensation.fuelAllowance } : {}),
+    ...(record.compensation.grossSalary !== null ? { gross_salary: record.compensation.grossSalary } : {}),
+    ...(record.compensation.medicalInsurance !== null
+      ? { medical_insurance: record.compensation.medicalInsurance }
+      : {}),
+    ...(record.compensation.netSalary !== null ? { net_salary: record.compensation.netSalary } : {}),
+    ...(record.compensation.paymentMode ? { payment_mode: normalizePayrollPaymentMode(record.compensation.paymentMode) } : {}),
+    ...(record.compensation.socialInsurance !== null
+      ? { social_insurance: record.compensation.socialInsurance }
+      : {}),
+    ...(record.compensation.taxes !== null ? { taxes: record.compensation.taxes } : {}),
+    ...(record.contractType ? { contract_type: truncate(record.contractType, 80) } : {}),
+    ...(record.gender ? { gender: truncate(record.gender, 40) } : {}),
+    ...(record.medicalInsuranceStatus ? { medical_insurance_status: record.medicalInsuranceStatus } : {}),
+    ...(record.medicalInsuranceNumber
+      ? { medical_insurance_number: truncate(record.medicalInsuranceNumber, 120) }
+      : {}),
+    ...(record.nationalId ? { national_id: truncate(record.nationalId, 120) } : {}),
+    ...(record.residenceAddress ? { residence_address: truncate(record.residenceAddress, 500) } : {}),
+    ...(record.residenceArea ? { residence_area: truncate(record.residenceArea, 160) } : {}),
+    ...(record.residenceCity ? { residence_city: truncate(record.residenceCity, 160) } : {}),
+    ...(record.socialInsuranceStatus ? { social_insurance_status: record.socialInsuranceStatus } : {}),
+    ...(record.socialInsuranceNumber
+      ? { social_insurance_number: truncate(record.socialInsuranceNumber, 120) }
+      : {}),
+  };
+}
+
+function departmentCodesForRecords(records: EmployeeImportRecord[]) {
+  return Array.from(
+    new Set(
+      records.flatMap((record) =>
+        record.codes.departmentCode ? [record.codes.departmentCode] : [],
+      ),
+    ),
+  );
+}
+
+function hasResidence(record: EmployeeImportRecord) {
+  return Boolean(record.residenceAddress || record.residenceCity || record.residenceArea);
+}
+
+function residenceValues(record: EmployeeImportRecord) {
+  return {
+    employee_hr_id: record.hrId as string,
+    geocode_status: record.residenceAddress ? "pending_import_review" : "missing_address",
+    residence_address: truncate(record.residenceAddress, 500),
+    residence_area: truncate(record.residenceArea, 160),
+    residence_city: truncate(record.residenceCity, 160),
+    updated_at: new Date().toISOString(),
   };
 }
 
@@ -447,29 +527,89 @@ function isMissingOptionalEmployeeColumn(error: unknown) {
 
   return (
     message.includes("birth_date") ||
+    message.includes("bank_account") ||
+    message.includes("bank_name") ||
+    message.includes("base_salary") ||
+    message.includes("basic_salary") ||
+    message.includes("contract_type") ||
     message.includes("employment_status") ||
+    message.includes("extra_cost_of_living") ||
+    message.includes("fuel_allowance") ||
+    message.includes("gender") ||
+    message.includes("gross_salary") ||
+    message.includes("medical_insurance_number") ||
+    message.includes("medical_insurance") ||
+    message.includes("national_id") ||
+    message.includes("net_salary") ||
     message.includes("organogram_visible") ||
+    message.includes("payment_mode") ||
     message.includes("payroll_eligible") ||
     message.includes("region_name") ||
+    message.includes("residence_address") ||
+    message.includes("residence_area") ||
+    message.includes("residence_city") ||
+    message.includes("social_insurance") ||
+    message.includes("social_insurance_number") ||
+    message.includes("taxes") ||
     message.includes("schema cache")
   );
 }
 
 function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues>) {
   const {
+    bank_account,
+    bank_name,
+    base_salary,
+    basic_salary,
     birth_date,
+    contract_type,
     employment_status,
+    extra_cost_of_living,
+    fuel_allowance,
+    gender,
+    gross_salary,
+    medical_insurance,
+    medical_insurance_number,
+    national_id,
+    net_salary,
     organogram_visible,
+    payment_mode,
     payroll_eligible,
     region_name,
+    residence_address,
+    residence_area,
+    residence_city,
+    social_insurance,
+    social_insurance_number,
+    taxes,
     ...rest
   } = values;
 
+  void bank_account;
+  void bank_name;
+  void base_salary;
+  void basic_salary;
   void birth_date;
+  void contract_type;
   void employment_status;
+  void extra_cost_of_living;
+  void fuel_allowance;
+  void gender;
+  void gross_salary;
+  void medical_insurance;
+  void medical_insurance_number;
+  void national_id;
+  void net_salary;
   void organogram_visible;
+  void payment_mode;
   void payroll_eligible;
   void region_name;
+  void residence_address;
+  void residence_area;
+  void residence_city;
+  void social_insurance;
+  void social_insurance_number;
+  void taxes;
 
   return rest;
 }
@@ -548,25 +688,32 @@ function hasCompensation(record: EmployeeImportRecord) {
 
 function compensationValues(record: EmployeeImportRecord) {
   return {
-    comprehensive_wage: record.compensation.comprehensiveWage,
     employee_hr_id: record.hrId as string,
-    extra_cost_of_living: record.compensation.extraCostOfLiving,
-    fuel_allowance: record.compensation.fuelAllowance,
-    gross_salary: record.compensation.grossSalary,
-    medical_insurance: record.compensation.medicalInsurance,
-    net_salary: record.compensation.netSalary,
-    payment_mode: normalizePayrollPaymentMode(record.compensation.paymentMode),
-    social_insurance: record.compensation.socialInsurance,
-    subscription_wage: record.compensation.subscriptionWage,
-    taxes: record.compensation.taxes,
     updated_at: new Date().toISOString(),
+    ...(record.compensation.extraCostOfLiving !== null
+      ? { extra_cost_of_living: record.compensation.extraCostOfLiving }
+      : {}),
+    ...(record.compensation.fuelAllowance !== null ? { fuel_allowance: record.compensation.fuelAllowance } : {}),
+    ...(record.compensation.grossSalary !== null ? { gross_salary: record.compensation.grossSalary } : {}),
+    ...(record.compensation.medicalInsurance !== null
+      ? { medical_insurance: record.compensation.medicalInsurance }
+      : {}),
+    ...(record.compensation.netSalary !== null ? { net_salary: record.compensation.netSalary } : {}),
+    ...(record.compensation.paymentMode ? { payment_mode: normalizePayrollPaymentMode(record.compensation.paymentMode) } : {}),
+    ...(record.compensation.socialInsurance !== null
+      ? { social_insurance: record.compensation.socialInsurance }
+      : {}),
+    ...(record.compensation.taxes !== null ? { taxes: record.compensation.taxes } : {}),
   };
 }
 
 function isMissingPaymentModeColumn(error: unknown) {
   const message = errorMessage(error).toLowerCase();
 
-  return message.includes("payment_mode") || message.includes("schema cache");
+  return (
+    message.includes("payment_mode") ||
+    message.includes("schema cache")
+  );
 }
 
 function withoutPaymentModeColumn(values: ReturnType<typeof compensationValues>) {
@@ -608,6 +755,34 @@ async function upsertEmployeeCompensation(
   }
 
   return { upserted: compensationRecords.length };
+}
+
+async function upsertEmployeeResidenceLocations(
+  supabase: SupabaseClient,
+  records: EmployeeImportRecord[],
+) {
+  const residenceRecords = records.filter(
+    (record) => record.hrId && hasResidence(record),
+  );
+
+  if (residenceRecords.length === 0) {
+    return { upserted: 0 };
+  }
+
+  const { error } = await supabase.from("employee_locations").upsert(
+    residenceRecords.map(residenceValues),
+    { onConflict: "employee_hr_id" },
+  );
+
+  if (error) {
+    if (isDatabaseSchemaMissing(error)) {
+      return { upserted: 0 };
+    }
+
+    throw new Error(error.message);
+  }
+
+  return { upserted: residenceRecords.length };
 }
 
 async function existingVacancyCodes(
@@ -734,7 +909,10 @@ export async function POST(request: Request) {
 
     const supabase = getSupabaseAdmin();
     const existingState = await loadEmployeeImportExistingState(supabase);
-    const dryRunResult = createEmployeeImportPlan(parsed.rows, { existingState });
+    const dryRunResult = createEmployeeImportPlan(parsed.rows, {
+      existingState,
+      firstDataRowNumber: parsed.firstDataRowNumber,
+    });
 
     if (shouldRejectImport(dryRunResult)) {
       return NextResponse.json(validationRejection(dryRunResult), {
@@ -751,10 +929,15 @@ export async function POST(request: Request) {
       supabase,
       dryRunResult.organizationEntitiesToCreate.departments,
     );
+    const departmentIds = await idsForCodes(
+      supabase,
+      "departments",
+      departmentCodesForRecords(importRecords),
+    );
     const lineResult = await upsertLines(
       supabase,
       dryRunResult.organizationEntitiesToCreate.lines,
-      departmentResult.ids,
+      departmentIds,
     );
     const areaResult = await upsertAreas(
       supabase,
@@ -767,7 +950,7 @@ export async function POST(request: Request) {
       importRecords,
       {
         areaIds: areaResult.ids,
-        departmentIds: departmentResult.ids,
+        departmentIds,
         lineIds: lineResult.ids,
       },
     );
@@ -776,7 +959,7 @@ export async function POST(request: Request) {
       [...dryRunResult.rowsToInsert, ...dryRunResult.rowsToUpdate],
       {
         areaIds: areaResult.ids,
-        departmentIds: departmentResult.ids,
+        departmentIds,
         lineIds: lineResult.ids,
         positionIds: positionResult.ids,
       },
@@ -785,12 +968,16 @@ export async function POST(request: Request) {
       supabase,
       [...dryRunResult.rowsToInsert, ...dryRunResult.rowsToUpdate],
     );
+    const residenceResult = await upsertEmployeeResidenceLocations(
+      supabase,
+      [...dryRunResult.rowsToInsert, ...dryRunResult.rowsToUpdate],
+    );
     const vacancyResult = await upsertVacancies(
       supabase,
       dryRunResult.vacantPositionsToCreate,
       {
         areaIds: areaResult.ids,
-        departmentIds: departmentResult.ids,
+        departmentIds,
         lineIds: lineResult.ids,
         positionIds: positionResult.ids,
       },
@@ -804,6 +991,7 @@ export async function POST(request: Request) {
       createdVacancies: vacancyResult.created,
       importedEmployees: employeeResult.imported,
       importedCompensationRows: compensationResult.upserted,
+      importedResidenceRows: residenceResult.upserted,
       recordedVacancies: vacancyResult.recorded,
       skippedVacantRows: 0,
       updatedEmployees: employeeResult.updated,

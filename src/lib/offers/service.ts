@@ -70,6 +70,7 @@ export type VacancyLookupRow = {
   positionId: number | null;
   positionTitle: string | null;
   regionName: string | null;
+  replacementForHrId: string | null;
   vacancyCode: string;
   vacancyId: number;
 };
@@ -325,15 +326,31 @@ async function loadAllOptions(table: string, label = "name") {
   }));
 }
 
-export async function getOpenMedicalRepVacancies(): Promise<VacancyLookupRow[]> {
-  const vacancyParams = new URLSearchParams({
-    select:
-      "id,vacancy_code,area_id,line_id,position_id,manager_hr_id,manager_name,job_title,department_id,region_name,status,lines(name),areas(name),positions(title)",
-    status: "eq.open",
-  });
-
+async function getOpenVacancies(): Promise<VacancyLookupRow[]> {
   try {
-    const vacancies = await supabaseRest<Array<{
+    const loadRows = (includeReplacement: boolean) => {
+      const vacancyParams = new URLSearchParams({
+        select: [
+          "id",
+          "vacancy_code",
+          "area_id",
+          "line_id",
+          "position_id",
+          "manager_hr_id",
+          "manager_name",
+          "job_title",
+          "department_id",
+          "region_name",
+          ...(includeReplacement ? ["replacement_for_hr_id"] : []),
+          "status",
+          "lines(name)",
+          "areas(name)",
+          "positions(title)",
+        ].join(","),
+        status: "eq.open",
+      });
+
+      return supabaseRest<Array<{
       area_id: number | null;
       areas?: { name: string | null } | null;
       department_id: number | null;
@@ -346,38 +363,41 @@ export async function getOpenMedicalRepVacancies(): Promise<VacancyLookupRow[]> 
       position_id: number | null;
       positions?: { title: string | null } | null;
       region_name: string | null;
+      replacement_for_hr_id?: string | null;
       vacancy_code: string;
-    }>>(`position_vacancies?${vacancyParams}`);
+      }>>(`position_vacancies?${vacancyParams}`);
+    };
 
-    return vacancies
-      .map((v) => {
-        const positionTitle = v.positions?.title ?? v.job_title ?? "";
-        const jobTitle = v.job_title ?? "";
-        const normalizedTitle = `${jobTitle} ${positionTitle}`.toLowerCase();
-        const isMedicalRep =
-          normalizedTitle.includes("medical representative") ||
-          normalizedTitle.includes("medical rep") ||
-          (normalizedTitle.includes("medical") && normalizedTitle.includes("representative"));
+    let vacancies: Awaited<ReturnType<typeof loadRows>>;
+    try {
+      vacancies = await loadRows(true);
+    } catch (error) {
+      const message = offerErrorMessage(error).toLowerCase();
+      if (!message.includes("replacement_for_hr_id") && !message.includes("schema cache")) {
+        throw error;
+      }
+      vacancies = await loadRows(false);
+    }
 
-        if (!isMedicalRep) return null;
-
-        return {
-          areaId: v.area_id,
-          areaName: v.areas?.name ?? "Unknown Area",
-          departmentId: v.department_id,
-          jobTitle: v.job_title,
-          lineId: v.line_id,
-          lineName: v.lines?.name ?? "Unknown Line",
-          managerHrId: v.manager_hr_id,
-          managerName: v.manager_name,
-          positionId: v.position_id,
-          positionTitle,
-          regionName: v.region_name,
-          vacancyCode: v.vacancy_code,
-          vacancyId: v.id,
-        };
-      })
-      .filter((v): v is NonNullable<typeof v> => v !== null);
+    return vacancies.map((v) => {
+      const positionTitle = v.positions?.title ?? v.job_title ?? "";
+      return {
+        areaId: v.area_id,
+        areaName: v.areas?.name ?? "Unknown Area",
+        departmentId: v.department_id,
+        jobTitle: v.job_title,
+        lineId: v.line_id,
+        lineName: v.lines?.name ?? "Unknown Line",
+        managerHrId: v.manager_hr_id,
+        managerName: v.manager_name,
+        positionId: v.position_id,
+        positionTitle,
+        regionName: v.region_name,
+        replacementForHrId: v.replacement_for_hr_id ?? null,
+        vacancyCode: v.vacancy_code,
+        vacancyId: v.id,
+      };
+    });
   } catch (error) {
     const message = offerErrorMessage(error).toLowerCase();
     if (
@@ -393,8 +413,26 @@ export async function getOpenMedicalRepVacancies(): Promise<VacancyLookupRow[]> 
   }
 }
 
+export async function getOpenWorkforceVacancies(): Promise<VacancyLookupRow[]> {
+  return getOpenVacancies();
+}
+
+export async function getOpenMedicalRepVacancies(): Promise<VacancyLookupRow[]> {
+  const vacancies = await getOpenVacancies();
+
+  return vacancies.filter((vacancy) => {
+    const normalizedTitle = `${vacancy.jobTitle ?? ""} ${vacancy.positionTitle ?? ""}`.toLowerCase();
+    return (
+      normalizedTitle.includes("medical representative") ||
+      normalizedTitle.includes("medical rep") ||
+      (normalizedTitle.includes("medical") && normalizedTitle.includes("representative"))
+    );
+  });
+}
+
 export async function closeVacancyForOffer(input: {
   area_id?: number | null;
+  filled_by_hr_id?: string | null;
   line_id?: number | null;
   manager_hr_id?: string | null;
   position_id?: number | null;
@@ -409,36 +447,78 @@ export async function closeVacancyForOffer(input: {
     return null;
   }
 
-  const matches = await supabaseRest<Array<{ id: number }>>(
-    `position_vacancies?${new URLSearchParams({
+  const matchParams = (select: string) =>
+    new URLSearchParams({
       area_id: `eq.${input.area_id}`,
       line_id: `eq.${input.line_id}`,
       manager_hr_id: `eq.${compactManagerHrId}`,
       order: "created_at.asc",
       position_id: `eq.${input.position_id}`,
-      select: "id",
+      select,
       status: "eq.open",
-    })}`,
-  );
+    });
 
-  const vacancyId = matches[0]?.id;
+  let matches: Array<{ id: number; replacement_for_hr_id?: string | null }>;
+  try {
+    matches = await supabaseRest(
+      `position_vacancies?${matchParams("id,replacement_for_hr_id")}`,
+    );
+  } catch (error) {
+    const message = offerErrorMessage(error).toLowerCase();
+    if (!message.includes("replacement_for_hr_id") && !message.includes("schema cache")) {
+      throw error;
+    }
+    matches = await supabaseRest(`position_vacancies?${matchParams("id")}`);
+  }
+
+  const vacancy = matches[0];
+  const vacancyId = vacancy?.id;
   if (!vacancyId) {
     return null;
   }
 
-  return supabaseRest(
-    `position_vacancies?id=eq.${vacancyId}`,
-    {
-      body: JSON.stringify({
-        note: "Auto-closed after employee creation.",
-        status: "filled",
-      }),
+  const filledByHrId = compact(input.filled_by_hr_id);
+  const fullPayload = {
+    filled_at: filledByHrId ? new Date().toISOString() : null,
+    filled_by_hr_id: filledByHrId,
+    note: filledByHrId
+      ? `Auto-closed after employee creation for ${filledByHrId}.`
+      : "Auto-closed after employee creation.",
+    status: "filled",
+  };
+
+  try {
+    await supabaseRest(`position_vacancies?id=eq.${vacancyId}`, {
+      body: JSON.stringify(fullPayload),
       headers: {
         Prefer: "return=representation",
       },
       method: "PATCH",
-    },
-  );
+    });
+  } catch (error) {
+    const message = offerErrorMessage(error).toLowerCase();
+    if (!message.includes("filled_by_hr_id") && !message.includes("filled_at") && !message.includes("schema cache")) {
+      throw error;
+    }
+    await supabaseRest(
+      `position_vacancies?id=eq.${vacancyId}`,
+      {
+        body: JSON.stringify({
+        note: "Auto-closed after employee creation.",
+        status: "filled",
+        }),
+        headers: {
+          Prefer: "return=representation",
+        },
+        method: "PATCH",
+      },
+    );
+  }
+
+  return {
+    id: vacancyId,
+    replacementForHrId: vacancy.replacement_for_hr_id ?? null,
+  };
 }
 
 export async function getOfferLookups(): Promise<OfferLookupData> {

@@ -24,15 +24,34 @@ async function parseExcelRows(file: File) {
     }
 
     const firstSheet = workbook.Sheets[firstSheetName];
+    const range = XLSX.utils.decode_range(firstSheet["!ref"] ?? "A1:A1");
+    let headerRowIndex = range.s.r;
+    for (let rowIndex = range.s.r; rowIndex <= Math.min(range.e.r, range.s.r + 10); rowIndex += 1) {
+      const values: string[] = [];
+      for (let columnIndex = range.s.c; columnIndex <= range.e.c; columnIndex += 1) {
+        const cell = firstSheet[XLSX.utils.encode_cell({ c: columnIndex, r: rowIndex })];
+        values.push(String(cell?.v ?? "").trim().toLowerCase());
+      }
+
+      if (
+        values.some((value) => ["employee id", "hr_id", "hr id", "employee code"].includes(value)) &&
+        values.some((value) => value === "full name")
+      ) {
+        headerRowIndex = rowIndex;
+        break;
+      }
+    }
+
     const rows = XLSX.utils.sheet_to_json<RawEmployeeImportRow>(firstSheet, {
       defval: null,
+      range: headerRowIndex,
     });
 
     if (rows.length === 0) {
       return { error: "empty_worksheet" as const };
     }
 
-    return { rows };
+    return { firstDataRowNumber: headerRowIndex + 2, rows };
   } catch {
     return { error: "invalid_excel_file" as const };
   }
@@ -70,7 +89,10 @@ export async function POST(request: Request) {
 
     const existingState = await loadEmployeeImportExistingState();
 
-    return NextResponse.json(createEmployeeImportPlan(parsed.rows, { existingState }));
+    return NextResponse.json(createEmployeeImportPlan(parsed.rows, {
+      existingState,
+      firstDataRowNumber: parsed.firstDataRowNumber,
+    }));
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to import employees." }, { status: 403 });

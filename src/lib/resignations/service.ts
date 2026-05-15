@@ -671,6 +671,7 @@ async function insertFallbackVacancy(
     note: `Auto-opened from resignation of ${employee.fullName} (${employee.hrId}). Effective ${effectiveDate}.`,
     position_id: employee.positionId,
     region_name: employee.regionName ?? null,
+    replacement_for_hr_id: employee.hrId,
     status: "open",
     updated_at: now,
     vacancy_code: vacancyCode,
@@ -760,7 +761,7 @@ async function updateEmployeeLifecycleFallback(
 }
 
 async function deactivateEmployeeAccessIfSupported(supabase: SupabaseClient, employeeHrId: string) {
-  const { error } = await supabase
+  const appAuthResult = await supabase
     .from("app_auth_users")
     .update({
       is_active: false,
@@ -768,8 +769,20 @@ async function deactivateEmployeeAccessIfSupported(supabase: SupabaseClient, emp
     })
     .eq("hr_id", employeeHrId);
 
-  if (error && !isMissingSchemaMessage(error)) {
-    throw error;
+  if (appAuthResult.error && !isMissingSchemaMessage(appAuthResult.error)) {
+    throw appAuthResult.error;
+  }
+
+  const accessProfileResult = await supabase
+    .from("user_access_profiles")
+    .update({
+      is_active: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("hr_id", employeeHrId);
+
+  if (accessProfileResult.error && !isMissingSchemaMessage(accessProfileResult.error)) {
+    throw accessProfileResult.error;
   }
 }
 

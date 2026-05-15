@@ -4,20 +4,33 @@ export type EmployeeImportField =
   | "crmUsername"
   | "fullName"
   | "nameAr"
+  | "nationalId"
+  | "gender"
   | "workEmail"
   | "mobileNumber"
   | "jobTitle"
   | "hireDate"
   | "birthDate"
   | "education"
+  | "employmentStatus"
+  | "payrollEligible"
+  | "organogramVisible"
   | "managerHrId"
   | "managerName"
+  | "contractType"
+  | "hasBankAccount"
+  | "bankName"
+  | "bankAccount"
+  | "socialInsuranceStatus"
+  | "socialInsuranceNumber"
+  | "medicalInsuranceStatus"
+  | "medicalInsuranceNumber"
+  | "basicSalary"
+  | "baseSalary"
   | "netSalary"
   | "socialInsurance"
   | "taxes"
   | "medicalInsurance"
-  | "comprehensiveWage"
-  | "subscriptionWage"
   | "fuelAllowance"
   | "extraCostOfLiving"
   | "grossSalary"
@@ -27,7 +40,10 @@ export type EmployeeImportField =
   | "region"
   | "area"
   | "team"
-  | "position";
+  | "position"
+  | "residenceAddress"
+  | "residenceCity"
+  | "residenceArea";
 
 export type OrganizationEntityType =
   | "department"
@@ -60,16 +76,30 @@ export type EmployeeImportRecord = {
   crmUsername: string | null;
   fullName: string | null;
   nameAr: string | null;
+  nationalId: string | null;
+  gender: string | null;
   workEmail: string | null;
   mobileNumber: string | null;
   jobTitle: string | null;
   hireDate: string | null;
   birthDate: string | null;
   education: string | null;
+  employmentStatus: string | null;
+  payrollEligible: string | null;
+  organogramVisible: string | null;
   managerHrId: string | null;
   managerName: string | null;
+  contractType: string | null;
+  hasBankAccount: string | null;
+  bankName: string | null;
+  bankAccount: string | null;
+  socialInsuranceStatus: string | null;
+  socialInsuranceNumber: string | null;
+  medicalInsuranceStatus: string | null;
+  medicalInsuranceNumber: string | null;
   compensation: {
-    comprehensiveWage: number | null;
+    basicSalary: number | null;
+    baseSalary: number | null;
     extraCostOfLiving: number | null;
     fuelAllowance: number | null;
     grossSalary: number | null;
@@ -77,7 +107,6 @@ export type EmployeeImportRecord = {
     netSalary: number | null;
     paymentMode: string | null;
     socialInsurance: number | null;
-    subscriptionWage: number | null;
     taxes: number | null;
   };
   departmentName: string | null;
@@ -86,6 +115,9 @@ export type EmployeeImportRecord = {
   areaName: string | null;
   teamName: string | null;
   positionTitle: string | null;
+  residenceAddress: string | null;
+  residenceCity: string | null;
+  residenceArea: string | null;
   normalizedOrganizationNames: {
     department: string | null;
     line: string | null;
@@ -166,10 +198,14 @@ export type VacantPositionImportRecord = EmployeeImportRecord & {
 };
 
 export type ExistingImportState = {
+  crmIdToHrId?: Map<string, string>;
   employeeHrIds?: Set<string>;
   managerHrIds?: Set<string>;
   terminalEmployeeHrIds?: Set<string>;
+  protectedLifecycleHrIds?: Set<string>;
   departmentCodes?: Set<string>;
+  departmentCodeToName?: Map<string, string>;
+  departmentNameToCode?: Map<string, string>;
   lineCodes?: Set<string>;
   areaCodes?: Set<string>;
   teamCodes?: Set<string>;
