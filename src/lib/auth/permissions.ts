@@ -7,6 +7,7 @@ export const phoenixRoles = [
   "Medical Rep",
   "District Manager",
   "Regional Manager",
+  "Regional Sales Manager",
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
@@ -119,6 +120,7 @@ const portalNavigationRoles = new Set<PhoenixRole>([
   "Medical Rep",
   "District Manager",
   "Regional Manager",
+  "Regional Sales Manager",
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
@@ -268,6 +270,20 @@ const defaultPermissionMatrix: PermissionMap = {
     sales: ["read", "export"],
     team: ["read", "export"],
   },
+  "Regional Sales Manager": {
+    overview: [],
+    employee_documents: ["read", "export"],
+    employee_profile: ["read", "update"],
+    expenses: ["read", "approve", "export"],
+    outstation: ["read", "create", "approve", "export"],
+    leave: ["read", "create", "approve", "export"],
+    coaching: ["read"],
+    organogram: ["read"],
+    payroll: ["read", "export"],
+    payslips: ["read", "export"],
+    sales: ["read", "export"],
+    team: ["read", "export"],
+  },
   "National Sales Manager": {
     overview: [],
     employee_documents: ["read", "export"],
@@ -387,8 +403,9 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
     "medical representative": "Medical Rep",
     "district sales manager": "District Manager",
     "district manager": "District Manager",
+    rsm: "Regional Sales Manager",
     "regional manager": "Regional Manager",
-    "regional sales manager": "Regional Manager",
+    "regional sales manager": "Regional Sales Manager",
     "national sales manager": "National Sales Manager",
     "product manager": "Product Manager",
     "group product manager": "Group Product Manager",
@@ -413,8 +430,9 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
     districtsalesmanager: "District Manager",
     medicalrep: "Medical Rep",
     districtmanager: "District Manager",
+    rsm: "Regional Sales Manager",
     regionalmanager: "Regional Manager",
-    regionalsalesmanager: "Regional Manager",
+    regionalsalesmanager: "Regional Sales Manager",
     nationalsalesmanager: "National Sales Manager",
     productmanager: "Product Manager",
     groupproductmanager: "Group Product Manager",
@@ -505,7 +523,7 @@ export function scopeForRole(role: PhoenixRole): AccessScope {
     return "company";
   }
   if (role === "District Manager" || role === "Manager") return "team";
-  if (role === "Regional Manager") return "hierarchy";
+  if (role === "Regional Manager" || role === "Regional Sales Manager") return "hierarchy";
   if (role === "National Sales Manager" || role === "Product Manager" || role === "Group Product Manager") {
     return "line";
   }
@@ -656,6 +674,7 @@ export function getSalesScope(context: Pick<AccessContext, "role"> & { salesScop
     case "Manager":
       return "TEAM";
     case "Regional Manager":
+    case "Regional Sales Manager":
       return "HIERARCHY";
     case "National Sales Manager":
     case "Product Manager":
@@ -693,6 +712,7 @@ export function getExpensesScope(
     case "Manager":
       return "TEAM";
     case "Regional Manager":
+    case "Regional Sales Manager":
       return "HIERARCHY";
     case "National Sales Manager":
     case "Product Manager":
@@ -794,13 +814,60 @@ export function filterEmployeesForAccess<T extends Pick<EmployeeDirectoryRow, "h
   return rows.filter((row) => canSeeEmployee(context, row));
 }
 
+function collectHierarchyHrIds<T extends Pick<EmployeeDirectoryRow, "hrId" | "managerHrId">>(
+  rows: T[],
+  rootHrId: string | null | undefined,
+) {
+  const root = normalizeHrIdForAccess(rootHrId);
+  const visibleHrIds = new Set<string>();
+
+  if (!root) {
+    return visibleHrIds;
+  }
+
+  visibleHrIds.add(root);
+  let frontier = [root];
+
+  while (frontier.length > 0) {
+    const nextFrontier: string[] = [];
+
+    for (const row of rows) {
+      const rowHrId = normalizeHrIdForAccess(row.hrId);
+      const managerHrId = normalizeHrIdForAccess(row.managerHrId);
+
+      if (
+        rowHrId &&
+        managerHrId &&
+        frontier.includes(managerHrId) &&
+        !visibleHrIds.has(rowHrId)
+      ) {
+        visibleHrIds.add(rowHrId);
+        nextFrontier.push(rowHrId);
+      }
+    }
+
+    frontier = nextFrontier;
+  }
+
+  return visibleHrIds;
+}
+
 export function filterEmployeeDirectoryForAccess(
   directory: EmployeeDirectoryData,
   context: AccessContext,
 ): EmployeeDirectoryData {
   if (context.scope === "system" || context.role === "Super Admin" || context.role === "HR Specialist") return directory;
 
-  const employees = filterEmployeesForAccess(directory.employees, context);
+  const hierarchyHrIds =
+    context.role === "Regional Manager" || context.role === "Regional Sales Manager"
+      ? collectHierarchyHrIds(directory.employees, context.hrId)
+      : null;
+  const employees = hierarchyHrIds
+    ? directory.employees.filter((employee) => {
+        const employeeHrId = normalizeHrIdForAccess(employee.hrId);
+        return Boolean(employeeHrId && hierarchyHrIds.has(employeeHrId));
+      })
+    : filterEmployeesForAccess(directory.employees, context);
   const visibleHrIds = new Set(employees.map((employee) => normalizeHrId(employee.hrId)).filter(Boolean));
 
   return {

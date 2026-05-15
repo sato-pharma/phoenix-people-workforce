@@ -68,7 +68,6 @@ Top-level admin/workforce pages:
 - `/contracts`
 - `/employees`
 - `/hr-calendar`
-- `/imports/employees`
 - `/login`
 - `/offers`, `/offers/[token]/accept`, `/offers/[token]/reject`
 - `/organogram`
@@ -276,9 +275,9 @@ Sales:
 4. Approve, reject, replace, or delete queued imports through `/api/sales/imports/[id]/[action]`.
 5. View approved sales data on `/sales` or scoped employee portal sales pages.
 
-Imports:
+Employee Master imports:
 
-1. Upload employee workbooks from `/imports/employees`.
+1. Upload employee workbooks from `/employees`.
 2. Run dry-run validation.
 3. Confirm validated imports through the matching confirm API route.
 

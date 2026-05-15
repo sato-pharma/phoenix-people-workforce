@@ -53,6 +53,7 @@ export function mapPhoenixRoleToCoarseAccessRole(role: PhoenixRole): CoarseAcces
       return "hr";
     case "District Manager":
     case "Regional Manager":
+    case "Regional Sales Manager":
     case "National Sales Manager":
     case "Product Manager":
     case "Group Product Manager":
@@ -80,6 +81,7 @@ export function mapPhoenixRoleToAccessScopeType(role: PhoenixRole): AccessScopeT
     case "Manager":
       return "TEAM";
     case "Regional Manager":
+    case "Regional Sales Manager":
       return "HIERARCHY";
     case "National Sales Manager":
     case "Product Manager":

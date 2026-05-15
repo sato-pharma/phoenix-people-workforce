@@ -160,6 +160,7 @@ const roleFamilies: Record<PhoenixRole, "executive" | "finance" | "hr" | "manage
   "National Sales Manager": "manager",
   "Product Manager": "manager",
   "Regional Manager": "manager",
+  "Regional Sales Manager": "manager",
   "SFE Manager": "manager",
   "Super Admin": "executive",
   "Training Manager": "manager",

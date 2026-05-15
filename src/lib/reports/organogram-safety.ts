@@ -36,6 +36,30 @@ function normalizeTitle(value: string | null | undefined) {
   return normalizeKey(value).replace(/\s+/g, " ");
 }
 
+function publicVacancyLabel(vacancyCode: string) {
+  const generatedResignationMatch = vacancyCode.match(
+    /^resignation_vac_(\d{14})(?:_([a-z0-9]+))?$/i,
+  );
+
+  if (generatedResignationMatch?.[1]) {
+    const suffix = generatedResignationMatch[2]
+      ? `-${generatedResignationMatch[2].toUpperCase()}`
+      : "";
+
+    return `VAC-RES-${generatedResignationMatch[1].slice(8)}${suffix}`;
+  }
+
+  const legacyResignationMatch = vacancyCode.match(/^resignation_.+?_(\d{14})$/i);
+
+  if (legacyResignationMatch?.[1]) {
+    return `VAC-RES-${legacyResignationMatch[1].slice(8)}`;
+  }
+
+  const match = vacancyCode.match(/^vacancy_(?:vac_)?(\d+)/i);
+
+  return match ? `VAC-${match[1]}` : vacancyCode;
+}
+
 function emptyKpiBreakdown(): OrganogramKpiBreakdown {
   return {
     actual: 0,
@@ -306,13 +330,33 @@ function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
       .filter((key): key is string => Boolean(key)),
   );
 
-  return visibleRows.filter((row) => {
+  const rowsWithoutFilledVacancies = visibleRows.filter((row) => {
     if (row.type !== "vacancy") {
       return true;
     }
 
     const key = strictPositionSlotKey(row);
     return !key || !activePositionKeys.has(key);
+  });
+  const visibleVacancySlotKeys = new Set<string>();
+
+  return rowsWithoutFilledVacancies.filter((row) => {
+    if (row.type !== "vacancy") {
+      return true;
+    }
+
+    const key = strictPositionSlotKey(row);
+
+    if (!key) {
+      return true;
+    }
+
+    if (visibleVacancySlotKeys.has(key)) {
+      return false;
+    }
+
+    visibleVacancySlotKeys.add(key);
+    return true;
   });
 }
 
@@ -427,16 +471,39 @@ function scopeVacancyRows(
   });
 }
 
+function sanitizeOrganogramVacancyCodes(report: VacancyReportData): VacancyReportData {
+  return {
+    ...report,
+    organogramRows: report.organogramRows.map((row) => {
+      if (row.type !== "vacancy" || !row.vacancyCode) {
+        return row;
+      }
+
+      const publicVacancyCode = publicVacancyLabel(row.vacancyCode);
+
+      return {
+        ...row,
+        hrId: publicVacancyCode,
+        vacancyCode: publicVacancyCode,
+      };
+    }),
+    rows: report.rows.map((row) => ({
+      ...row,
+      vacancyCode: publicVacancyLabel(row.vacancyCode),
+    })),
+  };
+}
+
 export function applyOrganogramMirrorSafety(report: VacancyReportData) {
   const organogramRows = suppressFilledVacancyRows(report.organogramRows);
   const rows = scopeVacancyRows(report.rows, organogramRows);
 
-  return {
+  return sanitizeOrganogramVacancyCodes({
     ...report,
     organogramRows,
     rows,
     summary: summarizeVacancies(organogramRows, rows),
-  };
+  });
 }
 
 export function scopeOrganogramReportForAccess(

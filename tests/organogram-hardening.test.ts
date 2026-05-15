@@ -24,6 +24,14 @@ const organogramComponentSource = readFileSync(
   new URL("../src/components/reports/organogram-report.tsx", import.meta.url),
   "utf8",
 );
+const vacancyReportSource = readFileSync(
+  new URL("../src/lib/reports/vacancies.ts", import.meta.url),
+  "utf8",
+);
+const resignationServiceSource = readFileSync(
+  new URL("../src/lib/resignations/service.ts", import.meta.url),
+  "utf8",
+);
 
 function employee(overrides: Partial<OrganogramRow>): OrganogramRow {
   return {
@@ -294,6 +302,35 @@ export function runOrganogramHardeningTests() {
     visibleVacancies(
       applyOrganogramMirrorSafety(
         report([
+          vacancyOrg({
+            areaId: 20,
+            areaName: "Nasr City",
+            hrId: "VAC-DSM-1",
+            jobTitle: "District Sales Manager",
+            managerHrId: "NSM-1",
+            positionTitle: "District Sales Manager",
+            vacancyCode: "resignation_dsm-old_20260101000000",
+          }),
+          vacancyOrg({
+            areaId: 20,
+            areaName: "Nasr City",
+            hrId: "VAC-DSM-2",
+            jobTitle: "District Sales Manager",
+            managerHrId: "NSM-1",
+            positionTitle: "District Sales Manager",
+            vacancyCode: "vacancy_dsm_duplicate",
+          }),
+        ]),
+      ),
+    ).length,
+    1,
+    "exact duplicate open vacancies for the same DSM slot render once in Organogram",
+  );
+
+  assert.equal(
+    visibleVacancies(
+      applyOrganogramMirrorSafety(
+        report([
           employee({ areaId: 20, areaName: "Nasr City", hrId: "REP-MISSING" }),
           vacancyOrg({ areaId: null, areaName: null, hrId: "VAC-MISSING", vacancyCode: "vacancy_missing" }),
         ]),
@@ -321,6 +358,46 @@ export function runOrganogramHardeningTests() {
     ).length,
     1,
     "resignation-created vacancy remains visible until the exact slot is filled",
+  );
+  const sanitizedResignationReport = applyOrganogramMirrorSafety(
+    report([
+      vacancyOrg({
+        areaId: 20,
+        areaName: "Nasr City",
+        hrId: "B-180",
+        vacancyCode: "resignation_b-180_20260101000000",
+      }),
+    ]),
+  );
+  assert.equal(
+    visibleVacancies(sanitizedResignationReport)[0]?.hrId,
+    "VAC-RES-000000",
+    "legacy resignation vacancies must not display the resigned employee HR_ID as the Organogram card ID",
+  );
+  assert.equal(
+    sanitizedResignationReport.rows[0]?.vacancyCode,
+    "VAC-RES-000000",
+    "Organogram vacancy payload must not expose legacy resignation vacancy codes containing HR_ID",
+  );
+  assert.match(
+    vacancyReportSource,
+    /VAC-RES-/,
+    "resignation-created Organogram vacancies must display generated vacancy labels",
+  );
+  assert.doesNotMatch(
+    vacancyReportSource,
+    /return\s+resignationMatch(?:\?\.)?\[1\]\.toUpperCase\(\)/,
+    "resignation-created Organogram vacancies must not display the resigned employee HR_ID",
+  );
+  assert.match(
+    resignationServiceSource,
+    /resignation_vac_\$\{stamp\}_\$\{suffix\}/,
+    "new resignation vacancy codes must be generated without embedding the resigned employee HR_ID",
+  );
+  assert.doesNotMatch(
+    resignationServiceSource,
+    /resignation_\$\{hrId\}_\$\{stamp\}/,
+    "resignation vacancy code generation must not embed the resigned employee HR_ID",
   );
 
   const scoped = scopeOrganogramReportForAccess(
@@ -378,18 +455,103 @@ export function runOrganogramHardeningTests() {
   );
   assert.match(
     organogramComponentSource,
-    /row\.lineName === effectiveLineFilter &&\s*\(\s*isVacancyRow\(row\) \|\| isSalesDepartment\(row\)\s*\)/,
+    /row\.lineName === effectiveLineFilter &&\s*\(\s*isVacancyRow\(row\) \|\| isSalesDepartment\(row\) \|\| isSalesStructureRole\(row\)\s*\)/,
     "Line filtering must keep vacancies in the selected line instead of requiring Sales department metadata",
   );
   assert.match(
     organogramComponentSource,
-    /function reportsToDsmGroup/,
-    "DSM lane assignment must use an explicit helper for defensive vacancy matching",
+    /function reportsToManagerGroup/,
+    "Manager lane assignment must use an explicit helper for defensive vacancy matching",
   );
   assert.match(
     organogramComponentSource,
-    /row\.type === "vacancy"[\s\S]*dsmNameKeysForGroup\.has\(managerNameKey\)/,
+    /row\.type === "vacancy"[\s\S]*managerNameKeysForGroup\.has\(managerNameKey\)/,
     "Vacancies with a bad or missing manager HR_ID must still render under the matching DSM name",
+  );
+  assert.match(
+    organogramComponentSource,
+    /function reportsToVacantManagerSlot/,
+    "DSM vacancies must have a context-aware fallback for teams whose old manager link is missing or stale",
+  );
+  assert.match(
+    organogramComponentSource,
+    /contextMatches\(row\.lineId, row\.lineName, vacantManager\.lineId, vacantManager\.lineName\)/,
+    "DSM vacancy fallback must always require the same line",
+  );
+  assert.match(
+    organogramComponentSource,
+    /contextMatches\(row\.areaId, row\.areaName, vacantManager\.areaId, vacantManager\.areaName\)/,
+    "DSM vacancy fallback must use area context before attaching team rows",
+  );
+  assert.match(
+    organogramComponentSource,
+    /function districtBucketMatches/,
+    "DSM vacancy fallback must support district bucket matching for Cairo-style structures",
+  );
+  assert.match(
+    organogramComponentSource,
+    /isDistrictBucketLabel\(vacantManager\.areaName\)[\s\S]*districtBucketKey\(vacantManager\.areaName\)/,
+    "DSM vacancy district fallback must only treat broad area labels like Cairo as buckets",
+  );
+  assert.match(
+    organogramComponentSource,
+    /districtBucketKey\(row\.regionName\)[\s\S]*districtBucketKey\(row\.areaName\)[\s\S]*districtBucketKey\(row\.teamName\)/,
+    "Cairo medical reps must match a Cairo vacant DSM through region, area, or team context",
+  );
+  assert.match(
+    organogramComponentSource,
+    /!reportsToKnownManager\(row, dsmHrIds, dsmNameKeys\)[\s\S]*reportsToVacantManagerSlot\(row, primaryDsm\)/,
+    "DSM vacancy fallback must not steal rows that already report to a known visible manager",
+  );
+  assert.match(
+    organogramComponentSource,
+    /region: primaryDsm\.regionName \?\? primaryDsm\.areaName/,
+    "DSM vacancy lanes should show area context when region metadata is missing",
+  );
+  assert.match(
+    organogramComponentSource,
+    /const rsmGroups: ManagerLane\[\]/,
+    "RSMs must render as explicit manager lanes, not be flattened into DSM lanes",
+  );
+  assert.match(
+    organogramComponentSource,
+    /level: "rsm"/,
+    "RSM lanes must carry their own hierarchy level for distinct rendering",
+  );
+  assert.match(
+    organogramComponentSource,
+    /Reports to NSM:/,
+    "RSM lanes must visibly show that they report to the NSM",
+  );
+  assert.match(
+    organogramComponentSource,
+    /childLanes: ManagerLane\[\][\s\S]*reportsToVacantManagerSlot\(row, primaryDsm\)/,
+    "Medical reps must stay under vacant DSM slots even when those DSM slots report to an RSM",
+  );
+  assert.match(
+    organogramComponentSource,
+    /group\.level === "rsm" && childLanes\.length > 0[\s\S]*gridColumn: `span \$\{Math\.max\(childLanes\.length, 1\)\}`/,
+    "RSM lanes must span their DSM child columns instead of rendering as a flat DSM lane",
+  );
+  assert.match(
+    organogramComponentSource,
+    /const vacancyCountForLane = \(group: ManagerLane\): number[\s\S]*group\.childLanes \?\? \[\][\s\S]*vacancyCountForLane\(child\)/,
+    "RSM vacancy counters must aggregate vacancies from reporting DSM child lanes",
+  );
+  assert.match(
+    organogramComponentSource,
+    /const groupVacancies = vacancyCountForLane\(group\)/,
+    "Manager lane vacancy labels must use the aggregated lane vacancy counter",
+  );
+  assert.match(
+    organogramComponentSource,
+    /canUseVacantManagerFallback[\s\S]*!isDistrictSalesManager\(member\)/,
+    "Vacant manager fallback must not nest DSM managers under other vacant DSM cards",
+  );
+  assert.match(
+    organogramComponentSource,
+    /isVacancyRow\(row\) \|\| isSalesDepartment\(row\) \|\| isSalesStructureRole\(row\)/,
+    "Line filtering must keep sales structure employees even when department metadata is incomplete",
   );
 
   const kpis = calculateOrganogramStructureKpis([
@@ -436,5 +598,25 @@ export function runOrganogramHardeningTests() {
     organogramComponentSource,
     /label="Employees"[\s\S]*label="Vacancies"[\s\S]*label="Rows"/,
     "Generic Employees/Vacancies/Rows KPI cards must not remain in Organogram",
+  );
+  assert.match(
+    organogramComponentSource,
+    /Medical Sales Representatives/,
+    "KPI cards must use the full enterprise role title",
+  );
+  assert.match(
+    organogramComponentSource,
+    /Actual \/ Total Structure/,
+    "KPI cards must show actual against total structure in one compact block",
+  );
+  assert.match(
+    organogramComponentSource,
+    /Completion/,
+    "KPI cards must include a completion bar label",
+  );
+  assert.doesNotMatch(
+    organogramComponentSource,
+    /bg-sky-500|bg-violet-500|bg-emerald-500|from-sky-500|from-violet-500|from-emerald-500/,
+    "Organogram KPI cards must stay on the Phoenix orange/slate page palette",
   );
 }

@@ -1908,7 +1908,7 @@ export type MedicalRepPortalData = {
     actualNow: number;
     compositionLabel: string | null;
     districtManagerVacancies: number;
-    scope: "line" | "team";
+    scope: "hierarchy" | "line" | "team";
     scopeLabel: string;
     totalStructure: number;
     vacancies: number;
@@ -2279,6 +2279,12 @@ function isNationalSalesManagerDirectoryEmployee(
   return normalizeRole(employee.jobTitle) === "National Sales Manager" || normalizeRole(employee.positionTitle) === "National Sales Manager";
 }
 
+function isRegionalSalesManagerDirectoryEmployee(
+  employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
+) {
+  return normalizeRole(employee.jobTitle) === "Regional Sales Manager" || normalizeRole(employee.positionTitle) === "Regional Sales Manager";
+}
+
 function isGroupProductManagerDirectoryEmployee(
   employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
 ) {
@@ -2290,6 +2296,7 @@ function isLineStructureDirectoryEmployee(
 ) {
   return (
     isNationalSalesManagerDirectoryEmployee(employee) ||
+    isRegionalSalesManagerDirectoryEmployee(employee) ||
     isDistrictManagerEmployee(employee) ||
     isGroupProductManagerDirectoryEmployee(employee) ||
     isMedicalRepDirectoryEmployee(employee)
@@ -2303,7 +2310,6 @@ function isCompanyWorkforceRole(role: PhoenixRole) {
 function isLineWorkforceRole(role: PhoenixRole) {
   return (
     role === "National Sales Manager" ||
-    role === "Regional Manager" ||
     role === "Product Manager" ||
     role === "Group Product Manager" ||
     role === "SFE Manager" ||
@@ -2312,8 +2318,50 @@ function isLineWorkforceRole(role: PhoenixRole) {
   );
 }
 
+function isHierarchyWorkforceRole(role: PhoenixRole) {
+  return role === "Regional Manager" || role === "Regional Sales Manager";
+}
+
 function isTeamWorkforceRole(role: PhoenixRole) {
   return role === "District Manager" || role === "Manager";
+}
+
+function resolveHierarchyWorkforceRows(
+  activeRows: EmployeeDirectoryRow[],
+  currentCanonicalHrId: string | null,
+) {
+  if (!currentCanonicalHrId) {
+    return [];
+  }
+
+  const visibleHrIds = new Set<string>([currentCanonicalHrId]);
+  let frontier = [currentCanonicalHrId];
+
+  while (frontier.length > 0) {
+    const nextFrontier: string[] = [];
+
+    for (const row of activeRows) {
+      const rowHrId = normalizeHrIdForAccess(row.hrId);
+      const managerHrId = normalizeHrIdForAccess(row.managerHrId);
+
+      if (
+        rowHrId &&
+        managerHrId &&
+        frontier.includes(managerHrId) &&
+        !visibleHrIds.has(rowHrId)
+      ) {
+        visibleHrIds.add(rowHrId);
+        nextFrontier.push(rowHrId);
+      }
+    }
+
+    frontier = nextFrontier;
+  }
+
+  return activeRows.filter((row) => {
+    const rowHrId = normalizeHrIdForAccess(row.hrId);
+    return Boolean(rowHrId && visibleHrIds.has(rowHrId));
+  });
 }
 
 function resolvePortalWorkforceRows({
@@ -2331,6 +2379,10 @@ function resolvePortalWorkforceRows({
   const activeRows = directory.employees.filter(isActiveDirectoryEmployee);
 
   if (isCompanyWorkforceRole(role)) return activeRows;
+
+  if (isHierarchyWorkforceRole(role)) {
+    return resolveHierarchyWorkforceRows(activeRows, currentCanonicalHrId);
+  }
 
   if (isLineWorkforceRole(role)) {
     return activeRows.filter((row) => {
@@ -2539,8 +2591,9 @@ async function resolvePortalStructureSummary({
 }): Promise<MedicalRepPortalData["orgStructure"]> {
   const currentRole = normalizeRole(currentUser.role);
   const isDsm = currentRole === "District Manager";
+  const isRsm = currentRole === "Regional Sales Manager";
   const isNsm = currentRole === "National Sales Manager";
-  if (!isDsm && !isNsm) return null;
+  if (!isDsm && !isRsm && !isNsm) return null;
 
   const currentCanonicalHrId = normalizeHrIdForAccess(currentUser.hrId);
   const currentLine = normalizeLineName(currentUser.line ?? employee.lineName);
@@ -2551,11 +2604,25 @@ async function resolvePortalStructureSummary({
     return normalizeLineName(row.lineName) === currentLine;
   };
 
-  const activeRows = directory.employees.filter((row) => {
+  const activeDirectoryRows = directory.employees.filter(isActiveDirectoryEmployee);
+  const hierarchyRows = isRsm
+    ? resolveHierarchyWorkforceRows(activeDirectoryRows, currentCanonicalHrId)
+    : [];
+  const hierarchyHrIds = new Set(
+    hierarchyRows
+      .map((row) => normalizeHrIdForAccess(row.hrId))
+      .filter((value): value is string => Boolean(value)),
+  );
+  const activeRows = activeDirectoryRows.filter((row) => {
     if (!isActiveDirectoryEmployee(row)) return false;
 
     if (isNsm) {
       return isCurrentLineRow(row) && isLineStructureDirectoryEmployee(row);
+    }
+
+    if (isRsm) {
+      const rowHrId = normalizeHrIdForAccess(row.hrId);
+      return Boolean(rowHrId && hierarchyHrIds.has(rowHrId) && isLineStructureDirectoryEmployee(row));
     }
 
     const managerCanonicalHrId = normalizeHrIdForAccess(row.managerHrId);
@@ -2571,13 +2638,14 @@ async function resolvePortalStructureSummary({
   const vacancyCount = isNsm ? vacancySummary.lineStructureVacancies : vacancySummary.openVacancies;
   const actualNow = activeRows.length;
   const activeNationalSalesManagers = activeRows.filter(isNationalSalesManagerDirectoryEmployee).length;
+  const activeRegionalSalesManagers = activeRows.filter(isRegionalSalesManagerDirectoryEmployee).length;
   const activeDistrictManagers = activeRows.filter(isDistrictManagerEmployee).length;
   const activeGroupProductManagers = activeRows.filter(isGroupProductManagerDirectoryEmployee).length;
   const activeMedicalReps = activeRows.filter(isMedicalRepDirectoryEmployee).length;
 
   return {
     actualNow,
-    compositionLabel: isNsm
+    compositionLabel: isNsm || isRsm
       ? formatLineStructureComposition({
           districtManagers: activeDistrictManagers + vacancySummary.districtManagerVacancies,
           groupProductManagers:
@@ -2585,12 +2653,15 @@ async function resolvePortalStructureSummary({
           medicalRepresentatives: activeMedicalReps + vacancySummary.medicalRepVacancies,
           nationalSalesManagers:
             activeNationalSalesManagers + vacancySummary.nationalSalesManagerVacancies,
+          regionalSalesManagers: activeRegionalSalesManagers,
         })
       : null,
     districtManagerVacancies: vacancySummary.districtManagerVacancies,
-    scope: isNsm ? "line" : "team",
+    scope: isNsm ? "line" : isRsm ? "hierarchy" : "team",
     scopeLabel: isNsm
       ? employee.lineName ?? currentUser.line ?? "Your line"
+      : isRsm
+        ? employee.fullName
       : employee.fullName,
     totalStructure: actualNow + vacancyCount,
     vacancies: vacancyCount,
@@ -2602,11 +2673,13 @@ function formatLineStructureComposition({
   groupProductManagers,
   medicalRepresentatives,
   nationalSalesManagers,
+  regionalSalesManagers = 0,
 }: {
   districtManagers: number;
   groupProductManagers: number;
   medicalRepresentatives: number;
   nationalSalesManagers: number;
+  regionalSalesManagers?: number;
 }) {
   const compactCount = (value: number) =>
     new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(
@@ -2615,6 +2688,9 @@ function formatLineStructureComposition({
 
   return [
     `${compactCount(nationalSalesManagers)} National Sales Manager${nationalSalesManagers === 1 ? "" : "s"}`,
+    ...(regionalSalesManagers > 0
+      ? [`${compactCount(regionalSalesManagers)} Regional Sales Manager${regionalSalesManagers === 1 ? "" : "s"}`]
+      : []),
     `${compactCount(districtManagers)} District Manager${districtManagers === 1 ? "" : "s"}`,
     `${compactCount(groupProductManagers)} Group Product Manager${groupProductManagers === 1 ? "" : "s"}`,
     `${compactCount(medicalRepresentatives)} Medical Representative${medicalRepresentatives === 1 ? "" : "s"}`,

@@ -399,11 +399,23 @@ export function vacancyReportWithoutOrganogramRows(
   };
 }
 
-function vacancyLabelForReport(vacancyCode: string) {
-  const resignationMatch = vacancyCode.match(/^resignation_(.+?)_\d{14}$/i);
+export function vacancyLabelForReport(vacancyCode: string) {
+  const generatedResignationMatch = vacancyCode.match(
+    /^resignation_vac_(\d{14})(?:_([a-z0-9]+))?$/i,
+  );
 
-  if (resignationMatch?.[1]) {
-    return resignationMatch[1].toUpperCase();
+  if (generatedResignationMatch?.[1]) {
+    const suffix = generatedResignationMatch[2]
+      ? `-${generatedResignationMatch[2].toUpperCase()}`
+      : "";
+
+    return `VAC-RES-${generatedResignationMatch[1].slice(8)}${suffix}`;
+  }
+
+  const legacyResignationMatch = vacancyCode.match(/^resignation_.+?_(\d{14})$/i);
+
+  if (legacyResignationMatch?.[1]) {
+    return `VAC-RES-${legacyResignationMatch[1].slice(8)}`;
   }
 
   const match = vacancyCode.match(/^vacancy_(?:vac_)?(\d+)/i);

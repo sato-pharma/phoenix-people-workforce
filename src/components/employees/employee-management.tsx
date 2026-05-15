@@ -195,6 +195,28 @@ const enrollmentStatusOptions = [
   { label: "Pending", value: "pending" },
 ];
 
+const dsmRegionLabels = [
+  "Cairo",
+  "Giza",
+  "Greater Cairo",
+  "Alexandria",
+  "Delta 1",
+  "Delta 2",
+  "Upper Egypt",
+  "Canal",
+  "East",
+  "West",
+];
+
+const rsmScopeOptions = [
+  { label: "Greater Cairo + Upper Egypt", value: "Greater Cairo + Upper Egypt" },
+  { label: "Alexandria + Delta", value: "Alexandria + Delta" },
+];
+
+const nationalScopeOptions = [
+  { label: "Egypt", value: "Egypt" },
+];
+
 const resignationStatusOptions = [
   { label: "Resigned", value: "resigned" },
   { label: "Terminated", value: "terminated" },
@@ -285,19 +307,124 @@ function isNationalSalesManagerTitle(value: string | null | undefined) {
   );
 }
 
+function isDistrictSalesManagerTitle(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return (
+    normalized.includes("district sales manager") ||
+    normalized.includes("district manager") ||
+    normalized === "dsm"
+  );
+}
+
 function isSalesPositionTitle(value: string | null | undefined) {
   const normalized = String(value ?? "").trim().toLowerCase();
   return (
     isMedicalRepTitle(normalized) ||
     isRegionalSalesManagerTitle(normalized) ||
-    normalized.includes("district sales manager") ||
-    normalized === "dsm" ||
+    isDistrictSalesManagerTitle(normalized) ||
+    isNationalSalesManagerTitle(normalized) ||
     normalized.includes("sales")
   );
 }
 
+function assignmentModeForTitle(value: string | null | undefined) {
+  if (isNationalSalesManagerTitle(value)) return "national" as const;
+  if (isRegionalSalesManagerTitle(value)) return "regional" as const;
+  if (isDistrictSalesManagerTitle(value)) return "district" as const;
+  return "area" as const;
+}
+
+function regionForTitle(value: string | null | undefined, currentRegion: string) {
+  const mode = assignmentModeForTitle(value);
+
+  if (mode === "national") {
+    return "Egypt";
+  }
+
+  if (mode === "regional") {
+    return rsmScopeOptions.some((option) => option.value === currentRegion)
+      ? currentRegion
+      : "";
+  }
+
+  if (mode === "district") {
+    return currentRegion === "Egypt" ||
+      rsmScopeOptions.some((option) => option.value === currentRegion)
+      ? ""
+      : currentRegion;
+  }
+
+  return currentRegion;
+}
+
 function normalizeForMatch(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function managerTitle(option: EmployeeLookupOption | EmployeeDirectoryRow) {
+  return `${option.positionTitle ?? ""} ${option.jobTitle ?? ""}`.trim();
+}
+
+function isManagerialTitle(value: string | null | undefined) {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) return false;
+
+  return (
+    normalized.includes("manager") ||
+    normalized.includes("director") ||
+    normalized.includes("head") ||
+    normalized.includes("lead") ||
+    normalized.includes("supervisor") ||
+    normalized.includes("chief") ||
+    normalized.includes("ceo") ||
+    /\b(nsm|rsm|dsm)\b/.test(normalized)
+  );
+}
+
+function isExecutiveManagerTitle(value: string | null | undefined) {
+  const normalized = normalizeForMatch(value);
+  return (
+    normalized.includes("chief") ||
+    normalized.includes("ceo") ||
+    normalized.includes("executive") ||
+    normalized.includes("general manager") ||
+    normalized.includes("managing director")
+  );
+}
+
+function isLineCompatible(candidate: EmployeeLookupOption, lineId: string) {
+  return !lineId || !candidate.lineId || String(candidate.lineId) === String(lineId);
+}
+
+function isValidManagerForTitle(candidate: EmployeeLookupOption, targetTitle: string, lineId: string) {
+  const candidateTitle = managerTitle(candidate);
+  if (!isManagerialTitle(candidateTitle)) return false;
+
+  if (isRegionalSalesManagerTitle(targetTitle)) {
+    return isNationalSalesManagerTitle(candidateTitle) && isLineCompatible(candidate, lineId);
+  }
+
+  if (isDistrictSalesManagerTitle(targetTitle)) {
+    return (
+      (isRegionalSalesManagerTitle(candidateTitle) || isNationalSalesManagerTitle(candidateTitle)) &&
+      isLineCompatible(candidate, lineId)
+    );
+  }
+
+  if (isMedicalRepTitle(targetTitle)) {
+    return (
+      !isRegionalSalesManagerTitle(candidateTitle) &&
+      !isNationalSalesManagerTitle(candidateTitle) &&
+      isManagerialTitle(candidateTitle) &&
+      isLineCompatible(candidate, lineId)
+    );
+  }
+
+  if (isNationalSalesManagerTitle(targetTitle)) {
+    return isExecutiveManagerTitle(candidateTitle);
+  }
+
+  return isManagerialTitle(candidateTitle);
 }
 
 function SelectField({
@@ -603,8 +730,8 @@ export function EmployeeManagement({
     return lookups.positions.find((position) => position.value === form.positionId)?.label ?? "";
   }, [lookups.positions, form.positionId]);
 
-  const selectedPositionIsRegionalSalesManager = React.useMemo(() => {
-    return isRegionalSalesManagerTitle(selectedPositionTitle || form.jobTitle);
+  const selectedAssignmentMode = React.useMemo(() => {
+    return assignmentModeForTitle(selectedPositionTitle || form.jobTitle);
   }, [form.jobTitle, selectedPositionTitle]);
 
   const openWorkforceVacancies = React.useMemo(
@@ -635,9 +762,10 @@ export function EmployeeManagement({
   const selectedPositionRequiresVacancy = React.useMemo(() => {
     return Boolean(
       (form.positionId || form.jobTitle || selectedPositionTitle) &&
-        !selectedPositionIsRegionalSalesManager,
+        selectedAssignmentMode === "area" &&
+        isMedicalRepTitle(selectedPositionTitle || form.jobTitle),
     );
-  }, [form.jobTitle, form.positionId, selectedPositionIsRegionalSalesManager, selectedPositionTitle]);
+  }, [form.jobTitle, form.positionId, selectedAssignmentMode, selectedPositionTitle]);
 
   const filteredWorkforceVacancies = React.useMemo(() => {
     const selectedTitle = normalizeForMatch(selectedPositionTitle || form.jobTitle);
@@ -687,6 +815,53 @@ export function EmployeeManagement({
       .sort((a, b) => String(a).localeCompare(String(b)))
       .map((region) => ({ label: String(region), value: String(region) }));
   }, [employees]);
+
+  const districtRegionOptions = React.useMemo(() => {
+    const labels = new Set<string>(dsmRegionLabels);
+    for (const option of regionOptions) {
+      if (option.label) labels.add(option.label);
+    }
+
+    return Array.from(labels)
+      .sort((a, b) => a.localeCompare(b))
+      .map((region) => ({ label: region, value: region }));
+  }, [regionOptions]);
+
+  const assignmentRegionOptions = React.useMemo(() => {
+    if (selectedAssignmentMode === "national") return nationalScopeOptions;
+    if (selectedAssignmentMode === "regional") return rsmScopeOptions;
+    if (selectedAssignmentMode === "district") return districtRegionOptions;
+    return regionOptions;
+  }, [districtRegionOptions, regionOptions, selectedAssignmentMode]);
+
+  const filteredManagerOptions = React.useMemo(() => {
+    const targetTitle = selectedPositionTitle || form.jobTitle;
+    const effectiveTargetTitle =
+      normalizeForMatch(targetTitle) === "manager" &&
+      form.lineId &&
+      (!salesDepartmentId || String(form.departmentId) === String(salesDepartmentId))
+        ? "District Sales Manager"
+        : targetTitle;
+
+    return lookups.managers.filter((manager) =>
+      manager.value !== form.hrId &&
+      isValidManagerForTitle(manager, effectiveTargetTitle, form.lineId),
+    );
+  }, [form.departmentId, form.hrId, form.jobTitle, form.lineId, lookups.managers, salesDepartmentId, selectedPositionTitle]);
+
+  const managerPlaceholder = React.useMemo(() => {
+    const targetTitle = selectedPositionTitle || form.jobTitle;
+    const isSalesGenericManager =
+      normalizeForMatch(targetTitle) === "manager" &&
+      form.lineId &&
+      (!salesDepartmentId || String(form.departmentId) === String(salesDepartmentId));
+
+    if (selectedAssignmentMode === "regional") return "Select National Sales Manager";
+    if (selectedAssignmentMode === "district" || isSalesGenericManager) return "Select RSM or NSM";
+    if (isMedicalRepTitle(selectedPositionTitle || form.jobTitle)) return "Select field manager";
+    if (selectedAssignmentMode === "national") return "Select executive manager";
+    return "Select manager";
+  }, [form.departmentId, form.jobTitle, form.lineId, salesDepartmentId, selectedAssignmentMode, selectedPositionTitle]);
 
   const loadEmployees = React.useCallback(async () => {
     setIsLoading(true);
@@ -819,13 +994,15 @@ export function EmployeeManagement({
 
   function updateLine(value: string) {
     setForm((current) => {
-      const isRsm = isRegionalSalesManagerTitle(selectedPositionTitle || current.jobTitle);
+      const currentTitle = selectedPositionTitle || current.jobTitle;
+      const isRsm = isRegionalSalesManagerTitle(currentTitle);
 
       return {
         ...current,
         areaId: "",
         lineId: value,
         managerHrId: isRsm ? defaultRegionalManagerForLine(value) : "",
+        regionName: regionForTitle(currentTitle, current.regionName),
         teamId: "",
       };
     });
@@ -873,6 +1050,21 @@ export function EmployeeManagement({
 
     if (!form.hrId.trim()) return "Employee ID is required.";
     if (!form.fullName.trim()) return "Full Name is required.";
+    const title = selectedPositionTitle || form.jobTitle;
+    const assignmentMode = assignmentModeForTitle(title);
+    if (assignmentMode !== "area" && !form.regionName.trim()) {
+      return assignmentMode === "regional"
+        ? "Regional Scope is required for Regional Sales Manager."
+        : "Region is required for this management title.";
+    }
+    if (isRegionalSalesManagerTitle(title)) {
+      if (!isPediaLine(form.lineId)) {
+        return "Regional Sales Manager is currently enabled for the Pedia line only.";
+      }
+      if (!form.managerHrId.trim()) {
+        return "Regional Sales Manager must report to the Pedia National Sales Manager.";
+      }
+    }
     if (form.managerHrId && form.managerHrId.trim().toUpperCase() === form.hrId.trim().toUpperCase()) {
       return "Direct Manager cannot be the same employee.";
     }
@@ -1775,11 +1967,13 @@ export function EmployeeManagement({
                       const isRsm = isRegionalSalesManagerTitle(nextJobTitle);
                       setForm((prev) => ({
                         ...prev,
-                        areaId: isRsm ? prev.areaId : "",
+                        areaId: "",
                         departmentId: isSalesPositionTitle(nextJobTitle) && salesDepartmentId ? salesDepartmentId : prev.departmentId,
                         managerHrId: isRsm ? defaultRegionalManagerForLine(prev.lineId) : "",
                         positionId: value,
                         jobTitle: nextJobTitle,
+                        regionName: regionForTitle(nextJobTitle, prev.regionName),
+                        teamId: "",
                       }));
                     }}
                     options={lookups.positions}
@@ -1794,9 +1988,12 @@ export function EmployeeManagement({
 
                         return {
                           ...prev,
+                          areaId: assignmentModeForTitle(value) === "area" ? prev.areaId : "",
                           departmentId: isSalesPositionTitle(value) && salesDepartmentId ? salesDepartmentId : prev.departmentId,
                           jobTitle: value,
                           managerHrId: isRsm ? defaultRegionalManagerForLine(prev.lineId) : prev.managerHrId,
+                          regionName: regionForTitle(value, prev.regionName),
+                          teamId: assignmentModeForTitle(value) === "area" ? prev.teamId : "",
                         };
                       });
                     }}
@@ -1817,46 +2014,70 @@ export function EmployeeManagement({
                     placeholder="Select business line"
                     value={form.lineId}
                   />
-                  <SelectField
-                    disabled={selectedPositionRequiresVacancy && !form.lineId}
-                    label="Operating Area"
-                    onChange={(value) => {
-                      if (value === "empty") return;
-                      if (selectedPositionRequiresVacancy) {
-                        applyVacancySelection(value);
-                      } else {
-                        const selectedArea = lookups.areas.find((a) => String(a.value) === String(value));
-                        if (selectedArea) {
-                          setForm((prev) => ({
-                            ...prev,
-                            areaId: String(value),
-                            lineId: String(selectedArea.lineId ?? prev.lineId),
-                            managerHrId: selectedArea.managerHrId ?? prev.managerHrId,
-                            positionId: String(selectedArea.positionId ?? prev.positionId),
-                            teamId: "",
-                          }));
+                  {selectedAssignmentMode === "area" ? (
+                    <SelectField
+                      disabled={selectedPositionRequiresVacancy && !form.lineId}
+                      label="Operating Area"
+                      onChange={(value) => {
+                        if (value === "empty") return;
+                        if (selectedPositionRequiresVacancy) {
+                          applyVacancySelection(value);
                         } else {
-                          setForm((prev) => ({ ...prev, areaId: value, teamId: "" }));
+                          const selectedArea = lookups.areas.find((a) => String(a.value) === String(value));
+                          if (selectedArea) {
+                            setForm((prev) => ({
+                              ...prev,
+                              areaId: String(value),
+                              lineId: String(selectedArea.lineId ?? prev.lineId),
+                              managerHrId: selectedArea.managerHrId ?? prev.managerHrId,
+                              positionId: String(selectedArea.positionId ?? prev.positionId),
+                              teamId: "",
+                            }));
+                          } else {
+                            setForm((prev) => ({ ...prev, areaId: value, teamId: "" }));
+                          }
                         }
+                      }}
+                      options={
+                        selectedPositionRequiresVacancy
+                          ? filteredWorkforceVacancies.length > 0
+                            ? filteredWorkforceVacancies.map((v) => ({
+                                label: v.managerName
+                                  ? `${v.areaName} - ${v.positionTitle} - Manager: ${v.managerName}`
+                                  : `${v.areaName} - ${v.positionTitle}`,
+                                value: String(v.areaId),
+                              }))
+                            : form.lineId
+                              ? [{ label: "No open vacancy for this position and line", value: "empty" }]
+                              : []
+                          : lookups.areas.filter((a) => !form.lineId || String(a.lineId) === String(form.lineId))
                       }
-                    }}
-                    options={
-                      selectedPositionRequiresVacancy
-                        ? filteredWorkforceVacancies.length > 0
-                          ? filteredWorkforceVacancies.map((v) => ({
-                              label: v.managerName
-                                ? `${v.areaName} - ${v.positionTitle} - Manager: ${v.managerName}`
-                                : `${v.areaName} - ${v.positionTitle}`,
-                              value: String(v.areaId),
-                            }))
-                          : form.lineId
-                            ? [{ label: "No open vacancy for this position and line", value: "empty" }]
-                            : []
-                        : lookups.areas.filter((a) => !form.lineId || String(a.lineId) === String(form.lineId))
-                    }
-                    placeholder={selectedPositionRequiresVacancy && !form.lineId ? "Select line first" : "Select area"}
-                    value={form.areaId}
-                  />
+                      placeholder={selectedPositionRequiresVacancy && !form.lineId ? "Select line first" : "Select area"}
+                      value={form.areaId}
+                    />
+                  ) : (
+                    <SelectField
+                      disabled={selectedAssignmentMode === "national"}
+                      label={selectedAssignmentMode === "regional" ? "Regional Scope" : "Region"}
+                      onChange={(value) => {
+                        setForm((prev) => ({
+                          ...prev,
+                          areaId: "",
+                          regionName: value,
+                          teamId: "",
+                        }));
+                      }}
+                      options={assignmentRegionOptions}
+                      placeholder={
+                        selectedAssignmentMode === "regional"
+                          ? "Select RSM scope"
+                          : selectedAssignmentMode === "national"
+                            ? "Egypt"
+                            : "Select region"
+                      }
+                      value={form.regionName}
+                    />
+                  )}
                   <SelectField
                     label="Team"
                     onChange={(value) => updateForm("teamId", value)}
@@ -1867,10 +2088,8 @@ export function EmployeeManagement({
                   <SelectField
                     label="Direct Manager"
                     onChange={(value) => updateForm("managerHrId", value)}
-                    options={lookups.managers.filter(
-                      (manager) => manager.value !== form.hrId,
-                    )}
-                    placeholder="Select manager"
+                    options={filteredManagerOptions}
+                    placeholder={managerPlaceholder}
                     value={form.managerHrId}
                   />
                   <TextField
@@ -2123,9 +2342,10 @@ export function EmployeeManagement({
                     value={form.employmentStatus === "active" || form.employmentStatus === "on_leave" ? "Yes" : "No"}
                   />
                   <TextField
+                    disabled={selectedAssignmentMode !== "area"}
                     label="Region"
                     onChange={(value) => updateForm("regionName", value)}
-                    placeholder="Auto-filled from vacancy when available"
+                    placeholder={selectedAssignmentMode === "area" ? "Auto-filled from vacancy when available" : "Controlled from organizational assignment"}
                     value={form.regionName}
                   />
                   <TextField

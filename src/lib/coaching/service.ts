@@ -191,7 +191,7 @@ export function canAccessCoachingEmployee(
     return Boolean(coach && idsMatch(currentHrId, coach.hrId));
   }
   if (idsMatch(currentHrId, employee.managerHrId)) return true;
-  if (access.role === "Regional Manager" || access.role === "Manager") {
+  if (access.role === "Regional Manager" || access.role === "Regional Sales Manager" || access.role === "Manager") {
     return isInHierarchy(directory, currentHrId, employee.hrId);
   }
   if (lineRoles.has(access.role)) {

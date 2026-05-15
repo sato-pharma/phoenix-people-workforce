@@ -3,6 +3,8 @@ const portalLandingRoleNames = new Set([
   "medical rep",
   "district manager",
   "regional manager",
+  "regional sales manager",
+  "rsm",
   "national sales manager",
   "product manager",
   "group product manager",

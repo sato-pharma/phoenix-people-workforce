@@ -14,7 +14,11 @@ function isMedicalRepTitle(value: string | null | undefined) {
 export async function resolveEmployeeCoachingPortalMode(
   access: AccessContext,
 ): Promise<EmployeeCoachingPortalMode | null> {
-  if (access.role === "District Manager" || access.role === "National Sales Manager") {
+  if (
+    access.role === "District Manager" ||
+    access.role === "Regional Sales Manager" ||
+    access.role === "National Sales Manager"
+  ) {
     return "team";
   }
 

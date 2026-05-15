@@ -7,7 +7,7 @@ import { googleGeocodeAddress } from "@/lib/google-maps/server";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { generateNextHrIdForLine } from "./hr-id-helper";
-import { isMissingRequiredManager } from "./hierarchy-governance";
+import { isManagerOptionalHrId, isMissingRequiredManager } from "./hierarchy-governance";
 
 const hrIdPattern = /^[A-Z0-9][A-Z0-9_-]*$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -84,10 +84,14 @@ export type EmployeeLookupOption = {
   label: string;
   value: string;
   areaId?: number | null;
-  lineId?: number | null;
-  positionId?: number | null;
-  managerHrId?: string | null;
   departmentId?: number | null;
+  jobTitle?: string | null;
+  lineId?: number | null;
+  managerHrId?: string | null;
+  positionId?: number | null;
+  positionTitle?: string | null;
+  regionName?: string | null;
+  teamId?: number | null;
 };
 
 export type EmployeeDirectoryData = {
@@ -313,6 +317,48 @@ function activeStatusOptions(employees: EmployeeDirectoryRow[]) {
       label: status.replace(/_/g, " "),
       value: status,
     }));
+}
+
+function isManagerialTitle(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return false;
+
+  return (
+    normalized.includes("manager") ||
+    normalized.includes("director") ||
+    normalized.includes("head") ||
+    normalized.includes("lead") ||
+    normalized.includes("supervisor") ||
+    normalized.includes("chief") ||
+    normalized.includes("ceo") ||
+    /\b(nsm|rsm|dsm)\b/.test(normalized)
+  );
+}
+
+function managerLookupOptions(activeEmployees: EmployeeDirectoryRow[]) {
+  return activeEmployees
+    .filter((employee) =>
+      isManagerOptionalHrId(employee.hrId) ||
+      isManagerialTitle(`${employee.positionTitle ?? ""} ${employee.jobTitle ?? ""}`),
+    )
+    .map((employee) => {
+      const title = employee.positionTitle ?? employee.jobTitle ?? "Manager";
+
+      return {
+        areaId: employee.areaId,
+        departmentId: employee.departmentId,
+        jobTitle: employee.jobTitle,
+        label: `${employee.fullName} - ${title} (${employee.hrId})`,
+        lineId: employee.lineId,
+        managerHrId: employee.managerHrId,
+        positionId: employee.positionId,
+        positionTitle: employee.positionTitle,
+        regionName: employee.regionName,
+        teamId: employee.teamId,
+        value: employee.hrId,
+      };
+    })
+    .sort((left, right) => left.label.localeCompare(right.label));
 }
 
 function getRequiredEnv(name: string) {
@@ -824,15 +870,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         areas,
         departments,
         lines,
-        managers: activeEmployees
-          .map((employee) => ({
-            departmentId: employee.departmentId,
-            label: employee.fullName,
-            lineId: employee.lineId,
-            positionId: employee.positionId,
-            value: employee.hrId,
-          }))
-          .sort((left, right) => left.label.localeCompare(right.label)),
+        managers: managerLookupOptions(activeEmployees),
         medicalRepVacancies,
         positions,
         statuses: activeStatusOptions(activeEmployees),
@@ -974,15 +1012,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         areas,
         departments,
         lines,
-        managers: activeEmployees
-          .map((employee) => ({
-            departmentId: employee.departmentId,
-            label: employee.fullName,
-            lineId: employee.lineId,
-            positionId: employee.positionId,
-            value: employee.hrId,
-          }))
-          .sort((left, right) => left.label.localeCompare(right.label)),
+        managers: managerLookupOptions(activeEmployees),
         medicalRepVacancies,
         positions,
         statuses: activeStatusOptions(activeEmployees),
@@ -1084,15 +1114,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       areas,
       departments,
       lines,
-      managers: activeEmployees
-        .map((employee) => ({
-          departmentId: employee.departmentId,
-          label: employee.fullName,
-          lineId: employee.lineId,
-          positionId: employee.positionId,
-          value: employee.hrId,
-        }))
-        .sort((left, right) => left.label.localeCompare(right.label)),
+      managers: managerLookupOptions(activeEmployees),
       medicalRepVacancies: [],
       positions,
       statuses: activeStatusOptions(activeEmployees),
@@ -1240,6 +1262,14 @@ async function ensureManagerIsValid(managerHrId: string | null, employeeHrId: st
     manager.organogram_visible === false
   ) {
     throw new Error(`Manager HR_ID ${managerHrId} is not active for hierarchy assignment.`);
+  }
+
+  const managerPositionTitle = await loadPositionTitleById(numberOrNull(manager.position_id));
+  if (
+    !isManagerOptionalHrId(manager.hr_id) &&
+    !isManagerialTitle(`${managerPositionTitle ?? ""} ${manager.job_title ?? ""}`)
+  ) {
+    throw new Error(`Manager HR_ID ${managerHrId} is not a valid manager-level employee.`);
   }
 }
 

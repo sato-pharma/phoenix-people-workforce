@@ -5,6 +5,7 @@ export const accessBulkPhoenixRoles = [
   "Medical Rep",
   "District Manager",
   "Regional Manager",
+  "Regional Sales Manager",
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",

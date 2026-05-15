@@ -37,6 +37,18 @@ type MemberNode = {
   key: string;
   row: OrganogramRow;
 };
+type ManagerLane = {
+  childLanes?: ManagerLane[];
+  dsm: OrganogramRow | null;
+  hireDate: string | null;
+  hrId: string | null;
+  level: "dsm" | "manager" | "rsm";
+  members: OrganogramRow[];
+  name: string;
+  region: string | null;
+  reportsTo?: string | null;
+  title: string;
+};
 
 type OrganogramReportProps = {
   fixedLine?: string | null;
@@ -129,6 +141,7 @@ function isOrganogramVisibleRow(row: OrganogramRow) {
   return (
     isVacancyRow(row) ||
     isSalesDepartment(row) ||
+    isSalesStructureRole(row) ||
     isMarketingDepartment(row) ||
     isOfficeLine(row)
   );
@@ -140,6 +153,110 @@ function normalizeNameKey(value: string | null | undefined) {
 
 function normalizeHrIdKey(value: string | null | undefined) {
   return value?.trim().toUpperCase() ?? "";
+}
+
+function orgContextKey(
+  id: number | null | undefined,
+  name: string | null | undefined,
+) {
+  if (typeof id === "number" && Number.isFinite(id)) {
+    return `id:${id}`;
+  }
+
+  const nameKey = normalizeNameKey(name);
+  return nameKey ? `name:${nameKey}` : "";
+}
+
+function contextMatches(
+  leftId: number | null | undefined,
+  leftName: string | null | undefined,
+  rightId: number | null | undefined,
+  rightName: string | null | undefined,
+) {
+  const leftKey = orgContextKey(leftId, leftName);
+  const rightKey = orgContextKey(rightId, rightName);
+
+  return Boolean(leftKey && rightKey && leftKey === rightKey);
+}
+
+function textContextMatches(
+  left: string | null | undefined,
+  right: string | null | undefined,
+) {
+  const leftKey = normalizeNameKey(left);
+  const rightKey = normalizeNameKey(right);
+
+  return Boolean(leftKey && rightKey && leftKey === rightKey);
+}
+
+function normalizedDistrictText(value: string | null | undefined) {
+  return normalizeNameKey(value)
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function districtBucketKey(value: string | null | undefined) {
+  const text = normalizedDistrictText(value);
+
+  if (!text) return "";
+  if (/\b(cairo|new cairo|nasr|heliopolis|helwan|maadi|shoubra|sheraton|nozha|airport|tagamoa|tagamo3)\b/.test(text)) {
+    return "cairo";
+  }
+  if (/\b(giza|dokki|faisal|haram|imbaba|mohandsen|mohandesen|october|zayed)\b/.test(text)) {
+    return "giza";
+  }
+  if (/\b(alex|alexandria|behira|beheira)\b/.test(text)) {
+    return "alexandria";
+  }
+  if (/\b(delta|gharbia|mahalla|tanta|menoufia|monofia|kafr|kfs|qalyubia|qaluibia|dakahlia)\b/.test(text)) {
+    return "delta";
+  }
+  if (/\b(upper egypt|assuit|asyut|sohag|qena|minia|bani suef|fayoum)\b/.test(text)) {
+    return "upper egypt";
+  }
+  if (/\b(canal|port said|domiat|damietta)\b/.test(text)) {
+    return "canal";
+  }
+
+  return text;
+}
+
+function isDistrictBucketLabel(value: string | null | undefined) {
+  const text = normalizedDistrictText(value);
+
+  return [
+    "cairo",
+    "greater cairo",
+    "giza",
+    "alexandria",
+    "delta",
+    "delta 1",
+    "delta 2",
+    "upper egypt",
+    "canal",
+    "east",
+    "west",
+  ].includes(text);
+}
+
+function districtBucketMatches(row: OrganogramRow, vacantManager: OrganogramRow) {
+  const vacancyRegionBucket = districtBucketKey(vacantManager.regionName);
+  const vacancyAreaBucket = isDistrictBucketLabel(vacantManager.areaName)
+    ? districtBucketKey(vacantManager.areaName)
+    : "";
+  const vacancyBucket = vacancyRegionBucket || vacancyAreaBucket;
+
+  if (!vacancyBucket) {
+    return false;
+  }
+
+  const rowBucket =
+    districtBucketKey(row.regionName) ||
+    districtBucketKey(row.areaName) ||
+    districtBucketKey(row.teamName);
+
+  return Boolean(rowBucket && rowBucket === vacancyBucket);
 }
 
 function rowKey(row: OrganogramRow) {
@@ -219,6 +336,15 @@ function isMarketingManager(row: OrganogramRow) {
   return titleText(row).includes("marketing manager");
 }
 
+function isSalesStructureRole(row: OrganogramRow) {
+  return (
+    isMedicalRep(row) ||
+    isDistrictSalesManager(row) ||
+    isRegionalSalesManager(row) ||
+    isNationalSalesManager(row)
+  );
+}
+
 function reportsUpTo(
   row: OrganogramRow,
   manager: OrganogramRow,
@@ -261,6 +387,47 @@ function reportsToManagerGroup(
   return row.type === "vacancy" && managerNameKey
     ? managerNameKeysForGroup.has(managerNameKey)
     : !managerHrId && managerNameKeysForGroup.has(managerNameKey);
+}
+
+function reportsToKnownManager(
+  row: OrganogramRow,
+  managerHrIds: Set<string>,
+  managerNameKeys: Set<string>,
+) {
+  const managerHrId = normalizeHrIdKey(row.managerHrId);
+  const managerNameKey = normalizeNameKey(row.managerName);
+
+  return (
+    Boolean(managerHrId && managerHrIds.has(managerHrId)) ||
+    Boolean(managerNameKey && managerNameKeys.has(managerNameKey))
+  );
+}
+
+function reportsToVacantManagerSlot(row: OrganogramRow, vacantManager: OrganogramRow) {
+  if (vacantManager.type !== "vacancy") {
+    return false;
+  }
+
+  if (!contextMatches(row.lineId, row.lineName, vacantManager.lineId, vacantManager.lineName)) {
+    return false;
+  }
+
+  if (
+    orgContextKey(vacantManager.teamId, vacantManager.teamName) &&
+    !contextMatches(row.teamId, row.teamName, vacantManager.teamId, vacantManager.teamName)
+  ) {
+    return false;
+  }
+
+  if (districtBucketMatches(row, vacantManager)) {
+    return true;
+  }
+
+  if (orgContextKey(vacantManager.areaId, vacantManager.areaName)) {
+    return contextMatches(row.areaId, row.areaName, vacantManager.areaId, vacantManager.areaName);
+  }
+
+  return textContextMatches(row.regionName, vacantManager.regionName);
 }
 
 function hierarchyMemberRank(row: OrganogramRow) {
@@ -425,11 +592,16 @@ function buildMemberTree(members: OrganogramRow[]) {
       .filter(([hrId]) => Boolean(hrId)),
   );
   const nodesByHrId = new Map<string, MemberNode[]>();
-  const nodes = members.map((member, index) => ({
-    children: [],
+  const nodes: MemberNode[] = members.map((member, index) => ({
+    children: [] as MemberNode[],
     key: `${rowKey(member)}-${index}`,
     row: member,
-  }) satisfies MemberNode);
+  }));
+  const vacantManagerNodes = nodes.filter(
+    (node) =>
+      node.row.type === "vacancy" &&
+      (isDistrictSalesManager(node.row) || isRegionalSalesManager(node.row)),
+  );
 
   for (const node of nodes) {
     const hrId = normalizeHrIdKey(node.row.hrId);
@@ -442,6 +614,16 @@ function buildMemberTree(members: OrganogramRow[]) {
     const member = node.row;
     const memberHrId = normalizeHrIdKey(member.hrId);
     const managerHrId = normalizeHrIdKey(member.managerHrId);
+    const canUseVacantManagerFallback =
+      !isChiefExecutive(member) &&
+      !isNationalSalesManager(member) &&
+      !isRegionalSalesManager(member) &&
+      !isDistrictSalesManager(member);
+    const vacantManagerNode = canUseVacantManagerFallback && !memberIds.has(managerHrId)
+      ? vacantManagerNodes.find((candidate) =>
+          candidate !== node && reportsToVacantManagerSlot(member, candidate.row),
+        )
+      : null;
 
     if (
       managerHrId &&
@@ -455,6 +637,8 @@ function buildMemberTree(members: OrganogramRow[]) {
       } else {
         roots.push(node);
       }
+    } else if (vacantManagerNode) {
+      vacantManagerNode.children.push(node);
     } else {
       roots.push(node);
     }
@@ -495,164 +679,85 @@ function TeamMemberNode({ node }: { node: MemberNode }) {
 function StructureKpiCard({
   breakdown,
   title,
+  tone = "medical",
 }: {
   breakdown: OrganogramKpiBreakdown;
   title: string;
   tone?: "medical" | "dsm" | "nsm" | "rsm" | "total";
 }) {
-  const isTotal = title.toLowerCase().includes("total");
-  const isMedicalRep = title.toLowerCase().includes("medical");
-  const isDsm = title.toLowerCase().includes("dsm");
-  const isNsm = title.toLowerCase().includes("nsm");
-  const isRsm = title.toLowerCase().includes("rsm");
-
-  const displayTitle = isNsm
-    ? "National Sales Managers"
-    : isDsm
-      ? "District Sales Managers"
-      : isRsm
-        ? "Regional Sales Managers"
-        : isMedicalRep
-          ? "Medical Sales Representatives"
-          : title;
+  const completion = breakdown.total > 0
+    ? Math.min(100, Math.round((breakdown.actual / breakdown.total) * 100))
+    : 0;
+  const displayTitle =
+    {
+      medical: "Medical Sales Representatives",
+      dsm: "District Sales Managers",
+      nsm: "National Sales Managers",
+      rsm: "Regional Sales Managers",
+      total: "Total Line Structure",
+    }[tone] ?? title;
+  const isTotal = tone === "total";
 
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 hover:shadow-xl",
+        "group relative overflow-hidden rounded-2xl border p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(15,23,42,0.11)]",
         isTotal
-          ? "border-slate-800 bg-slate-900 text-white shadow-2xl"
-          : "border-slate-200 bg-white shadow-sm",
+          ? "border-[#FDBA74]/80 bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF7ED_50%,#F8FAFC_100%)] ring-1 ring-[#F97316]/10"
+          : "border-[#E2E8F0] bg-white",
       )}
     >
-      {/* Premium Glass Effect Header */}
-      <div
-        className={cn(
-          "flex items-center justify-between px-4 py-2 border-b",
-          isTotal ? "border-white/10 bg-white/5" : "border-slate-100 bg-slate-50/50",
-        )}
-      >
-        <div className="flex items-center gap-2">
-          <div
-            className={cn(
-              "h-1.5 w-1.5 rounded-full animate-pulse",
-              isTotal
-                ? "bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.8)]"
-                : isMedicalRep
-                  ? "bg-blue-500"
-                  : isDsm
-                    ? "bg-purple-500"
-                    : "bg-orange-500",
-            )}
-          />
-          <p
-            className={cn(
-              "text-[9px] font-black uppercase tracking-[0.12em]",
-              isTotal ? "text-white" : "text-slate-600",
-            )}
-          >
+      <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-[#F97316]/10 blur-3xl" />
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-[#F97316] to-transparent" />
+
+      <div className="relative">
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="min-h-[32px] break-words text-[11px] font-black uppercase leading-4 tracking-[0.12em] text-slate-700">
             {displayTitle}
-          </p>
+          </h3>
+          <span className="shrink-0 rounded-full bg-[#F97316]/10 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-[#EA580C] ring-1 ring-[#FDBA74]/70">
+            {completion}%
+          </span>
         </div>
-        {isTotal && (
-          <div className="rounded-full bg-orange-500/20 px-2 py-0.5 text-[7px] font-bold text-orange-400 ring-1 ring-orange-500/30">
-            ENTERPRISE
-          </div>
-        )}
-      </div>
 
-      <div className="p-3 pt-4">
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <p
-              className={cn(
-                "text-[8px] font-bold uppercase tracking-[0.05em]",
-                isTotal ? "text-slate-400" : "text-slate-400",
-              )}
-            >
-              Headcount
+        <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-4">
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">
+              Actual / Total Structure
             </p>
-            <p
-              className={cn(
-                "text-3xl font-black tracking-tighter",
-                isTotal ? "text-white" : "text-slate-900",
-              )}
-            >
-              {breakdown.total}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <div className="flex items-center justify-end gap-1">
-                <p
-                  className={cn(
-                    "text-[8px] font-bold uppercase tracking-wider",
-                    isTotal ? "text-slate-400" : "text-slate-500",
-                  )}
-                >
-                  Actual
-                </p>
-                <div className={cn("h-1 w-1 rounded-full", isTotal ? "bg-emerald-400" : "bg-emerald-500")} />
-              </div>
-              <p
-                className={cn(
-                  "text-3xl font-black tracking-tighter leading-none mt-0.5",
-                  isTotal ? "text-emerald-400" : "text-slate-800",
-                )}
-              >
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-3xl font-black text-slate-950">
                 {breakdown.actual}
-              </p>
+              </span>
+              <span className="text-sm font-black text-slate-400">/</span>
+              <span className="text-xl font-black text-slate-500">
+                {breakdown.total}
+              </span>
             </div>
+          </div>
 
-            <div className="text-right">
-              <div className="flex items-center justify-end gap-1">
-                <p
-                  className={cn(
-                    "text-[8px] font-bold uppercase tracking-wider",
-                    isTotal ? "text-orange-400/80" : "text-orange-600",
-                  )}
-                >
-                  Vacants
-                </p>
-                <div className={cn("h-1 w-1 rounded-full", isTotal ? "bg-orange-400" : "bg-orange-500")} />
-              </div>
-              <p
-                className={cn(
-                  "text-3xl font-black tracking-tighter leading-none mt-0.5",
-                  isTotal ? "text-orange-400" : "text-orange-700",
-                )}
-              >
-                {breakdown.vacant}
-              </p>
-            </div>
+          <div className="rounded-xl border border-[#FDBA74]/55 bg-[#FFF7ED] px-3 py-2 text-right shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+            <p className="text-[9px] font-black uppercase tracking-[0.14em] text-[#EA580C]">
+              Vacant
+            </p>
+            <p className="mt-0.5 text-2xl font-black leading-none text-[#C2410C]">
+              {breakdown.vacant}
+            </p>
           </div>
         </div>
 
-        {/* Progress Bar Visualizer */}
         <div className="mt-4">
-          <div className={cn("h-1 w-full rounded-full overflow-hidden", isTotal ? "bg-white/10" : "bg-slate-100")}>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100 shadow-inner">
             <div
               className={cn(
-                "h-full rounded-full transition-all duration-1000 ease-out",
-                isTotal
-                  ? "bg-gradient-to-r from-orange-500 via-orange-400 to-amber-300"
-                  : isMedicalRep
-                    ? "bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-400"
-                    : isDsm
-                      ? "bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-400"
-                      : "bg-gradient-to-r from-slate-800 to-slate-600",
+                "h-full rounded-full bg-gradient-to-r from-[#F97316] to-[#FDBA74] transition-all duration-700 ease-out",
               )}
-              style={{ width: `${(breakdown.actual / (breakdown.total || 1)) * 100}%` }}
+              style={{ width: `${completion}%` }}
             />
           </div>
-          <div className="mt-1.5 flex justify-end">
-            <span className={cn(
-              "text-[9px] font-black tracking-widest",
-              isTotal ? "text-orange-400" : "text-slate-600"
-            )}>
-              {Math.round((breakdown.actual / (breakdown.total || 1)) * 100)}%
-            </span>
+          <div className="mt-2 flex items-center justify-between text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">
+            <span>Completion</span>
+            <span className="text-[#EA580C]">{completion}%</span>
           </div>
         </div>
       </div>
@@ -695,7 +800,7 @@ function OrganogramView({
       !isDistrictSalesManager(row),
   );
   const assignedToManager = new Set<string>();
-  const rsmGroups = groupBy(rsmRows, managerIdentityKey).map(([, rsms]) => {
+  const rsmGroups: ManagerLane[] = groupBy(rsmRows, managerIdentityKey).map(([, rsms]) => {
     const primaryRsm = [...rsms].sort((left, right) =>
       left.fullName.localeCompare(right.fullName),
     )[0];
@@ -704,35 +809,82 @@ function OrganogramView({
     const dsmsUnderRsm = dsmRows.filter((row) =>
       reportsToManagerGroup(row, rsmHrIdsForGroup, rsmNameKeysForGroup),
     );
-    const dsmHrIdsForGroup = new Set(dsmsUnderRsm.map((row) => normalizeHrIdKey(row.hrId)));
-    const dsmNameKeysForGroup = new Set(dsmsUnderRsm.map((row) => normalizeNameKey(row.fullName)));
-    const members = [
-      ...dsmsUnderRsm,
-      ...teamRows.filter((row) =>
-        reportsToManagerGroup(row, rsmHrIdsForGroup, rsmNameKeysForGroup) ||
-        reportsToManagerGroup(row, dsmHrIdsForGroup, dsmNameKeysForGroup) ||
-        rsms.some((rsm) => reportsUpTo(row, rsm, rows)),
-      ),
-    ].sort(sortHierarchyMembers);
+    const childLanes: ManagerLane[] = groupBy(dsmsUnderRsm, managerIdentityKey)
+      .map(([, dsms]) => {
+        const primaryDsm = [...dsms].sort((left, right) =>
+          left.fullName.localeCompare(right.fullName),
+        )[0];
+        const dsmHrIdsForGroup = new Set(dsms.map((row) => normalizeHrIdKey(row.hrId)));
+        const dsmNameKeysForGroup = new Set(dsms.map((row) => normalizeNameKey(row.fullName)));
+        const members = teamRows
+          .filter((row) => {
+            if (assignedToManager.has(rowKey(row))) {
+              return false;
+            }
 
-    for (const dsm of dsmsUnderRsm) {
-      assignedToManager.add(rowKey(dsm));
-    }
+            if (reportsToManagerGroup(row, dsmHrIdsForGroup, dsmNameKeysForGroup)) {
+              return true;
+            }
+
+            return (
+              isMedicalRep(row) &&
+              !reportsToKnownManager(row, dsmHrIds, dsmNameKeys) &&
+              !reportsToKnownManager(row, rsmHrIds, rsmNameKeys) &&
+              reportsToVacantManagerSlot(row, primaryDsm)
+            );
+          })
+          .sort(sortHierarchyMembers);
+
+        for (const dsm of dsms) {
+          assignedToManager.add(rowKey(dsm));
+        }
+        for (const member of members) {
+          assignedToManager.add(rowKey(member));
+        }
+
+        return {
+          dsm: primaryDsm,
+          hireDate: primaryDsm.hireDate,
+          hrId: primaryDsm.hrId,
+          level: "dsm",
+          members,
+          name: primaryDsm.fullName,
+          region: primaryDsm.regionName ?? primaryDsm.areaName,
+          reportsTo: primaryDsm.managerName ?? primaryRsm.fullName,
+          title: primaryDsm.positionTitle ?? primaryDsm.jobTitle ?? "District Sales Manager",
+        };
+      });
+    const childDsmHrIds = new Set(dsmsUnderRsm.map((row) => normalizeHrIdKey(row.hrId)));
+    const childDsmNameKeys = new Set(dsmsUnderRsm.map((row) => normalizeNameKey(row.fullName)));
+    const members = teamRows
+      .filter((row) =>
+        !assignedToManager.has(rowKey(row)) &&
+        !reportsToKnownManager(row, childDsmHrIds, childDsmNameKeys) &&
+        (
+          reportsToManagerGroup(row, rsmHrIdsForGroup, rsmNameKeysForGroup) ||
+          rsms.some((rsm) => reportsUpTo(row, rsm, rows))
+        ),
+      )
+      .sort(sortHierarchyMembers);
+
     for (const member of members) {
       assignedToManager.add(rowKey(member));
     }
 
     return {
+      childLanes,
       dsm: primaryRsm,
       hireDate: primaryRsm.hireDate,
       hrId: primaryRsm.hrId,
+      level: "rsm",
       members,
       name: primaryRsm.fullName,
       region: primaryRsm.regionName,
+      reportsTo: primaryRsm.managerName ?? lineLeader?.fullName ?? null,
       title: primaryRsm.positionTitle ?? primaryRsm.jobTitle ?? "Regional Sales Manager",
     };
   });
-  const dsmGroups = groupBy(
+  const dsmGroups: ManagerLane[] = groupBy(
     dsmRows.filter((row) => !assignedToManager.has(rowKey(row))),
     managerIdentityKey,
   ).map(([, dsms]) => {
@@ -742,10 +894,22 @@ function OrganogramView({
     const dsmHrIdsForGroup = new Set(dsms.map((row) => normalizeHrIdKey(row.hrId)));
     const dsmNameKeysForGroup = new Set(dsms.map((row) => normalizeNameKey(row.fullName)));
     const members = teamRows
-      .filter((row) =>
-        !assignedToManager.has(rowKey(row)) &&
-        reportsToManagerGroup(row, dsmHrIdsForGroup, dsmNameKeysForGroup),
-      )
+      .filter((row) => {
+        if (assignedToManager.has(rowKey(row))) {
+          return false;
+        }
+
+        if (reportsToManagerGroup(row, dsmHrIdsForGroup, dsmNameKeysForGroup)) {
+          return true;
+        }
+
+        return (
+          isDistrictSalesManager(primaryDsm) &&
+          !reportsToKnownManager(row, dsmHrIds, dsmNameKeys) &&
+          !reportsToKnownManager(row, rsmHrIds, rsmNameKeys) &&
+          reportsToVacantManagerSlot(row, primaryDsm)
+        );
+      })
       .sort(sortHierarchyMembers);
 
     for (const member of members) {
@@ -756,16 +920,18 @@ function OrganogramView({
       dsm: primaryDsm,
       hireDate: primaryDsm.hireDate,
       hrId: primaryDsm.hrId,
+      level: "dsm",
       members,
       name: primaryDsm.fullName,
-      region: primaryDsm.regionName,
+      region: primaryDsm.regionName ?? primaryDsm.areaName,
+      reportsTo: primaryDsm.managerName ?? lineLeader?.fullName ?? null,
       title: primaryDsm.positionTitle ?? primaryDsm.jobTitle ?? "District Sales Manager",
     };
   });
   const marketingManagers = teamRows
     .filter((row) => !assignedToManager.has(rowKey(row)) && isMarketingManager(row))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
-  const marketingGroups = groupBy(marketingManagers, managerIdentityKey).map(([, managers]) => {
+  const marketingGroups: ManagerLane[] = groupBy(marketingManagers, managerIdentityKey).map(([, managers]) => {
     const primaryManager = [...managers].sort((left, right) =>
       left.fullName.localeCompare(right.fullName),
     )[0];
@@ -785,13 +951,15 @@ function OrganogramView({
       dsm: null,
       hireDate: primaryManager.hireDate,
       hrId: primaryManager.hrId,
+      level: "manager",
       members,
       name: primaryManager.fullName,
       region: primaryManager.regionName,
+      reportsTo: primaryManager.managerName ?? null,
       title: primaryManager.positionTitle ?? primaryManager.jobTitle ?? "Marketing Manager",
-    };
+    } satisfies ManagerLane;
   });
-  const fallbackManagerGroups = groupBy(
+  const fallbackManagerGroups: ManagerLane[] = groupBy(
     teamRows.filter((row) => {
       const key = rowKey(row);
       const managerNameKey = normalizeNameKey(row.managerName);
@@ -836,38 +1004,46 @@ function OrganogramView({
       dsm: null,
       hireDate: firstMember?.hireDate,
       hrId: firstMember?.managerHrId,
+      level: "manager",
       members,
       name,
       region: firstMember?.regionName,
+      reportsTo: firstMember?.managerName ?? null,
       title: "Manager",
-    };
+    } satisfies ManagerLane;
   });
   const unassignedMembers = teamRows.filter((row) => {
     const key = rowKey(row);
 
     return !assignedToManager.has(key) && !row.managerHrId;
   });
-  const groups = [
+  const unassignedGroup: ManagerLane | null = unassignedMembers.length > 0
+    ? {
+        dsm: null,
+        hireDate: null,
+        hrId: null,
+        level: "manager",
+        members: unassignedMembers,
+        name: "Unassigned Manager",
+        region: null,
+        reportsTo: null,
+        title: "Manager",
+      }
+    : null;
+  const groups: ManagerLane[] = [
     ...rsmGroups,
     ...dsmGroups,
     ...marketingGroups,
     ...fallbackManagerGroups,
-    ...(unassignedMembers.length > 0
-      ? [
-          {
-            dsm: null,
-            hireDate: null,
-            hrId: null,
-            members: unassignedMembers,
-            name: "Unassigned Manager",
-            region: null,
-            title: "Manager",
-          },
-        ]
-      : []),
+    ...(unassignedGroup ? [unassignedGroup] : []),
   ].filter((group) => group.members.length > 0 || group.dsm);
   const filledLaneCount = groups.filter((group) => group.members.length > 0).length;
-  const laneCount = Math.max(groups.length, 1);
+  const laneSpanForGroup = (group: ManagerLane) =>
+    group.level === "rsm" ? Math.max(group.childLanes?.length ?? 0, 1) : 1;
+  const laneCount = Math.max(
+    groups.reduce((total, group) => total + laneSpanForGroup(group), 0),
+    1,
+  );
   const structureKpis = React.useMemo(
     () => calculateOrganogramStructureKpis(rows),
     [rows],
@@ -875,6 +1051,111 @@ function OrganogramView({
 
   const displayedEmployees = rows.filter((row) => row.type === "employee");
   const displayedVacancies = rows.filter((row) => row.type === "vacancy");
+  const vacancyCountForLane = (group: ManagerLane): number => {
+    const managerVacancy = group.dsm?.type === "vacancy" ? 1 : 0;
+    const directVacancies = group.members.filter((member) => member.type === "vacancy").length;
+    const childVacancies = (group.childLanes ?? []).reduce(
+      (total, child) => total + vacancyCountForLane(child),
+      0,
+    );
+
+    return managerVacancy + directVacancies + childVacancies;
+  };
+  const renderManagerLane = (
+    group: ManagerLane,
+    groupKey: string,
+    compact = false,
+  ) => {
+    const isRsmLane = group.level === "rsm";
+    const groupVacancies = vacancyCountForLane(group);
+
+    return (
+      <div
+        className={cn(
+          "group relative min-w-[250px] rounded-xl border bg-white p-2 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md",
+          isRsmLane ? "border-[#FDBA74]/80 ring-1 ring-[#F97316]/15" : "border-slate-200",
+          compact ? "min-w-0" : null,
+        )}
+        key={groupKey}
+      >
+        <div className="absolute -top-5 left-1/2 h-5 w-px -translate-x-1/2 bg-slate-200" />
+        <div
+          className={cn(
+            "absolute left-3 right-3 top-0 h-1 rounded-b-full",
+            isRsmLane
+              ? "bg-gradient-to-r from-[#F97316] via-[#FDBA74] to-[#F97316]"
+              : "bg-[#F97316]",
+          )}
+        />
+        <div
+          className={cn(
+            "rounded-xl px-2 py-2 text-white shadow-md",
+            isRsmLane
+              ? "bg-[linear-gradient(135deg,#0F172A_0%,#1E293B_62%,#431407_100%)] ring-1 ring-[#FDBA74]/25"
+              : "bg-slate-900",
+          )}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="w-full min-w-0 text-left">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-[10px] font-bold uppercase leading-3 tracking-[0.08em]">
+                  {group.name}
+                </span>
+                {group.hrId && (
+                  <span className="shrink-0 font-mono text-[9px] font-medium opacity-60">
+                    {group.hrId}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 break-words text-[9px] font-medium leading-3 opacity-80">
+                {group.title}
+              </p>
+              {group.hireDate && (
+                <p className="mt-1 text-[9px] font-medium opacity-70">
+                  Hired {formatDate(group.hireDate)}
+                </p>
+              )}
+              {isRsmLane && group.reportsTo ? (
+                <p className="mt-1 break-words text-[9px] font-semibold text-[#FDBA74] opacity-90">
+                  Reports to NSM: {group.reportsTo}
+                </p>
+              ) : null}
+              {group.region && (
+                <p className="mt-1 break-words text-[9px] font-bold text-[#FDBA74] opacity-90">
+                  {group.region}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-2 flex items-center justify-between gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[9px] text-[#64748B]">
+          <span className="truncate font-medium">
+            {group.members.length} {isRsmLane ? "direct rows" : "team rows"}
+          </span>
+          {groupVacancies > 0 ? (
+            <span className="shrink-0 font-bold uppercase tracking-[0.06em] text-primary">
+              {groupVacancies} vacant
+            </span>
+          ) : (
+            <span className="shrink-0">No vacancies</span>
+          )}
+        </div>
+
+        <div className="mt-2 space-y-1.5">
+          {group.members.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-text-secondary">
+              No team rows under this manager.
+            </div>
+          ) : (
+            buildMemberTree(group.members).map((node) => (
+              <TeamMemberNode key={node.key} node={node} />
+            ))
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <Card className={cn(panelClassName, "overflow-hidden p-0")}>
@@ -976,78 +1257,58 @@ function OrganogramView({
                   }}
                 >
                   {groups.map((group, groupIndex) => {
-                    const groupVacancies = group.members.filter(
-                      (member) => member.type === "vacancy",
-                    ).length;
                     const groupKey = group.dsm
                       ? `manager-${rowKey(group.dsm)}-${groupIndex}`
                       : `manager-${group.name}-${group.title}-${groupIndex}`;
+                    const childLanes = group.childLanes ?? [];
 
-                    return (
-                      <div
-                        className="group relative min-w-[250px] rounded-xl border border-slate-200 bg-white p-2 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md"
-                        key={groupKey}
-                      >
-                        <div className="absolute -top-5 left-1/2 h-5 w-px -translate-x-1/2 bg-slate-200" />
-                        <div className="absolute left-3 right-3 top-0 h-1 rounded-b-full bg-[#F97316]" />
+                    if (group.level === "rsm" && childLanes.length > 0) {
+                      return (
                         <div
-                          className={cn(
-                            "rounded-xl bg-slate-900 px-2 py-2 text-white shadow-md",
-                          )}
+                          className="relative min-w-[250px] rounded-2xl border border-[#FDBA74]/70 bg-white/80 p-3 shadow-sm ring-1 ring-[#F97316]/10"
+                          key={groupKey}
+                          style={{
+                            gridColumn: `span ${Math.max(childLanes.length, 1)}`,
+                          }}
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="w-full min-w-0 text-left">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="truncate text-[10px] font-bold uppercase tracking-[0.08em] leading-3">
-                                  {group.name}
-                                </span>
-                                {group.hrId && (
-                                  <span className="shrink-0 font-mono text-[9px] font-medium opacity-60">
-                                    {group.hrId}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="mt-1 break-words text-[9px] font-medium leading-3 opacity-80">
-                                {group.title}
-                              </p>
-                              {group.hireDate && (
-                                <p className="mt-1 text-[9px] font-medium opacity-70">
-                                  Hired {formatDate(group.hireDate)}
-                                </p>
-                              )}
-                              {group.region && (
-                                <p className="mt-1 break-words text-[9px] font-bold text-[#FDBA74] opacity-90">
-                                  {group.region}
-                                </p>
-                              )}
-                            </div>
+                          <div className="mx-auto max-w-[320px]">
+                            {renderManagerLane(group, `${groupKey}-rsm`, true)}
                           </div>
-                        </div>
-
-                        <div className="mt-2 flex items-center justify-between gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[9px] text-[#64748B]">
-                          <span className="truncate font-medium">{group.members.length} team rows</span>
-                          {groupVacancies > 0 ? (
-                            <span className="shrink-0 font-bold uppercase tracking-[0.06em] text-primary">
-                              {groupVacancies} vacant
-                            </span>
-                          ) : (
-                            <span className="shrink-0">No vacancies</span>
-                          )}
-                        </div>
-
-                        <div className="mt-2 space-y-1.5">
-                          {group.members.length === 0 ? (
-                            <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-text-secondary">
-                              No team rows under this manager.
+                          <div className="mx-auto h-5 w-px bg-slate-200" />
+                          <div className="relative h-px bg-slate-200">
+                            <span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#F97316]" />
+                          </div>
+                          <div
+                            className="grid gap-3 pt-5"
+                            style={{
+                              gridTemplateColumns: `repeat(${childLanes.length}, minmax(250px, 1fr))`,
+                            }}
+                          >
+                            {childLanes.map((child, childIndex) =>
+                              renderManagerLane(
+                                child,
+                                `${groupKey}-dsm-${child.dsm ? rowKey(child.dsm) : child.name}-${childIndex}`,
+                                true,
+                              ),
+                            )}
+                          </div>
+                          {group.members.length > 0 ? (
+                            <div className="mt-3 rounded-xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-2">
+                              <p className="mb-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">
+                                Direct RSM rows
+                              </p>
+                              <div className="space-y-1.5">
+                                {buildMemberTree(group.members).map((node) => (
+                                  <TeamMemberNode key={node.key} node={node} />
+                                ))}
+                              </div>
                             </div>
-                          ) : (
-                            buildMemberTree(group.members).map((node) => (
-                              <TeamMemberNode key={node.key} node={node} />
-                            ))
-                          )}
+                          ) : null}
                         </div>
-                      </div>
-                    );
+                      );
+                    }
+
+                    return renderManagerLane(group, groupKey);
                   })}
                 </div>
               </div>
@@ -1130,7 +1391,7 @@ export function OrganogramReport({
           isOfficeSelected
             ? row.lineName === effectiveLineFilter
             : row.lineName === effectiveLineFilter &&
-              (isVacancyRow(row) || isSalesDepartment(row)),
+              (isVacancyRow(row) || isSalesDepartment(row) || isSalesStructureRole(row)),
         )
       : rows;
 
@@ -1207,7 +1468,7 @@ export function OrganogramReport({
         (isOfficeSelected
           ? row.lineName === effectiveLineFilter || officeDescendantHrIdsToKeep.has(row.hrId)
           : row.lineName === effectiveLineFilter &&
-            (isVacancyRow(row) || isSalesDepartment(row)));
+            (isVacancyRow(row) || isSalesDepartment(row) || isSalesStructureRole(row)));
 
       if (keepLeadershipChain) {
         return true;

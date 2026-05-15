@@ -105,6 +105,22 @@ const numericImportFields: EmployeeImportField[] = [
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
+function isManagerialTitle(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return false;
+
+  return (
+    normalized.includes("manager") ||
+    normalized.includes("director") ||
+    normalized.includes("head") ||
+    normalized.includes("lead") ||
+    normalized.includes("supervisor") ||
+    normalized.includes("chief") ||
+    normalized.includes("ceo") ||
+    /\b(nsm|rsm|dsm)\b/.test(normalized)
+  );
+}
+
 function detectColumns(rows: RawEmployeeImportRow[]) {
   const columnLookup = createEmployeeColumnLookup();
   const mapping: HeaderMapping = new Map();
@@ -871,6 +887,13 @@ export function validateEmployeeImportRows(
       record.rowType === "employee" && record.hrId ? [record.hrId] : [],
     ),
   );
+  const fileEmployeesByHrId = new Map(
+    records.flatMap((record) =>
+      record.rowType === "employee" && record.hrId
+        ? [[record.hrId, record] as const]
+        : [],
+    ),
+  );
   const databaseManagerHrIds = options.existingState?.managerHrIds ?? new Set<string>();
 
   for (const record of records) {
@@ -884,6 +907,19 @@ export function validateEmployeeImportRows(
         field: "managerHrId",
         code: "manager_hr_id_not_found",
         message: `Manager HR_ID ${record.managerHrId} was not found in the file or provided database snapshot.`,
+      });
+    }
+
+    const fileManagerRecord = record.managerHrId ? fileEmployeesByHrId.get(record.managerHrId) : null;
+    if (
+      fileManagerRecord &&
+      !isManagerialTitle(`${fileManagerRecord.positionTitle ?? ""} ${fileManagerRecord.jobTitle ?? ""}`)
+    ) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "managerHrId",
+        code: "manager_hr_id_not_manager_level",
+        message: `Manager HR_ID ${record.managerHrId} is present in the uploaded file but its title is not manager-level.`,
       });
     }
   }

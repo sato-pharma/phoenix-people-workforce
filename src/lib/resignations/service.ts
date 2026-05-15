@@ -971,9 +971,11 @@ async function createResignationForEmployee(
   return resignationId;
 }
 
-function vacancyCodeFromEmployee(hrId: string) {
+function vacancyCodeFromEmployee() {
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
-  return `resignation_${hrId}_${stamp}`;
+  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+
+  return `resignation_vac_${stamp}_${suffix}`;
 }
 
 export async function resignEmployeeAndOpenVacancy(
@@ -998,7 +1000,7 @@ export async function resignEmployeeAndOpenVacancy(
   const employeeStatus = normalizeEmployeeExitStatus(input.employeeStatus);
   const directoryForActor = await getEmployeeDirectory();
   const submittedByHrId = resolveSubmittedByHrId(actor, directoryForActor);
-  const vacancyCode = vacancyCodeFromEmployee(employeeHrId);
+  const vacancyCode = vacancyCodeFromEmployee();
 
   if (effectiveDate < submittedDate) {
     throw new Error("Effective resignation date cannot be before the submitted date.");

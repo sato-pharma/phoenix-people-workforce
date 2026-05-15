@@ -25,6 +25,35 @@ function isActiveManager(row: {
   );
 }
 
+function isManagerialTitle(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return false;
+
+  return (
+    normalized.includes("manager") ||
+    normalized.includes("director") ||
+    normalized.includes("head") ||
+    normalized.includes("lead") ||
+    normalized.includes("supervisor") ||
+    normalized.includes("chief") ||
+    normalized.includes("ceo") ||
+    /\b(nsm|rsm|dsm)\b/.test(normalized)
+  );
+}
+
+async function loadPositionTitleMap(supabase: SupabaseClient) {
+  const { data, error } = await supabase.from("positions").select("id,title");
+
+  if (error) {
+    return new Map<number, string>();
+  }
+
+  return new Map(
+    ((data ?? []) as Array<{ id: number | null; title: string | null }>)
+      .flatMap((row) => row.id && row.title ? [[row.id, row.title] as const] : []),
+  );
+}
+
 async function loadCodeSet(supabase: SupabaseClient, table: string) {
   const { data, error } = await supabase.from(table).select("code");
   if (error) {
@@ -83,18 +112,18 @@ async function loadActiveDepartments(supabase: SupabaseClient) {
 async function loadEmployeeState(supabase: SupabaseClient) {
   let result = await supabase
     .from("employees")
-    .select("hr_id,crm_id,employment_status,organogram_visible,payroll_eligible");
+    .select("hr_id,crm_id,employment_status,organogram_visible,payroll_eligible,job_title,position_id");
 
   if (
     result.error &&
     (result.error.message.toLowerCase().includes("organogram_visible") ||
       result.error.message.toLowerCase().includes("payroll_eligible"))
   ) {
-    result = await supabase.from("employees").select("hr_id,crm_id,employment_status");
+    result = await supabase.from("employees").select("hr_id,crm_id,employment_status,job_title,position_id");
   }
 
   if (result.error && result.error.message.toLowerCase().includes("crm_id")) {
-    result = await supabase.from("employees").select("hr_id,employment_status");
+    result = await supabase.from("employees").select("hr_id,employment_status,job_title,position_id");
   }
 
   if (result.error) {
@@ -105,10 +134,13 @@ async function loadEmployeeState(supabase: SupabaseClient) {
     crm_id?: string | null;
     employment_status?: string | null;
     hr_id: string | null;
+    job_title?: string | null;
     organogram_visible?: boolean | null;
     payroll_eligible?: boolean | null;
+    position_id?: number | null;
   }>;
   const crmIdToHrId = new Map<string, string>();
+  const positionTitleById = await loadPositionTitleMap(supabase);
 
   for (const row of rows) {
     const crmId = String(row.crm_id ?? "").trim().toLowerCase();
@@ -126,7 +158,11 @@ async function loadEmployeeState(supabase: SupabaseClient) {
     ),
     managerHrIds: new Set(
       rows.flatMap((row) =>
-        row.hr_id && isActiveManager(row) ? [String(row.hr_id).trim().toUpperCase()] : [],
+        row.hr_id &&
+        isActiveManager(row) &&
+        isManagerialTitle(`${positionTitleById.get(Number(row.position_id)) ?? ""} ${row.job_title ?? ""}`)
+          ? [String(row.hr_id).trim().toUpperCase()]
+          : [],
       ),
     ),
     terminalEmployeeHrIds: new Set(
