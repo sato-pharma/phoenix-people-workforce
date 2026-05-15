@@ -1,5 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
+import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
 import { getPayrollDashboard } from "@/lib/payroll/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -127,7 +128,7 @@ function buildDataHealth(
   const activeEmployees = employees.filter((employee) =>
     String(employee.employmentStatus ?? "").trim().toLowerCase() !== "inactive"
   );
-  const missingManager = activeEmployees.filter((employee) => !employee.managerHrId).length;
+  const missingManager = activeEmployees.filter(isMissingRequiredManager).length;
   const missingJobTitle = activeEmployees.filter((employee) => !employee.jobTitle && !employee.positionTitle).length;
   const healthyEmployees = Math.max(0, activeEmployees.length - missingManager - missingJobTitle);
   const employeeHealthRate = activeEmployees.length > 0 ? (healthyEmployees / activeEmployees.length) * 100 : 100;
