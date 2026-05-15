@@ -1,4 +1,5 @@
 import type { EmployeeDirectoryData, EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const phoenixRoles = [
@@ -813,7 +814,7 @@ export function filterEmployeeDirectoryForAccess(
       activeEmployees: employees.filter((employee) =>
         ["active", "on_leave"].includes(String(employee.employmentStatus ?? "active").toLowerCase()),
       ).length,
-      employeesWithoutManagers: employees.filter((employee) => !employee.managerHrId).length,
+      employeesWithoutManagers: employees.filter(isMissingRequiredManager).length,
       totalEmployees: employees.length,
       uniqueAreas: new Set(employees.map((employee) => employee.areaName).filter(Boolean)).size,
       uniqueLines: new Set(employees.map((employee) => employee.lineName).filter(Boolean)).size,

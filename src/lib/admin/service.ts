@@ -12,6 +12,7 @@ import {
   type SalesOwnershipVacancySignal,
 } from "@/lib/workforce-classification";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { isManagerOptionalHrId } from "@/lib/employees/hierarchy-governance";
 
 export type PhoenixAdminStats = {
   totalEmployees: number;
@@ -535,7 +536,7 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
       else if (!hasAuthUser) healthStatus = "missing_auth_user";
       else healthStatus = "missing_access_profile";
       reason = "Active employee is eligible for login but is missing auth and/or access profile coverage.";
-    } else if (!managerHrId) {
+    } else if (!managerHrId && !isManagerOptionalHrId(hrId)) {
       healthStatus = "missing_manager";
       reason = "Active employee is missing manager_hr_id.";
     } else if (normalizedManagerHrId && !employeeByHrId.has(normalizedManagerHrId)) {

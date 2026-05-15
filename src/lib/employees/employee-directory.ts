@@ -7,6 +7,7 @@ import { googleGeocodeAddress } from "@/lib/google-maps/server";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { generateNextHrIdForLine } from "./hr-id-helper";
+import { isMissingRequiredManager } from "./hierarchy-governance";
 
 const hrIdPattern = /^[A-Z0-9][A-Z0-9_-]*$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -801,7 +802,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       },
       summary: {
         activeEmployees: activeEmployees.length,
-        employeesWithoutManagers: activeEmployees.filter((employee) => !employee.managerHrId).length,
+        employeesWithoutManagers: activeEmployees.filter(isMissingRequiredManager).length,
         totalEmployees: activeEmployees.length,
         uniqueAreas: new Set(activeEmployees.map((employee) => employee.areaId).filter(Boolean)).size,
         uniqueLines: new Set(activeEmployees.map((employee) => employee.lineId).filter(Boolean)).size,
@@ -943,7 +944,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       },
       summary: {
         activeEmployees: activeEmployees.length,
-        employeesWithoutManagers: activeEmployees.filter((employee) => !employee.managerHrId).length,
+        employeesWithoutManagers: activeEmployees.filter(isMissingRequiredManager).length,
         totalEmployees: activeEmployees.length,
         uniqueAreas: new Set(activeEmployees.map((employee) => employee.areaId).filter(Boolean)).size,
         uniqueLines: new Set(activeEmployees.map((employee) => employee.lineId).filter(Boolean)).size,
@@ -1051,9 +1052,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     },
     summary: {
       activeEmployees: activeEmployees.length,
-      employeesWithoutManagers: activeEmployees.filter(
-        (employee) => !employee.managerHrId,
-      ).length,
+      employeesWithoutManagers: activeEmployees.filter(isMissingRequiredManager).length,
       totalEmployees: activeEmployees.length,
       uniqueAreas: new Set(activeEmployees.map((employee) => employee.areaId).filter(Boolean)).size,
       uniqueLines: new Set(activeEmployees.map((employee) => employee.lineId).filter(Boolean)).size,
