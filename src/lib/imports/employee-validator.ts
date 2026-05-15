@@ -43,20 +43,33 @@ const fieldPriority: EmployeeImportField[] = [
   "crmUsername",
   "fullName",
   "nameAr",
+  "nationalId",
+  "gender",
   "workEmail",
   "mobileNumber",
   "jobTitle",
   "hireDate",
   "birthDate",
   "education",
+  "employmentStatus",
+  "payrollEligible",
+  "organogramVisible",
   "managerHrId",
   "managerName",
+  "contractType",
+  "hasBankAccount",
+  "bankName",
+  "bankAccount",
+  "socialInsuranceStatus",
+  "socialInsuranceNumber",
+  "medicalInsuranceStatus",
+  "medicalInsuranceNumber",
+  "basicSalary",
+  "baseSalary",
   "netSalary",
   "socialInsurance",
   "taxes",
   "medicalInsurance",
-  "comprehensiveWage",
-  "subscriptionWage",
   "fuelAllowance",
   "extraCostOfLiving",
   "grossSalary",
@@ -67,7 +80,30 @@ const fieldPriority: EmployeeImportField[] = [
   "area",
   "team",
   "position",
+  "residenceAddress",
+  "residenceCity",
+  "residenceArea",
 ];
+
+const activeImportStatuses = new Set(["", "active", "on_leave"]);
+const genderValues = new Set(["male", "female", "other", "not specified", "prefer not to say"]);
+const contractValues = new Set(["permanent", "fixed-term", "fixed term", "temporary", "consultant", "internship", "not specified"]);
+const paymentModeValues = new Set(["two_parts", "one_part", "two parts", "one part"]);
+const yesNoValues = new Set(["yes", "no"]);
+const enrollmentStatusValues = new Set(["yes", "no", "pending"]);
+const numericImportFields: EmployeeImportField[] = [
+  "basicSalary",
+  "baseSalary",
+  "netSalary",
+  "socialInsurance",
+  "taxes",
+  "medicalInsurance",
+  "fuelAllowance",
+  "extraCostOfLiving",
+  "grossSalary",
+];
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
 function detectColumns(rows: RawEmployeeImportRow[]) {
   const columnLookup = createEmployeeColumnLookup();
@@ -142,18 +178,30 @@ function buildRecord(
     crmUsername: normalizeTextValue(valueFor(row, mapping, "crmUsername")),
     fullName: normalizeTextValue(valueFor(row, mapping, "fullName")),
     nameAr: normalizeTextValue(valueFor(row, mapping, "nameAr")),
+    nationalId: normalizeTextValue(valueFor(row, mapping, "nationalId")),
+    gender: normalizeTextValue(valueFor(row, mapping, "gender"))?.toLowerCase() ?? null,
     workEmail: normalizeEmail(valueFor(row, mapping, "workEmail")),
     mobileNumber: normalizeTextValue(valueFor(row, mapping, "mobileNumber")),
     jobTitle,
     hireDate: normalizeDateValue(valueFor(row, mapping, "hireDate")),
     birthDate: normalizeDateValue(valueFor(row, mapping, "birthDate")),
     education: normalizeTextValue(valueFor(row, mapping, "education")),
+    employmentStatus: normalizeTextValue(valueFor(row, mapping, "employmentStatus"))?.toLowerCase() ?? null,
+    payrollEligible: normalizeTextValue(valueFor(row, mapping, "payrollEligible")),
+    organogramVisible: normalizeTextValue(valueFor(row, mapping, "organogramVisible")),
     managerHrId: normalizeHrId(valueFor(row, mapping, "managerHrId")),
     managerName: normalizeTextValue(valueFor(row, mapping, "managerName")),
+    contractType: normalizeTextValue(valueFor(row, mapping, "contractType"))?.toLowerCase() ?? null,
+    hasBankAccount: normalizeTextValue(valueFor(row, mapping, "hasBankAccount"))?.toLowerCase() ?? null,
+    bankName: normalizeTextValue(valueFor(row, mapping, "bankName")),
+    bankAccount: normalizeTextValue(valueFor(row, mapping, "bankAccount")),
+    socialInsuranceStatus: normalizeTextValue(valueFor(row, mapping, "socialInsuranceStatus"))?.toLowerCase() ?? null,
+    socialInsuranceNumber: normalizeTextValue(valueFor(row, mapping, "socialInsuranceNumber")),
+    medicalInsuranceStatus: normalizeTextValue(valueFor(row, mapping, "medicalInsuranceStatus"))?.toLowerCase() ?? null,
+    medicalInsuranceNumber: normalizeTextValue(valueFor(row, mapping, "medicalInsuranceNumber")),
     compensation: {
-      comprehensiveWage: normalizeNumberValue(
-        valueFor(row, mapping, "comprehensiveWage"),
-      ),
+      basicSalary: normalizeNumberValue(valueFor(row, mapping, "basicSalary")),
+      baseSalary: normalizeNumberValue(valueFor(row, mapping, "baseSalary")),
       extraCostOfLiving: normalizeNumberValue(
         valueFor(row, mapping, "extraCostOfLiving"),
       ),
@@ -165,12 +213,9 @@ function buildRecord(
         valueFor(row, mapping, "medicalInsurance"),
       ),
       netSalary: normalizeNumberValue(valueFor(row, mapping, "netSalary")),
-      paymentMode: normalizeTextValue(valueFor(row, mapping, "paymentMode")),
+      paymentMode: normalizeTextValue(valueFor(row, mapping, "paymentMode"))?.toLowerCase() ?? null,
       socialInsurance: normalizeNumberValue(
         valueFor(row, mapping, "socialInsurance"),
-      ),
-      subscriptionWage: normalizeNumberValue(
-        valueFor(row, mapping, "subscriptionWage"),
       ),
       taxes: normalizeNumberValue(valueFor(row, mapping, "taxes")),
     },
@@ -180,6 +225,9 @@ function buildRecord(
     areaName: organization.area.displayName,
     teamName: organization.team.displayName,
     positionTitle: organization.position.displayName,
+    residenceAddress: normalizeTextValue(valueFor(row, mapping, "residenceAddress")),
+    residenceCity: normalizeTextValue(valueFor(row, mapping, "residenceCity")),
+    residenceArea: normalizeTextValue(valueFor(row, mapping, "residenceArea")),
     normalizedOrganizationNames: {
       department: organization.department.normalizedName,
       line: organization.line.normalizedName,
@@ -267,21 +315,8 @@ function collectOrganizationEntities(
   }
 
   for (const record of records) {
-    if (record.departmentName && record.codes.departmentCode) {
-      addEntity(
-        {
-          type: "department",
-          code: record.codes.departmentCode,
-          name: record.departmentName,
-          normalizedName:
-            record.normalizedOrganizationNames.department ??
-            record.codes.departmentCode,
-          rawValuesMerged: [],
-        },
-        record.rawOrganizationValues.department,
-        existing?.departmentCodes,
-      );
-    }
+    // Departments are governed global lookup rows. Import may reference them,
+    // but must not create new departments from typo values.
 
     if (record.lineName && record.codes.lineCode) {
       addEntity(
@@ -403,6 +438,48 @@ function moneyText(value: number) {
   });
 }
 
+function normalizeDepartmentLookupKey(value: string | null | undefined) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizeCrmIdKey(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function resolveGlobalDepartment(
+  record: EmployeeImportRecord,
+  options: EmployeeImportPlanOptions,
+) {
+  const rawDepartment = record.rawOrganizationValues.department ?? record.departmentName;
+  const departmentText = normalizeTextValue(rawDepartment);
+
+  if (!departmentText) {
+    return null;
+  }
+
+  const nameToCode = options.existingState?.departmentNameToCode;
+  const codeToName = options.existingState?.departmentCodeToName;
+  const code =
+    nameToCode?.get(normalizeDepartmentLookupKey(departmentText)) ??
+    nameToCode?.get(normalizeDepartmentLookupKey(record.departmentName)) ??
+    nameToCode?.get(normalizeDepartmentLookupKey(record.codes.departmentCode));
+
+  if (!code) {
+    return {
+      rowNumber: record.rowNumber,
+      field: "department" as const,
+      code: "invalid_department",
+      message: `Department "${departmentText}" is not an active global department.`,
+    };
+  }
+
+  record.codes.departmentCode = code;
+  record.departmentName = codeToName?.get(code) ?? record.departmentName;
+  record.normalizedOrganizationNames.department = normalizeDepartmentLookupKey(record.departmentName);
+
+  return null;
+}
+
 export function validateEmployeeImportRows(
   rows: RawEmployeeImportRow[],
   options: EmployeeImportPlanOptions = {},
@@ -425,6 +502,7 @@ export function validateEmployeeImportRows(
 
   const validationErrors: EmployeeImportIssue[] = [];
   const validationWarnings: EmployeeImportIssue[] = [];
+  const crmIdCounts = new Map<string, number>();
   const hrIdCounts = new Map<string, number>();
 
   for (const field of missingRequiredColumns) {
@@ -447,6 +525,11 @@ export function validateEmployeeImportRows(
       hrIdCounts.set(record.hrId, (hrIdCounts.get(record.hrId) ?? 0) + 1);
     }
 
+    const crmIdKey = normalizeCrmIdKey(record.crmId);
+    if (record.rowType === "employee" && crmIdKey) {
+      crmIdCounts.set(crmIdKey, (crmIdCounts.get(crmIdKey) ?? 0) + 1);
+    }
+
     if (record.rowType === "employee" && record.hrId && !isValidHrId(record.hrId)) {
       validationErrors.push({
         rowNumber: record.rowNumber,
@@ -462,6 +545,121 @@ export function validateEmployeeImportRows(
         field: "fullName",
         code: "missing_full_name",
         message: "Employee row is missing full name.",
+      });
+    }
+
+    if (record.rowType === "employee" && record.workEmail && !emailPattern.test(record.workEmail)) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "workEmail",
+        code: "invalid_email",
+        message: `Work email is invalid: ${record.workEmail}.`,
+      });
+    }
+
+    const departmentError = resolveGlobalDepartment(record, options);
+    if (departmentError) {
+      validationErrors.push(departmentError);
+    }
+
+    for (const [field, value] of [
+      ["hireDate", record.hireDate],
+      ["birthDate", record.birthDate],
+    ] as const) {
+      if (value && (!datePattern.test(value) || Number.isNaN(new Date(`${value}T00:00:00`).getTime()))) {
+        validationErrors.push({
+          rowNumber: record.rowNumber,
+          field,
+          code: "invalid_date",
+          message: `${field === "hireDate" ? "Hire date" : "Birth date"} must be a valid YYYY-MM-DD date.`,
+        });
+      }
+    }
+
+    if (record.rowType === "employee" && record.employmentStatus && !activeImportStatuses.has(record.employmentStatus)) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "employmentStatus",
+        code: "lifecycle_status_import_blocked",
+        message: "Employee import cannot set inactive, resigned, or terminated status. Use the lifecycle workflow.",
+      });
+    }
+
+    if (record.rowType === "employee" && record.managerHrId && record.hrId === record.managerHrId) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "managerHrId",
+        code: "self_manager_assignment",
+        message: "An employee cannot be assigned as their own manager.",
+      });
+    }
+
+    for (const field of numericImportFields) {
+      const rawNumber = normalizeTextValue(valueFor(record.source, mapping, field));
+      const parsedNumber = field === "basicSalary" || field === "baseSalary"
+        ? record.compensation[field]
+        : record.compensation[field as keyof typeof record.compensation];
+      if (rawNumber && parsedNumber === null) {
+        validationErrors.push({
+          rowNumber: record.rowNumber,
+          field,
+          code: "invalid_numeric_value",
+          message: `${field} must be a valid numeric value.`,
+        });
+      }
+    }
+
+    if (record.gender && !genderValues.has(record.gender)) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "gender",
+        code: "invalid_gender",
+        message: "Gender must be Male, Female, Other, Not specified, or blank.",
+      });
+    }
+
+    if (record.contractType && !contractValues.has(record.contractType)) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "contractType",
+        code: "invalid_contract_type",
+        message: "Contract Type must be Permanent, Fixed-term, Temporary, Consultant, Internship, Not specified, or blank.",
+      });
+    }
+
+    if (record.compensation.paymentMode && !paymentModeValues.has(record.compensation.paymentMode)) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "paymentMode",
+        code: "invalid_payment_mode",
+        message: "Payment Mode must be two_parts, one_part, or blank.",
+      });
+    }
+
+    if (record.hasBankAccount && !yesNoValues.has(record.hasBankAccount)) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "hasBankAccount",
+        code: "invalid_has_bank_account",
+        message: "Has Bank Account must be yes, no, or blank.",
+      });
+    }
+
+    if (record.medicalInsuranceStatus && !enrollmentStatusValues.has(record.medicalInsuranceStatus)) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "medicalInsuranceStatus",
+        code: "invalid_medical_insurance_status",
+        message: "In Medical Insurance must be yes, no, pending, or blank.",
+      });
+    }
+
+    if (record.socialInsuranceStatus && !enrollmentStatusValues.has(record.socialInsuranceStatus)) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "socialInsuranceStatus",
+        code: "invalid_social_insurance_status",
+        message: "In Social Insurance must be yes, no, pending, or blank.",
       });
     }
 
@@ -540,9 +738,16 @@ export function validateEmployeeImportRows(
   const duplicateHrIds = Array.from(hrIdCounts.entries())
     .filter(([, count]) => count > 1)
     .map(([hrId]) => hrId);
+  const duplicateCrmIds = new Set(
+    Array.from(crmIdCounts.entries())
+      .filter(([, count]) => count > 1)
+      .map(([crmId]) => crmId),
+  );
 
   const duplicateHrIdSet = new Set(duplicateHrIds);
+  const existingCrmIdToHrId = options.existingState?.crmIdToHrId ?? new Map<string, string>();
   const terminalEmployeeHrIds = options.existingState?.terminalEmployeeHrIds ?? new Set<string>();
+  const protectedLifecycleHrIds = options.existingState?.protectedLifecycleHrIds ?? terminalEmployeeHrIds;
 
   for (const record of records) {
     if (record.hrId && duplicateHrIdSet.has(record.hrId)) {
@@ -554,12 +759,32 @@ export function validateEmployeeImportRows(
       });
     }
 
-    if (record.hrId && terminalEmployeeHrIds.has(record.hrId)) {
+    if (record.hrId && protectedLifecycleHrIds.has(record.hrId)) {
       validationErrors.push({
         rowNumber: record.rowNumber,
         field: "hrId",
         code: "inactive_employee_update_blocked",
-        message: `HR_ID ${record.hrId} belongs to an inactive or resigned employee and cannot be reactivated by import.`,
+        message: `HR_ID ${record.hrId} belongs to an inactive, hidden, resigned, or payroll-ineligible employee and cannot be reactivated by import.`,
+      });
+    }
+
+    const crmIdKey = normalizeCrmIdKey(record.crmId);
+    if (crmIdKey && duplicateCrmIds.has(crmIdKey)) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "crmId",
+        code: "duplicate_crm_id",
+        message: `Duplicate CRM ID detected in uploaded file: ${record.crmId}.`,
+      });
+    }
+
+    const existingCrmOwner = crmIdKey ? existingCrmIdToHrId.get(crmIdKey) : null;
+    if (record.hrId && existingCrmOwner && existingCrmOwner !== record.hrId) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "crmId",
+        code: "crm_id_already_assigned",
+        message: `CRM ID ${record.crmId} is already assigned to HR_ID ${existingCrmOwner}.`,
       });
     }
   }
@@ -577,7 +802,7 @@ export function validateEmployeeImportRows(
       !fileHrIds.has(record.managerHrId) &&
       !databaseManagerHrIds.has(record.managerHrId)
     ) {
-      validationWarnings.push({
+      validationErrors.push({
         rowNumber: record.rowNumber,
         field: "managerHrId",
         code: "manager_hr_id_not_found",

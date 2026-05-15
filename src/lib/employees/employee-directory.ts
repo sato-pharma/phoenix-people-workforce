@@ -17,18 +17,24 @@ export type EmployeeDirectoryRow = {
   areaId: number | null;
   areaName: string | null;
   birthDate: string | null;
+  bankName: string | null;
+  bankAccount: string | null;
+  baseSalary: number | null;
+  basicSalary: number | null;
+  contractType: string | null;
   createdAt: string;
   crmId: string | null;
   crmUsername: string | null;
-  comprehensiveWage: number | null;
   departmentId: number | null;
   departmentName: string | null;
   education: string | null;
   employmentStatus: string | null;
   extraCostOfLiving: number | null;
   fullName: string;
+  gender: string | null;
   fuelAllowance: number | null;
   grossSalary: number | null;
+  hasBankAccount: string | null;
   hireDate: string | null;
   hrId: string;
   jobTitle: string | null;
@@ -37,8 +43,11 @@ export type EmployeeDirectoryRow = {
   managerHrId: string | null;
   managerName: string | null;
   medicalInsurance: number | null;
+  medicalInsuranceStatus: string | null;
+  medicalInsuranceNumber: string | null;
   mobileNumber: string | null;
   nameAr: string | null;
+  nationalId: string | null;
   netSalary: number | null;
   organogramVisible: boolean;
   payrollEligible: boolean;
@@ -53,14 +62,20 @@ export type EmployeeDirectoryRow = {
   residenceLongitude: number | null;
   regionName: string | null;
   socialInsurance: number | null;
-  subscriptionWage: number | null;
+  socialInsuranceStatus: string | null;
+  socialInsuranceNumber: string | null;
   teamId: number | null;
   taxes: number | null;
   updatedAt: string;
   workEmail: string | null;
 };
 
-import { closeVacancyForOffer, getOpenMedicalRepVacancies, type VacancyLookupRow } from "@/lib/offers/service";
+import {
+  closeVacancyForOffer,
+  getOpenMedicalRepVacancies,
+  getOpenWorkforceVacancies,
+  type VacancyLookupRow,
+} from "@/lib/offers/service";
 
 export type EmployeeLookupOption = {
   id?: number;
@@ -82,6 +97,7 @@ export type EmployeeDirectoryData = {
     positions: EmployeeLookupOption[];
     statuses: EmployeeLookupOption[];
     medicalRepVacancies: VacancyLookupRow[];
+    workforceVacancies: VacancyLookupRow[];
   };
   summary: {
     activeEmployees: number;
@@ -98,8 +114,19 @@ export type EmployeeMutationInput = {
   crmUsername?: string | null;
   departmentId?: number | null;
   education?: string | null;
+  bankAccount?: string | null;
+  bankName?: string | null;
+  baseSalary?: number | null;
+  basicSalary?: number | null;
+  birthDate?: string | null;
+  contractType?: string | null;
+  gender?: string | null;
+  extraCostOfLiving?: number | null;
   employmentStatus?: string | null;
+  fuelAllowance?: number | null;
   fullName?: string | null;
+  grossSalary?: number | null;
+  hasBankAccount?: string | null;
   hireDate?: string | null;
   hrId?: string | null;
   jobTitle?: string | null;
@@ -107,18 +134,33 @@ export type EmployeeMutationInput = {
   managerHrId?: string | null;
   mobileNumber?: string | null;
   nameAr?: string | null;
+  nationalId?: string | null;
+  netSalary?: number | null;
+  medicalInsurance?: number | null;
+  medicalInsuranceStatus?: string | null;
+  medicalInsuranceNumber?: string | null;
   originalHrId?: string | null;
   positionId?: number | null;
   residenceAddress?: string | null;
   residenceArea?: string | null;
   residenceCity?: string | null;
+  regionName?: string | null;
   salaryPaymentMode?: string | null;
+  socialInsurance?: number | null;
+  socialInsuranceStatus?: string | null;
+  socialInsuranceNumber?: string | null;
+  taxes?: number | null;
   workEmail?: string | null;
 };
 
 type EmployeeDbRow = {
   area_id: number | null;
   birth_date?: string | null;
+  bank_account?: string | null;
+  bank_name?: string | null;
+  base_salary?: number | null;
+  basic_salary?: number | null;
+  contract_type?: string | null;
   created_at: string;
   crm_id: string | null;
   crm_username: string | null;
@@ -126,6 +168,11 @@ type EmployeeDbRow = {
   education: string | null;
   employment_status: string | null;
   full_name: string;
+  gender?: string | null;
+  has_bank_account?: string | null;
+  extra_cost_of_living?: number | null;
+  fuel_allowance?: number | null;
+  gross_salary?: number | null;
   hire_date: string | null;
   hr_id: string;
   job_title: string | null;
@@ -133,11 +180,24 @@ type EmployeeDbRow = {
   manager_hr_id: string | null;
   mobile_number: string | null;
   name_ar: string | null;
+  national_id?: string | null;
+  net_salary?: number | null;
+  medical_insurance_number?: string | null;
+  medical_insurance?: number | null;
+  medical_insurance_status?: string | null;
   organogram_visible?: boolean | null;
   payroll_eligible?: boolean | null;
+  payment_mode?: string | null;
   position_id: number | null;
   region_name?: string | null;
+  residence_address?: string | null;
+  residence_area?: string | null;
+  residence_city?: string | null;
+  social_insurance?: number | null;
+  social_insurance_status?: string | null;
+  social_insurance_number?: string | null;
   team_id: number | null;
+  taxes?: number | null;
   updated_at: string;
   work_email: string | null;
 };
@@ -153,7 +213,6 @@ type LookupRow = {
 };
 
 type EmployeeCompensationDbRow = {
-  comprehensive_wage: number | null;
   employee_hr_id: string;
   extra_cost_of_living: number | null;
   fuel_allowance: number | null;
@@ -162,7 +221,6 @@ type EmployeeCompensationDbRow = {
   net_salary: number | null;
   payment_mode?: string | null;
   social_insurance: number | null;
-  subscription_wage: number | null;
   taxes: number | null;
 };
 
@@ -213,6 +271,18 @@ function normalizeLifecycleStatus(value: string | null | undefined) {
 
 function isActiveLifecycleStatus(value: string | null | undefined) {
   return activeLifecycleStatuses.has(normalizeLifecycleStatus(value));
+}
+
+function normalizeYesNo(value: string | null | undefined) {
+  const normalized = compact(value)?.toLowerCase();
+  return normalized === "yes" || normalized === "no" ? normalized : null;
+}
+
+function normalizeEnrollmentStatus(value: string | null | undefined) {
+  const normalized = compact(value)?.toLowerCase();
+  return normalized === "yes" || normalized === "no" || normalized === "pending"
+    ? normalized
+    : null;
 }
 
 function isActiveDirectoryEmployee(employee: EmployeeDirectoryRow) {
@@ -411,6 +481,30 @@ async function loadLookup(table: string, ids: number[], label = "name") {
 }
 
 async function loadAllOptions(table: string, label = "name") {
+  if (table === "departments") {
+    const params = new URLSearchParams({
+      select: `id,${label},is_active`,
+      order: `${label}.asc`,
+    });
+
+    try {
+      const rows = await supabaseRest<Array<LookupRow & { is_active?: boolean | null }>>(`${table}?${params}`);
+
+      return rows
+        .filter((row) => row.is_active !== false)
+        .map((row) => ({
+          id: row.id,
+          label: String(label === "title" ? row.title ?? "" : row.name ?? ""),
+          value: String(row.id),
+        }));
+    } catch (error) {
+      const message = employeeDirectoryErrorMessage(error).toLowerCase();
+      if (!message.includes("is_active") && !message.includes("schema cache")) {
+        throw error;
+      }
+    }
+  }
+
   const select = table === "areas" ? `id,${label},line_id` : `id,${label}`;
   const params = new URLSearchParams({
     select,
@@ -449,7 +543,7 @@ async function loadCompensationByHrId(hrIds: string[]) {
 
   const params = new URLSearchParams({
     select:
-      "employee_hr_id,net_salary,social_insurance,taxes,medical_insurance,comprehensive_wage,subscription_wage,fuel_allowance,extra_cost_of_living,gross_salary,payment_mode",
+      "employee_hr_id,net_salary,social_insurance,taxes,medical_insurance,fuel_allowance,extra_cost_of_living,gross_salary,payment_mode",
     employee_hr_id: textInFilter(hrIds),
   });
 
@@ -465,7 +559,7 @@ async function loadCompensationByHrId(hrIds: string[]) {
     if (message.includes("payment_mode") || message.includes("schema cache")) {
       const fallbackParams = new URLSearchParams({
         select:
-          "employee_hr_id,net_salary,social_insurance,taxes,medical_insurance,comprehensive_wage,subscription_wage,fuel_allowance,extra_cost_of_living,gross_salary",
+          "employee_hr_id,net_salary,social_insurance,taxes,medical_insurance,fuel_allowance,extra_cost_of_living,gross_salary",
         employee_hr_id: textInFilter(hrIds),
       });
       const rows = await supabaseRest<EmployeeCompensationDbRow[]>(
@@ -532,11 +626,11 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
 async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const baseEmployeeSelect =
-    "hr_id,full_name,name_ar,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
 
   // Try to join compensation and other lookups in a single query to reduce N+1 and massive IN filters
   const joinedSelect = `${baseEmployeeSelect},region_name,birth_date,
-    employee_compensation(net_salary,social_insurance,taxes,medical_insurance,comprehensive_wage,subscription_wage,fuel_allowance,extra_cost_of_living,gross_salary,payment_mode),
+    employee_compensation(net_salary,social_insurance,taxes,medical_insurance,fuel_allowance,extra_cost_of_living,gross_salary,payment_mode),
     departments(name),
     lines(name),
     areas(name),
@@ -596,13 +690,14 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     });
 
     // Still need these for the filter dropdowns, but these are small tables usually
-    const [managerNamesResult, departmentsResult, linesResult, areasResult, positionsResult, medicalRepVacancies] = await Promise.all([
+    const [managerNamesResult, departmentsResult, linesResult, areasResult, positionsResult, medicalRepVacancies, workforceVacancies] = await Promise.all([
       loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
       loadAllOptions("departments"),
       loadAllOptions("lines"),
       loadAllOptions("areas"),
       loadAllOptions("positions", "title"),
       getOpenMedicalRepVacancies(),
+      getOpenWorkforceVacancies(),
     ]);
 
     managerNames = managerNamesResult;
@@ -627,8 +722,12 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       return {
         areaId: row.area_id,
         areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
+        bankName: row.bank_name ?? null,
+        bankAccount: row.bank_account ?? null,
+        baseSalary: row.base_salary ?? null,
+        basicSalary: row.basic_salary ?? null,
         birthDate: row.birth_date ?? null,
-        comprehensiveWage: compensation?.comprehensive_wage ?? null,
+        contractType: row.contract_type ?? null,
         createdAt: row.created_at,
         crmId: row.crm_id,
         crmUsername: row.crm_username,
@@ -636,10 +735,12 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         departmentName,
         education: row.education,
         employmentStatus: row.employment_status,
-        extraCostOfLiving: standardAllowances.extraCostOfLiving,
+        extraCostOfLiving: row.extra_cost_of_living ?? compensation?.extra_cost_of_living ?? standardAllowances.extraCostOfLiving,
         fullName: row.full_name,
-        fuelAllowance: standardAllowances.fuelAllowance,
-        grossSalary: compensation?.gross_salary ?? null,
+        gender: row.gender ?? null,
+        fuelAllowance: row.fuel_allowance ?? compensation?.fuel_allowance ?? standardAllowances.fuelAllowance,
+        grossSalary: row.gross_salary ?? compensation?.gross_salary ?? null,
+        hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
         hireDate: row.hire_date,
         hrId: row.hr_id,
         jobTitle: row.job_title,
@@ -647,25 +748,29 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         lineName,
         managerHrId: row.manager_hr_id,
         managerName: row.manager_hr_id ? managerNames.get(row.manager_hr_id) ?? null : null,
-        medicalInsurance: compensation?.medical_insurance ?? null,
+        medicalInsurance: row.medical_insurance ?? compensation?.medical_insurance ?? null,
+        medicalInsuranceStatus: row.medical_insurance_status ?? null,
+        medicalInsuranceNumber: row.medical_insurance_number ?? null,
         mobileNumber: row.mobile_number,
         nameAr: row.name_ar,
-        netSalary: compensation?.net_salary ?? null,
+        nationalId: row.national_id ?? null,
+        netSalary: row.net_salary ?? compensation?.net_salary ?? null,
         organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
         payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
-        salaryPaymentMode: normalizePayrollPaymentMode(compensation?.payment_mode),
+        salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? compensation?.payment_mode),
         positionId: row.position_id,
         positionTitle,
-        residenceAddress: residence?.residence_address ?? null,
-        residenceArea: residence?.residence_area ?? null,
-        residenceCity: residence?.residence_city ?? null,
+        residenceAddress: row.residence_address ?? residence?.residence_address ?? null,
+        residenceArea: row.residence_area ?? residence?.residence_area ?? null,
+        residenceCity: row.residence_city ?? residence?.residence_city ?? null,
         residenceGeocodeStatus: residence?.geocode_status ?? null,
         residenceLatitude: residence?.residence_latitude ?? null,
         residenceLongitude: residence?.residence_longitude ?? null,
         regionName: row.region_name ?? null,
-        socialInsurance: compensation?.social_insurance ?? null,
-        subscriptionWage: compensation?.subscription_wage ?? null,
-        taxes: compensation?.taxes ?? null,
+        socialInsurance: row.social_insurance ?? compensation?.social_insurance ?? null,
+        socialInsuranceStatus: row.social_insurance_status ?? null,
+        socialInsuranceNumber: row.social_insurance_number ?? null,
+        taxes: row.taxes ?? compensation?.taxes ?? null,
         teamId: row.team_id,
         updatedAt: row.updated_at,
         workEmail: row.work_email,
@@ -682,13 +787,17 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         lines,
         managers: activeEmployees
           .map((employee) => ({
+            departmentId: employee.departmentId,
             label: employee.fullName,
+            lineId: employee.lineId,
+            positionId: employee.positionId,
             value: employee.hrId,
           }))
           .sort((left, right) => left.label.localeCompare(right.label)),
         medicalRepVacancies,
         positions,
         statuses: activeStatusOptions(activeEmployees),
+        workforceVacancies,
       },
       summary: {
         activeEmployees: activeEmployees.length,
@@ -711,7 +820,8 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       linesRes,
       areasRes,
       positionsRes,
-      medicalRepVacancies
+      medicalRepVacancies,
+      workforceVacancies
     ] = await Promise.all([
       loadLookup("departments", uniqueNumberValues(employeeRows, "department_id")),
       loadLookup("lines", uniqueNumberValues(employeeRows, "line_id")),
@@ -724,6 +834,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       loadAllOptions("areas"),
       loadAllOptions("positions", "title"),
       getOpenMedicalRepVacancies(),
+      getOpenWorkforceVacancies(),
     ]);
 
     departmentNames = departmentNamesRes;
@@ -753,8 +864,12 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       return {
         areaId: row.area_id,
         areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
+        bankName: row.bank_name ?? null,
+        bankAccount: row.bank_account ?? null,
+        baseSalary: row.base_salary ?? null,
+        basicSalary: row.basic_salary ?? null,
         birthDate: row.birth_date ?? null,
-        comprehensiveWage: comp?.comprehensive_wage ?? null,
+        contractType: row.contract_type ?? null,
         createdAt: row.created_at,
         crmId: row.crm_id,
         crmUsername: row.crm_username,
@@ -762,10 +877,12 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         departmentName,
         education: row.education,
         employmentStatus: row.employment_status,
-        extraCostOfLiving: standardAllowances.extraCostOfLiving,
+        extraCostOfLiving: row.extra_cost_of_living ?? comp?.extra_cost_of_living ?? standardAllowances.extraCostOfLiving,
         fullName: row.full_name,
-        fuelAllowance: standardAllowances.fuelAllowance,
-        grossSalary: comp?.gross_salary ?? null,
+        gender: row.gender ?? null,
+        fuelAllowance: row.fuel_allowance ?? comp?.fuel_allowance ?? standardAllowances.fuelAllowance,
+        grossSalary: row.gross_salary ?? comp?.gross_salary ?? null,
+        hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
         hireDate: row.hire_date,
         hrId: row.hr_id,
         jobTitle: row.job_title,
@@ -773,25 +890,29 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         lineName,
         managerHrId: row.manager_hr_id,
         managerName: row.manager_hr_id ? managerNames.get(row.manager_hr_id) ?? null : null,
-        medicalInsurance: comp?.medical_insurance ?? null,
+        medicalInsurance: row.medical_insurance ?? comp?.medical_insurance ?? null,
+        medicalInsuranceStatus: row.medical_insurance_status ?? null,
+        medicalInsuranceNumber: row.medical_insurance_number ?? null,
         mobileNumber: row.mobile_number,
         nameAr: row.name_ar,
-        netSalary: comp?.net_salary ?? null,
+        nationalId: row.national_id ?? null,
+        netSalary: row.net_salary ?? comp?.net_salary ?? null,
         organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
         payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
-        salaryPaymentMode: normalizePayrollPaymentMode(comp?.payment_mode),
+        salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? comp?.payment_mode),
         positionId: row.position_id,
         positionTitle,
-        residenceAddress: residence?.residence_address ?? null,
-        residenceArea: residence?.residence_area ?? null,
-        residenceCity: residence?.residence_city ?? null,
+        residenceAddress: row.residence_address ?? residence?.residence_address ?? null,
+        residenceArea: row.residence_area ?? residence?.residence_area ?? null,
+        residenceCity: row.residence_city ?? residence?.residence_city ?? null,
         residenceGeocodeStatus: residence?.geocode_status ?? null,
         residenceLatitude: residence?.residence_latitude ?? null,
         residenceLongitude: residence?.residence_longitude ?? null,
         regionName: row.region_name ?? null,
-        socialInsurance: comp?.social_insurance ?? null,
-        subscriptionWage: comp?.subscription_wage ?? null,
-        taxes: comp?.taxes ?? null,
+        socialInsurance: row.social_insurance ?? comp?.social_insurance ?? null,
+        socialInsuranceStatus: row.social_insurance_status ?? null,
+        socialInsuranceNumber: row.social_insurance_number ?? null,
+        taxes: row.taxes ?? comp?.taxes ?? null,
         teamId: row.team_id,
         updatedAt: row.updated_at,
         workEmail: row.work_email,
@@ -808,13 +929,17 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         lines,
         managers: activeEmployees
           .map((employee) => ({
+            departmentId: employee.departmentId,
             label: employee.fullName,
+            lineId: employee.lineId,
+            positionId: employee.positionId,
             value: employee.hrId,
           }))
           .sort((left, right) => left.label.localeCompare(right.label)),
         medicalRepVacancies,
         positions,
         statuses: activeStatusOptions(activeEmployees),
+        workforceVacancies,
       },
       summary: {
         activeEmployees: activeEmployees.length,
@@ -846,8 +971,12 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     return {
       areaId: row.area_id,
       areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
+      bankName: row.bank_name ?? null,
+      bankAccount: row.bank_account ?? null,
+      baseSalary: row.base_salary ?? null,
+      basicSalary: row.basic_salary ?? null,
       birthDate: row.birth_date ?? null,
-      comprehensiveWage: compensation?.comprehensive_wage ?? null,
+      contractType: row.contract_type ?? null,
       createdAt: row.created_at,
       crmId: row.crm_id,
       crmUsername: row.crm_username,
@@ -855,10 +984,12 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       departmentName,
       education: row.education,
       employmentStatus: row.employment_status,
-      extraCostOfLiving: standardAllowances.extraCostOfLiving,
+      extraCostOfLiving: row.extra_cost_of_living ?? compensation?.extra_cost_of_living ?? standardAllowances.extraCostOfLiving,
       fullName: row.full_name,
-      fuelAllowance: standardAllowances.fuelAllowance,
-      grossSalary: compensation?.gross_salary ?? null,
+      gender: row.gender ?? null,
+      fuelAllowance: row.fuel_allowance ?? compensation?.fuel_allowance ?? standardAllowances.fuelAllowance,
+      grossSalary: row.gross_salary ?? compensation?.gross_salary ?? null,
+      hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
       hireDate: row.hire_date,
       hrId: row.hr_id,
       jobTitle: row.job_title,
@@ -868,25 +999,29 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       managerName: row.manager_hr_id
         ? managerNames.get(row.manager_hr_id) ?? null
         : null,
-      medicalInsurance: compensation?.medical_insurance ?? null,
+      medicalInsurance: row.medical_insurance ?? compensation?.medical_insurance ?? null,
+      medicalInsuranceStatus: row.medical_insurance_status ?? null,
+      medicalInsuranceNumber: row.medical_insurance_number ?? null,
       mobileNumber: row.mobile_number,
       nameAr: row.name_ar,
-      netSalary: compensation?.net_salary ?? null,
+      nationalId: row.national_id ?? null,
+      netSalary: row.net_salary ?? compensation?.net_salary ?? null,
       organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
       payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
-      salaryPaymentMode: normalizePayrollPaymentMode(compensation?.payment_mode),
+      salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? compensation?.payment_mode),
       positionId: row.position_id,
       positionTitle,
-      residenceAddress: residence?.residence_address ?? null,
-      residenceArea: residence?.residence_area ?? null,
-      residenceCity: residence?.residence_city ?? null,
+      residenceAddress: row.residence_address ?? residence?.residence_address ?? null,
+      residenceArea: row.residence_area ?? residence?.residence_area ?? null,
+      residenceCity: row.residence_city ?? residence?.residence_city ?? null,
       residenceGeocodeStatus: residence?.geocode_status ?? null,
       residenceLatitude: residence?.residence_latitude ?? null,
       residenceLongitude: residence?.residence_longitude ?? null,
       regionName: row.region_name ?? null,
-      socialInsurance: compensation?.social_insurance ?? null,
-      subscriptionWage: compensation?.subscription_wage ?? null,
-      taxes: compensation?.taxes ?? null,
+      socialInsurance: row.social_insurance ?? compensation?.social_insurance ?? null,
+      socialInsuranceStatus: row.social_insurance_status ?? null,
+      socialInsuranceNumber: row.social_insurance_number ?? null,
+      taxes: row.taxes ?? compensation?.taxes ?? null,
       teamId: row.team_id,
       updatedAt: row.updated_at,
       workEmail: row.work_email,
@@ -902,13 +1037,17 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       lines,
       managers: activeEmployees
         .map((employee) => ({
+          departmentId: employee.departmentId,
           label: employee.fullName,
+          lineId: employee.lineId,
+          positionId: employee.positionId,
           value: employee.hrId,
         }))
         .sort((left, right) => left.label.localeCompare(right.label)),
       medicalRepVacancies: [],
       positions,
       statuses: activeStatusOptions(activeEmployees),
+      workforceVacancies: [],
     },
     summary: {
       activeEmployees: activeEmployees.length,
@@ -924,7 +1063,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
 export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]> {
   const baseEmployeeSelect =
-    "hr_id,full_name,name_ar,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
   const employeeParams = new URLSearchParams({
     select: `${baseEmployeeSelect},region_name,birth_date`,
     order: "full_name.asc",
@@ -966,8 +1105,12 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
     return {
       areaId: row.area_id,
       areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
+      bankName: row.bank_name ?? null,
+      bankAccount: row.bank_account ?? null,
+      baseSalary: row.base_salary ?? null,
+      basicSalary: row.basic_salary ?? null,
       birthDate: row.birth_date ?? null,
-      comprehensiveWage: null,
+      contractType: row.contract_type ?? null,
       createdAt: row.created_at,
       crmId: row.crm_id,
       crmUsername: row.crm_username,
@@ -977,10 +1120,12 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
         : null,
       education: row.education,
       employmentStatus: row.employment_status,
-      extraCostOfLiving: null,
+      extraCostOfLiving: row.extra_cost_of_living ?? null,
       fullName: row.full_name,
-      fuelAllowance: null,
-      grossSalary: null,
+      gender: row.gender ?? null,
+      fuelAllowance: row.fuel_allowance ?? null,
+      grossSalary: row.gross_salary ?? null,
+      hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
       hireDate: row.hire_date,
       hrId: row.hr_id,
       jobTitle: row.job_title,
@@ -990,27 +1135,31 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       managerName: row.manager_hr_id
         ? managerNames.get(row.manager_hr_id) ?? null
         : null,
-      medicalInsurance: null,
+      medicalInsurance: row.medical_insurance ?? null,
+      medicalInsuranceStatus: row.medical_insurance_status ?? null,
+      medicalInsuranceNumber: row.medical_insurance_number ?? null,
       mobileNumber: row.mobile_number,
       nameAr: row.name_ar,
-      netSalary: null,
+      nationalId: row.national_id ?? null,
+      netSalary: row.net_salary ?? null,
       organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
       payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
-      salaryPaymentMode: "two_parts" as PayrollPaymentMode,
+      salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode),
       positionId: row.position_id,
       positionTitle: row.position_id
         ? positionTitles.get(row.position_id) ?? null
         : null,
-      residenceAddress: residence?.residence_address ?? null,
-      residenceArea: residence?.residence_area ?? null,
-      residenceCity: residence?.residence_city ?? null,
+      residenceAddress: row.residence_address ?? residence?.residence_address ?? null,
+      residenceArea: row.residence_area ?? residence?.residence_area ?? null,
+      residenceCity: row.residence_city ?? residence?.residence_city ?? null,
       residenceGeocodeStatus: residence?.geocode_status ?? null,
       residenceLatitude: residence?.residence_latitude ?? null,
       residenceLongitude: residence?.residence_longitude ?? null,
       regionName: row.region_name ?? null,
-      socialInsurance: null,
-      subscriptionWage: null,
-      taxes: null,
+      socialInsurance: row.social_insurance ?? null,
+      socialInsuranceStatus: row.social_insurance_status ?? null,
+      socialInsuranceNumber: row.social_insurance_number ?? null,
+      taxes: row.taxes ?? null,
       teamId: row.team_id,
       updatedAt: row.updated_at,
       workEmail: row.work_email,
@@ -1041,6 +1190,23 @@ async function ensureManagerIsValid(managerHrId: string | null, employeeHrId: st
     manager.organogram_visible === false
   ) {
     throw new Error(`Manager HR_ID ${managerHrId} is not active for hierarchy assignment.`);
+  }
+}
+
+async function ensureCrmIdIsUnique(crmId: string | null, employeeHrId: string) {
+  if (!crmId) {
+    return;
+  }
+
+  const matches = await supabaseRest<Array<{ hr_id: string }>>(
+    `employees?crm_id=eq.${encodeURIComponent(crmId)}&select=hr_id`,
+  );
+  const conflict = matches.find(
+    (row) => normalizeHrId(row.hr_id) !== employeeHrId,
+  );
+
+  if (conflict) {
+    throw new Error(`CRM ID ${crmId} is already assigned to HR_ID ${conflict.hr_id}.`);
   }
 }
 
@@ -1099,17 +1265,30 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
 
   const managerHrId = normalizeHrId(input.managerHrId);
   await ensureManagerIsValid(managerHrId, hrId);
+  const crmId = compact(input.crmId);
+  await ensureCrmIdIsUnique(crmId, hrId);
 
   const lifecycleActive = isActiveLifecycleStatus(employmentStatus);
 
   return {
     area_id: numberOrNull(input.areaId),
-    crm_id: compact(input.crmId),
+    bank_account: compact(input.bankAccount),
+    bank_name: compact(input.bankName),
+    base_salary: numberOrNull(input.baseSalary),
+    basic_salary: numberOrNull(input.basicSalary),
+    birth_date: compact(input.birthDate),
+    contract_type: compact(input.contractType),
+    crm_id: crmId,
     crm_username: compact(input.crmUsername),
     department_id: numberOrNull(input.departmentId),
     education: compact(input.education),
     employment_status: employmentStatus,
+    extra_cost_of_living: numberOrNull(input.extraCostOfLiving),
     full_name: fullName,
+    gender: compact(input.gender)?.toLowerCase(),
+    fuel_allowance: numberOrNull(input.fuelAllowance),
+    gross_salary: numberOrNull(input.grossSalary),
+    has_bank_account: normalizeYesNo(input.hasBankAccount),
     hire_date: compact(input.hireDate),
     hr_id: hrId,
     job_title: compact(input.jobTitle),
@@ -1117,9 +1296,23 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
     manager_hr_id: managerHrId,
     mobile_number: compact(input.mobileNumber),
     name_ar: compact(input.nameAr),
+    national_id: compact(input.nationalId),
+    net_salary: numberOrNull(input.netSalary),
+    medical_insurance: numberOrNull(input.medicalInsurance),
+    medical_insurance_status: normalizeEnrollmentStatus(input.medicalInsuranceStatus),
+    medical_insurance_number: compact(input.medicalInsuranceNumber),
     organogram_visible: lifecycleActive,
     payroll_eligible: lifecycleActive,
     position_id: numberOrNull(input.positionId),
+    payment_mode: normalizePayrollPaymentMode(input.salaryPaymentMode),
+    residence_address: compact(input.residenceAddress),
+    residence_area: compact(input.residenceArea),
+    residence_city: compact(input.residenceCity),
+    region_name: compact(input.regionName),
+    social_insurance: numberOrNull(input.socialInsurance),
+    social_insurance_status: normalizeEnrollmentStatus(input.socialInsuranceStatus),
+    social_insurance_number: compact(input.socialInsuranceNumber),
+    taxes: numberOrNull(input.taxes),
     updated_at: new Date().toISOString(),
     work_email: workEmail,
   };
@@ -1212,6 +1405,161 @@ async function upsertEmployeeResidenceLocation(
   );
 }
 
+function shouldIgnoreOptionalCascadeError(error: unknown) {
+  return isMissingRelationMessage(error) || isEmployeeDirectorySchemaMissing(error);
+}
+
+function isMissingReplacementOwnershipRpc(error: unknown) {
+  const message = employeeDirectoryErrorMessage(error).toLowerCase();
+
+  return (
+    message.includes("phx_reassign_replacement_ownership") ||
+    message.includes("could not find the function") ||
+    message.includes("schema cache")
+  );
+}
+
+async function patchOptionalTable(path: string, payload: Record<string, unknown>) {
+  try {
+    await supabaseRest(path, {
+      body: JSON.stringify(payload),
+      headers: {
+        Prefer: "return=minimal",
+      },
+      method: "PATCH",
+    });
+  } catch (error) {
+    if (!shouldIgnoreOptionalCascadeError(error)) {
+      throw error;
+    }
+  }
+}
+
+async function replacementForVacancy(vacancyId: number | null | undefined) {
+  if (!vacancyId) {
+    return null;
+  }
+
+  try {
+    const rows = await supabaseRest<Array<{
+      effective_date?: string | null;
+      employee_hr_id: string | null;
+      last_working_date?: string | null;
+    }>>(
+      `employee_resignations?${new URLSearchParams({
+        limit: "1",
+        order: "created_at.desc",
+        select: "employee_hr_id,effective_date,last_working_date",
+        vacancy_id: `eq.${vacancyId}`,
+      })}`,
+    );
+    const row = rows[0];
+    return row?.employee_hr_id
+      ? {
+          effectiveDate: row.effective_date ?? row.last_working_date ?? null,
+          hrId: normalizeHrId(row.employee_hr_id),
+        }
+      : null;
+  } catch (error) {
+    if (shouldIgnoreOptionalCascadeError(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function reassignLiveManagerOwnership(input: {
+  effectiveDate?: string | null;
+  newManagerHrId: string;
+  previousManagerHrId: string;
+}) {
+  const previousManagerHrId = normalizeHrId(input.previousManagerHrId);
+  const newManagerHrId = normalizeHrId(input.newManagerHrId);
+
+  if (!previousManagerHrId || !newManagerHrId || previousManagerHrId === newManagerHrId) {
+    return;
+  }
+
+  const effectiveDate = compact(input.effectiveDate);
+  try {
+    await supabaseRest<unknown>("rpc/phx_reassign_replacement_ownership", {
+      body: JSON.stringify({
+        p_effective_date: effectiveDate ? effectiveDate.slice(0, 10) : null,
+        p_previous_hr_id: previousManagerHrId,
+        p_replacement_hr_id: newManagerHrId,
+      }),
+      headers: {
+        Prefer: "return=minimal",
+      },
+      method: "POST",
+    });
+    return;
+  } catch (error) {
+    if (!isMissingReplacementOwnershipRpc(error)) {
+      throw error;
+    }
+  }
+
+  const now = new Date().toISOString();
+  const previous = encodeURIComponent(previousManagerHrId);
+  const nextPayload = {
+    manager_hr_id: newManagerHrId,
+    updated_at: now,
+  };
+
+  await patchOptionalTable(
+    `employees?manager_hr_id=eq.${previous}&employment_status=not.in.(resigned,terminated,inactive)`,
+    nextPayload,
+  );
+
+  await patchOptionalTable(
+    `app_auth_users?manager_hr_id=eq.${previous}&is_active=is.true`,
+    nextPayload,
+  );
+
+  await patchOptionalTable(
+    `user_access_profiles?manager_hr_id=eq.${previous}&is_active=is.true`,
+    nextPayload,
+  );
+
+  await patchOptionalTable(
+    `position_vacancies?manager_hr_id=eq.${previous}&status=eq.open`,
+    nextPayload,
+  );
+
+  if (!effectiveDate) {
+    return;
+  }
+
+  const date = new Date(`${effectiveDate.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    return;
+  }
+
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth() + 1;
+  const salesPayload = {
+    manager_hr_id: newManagerHrId,
+  };
+
+  await patchOptionalTable(
+    `sales_records?manager_hr_id=eq.${previous}&year=gt.${year}`,
+    salesPayload,
+  );
+  await patchOptionalTable(
+    `sales_records?manager_hr_id=eq.${previous}&year=eq.${year}&month=gte.${month}`,
+    salesPayload,
+  );
+  await patchOptionalTable(
+    `sales_targets?manager_hr_id=eq.${previous}&year=gt.${year}`,
+    salesPayload,
+  );
+  await patchOptionalTable(
+    `sales_targets?manager_hr_id=eq.${previous}&year=eq.${year}&month=gte.${month}`,
+    salesPayload,
+  );
+}
+
 export async function upsertEmployee(input: EmployeeMutationInput) {
   const hrId = normalizeHrId(input.hrId);
   const originalHrId = normalizeHrId(input.originalHrId);
@@ -1254,24 +1602,35 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
     method: "POST",
   });
 
-  const actions: Promise<unknown>[] = [
+  await Promise.all([
     upsertEmployeePaymentMode(payload.hr_id, input.salaryPaymentMode),
     upsertEmployeeResidenceLocation(input, payload.hr_id),
-  ];
+  ]);
 
   // Requirement: closeVacancyForOffer should only run after a NEW employee is created
   if (!isUpdate) {
-    actions.push(
-      closeVacancyForOffer({
-        area_id: payload.area_id,
-        line_id: payload.line_id,
-        manager_hr_id: payload.manager_hr_id,
-        position_id: payload.position_id,
-      }),
-    );
-  }
+    const closedVacancy = await closeVacancyForOffer({
+      area_id: payload.area_id,
+      filled_by_hr_id: payload.hr_id,
+      line_id: payload.line_id,
+      manager_hr_id: payload.manager_hr_id,
+      position_id: payload.position_id,
+    });
 
-  await Promise.all(actions);
+    const resignationReplacement = await replacementForVacancy(closedVacancy?.id);
+    const vacancyReplacement = {
+      effectiveDate: resignationReplacement?.effectiveDate ?? null,
+      hrId: normalizeHrId(closedVacancy?.replacementForHrId) ?? resignationReplacement?.hrId ?? null,
+    };
+
+    if (vacancyReplacement?.hrId) {
+      await reassignLiveManagerOwnership({
+        effectiveDate: vacancyReplacement.effectiveDate,
+        newManagerHrId: payload.hr_id,
+        previousManagerHrId: vacancyReplacement.hrId,
+      });
+    }
+  }
 
   invalidateEmployeeDirectoryCache();
 
