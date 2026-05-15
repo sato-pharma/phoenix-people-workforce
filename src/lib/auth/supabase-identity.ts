@@ -32,6 +32,8 @@ export type SupabaseAuthSession = {
   refreshToken: string;
 };
 
+const longBanDuration = "876000h";
+
 export function buildPhoenixAuthEmail(loginId: string) {
   const normalizedLoginId = loginId.trim().toLowerCase();
   const encodedLoginId = Buffer.from(normalizedLoginId).toString("hex");
@@ -124,12 +126,14 @@ export async function provisionSupabaseAuthIdentity(
   if (input.authUserId) {
     const updatePayload: {
       app_metadata: ReturnType<typeof appMetadata>;
+      ban_duration?: string;
       email: string;
       email_confirm: true;
       password?: string;
       user_metadata: ReturnType<typeof userMetadata>;
     } = {
       app_metadata: appMetadata(input),
+      ban_duration: input.isActive ? "none" : longBanDuration,
       email: authEmail,
       email_confirm: true,
       user_metadata: userMetadata(input),
@@ -159,6 +163,7 @@ export async function provisionSupabaseAuthIdentity(
 
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
     app_metadata: appMetadata(input),
+    ban_duration: input.isActive ? "none" : longBanDuration,
     email: authEmail,
     email_confirm: true,
     password: input.password,
@@ -174,6 +179,40 @@ export async function provisionSupabaseAuthIdentity(
     authUserId: data.user.id,
     coarseRole,
   };
+}
+
+export async function setSupabaseAuthIdentityAccess(input: {
+  authUserId: string;
+  isActive: boolean;
+}) {
+  const supabaseAdmin = getSupabaseAdmin();
+  const { data: existing, error: lookupError } = await supabaseAdmin.auth.admin.getUserById(input.authUserId);
+  if (lookupError) {
+    throw lookupError;
+  }
+
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(
+    input.authUserId,
+    {
+      app_metadata: {
+        ...(existing.user?.app_metadata ?? {}),
+        is_active: input.isActive,
+      },
+      ban_duration: input.isActive ? "none" : longBanDuration,
+    },
+  );
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function deleteSupabaseAuthIdentity(authUserId: string) {
+  const supabaseAdmin = getSupabaseAdmin();
+  const { error } = await supabaseAdmin.auth.admin.deleteUser(authUserId);
+  if (error) {
+    throw error;
+  }
 }
 
 export async function createSupabaseAuthSession(

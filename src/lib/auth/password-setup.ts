@@ -2,7 +2,7 @@ import crypto from "crypto";
 
 import bcrypt from "bcryptjs";
 
-import { writeAuditLog } from "@/lib/admin/audit";
+import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -40,7 +40,7 @@ export type PasswordSetupLinkResult = {
   deliveryMode: "copy" | "email";
   expiresAt: string;
   loginId: string;
-  setupUrl: string;
+  setupUrl?: string;
 };
 
 export function createTemporaryAuthPassword() {
@@ -122,6 +122,7 @@ async function invalidateOutstandingTokens(loginId: string) {
 export async function sendPasswordSetupLink(input: {
   actorLoginId?: string | null;
   deliveryMode?: "copy" | "email";
+  governanceReason?: string | null;
   loginId: string;
   origin?: string | null;
   purpose?: "reset" | "setup";
@@ -204,21 +205,24 @@ export async function sendPasswordSetupLink(input: {
         })
       : { skipped: true as const, reason: "Link generated for manual sharing." };
 
-  await writeAuditLog({
+  await writeRequiredAuditLog({
     actorLoginId: input.actorLoginId ?? null,
     entityId: loginId,
     entityType: "user",
     newValues: {
+      action: "password_setup_link_generated",
       delivery: deliveryMode === "email" && !emailResult.skipped ? "email_sent" : "link_generated_only",
       deliveryMode,
       expiresAt,
+      reason: input.governanceReason ?? null,
       purpose,
       sentTo: deliveryMode === "email" ? user.email : null,
-      setupUrl,
+      token: "[redacted]",
+      url: "[redacted]",
     },
     oldValues: null,
     summary: `${deliveryMode === "email" ? "Sent" : "Generated"} ${purpose === "setup" ? "setup" : "reset"} link for ${loginId}`,
-  }).catch(() => undefined);
+  });
 
   return {
     deliveryMessage:
@@ -230,7 +234,7 @@ export async function sendPasswordSetupLink(input: {
     deliveryMode,
     expiresAt,
     loginId,
-    setupUrl,
+    ...(deliveryMode === "copy" ? { setupUrl } : {}),
   } satisfies PasswordSetupLinkResult;
 }
 
@@ -372,7 +376,7 @@ export async function completePasswordSetup(input: { password: string; token: st
     throw tokenError;
   }
 
-  await writeAuditLog({
+  await writeRequiredAuditLog({
     actorLoginId: tokenRow.login_id,
     entityId: tokenRow.login_id,
     entityType: "user",
@@ -383,7 +387,7 @@ export async function completePasswordSetup(input: { password: string; token: st
     },
     oldValues: null,
     summary: `Completed password ${tokenRow.purpose} for ${tokenRow.login_id}`,
-  }).catch(() => undefined);
+  });
 
   return { bridgeWarning };
 }
