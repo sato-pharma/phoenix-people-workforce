@@ -121,19 +121,6 @@ const sectionColors: Record<string, string> = {
   "Lifecycle/System": "FF475569",
 };
 
-const approvedDepartmentNames = [
-  "Sales",
-  "Marketing",
-  "Finance",
-  "Human Resources",
-  "QPPV",
-  "R&D",
-  "Admins",
-  "Executive",
-  "SFE",
-  "Supply Chain",
-];
-
 function dateOnly(value: string | null) {
   return value ? value.slice(0, 10) : null;
 }
@@ -188,12 +175,24 @@ function employeeToExportRow(employee: EmployeeDirectoryRow): ExportRow {
     socialInsuranceNumber: employee.socialInsuranceNumber,
     socialInsuranceStatus: employee.socialInsuranceStatus,
     taxes: employee.taxes,
-    team: null,
+    team: employee.teamName,
     workEmail: employee.workEmail,
   };
 }
 
-function styleWorksheet(sheet: ExcelJS.Worksheet) {
+function inlineListFormula(values: string[]) {
+  if (values.some((value) => value.includes(","))) {
+    return null;
+  }
+
+  const formula = `"${values.map((value) => value.replace(/"/g, '""')).join(",")}"`;
+  return formula.length <= 255 ? formula : null;
+}
+
+function styleWorksheet(
+  sheet: ExcelJS.Worksheet,
+  lookupValues: { departments: string[]; teams: string[] },
+) {
   const titleRowNumber = 1;
   const sectionRowNumber = 2;
   const headerRowNumber = 3;
@@ -288,18 +287,30 @@ function styleWorksheet(sheet: ExcelJS.Worksheet) {
 
   const paymentModeColumn = columns.findIndex((column) => column.key === "paymentMode") + 1;
   const departmentColumn = columns.findIndex((column) => column.key === "department") + 1;
+  const teamColumn = columns.findIndex((column) => column.key === "team") + 1;
   const genderColumn = columns.findIndex((column) => column.key === "gender") + 1;
   const contractColumn = columns.findIndex((column) => column.key === "contractType") + 1;
   const statusColumn = columns.findIndex((column) => column.key === "employmentStatus") + 1;
   const hasBankAccountColumn = columns.findIndex((column) => column.key === "hasBankAccount") + 1;
   const medicalInsuranceStatusColumn = columns.findIndex((column) => column.key === "medicalInsuranceStatus") + 1;
   const socialInsuranceStatusColumn = columns.findIndex((column) => column.key === "socialInsuranceStatus") + 1;
+  const departmentFormula = inlineListFormula(lookupValues.departments);
+  const teamFormula = inlineListFormula(lookupValues.teams);
   for (let rowNumber = firstDataRowNumber; rowNumber <= Math.max(sheet.rowCount, 1000); rowNumber += 1) {
-    sheet.getCell(rowNumber, departmentColumn).dataValidation = {
-      allowBlank: true,
-      formulae: [`"${approvedDepartmentNames.join(",")}"`],
-      type: "list",
-    };
+    if (departmentFormula) {
+      sheet.getCell(rowNumber, departmentColumn).dataValidation = {
+        allowBlank: true,
+        formulae: [departmentFormula],
+        type: "list",
+      };
+    }
+    if (teamFormula) {
+      sheet.getCell(rowNumber, teamColumn).dataValidation = {
+        allowBlank: true,
+        formulae: [teamFormula],
+        type: "list",
+      };
+    }
     sheet.getCell(rowNumber, paymentModeColumn).dataValidation = {
       allowBlank: true,
       formulae: ['"two_parts,one_part"'],
@@ -337,7 +348,7 @@ function styleWorksheet(sheet: ExcelJS.Worksheet) {
     };
   }
 
-  const approvedDepartmentSet = new Set(approvedDepartmentNames.map((name) => name.toLowerCase()));
+  const approvedDepartmentSet = new Set(lookupValues.departments.map((name) => name.toLowerCase()));
   for (let rowNumber = firstDataRowNumber; rowNumber <= sheet.rowCount; rowNumber += 1) {
     const cell = sheet.getCell(rowNumber, departmentColumn);
     const value = String(cell.value ?? "").trim();
@@ -348,7 +359,10 @@ function styleWorksheet(sheet: ExcelJS.Worksheet) {
   }
 }
 
-function addInstructionsSheet(workbook: ExcelJS.Workbook) {
+function addInstructionsSheet(
+  workbook: ExcelJS.Workbook,
+  lookupValues: { departments: string[]; teams: string[] },
+) {
   const sheet = workbook.addWorksheet("Instructions");
   sheet.columns = [
     { header: "Topic", key: "topic", width: 28 },
@@ -373,7 +387,13 @@ function addInstructionsSheet(workbook: ExcelJS.Workbook) {
     },
     {
       topic: "Department dropdown",
-      guidance: `Department uses the approved global lookup: ${approvedDepartmentNames.join(", ")}. Legacy department values are preserved in export but should be remapped before upload.`,
+      guidance: `Department uses active global lookup values: ${lookupValues.departments.join(", ")}. Inactive legacy departments are excluded from the dropdown.`,
+    },
+    {
+      topic: "Team values",
+      guidance: lookupValues.teams.length
+        ? "Team exports use the global teams lookup. If the dropdown is not shown because the list is large, upload is still validated against the global team rules and can create a new team safely when Area is provided."
+        : "Team is accepted as text. Upload validates Team and maps or creates global team rows safely.",
     },
     {
       topic: "Blank optional values",
@@ -400,6 +420,14 @@ export async function GET(request: Request) {
     await assertPermission(access, "employees", "export");
 
     const directory = filterEmployeeDirectoryForAccess(await getEmployeeDirectory(), access);
+    const lookupValues = {
+      departments: Array.from(
+        new Set(directory.lookups.departments.map((department) => department.label).filter(Boolean)),
+      ).sort((left, right) => left.localeCompare(right)),
+      teams: Array.from(
+        new Set((directory.lookups.teams ?? []).map((team) => team.label).filter(Boolean)),
+      ).sort((left, right) => left.localeCompare(right)),
+    };
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Phoenix Workforce";
     workbook.created = new Date();
@@ -415,8 +443,8 @@ export async function GET(request: Request) {
     }));
     sheet.spliceRows(1, 0, [], columns.map((column) => column.section));
     sheet.addRows(directory.employees.map(employeeToExportRow));
-    styleWorksheet(sheet);
-    addInstructionsSheet(workbook);
+    styleWorksheet(sheet, lookupValues);
+    addInstructionsSheet(workbook, lookupValues);
 
     const buffer = await workbook.xlsx.writeBuffer();
 

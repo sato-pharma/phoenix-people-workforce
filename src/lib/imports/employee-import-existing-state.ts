@@ -1,4 +1,8 @@
-import type { ExistingImportState } from "@/lib/imports/employee-import-types";
+import type {
+  ExistingImportState,
+  ExistingTeamLookup,
+} from "@/lib/imports/employee-import-types";
+import { createOrgCode } from "@/lib/imports/org-rule-engine";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type SupabaseClient = ReturnType<typeof getSupabaseAdmin>;
@@ -36,6 +40,10 @@ async function loadCodeSet(supabase: SupabaseClient, table: string) {
 
 function normalizeDepartmentKey(value: string | null | undefined) {
   return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function teamAreaKey(name: string, areaCode: string | null) {
+  return `${normalizeDepartmentKey(name)}::${areaCode ?? ""}`;
 }
 
 async function loadActiveDepartments(supabase: SupabaseClient) {
@@ -134,6 +142,98 @@ async function loadEmployeeState(supabase: SupabaseClient) {
   };
 }
 
+async function loadAreaState(supabase: SupabaseClient) {
+  const { data, error } = await supabase.from("areas").select("id,code,name");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const areaCodes = new Set<string>();
+  const areaCodeToId = new Map<string, number>();
+  const areaIdToCode = new Map<number, string>();
+
+  for (const row of (data ?? []) as Array<{ code: string | null; id: number | null; name: string | null }>) {
+    const code = String(row.code ?? createOrgCode(row.name) ?? "").trim();
+    const id = Number(row.id);
+
+    if (!code || !Number.isFinite(id)) {
+      continue;
+    }
+
+    areaCodes.add(code);
+    areaCodeToId.set(code, id);
+    areaIdToCode.set(id, code);
+  }
+
+  return { areaCodeToId, areaCodes, areaIdToCode };
+}
+
+async function loadTeamRows(supabase: SupabaseClient) {
+  let result = await supabase.from("teams").select("id,code,name,area_id,is_active");
+
+  if (
+    result.error &&
+    (result.error.message.toLowerCase().includes("is_active") ||
+      result.error.message.toLowerCase().includes("area_id") ||
+      result.error.message.toLowerCase().includes("code"))
+  ) {
+    result = await supabase.from("teams").select("id,name");
+  }
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return (result.data ?? []) as Array<{
+    area_id?: number | null;
+    code?: string | null;
+    id: number | null;
+    is_active?: boolean | null;
+    name: string | null;
+  }>;
+}
+
+async function loadTeamState(
+  supabase: SupabaseClient,
+  areaIdToCode: Map<number, string>,
+) {
+  const rows = await loadTeamRows(supabase);
+  const teamCodes = new Set<string>();
+  const teamCodeToTeam = new Map<string, ExistingTeamLookup>();
+  const teamNameAreaToTeam = new Map<string, ExistingTeamLookup>();
+  const teamNameToTeams = new Map<string, ExistingTeamLookup[]>();
+
+  for (const row of rows) {
+    const name = String(row.name ?? "").trim();
+    const id = Number(row.id);
+
+    if (!name || !Number.isFinite(id) || row.is_active === false) {
+      continue;
+    }
+
+    const code = String(row.code ?? createOrgCode(name) ?? "").trim();
+    const areaCode =
+      typeof row.area_id === "number" ? areaIdToCode.get(row.area_id) ?? null : null;
+
+    if (!code) {
+      continue;
+    }
+
+    const team: ExistingTeamLookup = { areaCode, code, id, name };
+    const normalizedName = normalizeDepartmentKey(name);
+    const existingByName = teamNameToTeams.get(normalizedName) ?? [];
+
+    teamCodes.add(code);
+    teamCodeToTeam.set(code, team);
+    teamNameAreaToTeam.set(teamAreaKey(name, areaCode), team);
+    existingByName.push(team);
+    teamNameToTeams.set(normalizedName, existingByName);
+  }
+
+  return { teamCodeToTeam, teamCodes, teamNameAreaToTeam, teamNameToTeams };
+}
+
 export async function loadEmployeeImportExistingState(
   supabase: SupabaseClient = getSupabaseAdmin(),
 ): Promise<ExistingImportState> {
@@ -141,28 +241,28 @@ export async function loadEmployeeImportExistingState(
     employees,
     departmentCodes,
     lineCodes,
-    areaCodes,
-    teamCodes,
+    areaState,
     positionCodes,
     activeDepartments,
   ] = await Promise.all([
     loadEmployeeState(supabase),
     loadCodeSet(supabase, "departments"),
     loadCodeSet(supabase, "lines"),
-    loadCodeSet(supabase, "areas"),
-    loadCodeSet(supabase, "teams"),
+    loadAreaState(supabase),
     loadCodeSet(supabase, "positions"),
     loadActiveDepartments(supabase),
   ]);
+  const teamState = await loadTeamState(supabase, areaState.areaIdToCode);
 
   return {
     ...employees,
-    areaCodes,
+    areaCodes: areaState.areaCodes,
+    areaCodeToId: areaState.areaCodeToId,
     departmentCodes,
     departmentCodeToName: activeDepartments.codeToName,
     departmentNameToCode: activeDepartments.nameToCode,
     lineCodes,
     positionCodes,
-    teamCodes,
+    ...teamState,
   };
 }
