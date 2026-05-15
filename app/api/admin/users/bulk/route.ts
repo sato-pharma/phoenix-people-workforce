@@ -492,6 +492,7 @@ export async function POST(request: Request) {
         await upsertAccessUser(
           {
             email: row.email,
+            governanceReason: `Bulk user import row ${row.row}`,
             hrId: row.hrId,
             isActive: parseActive(row.isActive),
             line: row.line,

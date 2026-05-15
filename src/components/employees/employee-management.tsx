@@ -1,13 +1,19 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿"use client";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿"use client";
 
 import {
+  Activity,
   AlertCircle,
+  Briefcase,
   Building2,
   Check,
   CircleAlert,
+  CreditCard,
   Download,
   Info,
+  Layers,
+  MapPin,
   Pencil,
+  ShieldCheck,
   Users,
   RefreshCw,
   Search,
@@ -15,6 +21,7 @@ import {
   UserCheck2,
   UserPlus,
   UserX,
+  Wallet,
   X,
 } from "lucide-react";
 import * as React from "react";
@@ -218,7 +225,7 @@ function EmployeePageShell({ children }: { children: React.ReactNode }) {
         aria-hidden="true"
         className="pointer-events-none absolute bottom-10 left-1/4 h-80 w-80 rounded-full bg-[#3B82F6]/5 blur-3xl"
       />
-      <div className="relative z-10 space-y-8 max-w-[1600px] mx-auto">{children}</div>
+      <div className="relative z-10 space-y-6 max-w-[1720px] mx-auto">{children}</div>
     </div>
   );
 }
@@ -284,6 +291,7 @@ function SelectField({
   options,
   placeholder,
   value,
+  tone = "blue",
 }: {
   className?: string;
   disabled?: boolean;
@@ -292,25 +300,88 @@ function SelectField({
   options: EmployeeLookupOption[];
   placeholder?: string;
   value: string;
+  tone?: "blue" | "emerald" | "orange" | "violet" | "slate";
 }) {
+  const isSelected = value !== "";
+
+  const toneStyles = {
+    blue: {
+      border: isSelected ? "border-blue-200" : "border-[#D7E0EA]",
+      bg: isSelected ? "bg-blue-50/50" : "bg-white",
+      text: isSelected ? "text-blue-700" : "text-text",
+      label: isSelected ? "text-blue-600" : "text-text-secondary",
+      icon: "text-blue-500",
+      focus: "focus-visible:outline-blue-500",
+    },
+    emerald: {
+      border: isSelected ? "border-emerald-200" : "border-[#D7E0EA]",
+      bg: isSelected ? "bg-emerald-50/50" : "bg-white",
+      text: isSelected ? "text-emerald-700" : "text-text",
+      label: isSelected ? "text-emerald-600" : "text-text-secondary",
+      icon: "text-emerald-500",
+      focus: "focus-visible:outline-emerald-500",
+    },
+    orange: {
+      border: isSelected ? "border-orange-200" : "border-[#D7E0EA]",
+      bg: isSelected ? "bg-orange-50/50" : "bg-white",
+      text: isSelected ? "text-orange-700" : "text-text",
+      label: isSelected ? "text-orange-600" : "text-text-secondary",
+      icon: "text-orange-500",
+      focus: "focus-visible:outline-orange-500",
+    },
+    violet: {
+      border: isSelected ? "border-violet-200" : "border-[#D7E0EA]",
+      bg: isSelected ? "bg-violet-50/50" : "bg-white",
+      text: isSelected ? "text-violet-700" : "text-text",
+      label: isSelected ? "text-violet-600" : "text-text-secondary",
+      icon: "text-violet-500",
+      focus: "focus-visible:outline-violet-500",
+    },
+    slate: {
+      border: isSelected ? "border-slate-300" : "border-[#D7E0EA]",
+      bg: isSelected ? "bg-slate-50/50" : "bg-white",
+      text: isSelected ? "text-slate-700" : "text-text",
+      label: isSelected ? "text-slate-600" : "text-text-secondary",
+      icon: "text-slate-500",
+      focus: "focus-visible:outline-slate-500",
+    },
+  }[tone];
+
   return (
-    <label className={cn("block", className)}>
-      <span className="mb-1.5 block text-xs font-medium text-text-secondary">
-        {label}
-      </span>
-      <select
-        className={cn(selectClassName, disabled ? "bg-[#F8FAFC] text-[#94A3B8]" : "bg-white", className)}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
-      >
-        <option value="">{placeholder ?? `Select ${label.toLowerCase()}`}</option>
-        {options.map((option) => (
-          <option key={`${option.value}-${option.label}`} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+    <label className={cn("block group", className)}>
+      <div className="mb-1.5 flex items-center px-0.5 whitespace-nowrap overflow-hidden">
+        <span className={cn("block text-[10px] font-black uppercase tracking-[0.15em] transition-colors truncate", toneStyles.label)}>
+          {label}
+        </span>
+      </div>
+      <div className="relative">
+        <select
+          className={cn(
+            "h-11 w-full rounded-2xl border bg-white/95 px-3 text-xs font-semibold shadow-sm transition-all duration-200",
+            "appearance-none hover:shadow-md cursor-pointer whitespace-nowrap truncate pr-8",
+            toneStyles.border,
+            toneStyles.bg,
+            toneStyles.text,
+            toneStyles.focus,
+            disabled && "opacity-50 cursor-not-allowed bg-[#F8FAFC]"
+          )}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          value={value}
+        >
+          <option value="">{placeholder ?? `Select ${label.toLowerCase()}`}</option>
+          {options.map((option) => (
+            <option key={`${option.value}-${option.label}`} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+          <svg className={cn("h-4 w-4 transition-transform group-hover:translate-y-0.5", toneStyles.icon)} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+          </svg>
+        </div>
+      </div>
     </label>
   );
 }
@@ -1000,24 +1071,24 @@ export function EmployeeManagement({
     <div className="space-y-6">
       <AdminPageHero
         actions={
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white p-1 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 rounded-2xl border border-[#D7E0EA] bg-white/80 p-1 shadow-sm backdrop-blur-sm">
               <a
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-xl px-4 text-xs font-semibold text-[#475569] transition hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+                className="inline-flex h-10 items-center justify-center gap-2.5 rounded-xl px-5 text-xs font-semibold text-[#475569] transition-all hover:bg-[#F8FAFC] hover:text-[#0F172A] focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
                 href="/api/employees/template"
                 title="Export active employee master data"
               >
-                <Download className="h-3.5 w-3.5 text-[#F97316]" />
-                Export XLSX
+                <Download className="h-4 w-4 text-[#F97316]" />
+                <span className="hidden sm:inline">Export</span>
               </a>
-              <div className="h-4 w-px bg-[#E2E8F0]" />
-              <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-xs font-semibold text-[#475569] transition hover:bg-[#F8FAFC] hover:text-[#0F172A]">
+              <div className="h-5 w-px bg-[#E2E8F0]" />
+              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2.5 rounded-xl px-5 text-xs font-semibold text-[#475569] transition-all hover:bg-[#F8FAFC] hover:text-[#0F172A] focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1">
                 {isImportingTemplate ? (
                   <LoadingSpinner />
                 ) : (
-                  <Upload className="h-3.5 w-3.5 text-[#F97316]" />
+                  <Upload className="h-4 w-4 text-[#F97316]" />
                 )}
-                Upload
+                <span className="hidden sm:inline">Upload</span>
                 <input
                   accept=".xlsx,.xls"
                   className="sr-only"
@@ -1028,27 +1099,21 @@ export function EmployeeManagement({
               </label>
             </div>
             <Button
-              className="h-11 gap-2 rounded-2xl border-[#D7E0EA] bg-white px-4 text-xs font-semibold text-[#475569] shadow-sm transition hover:border-[#FDBA74] hover:bg-[#FFF7ED] hover:text-[#0F172A]"
+              className="h-10 gap-2 rounded-2xl border-[#D7E0EA] bg-white px-4 text-xs font-semibold text-[#475569] shadow-sm transition-all hover:border-[#FDBA74] hover:bg-[#FFF7ED] hover:text-[#0F172A] focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
               disabled={isLoading}
               onClick={() => void loadEmployees()}
               variant="outline"
             >
-              {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-3.5 w-3.5" />}
-              Sync
+              {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-4 w-4" />}
+              <span className="hidden lg:inline">Sync</span>
             </Button>
-            <Button className="h-11 gap-2 rounded-2xl bg-[#0F172A] px-6 text-xs font-bold text-white shadow-[0_14px_30px_rgba(15,23,42,0.22)] transition hover:bg-[#1E293B]" onClick={startCreate}>
+            <Button className="h-11 gap-2 rounded-2xl bg-[#0F172A] px-6 text-xs font-bold text-white shadow-[0_14px_30px_rgba(15,23,42,0.22)] transition-all hover:bg-[#1E293B] hover:shadow-[0_18px_36px_rgba(15,23,42,0.28)] focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1" onClick={startCreate}>
               <UserPlus className="h-4 w-4" />
               Add Employee
             </Button>
           </div>
         }
-        badges={
-          <div className="flex flex-wrap gap-2 text-xs text-[#475569]">
-            <AdminInsightChip>Master Data Governance</AdminInsightChip>
-            <AdminInsightChip tone="orange">Payroll Aligned</AdminInsightChip>
-          </div>
-        }
-        description="Enterprise employee master data center for workforce management, lifecycle tracking, and payroll-ready record governance."
+        description=""
         eyebrow="Workforce Intelligence"
         icon={<Building2 className="h-3.5 w-3.5" />}
         title="Employee Master Data"
@@ -1075,27 +1140,51 @@ export function EmployeeManagement({
 
       {pendingImportPreview ? (
         <AdminCallout tone={pendingImportPreview.failedRows ? "danger" : "warning"}>
-          <Upload className="mt-0.5 h-5 w-5 text-[#F97316]" />
-          <div className="flex w-full flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-text">Employee import preview</h2>
-              <p className="mt-1 text-sm text-text-secondary">
-                {(pendingImportPreview.rowsToInsert?.length ?? 0)} create, {(pendingImportPreview.rowsToUpdate?.length ?? 0)} update, {(pendingImportPreview.vacantPositionsToCreate?.length ?? 0)} vacancy rows, {pendingImportPreview.failedRows ?? 0} blocked.
-              </p>
-              {(pendingImportPreview.validationErrors?.length ?? 0) > 0 ? (
-                <p className="mt-1 text-xs text-danger">
-                  {pendingImportPreview.validationErrors?.slice(0, 3).map((issue) => `Row ${issue.rowNumber ?? "-"}: ${issue.message ?? "Validation failed."}`).join(" ")}
-                </p>
-              ) : null}
+          <div className="flex items-start gap-4 w-full">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#F97316] to-[#FB923C] text-white shadow-lg">
+              <Upload className="h-5 w-5" />
             </div>
-            <Button
-              className="h-9 rounded-xl px-4 text-xs"
-              disabled={isImportingTemplate || Boolean(pendingImportPreview.failedRows)}
-              onClick={() => void confirmPendingImport()}
-            >
-              {isImportingTemplate ? <LoadingSpinner /> : <Check className="h-3.5 w-3.5" />}
-              Confirm Import
-            </Button>
+            <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="space-y-2">
+                <h2 className="text-sm font-semibold text-text">Employee import preview</h2>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                    <Check className="h-3 w-3" />
+                    {(pendingImportPreview.rowsToInsert?.length ?? 0)} to create
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
+                    <Pencil className="h-3 w-3" />
+                    {(pendingImportPreview.rowsToUpdate?.length ?? 0)} to update
+                  </span>
+                  {(pendingImportPreview.vacantPositionsToCreate?.length ?? 0) > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-700">
+                      {(pendingImportPreview.vacantPositionsToCreate?.length ?? 0)} vacancies
+                    </span>
+                  ) : null}
+                  {(pendingImportPreview.failedRows ?? 0) > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700">
+                      <AlertCircle className="h-3 w-3" />
+                      {(pendingImportPreview.failedRows ?? 0)} blocked
+                    </span>
+                  ) : null}
+                </div>
+                {(pendingImportPreview.validationErrors?.length ?? 0) > 0 ? (
+                  <p className="mt-1 text-xs text-danger">
+                    {pendingImportPreview.validationErrors?.slice(0, 3).map((issue) => `Row ${issue.rowNumber ?? "-"}: ${issue.message ?? "Validation failed."}`).join(" ")}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  className="h-10 rounded-xl px-5 text-xs font-semibold transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                  disabled={isImportingTemplate || Boolean(pendingImportPreview.failedRows)}
+                  onClick={() => void confirmPendingImport()}
+                >
+                  {isImportingTemplate ? <LoadingSpinner /> : <Check className="h-4 w-4" />}
+                  Confirm Import
+                </Button>
+              </div>
+            </div>
           </div>
         </AdminCallout>
       ) : null}
@@ -1151,14 +1240,14 @@ export function EmployeeManagement({
                   <span className="sr-only">Search employees</span>
                   <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
                   <Input
-                    className="h-12 w-full rounded-2xl border-[#E2E8F0] bg-white pl-11 text-sm shadow-sm transition focus:border-[#F97316] focus:ring-1 focus:ring-[#F97316]"
+                    className="h-12 w-full rounded-2xl border-[#E2E8F0] bg-white pl-11 text-sm shadow-sm transition-all focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/20 focus:shadow-[0_0_0_4px_rgba(249,115,22,0.1)]"
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Search by name, ID, email, or manager..."
                     value={query}
                   />
                 </label>
                 <Button
-                  className="h-12 gap-2 rounded-2xl border-[#E2E8F0] bg-white px-6 text-sm font-semibold text-[#475569] shadow-sm transition hover:bg-[#F8FAFC]"
+                  className="h-12 gap-2 rounded-2xl border-[#E2E8F0] bg-white px-6 text-sm font-semibold text-[#475569] shadow-sm transition-all hover:bg-[#F8FAFC] focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1 disabled:opacity-40"
                   disabled={!hasActiveFilters}
                   onClick={clearFilters}
                   variant="outline"
@@ -1168,12 +1257,13 @@ export function EmployeeManagement({
                 </Button>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9">
                 <SelectField
                   label="Department"
                   onChange={setDepartmentFilter}
                   options={lookups.departments}
                   placeholder="All Departments"
+                  tone="blue"
                   value={departmentFilter}
                 />
                 <SelectField
@@ -1181,6 +1271,7 @@ export function EmployeeManagement({
                   onChange={setLineFilter}
                   options={lookups.lines}
                   placeholder="All Lines"
+                  tone="blue"
                   value={lineFilter}
                 />
                 <SelectField
@@ -1188,6 +1279,7 @@ export function EmployeeManagement({
                   onChange={setAreaFilter}
                   options={lookups.areas}
                   placeholder="All Areas"
+                  tone="blue"
                   value={areaFilter}
                 />
                 <SelectField
@@ -1195,6 +1287,7 @@ export function EmployeeManagement({
                   onChange={setPositionFilter}
                   options={lookups.positions}
                   placeholder="All Positions"
+                  tone="blue"
                   value={positionFilter}
                 />
                 <SelectField
@@ -1202,6 +1295,7 @@ export function EmployeeManagement({
                   onChange={setRegionFilter}
                   options={regionOptions}
                   placeholder="All Regions"
+                  tone="violet"
                   value={regionFilter}
                 />
                 <SelectField
@@ -1209,6 +1303,7 @@ export function EmployeeManagement({
                   onChange={setHasBankAccountFilter}
                   options={yesNoOptions}
                   placeholder="All"
+                  tone="orange"
                   value={hasBankAccountFilter}
                 />
                 <SelectField
@@ -1216,6 +1311,7 @@ export function EmployeeManagement({
                   onChange={setMedicalInsuranceStatusFilter}
                   options={enrollmentStatusOptions}
                   placeholder="All"
+                  tone="emerald"
                   value={medicalInsuranceStatusFilter}
                 />
                 <SelectField
@@ -1223,6 +1319,7 @@ export function EmployeeManagement({
                   onChange={setSocialInsuranceStatusFilter}
                   options={enrollmentStatusOptions}
                   placeholder="All"
+                  tone="emerald"
                   value={socialInsuranceStatusFilter}
                 />
                 <SelectField
@@ -1230,6 +1327,7 @@ export function EmployeeManagement({
                   onChange={setSalaryPaymentModeFilter}
                   options={salaryPaymentModeOptions}
                   placeholder="All Modes"
+                  tone="orange"
                   value={salaryPaymentModeFilter}
                 />
               </div>
@@ -1240,11 +1338,11 @@ export function EmployeeManagement({
                 <thead>
                   <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
                     <th className="sticky top-0 z-10 px-6 py-4">Employee Information</th>
+                    <th className="sticky top-0 z-10 px-6 py-4 whitespace-nowrap">Hiring Date</th>
                     <th className="sticky top-0 z-10 px-6 py-4">Organization</th>
                     <th className="sticky top-0 z-10 px-6 py-4">Direct Manager</th>
                     <th className="sticky top-0 z-10 px-6 py-4 text-center">Payout</th>
                     <th className="sticky top-0 z-10 px-6 py-4">Contact Details</th>
-                    <th className="sticky top-0 z-10 px-6 py-4">Status</th>
                     <th className="sticky top-0 z-10 px-6 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1252,16 +1350,21 @@ export function EmployeeManagement({
                   {filteredEmployees.length === 0 ? (
                     <tr>
                       <td
-                        className="px-6 py-12 text-center text-sm text-[#94A3B8]"
+                        className="px-6 py-16 text-center text-sm text-[#94A3B8]"
                         colSpan={7}
                       >
-                        No employee records match your current filter criteria.
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="h-12 w-12 rounded-full bg-[#F1F5F9] flex items-center justify-center">
+                            <Users className="h-6 w-6 text-[#CBD5E1]" />
+                          </div>
+                          <span>No employee records match your current filter criteria.</span>
+                        </div>
                       </td>
                     </tr>
                   ) : (
                     filteredEmployees.map((employee, index) => (
                       <tr
-                        className="group transition-colors hover:bg-[#F8FAFC]"
+                        className="group transition-all duration-200 hover:bg-[#F8FAFC] data-[state=selected]:bg-[#FFF7ED]"
                         key={employeeRowKey(employee, index)}
                       >
                         <td className="px-6 py-4">
@@ -1283,9 +1386,14 @@ export function EmployeeManagement({
                             </div>
                           </button>
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="font-mono text-xs text-[#475569]">
+                            {employee.hireDate ? employee.hireDate.slice(0, 10) : "-"}
+                          </span>
+                        </td>
                         <td className="px-6 py-4">
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-xs font-semibold text-[#334155]">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-semibold text-[#0F172A] leading-tight">
                               {emptyText(employee.positionTitle ?? employee.jobTitle)}
                             </span>
                             <span className="text-[10px] text-[#64748B]">
@@ -1295,11 +1403,11 @@ export function EmployeeManagement({
                         </td>
                         <td className="px-6 py-4">
                           {employee.managerHrId ? (
-                            <div className="flex flex-col">
-                              <span className="text-xs font-medium text-[#334155]">
+                            <div className="flex flex-col gap-1">
+                              <span className="text-xs font-medium text-[#0F172A]">
                                 {emptyText(employee.managerName)}
                               </span>
-                              <span className="text-[10px] text-[#94A3B8]">
+                              <span className="font-mono text-[10px] tracking-tight text-[#94A3B8]">
                                 {employee.managerHrId}
                               </span>
                             </div>
@@ -1312,7 +1420,7 @@ export function EmployeeManagement({
                         <td className="px-6 py-4 text-center">
                           <Badge
                             className={cn(
-                              "border-none px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight",
+                              "border-none px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight whitespace-nowrap",
                               employee.salaryPaymentMode === "two_parts"
                                 ? "bg-amber-100 text-amber-700"
                                 : "bg-emerald-100 text-emerald-700"
@@ -1325,53 +1433,40 @@ export function EmployeeManagement({
                           </Badge>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            <span className="text-xs text-[#334155]">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-medium text-[#0F172A] leading-tight">
                               {emptyText(employee.workEmail)}
                             </span>
-                            <span className="text-[10px] text-[#64748B]">
+                            <span className="font-mono text-[10px] tracking-tight text-[#64748B]">
                               {emptyText(employee.mobileNumber)}
                             </span>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
-                          <Badge
-                            className={cn(
-                              "border-none px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight",
-                              statusBadgeVariant(employee.employmentStatus) === "success" && "bg-emerald-100 text-emerald-700",
-                              statusBadgeVariant(employee.employmentStatus) === "warning" && "bg-amber-100 text-amber-700",
-                              statusBadgeVariant(employee.employmentStatus) === "danger" && "bg-rose-100 text-rose-700"
-                            )}
-                            variant="neutral"
-                          >
-                            {optionName(employee.employmentStatus ?? "active")}
-                          </Badge>
-                        </td>
                         <td className="px-6 py-4 text-right">
-                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex justify-end gap-1.5 transition-all duration-200">
                             <Button
-                              className="h-8 w-8 rounded-lg p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+                              className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A] hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
                               onClick={() => setMasterDetailsEmployee(employee)}
                               title="View Master Details"
                               variant="ghost"
                             >
-                              <Info className="h-3.5 w-3.5" />
+                              <Info className="h-4 w-4" />
                             </Button>
                             <Button
-                              className="h-8 w-8 rounded-lg p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+                              className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A] hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
                               onClick={() => startEdit(employee)}
                               title="Edit Record"
                               variant="ghost"
                             >
-                              <Pencil className="h-3.5 w-3.5" />
+                              <Pencil className="h-4 w-4" />
                             </Button>
                             <Button
-                              className="h-8 w-8 rounded-lg p-0 text-[#64748B] hover:bg-rose-50 hover:text-rose-600"
+                              className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-rose-50 hover:text-rose-600 hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
                               onClick={() => startResignation(employee)}
                               title="Mark as Resigned"
                               variant="ghost"
                             >
-                              <UserX className="h-3.5 w-3.5" />
+                              <UserX className="h-4 w-4" />
                             </Button>
                           </div>
                         </td>
@@ -1386,27 +1481,45 @@ export function EmployeeManagement({
       ) : null}
 
       {masterDetailsEmployee ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-[#0F172A]/40 backdrop-blur-sm">
-          <Card className="h-full w-full max-w-4xl overflow-hidden rounded-none border-l border-[#D8E0EA] bg-white shadow-[-20px_0_50px_rgba(15,23,42,0.1)]">
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] bg-[#F8FAFC] px-6 py-5">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight text-[#0F172A]">{masterDetailsEmployee.fullName}</h2>
-                <p className="mt-1 text-sm text-[#64748B]">
-                  {masterDetailsEmployee.hrId} · {masterText(masterDetailsEmployee.positionTitle ?? masterDetailsEmployee.jobTitle)}
-                </p>
+        <div 
+          className="fixed inset-0 z-50 flex justify-end bg-[#0F172A]/40 backdrop-blur-sm transition-opacity duration-300" 
+          onClick={() => setMasterDetailsEmployee(null)}
+          role="dialog" 
+          aria-modal="true" 
+          aria-labelledby="master-details-title"
+        >
+          <Card 
+            className="h-full w-full max-w-[640px] overflow-hidden rounded-l-3xl border-l border-[#D8E0EA] bg-white shadow-[-24px_0_60px_rgba(15,23,42,0.15)] flex flex-col transition-transform duration-300 translate-x-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] bg-gradient-to-r from-[#F8FAFC] to-white px-6 py-5">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#F97316] to-[#FB923C] text-white shadow-lg shadow-orange-200">
+                  <span className="text-lg font-bold">{masterDetailsEmployee.fullName.charAt(0).toUpperCase()}</span>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight text-[#0F172A]" id="master-details-title">{masterDetailsEmployee.fullName}</h2>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="font-mono text-[10px] font-black tracking-wider text-[#64748B] bg-slate-100 px-2 py-0.5 rounded uppercase">{masterDetailsEmployee.hrId}</span>
+                    <span className="text-[10px] text-[#94A3B8]">·</span>
+                    <span className="text-sm text-[#64748B]">{masterText(masterDetailsEmployee.positionTitle ?? masterDetailsEmployee.jobTitle)}</span>
+                  </div>
+                </div>
               </div>
               <Button
-                className="h-10 w-10 rounded-xl p-0 text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+                className="h-10 w-10 rounded-xl p-0 text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
                 onClick={() => setMasterDetailsEmployee(null)}
                 variant="ghost"
+                aria-label="Close details panel"
               >
                 <X className="h-5 w-5" />
               </Button>
             </div>
-            <div className="grid max-h-[calc(100vh-88px)] gap-5 overflow-y-auto p-6 lg:grid-cols-2">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {[
                 {
                   title: "Identity",
+                  accent: "bg-[#F97316]",
                   rows: [
                     ["Employee ID", masterDetailsEmployee.hrId],
                     ["Full Name", masterDetailsEmployee.fullName],
@@ -1418,6 +1531,7 @@ export function EmployeeManagement({
                 },
                 {
                   title: "Organization",
+                  accent: "bg-[#3B82F6]",
                   rows: [
                     ["Department", masterDetailsEmployee.departmentName],
                     ["Line", masterDetailsEmployee.lineName],
@@ -1434,6 +1548,7 @@ export function EmployeeManagement({
                 },
                 {
                   title: "Contact & Residence",
+                  accent: "bg-[#8B5CF6]",
                   rows: [
                     ["Email", masterDetailsEmployee.workEmail],
                     ["Phone", masterDetailsEmployee.mobileNumber],
@@ -1444,6 +1559,7 @@ export function EmployeeManagement({
                 },
                 {
                   title: "CRM",
+                  accent: "bg-[#14B8A6]",
                   rows: [
                     ["CRM ID", masterDetailsEmployee.crmId],
                     ["CRM Username", masterDetailsEmployee.crmUsername],
@@ -1451,6 +1567,7 @@ export function EmployeeManagement({
                 },
                 {
                   title: "Payroll Reference",
+                  accent: "bg-[#F43F5E]",
                   rows: [
                     ["Basic Salary", masterDetailsEmployee.basicSalary],
                     ["Base Salary", masterDetailsEmployee.baseSalary],
@@ -1473,6 +1590,7 @@ export function EmployeeManagement({
                 },
                 {
                   title: "Lifecycle/System",
+                  accent: "bg-[#64748B]",
                   rows: [
                     ["Payroll Eligible", masterDetailsEmployee.payrollEligible],
                     ["Organogram Visible", masterDetailsEmployee.organogramVisible],
@@ -1481,39 +1599,60 @@ export function EmployeeManagement({
                   ],
                 },
               ].map((group) => (
-                <section className="rounded-2xl border border-[#E2E8F0] bg-white p-4" key={group.title}>
-                  <h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-[#475569]">{group.title}</h3>
-                  <dl className="grid gap-2">
+                <section className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm transition-all hover:shadow-md hover:border-[#E2E8F0]/80" key={group.title}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className={cn("h-1.5 w-1.5 rounded-full", group.accent)} />
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">{group.title}</h3>
+                  </div>
+                  <dl className="grid gap-1.5">
                     {group.rows.map(([label, value]) => (
-                      <div className="grid grid-cols-[150px_1fr] gap-3 border-b border-[#F1F5F9] py-2 last:border-0" key={String(label)}>
-                        <dt className="text-xs font-semibold text-[#64748B]">{label}</dt>
-                        <dd className="text-sm text-[#0F172A]">{masterText(value)}</dd>
+                      <div className="grid grid-cols-[140px_1fr] gap-3 border-b border-[#F8FAFC] py-2 last:border-0" key={String(label)}>
+                        <dt className="text-xs font-medium text-[#94A3B8]">{label}</dt>
+                        <dd className="text-sm font-medium text-[#0F172A]">{masterText(value)}</dd>
                       </div>
                     ))}
                   </dl>
                 </section>
               ))}
             </div>
+            <div className="border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4 flex justify-end">
+              <Button
+                className="h-11 rounded-2xl px-8 text-sm font-bold text-white bg-[#0F172A] hover:bg-[#1E293B] shadow-lg transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                onClick={() => setMasterDetailsEmployee(null)}
+              >
+                Close Details
+              </Button>
+            </div>
           </Card>
         </div>
       ) : null}
 
       {isFormOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-[#0F172A]/40 backdrop-blur-sm transition-all duration-300">
-          <Card className="h-full w-full max-w-2xl overflow-hidden rounded-none border-l border-[#D8E0EA] bg-white shadow-[-20px_0_50px_rgba(15,23,42,0.1)] flex flex-col animate-in slide-in-from-right duration-300">
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] bg-[#F8FAFC] px-6 py-5">
+        <div 
+          className="fixed inset-0 z-50 flex justify-end bg-[#0F172A]/40 backdrop-blur-sm transition-all duration-300" 
+          onClick={closeForm}
+          role="dialog" 
+          aria-modal="true" 
+          aria-labelledby="form-drawer-title"
+        >
+          <Card 
+            className="h-full w-full max-w-[680px] overflow-hidden rounded-l-3xl border-l border-[#D8E0EA] bg-white shadow-[-24px_0_60px_rgba(15,23,42,0.15)] flex flex-col transition-transform duration-300 translate-x-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] bg-gradient-to-r from-[#F8FAFC] to-white px-6 py-5">
               <div>
-                <h2 className="text-xl font-bold tracking-tight text-[#0F172A]">
+                <h2 className="text-xl font-bold tracking-tight text-[#0F172A]" id="form-drawer-title">
                   {editingHrId ? "Employee Profile" : "New Employee Onboarding"}
                 </h2>
                 <p className="mt-1 text-sm text-[#64748B]">
-                  {editingHrId ? `Editing master record for ${form.fullName}` : "Create a new workforce master data record."}
+                  {editingHrId ? `Editing master record for ${form.fullName || "..."}` : "Create a new workforce master data record."}
                 </p>
               </div>
               <Button
-                className="h-10 w-10 rounded-xl p-0 text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+                className="h-10 w-10 rounded-xl p-0 text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
                 onClick={closeForm}
                 variant="ghost"
+                aria-label="Close form panel"
               >
                 <X className="h-5 w-5" />
               </Button>
@@ -1950,29 +2089,40 @@ export function EmployeeManagement({
               </div>
             </div>
 
-            <div className="border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4 flex justify-end gap-3">
-              <Button
-                className="h-11 rounded-2xl px-6 text-sm font-semibold text-[#475569] hover:bg-[#E2E8F0]"
-                onClick={closeForm}
-                variant="ghost"
-              >
-                Discard Changes
-              </Button>
-              <Button
-                className="h-11 gap-2 rounded-2xl bg-[#0F172A] px-8 text-sm font-bold text-white shadow-lg transition hover:bg-[#1E293B] disabled:opacity-50"
-                disabled={isSaving}
-                onClick={() => void saveEmployee()}
-              >
-                {isSaving ? <LoadingSpinner /> : <Check className="h-4 w-4" />}
-                {editingHrId ? "Update Record" : "Create Master Record"}
-              </Button>
+            <div className="border-t border-[#E2E8F0] bg-gradient-to-r from-[#F8FAFC] to-white px-6 py-4 flex justify-between items-center">
+              <div className="text-xs text-[#94A3B8]">
+                {editingHrId ? "Editing existing master record" : "Creating new employee record"}
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  className="h-11 rounded-2xl px-6 text-sm font-semibold text-[#475569] hover:bg-[#E2E8F0] transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                  onClick={closeForm}
+                  variant="ghost"
+                >
+                  Discard Changes
+                </Button>
+                <Button
+                  className="h-11 gap-2 rounded-2xl bg-[#0F172A] px-8 text-sm font-bold text-white shadow-lg transition-all hover:bg-[#1E293B] hover:shadow-xl disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                  disabled={isSaving}
+                  onClick={() => void saveEmployee()}
+                >
+                  {isSaving ? <LoadingSpinner /> : <Check className="h-4 w-4" />}
+                  {editingHrId ? "Update Record" : "Create Master Record"}
+                </Button>
+              </div>
             </div>
           </Card>
         </div>
       )}
       {isResignationOpen && resigningEmployee ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0F172A]/60 px-4 py-6 backdrop-blur-md">
-          <Card className={`${panelClassName} w-full max-w-3xl overflow-hidden`}>
+        <div 
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0F172A]/60 px-4 py-6 backdrop-blur-md"
+          onClick={closeResignation}
+        >
+          <Card 
+            className={`${panelClassName} w-full max-w-3xl overflow-hidden`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <AdminSectionHeader
               action={
                 <Button

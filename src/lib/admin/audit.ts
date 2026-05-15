@@ -11,6 +11,16 @@ export type AuditLogInput = {
   summary: string;
 };
 
+export class AuditPersistenceError extends Error {
+  cause: unknown;
+
+  constructor(cause: unknown) {
+    super("Critical audit log could not be persisted. Review mutation state before retrying.");
+    this.name = "AuditPersistenceError";
+    this.cause = cause;
+  }
+}
+
 export type AuditLogFilter = {
   actor?: string | null;
   action?: string | null;
@@ -88,4 +98,20 @@ export async function writeAuditLog(input: AuditLogInput) {
     old_values: input.oldValues ?? null,
     summary: input.summary,
   });
+}
+
+export async function writeRequiredAuditLog(input: AuditLogInput) {
+  try {
+    await writeAuditLog(input);
+  } catch (error) {
+    console.error(JSON.stringify({
+      actorLoginId: input.actorLoginId ?? null,
+      entityId: input.entityId ?? null,
+      entityType: input.entityType,
+      error: error instanceof Error ? error.message : String(error),
+      event: "critical_audit_persistence_failed",
+      summary: input.summary,
+    }));
+    throw new AuditPersistenceError(error);
+  }
 }

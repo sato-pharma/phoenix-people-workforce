@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import {
+  parseAccessUserRequest,
+  parseAccessUserStatusRequest,
+} from "@/lib/admin/access-validation";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
@@ -7,89 +11,97 @@ import {
   updateAccessUserStatus,
   upsertAccessUser,
 } from "@/lib/admin/access-control";
+import { toApiError, unauthorizedError } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function adminApiError(error: unknown) {
+  const apiError = toApiError(error, "Access control request failed.");
+  if (apiError.status !== 500 || apiError.code === "audit_persistence_failed") {
+    return {
+      code: apiError.code,
+      message: apiError.message,
+      status: apiError.status,
+    };
+  }
   if (isForbiddenError(error)) {
     return {
+      code: "forbidden",
       message: error instanceof Error ? error.message : "Forbidden.",
       status: 403,
     };
   }
   return {
+    code: "access_control_failed",
     message: error instanceof Error ? error.message : "Access control request failed.",
     status: 500,
   };
 }
 
+function assertAuthenticated(access: { hrId: string | null; loginId?: string | null }) {
+  if (!access.loginId && !access.hrId) {
+    throw unauthorizedError();
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    assertAuthenticated(access);
     await assertPermission(access, "admin_access", "read");
     return NextResponse.json(await getAccessControlDashboard());
   } catch (error) {
-    const { message, status } = adminApiError(error);
-    return NextResponse.json({ error: "access_users_load_failed", message }, { status });
+    const { code, message, status } = adminApiError(error);
+    return NextResponse.json({ error: code, message }, { status });
   }
 }
 
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    assertAuthenticated(access);
     await assertPermission(access, "user_admin", "update");
-    const payload = await request.json();
-
-    if (typeof payload.isActive !== "undefined" && typeof payload.isActive !== "boolean") {
-      return NextResponse.json(
-        { error: "invalid_is_active", message: "isActive must be a boolean when provided." },
-        { status: 400 },
-      );
-    }
+    const payload = parseAccessUserRequest(await request.json());
 
     return NextResponse.json(
       await upsertAccessUser({
-        email: payload.email ? String(payload.email) : null,
-        hrId: payload.hrId ? String(payload.hrId) : null,
-        isActive: typeof payload.isActive === "boolean" ? payload.isActive : undefined,
-        line: payload.line ? String(payload.line) : null,
-        loginId: String(payload.loginId ?? ""),
-        managerHrId: payload.managerHrId ? String(payload.managerHrId) : null,
-        name: payload.name ? String(payload.name) : null,
+        email: payload.email,
+        governanceReason: payload.governanceReason,
+        hrId: payload.hrId,
+        isActive: payload.isActive,
+        line: payload.line,
+        loginId: payload.loginId,
+        managerHrId: payload.managerHrId,
+        name: payload.name,
         role: payload.role,
-        salesScopeOverride: payload.salesScopeOverride ?? null,
+        salesScopeOverride: payload.salesScopeOverride,
       }, { loginId: access.loginId ?? null, role: access.role }),
       { status: 201 },
     );
   } catch (error) {
-    const { message, status } = adminApiError(error);
-    return NextResponse.json({ error: "access_user_save_failed", message }, { status });
+    const { code, message, status } = adminApiError(error);
+    return NextResponse.json({ error: code, message }, { status });
   }
 }
 
 export async function PATCH(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    assertAuthenticated(access);
     await assertPermission(access, "user_admin", "update");
-    const payload = await request.json();
-
-    if (typeof payload.isActive !== "boolean") {
-      return NextResponse.json(
-        { error: "invalid_is_active", message: "isActive must be a boolean." },
-        { status: 400 },
-      );
-    }
+    const payload = parseAccessUserStatusRequest(await request.json());
 
     return NextResponse.json(
       await updateAccessUserStatus(
-        String(payload.loginId ?? ""),
+        payload.loginId,
         payload.isActive,
         { loginId: access.loginId ?? null, role: access.role },
+        payload.governanceReason,
       ),
     );
   } catch (error) {
-    const { message, status } = adminApiError(error);
-    return NextResponse.json({ error: "access_user_status_failed", message }, { status });
+    const { code, message, status } = adminApiError(error);
+    return NextResponse.json({ error: code, message }, { status });
   }
 }

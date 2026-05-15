@@ -34,7 +34,7 @@ export async function POST(request: Request) {
 
     const results = await Promise.allSettled(
       (loginIds as string[]).map((loginId) =>
-        updateAccessUserStatus(loginId, isActive, actor),
+        updateAccessUserStatus(loginId, isActive, actor, `Bulk ${action} action`),
       ),
     );
 

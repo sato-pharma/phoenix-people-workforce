@@ -63,8 +63,16 @@ type DashboardData = {
   employees: EmployeeOption[];
   lines: readonly PhoenixLine[];
   permissions: PermissionMap;
+  permissionOverrides?: PermissionOverrideMarker[];
   roles: typeof phoenixRoles;
   users: AccessUserRow[];
+};
+
+type PermissionOverrideMarker = {
+  action: PermissionAction;
+  isAllowed: boolean;
+  resource: PermissionResource;
+  role: PhoenixRole;
 };
 
 type RowResult = {
@@ -78,6 +86,12 @@ type RowResult = {
 };
 
 type Props = {
+  capabilities?: {
+    canBulkImportUsers: boolean;
+    canManagePermissions: boolean;
+    canManageUsers: boolean;
+    canReadUsers: boolean;
+  };
   initialData?: DashboardData | null;
   initialError?: string | null;
 };
@@ -171,6 +185,12 @@ function getScopeSemanticClasses(scope: BusinessScope) {
 }
 
 export function AccessControlManager({
+  capabilities = {
+    canBulkImportUsers: false,
+    canManagePermissions: false,
+    canManageUsers: false,
+    canReadUsers: false,
+  },
   initialData = null,
   initialError = null,
 }: Props) {
@@ -189,12 +209,74 @@ export function AccessControlManager({
   const [setupLinkSending, setSetupLinkSending] = React.useState<string | null>(null);
   const [showPermissions, setShowPermissions] = React.useState(false);
   const [showAudit, setShowAudit] = React.useState(false);
+  const [pendingGovernanceAction, setPendingGovernanceAction] = React.useState<{
+    body: string;
+    confirmLabel: string;
+    onConfirm: (reason: string) => Promise<void>;
+    reasonPlaceholder: string;
+    title: string;
+  } | null>(null);
+  const [governanceReason, setGovernanceReason] = React.useState("");
+  const [isConfirmingGovernanceAction, setIsConfirmingGovernanceAction] = React.useState(false);
+
+  const canManageUsers = capabilities.canManageUsers;
+  const canManagePermissions = capabilities.canManagePermissions;
+
+  function requestGovernanceConfirmation(input: {
+    body: string;
+    confirmLabel: string;
+    onConfirm: (reason: string) => Promise<void>;
+    reasonPlaceholder?: string;
+    title: string;
+  }) {
+    setGovernanceReason("");
+    setPendingGovernanceAction({
+      ...input,
+      reasonPlaceholder: input.reasonPlaceholder ?? "Optional governance reason",
+    });
+  }
+
+  async function confirmGovernanceAction() {
+    if (!pendingGovernanceAction) return;
+    setIsConfirmingGovernanceAction(true);
+    try {
+      await pendingGovernanceAction.onConfirm(governanceReason.trim());
+      setPendingGovernanceAction(null);
+      setGovernanceReason("");
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Governance action failed.");
+    } finally {
+      setIsConfirmingGovernanceAction(false);
+    }
+  }
 
   async function updatePermission(
     role: PhoenixRole,
     resource: PermissionResource,
     action: PermissionAction,
     isAllowed: boolean,
+  ) {
+    if (!canManagePermissions) {
+      setError("Only Super Admin can update permission overrides.");
+      return;
+    }
+    requestGovernanceConfirmation({
+      body: `Change ${role} permission for ${resource}:${action} to ${isAllowed ? "allowed" : "restricted"}.`,
+      confirmLabel: "Update permission",
+      onConfirm: async (reason) => {
+        await performPermissionUpdate(role, resource, action, isAllowed, reason);
+      },
+      reasonPlaceholder: "Why is this permission override required?",
+      title: "Confirm permission override",
+    });
+  }
+
+  async function performPermissionUpdate(
+    role: PhoenixRole,
+    resource: PermissionResource,
+    action: PermissionAction,
+    isAllowed: boolean,
+    governanceReason: string,
   ) {
     setError(null);
     const key = `${role}:${resource}:${action}`;
@@ -203,6 +285,7 @@ export function AccessControlManager({
       const response = await fetch("/api/admin/permissions", {
         body: JSON.stringify({
           action,
+          governanceReason,
           isAllowed,
           resource,
           role,
@@ -237,6 +320,32 @@ export function AccessControlManager({
 
   async function saveUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManageUsers) {
+      setError("You do not have permission to update users.");
+      return;
+    }
+    const existing = data?.users.find((user) => user.loginId === (form.hrId.trim() || form.loginId.trim()));
+    const roleChanged = Boolean(existing && existing.role !== form.role);
+    const privilegedRole = form.role === "Super Admin" || form.role === "CEO" || form.role === "HR Specialist" || form.role === "Finance Manager";
+    const deactivating = Boolean(existing?.isActive && !form.isActive);
+
+    if (roleChanged || privilegedRole || deactivating) {
+      requestGovernanceConfirmation({
+        body: `Save ${form.hrId.trim() || form.loginId.trim() || "this user"} with role ${form.role}${deactivating ? " and deactivate access" : ""}.`,
+        confirmLabel: "Save user",
+        onConfirm: async (reason) => {
+          await performSaveUser(reason);
+        },
+        reasonPlaceholder: "Reason for role/access governance change",
+        title: "Confirm user access change",
+      });
+      return;
+    }
+
+    await performSaveUser("");
+  }
+
+  async function performSaveUser(governanceReason: string) {
     setIsSaving(true);
     setError(null);
     setSetupLinkMessage(null);
@@ -251,6 +360,7 @@ export function AccessControlManager({
       const response = await fetch("/api/admin/users", {
         body: JSON.stringify({
           ...form,
+          governanceReason,
           loginId,
           salesScopeOverride: form.salesScopeOverride || null,
         }),
@@ -269,6 +379,11 @@ export function AccessControlManager({
   }
 
   async function uploadBulkUsers(event: React.ChangeEvent<HTMLInputElement>) {
+    if (!capabilities.canBulkImportUsers) {
+      setError("You do not have permission to bulk import users.");
+      event.target.value = "";
+      return;
+    }
     const file = event.target.files?.[0];
     if (!file) return;
     setError(null);
@@ -298,9 +413,25 @@ export function AccessControlManager({
   }
 
   async function toggleUser(user: AccessUserRow) {
+    if (!canManageUsers) {
+      setError("You do not have permission to update users.");
+      return;
+    }
+    requestGovernanceConfirmation({
+      body: `${user.isActive ? "Deactivate" : "Reactivate"} ${user.name} (${user.loginId}). This changes session validity and Supabase access state.`,
+      confirmLabel: user.isActive ? "Deactivate user" : "Reactivate user",
+      onConfirm: async (reason) => {
+        await performToggleUser(user, reason);
+      },
+      reasonPlaceholder: "Reason for changing account status",
+      title: user.isActive ? "Confirm deactivation" : "Confirm reactivation",
+    });
+  }
+
+  async function performToggleUser(user: AccessUserRow, governanceReason: string) {
     setError(null);
     const response = await fetch("/api/admin/users", {
-      body: JSON.stringify({ isActive: !user.isActive, loginId: user.loginId }),
+      body: JSON.stringify({ governanceReason, isActive: !user.isActive, loginId: user.loginId }),
       headers: { "Content-Type": "application/json" },
       method: "PATCH",
     });
@@ -313,6 +444,22 @@ export function AccessControlManager({
   }
 
   async function sendSetupLink(user: AccessUserRow, deliveryMode: "copy" | "email") {
+    if (!canManageUsers) {
+      setError("You do not have permission to generate password links.");
+      return;
+    }
+    requestGovernanceConfirmation({
+      body: `${deliveryMode === "email" ? "Email" : "Generate and copy"} a one-time ${user.forcePasswordReset ? "setup" : "reset"} link for ${user.name} (${user.loginId}).`,
+      confirmLabel: deliveryMode === "email" ? "Send link" : "Generate link",
+      onConfirm: async (reason) => {
+        await performSendSetupLink(user, deliveryMode, reason);
+      },
+      reasonPlaceholder: "Reason for password setup/reset link",
+      title: "Confirm password link",
+    });
+  }
+
+  async function performSendSetupLink(user: AccessUserRow, deliveryMode: "copy" | "email", governanceReason: string) {
     setError(null);
     setSetupLinkMessage(null);
     setSetupLinkSending(`${user.loginId}:${deliveryMode}`);
@@ -321,6 +468,7 @@ export function AccessControlManager({
       const response = await fetch("/api/admin/users/setup-link", {
         body: JSON.stringify({
           deliveryMode,
+          governanceReason,
           loginId: user.loginId,
           purpose: user.forcePasswordReset ? "setup" : "reset",
         }),
@@ -358,6 +506,10 @@ export function AccessControlManager({
   }
 
   function editUser(user: AccessUserRow) {
+    if (!canManageUsers) {
+      setError("You do not have permission to edit users.");
+      return;
+    }
     setForm({
       email: user.email ?? "",
       hrId: user.hrId ?? "",
@@ -390,6 +542,11 @@ export function AccessControlManager({
   const hasDashboard = data !== null;
   const hasUsers = filteredUsers.length > 0;
   const lineOptions = data?.lines ?? ["CNS", "Pedia", "Anti-Infective", "Office", "Other"];
+  const permissionOverrideSet = new Set(
+    (data?.permissionOverrides ?? []).map((override) =>
+      `${override.role}:${override.resource}:${override.action}:${override.isAllowed ? "allow" : "deny"}`,
+    ),
+  );
 
   const statCards = [
     {
@@ -444,20 +601,22 @@ export function AccessControlManager({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <a
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-medium text-slate-700 shadow-sm transition-all duration-160 ease-out hover:border-slate-300 hover:bg-slate-50 hover:shadow-md hover:-translate-y-px"
-              download
-              href="/api/admin/users/bulk"
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              <Download className="h-3.5 w-3.5 text-slate-500" />
-              Download template
-            </a>
-            <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-medium text-slate-700 shadow-sm transition-all duration-160 ease-out hover:border-slate-300 hover:bg-slate-50 hover:shadow-md hover:-translate-y-px">
+            {capabilities.canReadUsers && (
+              <a
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-medium text-slate-700 shadow-sm transition-all duration-160 ease-out hover:border-slate-300 hover:bg-slate-50 hover:shadow-md hover:-translate-y-px"
+                download
+                href="/api/admin/users/bulk"
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                <Download className="h-3.5 w-3.5 text-slate-500" />
+                Download template
+              </a>
+            )}
+            <label className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-medium text-slate-700 shadow-sm transition-all duration-160 ease-out ${capabilities.canBulkImportUsers ? "cursor-pointer hover:border-slate-300 hover:bg-slate-50 hover:shadow-md hover:-translate-y-px" : "cursor-not-allowed opacity-60"}`}>
               <Upload className="h-3.5 w-3.5 text-slate-500" />
-              Bulk upload
-              <input accept=".xlsx,.xls" className="sr-only" onChange={uploadBulkUsers} type="file" />
+              {capabilities.canBulkImportUsers ? "Bulk upload" : "Import restricted"}
+              <input accept=".xlsx,.xls" className="sr-only" disabled={!capabilities.canBulkImportUsers} onChange={uploadBulkUsers} type="file" />
             </label>
             <Button
               className="h-9 rounded-lg px-3.5 text-xs font-medium transition-all duration-160 ease-out hover:shadow-md hover:-translate-y-px active:scale-95"
@@ -475,7 +634,6 @@ export function AccessControlManager({
       {error && (
         <AdminCallout tone="danger">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          {error}
           <span>{error}</span>
         </AdminCallout>
       )}
@@ -620,7 +778,7 @@ export function AccessControlManager({
           <div className="grid gap-8 xl:grid-cols-[420px_minmax(0,1fr)]">
             <Card className={`${panelClassName} h-fit p-0 xl:sticky xl:top-6`}>
               <AdminSectionHeader
-                action={<div className="text-xs font-semibold text-[#0F172A]">Active</div>}
+                action={<div className="text-xs font-semibold text-[#0F172A]">{canManageUsers ? "Active" : "Read only"}</div>}
                 description="Create or update a user profile, then issue setup and reset links from the user table."
                 title="User editor"
               />
@@ -631,12 +789,14 @@ export function AccessControlManager({
                   <div className="grid gap-3">
                     <Input
                       className="h-9 rounded-lg border-slate-200 bg-white px-3 text-sm font-medium transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                      disabled={!canManageUsers}
                       onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
                       placeholder="Full name"
                       value={form.name}
                     />
                     <Input
                       className="h-9 rounded-lg border-slate-200 bg-white px-3 text-sm font-medium transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                      disabled={!canManageUsers}
                       onChange={(e) => {
                         const hrId = e.target.value;
                         setForm((p) => ({
@@ -650,6 +810,7 @@ export function AccessControlManager({
                     />
                     <Input
                       className="h-9 rounded-lg border-slate-200 bg-white px-3 text-sm font-medium transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                      disabled={!canManageUsers}
                       onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
                       placeholder="Email"
                       type="email"
@@ -665,6 +826,7 @@ export function AccessControlManager({
                   <div className="grid gap-3">
                     <select
                       className="h-9 w-full rounded-lg border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                      disabled={!canManageUsers}
                       onChange={(e) => setForm((p) => ({ ...p, role: e.target.value as PhoenixRole }))}
                       value={form.role}
                     >
@@ -677,6 +839,7 @@ export function AccessControlManager({
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <select
                         className="h-9 w-full rounded-lg border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                        disabled={!canManageUsers}
                         onChange={(e) => setForm((p) => ({ ...p, line: e.target.value as PhoenixLine }))}
                         value={form.line}
                       >
@@ -688,6 +851,7 @@ export function AccessControlManager({
                       </select>
                       <Input
                         className="h-9 rounded-lg border-slate-200 bg-white px-3 text-sm font-medium transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                        disabled={!canManageUsers}
                         onChange={(e) => setForm((p) => ({ ...p, managerHrId: e.target.value }))}
                         placeholder="Manager HR_ID"
                         value={form.managerHrId}
@@ -703,6 +867,7 @@ export function AccessControlManager({
                   <div className="grid gap-3">
                     <select
                       className="h-9 w-full rounded-lg border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                      disabled={!canManageUsers}
                       onChange={(e) =>
                         setForm((p) => ({ ...p, salesScopeOverride: e.target.value as BusinessScope | "" }))
                       }
@@ -749,6 +914,7 @@ export function AccessControlManager({
                       <input
                         checked={form.isActive}
                         className="h-4 w-4 accent-orange-500 transition-all duration-160 ease-out"
+                        disabled={!canManageUsers}
                         onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))}
                         type="checkbox"
                       />
@@ -756,9 +922,9 @@ export function AccessControlManager({
                   </div>
                 </div>
 
-                <Button className="h-9 w-full gap-2 rounded-lg text-sm font-medium transition-all duration-160 ease-out hover:shadow-sm active:scale-95" disabled={isSaving} type="submit">
+                <Button className="h-9 w-full gap-2 rounded-lg text-sm font-medium transition-all duration-160 ease-out hover:shadow-sm active:scale-95" disabled={isSaving || !canManageUsers} type="submit">
                   {isSaving ? <LoadingSpinner /> : <CheckCircle2 className="h-4 w-4" />}
-                  Save user
+                  {canManageUsers ? "Save user" : "Read-only access"}
                 </Button>
               </form>
             </Card>
@@ -961,54 +1127,60 @@ export function AccessControlManager({
                             </span>
                           </td>
                           <td className="px-3 py-3 align-top text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-all duration-160 ease-out hover:bg-orange-50 hover:text-orange-600 hover:shadow-[0_0_0_1px_rgba(249,115,22,0.12)_inset,0_2px_8px_rgba(249,115,22,0.1)] active:scale-95 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-500 disabled:hover:shadow-none"
-                                onClick={() => editUser(user)}
-                                title="Edit User"
-                                type="button"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </button>
-                              <button
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-all duration-160 ease-out hover:bg-sky-50 hover:text-sky-600 hover:shadow-[0_0_0_1px_rgba(14,165,233,0.12)_inset,0_2px_8px_rgba(14,165,233,0.1)] active:scale-95 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-500 disabled:hover:shadow-none"
-                                disabled={setupLinkSending !== null || !user.isActive}
-                                onClick={() => sendSetupLink(user, "email")}
-                                title={user.forcePasswordReset ? "Email Setup Link" : "Email Reset Link"}
-                                type="button"
-                              >
-                                {setupLinkSending === `${user.loginId}:email` ? (
-                                  <LoadingSpinner className="h-4 w-4" />
-                                ) : (
-                                  <Mail className="h-4 w-4" />
-                                )}
-                              </button>
-                              <button
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-all duration-160 ease-out hover:bg-violet-50 hover:text-violet-600 hover:shadow-[0_0_0_1px_rgba(139,92,246,0.12)_inset,0_2px_8px_rgba(139,92,246,0.1)] active:scale-95 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-500 disabled:hover:shadow-none"
-                                disabled={setupLinkSending !== null || !user.isActive}
-                                onClick={() => sendSetupLink(user, "copy")}
-                                title={user.forcePasswordReset ? "Copy Setup Link" : "Copy Reset Link"}
-                                type="button"
-                              >
-                                {setupLinkSending === `${user.loginId}:copy` ? (
-                                  <LoadingSpinner className="h-4 w-4" />
-                                ) : (
-                                  <Copy className="h-4 w-4" />
-                                )}
-                              </button>
-                              <button
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-all duration-160 ease-out hover:bg-rose-50 hover:text-rose-600 hover:shadow-[0_0_0_1px_rgba(244,63,94,0.12)_inset,0_2px_8px_rgba(244,63,94,0.1)] active:scale-95"
-                                onClick={() => toggleUser(user)}
-                                title={user.isActive ? "Disable Account" : "Enable Account"}
-                                type="button"
-                              >
-                                {user.isActive ? (
-                                  <Ban className="h-4 w-4" />
-                                ) : (
-                                  <CheckCircle2 className="h-4 w-4" />
-                                )}
-                              </button>
-                            </div>
+                            {canManageUsers ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-all duration-160 ease-out hover:bg-orange-50 hover:text-orange-600 hover:shadow-[0_0_0_1px_rgba(249,115,22,0.12)_inset,0_2px_8px_rgba(249,115,22,0.1)] active:scale-95 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-500 disabled:hover:shadow-none"
+                                  onClick={() => editUser(user)}
+                                  title="Edit User"
+                                  type="button"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                                <button
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-all duration-160 ease-out hover:bg-sky-50 hover:text-sky-600 hover:shadow-[0_0_0_1px_rgba(14,165,233,0.12)_inset,0_2px_8px_rgba(14,165,233,0.1)] active:scale-95 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-500 disabled:hover:shadow-none"
+                                  disabled={setupLinkSending !== null || !user.isActive}
+                                  onClick={() => sendSetupLink(user, "email")}
+                                  title={user.forcePasswordReset ? "Email Setup Link" : "Email Reset Link"}
+                                  type="button"
+                                >
+                                  {setupLinkSending === `${user.loginId}:email` ? (
+                                    <LoadingSpinner className="h-4 w-4" />
+                                  ) : (
+                                    <Mail className="h-4 w-4" />
+                                  )}
+                                </button>
+                                <button
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-all duration-160 ease-out hover:bg-violet-50 hover:text-violet-600 hover:shadow-[0_0_0_1px_rgba(139,92,246,0.12)_inset,0_2px_8px_rgba(139,92,246,0.1)] active:scale-95 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-500 disabled:hover:shadow-none"
+                                  disabled={setupLinkSending !== null || !user.isActive}
+                                  onClick={() => sendSetupLink(user, "copy")}
+                                  title={user.forcePasswordReset ? "Copy Setup Link" : "Copy Reset Link"}
+                                  type="button"
+                                >
+                                  {setupLinkSending === `${user.loginId}:copy` ? (
+                                    <LoadingSpinner className="h-4 w-4" />
+                                  ) : (
+                                    <Copy className="h-4 w-4" />
+                                  )}
+                                </button>
+                                <button
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-all duration-160 ease-out hover:bg-rose-50 hover:text-rose-600 hover:shadow-[0_0_0_1px_rgba(244,63,94,0.12)_inset,0_2px_8px_rgba(244,63,94,0.1)] active:scale-95"
+                                  onClick={() => toggleUser(user)}
+                                  title={user.isActive ? "Disable Account" : "Enable Account"}
+                                  type="button"
+                                >
+                                  {user.isActive ? (
+                                    <Ban className="h-4 w-4" />
+                                  ) : (
+                                    <CheckCircle2 className="h-4 w-4" />
+                                  )}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                Restricted
+                              </span>
+                            )}
                           </td>
                         </tr>
                         );
@@ -1083,7 +1255,14 @@ export function AccessControlManager({
               )}
             </button>
             {showPermissions && (
-              <div className="border-t border-slate-200/80 overflow-x-auto">
+              <div className="border-t border-slate-200/80">
+                <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">Inherited</span>
+                  <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 font-semibold text-orange-700">Override</span>
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 font-semibold text-slate-500">Restricted</span>
+                  {!canManagePermissions && <span className="font-medium text-slate-500">Permission changes are locked to Super Admin governance.</span>}
+                </div>
+                <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-xs">
                   <thead className="bg-stone-50 text-[10px] font-medium uppercase tracking-wider text-slate-500">
                     <tr>
@@ -1136,20 +1315,40 @@ export function AccessControlManager({
                           return (
                             <td className="border-l border-slate-100/80 px-4 py-3" key={`${role}-${resource}`}>
                               <div className="flex flex-wrap gap-2">
-                                {permissionActions.map((action) => (
-                                  <label className="flex items-center gap-1.5 text-[10px] cursor-pointer hover:text-slate-700 transition-colors" key={`${role}-${resource}-${action}`}>
-                                    <input
-                                      checked={allowedActions.includes(action)}
-                                      className="h-3.5 w-3.5 accent-orange-500"
-                                      disabled={permissionSaving === `${role}:${resource}:${action}`}
-                                      onChange={(event) =>
-                                        void updatePermission(role, resource, action, event.target.checked)
-                                      }
-                                      type="checkbox"
-                                    />
-                                    <span className="uppercase font-medium">{action}</span>
-                                  </label>
-                                ))}
+                                {permissionActions.map((action) => {
+                                  const isAllowed = allowedActions.includes(action);
+                                  const isAllowOverride = permissionOverrideSet.has(`${role}:${resource}:${action}:allow`);
+                                  const isDenyOverride = permissionOverrideSet.has(`${role}:${resource}:${action}:deny`);
+                                  const provenance = isAllowOverride || isDenyOverride
+                                    ? "Override"
+                                    : isAllowed
+                                      ? "Inherited"
+                                      : "Restricted";
+                                  return (
+                                    <label
+                                      className={`flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[10px] transition-colors ${
+                                        isAllowOverride || isDenyOverride
+                                          ? "border-orange-200 bg-orange-50 text-orange-700"
+                                          : isAllowed
+                                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                            : "border-slate-200 bg-white text-slate-500"
+                                      } ${canManagePermissions ? "cursor-pointer hover:text-slate-700" : "cursor-not-allowed opacity-70"}`}
+                                      key={`${role}-${resource}-${action}`}
+                                      title={`${provenance}: ${role} ${action} ${resource}`}
+                                    >
+                                      <input
+                                        checked={isAllowed}
+                                        className="h-3.5 w-3.5 accent-orange-500"
+                                        disabled={!canManagePermissions || permissionSaving === `${role}:${resource}:${action}`}
+                                        onChange={(event) =>
+                                          void updatePermission(role, resource, action, event.target.checked)
+                                        }
+                                        type="checkbox"
+                                      />
+                                      <span className="uppercase font-medium">{action}</span>
+                                    </label>
+                                  );
+                                })}
                               </div>
                             </td>
                           );
@@ -1158,6 +1357,7 @@ export function AccessControlManager({
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </Card>
@@ -1229,6 +1429,54 @@ export function AccessControlManager({
             </div>
           </div>
         </Card>
+      )}
+      {pendingGovernanceAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-orange-200 bg-orange-50 text-orange-600">
+                <ShieldAlert className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-slate-900">{pendingGovernanceAction.title}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{pendingGovernanceAction.body}</p>
+              </div>
+            </div>
+            <label className="mt-5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Governance reason
+              <textarea
+                className="mt-2 min-h-24 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-800 outline-none transition-all duration-160 ease-out placeholder:text-slate-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                maxLength={500}
+                onChange={(event) => setGovernanceReason(event.target.value)}
+                placeholder={pendingGovernanceAction.reasonPlaceholder}
+                value={governanceReason}
+              />
+            </label>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Button
+                className="h-9 rounded-lg px-3.5 text-xs"
+                disabled={isConfirmingGovernanceAction}
+                onClick={() => {
+                  setPendingGovernanceAction(null);
+                  setGovernanceReason("");
+                }}
+                type="button"
+                variant="secondary"
+              >
+                Cancel
+              </Button>
+              <Button
+                className="h-9 rounded-lg px-3.5 text-xs"
+                disabled={isConfirmingGovernanceAction}
+                onClick={confirmGovernanceAction}
+                type="button"
+              >
+                {isConfirmingGovernanceAction ? <LoadingSpinner className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+                {pendingGovernanceAction.confirmLabel}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
       </div>
     </div>

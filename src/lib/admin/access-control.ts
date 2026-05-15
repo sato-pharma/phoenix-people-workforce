@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 
-import { writeAuditLog } from "@/lib/admin/audit";
+import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
   clearPermissionMatrixCache,
@@ -20,7 +20,9 @@ import {
 import {
   mapPhoenixRoleToAccessScopeType,
   mapPhoenixRoleToCoarseAccessRole,
+  deleteSupabaseAuthIdentity,
   provisionSupabaseAuthIdentity,
+  setSupabaseAuthIdentityAccess,
 } from "@/lib/auth/supabase-identity";
 import { createTemporaryAuthPassword } from "@/lib/auth/password-setup";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -56,6 +58,13 @@ export type AuditLogRow = {
   summary: string;
 };
 
+export type PermissionOverrideRow = {
+  action: PermissionAction;
+  isAllowed: boolean;
+  resource: PermissionResource;
+  role: PhoenixRole;
+};
+
 type AccessUserDbRow = {
   auth_email?: string | null;
   auth_user_id?: string | null;
@@ -76,6 +85,7 @@ type AccessUserDbRow = {
 
 export type AccessUserMutation = {
   email?: string | null;
+  governanceReason?: string | null;
   hrId?: string | null;
   isActive?: boolean;
   loginId: string;
@@ -102,6 +112,7 @@ type AccessUserRecord = Record<string, unknown> & {
   login_id?: string | null;
   manager_hr_id?: string | null;
   name?: string | null;
+  password_hash?: string | null;
   role?: string | null;
   sales_scope_override?: string | null;
   session_version?: number | null;
@@ -184,6 +195,33 @@ async function listAuditLogs(): Promise<AuditLogRow[]> {
   });
 }
 
+async function listPermissionOverrides(): Promise<PermissionOverrideRow[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("role_permission_overrides")
+    .select("role_name,resource,action,is_allowed");
+
+  if (error || !data) {
+    return [];
+  }
+
+  return (data as Array<{ action: string | null; is_allowed: boolean | null; resource: string | null; role_name: string | null }>)
+    .map((row) => {
+      try {
+        if (typeof row.is_allowed !== "boolean") return null;
+        return {
+          action: parsePermissionActionStrict(row.action),
+          isAllowed: row.is_allowed,
+          resource: parsePermissionResourceStrict(row.resource),
+          role: parseRoleStrict(row.role_name),
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter((row): row is PermissionOverrideRow => row !== null);
+}
+
 async function auditUserChange(input: {
   actor?: AccessActor | null;
   entityId: string;
@@ -191,7 +229,7 @@ async function auditUserChange(input: {
   oldValues?: Record<string, unknown> | null;
   summary: string;
 }) {
-  await writeAuditLog({
+  await writeRequiredAuditLog({
     actorLoginId: input.actor?.loginId ?? null,
     entityId: input.entityId,
     entityType: "user",
@@ -211,6 +249,14 @@ function getStoredSessionVersion(record: AccessUserRecord | null) {
 
 function isStoredActive(record: AccessUserRecord | null) {
   return Boolean(record?.is_active);
+}
+
+function logCompensationFailure(context: string, error: unknown) {
+  console.error(JSON.stringify({
+    context,
+    error: error instanceof Error ? error.message : String(error),
+    event: "access_control_compensation_failed",
+  }));
 }
 
 async function countActiveSuperAdmins() {
@@ -241,7 +287,7 @@ async function assertLastSuperAdminInvariant(
   }
 }
 
-function assertActorMayManageUser(input: {
+export function assertActorMayManageUser(input: {
   actor?: AccessActor | null;
   existing: AccessUserRecord | null;
   loginId: string;
@@ -320,6 +366,7 @@ export async function getAccessControlDashboard() {
     })),
     lines: phoenixLines,
     permissions: await getPermissionMatrix(),
+    permissionOverrides: await listPermissionOverrides(),
     roles: phoenixRoles,
     users: ((data ?? []) as AccessUserDbRow[]).map((row) =>
       toUser(row, row.hr_id ? employeeMap.get(row.hr_id.trim().toLowerCase()) : undefined),
@@ -329,6 +376,7 @@ export async function getAccessControlDashboard() {
 
 export type PermissionUpdateInput = {
   action: PermissionAction | string;
+  governanceReason?: string | null;
   isAllowed: boolean;
   resource: PermissionResource | string;
   role: PhoenixRole | string;
@@ -355,46 +403,71 @@ export async function upsertRolePermissionOverride(
     .eq("action", action)
     .maybeSingle();
 
-  const { error } = await supabase
-    .from("role_permission_overrides")
-    .upsert({
-      role_name: permissionRole,
-      resource,
-      action,
-      is_allowed: input.isAllowed,
-      updated_by: actor.loginId ?? null,
-      updated_at: new Date().toISOString(),
-    }, {
-      onConflict: "role_name,resource,action",
-    });
+  try {
+    const { error } = await supabase
+      .from("role_permission_overrides")
+      .upsert({
+        role_name: permissionRole,
+        resource,
+        action,
+        is_allowed: input.isAllowed,
+        updated_by: actor.loginId ?? null,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: "role_name,resource,action",
+      });
 
-  if (error) {
-    if ((error as { code?: string }).code === "42P01") {
-      throw new Error("Role permission override table is missing. Please run migration for dynamic permissions.");
+    if (error) {
+      if ((error as { code?: string }).code === "42P01") {
+        throw new Error("Role permission override table is missing. Please run migration for dynamic permissions.");
+      }
+      throw error;
     }
-    throw error;
+
+    clearPermissionMatrixCache();
+
+    await writeRequiredAuditLog({
+      actorLoginId: actor.loginId,
+      entityId: `${permissionRole}.${resource}.${action}`,
+      entityType: "permission_override",
+      newValues: {
+        action,
+        isAllowed: input.isAllowed,
+        reason: input.governanceReason ?? null,
+        resource,
+        role: permissionRole,
+      },
+      oldValues: previousRow ? {
+        action: previousRow.action,
+        isAllowed: previousRow.is_allowed,
+        resource: previousRow.resource,
+        role: previousRow.role_name,
+      } : null,
+      summary: `${permissionRole} ${action.toUpperCase()} ${resource} => ${input.isAllowed ? "allow" : "deny"}`,
+    });
+  } catch (mutationError) {
+    try {
+      if (previousRow) {
+        const { error: restoreError } = await supabase
+          .from("role_permission_overrides")
+          .upsert(previousRow, { onConflict: "role_name,resource,action" });
+        if (restoreError) throw restoreError;
+      } else {
+        const { error: deleteError } = await supabase
+          .from("role_permission_overrides")
+          .delete()
+          .eq("role_name", permissionRole)
+          .eq("resource", resource)
+          .eq("action", action);
+        if (deleteError) throw deleteError;
+      }
+      clearPermissionMatrixCache();
+    } catch (rollbackError) {
+      logCompensationFailure("permission_override_restore", rollbackError);
+    }
+
+    throw mutationError;
   }
-
-  clearPermissionMatrixCache();
-
-  await writeAuditLog({
-    actorLoginId: actor.loginId,
-    entityId: `${permissionRole}.${resource}.${action}`,
-    entityType: "permission_override",
-    newValues: {
-      action,
-      isAllowed: input.isAllowed,
-      resource,
-      role: permissionRole,
-    },
-    oldValues: previousRow ? {
-      action: previousRow.action,
-      isAllowed: previousRow.is_allowed,
-      resource: previousRow.resource,
-      role: previousRow.role_name,
-    } : null,
-    summary: `${permissionRole} ${action.toUpperCase()} ${resource} => ${input.isAllowed ? "allow" : "deny"}`,
-  }).catch(() => undefined);
 
   return getAccessControlDashboard();
 }
@@ -492,6 +565,7 @@ export async function upsertAccessUser(input: AccessUserMutation, actor?: Access
 
     payload.auth_email = supabaseIdentity.authEmail;
     payload.auth_user_id = supabaseIdentity.authUserId;
+    payload.__created_auth_user_id = supabaseIdentity.authUserId;
   } else if (metadataChanged || !existing?.auth_user_id) {
     const bridgePassword = existing?.auth_user_id ? null : createTemporaryAuthPassword();
     const supabaseIdentity = await provisionSupabaseAuthIdentity({
@@ -509,6 +583,9 @@ export async function upsertAccessUser(input: AccessUserMutation, actor?: Access
 
     payload.auth_email = supabaseIdentity.authEmail;
     payload.auth_user_id = supabaseIdentity.authUserId;
+    if (!existing?.auth_user_id) {
+      payload.__created_auth_user_id = supabaseIdentity.authUserId;
+    }
 
     if (bridgePassword) {
       payload.password_hash = await bcrypt.hash(bridgePassword, 12);
@@ -517,54 +594,156 @@ export async function upsertAccessUser(input: AccessUserMutation, actor?: Access
   }
 
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase
-    .from("app_auth_users")
-    .upsert(payload, { onConflict: "login_id" });
-
-  if (error) throw error;
-
   const authUserId = typeof payload.auth_user_id === "string"
     ? payload.auth_user_id
     : typeof existing?.auth_user_id === "string"
       ? existing.auth_user_id
       : null;
-  if (authUserId) {
-    const { error: profileError } = await supabase
+  const createdAuthUserId = typeof payload.__created_auth_user_id === "string"
+    ? payload.__created_auth_user_id
+    : null;
+  delete payload.__created_auth_user_id;
+  let appUserWritten = false;
+  let profileWritten = false;
+  const previousProfile = authUserId
+    ? await supabase
       .from("user_access_profiles")
-      .upsert({
-        auth_user_id: authUserId,
-        hr_id: input.hrId?.trim() || loginId,
-        is_active: nextIsActive,
-        line,
-        login_id: loginId,
-        manager_hr_id: input.managerHrId?.trim() || null,
-        phoenix_role: role,
-        role: mapPhoenixRoleToCoarseAccessRole(role),
-        scope_type: mapPhoenixRoleToAccessScopeType(role),
-        updated_at: new Date().toISOString(),
-      }, {
-        onConflict: "auth_user_id",
-      });
+      .select("*")
+      .eq("auth_user_id", authUserId)
+      .maybeSingle()
+    : null;
 
-    if (profileError) {
-      throw profileError;
+  try {
+    const { error } = await supabase
+      .from("app_auth_users")
+      .upsert(payload, { onConflict: "login_id" });
+
+    if (error) throw error;
+    appUserWritten = true;
+
+    if (authUserId) {
+      const { error: profileError } = await supabase
+        .from("user_access_profiles")
+        .upsert({
+          auth_user_id: authUserId,
+          hr_id: input.hrId?.trim() || loginId,
+          is_active: nextIsActive,
+          line,
+          login_id: loginId,
+          manager_hr_id: input.managerHrId?.trim() || null,
+          phoenix_role: role,
+          role: mapPhoenixRoleToCoarseAccessRole(role),
+          scope_type: mapPhoenixRoleToAccessScopeType(role),
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: "auth_user_id",
+        });
+
+      if (profileError) {
+        throw profileError;
+      }
+      profileWritten = true;
     }
+
+    const roleChanged = Boolean(existingRole && existingRole !== role);
+    const summary = !existing
+      ? `Created ${loginId}`
+      : roleChanged
+        ? `Updated role for ${loginId}`
+        : `Updated ${loginId}`;
+
+    await auditUserChange({
+      actor,
+      entityId: loginId,
+      oldValues: existing,
+      newValues: {
+        ...payload,
+        password_hash: payload.password_hash ? "[managed]" : "[unchanged]",
+        reason: input.governanceReason ?? null,
+      },
+      summary,
+    });
+  } catch (mutationError) {
+    if (profileWritten && authUserId) {
+      try {
+        if (previousProfile?.data) {
+          const { error: restoreProfileError } = await supabase
+            .from("user_access_profiles")
+            .upsert(previousProfile.data as Record<string, unknown>, { onConflict: "auth_user_id" });
+          if (restoreProfileError) throw restoreProfileError;
+        } else {
+          const { error: deleteProfileError } = await supabase
+            .from("user_access_profiles")
+            .delete()
+            .eq("auth_user_id", authUserId);
+          if (deleteProfileError) throw deleteProfileError;
+        }
+      } catch (rollbackError) {
+        logCompensationFailure("user_access_profiles", rollbackError);
+      }
+    }
+
+    if (appUserWritten) {
+      try {
+        if (existing) {
+          const { error: restoreUserError } = await supabase
+            .from("app_auth_users")
+            .upsert({
+              auth_email: existing.auth_email ?? null,
+              auth_user_id: existing.auth_user_id ?? null,
+              email: existing.email ?? null,
+              force_password_reset: Boolean(existing.force_password_reset),
+              hr_id: existing.hr_id ?? null,
+              is_active: Boolean(existing.is_active),
+              line: existing.line ?? null,
+              login_id: loginId,
+              manager_hr_id: existing.manager_hr_id ?? null,
+              name: existing.name ?? loginId,
+              password_hash: existing.password_hash ?? null,
+              role: existing.role,
+              sales_scope_override: existing.sales_scope_override ?? null,
+              session_version: getStoredSessionVersion(existing),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: "login_id" });
+          if (restoreUserError) throw restoreUserError;
+        } else {
+          const { error: deleteUserError } = await supabase
+            .from("app_auth_users")
+            .delete()
+            .eq("login_id", loginId);
+          if (deleteUserError) throw deleteUserError;
+        }
+      } catch (rollbackError) {
+        logCompensationFailure("app_auth_users", rollbackError);
+      }
+    }
+
+    if (createdAuthUserId) {
+      try {
+        await deleteSupabaseAuthIdentity(createdAuthUserId);
+      } catch (rollbackError) {
+        logCompensationFailure("supabase_auth_delete", rollbackError);
+      }
+    } else if (typeof existing?.auth_user_id === "string") {
+      try {
+        await provisionSupabaseAuthIdentity({
+          authUserId: existing.auth_user_id,
+          email: existing.email ?? null,
+          hrId: existing.hr_id ?? loginId,
+          isActive: isStoredActive(existing),
+          line: existing.line ?? null,
+          loginId,
+          managerHrId: existing.manager_hr_id ?? null,
+          name: existing.name ?? loginId,
+          role: getStoredRole(existing) ?? role,
+        });
+      } catch (rollbackError) {
+        logCompensationFailure("supabase_auth_restore", rollbackError);
+      }
+    }
+
+    throw mutationError;
   }
-
-  const roleChanged = Boolean(existingRole && existingRole !== role);
-  const summary = !existing
-    ? `Created ${loginId}`
-    : roleChanged
-      ? `Updated role for ${loginId}`
-      : `Updated ${loginId}`;
-
-  await auditUserChange({
-    actor,
-    entityId: loginId,
-    oldValues: existing,
-    newValues: { ...payload, password_hash: payload.password_hash ? "[managed]" : "[unchanged]" },
-    summary,
-  }).catch(() => undefined);
 
   return getAccessControlDashboard();
 }
@@ -573,7 +752,7 @@ async function supabaseUser(loginId: string) {
   const supabase = getSupabaseAdmin();
   const { data } = await supabase
     .from("app_auth_users")
-    .select("login_id,role,hr_id,is_active,name,email,line,manager_hr_id,sales_scope_override,auth_user_id,auth_email,session_version,force_password_reset")
+    .select("login_id,role,hr_id,is_active,name,email,line,manager_hr_id,sales_scope_override,auth_user_id,auth_email,session_version,force_password_reset,password_hash")
     .eq("login_id", loginId)
     .maybeSingle();
   return (data as AccessUserRecord | null) ?? null;
@@ -583,6 +762,7 @@ export async function updateAccessUserStatus(
   loginId: string,
   isActive: boolean,
   actor?: AccessActor | null,
+  governanceReason?: string | null,
 ) {
   const supabase = getSupabaseAdmin();
   const existing = await supabaseUser(loginId);
@@ -607,34 +787,95 @@ export async function updateAccessUserStatus(
   const nextSessionVersion = isStoredActive(existing) && !isActive
     ? getStoredSessionVersion(existing) + 1
     : getStoredSessionVersion(existing);
+  const previousIsActive = isStoredActive(existing);
+  const previousSessionVersion = getStoredSessionVersion(existing);
+  let appStatusWritten = false;
+  let authStatusWritten = false;
+  let profileStatusWritten = false;
 
-  const { error } = await supabase
-    .from("app_auth_users")
-    .update({
-      is_active: isActive,
-      session_version: nextSessionVersion,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("login_id", loginId);
+  try {
+    const { error } = await supabase
+      .from("app_auth_users")
+      .update({
+        is_active: isActive,
+        session_version: nextSessionVersion,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("login_id", loginId);
 
-  if (error) throw error;
+    if (error) throw error;
+    appStatusWritten = true;
 
-  if (typeof existing.auth_user_id === "string") {
-    const { error: profileError } = await supabase
-      .from("user_access_profiles")
-      .update({ is_active: isActive, updated_at: new Date().toISOString() })
-      .eq("auth_user_id", existing.auth_user_id);
+    if (typeof existing.auth_user_id === "string") {
+      await setSupabaseAuthIdentityAccess({
+        authUserId: existing.auth_user_id,
+        isActive,
+      });
+      authStatusWritten = true;
 
-    if (profileError) throw profileError;
+      const { error: profileError } = await supabase
+        .from("user_access_profiles")
+        .update({ is_active: isActive, updated_at: new Date().toISOString() })
+        .eq("auth_user_id", existing.auth_user_id);
+
+      if (profileError) throw profileError;
+      profileStatusWritten = true;
+    }
+
+    await auditUserChange({
+      actor,
+      entityId: loginId,
+      oldValues: existing,
+      newValues: {
+        auth_identity_access: isActive ? "unbanned" : "banned",
+        is_active: isActive,
+        reason: governanceReason ?? null,
+        session_version: nextSessionVersion,
+      },
+      summary: `${isActive ? "Activated" : "Deactivated"} ${loginId}`,
+    });
+  } catch (mutationError) {
+    if (profileStatusWritten && typeof existing.auth_user_id === "string") {
+      try {
+        const { error: profileRollbackError } = await supabase
+          .from("user_access_profiles")
+          .update({ is_active: previousIsActive, updated_at: new Date().toISOString() })
+          .eq("auth_user_id", existing.auth_user_id);
+        if (profileRollbackError) throw profileRollbackError;
+      } catch (rollbackError) {
+        logCompensationFailure("status_profile_restore", rollbackError);
+      }
+    }
+
+    if (authStatusWritten && typeof existing.auth_user_id === "string") {
+      try {
+        await setSupabaseAuthIdentityAccess({
+          authUserId: existing.auth_user_id,
+          isActive: previousIsActive,
+        });
+      } catch (rollbackError) {
+        logCompensationFailure("status_auth_restore", rollbackError);
+      }
+    }
+
+    if (appStatusWritten) {
+      try {
+        const { error: userRollbackError } = await supabase
+          .from("app_auth_users")
+          .update({
+            is_active: previousIsActive,
+            session_version: previousSessionVersion,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("login_id", loginId);
+        if (userRollbackError) throw userRollbackError;
+      } catch (rollbackError) {
+        logCompensationFailure("status_user_restore", rollbackError);
+      }
+    }
+
+    throw mutationError;
   }
-
-  await auditUserChange({
-    actor,
-    entityId: loginId,
-    oldValues: existing,
-    newValues: { is_active: isActive, session_version: nextSessionVersion },
-    summary: `${isActive ? "Activated" : "Deactivated"} ${loginId}`,
-  }).catch(() => undefined);
 
   return getAccessControlDashboard();
 }
