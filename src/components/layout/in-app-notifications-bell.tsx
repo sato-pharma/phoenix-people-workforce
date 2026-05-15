@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 
 type InAppNotificationView = {
   category: string;
+  actionLabel: string | null;
   href: string | null;
   id: string;
   message: string;
@@ -114,6 +115,14 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                           <span className="rounded-full bg-[#FFF7ED] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#C2410C]">
                             {notification.category.replace(/_/g, " ")}
                           </span>
+                          {notification.href ? (
+                            <span className={cn(
+                              "rounded-full border border-[#E2E8F0] bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em]",
+                              isAdminMode ? "border-[#334155] text-[#CBD5E1]" : "text-[#0F172A]",
+                            )}>
+                              {notification.actionLabel || "See details"}
+                            </span>
+                          ) : null}
                           <span className={cn("text-[11px]", isAdminMode ? "text-[#64748B]" : "text-[#94A3B8]")}>
                             {formatNotificationTime(notification.sentAt ?? notification.scheduledFor)}
                           </span>

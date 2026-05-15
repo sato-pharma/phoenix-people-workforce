@@ -3,7 +3,11 @@ import ExcelJS from "exceljs";
 import {
   assertPermission,
   canAccess,
+  createAccessContext,
   type AccessContext,
+  getPermissionMatrix,
+  normalizeRole,
+  resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
@@ -45,6 +49,9 @@ import type {
   LeaveDurationUnit,
   LeavePaymentStatus,
   LeaveDecisionInput,
+  LeaveNotificationDeliveryStatus,
+  LeaveNotificationRecipient,
+  LeaveNotificationRouteLevel,
   LeavePolicy,
   LeaveRequest,
   LeaveRequestFilters,
@@ -62,6 +69,8 @@ import type {
   VacationReportRow,
   VacationReportScope,
   VacationReportWorkspace,
+  LeaveSubmitResponse,
+  LeaveDecisionResponse,
 } from "@/lib/leave/types";
 import { createLeaveCorrelationId, writeLeaveAuditLog } from "@/lib/leave/audit";
 import { getLeaveAttachmentUrl } from "@/lib/leave/attachments";
@@ -1566,8 +1575,14 @@ async function loadAllLeaveRequestsForEngine(filters: LeaveRequestFilters = {}) 
 }
 
 export async function getLeaveRequestDetails(access: AccessContext, id: string) {
-  const requests = await listLeaveRequests(access, {});
-  const request = requests.find((item) => item.id === id);
+  const row = await loadRequestRow(id);
+  const request = await hydrateLeaveRequest(row);
+  const { employeeByHrId } = await loadDirectoryMaps();
+
+  if (!isManageRole(access) && !canSeeLeaveEmployee(access, request.employeeHrId, employeeByHrId)) {
+    throw new Error("Leave request was not found or is not accessible.");
+  }
+
   if (!request) throw new Error("Leave request was not found or is not accessible.");
   return request;
 }
@@ -1588,22 +1603,601 @@ export async function getLeaveAttachmentDownloadUrl(access: AccessContext, reque
   return { url };
 }
 
-export async function listLeaveAuditLogs(access: AccessContext, limit = 80): Promise<LeaveAuditLog[]> {
+export async function listLeaveAuditLogs(
+  access: AccessContext,
+  options: { eventTypePrefix?: string; limit?: number } | number = 80,
+): Promise<LeaveAuditLog[]> {
   await assertPermission(access, "leave", "read");
   if (!isManageRole(access)) return [];
+  const limit = typeof options === "number" ? options : options.limit ?? 80;
+  const eventTypePrefix = typeof options === "number" ? undefined : options.eventTypePrefix?.trim();
+
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
+  let query = supabase
     .from("leave_audit_logs")
     .select("*")
-    .order("created_at", { ascending: false })
-    .limit(Math.min(Math.max(limit, 1), 200));
+    .order("created_at", { ascending: false });
+  if (eventTypePrefix) {
+    query = query.ilike("event_type", `${eventTypePrefix}%`);
+  }
+  const { data, error } = await query.limit(Math.min(Math.max(limit, 1), 200));
   if (error) throw error;
   return ((data ?? []) as LeaveAuditLogRow[]).map(mapAuditLog);
 }
 
-async function notifyLeaveSubmitted(request: LeaveRequest) {
+async function resolveManagerHrChain(startManagerHrId?: string | null): Promise<string[]> {
+  const initialManager = cleanHrId(startManagerHrId);
+  if (!initialManager) return [];
+
+  const { employeeByHrId } = await loadDirectoryMaps();
+  const chain: string[] = [];
+  const visited = new Set<string>();
+  let currentManagerHrId = initialManager;
+
+  while (currentManagerHrId && !visited.has(currentManagerHrId) && chain.length < 6) {
+    visited.add(currentManagerHrId);
+    chain.push(currentManagerHrId);
+    const manager = employeeByHrId.get(currentManagerHrId);
+    if (!manager) break;
+    currentManagerHrId = cleanHrId(manager.managerHrId);
+  }
+
+  return chain;
+}
+
+function getLeaveFallbackApproverRoles() {
+  return new Set([
+    "Business Development Manager",
+    "CEO",
+    "District Manager",
+    "Finance Manager",
+    "HR Specialist",
+    "Manager",
+    "National Sales Manager",
+    "Regional Manager",
+    "Regional Sales Manager",
+    "SFE Manager",
+    "Super Admin",
+    "Team Leader",
+    "Training Manager",
+    "Marketing Manager",
+    "Product Manager",
+    "Group Product Manager",
+  ]);
+}
+
+let cachedLeaveApproverRoleSet: Set<string> | null = null;
+
+async function resolveLeaveApproverRoleSet(): Promise<Set<string>> {
+  if (cachedLeaveApproverRoleSet) return cachedLeaveApproverRoleSet;
+
+  try {
+    const permissionMatrix = await getPermissionMatrix();
+    const approverRoles = new Set<string>();
+    for (const [role, permissions] of Object.entries(permissionMatrix) as Array<
+      [string, { leave?: string[] }]
+    >) {
+      if (permissions.leave?.includes("approve")) {
+        approverRoles.add(role);
+      }
+    }
+    const fallbackRoles = getLeaveFallbackApproverRoles();
+    for (const role of fallbackRoles) approverRoles.add(role);
+    cachedLeaveApproverRoleSet = approverRoles;
+    return approverRoles;
+  } catch {
+    const fallbackRoles = getLeaveFallbackApproverRoles();
+    cachedLeaveApproverRoleSet = fallbackRoles;
+    return fallbackRoles;
+  }
+}
+
+function isLeaveInAppFallbackRole(roleText: string | null | undefined, approverRoles: Set<string>) {
+  const role = normalizeRole(roleText);
+  if (approverRoles.has(role)) return true;
+
+  const raw = String(roleText ?? "").trim().toLowerCase();
+  if (!raw) return false;
+  if (raw === "employee" || raw === "medical rep") return false;
+
+  const normalized = raw.replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+  const tokens = new Set(normalized.split(" "));
+  const normalizedNoSpace = normalized.replace(/\s+/g, "");
+
+  if (tokens.has("admin") || tokens.has("admin.") || tokens.has("super") || tokens.has("ceo")) return true;
+  if (tokens.has("finance")) return true;
+  if (tokens.has("hr") || tokens.has("human") && tokens.has("resource") || normalizedNoSpace.startsWith("hr") || normalizedNoSpace.endsWith("hr")) return true;
+  if (
+    tokens.has("manager") ||
+    tokens.has("mgr") ||
+    tokens.has("mngr") ||
+    tokens.has("lead") ||
+    tokens.has("leader") ||
+    tokens.has("supervisor") ||
+    normalized.includes("manager") ||
+    normalized.includes("mngr") ||
+    normalized.includes("lead") ||
+    normalized.includes("supervisor")
+  ) return true;
+  if (tokens.has("team")) return true;
+  if (raw.startsWith("nsm") || raw.startsWith("dsm") || raw.startsWith("rsm")) return true;
+  if (normalizedNoSpace.startsWith("teamlead") || normalizedNoSpace.endsWith("teamleader")) return true;
+
+  return false;
+}
+
+function leaveSubmittedNotificationHref(roleText: string | null | undefined, requestId: string) {
+  const recipientAccess = createAccessContext({
+    role: roleText,
+    source: "system",
+  });
+  const mode = resolveNavigationMode(recipientAccess);
+  if (mode === "admin") {
+    return `/admin/leave?section=approvals&requestId=${encodeURIComponent(requestId)}`;
+  }
+  return `/employee-portals/leave-approvals?requestId=${encodeURIComponent(requestId)}`;
+}
+
+type LeaveFallbackRecipientCache = {
+  approverRolesKey: string;
+  fetchedAt: number;
+  recipients: string[];
+};
+
+let cachedLeaveFallbackApproverRecipients: LeaveFallbackRecipientCache | null = null;
+const leaveFallbackRecipientCacheMs = 5 * 60_000;
+
+async function resolveLeaveInAppFallbackRecipients(approverRoles: Set<string>): Promise<string[]> {
+  const now = Date.now();
+  const approverRolesKey = Array.from(approverRoles).sort().join("|");
+  if (
+    cachedLeaveFallbackApproverRecipients &&
+    cachedLeaveFallbackApproverRecipients.approverRolesKey === approverRolesKey &&
+    now - cachedLeaveFallbackApproverRecipients.fetchedAt < leaveFallbackRecipientCacheMs
+  ) {
+    return [...cachedLeaveFallbackApproverRecipients.recipients];
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("app_auth_users")
+      .select("hr_id,role")
+      .eq("is_active", true);
+
+    if (error) return [];
+
+    const recipients = new Set<string>();
+    for (const row of (data ?? []) as Array<{ hr_id?: string | null; role?: string | null }>) {
+      if (!isLeaveInAppFallbackRole(row.role, approverRoles)) continue;
+      const hrId = cleanHrId(row.hr_id);
+      if (hrId) recipients.add(hrId);
+    }
+
+    const resolvedRecipients = [...recipients];
+    if (resolvedRecipients.length > 0 || cachedLeaveFallbackApproverRecipients) {
+      cachedLeaveFallbackApproverRecipients = {
+        approverRolesKey,
+        fetchedAt: now,
+        recipients: resolvedRecipients,
+      };
+    }
+    return resolvedRecipients;
+  } catch {
+    return [];
+  }
+}
+
+async function resolveRecipientRoles(hrIds: string[]): Promise<Map<string, string>> {
+  const normalizedHrIds = Array.from(new Set(hrIds.map((hrId) => cleanHrId(hrId)).filter(Boolean)));
+  if (normalizedHrIds.length === 0) return new Map();
+
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("app_auth_users")
+      .select("hr_id,role")
+      .eq("is_active", true)
+      .in("hr_id", normalizedHrIds);
+    if (error) return new Map();
+
+    const roles = new Map<string, string>();
+    for (const row of (data ?? []) as Array<{ hr_id?: string | null; role?: string | null }>) {
+      const hrId = cleanHrId(row.hr_id);
+      if (!hrId) continue;
+      const role = row.role ? String(row.role).trim() : "";
+      roles.set(hrId, role);
+    }
+    return roles;
+  } catch {
+    return new Map();
+  }
+}
+
+async function resolveActiveLeaveNotificationRecipients(hrIds: string[]): Promise<string[]> {
+  const uniqueHrIds = Array.from(new Set(hrIds.map((id) => cleanHrId(id)).filter(Boolean)));
+  if (uniqueHrIds.length === 0) return [];
+
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("app_auth_users")
+      .select("hr_id")
+      .eq("is_active", true)
+      .in("hr_id", uniqueHrIds);
+
+    if (error) return [];
+
+    const recipients = new Set<string>();
+    for (const row of (data ?? []) as Array<{ hr_id?: string | null }>) {
+      const hrId = cleanHrId(row.hr_id);
+      if (hrId) recipients.add(hrId);
+    }
+    return [...recipients];
+  } catch {
+    return [];
+  }
+}
+
+type LeaveNotificationDispatchRecipient = LeaveNotificationRecipient & {
+  reason?: string | null;
+};
+
+type LeaveNotificationDispatchResult = {
+  notificationQueued: boolean;
+  recipients: LeaveNotificationRecipient[];
+  warnings: string[];
+};
+
+const leaveNotificationRoutePriority = ["direct_manager", "nsm", "hr", "admin"] as const;
+
+function isNsmApproverRole(roleText: string | null | undefined) {
+  const normalized = String(roleText ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return false;
+  if (normalized.includes("nsm") || normalized.includes("national sales manager") || normalized.includes("regional sales manager") || normalized.includes("district manager")) return true;
+  if (normalized.includes("dsm") || normalized.includes("rsm")) return true;
+  return false;
+}
+
+function isHrApproverRole(roleText: string | null | undefined) {
+  const normalized = String(roleText ?? "").trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized.includes("hr") || normalized.includes("human resource")) return true;
+  return false;
+}
+
+function isAdminApproverRole(roleText: string | null | undefined) {
+  const normalized = String(roleText ?? "").trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized.includes("admin") || normalized.includes("super") || normalized.includes("ceo") || normalized.includes("finance manager")) return true;
+  return false;
+}
+
+function isTransientFailure(errorMessage: string) {
+  const message = errorMessage.toLowerCase();
+  return (
+    message.includes("connection") ||
+    message.includes("timeout") ||
+    message.includes("temporar") ||
+    message.includes("unavailable") ||
+    message.includes("rate limit") ||
+    message.includes("too many requests") ||
+    message.includes("503") ||
+    message.includes("502") ||
+    message.includes("504")
+  );
+}
+
+function leaveNotificationEnvelope(status: LeaveNotificationDeliveryStatus, request: LeaveRequest, recipient: LeaveNotificationRecipient, attemptCount: number) {
+  return {
+    actionUrl: leaveSubmittedNotificationHref(recipient.recipientRole, request.id),
+    actorName: leaveNotificationActorName(request),
+    deliveryStatus: status,
+    requestId: request.id,
+    requestType: "leave" as const,
+    requestorId: request.employeeHrId,
+    routeLevel: recipient.routeLevel,
+    attemptCount,
+  } satisfies Parameters<typeof writeLeaveAuditLog>[0] & { requestId: string; attemptCount: number };
+}
+
+function leaveNotificationActorName(request: LeaveRequest) {
+  return request.employee?.fullName ?? request.employeeHrId;
+}
+
+function normalizeLeaveDecision(raw: { action?: LeaveDecisionInput["action"]; decision?: LeaveDecisionInput["decision"] }) {
+  const decision = raw.action ?? raw.decision;
+  if (decision === "approved" || decision === "rejected") return decision;
+  throw new Error("Decision is required and must be approved or rejected.");
+}
+
+async function resolveLeaveSubmissionRecipients(request: LeaveRequest): Promise<{ recipients: LeaveNotificationDispatchRecipient[]; warnings: string[] }> {
+  const warnings: string[] = [];
+  const requestedManagerHrId = cleanHrId(request.employee?.managerHrId);
+
+  const directManagerRecipients = requestedManagerHrId ? await resolveActiveLeaveNotificationRecipients([requestedManagerHrId]) : [];
+  if (requestedManagerHrId && directManagerRecipients.length === 0) {
+    warnings.push("No active direct manager was found for leave submission notification routing.");
+  }
+
+  const managerChain = requestedManagerHrId ? await resolveManagerHrChain(requestedManagerHrId) : [];
+  const activeManagerChain = await resolveActiveLeaveNotificationRecipients(managerChain);
+  const managerChainRoles = await resolveRecipientRoles(activeManagerChain);
+  const nsmManagerRecipients = activeManagerChain.filter(
+    (recipientHrId) => recipientHrId !== requestedManagerHrId && isNsmApproverRole(managerChainRoles.get(recipientHrId)),
+  );
+  if (requestedManagerHrId && nsmManagerRecipients.length === 0) {
+    warnings.push("No active NSM was found for leave submission notification routing.");
+  }
+
+  const approverRoles = await resolveLeaveApproverRoleSet();
+  const fallbackApproverIds = await resolveLeaveInAppFallbackRecipients(approverRoles);
+  const fallbackApproverRoles = await resolveRecipientRoles(fallbackApproverIds);
+  const hrRecipients = fallbackApproverIds.filter((id) => isHrApproverRole(fallbackApproverRoles.get(id)));
+  const adminRecipients = fallbackApproverIds.filter((id) => isAdminApproverRole(fallbackApproverRoles.get(id)));
+
+  if (!hrRecipients.length) {
+    warnings.push("No active HR approver was found for leave submission notifications.");
+  }
+  if (!adminRecipients.length) {
+    warnings.push("No active admin approver was found for leave submission notifications.");
+  }
+
+  const stagedRecipients: Array<{ level: LeaveNotificationRouteLevel; recipients: string[] }> = [
+    { level: "direct_manager", recipients: directManagerRecipients },
+    { level: "nsm", recipients: nsmManagerRecipients },
+    { level: "hr", recipients: hrRecipients },
+    { level: "admin", recipients: adminRecipients },
+  ];
+  const allCandidateIds = [...new Set(stagedRecipients.flatMap((level) => level.recipients))];
+  const roleByHrId = await resolveRecipientRoles(allCandidateIds);
+  const resolvedRecipients: LeaveNotificationDispatchRecipient[] = [];
+  const seen = new Set<string>();
+
+  for (const level of leaveNotificationRoutePriority) {
+    const candidates = stagedRecipients.find((item) => item.level === level)?.recipients ?? [];
+    for (const recipientHrId of candidates) {
+      const normalized = cleanHrId(recipientHrId);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      resolvedRecipients.push({
+        deliveryStatus: "queued",
+        recipientHrId: normalized,
+        recipientRole: roleByHrId.get(normalized) ?? null,
+        routeLevel: level,
+      });
+    }
+  }
+
+  return { recipients: resolvedRecipients, warnings };
+}
+
+async function dispatchLeaveSubmissionInAppNotifications(
+  request: LeaveRequest,
+  recipients: LeaveNotificationDispatchRecipient[],
+) {
+  const actorName = leaveNotificationActorName(request);
+  const resolved: LeaveNotificationRecipient[] = [];
+  let anyDeliverySucceeded = false;
+  let hasFailure = false;
+
+  for (const recipient of recipients) {
+    const actionUrl = leaveSubmittedNotificationHref(recipient.recipientRole, request.id);
+    let finalDeliveryStatus: LeaveNotificationDeliveryStatus = "queued";
+    let lastReason: string | null = null;
+    let attemptCount = 1;
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      attemptCount = attempt;
+      try {
+        const result = await enqueueInAppNotification({
+          category: "leave",
+          dedupeKey: `leave:submitted:${request.id}:${recipient.recipientHrId}:${recipient.routeLevel}`,
+          href: actionUrl,
+          message: `${actorName} submitted a vacation request from ${request.startDate} to ${request.endDate}.`,
+          metadata: {
+            actionLabel: "See details",
+            leaveRequestId: request.id,
+            leaveType: request.leaveType?.name ?? "Leave",
+            routeLevel: recipient.routeLevel,
+            requestorId: request.employeeHrId,
+          },
+          recipientHrId: recipient.recipientHrId,
+          title: `${actorName} has submitted a vacation request`,
+        });
+
+        const deliveryStatus: LeaveNotificationDeliveryStatus = result.skipped ? "skipped" : "sent";
+        const now = new Date().toISOString();
+        finalDeliveryStatus = deliveryStatus;
+        lastReason = result.skipped ? result.reason : null;
+        if (deliveryStatus === "sent") anyDeliverySucceeded = true;
+        await writeLeaveAuditLog({
+          actorHrId: null,
+          actorRole: "system",
+          employeeHrId: request.employeeHrId,
+          eventType: "leave.notification.delivery",
+          metadata: {
+            actionUrl,
+            actorName,
+            attemptCount,
+            deliveryStatus,
+            errorCode: result.skipped ? result.reason : null,
+            envelope: leaveNotificationEnvelope(deliveryStatus, request, recipient, attemptCount),
+            lastAttemptAt: now,
+            metadataAttempt: {
+              actionUrl,
+              actorName,
+              requestId: request.id,
+            },
+            recipientHrId: recipient.recipientHrId,
+            recipientRole: recipient.recipientRole,
+            requestId: request.id,
+            requestType: "leave",
+            routeLevel: recipient.routeLevel,
+          },
+          requestId: request.id,
+        });
+        break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Leave notification failed.";
+        lastReason = message;
+        const now = new Date().toISOString();
+        finalDeliveryStatus = "failed";
+        if (!isTransientFailure(message) || attempt >= 3) {
+          await writeLeaveAuditLog({
+            actorHrId: null,
+            actorRole: "system",
+            employeeHrId: request.employeeHrId,
+            eventType: "leave.notification.delivery",
+            metadata: {
+              actionUrl,
+              actorName,
+              attemptCount,
+              deliveryStatus: "failed",
+              errorCode: message,
+              envelope: leaveNotificationEnvelope("failed", request, recipient, attemptCount),
+              lastAttemptAt: now,
+              metadataAttempt: {
+                actionUrl,
+                actorName,
+                requestId: request.id,
+              },
+              recipientHrId: recipient.recipientHrId,
+              recipientRole: recipient.recipientRole,
+              requestId: request.id,
+              requestType: "leave",
+              routeLevel: recipient.routeLevel,
+            },
+            requestId: request.id,
+          });
+          break;
+        }
+      }
+    }
+
+    if (finalDeliveryStatus === "queued") {
+      finalDeliveryStatus = "failed";
+      lastReason = lastReason ?? "Notification delivery could not be completed.";
+      await writeLeaveAuditLog({
+        actorHrId: null,
+        actorRole: "system",
+        employeeHrId: request.employeeHrId,
+        eventType: "leave.notification.delivery",
+        metadata: {
+          actionUrl,
+          actorName,
+          attemptCount: 3,
+          deliveryStatus: "failed",
+          errorCode: lastReason,
+          envelope: leaveNotificationEnvelope("failed", request, recipient, 3),
+          lastAttemptAt: new Date().toISOString(),
+          metadataAttempt: {
+            actionUrl,
+            actorName,
+            requestId: request.id,
+          },
+          recipientHrId: recipient.recipientHrId,
+          recipientRole: recipient.recipientRole,
+          requestId: request.id,
+          requestType: "leave",
+          routeLevel: recipient.routeLevel,
+        },
+        requestId: request.id,
+      });
+    }
+
+    resolved.push({
+      ...recipient,
+      deliveryStatus: finalDeliveryStatus,
+      reason: finalDeliveryStatus === "sent" ? null : lastReason,
+    });
+
+    if (finalDeliveryStatus !== "sent") {
+      hasFailure = true;
+    }
+  }
+
+  if (!anyDeliverySucceeded) {
+    await writeLeaveAuditLog({
+      actorHrId: null,
+      actorRole: "system",
+      employeeHrId: request.employeeHrId,
+      eventType: "leave.notification.delivery.failed",
+      metadata: {
+        actionUrl: leaveSubmittedNotificationHref("manager", request.id),
+        actorName,
+        errorCode: "No submission notification was sent after retries.",
+        recipientCount: recipients.length,
+      },
+      requestId: request.id,
+    });
+  }
+
+  return {
+    notificationQueued: hasFailure,
+    recipients: resolved,
+  };
+}
+
+async function dispatchLeaveDecisionInAppNotification(
+  request: LeaveRequest,
+  decision: string,
+) {
+  const actorName = leaveNotificationActorName(request);
+  const deliveryStatus: LeaveNotificationDeliveryStatus = "queued";
+  try {
+    const result = await enqueueInAppNotification({
+      category: "leave",
+      dedupeKey: `leave:decision:${request.id}:${decision}`,
+      href: leaveSubmittedNotificationHref("employee", request.id),
+      message: `${actorName} leave request from ${request.startDate} to ${request.endDate} is ${decision}.`,
+      metadata: {
+        actionLabel: "View request",
+        leaveRequestId: request.id,
+        leaveType: request.leaveType?.name ?? "Leave",
+        requestorId: request.employeeHrId,
+      },
+      recipientHrId: request.employeeHrId,
+      title: `Leave Request ${decision}`,
+    });
+    return { reason: result.skipped ? result.reason : null, deliveryStatus: result.skipped ? "skipped" : "sent" };
+  } catch (error) {
+    return {
+      reason: error instanceof Error ? error.message : "Leave decision notification failed.",
+      deliveryStatus,
+    } as const;
+  }
+}
+async function notifyLeaveSubmitted(
+  request: LeaveRequest,
+  recipientsResult?: Awaited<ReturnType<typeof resolveLeaveSubmissionRecipients>>,
+) {
   const employee = request.employee;
-  await emitLeaveNotification("request_submitted", {
+  const actorName = leaveNotificationActorName(request);
+  const resolvedRecipients = recipientsResult ?? await resolveLeaveSubmissionRecipients(request);
+  const recipientChain = resolvedRecipients.recipients.map((recipient) => ({
+    routeLevel: recipient.routeLevel,
+    recipientHrId: recipient.recipientHrId,
+    recipientRole: recipient.recipientRole,
+  }));
+
+  await writeLeaveAuditLog({
+    actorHrId: null,
+    actorRole: "system",
+    employeeHrId: request.employeeHrId,
+    eventType: "leave.notification.intent.created",
+    metadata: {
+      actorName,
+      requestId: request.id,
+      recipientChain,
+      routeCount: recipientChain.length,
+      requestType: "leave",
+      routeLevels: [...new Set(resolvedRecipients.recipients.map((recipient) => recipient.routeLevel))],
+      warnings: resolvedRecipients.warnings,
+    },
+    requestId: request.id,
+  });
+  const inAppResult = await dispatchLeaveSubmissionInAppNotifications(request, resolvedRecipients.recipients);
+  const emailResult = await emitLeaveNotification("request_submitted", {
     ctaHref: "/employee-portals/leave-approvals",
     ctaLabel: "Open leave approval",
     employeeHrId: request.employeeHrId,
@@ -1627,6 +2221,15 @@ async function notifyLeaveSubmitted(request: LeaveRequest) {
     title: "Leave Approval Needed",
     tone: "warning",
   });
+
+  return {
+    notificationQueued: inAppResult.notificationQueued || Boolean(emailResult?.skipped),
+    recipients: inAppResult.recipients,
+    warnings: [
+      ...recipientsResult.warnings,
+      ...(emailResult && "skipped" in emailResult && emailResult.skipped ? [emailResult.reason] : []),
+    ],
+  };
 }
 
 async function notifyLeaveDecision(request: LeaveRequest, decision: string) {
@@ -1639,7 +2242,7 @@ async function notifyLeaveDecision(request: LeaveRequest, decision: string) {
         : decision.includes("approved")
           ? "hr_approved"
           : "hr_rejected";
-  await emitLeaveNotification(event, {
+  const emailResult = await emitLeaveNotification(event, {
     ctaHref: "/employee-portals/leave",
     ctaLabel: "Open leave report",
     employeeHrId: request.employeeHrId,
@@ -1660,6 +2263,17 @@ async function notifyLeaveDecision(request: LeaveRequest, decision: string) {
     title: "Leave Request Updated",
     tone: decision.includes("approved") ? "success" : decision.includes("cancelled") ? "neutral" : "danger",
   });
+  const inAppResult = await dispatchLeaveDecisionInAppNotification(request, decision);
+
+  return {
+    notificationQueued:
+      inAppResult.deliveryStatus !== "sent" || (emailResult !== null && "skipped" in emailResult && emailResult.skipped),
+    recipients: [],
+    warnings: [
+      ...((emailResult && "skipped" in emailResult && emailResult.skipped) ? [emailResult.reason] : []),
+      inAppResult.reason ? inAppResult.reason : null,
+    ].filter(Boolean) as string[],
+  };
 }
 
 export async function previewLeaveConflicts(
@@ -1702,6 +2316,8 @@ export async function previewLeaveConflicts(
 }
 
 export async function submitLeaveRequest(access: AccessContext, input: SubmitLeaveRequestInput) {
+  const correlationId = createLeaveCorrelationId();
+  const startedAt = Date.now();
   await assertPermission(access, "leave", "create");
   if (!access.hrId) throw new Error("A linked employee HR_ID is required to submit leave.");
   if (!input.leaveTypeId || !input.startDate || !input.endDate) throw new Error("Leave type and date range are required.");
@@ -1782,7 +2398,6 @@ export async function submitLeaveRequest(access: AccessContext, input: SubmitLea
   const shouldConsume = shouldReserveBalanceOnSubmit(leaveType, paymentStatus);
   const throughMonth = new Date().getUTCFullYear() === startYear ? new Date().getUTCMonth() + 1 : 12;
   const accruals = shouldConsume ? buildMonthlyAccrualEntries(employee, policy, startYear, throughMonth) : [];
-  const correlationId = createLeaveCorrelationId();
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .rpc("phx_leave_submit_request_atomic", {
@@ -1823,9 +2438,77 @@ export async function submitLeaveRequest(access: AccessContext, input: SubmitLea
     throw error;
   }
 
-  const request = await getLeaveRequestDetails(access, (data as LeaveRequestRow).id);
-  await notifyLeaveSubmitted(request).catch(() => undefined);
-  return request;
+  const request = await hydrateLeaveRequest(data as LeaveRequestRow);
+  void (async () => {
+    try {
+      const conflicts = await previewLeaveConflicts(access, input);
+      if (conflicts.warnings.length) {
+        await writeLeaveAuditLog({
+          actorHrId: access.hrId,
+          actorRole: access.role,
+          correlationId,
+          employeeHrId: request.employeeHrId,
+          eventType: "leave.request.submit.conflict.warning",
+          metadata: {
+            requestId: request.id,
+            warnings: conflicts.warnings.map((warning) => warning.message),
+          },
+          requestId: request.id,
+        });
+      }
+    } catch (error) {
+      await writeLeaveAuditLog({
+        actorHrId: access.hrId,
+        actorRole: access.role,
+        correlationId,
+        employeeHrId: request.employeeHrId,
+        eventType: "leave.request.submit.conflict.check_failed",
+        metadata: {
+          error: error instanceof Error ? error.message : "Unable to compute conflict warnings after submission.",
+          requestId: request.id,
+        },
+        requestId: request.id,
+      });
+    }
+  })().catch(() => undefined);
+
+  const recipientResult = await resolveLeaveSubmissionRecipients(request);
+  const notificationPreview = {
+    notificationQueued: recipientResult.recipients.length > 0,
+    recipients: recipientResult.recipients.map((recipient) => ({ ...recipient, deliveryStatus: "queued" })),
+    warnings: [...recipientResult.warnings],
+  };
+  void notifyLeaveSubmitted(request, recipientResult).catch((error) => {
+    void writeLeaveAuditLog({
+      actorHrId: access.hrId,
+      actorRole: access.role,
+      correlationId,
+      employeeHrId: request.employeeHrId,
+      eventType: "leave.notification.submit.background_failed",
+      metadata: { error: error instanceof Error ? error.message : "Leave submission notification workflow failed." },
+      requestId: request.id,
+    });
+  });
+  await writeLeaveAuditLog({
+    actorHrId: access.hrId,
+    actorRole: access.role,
+    correlationId,
+    employeeHrId: request.employeeHrId,
+    eventType: "leave.request.submit.completed",
+    metadata: {
+      durationMs: Date.now() - startedAt,
+      recipientCount: recipientResult.recipients.length,
+      requestId: request.id,
+      status: request.status,
+    },
+    requestId: request.id,
+  });
+  return {
+    notificationQueued: notificationPreview.notificationQueued,
+    recipients: notificationPreview.recipients,
+    request,
+    warnings: notificationPreview.warnings,
+  };
 }
 
 async function loadRequestRow(id: string) {
@@ -1846,11 +2529,9 @@ async function hydrateLeaveRequest(row: LeaveRequestRow) {
   return mapLeaveRequest(row, employeeByHrId, approvalMap.get(row.id) ?? []);
 }
 
-export async function decideLeaveAsManager(access: AccessContext, requestId: string, input: LeaveDecisionInput) {
+export async function decideLeaveAsManager(access: AccessContext, requestId: string, input: LeaveDecisionInput): Promise<LeaveDecisionResponse> {
   await assertPermission(access, "leave", "approve");
-  if (input.decision === "rejected" && !input.comment?.trim()) {
-    throw new Error("A rejection comment is required.");
-  }
+  const decision = normalizeLeaveDecision(input);
 
   const row = await loadRequestRow(requestId);
   const { employeeByHrId } = await loadDirectoryMaps();
@@ -1867,7 +2548,7 @@ export async function decideLeaveAsManager(access: AccessContext, requestId: str
       p_actor_role: access.role,
       p_comment: input.comment?.trim() || null,
       p_correlation_id: correlationId,
-      p_decision: input.decision,
+      p_decision: decision,
       p_request_id: requestId,
     })
     .single();
@@ -1878,33 +2559,46 @@ export async function decideLeaveAsManager(access: AccessContext, requestId: str
       correlationId,
       employeeHrId: row.employee_hr_id,
       eventType: "leave.manager.decision.failed",
-      metadata: { decision: input.decision, error: error.message, requestId },
+      metadata: { decision, error: error.message, requestId },
       requestId,
     });
     throw error;
   }
 
   const request = await hydrateLeaveRequest(data as LeaveRequestRow);
-  await notifyLeaveDecision(request, input.decision === "approved" ? "manager approved" : "manager rejected").catch(() => undefined);
-  return request;
+  void notifyLeaveDecision(request, decision === "approved" ? "manager approved" : "manager rejected").catch(async (error) => {
+    await writeLeaveAuditLog({
+      actorHrId: access.hrId,
+      actorRole: access.role,
+      correlationId,
+      employeeHrId: row.employee_hr_id,
+      eventType: "leave.manager.decision.notification_failed",
+      metadata: { decision, error: error instanceof Error ? error.message : "Leave decision notification failed.", requestId },
+      requestId,
+    });
+  });
+  return {
+    notificationQueued: true,
+    recipients: [],
+    request,
+    warnings: [],
+  };
 }
 
-export async function decideLeaveAsHr(access: AccessContext, requestId: string, input: LeaveDecisionInput) {
+export async function decideLeaveAsHr(access: AccessContext, requestId: string, input: LeaveDecisionInput): Promise<LeaveDecisionResponse> {
   await assertPermission(access, "leave", "approve");
   if (!isManageRole(access)) throw new Error("Forbidden: HR approval requires HR or Super Admin access.");
-  if (input.decision === "rejected" && !input.comment?.trim()) {
-    throw new Error("A rejection comment is required.");
-  }
+  const decision = normalizeLeaveDecision(input);
 
   const row = await loadRequestRow(requestId);
   if (row.status !== "pending_hr" && row.status !== "manager_approved") {
     throw new Error("This request is not pending HR approval.");
   }
   const leaveType = await getLeaveTypeById(row.leave_type_id);
-  if (input.decision === "approved" && leaveType.code === otherLeaveCode && input.balanceDecision !== "deduct" && input.balanceDecision !== "no_deduct") {
+  if (decision === "approved" && leaveType.code === otherLeaveCode && input.balanceDecision !== "deduct" && input.balanceDecision !== "no_deduct") {
     throw new Error("HR must choose whether Other leave deducts from balance.");
   }
-  if (input.decision === "approved" && leaveType.code === otherLeaveCode && input.balanceDecision === "deduct") {
+  if (decision === "approved" && leaveType.code === otherLeaveCode && input.balanceDecision === "deduct") {
     if (!row.balance_leave_type_id) throw new Error("Other leave cannot deduct balance because no balance leave type is linked.");
     const requestYear = new Date(`${row.start_date}T00:00:00.000Z`).getUTCFullYear();
     const availableBalance = await calculateAvailableBalance(row.employee_hr_id, row.balance_leave_type_id, requestYear);
@@ -1922,7 +2616,7 @@ export async function decideLeaveAsHr(access: AccessContext, requestId: string, 
       p_balance_decision: input.balanceDecision ?? null,
       p_comment: input.comment?.trim() || null,
       p_correlation_id: correlationId,
-      p_decision: input.decision,
+      p_decision: decision,
       p_request_id: requestId,
     })
     .single();
@@ -1933,15 +2627,30 @@ export async function decideLeaveAsHr(access: AccessContext, requestId: string, 
       correlationId,
       employeeHrId: row.employee_hr_id,
       eventType: "leave.hr.decision.failed",
-      metadata: { balanceDecision: input.balanceDecision ?? null, decision: input.decision, error: error.message, requestId },
+      metadata: { balanceDecision: input.balanceDecision ?? null, decision, error: error.message, requestId },
       requestId,
     });
     throw error;
   }
 
   const request = await hydrateLeaveRequest(data as LeaveRequestRow);
-  await notifyLeaveDecision(request, input.decision === "approved" ? "approved" : "rejected").catch(() => undefined);
-  return request;
+  void notifyLeaveDecision(request, decision === "approved" ? "approved" : "rejected").catch(async (error) => {
+    await writeLeaveAuditLog({
+      actorHrId: access.hrId,
+      actorRole: access.role,
+      correlationId,
+      employeeHrId: row.employee_hr_id,
+      eventType: "leave.hr.decision.notification_failed",
+      metadata: { balanceDecision: input.balanceDecision ?? null, decision, error: error instanceof Error ? error.message : "Leave decision notification failed.", requestId },
+      requestId,
+    });
+  });
+  return {
+    notificationQueued: true,
+    recipients: [],
+    request,
+    warnings: [],
+  };
 }
 
 export async function cancelLeaveRequest(access: AccessContext, requestId: string, comment?: string | null) {
@@ -3917,7 +4626,7 @@ export async function getAdminLeaveWorkspace(access: AccessContext, filters: Lea
   const range = getLeaveCalendarRange(month, year);
   const [activeEmployeesAccrual, activityLogs, titleWeekendRules] = await Promise.all([
     canManageLeave ? getActiveEmployeesAccrualReport(access, year, filters).catch(() => null) : Promise.resolve(null),
-    canManageLeave ? listLeaveAuditLogs(access).catch(() => []) : Promise.resolve([]),
+    canManageLeave ? listLeaveAuditLogs(access, { eventTypePrefix: "leave.notification", limit: 100 }).catch(() => []) : Promise.resolve([]),
     canManageLeave ? getLeaveTitleWeekendRules().catch(() => []) : Promise.resolve([]),
   ]);
   const [employeeRequestWorkspace, vacationReports] = await Promise.all([
@@ -3943,3 +4652,4 @@ export async function getAdminLeaveWorkspace(access: AccessContext, filters: Lea
     vacationReports,
   };
 }
+

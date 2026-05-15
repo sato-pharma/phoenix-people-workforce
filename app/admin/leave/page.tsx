@@ -48,8 +48,10 @@ export default async function AdminLeavePage(props: {
   const searchParams = await props.searchParams;
   const filters = parseFilters(searchParams);
   const section = firstValue(searchParams.section);
+  const requestId = firstValue(searchParams.requestId)?.trim() || undefined;
   const viewMode = section === "request" || section === "reports" ? section : "management";
   const data = await getAdminLeaveWorkspace(access, filters);
+  const defaultManagementTab = section === "approvals" ? "approvals" : viewMode === "management" ? "accrual" : undefined;
 
   return (
     <AppShell navigationMode="admin">
@@ -95,8 +97,9 @@ export default async function AdminLeavePage(props: {
         />
         <AdminLeaveManagementWorkspace
           {...data}
-          defaultManagementTab={viewMode === "management" ? "accrual" : undefined}
+          defaultManagementTab={defaultManagementTab}
           defaultVacationTab={viewMode === "reports" ? "company" : undefined}
+          initialRequestId={requestId}
           key={`admin-leave-${section ?? "default"}`}
           viewMode={viewMode}
         />

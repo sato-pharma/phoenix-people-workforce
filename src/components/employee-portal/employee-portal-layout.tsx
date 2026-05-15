@@ -3,8 +3,9 @@
 import { startTransition, useEffect, useEffectEvent, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2 } from "lucide-react";
+import { Menu, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2 } from "lucide-react";
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
+import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
@@ -192,13 +193,7 @@ export function EmployeePortalTopNav({
               type="text"
             />
           </div>
-          <button
-            aria-label="Alerts"
-            className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex"
-            type="button"
-          >
-            <Bell className="h-4 w-4" />
-          </button>
+          <InAppNotificationsBell isAdminMode={false} />
           <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 shadow-sm lg:flex">
             <CalendarClock className="h-3.5 w-3.5 text-slate-400" />
             <span>

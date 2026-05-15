@@ -20,6 +20,7 @@ export type InAppNotificationResult =
 
 export type InAppNotificationView = {
   category: string;
+  actionLabel: string | null;
   href: string | null;
   id: string;
   message: string;
@@ -129,6 +130,7 @@ export async function listInAppNotificationsForViewer(
 
       return {
         category: String(record.category ?? "general"),
+        actionLabel: typeof metadata.actionLabel === "string" ? metadata.actionLabel : null,
         href: typeof metadata.href === "string" ? metadata.href : null,
         id: String(record.id ?? ""),
         message: typeof metadata.message === "string" ? metadata.message : String(record.subject ?? "Notification"),

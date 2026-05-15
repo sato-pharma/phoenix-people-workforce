@@ -102,6 +102,7 @@ type AdminLeaveWorkspaceProps = WorkspaceCommon & {
   defaultVacationTab?: "request" | "my" | "team" | "company";
   viewMode?: "management" | "reports" | "request";
   vacationReports?: VacationReportWorkspace | null;
+  initialRequestId?: string;
 };
 
 function EmployeeVacationRequestPanel({
@@ -200,13 +201,14 @@ export function ManagerLeaveApprovalWorkspace({
   policy,
   requests,
   teamAvailability,
-}: WorkspaceCommon) {
+  initialRequestId,
+}: WorkspaceCommon & { initialRequestId?: string }) {
   const [toast, setToast] = useState<string | null>(null);
   const pendingRequests = requests.filter((request) => request.status === "pending_manager");
   const upcoming = requests.filter((request) => request.status === "hr_approved" && request.startDate >= new Date().toISOString().slice(0, 10));
 
   async function decide(request: LeaveRequest, decision: "approved" | "rejected") {
-    const comment = decision === "rejected" ? window.prompt("Rejection comment") : window.prompt("Manager comment (optional)");
+    const comment = decision === "rejected" ? window.prompt("Rejection comment") : null;
     if (decision === "rejected" && !comment?.trim()) return setToast("A rejection comment is required.");
     const response = await fetch(`/api/leave/requests/${request.id}/manager-decision`, {
       body: JSON.stringify({ comment, decision }),
@@ -218,6 +220,13 @@ export function ManagerLeaveApprovalWorkspace({
     setToast("Manager decision recorded.");
     window.setTimeout(() => window.location.reload(), 650);
   }
+
+  const managerDecisionActions = (request: LeaveRequest) => request.status === "pending_manager" ? (
+    <>
+      <button className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700" data-testid="manager-leave-approve-button" onClick={() => decide(request, "approved")} type="button">Approve</button>
+      <button className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white hover:bg-rose-700" data-testid="manager-leave-reject-button" onClick={() => decide(request, "rejected")} type="button">Reject</button>
+    </>
+  ) : null;
 
   return (
     <div className="space-y-6" data-testid="manager-leave-workspace">
@@ -241,12 +250,9 @@ export function ManagerLeaveApprovalWorkspace({
         title="Team Availability"
       />
       <LeaveRequestHistory
-        actions={(request) => request.status === "pending_manager" ? (
-          <>
-            <button className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700" data-testid="manager-leave-approve-button" onClick={() => decide(request, "approved")} type="button">Approve</button>
-            <button className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white hover:bg-rose-700" data-testid="manager-leave-reject-button" onClick={() => decide(request, "rejected")} type="button">Reject</button>
-          </>
-        ) : null}
+        actions={managerDecisionActions}
+        detailActions={managerDecisionActions}
+        initialRequestId={initialRequestId}
         requests={requests}
         title="Manager Leave Approval"
       />
@@ -702,6 +708,7 @@ export function AdminLeaveManagementWorkspace({
   defaultVacationTab,
   employeeRequestWorkspace,
   holidays,
+  initialRequestId,
   leaveTypes,
   policies,
   requests,
@@ -717,7 +724,7 @@ export function AdminLeaveManagementWorkspace({
   const canExport = capabilities?.canExport ?? true;
 
   async function hrDecision(request: LeaveRequest, decision: "approved" | "rejected", balanceDecision?: HrBalanceDecision | null) {
-    const comment = decision === "rejected" ? window.prompt("HR rejection comment") : window.prompt("HR comment (optional)");
+    const comment = decision === "rejected" ? window.prompt("HR rejection comment") : null;
     if (decision === "rejected" && !comment?.trim()) return setToast("A rejection comment is required.");
     if (decision === "approved" && request.leaveType?.code === "other" && balanceDecision !== "deduct" && balanceDecision !== "no_deduct") {
       return setToast("Choose whether Other leave deducts from balance before HR approval.");
@@ -811,6 +818,7 @@ export function AdminLeaveManagementWorkspace({
                   detailActions={(request) => canManageLeave && request.status === "pending_hr" ? (
                     <HrDecisionActions onDecision={hrDecision} request={request} />
                   ) : null}
+                  initialRequestId={initialRequestId}
                   requests={requests}
                   title="Admin Leave Requests Report"
                 />

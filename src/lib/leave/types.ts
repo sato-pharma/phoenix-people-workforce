@@ -290,8 +290,35 @@ export type SubmitLeaveRequestInput = {
 
 export type LeaveDecisionInput = {
   balanceDecision?: "deduct" | "no_deduct" | null;
-  decision: "approved" | "rejected";
+  action?: "approved" | "rejected";
+  decision?: "approved" | "rejected";
   comment?: string | null;
+  nextApproverOverride?: "direct_manager" | "nsm" | "hr" | "admin" | null;
+};
+
+export type LeaveNotificationRouteLevel = "direct_manager" | "nsm" | "hr" | "admin";
+export type LeaveNotificationDeliveryStatus = "sent" | "failed" | "skipped" | "queued";
+
+export type LeaveNotificationRecipient = {
+  deliveryStatus: LeaveNotificationDeliveryStatus;
+  recipientHrId: string;
+  recipientRole: string | null;
+  reason?: string | null;
+  routeLevel: LeaveNotificationRouteLevel;
+};
+
+export type LeaveSubmitResponse = {
+  notificationQueued: boolean;
+  recipients: LeaveNotificationRecipient[];
+  request: LeaveRequest;
+  warnings: string[];
+};
+
+export type LeaveDecisionResponse = {
+  notificationQueued: boolean;
+  recipients: LeaveNotificationRecipient[];
+  request: LeaveRequest;
+  warnings: string[];
 };
 
 export type LeaveAdjustmentInput = {

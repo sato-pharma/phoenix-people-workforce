@@ -11,7 +11,13 @@ import { getManagerLeaveWorkspace } from "@/lib/leave/service";
 
 export const dynamic = "force-dynamic";
 
-export default async function ManagerLeaveApprovalsPage() {
+function firstValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function ManagerLeaveApprovalsPage(props: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/admin/leave");
@@ -30,6 +36,8 @@ export default async function ManagerLeaveApprovalsPage() {
   }
 
   let data = null;
+  const searchParams = await props.searchParams;
+  const initialRequestId = firstValue(searchParams.requestId)?.trim() || undefined;
   try {
     data = await getManagerLeaveWorkspace(access);
   } catch {
@@ -51,7 +59,7 @@ export default async function ManagerLeaveApprovalsPage() {
       description="Approve or reject leave requests for employees under your reporting hierarchy."
       title="Team Leave Approvals"
     >
-      <ManagerLeaveApprovalWorkspace {...data} />
+      <ManagerLeaveApprovalWorkspace {...data} initialRequestId={initialRequestId} />
     </EmployeePortalPageShell>
   );
 }

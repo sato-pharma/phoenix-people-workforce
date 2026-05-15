@@ -49,7 +49,7 @@ export async function POST(request: Request) {
         reason: String(formData.get("reason") ?? ""),
         startDate: String(formData.get("startDate") ?? ""),
       });
-      return NextResponse.json({ request: requestRecord });
+      return NextResponse.json(requestRecord);
     }
 
     const body = await request.json();
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       reason: typeof body.reason === "string" ? body.reason : null,
       startDate: String(body.startDate ?? ""),
     });
-    return NextResponse.json({ request: requestRecord });
+    return NextResponse.json(requestRecord);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to submit leave request." }, { status: 400 });
   }

@@ -2,6 +2,16 @@ import type { NotificationEmailInput } from "@/lib/notifications/email";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { writeLeaveAuditLog } from "@/lib/leave/audit";
 
+export type LeaveNotificationEnvelope = {
+  actionUrl: string;
+  actorName: string;
+  deliveryStatus: "queued" | "sent" | "failed" | "skipped";
+  requestId: string;
+  requestType: "leave";
+  requestorId: string;
+  routeLevel: "admin" | "direct_manager" | "hr" | "nsm";
+};
+
 export type LeaveNotificationEvent =
   | "accrual_completed"
   | "balance_adjusted"

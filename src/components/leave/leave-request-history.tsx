@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CalendarDays, FileText } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -27,15 +27,29 @@ function paymentStatusLabel(status: LeaveRequest["paymentStatus"]) {
 export function LeaveRequestHistory({
   actions,
   detailActions,
+  initialRequestId,
   requests,
   title = "Leave Requests",
 }: {
   actions?: (request: LeaveRequest) => ReactNode;
   detailActions?: (request: LeaveRequest) => ReactNode;
+  initialRequestId?: string;
   requests: LeaveRequest[];
   title?: string;
 }) {
   const [selected, setSelected] = useState<LeaveRequest | null>(null);
+  const autoOpenedRequestId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!initialRequestId) return;
+    if (autoOpenedRequestId.current === initialRequestId) return;
+
+    const target = requests.find((request) => request.id === initialRequestId);
+    if (!target) return;
+
+    autoOpenedRequestId.current = initialRequestId;
+    setSelected(target);
+  }, [initialRequestId, requests]);
 
   return (
     <>
