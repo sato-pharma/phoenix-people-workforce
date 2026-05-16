@@ -770,7 +770,7 @@ export function isDirectReport(managerHrId: string | null, employee: Pick<Employ
 }
 
 export function canSeeEmployee(context: AccessContext, employee: Pick<EmployeeDirectoryRow, "hrId" | "managerHrId">) {
-  if (context.scope === "system" || context.role === "Super Admin" || context.role === "HR Specialist") return true;
+  if (context.scope === "system" || context.scope === "company") return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(employee.hrId);
@@ -793,14 +793,14 @@ export function canSeeHrScopedRecord(
     managerHrId?: string | null;
   },
 ) {
-  if (context.scope === "system" || context.role === "Super Admin" || context.role === "HR Specialist") return true;
+  if (context.scope === "system" || context.scope === "company") return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(record.employeeHrId ?? record.hrId);
   const managerHrId = normalizeHrId(record.managerHrId);
 
   if (!currentHrId) return false;
-  if (context.role === "District Manager" || context.role === "Manager") {
+  if (context.scope === "team" || context.scope === "hierarchy" || context.scope === "line") {
     return hrIdsMatch(currentHrId, employeeHrId) || hrIdsMatch(currentHrId, managerHrId);
   }
 
@@ -856,10 +856,10 @@ export function filterEmployeeDirectoryForAccess(
   directory: EmployeeDirectoryData,
   context: AccessContext,
 ): EmployeeDirectoryData {
-  if (context.scope === "system" || context.role === "Super Admin" || context.role === "HR Specialist") return directory;
+  if (context.scope === "system" || context.scope === "company") return directory;
 
   const hierarchyHrIds =
-    context.role === "Regional Manager" || context.role === "Regional Sales Manager"
+    context.scope === "hierarchy" || context.scope === "line"
       ? collectHierarchyHrIds(directory.employees, context.hrId)
       : null;
   const employees = hierarchyHrIds
