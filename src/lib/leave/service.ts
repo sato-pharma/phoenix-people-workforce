@@ -1897,7 +1897,7 @@ function leaveNotificationEnvelope(status: LeaveNotificationDeliveryStatus, requ
     requestorId: request.employeeHrId,
     routeLevel: recipient.routeLevel,
     attemptCount,
-  } satisfies Parameters<typeof writeLeaveAuditLog>[0] & { requestId: string; attemptCount: number };
+  };
 }
 
 function leaveNotificationActorName(request: LeaveRequest) {
