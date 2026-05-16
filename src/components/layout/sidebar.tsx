@@ -17,6 +17,7 @@ import {
   Hourglass,
   IdCard,
   LayoutDashboard,
+  LayoutTemplate,
   Mail,
   MapPinned,
   Network,
@@ -148,6 +149,7 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       id: "access-communication",
       items: [
         { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
+        { href: "/admin/email-templates", icon: LayoutTemplate, label: "Email Templates", permissions: [{ resource: "admin" }] },
         { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "admin" }] },
         { href: "/admin/email-notifications", icon: BellRing, label: "Email Governance", permissions: [{ resource: "admin" }] },
       ],
