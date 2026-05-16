@@ -319,6 +319,24 @@ function activeStatusOptions(employees: EmployeeDirectoryRow[]) {
     }));
 }
 
+function allStatusOptions(employees: EmployeeDirectoryRow[]) {
+  const statuses = new Set(
+    employees.map((employee) => normalizeLifecycleStatus(employee.employmentStatus)),
+  );
+  if (statuses.size === 0) {
+    return Array.from(activeLifecycleStatuses).sort().map((status) => ({
+      label: status.replace(/_/g, " "),
+      value: status,
+    }));
+  }
+  return Array.from(statuses)
+    .sort()
+    .map((status) => ({
+      label: status.replace(/_/g, " "),
+      value: status,
+    }));
+}
+
 function isManagerialTitle(value: string | null | undefined) {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (!normalized) return false;
@@ -865,7 +883,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     const activeEmployees = employeesData.filter(isActiveDirectoryEmployee);
 
     return {
-      employees: activeEmployees,
+      employees: employeesData,
       lookups: {
         areas,
         departments,
@@ -873,14 +891,14 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         managers: managerLookupOptions(activeEmployees),
         medicalRepVacancies,
         positions,
-        statuses: activeStatusOptions(activeEmployees),
+        statuses: allStatusOptions(employeesData),
         teams,
         workforceVacancies,
       },
       summary: {
         activeEmployees: activeEmployees.length,
         employeesWithoutManagers: activeEmployees.filter(isMissingRequiredManager).length,
-        totalEmployees: activeEmployees.length,
+        totalEmployees: employeesData.length,
         uniqueAreas: new Set(activeEmployees.map((employee) => employee.areaId).filter(Boolean)).size,
         uniqueLines: new Set(activeEmployees.map((employee) => employee.lineId).filter(Boolean)).size,
       },
@@ -1007,7 +1025,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     const activeEmployees = employeesData.filter(isActiveDirectoryEmployee);
 
     return {
-      employees: activeEmployees,
+      employees: employeesData,
       lookups: {
         areas,
         departments,
@@ -1015,14 +1033,14 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         managers: managerLookupOptions(activeEmployees),
         medicalRepVacancies,
         positions,
-        statuses: activeStatusOptions(activeEmployees),
+        statuses: allStatusOptions(employeesData),
         teams,
         workforceVacancies,
       },
       summary: {
         activeEmployees: activeEmployees.length,
         employeesWithoutManagers: activeEmployees.filter(isMissingRequiredManager).length,
-        totalEmployees: activeEmployees.length,
+        totalEmployees: employeesData.length,
         uniqueAreas: new Set(activeEmployees.map((employee) => employee.areaId).filter(Boolean)).size,
         uniqueLines: new Set(activeEmployees.map((employee) => employee.lineId).filter(Boolean)).size,
       },
@@ -1109,7 +1127,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const activeEmployees = employees.filter(isActiveDirectoryEmployee);
 
   return {
-    employees: activeEmployees,
+    employees,
     lookups: {
       areas,
       departments,
@@ -1117,14 +1135,14 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       managers: managerLookupOptions(activeEmployees),
       medicalRepVacancies: [],
       positions,
-      statuses: activeStatusOptions(activeEmployees),
+      statuses: allStatusOptions(employees),
       teams,
       workforceVacancies: [],
     },
     summary: {
       activeEmployees: activeEmployees.length,
       employeesWithoutManagers: activeEmployees.filter(isMissingRequiredManager).length,
-      totalEmployees: activeEmployees.length,
+      totalEmployees: employees.length,
       uniqueAreas: new Set(activeEmployees.map((employee) => employee.areaId).filter(Boolean)).size,
       uniqueLines: new Set(activeEmployees.map((employee) => employee.lineId).filter(Boolean)).size,
     },
@@ -1236,7 +1254,7 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       updatedAt: row.updated_at,
       workEmail: row.work_email,
     };
-  }).filter(isActiveDirectoryEmployee);
+  });
 }
 
 async function ensureManagerIsValid(managerHrId: string | null, employeeHrId: string) {
