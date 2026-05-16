@@ -8,7 +8,6 @@ export type EmployeePortalNavVisibility = {
   showMedRepsPerformanceTab?: boolean;
   showDsmsPerformanceTab?: boolean;
   showTeamExpensesTab?: boolean;
-  showLeaveApprovalsTab?: boolean;
   showVacanciesTab?: boolean;
   showProbationTab?: boolean;
   showOrganogramTab?: boolean;
@@ -17,6 +16,9 @@ export type EmployeePortalNavVisibility = {
   showTrainingManagerCreateCoachingTab?: boolean;
   showTrainingManagerDashboardTab?: boolean;
   showTrainingManagerFieldCoachingTab?: boolean;
+  showSupportTab?: boolean;
+  showVacationRequestTab?: boolean;
+  showVacationReportTab?: boolean;
 };
 
 export function resolveEmployeePortalNavVisibility(
@@ -49,22 +51,11 @@ export function resolveEmployeePortalNavVisibility(
     roleNormalized.includes("medical rep") ||
     roleNormalized === "medical representative";
   const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
-  const showLeaveApprovalsTab =
-    !isTrainingManager &&
-    (
-      showTeamPerformanceTab ||
-      isNationalSalesManager ||
-      isRegionalSalesManager ||
-      roleNormalized.includes("regional manager") ||
-      roleNormalized.includes("manager")
-    );
-
   return {
     showDashboardTab: !isTrainingManager,
     showDsmsPerformanceTab: isNationalSalesManager || isRegionalSalesManager,
     showExpenseActionTab,
     showIncentiveTab: !isTrainingManager,
-    showLeaveApprovalsTab,
     showManagementTab,
     showMedRepsPerformanceTab,
     showMyPerformanceTab: !isTrainingManager,
@@ -74,9 +65,12 @@ export function resolveEmployeePortalNavVisibility(
     showTeamCoachingTab,
     showTeamExpensesTab: isNationalSalesManager || isRegionalSalesManager,
     showTeamPerformanceTab,
+    showSupportTab: true,
     showTrainingManagerCreateCoachingTab: isTrainingManager,
     showTrainingManagerDashboardTab: isTrainingManager,
     showTrainingManagerFieldCoachingTab: isTrainingManager,
     showVacanciesTab: showTeamPerformanceTab || showMedRepsPerformanceTab,
+    showVacationRequestTab: true,
+    showVacationReportTab: true,
   };
 }

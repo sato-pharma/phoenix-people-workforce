@@ -18,8 +18,6 @@ import { ChartLine as LineChartIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 
-import { PayrollSummaryPanel } from "./payroll-payslips-section";
-
 type ContributionMetric = "sales" | "units";
 type ContributionRow = {
   name: string;
@@ -240,7 +238,7 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
       {salesMissing ? (
         <EmptyStateCard title="Sales Unavailable" message="Sales data has not been uploaded yet." />
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[1.55fr_0.85fr]">
+        <div className="space-y-4">
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
               <MetricCard label="Sales Value" value={egp(data.sales.currentMonthSales)} tooltip="Current month sales value" />
@@ -386,7 +384,6 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
             </Card>
           </div>
 
-          <PayrollSummaryPanel data={data} />
         </div>
       )}
     </section>

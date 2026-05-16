@@ -89,6 +89,7 @@ export default async function EmployeeOutstationNewPage() {
             <MobileOutstationWizard
               employeeName={employeeName}
               employeeRole={employeeRole}
+              employeeHrId={outstationContext?.employeeHrId ?? ""}
               hasResidenceCoordinates={hasResidenceCoordinates}
               medicalTripOptions={medicalTripOptions}
               residenceSummary={residenceSummary}

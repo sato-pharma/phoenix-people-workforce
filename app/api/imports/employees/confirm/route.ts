@@ -23,9 +23,29 @@ export const dynamic = "force-dynamic";
 
 type IdMap = Map<string, number>;
 type SupabaseClient = ReturnType<typeof getSupabaseAdmin>;
+type ExistingEmployeeLifecycleRow = {
+  employment_status: string | null;
+  hr_id: string;
+  organogram_visible?: boolean | null;
+  payroll_eligible?: boolean | null;
+};
+
+const importUpdatableStatuses = new Set(["active", "on_leave"]);
 
 function truncate(value: string | null, maxLength: number) {
   return value ? value.slice(0, maxLength) : null;
+}
+
+function normalizeLifecycleStatus(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function canImportUpdateEmployee(row: ExistingEmployeeLifecycleRow) {
+  return (
+    importUpdatableStatuses.has(normalizeLifecycleStatus(row.employment_status)) &&
+    row.organogram_visible !== false &&
+    row.payroll_eligible !== false
+  );
 }
 
 function compactCodePart(value: string | null) {
@@ -482,12 +502,19 @@ function employeeValues(
     positionIds: IdMap;
     teamIds: IdMap;
   },
+  existingEmployee?: ExistingEmployeeLifecycleRow | null,
 ) {
+  const isExistingEmployee = Boolean(existingEmployee);
   const values = {
     full_name: truncate(record.fullName, 220) ?? record.hrId ?? "Unknown",
     hr_id: record.hrId as string,
-    organogram_visible: true,
-    payroll_eligible: true,
+    ...(!isExistingEmployee
+      ? {
+          employment_status: record.employmentStatus ?? "active",
+          organogram_visible: true,
+          payroll_eligible: true,
+        }
+      : {}),
     updated_at: new Date().toISOString(),
     ...(record.birthDate ? { birth_date: record.birthDate } : {}),
     ...(record.codes.areaCode && ids.areaIds.has(record.codes.areaCode)
@@ -508,7 +535,6 @@ function employeeValues(
     ...(record.crmId ? { crm_id: truncate(record.crmId, 80) } : {}),
     ...(record.crmUsername ? { crm_username: truncate(record.crmUsername, 160) } : {}),
     ...(record.education ? { education: truncate(record.education, 160) } : {}),
-    ...(record.employmentStatus ? { employment_status: record.employmentStatus } : {}),
     ...(record.hireDate ? { hire_date: record.hireDate } : {}),
     ...(record.jobTitle ? { job_title: truncate(record.jobTitle, 160) } : {}),
     ...(record.mobileNumber ? { mobile_number: truncate(record.mobileNumber, 40) } : {}),
@@ -553,6 +579,28 @@ function employeeValues(
       ? { social_insurance_number: truncate(record.socialInsuranceNumber, 120) }
       : {}),
   };
+}
+
+async function existingEmployeeLifecycleByHrId(
+  supabase: SupabaseClient,
+  hrIds: string[],
+) {
+  if (hrIds.length === 0) {
+    return new Map<string, ExistingEmployeeLifecycleRow>();
+  }
+
+  const { data, error } = await supabase
+    .from("employees")
+    .select("hr_id,employment_status,organogram_visible,payroll_eligible")
+    .in("hr_id", hrIds);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return new Map(
+    ((data ?? []) as ExistingEmployeeLifecycleRow[]).map((row) => [String(row.hr_id), row]),
+  );
 }
 
 function departmentCodesForRecords(records: EmployeeImportRecord[]) {
@@ -703,9 +751,27 @@ async function upsertEmployees(
   const employeeRecords = records.filter((record) => record.hrId);
   const hrIds = employeeRecords.map((record) => record.hrId as string);
   const existingHrIds = await existingEmployeeHrIds(supabase, hrIds);
+  const existingLifecycle = await existingEmployeeLifecycleByHrId(supabase, hrIds);
+  const protectedEmployees = employeeRecords.filter((record) => {
+    const existing = record.hrId ? existingLifecycle.get(record.hrId) : null;
+    return existing ? !canImportUpdateEmployee(existing) : false;
+  });
+
+  if (protectedEmployees.length > 0) {
+    const sample = protectedEmployees
+      .slice(0, 5)
+      .map((record) => record.hrId)
+      .filter(Boolean)
+      .join(", ");
+    throw new Error(
+      `Employee import cannot update inactive, hidden, payroll-ineligible, resigned, or terminated employees. Blocked HR_IDs: ${sample}${protectedEmployees.length > 5 ? "..." : ""}`,
+    );
+  }
 
   if (employeeRecords.length > 0) {
-    const values = employeeRecords.map((record) => employeeValues(record, ids));
+    const values = employeeRecords.map((record) =>
+      employeeValues(record, ids, record.hrId ? existingLifecycle.get(record.hrId) ?? null : null),
+    );
     let { error } = await supabase.from("employees").upsert(
       values,
       { onConflict: "hr_id" },

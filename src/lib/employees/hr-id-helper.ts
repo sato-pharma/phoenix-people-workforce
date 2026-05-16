@@ -6,7 +6,7 @@ function getRequiredEnv(name: string) {
 
 const databaseQueryTimeoutMs = 8000;
 
-async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<{ data: T }> {
   const url = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL").replace(/\/+$/g, "");
   const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
   const controller = new AbortController();
@@ -35,7 +35,7 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
       );
     }
 
-    return payload as T;
+    return { data: payload as T };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("Supabase request timed out.");
@@ -47,14 +47,14 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
 }
 
 export async function generateNextHrIdForLine(
-  lineId: number | null,
-): Promise<string> {
+  lineId: number | null
+) {
   let prefix = "PH";
 
   if (lineId) {
     try {
-      const lines = await supabaseRest<Array<{ name: string; code: string | null }>>(
-        `lines?id=eq.${lineId}&select=name,code`,
+      const { data: lines } = await supabaseRest<Array<{ name: string; code: string | null }>>(
+        "lines?id=eq." + lineId + "&select=name,code"
       );
       const line = lines[0];
       if (line) {
@@ -73,22 +73,24 @@ export async function generateNextHrIdForLine(
   const retryLimit = 5;
   for (let attempt = 0; attempt < retryLimit; attempt++) {
     // Find the current highest numeric suffix for this prefix
-    const params = new URLSearchParams({
-      hr_id: `like.${prefix}-%`,
-      select: "hr_id",
-      order: "hr_id.desc",
-      limit: "50",
-    });
+    const params = new URLSearchParams();
+    params.append("hr_id", "like." + prefix + "-%");
+    params.append("select", "hr_id");
+    params.append("order", "hr_id.desc");
+    params.append("limit", "50");
 
-    const employees = await supabaseRest<Array<{ hr_id: string }>>(
-      `employees?${params}`,
-    );
+    const searchParams = params.toString();
+    const restPath = "employees?" + searchParams;
+    const response = await supabaseRest<Array<{ hr_id: string }>>(restPath);
+    const employees = response.data || [];
 
     let maxNum = 0;
-    const regex = new RegExp(`^${prefix}-(\\d+)$`);
+    const pattern = "^" + prefix + "-(\\d+)$";
+    const regex = new RegExp(pattern);
 
-    for (const emp of employees) {
-      const match = emp.hr_id.match(regex);
+    for (const row of employees) {
+      const hrId = row.hr_id;
+      const match = hrId.match(regex);
       if (match) {
         const num = parseInt(match[1], 10);
         if (num > maxNum) {
@@ -98,17 +100,17 @@ export async function generateNextHrIdForLine(
     }
 
     const nextNum = maxNum + 1 + attempt;
-    const nextHrId = `${prefix}-${String(nextNum).padStart(4, "0")}`;
+    const nextHrId = prefix + "-" + String(nextNum).padStart(4, "0");
 
     // Double check uniqueness to handle race conditions
-    const existing = await supabaseRest<Array<{ hr_id: string }>>(
-      `employees?hr_id=eq.${nextHrId}&select=hr_id`,
-    );
+    const checkPath = "employees?hr_id=eq." + nextHrId + "&select=hr_id";
+    const checkResponse = await supabaseRest<Array<{ hr_id: string }>>(checkPath);
+    const existing = checkResponse.data || [];
 
     if (existing.length === 0) {
       return nextHrId;
     }
   }
 
-  throw new Error(`Failed to generate a unique HR_ID for prefix ${prefix} after ${retryLimit} attempts.`);
+  throw new Error("Failed to generate a unique HR_ID for prefix " + prefix + " after " + retryLimit + " attempts.");
 }

@@ -352,21 +352,27 @@ function reportsUpTo(
 ) {
   const visited = new Set<string>();
   const managerHrIdKey = normalizeHrIdKey(manager.hrId);
+  const managerNameKey = normalizeNameKey(manager.fullName);
   let managerHrId = normalizeHrIdKey(row.managerHrId);
+  let currentManagerName = row.managerName ?? null;
 
-  while (managerHrId) {
-    if (managerHrId === managerHrIdKey) {
+  while (managerHrId || currentManagerName) {
+    if (
+      (managerHrId && managerHrId === managerHrIdKey) ||
+      (currentManagerName && normalizeNameKey(currentManagerName) === managerNameKey)
+    ) {
       return true;
     }
 
-    if (visited.has(managerHrId)) {
+    const visitedKey = managerHrId || `name:${normalizeNameKey(currentManagerName)}`;
+    if (!visitedKey || visited.has(visitedKey)) {
       return false;
     }
 
-    visited.add(managerHrId);
-    managerHrId = normalizeHrIdKey(
-      rows.find((candidate) => normalizeHrIdKey(candidate.hrId) === managerHrId)?.managerHrId,
-    );
+    visited.add(visitedKey);
+    const managerRow = findManagerRow(rows, managerHrId, currentManagerName);
+    managerHrId = normalizeHrIdKey(managerRow?.managerHrId);
+    currentManagerName = managerRow?.managerName ?? null;
   }
 
   return false;
@@ -428,6 +434,20 @@ function reportsToVacantManagerSlot(row: OrganogramRow, vacantManager: Organogra
   }
 
   return textContextMatches(row.regionName, vacantManager.regionName);
+}
+
+function findManagerRow(
+  rows: OrganogramRow[],
+  managerHrId: string | null | undefined,
+  managerName: string | null | undefined,
+) {
+  const managerHrIdKey = normalizeHrIdKey(managerHrId);
+  const managerNameKey = normalizeNameKey(managerName);
+
+  return rows.find((row) =>
+    (managerHrIdKey && normalizeHrIdKey(row.hrId) === managerHrIdKey) ||
+    (managerNameKey && normalizeNameKey(row.fullName) === managerNameKey),
+  ) ?? null;
 }
 
 function hierarchyMemberRank(row: OrganogramRow) {
@@ -614,6 +634,7 @@ function buildMemberTree(members: OrganogramRow[]) {
     const member = node.row;
     const memberHrId = normalizeHrIdKey(member.hrId);
     const managerHrId = normalizeHrIdKey(member.managerHrId);
+    const managerNameKey = normalizeNameKey(member.managerName);
     const canUseVacantManagerFallback =
       !isChiefExecutive(member) &&
       !isNationalSalesManager(member) &&
@@ -626,12 +647,17 @@ function buildMemberTree(members: OrganogramRow[]) {
       : null;
 
     if (
-      managerHrId &&
-      managerHrId !== memberHrId &&
-      memberIds.has(managerHrId) &&
-      !hasCircularManagerChain(member, rowByHrId)
+      (
+        (managerHrId &&
+          managerHrId !== memberHrId &&
+          memberIds.has(managerHrId) &&
+          !hasCircularManagerChain(member, rowByHrId)) ||
+        (!managerHrId && managerNameKey)
+      )
     ) {
-      const managerNode = nodesByHrId.get(managerHrId)?.[0];
+      const managerNode = managerHrId
+        ? nodesByHrId.get(managerHrId)?.[0]
+        : nodes.find((candidate) => normalizeNameKey(candidate.row.fullName) === managerNameKey);
       if (managerNode && managerNode !== node) {
         managerNode.children.push(node);
       } else {
@@ -778,6 +804,8 @@ function OrganogramView({
     rows.find((row) =>
       isNationalSalesManager(row),
     ) ?? null;
+  const lineLeaderHrId = normalizeHrIdKey(lineLeader?.hrId);
+  const lineLeaderNameKey = normalizeNameKey(lineLeader?.fullName);
   const rsmRows = rows
     .filter((row) => isRegionalSalesManager(row))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
@@ -959,6 +987,40 @@ function OrganogramView({
       title: primaryManager.positionTitle ?? primaryManager.jobTitle ?? "Marketing Manager",
     } satisfies ManagerLane;
   });
+  const lineLeaderDirectMembers = teamRows
+    .filter((row) => {
+      if (assignedToManager.has(rowKey(row)) || !lineLeader) {
+        return false;
+      }
+
+      const managerHrId = normalizeHrIdKey(row.managerHrId);
+      const managerNameKey = normalizeNameKey(row.managerName);
+
+      return (
+        (lineLeaderHrId && managerHrId === lineLeaderHrId) ||
+        (lineLeaderNameKey && managerNameKey === lineLeaderNameKey)
+      );
+    })
+    .sort(sortHierarchyMembers);
+
+  for (const member of lineLeaderDirectMembers) {
+    assignedToManager.add(rowKey(member));
+  }
+
+  const lineLeaderDirectGroup: ManagerLane | null =
+    lineLeader && lineLeaderDirectMembers.length > 0
+      ? {
+          dsm: null,
+          hireDate: lineLeader.hireDate,
+          hrId: lineLeader.hrId,
+          level: "manager",
+          members: lineLeaderDirectMembers,
+          name: `${lineLeader.fullName} Direct Reports`,
+          region: lineLeader.regionName ?? lineLeader.areaName,
+          reportsTo: lineLeader.managerName ?? chiefExecutive?.fullName ?? null,
+          title: "Direct Reports",
+        }
+      : null;
   const fallbackManagerGroups: ManagerLane[] = groupBy(
     teamRows.filter((row) => {
       const key = rowKey(row);
@@ -966,8 +1028,8 @@ function OrganogramView({
       const managerHrId = normalizeHrIdKey(row.managerHrId);
       const reportsToLineLeader =
         Boolean(lineLeader) &&
-        (managerHrId === normalizeHrIdKey(lineLeader?.hrId) ||
-          managerNameKey === normalizeNameKey(lineLeader?.fullName));
+        (managerHrId === lineLeaderHrId ||
+          managerNameKey === lineLeaderNameKey);
 
       return (
         !assignedToManager.has(key) &&
@@ -1034,6 +1096,7 @@ function OrganogramView({
     ...rsmGroups,
     ...dsmGroups,
     ...marketingGroups,
+    ...(lineLeaderDirectGroup ? [lineLeaderDirectGroup] : []),
     ...fallbackManagerGroups,
     ...(unassignedGroup ? [unassignedGroup] : []),
   ].filter((group) => group.members.length > 0 || group.dsm);
@@ -1384,7 +1447,9 @@ export function OrganogramReport({
   );
   const filteredRows = React.useMemo(() => {
     const managerHrIdsToKeep = new Set<string>();
+    const managerRowKeysToKeep = new Set<string>();
     const officeDescendantHrIdsToKeep = new Set<string>();
+    type ManagerFrontier = { managerHrId: string | null; managerName: string | null };
     const isOfficeSelected = effectiveLineFilter.trim().toLowerCase() === "office";
     const selectedLineRows = effectiveLineFilter
       ? rows.filter((row) =>
@@ -1396,26 +1461,38 @@ export function OrganogramReport({
       : rows;
 
     if (effectiveLineFilter) {
-      let frontier = selectedLineRows
-        .map((row) => row.managerHrId)
-        .filter((value): value is string => Boolean(value));
+      let frontier: ManagerFrontier[] = selectedLineRows
+        .map((row) => ({
+          managerHrId: row.managerHrId ?? null,
+          managerName: row.managerName ?? null,
+        }))
+        .filter((value) => Boolean(value.managerHrId || value.managerName));
 
       while (frontier.length > 0) {
-        const nextFrontier: string[] = [];
+        const nextFrontier: ManagerFrontier[] = [];
 
-        for (const managerHrId of frontier) {
-          const normalizedManagerHrId = normalizeHrIdKey(managerHrId);
-
-          if (managerHrIdsToKeep.has(normalizedManagerHrId)) {
+        for (const managerRef of frontier) {
+          const managerRow = findManagerRow(rows, managerRef.managerHrId, managerRef.managerName);
+          if (!managerRow) {
             continue;
           }
 
-          managerHrIdsToKeep.add(normalizedManagerHrId);
+          const normalizedManagerHrId = normalizeHrIdKey(managerRow.hrId);
+          const managerKey = rowKey(managerRow);
+          if (managerRowKeysToKeep.has(managerKey)) {
+            continue;
+          }
 
-          const managerRow = rows.find((row) => normalizeHrIdKey(row.hrId) === normalizedManagerHrId);
+          managerRowKeysToKeep.add(managerKey);
+          if (normalizedManagerHrId) {
+            managerHrIdsToKeep.add(normalizedManagerHrId);
+          }
 
-          if (managerRow?.managerHrId) {
-            nextFrontier.push(managerRow.managerHrId);
+          if (managerRow.managerHrId || managerRow.managerName) {
+            nextFrontier.push({
+              managerHrId: managerRow.managerHrId ?? null,
+              managerName: managerRow.managerName ?? null,
+            });
           }
         }
 
@@ -1460,6 +1537,7 @@ export function OrganogramReport({
       const keepLeadershipChain =
         Boolean(effectiveLineFilter) &&
         (isChiefExecutive(row) ||
+          managerRowKeysToKeep.has(rowKey(row)) ||
           managerHrIdsToKeep.has(row.hrId) ||
           managerHrIdsToKeep.has(normalizeHrIdKey(row.hrId)) ||
           officeDescendantHrIdsToKeep.has(row.hrId));
@@ -1478,8 +1556,8 @@ export function OrganogramReport({
     });
   }, [effectiveLineFilter, rows]);
   const diagnostics = React.useMemo(
-    () => findOrganogramDiagnostics(filteredRows),
-    [filteredRows],
+    () => findOrganogramDiagnostics(rows),
+    [rows],
   );
   const hasActiveFilters = Boolean(effectiveLineFilter) && !fixedLine;
   const canShowChart = Boolean(effectiveLineFilter);

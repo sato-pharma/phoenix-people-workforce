@@ -107,77 +107,73 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
   const [
-    bridgeRows,
+    bridgeStats,
     lockedAccounts,
     forcedPasswordResets,
     failedAttempts,
     authAuditCount,
     notificationLogCount,
-    notificationLogs24h,
-    notificationEvents24h,
-    authUsersWithUid,
-    accessProfileUids,
+    notificationStats,
+    notificationEventStats,
+    brokenAccountsResult,
   ] = await Promise.all([
-    supabase.from("app_auth_users").select("login_id,auth_user_id,auth_email"),
+    supabase
+      .from("app_auth_users")
+      .select("count(),bridged:count().filter(auth_user_id.not.is.null,auth_email.not.is.null)")
+      .single(),
     supabase.from("app_auth_users").select("*", { count: "exact", head: true }).gt("locked_until", new Date().toISOString()),
     supabase.from("app_auth_users").select("*", { count: "exact", head: true }).eq("force_password_reset", true),
-    supabase.from("auth_login_attempts").select("ip,success,attempted_at").eq("success", false).gte("attempted_at", since24h),
+    supabase
+      .from("auth_login_attempts")
+      .select("count(),unique_ips:ip.count(distinct)")
+      .eq("success", false)
+      .gte("attempted_at", since24h)
+      .single(),
     supabase.from("audit_logs").select("*", { count: "exact", head: true }).eq("entity_type", "auth_session").gte("created_at", since24h),
     supabase.from("notification_delivery_logs").select("*", { count: "exact", head: true }),
     supabase
       .from("notification_delivery_logs")
-      .select("status,sent_at")
-      .gte("sent_at", since24h),
+      .select("status.count(),sent:status.count().filter(status.eq.sent),failed:status.count().filter(status.eq.failed)")
+      .gte("sent_at", since24h)
+      .single(),
     supabase
       .from("notification_events")
-      .select("status,created_at")
-      .gte("created_at", since24h),
-    supabase.from("app_auth_users").select("login_id,auth_user_id").not("auth_user_id", "is", null),
-    supabase.from("user_access_profiles").select("auth_user_id"),
+      .select("status.count(),pending:status.count().filter(status.eq.pending)")
+      .gte("created_at", since24h)
+      .single(),
+    supabase.rpc("fn_get_broken_auth_accounts") as any,
   ]);
 
-  const bridgeData = bridgeRows.data ?? [];
-  const bridgedUsers = bridgeData.filter((row) => row.auth_user_id && row.auth_email).length;
-  const authBridgeCoverageRate = bridgeData.length > 0 ? bridgedUsers / bridgeData.length : 1;
+  const bridgeData = (bridgeStats.data as any) ?? { count: 0, bridged: 0 };
+  const authBridgeCoverageRate = bridgeData.count > 0 ? Number(bridgeData.bridged) / Number(bridgeData.count) : 1;
 
-  const profileUidSet = new Set(
-    (accessProfileUids.data ?? [])
-      .map((row) => row.auth_user_id)
-      .filter((uid): uid is string => typeof uid === "string" && uid.length > 0),
-  );
-  const brokenAccounts = (authUsersWithUid.data ?? [])
-    .filter((row) => typeof row.auth_user_id === "string" && !profileUidSet.has(row.auth_user_id))
-    .map((row) => row.login_id as string)
-    .filter(Boolean);
-
-  const failedAttemptsData = failedAttempts.data ?? [];
-  const uniqueFailedIps24h = new Set(
-    failedAttemptsData
-      .map((row) => row.ip)
-      .filter((value): value is string => typeof value === "string" && value.length > 0),
-  ).size;
-
-  const notificationLogRows = notificationLogs24h.data ?? [];
-  const notificationEventRows = notificationEvents24h.data ?? [];
+  const failedData = (failedAttempts.data as any) ?? { count: 0, unique_ips: 0 };
+  const nStats = (notificationStats.data as any) ?? { count: 0, sent: 0, failed: 0 };
+  const eStats = (notificationEventStats.data as any) ?? { count: 0, pending: 0 };
 
   return {
     auth: {
       authBridgeCoverageRate,
-      brokenAccounts,
-      failedAttempts24h: failedAttemptsData.length,
+      brokenAccounts: (brokenAccountsResult.data as string[]) ?? [],
+      failedAttempts24h: safeNumber(failedData.count),
       forcedPasswordResets: forcedPasswordResets.count ?? 0,
       lockedAccounts: lockedAccounts.count ?? 0,
       recentAuthEvents: authAuditCount.count ?? 0,
-      uniqueFailedIps24h,
+      uniqueFailedIps24h: safeNumber(failedData.unique_ips),
     },
     notifications: {
-      failed24h: notificationLogRows.filter((row) => String(row.status ?? "").toLowerCase() === "failed").length,
-      pending24h: notificationEventRows.filter((row) => String(row.status ?? "").toLowerCase() === "pending").length,
-      sent24h: notificationLogRows.filter((row) => String(row.status ?? "").toLowerCase() === "sent").length,
+      failed24h: safeNumber(nStats.failed),
+      pending24h: safeNumber(eStats.pending),
+      sent24h: safeNumber(nStats.sent),
       totalLogs: notificationLogCount.count ?? 0,
-      totalQueuedEvents: notificationEventRows.length,
+      totalQueuedEvents: safeNumber(eStats.count),
     },
   };
+}
+
+function safeNumber(val: any): number {
+  const n = Number(val);
+  return isNaN(n) ? 0 : n;
 }
 
 export type DataHealthStats = {
@@ -418,7 +414,7 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
     vacancyRows,
     orphanAudit,
   ] = await Promise.all([
-    getEmployeeDirectory(),
+    getEmployeeDirectory({ pageSize: -1 }),
     fetchAllDataHealthRows<Record<string, unknown>>(() =>
       supabase.from("app_auth_users").select("hr_id,is_active,login_id"),
     ),

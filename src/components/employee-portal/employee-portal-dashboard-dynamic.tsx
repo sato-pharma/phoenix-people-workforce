@@ -18,6 +18,10 @@ export const MedicalRepOverviewPage = dynamic<PortalDashboardPageProps>(() =>
   import("@/components/employee-portal/employee-portal-dashboard").then((mod) => mod.MedicalRepOverviewPage),
 );
 
+export const MedicalRepSalesPage = dynamic<PortalDashboardPageProps>(() =>
+  import("@/components/employee-portal/employee-portal-dashboard").then((mod) => mod.MedicalRepSalesPage),
+);
+
 export const MedicalRepPayrollPage = dynamic<PortalDashboardPageProps>(() =>
   import("@/components/employee-portal/employee-portal-dashboard").then((mod) => mod.MedicalRepPayrollPage),
 );

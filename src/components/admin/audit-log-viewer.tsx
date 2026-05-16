@@ -10,7 +10,6 @@ const MODULE_OPTIONS: Array<"all" | AuditModule> = [
   "auth",
   "access",
   "governance",
-  "leave",
   "sales",
   "recruitment",
   "coaching",
@@ -19,7 +18,6 @@ const MODULE_OPTIONS: Array<"all" | AuditModule> = [
 const SOURCE_OPTIONS: Array<"all" | AuditSourceTable> = [
   "all",
   "audit_logs",
-  "leave_audit_logs",
   "sales_audit_logs",
   "job_offer_audit_logs",
   "coaching_report_audit_logs",
@@ -30,7 +28,6 @@ const ENTITY_TYPES = [
   "auth_session",
   "coaching_report",
   "job_offer",
-  "leave_request",
   "outstation_location",
   "permission_override",
   "salary_flag",

@@ -1,4 +1,12 @@
 import {
+  getSalesScope,
+  normalizeHrId as normalizeHrIdForAccess,
+  normalizeLineName,
+  resolveEmployeeIdentityId,
+  type AccessContext,
+} from "@/lib/auth/permissions";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import {
   normalizePayrollPaymentMode,
   type PayrollPaymentMode,
 } from "@/lib/payroll/policy";
@@ -13,6 +21,7 @@ const hrIdPattern = /^[A-Z0-9][A-Z0-9_-]*$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const activeLifecycleStatuses = new Set(["active", "on_leave"]);
 const statusOptions = ["active", "inactive", "on_leave", "terminated", "resigned"];
+const directoryStatusFilterValues = new Set(["all", ...statusOptions]);
 
 export type EmployeeDirectoryRow = {
   areaId: number | null;
@@ -96,6 +105,10 @@ export type EmployeeLookupOption = {
 
 export type EmployeeDirectoryData = {
   employees: EmployeeDirectoryRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
   lookups: {
     areas: EmployeeLookupOption[];
     departments: EmployeeLookupOption[];
@@ -114,6 +127,43 @@ export type EmployeeDirectoryData = {
     uniqueAreas: number;
     uniqueLines: number;
   };
+  diagnostics?: {
+    rawRowsMatched: number;
+    returnedRows: number;
+    page: number;
+    pageSize: number;
+    filters: {
+      status?: string | null;
+      lineId?: number;
+      areaId?: number;
+      departmentId?: number;
+      teamId?: number;
+      region?: string | null;
+      hasBankAccount?: string | null;
+      medicalInsuranceStatus?: string | null;
+      socialInsuranceStatus?: string | null;
+      salaryPaymentMode?: string | null;
+    };
+    duplicateHrIdCount?: number;
+    duplicateHrIds?: string[];
+  };
+};
+
+export type EmployeeDirectoryFilter = {
+  search?: string;
+  lineId?: number;
+  areaId?: number;
+  departmentId?: number;
+  teamId?: number;
+  positionId?: number;
+  status?: string;
+  region?: string;
+  hasBankAccount?: string;
+  medicalInsuranceStatus?: string;
+  socialInsuranceStatus?: string;
+  salaryPaymentMode?: string;
+  page?: number;
+  pageSize?: number;
 };
 
 export type EmployeeMutationInput = {
@@ -255,6 +305,7 @@ type JoinedEmployeeDbRow = EmployeeDbRow & {
 const databaseQueryTimeoutMs = 15000;
 const databaseQueryRetryMs = 30000;
 const DATABASE_QUERY_MAX_ATTEMPTS = 2;
+const EMPLOYEE_DIRECTORY_PAGE_SIZE = 1000;
 
 let directoryCache: {
   data: EmployeeDirectoryData;
@@ -288,6 +339,12 @@ function normalizeYesNo(value: string | null | undefined) {
   return normalized === "yes" || normalized === "no" ? normalized : null;
 }
 
+function normalizeDirectoryStatusFilter(value: string | null | undefined) {
+  const normalized = compact(value)?.toLowerCase();
+  if (!normalized) return null;
+  return directoryStatusFilterValues.has(normalized) ? normalized : null;
+}
+
 function normalizeEnrollmentStatus(value: string | null | undefined) {
   const normalized = compact(value)?.toLowerCase();
   return normalized === "yes" || normalized === "no" || normalized === "pending"
@@ -297,7 +354,6 @@ function normalizeEnrollmentStatus(value: string | null | undefined) {
 
 function isActiveDirectoryEmployee(employee: EmployeeDirectoryRow) {
   return (
-    isActiveLifecycleStatus(employee.employmentStatus) &&
     employee.payrollEligible !== false &&
     employee.organogramVisible !== false &&
     isClassifiedActiveEmployee(employee)
@@ -312,24 +368,6 @@ function activeStatusOptions(employees: EmployeeDirectoryRow[]) {
   );
 
   return Array.from(statuses.size ? statuses : activeLifecycleStatuses)
-    .sort()
-    .map((status) => ({
-      label: status.replace(/_/g, " "),
-      value: status,
-    }));
-}
-
-function allStatusOptions(employees: EmployeeDirectoryRow[]) {
-  const statuses = new Set(
-    employees.map((employee) => normalizeLifecycleStatus(employee.employmentStatus)),
-  );
-  if (statuses.size === 0) {
-    return Array.from(activeLifecycleStatuses).sort().map((status) => ({
-      label: status.replace(/_/g, " "),
-      value: status,
-    }));
-  }
-  return Array.from(statuses)
     .sort()
     .map((status) => ({
       label: status.replace(/_/g, " "),
@@ -426,6 +464,27 @@ function compact(value: string | null | undefined) {
   return text ? text : null;
 }
 
+function findDuplicateHrIds(rows: EmployeeDbRow[]) {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+
+  for (const row of rows) {
+    const normalizedHrId = normalizeHrId(row.hr_id);
+    if (!normalizedHrId) {
+      continue;
+    }
+
+    if (seen.has(normalizedHrId)) {
+      duplicates.add(normalizedHrId);
+      continue;
+    }
+
+    seen.add(normalizedHrId);
+  }
+
+  return Array.from(duplicates).sort();
+}
+
 function numberOrNull(value: unknown) {
   if (value === null || value === undefined || value === "") {
     return null;
@@ -443,7 +502,10 @@ function idInFilter(values: number[]) {
   return `in.(${values.join(",")})`;
 }
 
-async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function supabaseRest<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<{ data: T; count?: number }> {
   const url = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL").replace(/\/+$/g, "");
   const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
   let lastError: unknown;
@@ -455,15 +517,18 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
+      const headers: Record<string, string> = {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Content-Type": "application/json",
+        "Prefer": (init.headers as Record<string, string> | undefined)?.["Prefer"] ?? "return=representation",
+        ...(init.headers as Record<string, string> ?? {}),
+      };
+
       const response = await fetch(`${url}/rest/v1/${path}`, {
         ...init,
         cache: "no-store",
-        headers: {
-          apikey: serviceRoleKey,
-          Authorization: `Bearer ${serviceRoleKey}`,
-          "Content-Type": "application/json",
-          ...(init.headers ?? {}),
-        },
+        headers,
         signal: controller.signal,
       });
       const text = await response.text();
@@ -477,7 +542,10 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
         throw new Error(message);
       }
 
-      return payload as T;
+      const contentRange = response.headers.get("Content-Range");
+      const count = contentRange ? parseInt(contentRange.split("/")[1], 10) : undefined;
+
+      return { data: payload as T, count };
     } catch (error) {
       lastError = error;
       const isTimeout =
@@ -540,7 +608,7 @@ async function loadLookup(table: string, ids: number[], label = "name") {
     select: `id,${label}`,
     id: idInFilter(ids),
   });
-  const rows = await supabaseRest<LookupRow[]>(`${table}?${params}`);
+  const { data: rows } = await supabaseRest<LookupRow[]>(`${table}?${params}`);
 
   return new Map(
     rows.map((row) => [
@@ -558,7 +626,7 @@ async function loadAllOptions(table: string, label = "name") {
     });
 
     try {
-      const rows = await supabaseRest<Array<LookupRow & { is_active?: boolean | null }>>(`${table}?${params}`);
+      const { data: rows } = await supabaseRest<Array<LookupRow & { is_active?: boolean | null }>>(`${table}?${params}`);
 
       return rows
         .filter((row) => row.is_active !== false)
@@ -588,7 +656,8 @@ async function loadAllOptions(table: string, label = "name") {
   let rows: Array<LookupRow & { area_id?: number | null; is_active?: boolean | null }>;
 
   try {
-    rows = await supabaseRest<Array<LookupRow & { area_id?: number | null; is_active?: boolean | null }>>(`${table}?${params}`);
+    const result = await supabaseRest<Array<LookupRow & { area_id?: number | null; is_active?: boolean | null }>>(`${table}?${params}`);
+    rows = result.data;
   } catch (error) {
     const message = employeeDirectoryErrorMessage(error).toLowerCase();
     if (
@@ -602,7 +671,8 @@ async function loadAllOptions(table: string, label = "name") {
       select: `id,${label}`,
       order: `${label}.asc`,
     });
-    rows = await supabaseRest<LookupRow[]>(`${table}?${fallbackParams}`);
+    const result = await supabaseRest<LookupRow[]>(`${table}?${fallbackParams}`);
+    rows = result.data;
   }
 
   return rows
@@ -625,11 +695,43 @@ async function loadManagerNames(hrIds: string[]) {
     select: "hr_id,full_name",
     hr_id: textInFilter(hrIds),
   });
-  const rows = await supabaseRest<LookupRow[]>(`employees?${params}`);
+  const { data: rows } = await supabaseRest<LookupRow[]>(`employees?${params}`);
 
   return new Map(
-    rows.map((row) => [String(row.hr_id), String(row.full_name ?? "")]),
+    rows
+      .map((row) => {
+        const normalized = normalizeHrId(row.hr_id);
+        return normalized ? [normalized, String(row.full_name ?? "")] : null;
+      })
+      .filter((entry): entry is [string, string] => entry !== null),
   );
+}
+
+async function fetchAllEmployees(
+  baseParams: Record<string, string>,
+  filters: string[] = [],
+  pageSize: number = EMPLOYEE_DIRECTORY_PAGE_SIZE,
+): Promise<EmployeeDbRow[]> {
+  const rows: EmployeeDbRow[] = [];
+  let offset = Number(baseParams.offset ?? 0);
+
+  while (true) {
+    const params = new URLSearchParams(baseParams);
+    params.set("limit", String(pageSize));
+    params.set("offset", String(offset));
+
+    const { data: batch } = await supabaseRest<EmployeeDbRow[]>(
+      `employees?${params}${filters.length > 0 ? `&${filters.join("&")}` : ""}`,
+    );
+
+    rows.push(...batch);
+
+    if (!Array.isArray(batch) || batch.length < pageSize) {
+      return rows;
+    }
+
+    offset += pageSize;
+  }
 }
 
 async function loadCompensationByHrId(hrIds: string[]) {
@@ -644,7 +746,7 @@ async function loadCompensationByHrId(hrIds: string[]) {
   });
 
   try {
-    const rows = await supabaseRest<EmployeeCompensationDbRow[]>(
+    const { data: rows } = await supabaseRest<EmployeeCompensationDbRow[]>(
       `employee_compensation?${params}`,
     );
 
@@ -658,7 +760,7 @@ async function loadCompensationByHrId(hrIds: string[]) {
           "employee_hr_id,net_salary,social_insurance,taxes,medical_insurance,fuel_allowance,extra_cost_of_living,gross_salary",
         employee_hr_id: textInFilter(hrIds),
       });
-      const rows = await supabaseRest<EmployeeCompensationDbRow[]>(
+      const { data: rows } = await supabaseRest<EmployeeCompensationDbRow[]>(
         `employee_compensation?${fallbackParams}`,
       );
 
@@ -680,7 +782,7 @@ async function loadResidenceByHrId(hrIds: string[]) {
   }
 
   try {
-    const rows = await supabaseRest<EmployeeResidenceDbRow[]>(
+    const { data: rows } = await supabaseRest<EmployeeResidenceDbRow[]>(
       `employee_locations?employee_hr_id=${encodeURIComponent(
         textInFilter(cleanedHrIds),
       )}&select=employee_hr_id,residence_address,residence_city,residence_area,residence_latitude,residence_longitude,geocode_status`,
@@ -697,404 +799,318 @@ async function loadResidenceByHrId(hrIds: string[]) {
   }
 }
 
-export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
-  const now = Date.now();
-  if (directoryCache && now - directoryCache.timestamp < CACHE_TTL) {
-    return directoryCache.data;
-  }
+export async function getEmployeeDirectory(
+  filter: EmployeeDirectoryFilter = {},
+  access?: AccessContext,
+): Promise<EmployeeDirectoryData> {
+  const page = Math.max(1, filter.page ?? 1);
+  const isAllEmployees = filter.pageSize === -1;
+  const pageSize = isAllEmployees ? EMPLOYEE_DIRECTORY_PAGE_SIZE : Math.min(200, Math.max(1, filter.pageSize ?? 50));
+  const offset = isAllEmployees ? 0 : (page - 1) * pageSize;
 
-  const startTime = Date.now();
-  try {
-    const result = await fetchEmployeeDirectory();
-    directoryCache = {
-      data: result,
-      timestamp: now,
-    };
-    return result;
-  } catch (error) {
-    if (isEmployeeDirectoryTimeout(error) && directoryCache) {
-      return directoryCache.data;
+  const baseEmployeeSelect =
+    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at,region_name,birth_date";
+
+  // Apply filters in SQL
+  const filters: string[] = [];
+  if (filter.search) {
+    const search = filter.search.trim();
+    if (search) {
+      filters.push(`or=(full_name.ilike.*${search}*,hr_id.ilike.*${search}*,work_email.ilike.*${search}*)`);
     }
-
-    throw error;
   }
+  if (filter.lineId) filters.push(`line_id=eq.${filter.lineId}`);
+  if (filter.areaId) filters.push(`area_id=eq.${filter.areaId}`);
+  if (filter.departmentId) filters.push(`department_id=eq.${filter.departmentId}`);
+  if (filter.teamId) filters.push(`team_id=eq.${filter.teamId}`);
+  if (filter.positionId) filters.push(`position_id=eq.${filter.positionId}`);
+  const normalizedStatusFilter = normalizeDirectoryStatusFilter(filter.status ?? "all");
+  if (normalizedStatusFilter && normalizedStatusFilter !== "all") {
+    filters.push(`employment_status=eq.${normalizedStatusFilter}`);
+  }
+  if (filter.region) {
+    filters.push(`region_name=ilike.*${filter.region}*`);
+  }
+  const normalizedHasBankAccount = normalizeYesNo(filter.hasBankAccount);
+  if (normalizedHasBankAccount) {
+    filters.push(`has_bank_account=eq.${normalizedHasBankAccount}`);
+  }
+  const normalizedMedicalInsuranceStatus = normalizeEnrollmentStatus(filter.medicalInsuranceStatus);
+  if (normalizedMedicalInsuranceStatus) {
+    filters.push(`medical_insurance_status=eq.${normalizedMedicalInsuranceStatus}`);
+  }
+  const normalizedSocialInsuranceStatus = normalizeEnrollmentStatus(filter.socialInsuranceStatus);
+  if (normalizedSocialInsuranceStatus) {
+    filters.push(`social_insurance_status=eq.${normalizedSocialInsuranceStatus}`);
+  }
+  const normalizedSalaryPaymentMode = normalizePayrollPaymentMode(filter.salaryPaymentMode);
+  if (normalizedSalaryPaymentMode) {
+    filters.push(`payment_mode=eq.${normalizedSalaryPaymentMode}`);
+  }
+
+  // Apply Access Scoping in SQL
+  if (access && access.scope !== "system") {
+    const currentHrId = access.hrId;
+    if (["Super Admin", "CEO", "HR Specialist", "Finance Manager"].includes(access.role)) {
+      // Company scope
+    } else if (["Regional Manager", "Regional Sales Manager"].includes(access.role)) {
+      const hierarchyHrIds = await getHierarchyHrIdsInSql(access.hrId);
+      filters.push(`hr_id=${hierarchyHrIds.length > 0 ? textInFilter(hierarchyHrIds) : "eq.NONE"}`);
+    } else if (access.scope === "line") {
+      const lineId = await getEmployeeLineIdForHrId(currentHrId);
+      if (lineId !== null) {
+        filters.push(`line_id=eq.${lineId}`);
+      } else if (currentHrId) {
+        filters.push(`hr_id=eq.${currentHrId}`);
+      }
+    } else if (["District Manager", "Manager"].includes(access.role)) {
+      if (currentHrId) {
+        filters.push(`or=(hr_id.eq.${currentHrId},manager_hr_id.eq.${currentHrId})`);
+      } else {
+        filters.push("hr_id=is.null");
+      }
+    } else {
+      if (currentHrId) {
+        filters.push(`hr_id=eq.${currentHrId}`);
+      } else {
+        filters.push("hr_id=is.null");
+      }
+    }
+  }
+
+  const queryBase = {
+    select: baseEmployeeSelect,
+    order: "full_name.asc",
+    ...(isAllEmployees ? {} : { offset: String(offset), limit: String(pageSize) }),
+  };
+
+  let employeeRows: EmployeeDbRow[];
+  let total: number | undefined;
+
+  if (isAllEmployees) {
+    employeeRows = await fetchAllEmployees(queryBase, filters);
+    total = employeeRows.length;
+  } else {
+    const pagedResult = await supabaseRest<EmployeeDbRow[]>(
+      `employees?${new URLSearchParams(queryBase).toString()}${filters.length > 0 ? `&${filters.join("&")}` : ""}`,
+      { headers: { Prefer: "count=exact" } },
+    );
+    employeeRows = pagedResult.data;
+    total = pagedResult.count ?? employeeRows.length;
+  }
+
+  const [areas, departments, lines, positions, teams, managerNames] = await Promise.all([
+    loadAllOptions("areas"),
+    loadAllOptions("departments"),
+    loadAllOptions("lines"),
+    loadAllOptions("positions", "title"),
+    loadAllOptions("teams"),
+    loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
+  ]);
+
+  const employees = mapSimpleRows(employeeRows, { areas, departments, lines, managerNames, positions, teams });
+  const totalCount = total ?? employees.length;
+  const duplicateHrIds = findDuplicateHrIds(employeeRows);
+  const filteredEmployees = employees;
+  const effectiveTotalCount = totalCount;
+
+  return {
+    employees: filteredEmployees,
+    total: isAllEmployees ? filteredEmployees.length : effectiveTotalCount,
+    page,
+    pageSize: isAllEmployees ? filteredEmployees.length : pageSize,
+    pageCount: Math.max(
+      1,
+      Math.ceil((isAllEmployees ? filteredEmployees.length : effectiveTotalCount) / pageSize),
+    ),
+    lookups: {
+      areas,
+      departments,
+      lines,
+      managers: managerLookupOptions(filteredEmployees),
+      positions,
+      teams,
+      statuses: activeStatusOptions(filteredEmployees),
+      medicalRepVacancies: [], 
+      workforceVacancies: [],
+    },
+    summary: {
+      activeEmployees: filteredEmployees.filter((employee) =>
+        ["active", "on_leave"].includes(String(employee.employmentStatus ?? "active").toLowerCase()),
+      ).length,
+      employeesWithoutManagers: filteredEmployees.filter(isMissingRequiredManager).length,
+      totalEmployees: effectiveTotalCount,
+      uniqueAreas: areas.length,
+      uniqueLines: lines.length,
+    },
+    diagnostics: {
+      rawRowsMatched: totalCount,
+      returnedRows: filteredEmployees.length,
+      page,
+      pageSize,
+      filters: {
+        status: normalizedStatusFilter,
+        lineId: filter.lineId,
+        areaId: filter.areaId,
+        departmentId: filter.departmentId,
+        teamId: filter.teamId,
+        region: filter.region ? compact(filter.region) : null,
+        hasBankAccount: normalizedHasBankAccount,
+        medicalInsuranceStatus: normalizedMedicalInsuranceStatus,
+        socialInsuranceStatus: normalizedSocialInsuranceStatus,
+        salaryPaymentMode: normalizedSalaryPaymentMode,
+      },
+      duplicateHrIdCount: duplicateHrIds.length,
+      duplicateHrIds,
+    },
+  };
 }
 
-async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
-  const baseEmployeeSelect =
-    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
-
-  // Try to join compensation and other lookups in a single query to reduce N+1 and massive IN filters
-  const joinedSelect = `${baseEmployeeSelect},region_name,birth_date,
-    employee_compensation(net_salary,social_insurance,taxes,medical_insurance,fuel_allowance,extra_cost_of_living,gross_salary,payment_mode),
-    departments(name),
-    lines(name),
-    areas(name),
-    positions(title),
-    teams(name)`;
-
-  const employeeParams = new URLSearchParams({
-    select: joinedSelect,
-    order: "full_name.asc",
+async function getHierarchyHrIdsInSql(rootHrId: string | null): Promise<string[]> {
+  if (!rootHrId) return [];
+  const { data, error } = await getSupabaseAdmin().rpc("fn_get_employee_hierarchy", {
+    p_root_hr_id: rootHrId,
   });
+  if (error) return [rootHrId];
+  return (data as Array<{ hr_id: string }>).map((row) => row.hr_id);
+}
 
-  let employeeRows: JoinedEmployeeDbRow[];
-
-  try {
-    employeeRows = await supabaseRest<JoinedEmployeeDbRow[]>(`employees?${employeeParams}`);
-  } catch {
-    // Fallback if joined query fails due to schema/relationship issues
-    const fallbackParams = new URLSearchParams({
-      select: `${baseEmployeeSelect},region_name,birth_date`,
-      order: "full_name.asc",
-    });
-    employeeRows = await supabaseRest<EmployeeDbRow[]>(`employees?${fallbackParams}`);
+function mapSimpleRows(
+  rows: EmployeeDbRow[],
+  lookups: {
+    areas: EmployeeLookupOption[];
+    departments: EmployeeLookupOption[];
+    lines: EmployeeLookupOption[];
+    managerNames: Map<string, string>;
+    positions: EmployeeLookupOption[];
+    teams: EmployeeLookupOption[];
   }
-
-  const residenceByHrId = await loadResidenceByHrId(uniqueTextValues(employeeRows, "hr_id"));
-
-  // Check if we got joined data
-  const hasJoinedData = employeeRows.length > 0 && (employeeRows[0].employee_compensation || employeeRows[0].departments);
-
-  let departmentNames: Map<number, string>;
-  let lineNames: Map<number, string>;
-  let areaNames: Map<number, string>;
-  let positionTitles: Map<number, string>;
-  let managerNames: Map<string, string>;
-  let compensationByHrId: Map<string, EmployeeCompensationDbRow>;
-  let departments: EmployeeLookupOption[];
-  let lines: EmployeeLookupOption[];
-  let areas: EmployeeLookupOption[];
-  let positions: EmployeeLookupOption[];
-  let teams: EmployeeLookupOption[] = [];
-
-  if (hasJoinedData) {
-    // Extract lookups from joined data to avoid extra requests
-    departmentNames = new Map();
-    lineNames = new Map();
-    areaNames = new Map();
-    positionTitles = new Map();
-    const teamNames = new Map<number, string>();
-    compensationByHrId = new Map();
-
-    employeeRows.forEach(row => {
-      if (row.departments && row.department_id !== null) departmentNames.set(row.department_id, row.departments.name ?? "");
-      if (row.lines && row.line_id !== null) lineNames.set(row.line_id, row.lines.name ?? "");
-      if (row.areas && row.area_id !== null) areaNames.set(row.area_id, row.areas.name ?? "");
-      if (row.positions && row.position_id !== null) positionTitles.set(row.position_id, row.positions.title ?? "");
-      if (row.teams && row.team_id !== null) teamNames.set(row.team_id, row.teams.name ?? "");
-      if (row.employee_compensation) {
-        const comp = Array.isArray(row.employee_compensation) ? row.employee_compensation[0] : row.employee_compensation;
-        if (comp) compensationByHrId.set(row.hr_id, comp);
-      }
-    });
-
-    // Still need these for the filter dropdowns, but these are small tables usually
-    const [managerNamesResult, departmentsResult, linesResult, areasResult, positionsResult, teamsResult, medicalRepVacancies, workforceVacancies] = await Promise.all([
-      loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
-      loadAllOptions("departments"),
-      loadAllOptions("lines"),
-      loadAllOptions("areas"),
-      loadAllOptions("positions", "title"),
-      loadAllOptions("teams"),
-      getOpenMedicalRepVacancies(),
-      getOpenWorkforceVacancies(),
-    ]);
-
-    managerNames = managerNamesResult;
-    departments = departmentsResult;
-    lines = linesResult;
-    areas = areasResult;
-    positions = positionsResult;
-    teams = teamsResult;
-
-    const employeesData = employeeRows.map((row) => {
-      const compensation = compensationByHrId.get(row.hr_id);
-      const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
-      const departmentName = row.department_id ? departmentNames.get(row.department_id) ?? null : null;
-      const lineName = row.line_id ? lineNames.get(row.line_id) ?? null : null;
-      const positionTitle = row.position_id ? positionTitles.get(row.position_id) ?? null : null;
-      const standardAllowances = resolveStandardSalaryAllowances({
-        departmentName,
-        jobTitle: row.job_title,
-        lineName,
-        positionTitle,
-      });
-
-      return {
-        areaId: row.area_id,
-        areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
-        bankName: row.bank_name ?? null,
-        bankAccount: row.bank_account ?? null,
-        baseSalary: row.base_salary ?? null,
-        basicSalary: row.basic_salary ?? null,
-        birthDate: row.birth_date ?? null,
-        contractType: row.contract_type ?? null,
-        createdAt: row.created_at,
-        crmId: row.crm_id,
-        crmUsername: row.crm_username,
-        departmentId: row.department_id,
-        departmentName,
-        education: row.education,
-        employmentStatus: row.employment_status,
-        extraCostOfLiving: row.extra_cost_of_living ?? compensation?.extra_cost_of_living ?? standardAllowances.extraCostOfLiving,
-        fullName: row.full_name,
-        gender: row.gender ?? null,
-        fuelAllowance: row.fuel_allowance ?? compensation?.fuel_allowance ?? standardAllowances.fuelAllowance,
-        grossSalary: row.gross_salary ?? compensation?.gross_salary ?? null,
-        hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
-        hireDate: row.hire_date,
-        hrId: row.hr_id,
-        jobTitle: row.job_title,
-        lineId: row.line_id,
-        lineName,
-        managerHrId: row.manager_hr_id,
-        managerName: row.manager_hr_id ? managerNames.get(row.manager_hr_id) ?? null : null,
-        medicalInsurance: row.medical_insurance ?? compensation?.medical_insurance ?? null,
-        medicalInsuranceStatus: row.medical_insurance_status ?? null,
-        medicalInsuranceNumber: row.medical_insurance_number ?? null,
-        mobileNumber: row.mobile_number,
-        nameAr: row.name_ar,
-        nationalId: row.national_id ?? null,
-        netSalary: row.net_salary ?? compensation?.net_salary ?? null,
-        organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
-        payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
-        salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? compensation?.payment_mode),
-        positionId: row.position_id,
-        positionTitle,
-        residenceAddress: row.residence_address ?? residence?.residence_address ?? null,
-        residenceArea: row.residence_area ?? residence?.residence_area ?? null,
-        residenceCity: row.residence_city ?? residence?.residence_city ?? null,
-        residenceGeocodeStatus: residence?.geocode_status ?? null,
-        residenceLatitude: residence?.residence_latitude ?? null,
-        residenceLongitude: residence?.residence_longitude ?? null,
-        regionName: row.region_name ?? null,
-        socialInsurance: row.social_insurance ?? compensation?.social_insurance ?? null,
-        socialInsuranceStatus: row.social_insurance_status ?? null,
-        socialInsuranceNumber: row.social_insurance_number ?? null,
-        taxes: row.taxes ?? compensation?.taxes ?? null,
-        teamId: row.team_id,
-        teamName: row.team_id ? teamNames.get(row.team_id) ?? null : null,
-        updatedAt: row.updated_at,
-        workEmail: row.work_email,
-      };
-    });
-
-    const activeEmployees = employeesData.filter(isActiveDirectoryEmployee);
-
-    return {
-      employees: employeesData,
-      lookups: {
-        areas,
-        departments,
-        lines,
-        managers: managerLookupOptions(activeEmployees),
-        medicalRepVacancies,
-        positions,
-        statuses: allStatusOptions(employeesData),
-        teams,
-        workforceVacancies,
-      },
-      summary: {
-        activeEmployees: activeEmployees.length,
-        employeesWithoutManagers: activeEmployees.filter(isMissingRequiredManager).length,
-        totalEmployees: employeesData.length,
-        uniqueAreas: new Set(activeEmployees.map((employee) => employee.areaId).filter(Boolean)).size,
-        uniqueLines: new Set(activeEmployees.map((employee) => employee.lineId).filter(Boolean)).size,
-      },
-    };
-  } else {
-    // Fallback to original slow method if join failed
-    const [
-      departmentNamesRes,
-      lineNamesRes,
-      areaNamesRes,
-      positionTitlesRes,
-      teamNamesRes,
-      managerNamesRes,
-      compensationByHrIdRes,
-      departmentsRes,
-      linesRes,
-      areasRes,
-      positionsRes,
-      teamsRes,
-      medicalRepVacancies,
-      workforceVacancies
-    ] = await Promise.all([
-      loadLookup("departments", uniqueNumberValues(employeeRows, "department_id")),
-      loadLookup("lines", uniqueNumberValues(employeeRows, "line_id")),
-      loadLookup("areas", uniqueNumberValues(employeeRows, "area_id")),
-      loadLookup("positions", uniqueNumberValues(employeeRows, "position_id"), "title"),
-      loadLookup("teams", uniqueNumberValues(employeeRows, "team_id")),
-      loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
-      loadCompensationByHrId(uniqueTextValues(employeeRows, "hr_id")),
-      loadAllOptions("departments"),
-      loadAllOptions("lines"),
-      loadAllOptions("areas"),
-      loadAllOptions("positions", "title"),
-      loadAllOptions("teams"),
-      getOpenMedicalRepVacancies(),
-      getOpenWorkforceVacancies(),
-    ]);
-
-    departmentNames = departmentNamesRes;
-    lineNames = lineNamesRes;
-    areaNames = areaNamesRes;
-    positionTitles = positionTitlesRes;
-    const teamNames = teamNamesRes;
-    managerNames = managerNamesRes;
-    compensationByHrId = compensationByHrIdRes;
-    departments = departmentsRes;
-    lines = linesRes;
-    areas = areasRes;
-    positions = positionsRes;
-    teams = teamsRes;
-
-    const employeesData = employeeRows.map((row) => {
-      const comp = compensationByHrId.get(row.hr_id);
-      const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
-      const departmentName = row.department_id ? departmentNames.get(row.department_id) ?? null : null;
-      const lineName = row.line_id ? lineNames.get(row.line_id) ?? null : null;
-      const positionTitle = row.position_id ? positionTitles.get(row.position_id) ?? null : null;
-      const standardAllowances = resolveStandardSalaryAllowances({
-        departmentName,
-        jobTitle: row.job_title,
-        lineName,
-        positionTitle,
-      });
-
-      return {
-        areaId: row.area_id,
-        areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
-        bankName: row.bank_name ?? null,
-        bankAccount: row.bank_account ?? null,
-        baseSalary: row.base_salary ?? null,
-        basicSalary: row.basic_salary ?? null,
-        birthDate: row.birth_date ?? null,
-        contractType: row.contract_type ?? null,
-        createdAt: row.created_at,
-        crmId: row.crm_id,
-        crmUsername: row.crm_username,
-        departmentId: row.department_id,
-        departmentName,
-        education: row.education,
-        employmentStatus: row.employment_status,
-        extraCostOfLiving: row.extra_cost_of_living ?? comp?.extra_cost_of_living ?? standardAllowances.extraCostOfLiving,
-        fullName: row.full_name,
-        gender: row.gender ?? null,
-        fuelAllowance: row.fuel_allowance ?? comp?.fuel_allowance ?? standardAllowances.fuelAllowance,
-        grossSalary: row.gross_salary ?? comp?.gross_salary ?? null,
-        hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
-        hireDate: row.hire_date,
-        hrId: row.hr_id,
-        jobTitle: row.job_title,
-        lineId: row.line_id,
-        lineName,
-        managerHrId: row.manager_hr_id,
-        managerName: row.manager_hr_id ? managerNames.get(row.manager_hr_id) ?? null : null,
-        medicalInsurance: row.medical_insurance ?? comp?.medical_insurance ?? null,
-        medicalInsuranceStatus: row.medical_insurance_status ?? null,
-        medicalInsuranceNumber: row.medical_insurance_number ?? null,
-        mobileNumber: row.mobile_number,
-        nameAr: row.name_ar,
-        nationalId: row.national_id ?? null,
-        netSalary: row.net_salary ?? comp?.net_salary ?? null,
-        organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
-        payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
-        salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? comp?.payment_mode),
-        positionId: row.position_id,
-        positionTitle,
-        residenceAddress: row.residence_address ?? residence?.residence_address ?? null,
-        residenceArea: row.residence_area ?? residence?.residence_area ?? null,
-        residenceCity: row.residence_city ?? residence?.residence_city ?? null,
-        residenceGeocodeStatus: residence?.geocode_status ?? null,
-        residenceLatitude: residence?.residence_latitude ?? null,
-        residenceLongitude: residence?.residence_longitude ?? null,
-        regionName: row.region_name ?? null,
-        socialInsurance: row.social_insurance ?? comp?.social_insurance ?? null,
-        socialInsuranceStatus: row.social_insurance_status ?? null,
-        socialInsuranceNumber: row.social_insurance_number ?? null,
-        taxes: row.taxes ?? comp?.taxes ?? null,
-        teamId: row.team_id,
-        teamName: row.team_id ? teamNames.get(row.team_id) ?? null : null,
-        updatedAt: row.updated_at,
-        workEmail: row.work_email,
-      };
-    });
-
-    const activeEmployees = employeesData.filter(isActiveDirectoryEmployee);
-
-    return {
-      employees: employeesData,
-      lookups: {
-        areas,
-        departments,
-        lines,
-        managers: managerLookupOptions(activeEmployees),
-        medicalRepVacancies,
-        positions,
-        statuses: allStatusOptions(employeesData),
-        teams,
-        workforceVacancies,
-      },
-      summary: {
-        activeEmployees: activeEmployees.length,
-        employeesWithoutManagers: activeEmployees.filter(isMissingRequiredManager).length,
-        totalEmployees: employeesData.length,
-        uniqueAreas: new Set(activeEmployees.map((employee) => employee.areaId).filter(Boolean)).size,
-        uniqueLines: new Set(activeEmployees.map((employee) => employee.lineId).filter(Boolean)).size,
-      },
-    };
-  }
-
-  const employees = employeeRows.map((row) => {
-    const compensation = compensationByHrId.get(row.hr_id);
-    const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
-    const departmentName = row.department_id
-      ? departmentNames.get(row.department_id) ?? null
-      : null;
-    const lineName = row.line_id ? lineNames.get(row.line_id) ?? null : null;
-    const positionTitle = row.position_id
-      ? positionTitles.get(row.position_id) ?? null
-      : null;
-    const standardAllowances = resolveStandardSalaryAllowances({
-      departmentName,
-      jobTitle: row.job_title,
-      lineName,
-      positionTitle,
-    });
+): EmployeeDirectoryRow[] {
+  const areaMap = new Map(lookups.areas.map(a => [a.id, a.label]));
+  const deptMap = new Map(lookups.departments.map(d => [d.id, d.label]));
+  const lineMap = new Map(lookups.lines.map(l => [l.id, l.label]));
+  const posMap = new Map(lookups.positions.map(p => [p.id, p.label]));
+  const teamMap = new Map(lookups.teams.map(t => [t.id, t.label]));
+  return rows.map((row) => {
+    const managerKey = normalizeHrId(row.manager_hr_id);
+    const managerName = managerKey ? lookups.managerNames.get(managerKey) ?? null : null;
 
     return {
       areaId: row.area_id,
-      areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
+      areaName: row.area_id ? areaMap.get(row.area_id) ?? null : null,
+      birthDate: row.birth_date ?? null,
       bankName: row.bank_name ?? null,
       bankAccount: row.bank_account ?? null,
       baseSalary: row.base_salary ?? null,
       basicSalary: row.basic_salary ?? null,
-      birthDate: row.birth_date ?? null,
       contractType: row.contract_type ?? null,
       createdAt: row.created_at,
       crmId: row.crm_id,
       crmUsername: row.crm_username,
       departmentId: row.department_id,
-      departmentName,
+      departmentName: row.department_id ? deptMap.get(row.department_id) ?? null : null,
       education: row.education,
       employmentStatus: row.employment_status,
-      extraCostOfLiving: row.extra_cost_of_living ?? compensation?.extra_cost_of_living ?? standardAllowances.extraCostOfLiving,
+      extraCostOfLiving: row.extra_cost_of_living ?? null,
       fullName: row.full_name,
       gender: row.gender ?? null,
-      fuelAllowance: row.fuel_allowance ?? compensation?.fuel_allowance ?? standardAllowances.fuelAllowance,
+      fuelAllowance: row.fuel_allowance ?? null,
+      grossSalary: row.gross_salary ?? null,
+      hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
+      hireDate: row.hire_date,
+      hrId: row.hr_id,
+      jobTitle: row.job_title,
+      lineId: row.line_id,
+      lineName: row.line_id ? lineMap.get(row.line_id) ?? null : null,
+      managerHrId: row.manager_hr_id,
+      managerName: managerName,
+      medicalInsurance: row.medical_insurance ?? null,
+      medicalInsuranceStatus: row.medical_insurance_status ?? null,
+      medicalInsuranceNumber: row.medical_insurance_number ?? null,
+      mobileNumber: row.mobile_number,
+      nameAr: row.name_ar,
+      nationalId: row.national_id ?? null,
+      netSalary: row.net_salary ?? null,
+      organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
+      payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
+      salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode),
+      positionId: row.position_id,
+      positionTitle: row.position_id ? posMap.get(row.position_id) ?? null : null,
+      residenceAddress: row.residence_address ?? null,
+      residenceArea: row.residence_area ?? null,
+      residenceCity: row.residence_city ?? null,
+      residenceGeocodeStatus: null,
+      residenceLatitude: null,
+      residenceLongitude: null,
+      regionName: row.region_name ?? null,
+      socialInsurance: row.social_insurance ?? null,
+      socialInsuranceStatus: row.social_insurance_status ?? null,
+      socialInsuranceNumber: row.social_insurance_number ?? null,
+      taxes: row.taxes ?? null,
+      teamId: row.team_id,
+      teamName: row.team_id ? teamMap.get(row.team_id) ?? null : null,
+      updatedAt: row.updated_at,
+      workEmail: row.work_email,
+    };
+  });
+}
+
+async function getEmployeeLineIdForHrId(hrId: string | null | undefined) {
+  if (!hrId) {
+    return null;
+  }
+
+  const { data: rows } = await supabaseRest<
+    Array<{ line_id: number | null }>
+  >(
+    `employees?hr_id=eq.${hrId}&select=line_id&limit=1`,
+  );
+
+  return rows[0]?.line_id ?? null;
+}
+
+function mapJoinedRows(rows: JoinedEmployeeDbRow[]): EmployeeDirectoryRow[] {
+  const managerMap = new Map<string, string>();
+  for (const row of rows) {
+    const key = normalizeHrId(row.hr_id);
+    if (key) managerMap.set(key, row.full_name);
+  }
+
+  return rows.map((row) => {
+    const compensation = Array.isArray(row.employee_compensation)
+      ? row.employee_compensation[0]
+      : row.employee_compensation;
+    const managerKey = normalizeHrId(row.manager_hr_id);
+
+    return {
+      areaId: row.area_id,
+      areaName: row.areas?.name ?? null,
+      birthDate: row.birth_date ?? null,
+      bankName: row.bank_name ?? null,
+      bankAccount: row.bank_account ?? null,
+      baseSalary: row.base_salary ?? null,
+      basicSalary: row.basic_salary ?? null,
+      contractType: row.contract_type ?? null,
+      createdAt: row.created_at,
+      crmId: row.crm_id,
+      crmUsername: row.crm_username,
+      departmentId: row.department_id,
+      departmentName: row.departments?.name ?? null,
+      education: row.education,
+      employmentStatus: row.employment_status,
+      extraCostOfLiving: row.extra_cost_of_living ?? compensation?.extra_cost_of_living ?? null,
+      fullName: row.full_name,
+      gender: row.gender ?? null,
+      fuelAllowance: row.fuel_allowance ?? compensation?.fuel_allowance ?? null,
       grossSalary: row.gross_salary ?? compensation?.gross_salary ?? null,
       hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
       hireDate: row.hire_date,
       hrId: row.hr_id,
       jobTitle: row.job_title,
       lineId: row.line_id,
-      lineName,
+      lineName: row.lines?.name ?? null,
       managerHrId: row.manager_hr_id,
-      managerName: row.manager_hr_id
-        ? managerNames.get(row.manager_hr_id) ?? null
-        : null,
+      managerName: managerKey ? managerMap.get(managerKey) ?? row.manager_hr_id ?? null : null,
       medicalInsurance: row.medical_insurance ?? compensation?.medical_insurance ?? null,
       medicalInsuranceStatus: row.medical_insurance_status ?? null,
       medicalInsuranceNumber: row.medical_insurance_number ?? null,
@@ -1106,50 +1122,29 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
       salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? compensation?.payment_mode),
       positionId: row.position_id,
-      positionTitle,
-      residenceAddress: row.residence_address ?? residence?.residence_address ?? null,
-      residenceArea: row.residence_area ?? residence?.residence_area ?? null,
-      residenceCity: row.residence_city ?? residence?.residence_city ?? null,
-      residenceGeocodeStatus: residence?.geocode_status ?? null,
-      residenceLatitude: residence?.residence_latitude ?? null,
-      residenceLongitude: residence?.residence_longitude ?? null,
+      positionTitle: row.positions?.title ?? null,
+      residenceAddress: row.residence_address ?? null,
+      residenceArea: row.residence_area ?? null,
+      residenceCity: row.residence_city ?? null,
+      residenceGeocodeStatus: null,
+      residenceLatitude: null,
+      residenceLongitude: null,
       regionName: row.region_name ?? null,
       socialInsurance: row.social_insurance ?? compensation?.social_insurance ?? null,
       socialInsuranceStatus: row.social_insurance_status ?? null,
       socialInsuranceNumber: row.social_insurance_number ?? null,
       taxes: row.taxes ?? compensation?.taxes ?? null,
       teamId: row.team_id,
-      teamName: null,
+      teamName: row.teams?.name ?? null,
       updatedAt: row.updated_at,
       workEmail: row.work_email,
     };
   });
-  const activeEmployees = employees.filter(isActiveDirectoryEmployee);
-
-  return {
-    employees,
-    lookups: {
-      areas,
-      departments,
-      lines,
-      managers: managerLookupOptions(activeEmployees),
-      medicalRepVacancies: [],
-      positions,
-      statuses: allStatusOptions(employees),
-      teams,
-      workforceVacancies: [],
-    },
-    summary: {
-      activeEmployees: activeEmployees.length,
-      employeesWithoutManagers: activeEmployees.filter(isMissingRequiredManager).length,
-      totalEmployees: employees.length,
-      uniqueAreas: new Set(activeEmployees.map((employee) => employee.areaId).filter(Boolean)).size,
-      uniqueLines: new Set(activeEmployees.map((employee) => employee.lineId).filter(Boolean)).size,
-    },
-  };
 }
 
-export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]> {
+export async function getEmployeeDirectoryRows(
+  includeInactiveEmployees = true,
+): Promise<EmployeeDirectoryRow[]> {
   const baseEmployeeSelect =
     "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
   const employeeParams = new URLSearchParams({
@@ -1157,23 +1152,26 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
     order: "full_name.asc",
   });
   let employeeRows: EmployeeDbRow[];
+  const pageSize = EMPLOYEE_DIRECTORY_PAGE_SIZE;
 
   try {
-    employeeRows = await supabaseRest<EmployeeDbRow[]>(
-      `employees?${employeeParams}`,
+    employeeRows = await fetchAllEmployees(
+      {
+        select: `${baseEmployeeSelect},region_name,birth_date`,
+        order: "full_name.asc",
+      },
+      [],
+      pageSize,
     );
   } catch (error) {
     if (!isMissingRelationMessage(error)) {
       throw error;
     }
 
-    const fallbackParams = new URLSearchParams({
+    employeeRows = await fetchAllEmployees({
       select: baseEmployeeSelect,
       order: "full_name.asc",
     });
-    employeeRows = await supabaseRest<EmployeeDbRow[]>(
-      `employees?${fallbackParams}`,
-    );
   }
 
   const [departmentNames, lineNames, areaNames, positionTitles, teamNames, managerNames] =
@@ -1188,8 +1186,10 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
 
   const residenceByHrId = await loadResidenceByHrId(uniqueTextValues(employeeRows, "hr_id"));
 
-  return employeeRows.map((row) => {
+  const rows = employeeRows
+    .map((row) => {
     const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
+    const managerKey = normalizeHrId(row.manager_hr_id);
 
     return {
       areaId: row.area_id,
@@ -1221,8 +1221,8 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       lineId: row.line_id,
       lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
       managerHrId: row.manager_hr_id,
-      managerName: row.manager_hr_id
-        ? managerNames.get(row.manager_hr_id) ?? null
+      managerName: managerKey
+        ? managerNames.get(managerKey) ?? null
         : null,
       medicalInsurance: row.medical_insurance ?? null,
       medicalInsuranceStatus: row.medical_insurance_status ?? null,
@@ -1255,6 +1255,9 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       workEmail: row.work_email,
     };
   });
+
+  // Keep active-only filtering explicit; never hide rows by default.
+  return includeInactiveEmployees ? rows : rows.filter(isActiveDirectoryEmployee);
 }
 
 async function ensureManagerIsValid(managerHrId: string | null, employeeHrId: string) {
@@ -1266,7 +1269,7 @@ async function ensureManagerIsValid(managerHrId: string | null, employeeHrId: st
     throw new Error("An employee cannot be assigned as their own manager.");
   }
 
-  const managers = await supabaseRest<EmployeeDbRow[]>(
+  const { data: managers } = await supabaseRest<EmployeeDbRow[]>(
     `employees?hr_id=eq.${encodeURIComponent(managerHrId)}&select=hr_id,employment_status,payroll_eligible,organogram_visible,full_name,name_ar,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,created_at,updated_at`,
   );
 
@@ -1306,7 +1309,7 @@ async function loadPositionTitleById(positionId: number | null) {
     return null;
   }
 
-  const rows = await supabaseRest<Array<{ title: string | null }>>(
+  const { data: rows } = await supabaseRest<Array<{ title: string | null }>>(
     `positions?id=eq.${positionId}&select=title&limit=1`,
   );
 
@@ -1318,7 +1321,7 @@ async function loadLineNameById(lineId: number | null) {
     return null;
   }
 
-  const rows = await supabaseRest<Array<{ name: string | null }>>(
+  const { data: rows } = await supabaseRest<Array<{ name: string | null }>>(
     `lines?id=eq.${lineId}&select=name&limit=1`,
   );
 
@@ -1340,7 +1343,8 @@ async function findNationalSalesManagerForLine(lineId: number) {
   let rows: NsmCandidateRow[];
 
   try {
-    rows = await supabaseRest<NsmCandidateRow[]>(`employees?${params}`);
+    const result = await supabaseRest<NsmCandidateRow[]>(`employees?${params}`);
+    rows = result.data;
   } catch (error) {
     if (!isEmployeeDirectorySchemaMissing(error)) {
       throw error;
@@ -1352,7 +1356,8 @@ async function findNationalSalesManagerForLine(lineId: number) {
       organogram_visible: "is.true",
       select: "hr_id,job_title,position_id",
     });
-    rows = await supabaseRest<NsmCandidateRow[]>(`employees?${fallbackParams}`);
+    const result = await supabaseRest<NsmCandidateRow[]>(`employees?${fallbackParams}`);
+    rows = result.data;
   }
 
   return rows.find((row) =>
@@ -1384,11 +1389,11 @@ async function ensureCrmIdIsUnique(crmId: string | null, employeeHrId: string) {
     return;
   }
 
-  const matches = await supabaseRest<Array<{ hr_id: string }>>(
+  const { data: matches } = await supabaseRest<Array<{ hr_id: string }>>(
     `employees?crm_id=eq.${encodeURIComponent(crmId)}&select=hr_id`,
   );
   const conflict = matches.find(
-    (row) => normalizeHrId(row.hr_id) !== employeeHrId,
+    (row: any) => normalizeHrId(row.hr_id) !== employeeHrId,
   );
 
   if (conflict) {
@@ -1436,7 +1441,7 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
       hrId = await generateNextHrIdForLine(lineId);
     } else {
       // Validate uniqueness if manually entered
-      const existing = await supabaseRest<Array<{ hr_id: string }>>(
+      const { data: existing } = await supabaseRest<Array<{ hr_id: string }>>(
         `employees?hr_id=eq.${hrId}&select=hr_id`,
       );
       if (existing.length > 0) {
@@ -1632,7 +1637,7 @@ async function replacementForVacancy(vacancyId: number | null | undefined) {
   }
 
   try {
-    const rows = await supabaseRest<Array<{
+    const { data: rows } = await supabaseRest<Array<{
       effective_date?: string | null;
       employee_hr_id: string | null;
       last_working_date?: string | null;
@@ -1765,14 +1770,14 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
       throw new Error("HR_ID is immutable after employee creation. Use a governed HR_ID rename workflow.");
     }
 
-    const existing = await supabaseRest<Array<{ hr_id: string }>>(
+    const { data: existing } = await supabaseRest<Array<{ hr_id: string }>>(
       `employees?hr_id=eq.${encodeURIComponent(originalHrId as string)}&select=hr_id`,
     );
     if (existing.length === 0) {
       throw new Error(`Employee ${originalHrId} was not found.`);
     }
   } else if (hrId) {
-    const existing = await supabaseRest<Array<{ hr_id: string }>>(
+    const { data: existing } = await supabaseRest<Array<{ hr_id: string }>>(
       `employees?hr_id=eq.${encodeURIComponent(hrId)}&select=hr_id`,
     );
     if (existing.length > 0) {
@@ -1785,7 +1790,7 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
     on_conflict: "hr_id",
   });
 
-  const rows = await supabaseRest<EmployeeDbRow[]>(`employees?${params}`, {
+  const { data: rows } = await supabaseRest<EmployeeDbRow[]>(`employees?${params}`, {
     body: JSON.stringify(payload),
     headers: {
       Prefer: "resolution=merge-duplicates,return=representation",
@@ -1876,7 +1881,7 @@ export async function bulkUpdateEmployees(
     updated_at: new Date().toISOString(),
   };
 
-  const rows = await supabaseRest<EmployeeDbRow[]>(
+  const { data: rows } = await supabaseRest<EmployeeDbRow[]>(
     `employees?hr_id=${encodeURIComponent(textInFilter(cleanedHrIds))}`,
     {
       body: JSON.stringify(payload),

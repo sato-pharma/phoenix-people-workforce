@@ -1,4 +1,4 @@
-﻿import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 
 type LookupRow = {
   id: number;
@@ -165,7 +165,7 @@ function textInFilter(values: string[]) {
   return `in.(${values.map((value) => `"${value.replace(/"/g, '\\"')}"`).join(",")})`;
 }
 
-async function supabaseRest<T>(path: string): Promise<T> {
+async function supabaseRest<T>(path: string): Promise<{ data: T }> {
   const url = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL").replace(/\/+$/g, "");
   const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
   const controller = new AbortController();
@@ -195,7 +195,7 @@ async function supabaseRest<T>(path: string): Promise<T> {
       throw new Error(message);
     }
 
-    return payload as T;
+    return { data: payload as T };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("Supabase request timed out.");
@@ -216,7 +216,7 @@ async function loadLookup(table: string, idsToLoad: number[], label = "name") {
     select: `id,${label}`,
     id: inFilter(idsToLoad),
   });
-  const rows = await supabaseRest<LookupRow[]>(`${table}?${params}`);
+  const { data: rows } = await supabaseRest<LookupRow[]>(`${table}?${params}`);
 
   return new Map(
     rows.map((row) => [
@@ -235,7 +235,7 @@ async function loadEmployeeNames(hrIds: string[]) {
     select: "hr_id,full_name",
     hr_id: textInFilter(hrIds),
   });
-  const rows = await supabaseRest<EmployeeLookupRow[]>(`employees?${params}`);
+  const { data: rows } = await supabaseRest<EmployeeLookupRow[]>(`employees?${params}`);
 
   return new Map(
     rows.map((row) => [String(row.hr_id), String(row.full_name ?? "")]),
@@ -262,7 +262,8 @@ async function loadVacancyRows() {
   });
 
   try {
-    return await supabaseRest<VacancyDbRow[]>(`position_vacancies?${params}`);
+    const { data } = await supabaseRest<VacancyDbRow[]>(`position_vacancies?${params}`);
+    return data;
   } catch (error) {
     if (!isMissingManagerColumns(error)) {
       throw error;
@@ -273,16 +274,17 @@ async function loadVacancyRows() {
       order: "created_at.desc",
     });
 
-    return supabaseRest<VacancyDbRow[]>(
+    const { data } = await supabaseRest<VacancyDbRow[]>(
       `position_vacancies?${fallbackParams}`,
     );
+    return data;
   }
 }
 
 export async function getVacancyReport(): Promise<VacancyReportData> {
   const [vacancyRows, employeeDirectory] = await Promise.all([
     loadVacancyRows(),
-    getEmployeeDirectory(),
+    getEmployeeDirectory({ pageSize: -1 }),
   ]);
   const [departmentNames, lineNames, areaNames, positionTitles, teamNames, managerNames] =
     await Promise.all([

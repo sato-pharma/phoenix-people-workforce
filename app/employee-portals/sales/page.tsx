@@ -14,7 +14,10 @@ export const dynamic = "force-dynamic";
 function normalizeMultiValueInput(value?: string | string[]) {
   if (!value) return [];
   if (Array.isArray(value)) {
-    return value.flatMap((entry) => (typeof entry === "string" ? entry.split(",") : [])).map((entry) => entry.trim()).filter(Boolean);
+    return value
+      .flatMap((entry) => (typeof entry === "string" ? entry.split(",") : []))
+      .map((entry) => entry.trim())
+      .filter(Boolean);
   }
 
   return value
@@ -52,14 +55,13 @@ export default async function EmployeePortalSalesPage({
   try {
     await assertPermission(accessContext, "sales", "read");
 
-    // Build filters from search params
     const filters: Record<string, unknown> = {};
     const normalizedPeriods = normalizeMultiValueInput(resolvedParams.period);
     if (normalizedPeriods.length > 0) filters.periods = normalizedPeriods;
     if (resolvedParams.family) filters.family = resolvedParams.family;
     const normalizedProducts = normalizeMultiValueInput(resolvedParams.products);
     if (normalizedProducts.length > 0) filters.products = normalizedProducts;
-    
+
     initialData = await getSalesDashboard(filters, accessContext);
   } catch {
     initialData = null;

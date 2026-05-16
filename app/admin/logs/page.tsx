@@ -69,7 +69,7 @@ export default async function AdminLogsPage({
                   </div>
                   <div>
                     <h1 className="text-3xl font-black tracking-tight text-slate-950">Audit Logs</h1>
-                    <p className="mt-1 text-sm text-slate-500">Master system audit report across access, auth, leave, sales, recruitment, coaching, and outstation.</p>
+                    <p className="mt-1 text-sm text-slate-500">Master system audit report across access, auth, sales, recruitment, coaching, and outstation.</p>
                   </div>
                 </div>
               </div>

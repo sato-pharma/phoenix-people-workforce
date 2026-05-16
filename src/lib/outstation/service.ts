@@ -17,6 +17,7 @@ import type {
   OutstationAllowanceBreakdown,
   OutstationApprovalRecommendation,
   OutstationCalculationInput,
+  OutstationCarEvidenceMetadata,
   OutstationCalculationResult,
   OutstationCaptureResult,
   OutstationEligibilityStatus,
@@ -46,6 +47,49 @@ type ValidationContext = {
   hasTicketAttachments?: boolean;
   offlineCaptured?: boolean;
 };
+
+const CAR_EVIDENCE_SOURCE = "live_camera";
+
+export function validateLiveCarEvidence(params: {
+  carEvidenceMetadata?: OutstationCarEvidenceMetadata | null;
+  transportationType: OutstationTransportationType;
+}) {
+  if (params.transportationType !== "car") {
+    return { isValid: true, message: "" };
+  }
+
+  if (!params.carEvidenceMetadata) {
+    return {
+      isValid: false,
+      message:
+        "Car transport requires one live in-app camera capture before submitting the request.",
+    };
+  }
+
+  if (params.carEvidenceMetadata.source !== CAR_EVIDENCE_SOURCE) {
+    return {
+      isValid: false,
+      message:
+        "Only live in-app camera capture satisfies car evidence requirements for car transport requests.",
+    };
+  }
+
+  if (
+    !params.carEvidenceMetadata.employeeHrId ||
+    !params.carEvidenceMetadata.requestDraftId ||
+    !params.carEvidenceMetadata.capturedAt ||
+    !Number.isFinite(params.carEvidenceMetadata.capturedLatitude) ||
+    !Number.isFinite(params.carEvidenceMetadata.capturedLongitude)
+  ) {
+    return {
+      isValid: false,
+      message:
+        "Car live camera evidence is incomplete. Capture the photo again and keep it inside the app only.",
+    };
+  }
+
+  return { isValid: true, message: "" };
+}
 
 type ValidatedLocationBundle = {
   employee: EmployeeDirectoryRow | null;
@@ -960,6 +1004,15 @@ export async function submitOutstationRequest(
   input: OutstationCalculationInput,
 ) {
   const calculation = await calculateOutstationExpense(access, input);
+  const evidenceValidation = validateLiveCarEvidence({
+    carEvidenceMetadata: input.carEvidenceMetadata,
+    transportationType: input.transportationType,
+  });
+
+  if (!evidenceValidation.isValid) {
+    throw new Error(evidenceValidation.message);
+  }
+
   if (calculation.eligibilityStatus === "not_eligible") {
     throw new Error(calculation.eligibilityReason);
   }
@@ -1176,6 +1229,13 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     toArea: text(row.to_area) || null,
     toCity: text(row.to_city) || null,
     toLabel: text(row.to_label) || null,
+    carEvidenceMetadata: (() => {
+      const parsedMetadata = safeJsonParse<OutstationCarEvidenceMetadata | null>(
+        row.car_evidence_metadata,
+        null,
+      );
+      return parsedMetadata ?? undefined;
+    })(),
     transportationType,
     tripEndDate: isoString(row.trip_end_date),
     tripStartDate: isoString(row.trip_start_date),

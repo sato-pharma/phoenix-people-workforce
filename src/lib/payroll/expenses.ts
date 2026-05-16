@@ -4,6 +4,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  buildManagerHierarchyMap,
+  collectHierarchyHrIdsFromMap,
   canAccess,
   getExpensesScope,
   resolveEmployeeIdentityId,
@@ -40,15 +42,15 @@ export function isPayrollExpensesSchemaMissing(error: unknown) {
 
 function mapExpenseReport(row: Record<string, unknown>): PayrollExpenseReport {
   return {
-    approvedRows: Number(row.approved_rows ?? 0),
-    createdAt: row.created_at ? new Date(String(row.created_at)).toISOString() : "",
-    fileName: String(row.file_name ?? ""),
+    approvedRows: Number(row.approved_rows ?? row.approvedRows ?? 0),
+    createdAt: row.created_at ? new Date(String(row.created_at)).toISOString() : (row.createdAt ? String(row.createdAt) : ""),
+    fileName: String(row.file_name ?? row.fileName ?? ""),
     id: String(row.id ?? ""),
-    rowCount: Number(row.row_count ?? 0),
-    totalExpenses: Number(row.total_expenses ?? 0),
-    tripDateFrom: row.trip_date_from ? new Date(String(row.trip_date_from)).toISOString() : null,
-    tripDateTo: row.trip_date_to ? new Date(String(row.trip_date_to)).toISOString() : null,
-    updatedAt: row.updated_at ? new Date(String(row.updated_at)).toISOString() : "",
+    rowCount: Number(row.row_count ?? row.rowCount ?? 0),
+    totalExpenses: Number(row.total_expenses ?? row.totalExpenses ?? 0),
+    tripDateFrom: (row.trip_date_from || row.tripDateFrom) ? new Date(String(row.trip_date_from || row.tripDateFrom)).toISOString() : null,
+    tripDateTo: (row.trip_date_to || row.tripDateTo) ? new Date(String(row.trip_date_to || row.tripDateTo)).toISOString() : null,
+    updatedAt: row.updated_at ? new Date(String(row.updated_at)).toISOString() : (row.updatedAt ? String(row.updatedAt) : ""),
   };
 }
 
@@ -83,40 +85,6 @@ type ExpenseAccessFilter = {
   all: boolean;
   allowedHrIds: Set<string>;
 };
-
-function buildManagerMap(directory: Awaited<ReturnType<typeof getEmployeeDirectory>>) {
-  const managerMap = new Map<string, string[]>();
-  directory.employees.forEach((employee) => {
-    const managerId = normalizeHrIdForAccess(employee.managerHrId);
-    const employeeId = normalizeHrId(employee.hrId);
-    if (!managerId || !employeeId) return;
-    const list = managerMap.get(managerId) ?? [];
-    list.push(employeeId);
-    managerMap.set(managerId, list);
-  });
-  return managerMap;
-}
-
-function collectHierarchy(managerMap: Map<string, string[]>, rootHrId: string) {
-  const allowedHrIds = new Set<string>();
-  const canonicalRoot = normalizeHrIdForAccess(rootHrId);
-  if (!canonicalRoot) return allowedHrIds;
-
-  const queue: string[] = [canonicalRoot];
-  while (queue.length > 0) {
-    const managerId = queue.shift();
-    if (!managerId) continue;
-    for (const subordinateId of managerMap.get(managerId) ?? []) {
-      const normalizedSub = normalizeHrId(subordinateId);
-      if (normalizedSub && !allowedHrIds.has(normalizedSub)) {
-        allowedHrIds.add(normalizedSub);
-        const canonicalSub = normalizeHrIdForAccess(normalizedSub);
-        if (canonicalSub) queue.push(canonicalSub);
-      }
-    }
-  }
-  return allowedHrIds;
-}
 
 type LineFallbackOptions = {
   areaId?: number | null;
@@ -174,10 +142,12 @@ async function resolveExpenseAccessFilter(
   if (scope === "COMPANY") return { all: true, allowedHrIds: new Set() };
   if (scope === "NONE" || !currentHrId) return { all: false, allowedHrIds: new Set() };
 
-  const directory = await getEmployeeDirectory();
+  const directory = await getEmployeeDirectory({ pageSize: -1 });
   const canonicalViewerId = normalizeHrIdForAccess(currentHrId);
-  const viewer = canonicalViewerId ? directory.employees.find(e => normalizeHrIdForAccess(e.hrId) === canonicalViewerId) : null;
-  const managerMap = buildManagerMap(directory);
+  const viewer = canonicalViewerId
+    ? directory.employees.find((e) => normalizeHrIdForAccess(e.hrId) === canonicalViewerId)
+    : null;
+  const managerMap = buildManagerHierarchyMap(directory.employees);
 
   if (scope === "SELF") {
     return { all: false, allowedHrIds: new Set([currentHrId]) };
@@ -186,13 +156,17 @@ async function resolveExpenseAccessFilter(
   if (scope === "TEAM") {
     const canonicalId = normalizeHrIdForAccess(currentHrId);
     const allowed = new Set(canonicalId ? managerMap.get(canonicalId) ?? [] : []);
+    if (canonicalId) {
+      allowed.add(canonicalId);
+    }
     allowed.add(currentHrId);
     return { all: false, allowedHrIds: allowed };
   }
 
   if (scope === "HIERARCHY") {
-    const allowed = collectHierarchy(managerMap, currentHrId);
-    allowed.add(currentHrId);
+    const allowed = canonicalViewerId
+      ? collectHierarchyHrIdsFromMap(managerMap, canonicalViewerId, { includeSelf: true })
+      : new Set([currentHrId]);
     return { all: false, allowedHrIds: allowed };
   }
 
@@ -254,7 +228,7 @@ function nextPayrollPeriod(dateValue: string) {
 }
 
 async function employeeCodeBySpecialist() {
-  const directory = await getEmployeeDirectory();
+  const directory = await getEmployeeDirectory({ pageSize: -1 });
   const byName = new Map<string, string>();
 
   directory.employees.forEach((employee) => {
@@ -367,7 +341,7 @@ export async function listPayrollExpenseReports(accessContext: AccessContext) {
   if (accessFilter.all) {
     const { data, error } = await supabase
       .from("payroll_expense_reports")
-      .select("*")
+      .select("id,file_name,row_count,approved_rows,total_expenses,trip_date_from,trip_date_to,created_at,updated_at")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -386,7 +360,7 @@ export async function listPayrollExpenseReports(accessContext: AccessContext) {
 
   const { data, error } = await supabase
     .from("payroll_expense_reports")
-    .select("*")
+    .select("id,file_name,row_count,approved_rows,total_expenses,trip_date_from,trip_date_to,created_at,updated_at")
     .in("id", Array.from(visibleReportIds))
     .order("created_at", { ascending: false });
 
@@ -408,7 +382,7 @@ export async function listPayrollExpenses(
   const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
   let query = supabase
     .from("payroll_expenses")
-    .select("*")
+    .select("id,hr_id,report_id,trip_id,specialist,from_location,to_location,trip_type,km,total,hr_approved,hr_comment,hr_notes,hr_status,status,payout_month,payout_year,expense_date,created_at,updated_at,request_type,source_row,source_file_name,to_date,transportation_type,travel_cost,location,allowance,am_workload,pm_workload,meeting_amount,open_status")
     .order("expense_date", { ascending: false });
 
   const allowedHrIds = Array.from(accessFilter.allowedHrIds);

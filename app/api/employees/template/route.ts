@@ -419,7 +419,10 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employees", "export");
 
-    const directory = filterEmployeeDirectoryForAccess(await getEmployeeDirectory(), access);
+    const directory = filterEmployeeDirectoryForAccess(
+      await getEmployeeDirectory({ pageSize: -1 }, access),
+      access,
+    );
     const lookupValues = {
       departments: Array.from(
         new Set(directory.lookups.departments.map((department) => department.label).filter(Boolean)),

@@ -58,6 +58,12 @@ type LookupRow = {
   name?: string | null;
 };
 
+type LineEmployeeLookupRow = {
+  hr_id?: string | null;
+  job_title?: string | null;
+  manager_hr_id?: string | null;
+};
+
 export type VacancyLookupRow = {
   areaId: number | null;
   areaName: string | null;
@@ -193,6 +199,79 @@ export function isOfferTimeout(error: unknown) {
 function compact(value: string | null | undefined) {
   const text = value?.trim();
   return text ? text : null;
+}
+
+async function resolveHrId(value: string | null | undefined) {
+  const requested = compact(value);
+  if (!requested) return null;
+
+  const exact = await supabaseRest<LookupRow[]>(
+    `employees?${new URLSearchParams({ hr_id: `eq.${requested}`, select: "hr_id" })}`,
+  );
+  if (exact.length > 0 && exact[0].hr_id) {
+    return compact(exact[0].hr_id);
+  }
+
+  const caseInsensitive = await supabaseRest<LookupRow[]>(
+    `employees?${new URLSearchParams({ hr_id: `ilike.${requested}`, select: "hr_id" })}`,
+  );
+  return caseInsensitive.length > 0 && caseInsensitive[0].hr_id ? compact(caseInsensitive[0].hr_id) : null;
+}
+
+function isManagerTitle(title: string | null | undefined) {
+  const normalized = String(title ?? "").trim().toLowerCase();
+  return (
+    normalized.includes("manager") ||
+    normalized.includes("director") ||
+    normalized.includes("supervisor") ||
+    normalized.includes("head")
+  );
+}
+
+function pickMostFrequentManagerHrId(rows: LineEmployeeLookupRow[]) {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const managerHrId = compact(row.manager_hr_id);
+    if (!managerHrId) continue;
+    counts.set(managerHrId, (counts.get(managerHrId) ?? 0) + 1);
+  }
+
+  let selected: string | null = null;
+  let highest = -1;
+  for (const [managerHrId, count] of counts.entries()) {
+    if (count > highest) {
+      selected = managerHrId;
+      highest = count;
+    }
+  }
+  return selected;
+}
+
+async function resolveCreatorHrIdFromLine(lineId: number | null | undefined) {
+  const normalizedLineId = numberOrNull(lineId);
+  if (!normalizedLineId) return null;
+
+  const members = await supabaseRest<LineEmployeeLookupRow[]>(
+    `employees?${new URLSearchParams({
+      line_id: `eq.${normalizedLineId}`,
+      select: "hr_id,manager_hr_id,job_title",
+      order: "hr_id.asc",
+    })}`,
+  );
+  if (members.length === 0) return null;
+
+  const managerByTitle = members.find((member) => isManagerTitle(member.job_title));
+  const fromTitle = compact(managerByTitle?.hr_id);
+  if (fromTitle) return fromTitle;
+
+  const topLevel = members.find((member) => !compact(member.manager_hr_id));
+  const fromTopLevel = compact(topLevel?.hr_id);
+  if (fromTopLevel) return fromTopLevel;
+
+  const sharedManagerHrId = pickMostFrequentManagerHrId(members);
+  if (sharedManagerHrId) return sharedManagerHrId;
+
+  return compact(members[0].hr_id);
 }
 
 function numberOrNull(value: unknown) {
@@ -460,7 +539,7 @@ export async function closeVacancyForOffer(input: {
 
   let matches: Array<{ id: number; replacement_for_hr_id?: string | null }>;
   try {
-    matches = await supabaseRest(
+    matches = await supabaseRest<{ id: number; replacement_for_hr_id?: string | null }[]>(
       `position_vacancies?${matchParams("id,replacement_for_hr_id")}`,
     );
   } catch (error) {
@@ -468,7 +547,9 @@ export async function closeVacancyForOffer(input: {
     if (!message.includes("replacement_for_hr_id") && !message.includes("schema cache")) {
       throw error;
     }
-    matches = await supabaseRest(`position_vacancies?${matchParams("id")}`);
+    matches = await supabaseRest<{ id: number; replacement_for_hr_id?: string | null }[]>(
+      `position_vacancies?${matchParams("id")}`,
+    );
   }
 
   const vacancy = matches[0];
@@ -522,7 +603,7 @@ export async function closeVacancyForOffer(input: {
 }
 
 export async function getOfferLookups(): Promise<OfferLookupData> {
-  const [departments, employees, lines, areas, positions, medicalRepVacancies] = await Promise.all([
+  const [departments, employeesResult, lines, areas, positionsResult, medicalRepVacancies] = await Promise.all([
     loadAllOptions("departments"),
     supabaseRest<LookupRow[]>(
       `employees?${new URLSearchParams({ order: "full_name.asc", select: "hr_id,full_name" })}`,
@@ -534,6 +615,9 @@ export async function getOfferLookups(): Promise<OfferLookupData> {
     ),
     getOpenMedicalRepVacancies(),
   ]);
+
+  const employees = employeesResult;
+  const positions = positionsResult;
 
   return {
     areas: areas.map((a) => ({
@@ -552,7 +636,7 @@ export async function getOfferLookups(): Promise<OfferLookupData> {
     })),
     medicalRepVacancies,
     positions: positions.map((row) => ({
-      label: String((row as { title?: string }).title ?? row.name ?? ""),
+      label: String((row as LookupRow & { title?: string | null }).title ?? row.name ?? ""),
       value: String(row.id),
     })),
   };
@@ -588,22 +672,32 @@ async function loadLookupMaps(rows: OfferDbRow[]) {
     new Set(rows.map((row) => row.manager_hr_id).filter((value): value is string => Boolean(value))),
   );
 
-  const [departments, lines, managers] = await Promise.all([
+  const [departmentsResult, linesResult, managersResult] = await Promise.all([
     departmentIds.length
       ? supabaseRest<LookupRow[]>(`departments?${new URLSearchParams({ id: idInFilter(departmentIds), select: "id,name" })}`)
-      : Promise.resolve([]),
+      : Promise.resolve([] as LookupRow[]),
     lineIds.length
       ? supabaseRest<LookupRow[]>(`lines?${new URLSearchParams({ id: idInFilter(lineIds), select: "id,name" })}`)
-      : Promise.resolve([]),
+      : Promise.resolve([] as LookupRow[]),
     managerHrIds.length
       ? supabaseRest<LookupRow[]>(`employees?${new URLSearchParams({ hr_id: textInFilter(managerHrIds), select: "hr_id,full_name" })}`)
-      : Promise.resolve([]),
+      : Promise.resolve([] as LookupRow[]),
   ]);
 
+  const departments = departmentsResult;
+  const lines = linesResult;
+  const managers = managersResult;
+
   return {
-    departments: new Map(departments.map((row) => [Number(row.id), row.name ?? ""])),
-    lines: new Map(lines.map((row) => [Number(row.id), row.name ?? ""])),
-    managers: new Map(managers.map((row) => [String(row.hr_id), row.full_name ?? ""])),
+    departments: new Map<number, string>(
+      departments.map((row) => [Number(row.id), row.name ?? ""]),
+    ),
+    lines: new Map<number, string>(
+      lines.map((row) => [Number(row.id), row.name ?? ""]),
+    ),
+    managers: new Map<string, string>(
+      managers.map((row) => [String(row.hr_id), row.full_name ?? ""]),
+    ),
   };
 }
 
@@ -619,13 +713,13 @@ async function hydrateOffers(rows: OfferDbRow[]): Promise<OfferLifecycleRow[]> {
     candidatePhone: row.candidate_phone,
     createdAt: row.created_at,
     departmentId: row.department_id,
-    departmentName: row.department_id ? lookups.departments.get(row.department_id) ?? null : null,
+    departmentName: row.department_id !== null ? lookups.departments.get(row.department_id) ?? null : null,
     employeeHrId: row.employee_hr_id,
     expiresAt: row.expires_at,
     id: row.id,
     jobTitle: row.job_title,
     lineId: row.line_id,
-    lineName: row.line_id ? lookups.lines.get(row.line_id) ?? null : null,
+    lineName: row.line_id !== null ? lookups.lines.get(row.line_id) ?? null : null,
     managerHrId: row.manager_hr_id,
     managerName: row.manager_hr_id ? lookups.managers.get(row.manager_hr_id) ?? null : null,
     offerCode: row.offer_code,
@@ -768,18 +862,22 @@ export async function createOffer(input: OfferLifecycleInput) {
   const token = createToken();
   const template = getOfferTemplate(input.templateKey);
   const expiresInDays = Math.max(1, Math.min(60, Number(input.expiresInDays ?? 7)));
+  const createdByHrId = await resolveHrId(input.createdByHrId);
+  const managerHrId = await resolveHrId(input.managerHrId);
+  const lineId = numberOrNull(input.lineId);
+  const resolvedCreatedByHrId = createdByHrId ?? (await resolveCreatorHrIdFromLine(lineId));
   const payload = {
     area_scope: compact(input.areaScope),
     area_id: numberOrNull(input.areaId),
     candidate_email: input.candidateEmail.trim().toLowerCase(),
     candidate_name: input.candidateName.trim(),
     candidate_phone: compact(input.candidatePhone),
-    created_by_hr_id: compact(input.createdByHrId),
+    created_by_hr_id: resolvedCreatedByHrId,
     department_id: numberOrNull(input.departmentId),
     expires_at: daysFromNow(expiresInDays),
     job_title: input.jobTitle.trim() || template?.label || "Job Offer",
-    line_id: numberOrNull(input.lineId),
-    manager_hr_id: compact(input.managerHrId),
+    line_id: lineId,
+    manager_hr_id: managerHrId,
     offer_code: offerCode(),
     position_id: numberOrNull(input.positionId),
     salary_amount: numberOrNull(input.salaryAmount) ?? template?.monthlyPackage ?? null,
@@ -796,7 +894,7 @@ export async function createOffer(input: OfferLifecycleInput) {
     method: "POST",
   });
   const offer = rows[0];
-  await insertAudit(offer.id, "offer_sent", "hr", { expiresInDays }, input.createdByHrId);
+  await insertAudit(offer.id, "offer_sent", "hr", { expiresInDays }, resolvedCreatedByHrId);
 
   const baseUrl = publicBaseUrl();
   const acceptUrl = baseUrl ? `${baseUrl}/offers/${token}/accept` : "#";
@@ -959,7 +1057,8 @@ export async function approveAcceptedOffer(
     select:
       "id,offer_code,candidate_name,candidate_email,candidate_phone,job_title,template_key,area_scope,area_id,department_id,line_id,manager_hr_id,position_id,salary_amount,start_date,expires_at,status,accepted_at,rejected_at,employee_hr_id,onboarding_status,created_at,updated_at",
   });
-  const offer = (await supabaseRest<OfferDbRow[]>(`job_offers?${params}`))[0];
+  const offers = await supabaseRest<OfferDbRow[]>(`job_offers?${params}`);
+  const offer = offers[0];
 
   if (!offer) throw new Error("Offer not found.");
   if (offer.status !== "accepted") throw new Error("Only accepted offers can be approved.");
@@ -984,7 +1083,8 @@ export async function approveAcceptedOffer(
     p_offer_id: offer.id,
   });
   const employeeHrId = String(rpcResult.employee_hr_id);
-  const refreshedOffer = (await supabaseRest<OfferDbRow[]>(`job_offers?${params}`))[0];
+  const refreshedOffers = await supabaseRest<OfferDbRow[]>(`job_offers?${params}`);
+  const refreshedOffer = refreshedOffers[0];
   if (!refreshedOffer) {
     throw new Error("Offer approval succeeded but the updated offer could not be reloaded.");
   }

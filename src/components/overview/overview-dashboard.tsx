@@ -259,7 +259,7 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
                 <div>
                   <p className="text-sm font-bold text-slate-900">Detailed admin activity has moved to one governed report.</p>
                   <p className="mt-1 max-w-2xl text-xs font-medium leading-5 text-slate-500">
-                    Use the master audit report for sales, recruitment, access, auth, leave, coaching, and outstation logs.
+                    Use the master audit report for sales, recruitment, access, auth, coaching, and outstation logs.
                   </p>
                 </div>
                 <Link

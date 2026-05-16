@@ -129,7 +129,7 @@ function getRequiredEnv(name: string) {
   return value;
 }
 
-async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<{ data: T }> {
   const url = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL").replace(/\/+$/g, "");
   const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
   const controller = new AbortController();
@@ -158,7 +158,7 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
       );
     }
 
-    return payload as T;
+    return { data: payload as T };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("Supabase request timed out.");
@@ -309,7 +309,9 @@ export async function getOverviewDashboard(
     canReadPayroll ? getPayrollDashboard(undefined, accessContext) : Promise.resolve(null),
     canReadSales ? getSalesDashboard({}, accessContext) : Promise.resolve(null),
     canReadEmployees
-      ? getEmployeeDirectory().then((directory) => filterEmployeeDirectoryForAccess(directory, accessContext))
+      ? getEmployeeDirectory({ pageSize: -1 }).then((directory) =>
+          filterEmployeeDirectoryForAccess(directory, accessContext),
+        )
       : Promise.resolve(null),
     canReadExpenses
       ? listPayrollExpenses(undefined, undefined, undefined, accessContext)
@@ -319,10 +321,10 @@ export async function getOverviewDashboard(
       : Promise.resolve([]),
     canReadOffers ? getOfferDashboard() : Promise.resolve(null),
     canReadContracts
-      ? supabaseRest<OverviewContractRow[]>("v_lifecycle_dashboard").catch(() => [])
+      ? supabaseRest<OverviewContractRow[]>("v_lifecycle_dashboard").then(r => r.data).catch(() => [])
       : Promise.resolve([]),
     canReadProbation
-      ? supabaseRest<OverviewProbationRow[]>("v_probation_tracker").catch(() => [])
+      ? supabaseRest<OverviewProbationRow[]>("v_probation_tracker").then(r => r.data).catch(() => [])
       : Promise.resolve([]),
     canReadPayroll
       ? supabaseRest<OverviewSalaryBatchActivityRow[]>(
@@ -330,7 +332,7 @@ export async function getOverviewDashboard(
             order: "updated_at.desc",
             select: "month,year,status,uploaded_by,approved_by,approved_at,created_at,updated_at",
           })}`,
-        ).catch(() => [])
+        ).then(r => r.data).catch(() => [])
       : Promise.resolve([]),
     canReadSales
       ? supabaseRest<OverviewSalesAuditRow[]>(
@@ -339,7 +341,7 @@ export async function getOverviewDashboard(
             order: "created_at.desc",
             select: "action,actor_username,actor_display_name,line,period,created_at",
           })}`,
-        ).catch(() => [])
+        ).then(r => r.data).catch(() => [])
       : Promise.resolve([]),
     canReadOffers
       ? supabaseRest<OverviewOfferAuditRow[]>(
@@ -348,7 +350,7 @@ export async function getOverviewDashboard(
             order: "created_at.desc",
             select: "action,actor_type,actor_reference,details,created_at",
           })}`,
-        ).catch(() => [])
+        ).then(r => r.data).catch(() => [])
       : Promise.resolve([]),
   ]);
 
@@ -550,7 +552,7 @@ export async function getOverviewDashboard(
     ? (
         await supabaseRest<Array<{ id: number }>>(
           `position_vacancies?${new URLSearchParams({ select: "id", status: "eq.open" })}`,
-        ).catch(() => [])
+        ).then(r => r.data).catch(() => [])
       ).length
     : 0;
 

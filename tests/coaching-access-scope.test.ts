@@ -27,7 +27,19 @@ export function runCoachingAccessScopeTests() {
 
   assert.match(
     coachingServiceSource,
-    /if \(access\.role === "Training Manager"\) \{\s*const coachHrId = normalizeHrId\(access\.hrId\);[\s\S]*?return rows\.filter\(\(row\) => idsMatch\(coachHrId, row\.coachHrId\)\);[\s\S]*?\}/,
+    /if \(access\.role === "Training Manager"\) \{\s*const coachHrId = normalizeHrId\(.*\);\s*if \(!coachHrId\) return \[\];\s*return rows\.filter\(\(row\) => idsMatch\(coachHrId, row\.coachHrId\)\);[\s\S]*?\}/,
     "Training Manager report summaries should be filtered to reports they coached",
+  );
+
+  assert.match(
+    lineRolesBlock(),
+    /"National Sales Manager"/,
+    "NSM must retain explicit line-scoped coaching access",
+  );
+
+  assert.match(
+    coachingServiceSource,
+    /if \(access\.role === "Regional Manager" \|\| access\.role === "Regional Sales Manager" \|\| access\.role === "Manager"\) \{\s*const managerMap = buildManagerHierarchyMap\(directory\);\s*const hierarchyHrIds = collectHierarchyHrIdsFromMap\(\s*managerMap,\s*normalizeHrIdForAccess\(currentHrId\),\s*\{ includeSelf: true \},\s*\);/m,
+    "RSM coaching access must resolve explicit hierarchy descendants instead of falling back to line scope",
   );
 }

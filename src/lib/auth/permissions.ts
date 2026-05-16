@@ -52,7 +52,6 @@ export type PermissionResource =
   | "coaching"
   | "hr_calendar"
   | "outstation"
-  | "leave"
   | "admin"
   | "user_admin"
   | "permission_admin";
@@ -81,7 +80,6 @@ export const permissionResources: PermissionResource[] = [
   "hr_calendar",
   "payslips",
   "outstation",
-  "leave",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -146,7 +144,6 @@ const defaultPermissionMatrix: PermissionMap = {
     expenses: allActions,
     hr_calendar: allActions,
     outstation: allActions,
-    leave: allActions,
     organogram: allActions,
     offers: allActions,
     payroll: allActions,
@@ -170,7 +167,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employees: ["read", "export"],
     expenses: ["read", "approve", "export"],
     outstation: ["read", "approve", "export", "update"],
-    leave: ["read", "approve", "export"],
     organogram: ["read", "export"],
     payroll: ["read", "export"],
     permission_admin: ["read"],
@@ -194,7 +190,6 @@ const defaultPermissionMatrix: PermissionMap = {
     expenses: allActions,
     hr_calendar: allActions,
     outstation: allActions,
-    leave: allActions,
     organogram: ["read", "export"],
     offers: allActions,
     payroll: allActions,
@@ -211,7 +206,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: allActions,
     outstation: ["read", "approve", "export", "update"],
-    leave: ["read", "approve", "export", "update"],
     payroll: allActions,
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -223,7 +217,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
-    leave: ["read", "create", "update"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -235,7 +228,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
-    leave: ["read", "create", "update"],
     payroll: ["read", "export"],
     sales: ["read", "export"],
     payslips: ["read", "export"],
@@ -246,7 +238,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
     outstation: ["read", "create", "approve", "export"],
-    leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
     organogram: ["read"],
     payroll: ["read", "export"],
@@ -262,7 +253,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
     outstation: ["read", "create", "approve", "export"],
-    leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
     organogram: ["read"],
     payroll: ["read", "export"],
@@ -276,7 +266,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
     outstation: ["read", "create", "approve", "export"],
-    leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
     organogram: ["read"],
     payroll: ["read", "export"],
@@ -290,7 +279,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
     outstation: ["read", "create", "approve", "export"],
-    leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
     probation: ["read", "export"],
     payroll: ["read", "export"],
@@ -306,7 +294,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
-    leave: ["read", "create", "update"],
     coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -318,7 +305,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
-    leave: ["read", "create", "update"],
     coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -330,7 +316,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
-    leave: allActions,
     coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -343,7 +328,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employees: ["read", "export"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
-    leave: ["read", "create", "export"],
     coaching: ["read", "create", "update"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -357,7 +341,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employees: ["read"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
-    leave: ["read", "create", "update"],
     offers: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -369,7 +352,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employees: ["read", "export"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
-    leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -488,7 +470,7 @@ export function normalizeHrIdForAccess(value: string | null | undefined) {
   return normalized ? normalized.replace(/[^a-z0-9]/g, "") : null;
 }
 
-function hrIdsMatch(left: string | null | undefined, right: string | null | undefined) {
+export function hrIdsMatch(left: string | null | undefined, right: string | null | undefined) {
   const a = normalizeHrId(left);
   const b = normalizeHrId(right);
   if (a && b && a === b) return true;
@@ -698,6 +680,26 @@ export function getPayrollScope(context: Pick<AccessContext, "role">): BusinessS
   ) {
     return "COMPANY";
   }
+  if (
+    context.role === "Regional Manager" ||
+    context.role === "Regional Sales Manager"
+  ) {
+    return "HIERARCHY";
+  }
+  if (
+    context.role === "District Manager" ||
+    context.role === "Manager"
+  ) {
+    return "TEAM";
+  }
+  if (
+    context.role === "National Sales Manager" ||
+    context.role === "Product Manager" ||
+    context.role === "Group Product Manager" ||
+    context.role === "Training Manager"
+  ) {
+    return "LINE";
+  }
 
   return "SELF";
 }
@@ -770,7 +772,7 @@ export function isDirectReport(managerHrId: string | null, employee: Pick<Employ
 }
 
 export function canSeeEmployee(context: AccessContext, employee: Pick<EmployeeDirectoryRow, "hrId" | "managerHrId">) {
-  if (context.scope === "system" || context.scope === "company") return true;
+  if (context.scope === "system" || context.scope === "company" || context.role === "Super Admin" || context.role === "HR Specialist") return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(employee.hrId);
@@ -793,14 +795,14 @@ export function canSeeHrScopedRecord(
     managerHrId?: string | null;
   },
 ) {
-  if (context.scope === "system" || context.scope === "company") return true;
+  if (context.scope === "system" || context.scope === "company" || context.role === "Super Admin" || context.role === "HR Specialist") return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(record.employeeHrId ?? record.hrId);
   const managerHrId = normalizeHrId(record.managerHrId);
 
   if (!currentHrId) return false;
-  if (context.scope === "team" || context.scope === "hierarchy" || context.scope === "line") {
+  if (context.role === "District Manager" || context.role === "Manager") {
     return hrIdsMatch(currentHrId, employeeHrId) || hrIdsMatch(currentHrId, managerHrId);
   }
 
@@ -814,60 +816,127 @@ export function filterEmployeesForAccess<T extends Pick<EmployeeDirectoryRow, "h
   return rows.filter((row) => canSeeEmployee(context, row));
 }
 
-function collectHierarchyHrIds<T extends Pick<EmployeeDirectoryRow, "hrId" | "managerHrId">>(
-  rows: T[],
+export type RoleHierarchyRow = Pick<EmployeeDirectoryRow, "hrId" | "managerHrId">;
+export type RoleHierarchyMap = Map<string, string[]>;
+
+export function buildManagerHierarchyMap<T extends RoleHierarchyRow>(rows: ReadonlyArray<T>) {
+  const managerMap: RoleHierarchyMap = new Map();
+
+  rows.forEach((row) => {
+    const managerId = normalizeHrIdForAccess(row.managerHrId);
+    const employeeId = normalizeHrIdForAccess(row.hrId);
+    if (!managerId || !employeeId) return;
+
+    const list = managerMap.get(managerId) ?? [];
+    list.push(employeeId);
+    managerMap.set(managerId, list);
+  });
+
+  return managerMap;
+}
+
+export function collectHierarchyHrIdsFromMap<T extends RoleHierarchyRow>(
+  managerMap: RoleHierarchyMap,
   rootHrId: string | null | undefined,
+  options: { includeSelf?: boolean } = {},
 ) {
+  const includeSelf = options.includeSelf ?? true;
   const root = normalizeHrIdForAccess(rootHrId);
   const visibleHrIds = new Set<string>();
 
-  if (!root) {
-    return visibleHrIds;
+  if (!root) return visibleHrIds;
+
+  const queue: string[] = [root];
+  if (includeSelf) {
+    visibleHrIds.add(root);
   }
 
-  visibleHrIds.add(root);
-  let frontier = [root];
+  while (queue.length > 0) {
+    const managerId = queue.shift();
+    if (!managerId) continue;
 
-  while (frontier.length > 0) {
-    const nextFrontier: string[] = [];
-
-    for (const row of rows) {
-      const rowHrId = normalizeHrIdForAccess(row.hrId);
-      const managerHrId = normalizeHrIdForAccess(row.managerHrId);
-
-      if (
-        rowHrId &&
-        managerHrId &&
-        frontier.includes(managerHrId) &&
-        !visibleHrIds.has(rowHrId)
-      ) {
-        visibleHrIds.add(rowHrId);
-        nextFrontier.push(rowHrId);
-      }
+    for (const subordinateId of managerMap.get(managerId) ?? []) {
+      if (visibleHrIds.has(subordinateId)) continue;
+      visibleHrIds.add(subordinateId);
+      queue.push(subordinateId);
     }
-
-    frontier = nextFrontier;
   }
 
   return visibleHrIds;
+}
+
+export function collectHierarchyHrIds<T extends RoleHierarchyRow>(
+  rows: T[],
+  rootHrId: string | null | undefined,
+  options: { includeSelf?: boolean } = {},
+) {
+  return collectHierarchyHrIdsFromMap(
+    buildManagerHierarchyMap(rows),
+    rootHrId,
+    options,
+  );
 }
 
 export function filterEmployeeDirectoryForAccess(
   directory: EmployeeDirectoryData,
   context: AccessContext,
 ): EmployeeDirectoryData {
-  if (context.scope === "system" || context.scope === "company") return directory;
+  if (context.scope === "system" || context.scope === "company" || context.role === "Super Admin" || context.role === "HR Specialist") return directory;
 
-  const hierarchyHrIds =
-    context.scope === "hierarchy" || context.scope === "line"
-      ? collectHierarchyHrIds(directory.employees, context.hrId)
-      : null;
-  const employees = hierarchyHrIds
-    ? directory.employees.filter((employee) => {
-        const employeeHrId = normalizeHrIdForAccess(employee.hrId);
-        return Boolean(employeeHrId && hierarchyHrIds.has(employeeHrId));
-      })
-    : filterEmployeesForAccess(directory.employees, context);
+  if (!context.hrId) {
+    return {
+      ...directory,
+      employees: [],
+      lookups: {
+        ...directory.lookups,
+        managers: [],
+      },
+      summary: {
+        activeEmployees: 0,
+        employeesWithoutManagers: 0,
+        totalEmployees: 0,
+        uniqueAreas: 0,
+        uniqueLines: 0,
+      },
+    };
+  }
+
+  const currentCanonicalHrId = normalizeHrIdForAccess(context.hrId);
+  const managerMap = buildManagerHierarchyMap(directory.employees);
+  const currentEmployee = directory.employees.find((employee) =>
+    normalizeHrIdForAccess(employee.hrId) === currentCanonicalHrId,
+  );
+  const isLineScope = context.scope === "line";
+  const isHierarchyScope = context.scope === "hierarchy";
+  const isTeamScope = context.scope === "team";
+  const hierarchyHrIds = isHierarchyScope
+    ? collectHierarchyHrIdsFromMap(managerMap, currentCanonicalHrId, { includeSelf: true })
+    : null;
+
+  let employees = filterEmployeesForAccess(directory.employees, context);
+  if (isLineScope && currentEmployee) {
+    employees = directory.employees.filter((employee) => {
+      if (currentEmployee.lineId !== null && employee.lineId !== null) {
+        return employee.lineId === currentEmployee.lineId;
+      }
+
+      return normalizeLineName(employee.lineName) === normalizeLineName(currentEmployee.lineName);
+    });
+  } else if (isHierarchyScope) {
+    employees = directory.employees.filter((employee) => {
+      const employeeCanonicalHrId = normalizeHrIdForAccess(employee.hrId);
+      return Boolean(employeeCanonicalHrId && hierarchyHrIds?.has(employeeCanonicalHrId));
+    });
+  } else if (isTeamScope) {
+    employees = directory.employees.filter((employee) => {
+      const employeeCanonicalHrId = normalizeHrIdForAccess(employee.hrId);
+      const managerCanonicalHrId = normalizeHrIdForAccess(employee.managerHrId);
+      return Boolean(
+        (employeeCanonicalHrId && employeeCanonicalHrId === currentCanonicalHrId) ||
+        (managerCanonicalHrId && managerCanonicalHrId === currentCanonicalHrId),
+      );
+    });
+  }
   const visibleHrIds = new Set(employees.map((employee) => normalizeHrId(employee.hrId)).filter(Boolean));
 
   return {
@@ -898,3 +967,4 @@ export async function assertPermission(
     throw new Error(`Forbidden: ${context.role} cannot ${action} ${resource}.`);
   }
 }
+

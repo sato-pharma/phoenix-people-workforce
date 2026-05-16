@@ -834,7 +834,11 @@ export async function GET(
       const matchesHrId =
         !employeeHrId ||
         record.hrId.toLowerCase() === employeeHrId ||
-        record.employeeCode.toLowerCase() === employeeHrId;
+        record.employeeCode.toLowerCase() === employeeHrId ||
+        (access.hrId && (
+          record.hrId.toLowerCase() === access.hrId.toLowerCase() ||
+          record.employeeCode.toLowerCase() === access.hrId.toLowerCase()
+        ));
       const matchesName = !employeeName || record.fullName.toLowerCase().includes(employeeName);
       return matchesHrId && matchesName;
     }) ?? [];

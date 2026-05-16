@@ -6,6 +6,7 @@ import { EmployeePortalEmptyState } from "@/components/employee-portal/enterpris
 import { getNsmDsmPerformance } from "@/lib/employee-portal/service";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { normalizeRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   TeamAchievementChart,
@@ -35,8 +36,11 @@ export default async function DsmsPerformancePage({
     redirect("/overview");
   }
 
-  // Only NSM should access this page
-  if (!access.role.toLowerCase().includes("national sales manager")) {
+  const currentRole = normalizeRole(access.role);
+  // Only NSM and RSM should access this page
+  const isSalesLineManager =
+    currentRole === "National Sales Manager" || currentRole === "Regional Sales Manager";
+  if (!isSalesLineManager) {
     redirect("/employee-portals");
   }
 

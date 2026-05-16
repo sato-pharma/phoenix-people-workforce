@@ -116,6 +116,7 @@ export type ExpenseTripRecord = {
 export type PayrollExpenseApproval = ExpenseTripRecord & {
   approvedAt: string | null;
   approvedBy: string | null;
+  createdAt?: string | null;
   hrId: string | null;
   hrApproved: boolean;
   hrComment: string;

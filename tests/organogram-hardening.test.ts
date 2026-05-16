@@ -223,6 +223,11 @@ export function runOrganogramHardeningTests() {
     /vacancyReportWithoutOrganogramRows/,
     "Vacancy API must not expose Organogram hierarchy rows",
   );
+  assert.match(
+    vacancyReportSource,
+    /getEmployeeDirectory\(\{ pageSize: -1 \}\)/,
+    "Organogram report must load the full employee directory instead of a paginated slice",
+  );
 
   const safeReport = applyOrganogramMirrorSafety(baseReport);
   assert.equal(
@@ -420,7 +425,7 @@ export function runOrganogramHardeningTests() {
     employee({ fullName: "Self Manager", hrId: "SELF-1", managerHrId: "SELF-1" }),
     employee({ fullName: "Cycle A", hrId: "CYCLE-A", managerHrId: "CYCLE-B" }),
     employee({ fullName: "Cycle B", hrId: "CYCLE-B", managerHrId: "CYCLE-A" }),
-    employee({ fullName: "Missing Manager", hrId: "MISSING-1", managerHrId: "NO-MANAGER" }),
+    employee({ fullName: "Missing Manager", hrId: "MISSING-1", managerHrId: "NO-MANAGER", managerName: null }),
   ]);
   assert.equal(
     diagnostics.some((diagnostic) => diagnostic.code === "self_manager"),
@@ -436,6 +441,38 @@ export function runOrganogramHardeningTests() {
     diagnostics.some((diagnostic) => diagnostic.code === "missing_manager"),
     true,
     "missing or inactive managers are diagnosed",
+  );
+
+  const nameFallbackDiagnostics = findOrganogramDiagnostics([
+    employee({
+      fullName: "Pedia NSM",
+      hrId: "NSM-1",
+      jobTitle: "National Sales Manager",
+      managerHrId: null,
+      managerName: null,
+      positionTitle: "National Sales Manager",
+    }),
+    employee({
+      fullName: "Pedia RSM",
+      hrId: "RSM-1",
+      jobTitle: "Regional Sales Manager",
+      managerHrId: "NSM-1",
+      managerName: "Pedia NSM",
+      positionTitle: "Regional Sales Manager",
+    }),
+    employee({
+      fullName: "Pedia DSM",
+      hrId: "DSM-NAME",
+      jobTitle: "District Sales Manager",
+      managerHrId: null,
+      managerName: "Pedia RSM",
+      positionTitle: "District Sales Manager",
+    }),
+  ]);
+  assert.equal(
+    nameFallbackDiagnostics.some((diagnostic) => diagnostic.code === "missing_manager"),
+    false,
+    "managerName fallback must not flag a valid visible manager chain as missing",
   );
 
   assert.doesNotMatch(
@@ -465,8 +502,23 @@ export function runOrganogramHardeningTests() {
   );
   assert.match(
     organogramComponentSource,
+    /function findManagerRow\(/,
+    "Organogram hierarchy resolution must expose a shared manager row resolver",
+  );
+  assert.match(
+    organogramComponentSource,
     /row\.type === "vacancy"[\s\S]*managerNameKeysForGroup\.has\(managerNameKey\)/,
     "Vacancies with a bad or missing manager HR_ID must still render under the matching DSM name",
+  );
+  assert.match(
+    organogramComponentSource,
+    /currentManagerName = row\.managerName \?\? null[\s\S]*findManagerRow\(rows, managerHrId, currentManagerName\)/,
+    "Recursive hierarchy traversal must fall back to managerName when manager_hr_id is stale",
+  );
+  assert.match(
+    organogramComponentSource,
+    /const managerNameKey = normalizeNameKey\(member\.managerName\)[\s\S]*nodes\.find\(\(candidate\) => normalizeNameKey\(candidate\.row\.fullName\) === managerNameKey\)/,
+    "Nested team rendering must attach children by manager name when manager_hr_id is missing",
   );
   assert.match(
     organogramComponentSource,

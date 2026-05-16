@@ -205,16 +205,53 @@ function buildEmployeeMap(rows: OrganogramReportRow[]) {
   );
 }
 
+function buildRowNameMap(rows: OrganogramReportRow[]) {
+  return new Map(
+    rows
+      .map((row) => [normalizeKey(row.fullName), row] as const)
+      .filter(([name]) => Boolean(name)),
+  );
+}
+
+function findHierarchyRow(
+  rowByHrId: Map<string, OrganogramReportRow>,
+  rowByName: Map<string, OrganogramReportRow>,
+  managerHrId: string | null | undefined,
+  managerName: string | null | undefined,
+) {
+  const hrId = normalizeHrId(managerHrId);
+  if (hrId && rowByHrId.has(hrId)) {
+    return rowByHrId.get(hrId) ?? null;
+  }
+
+  const name = normalizeKey(managerName);
+  return name ? rowByName.get(name) ?? null : null;
+}
+
 function collectAncestors(
   employeeByHrId: Map<string, OrganogramReportRow>,
+  rowByName: Map<string, OrganogramReportRow>,
   managerHrId: string | null | undefined,
+  managerName: string | null | undefined,
 ) {
   const ancestors = new Set<string>();
-  let current = normalizeHrId(managerHrId);
+  let current = findHierarchyRow(employeeByHrId, rowByName, managerHrId, managerName);
 
-  while (current && !ancestors.has(current)) {
-    ancestors.add(current);
-    current = normalizeHrId(employeeByHrId.get(current)?.managerHrId);
+  while (current) {
+    const currentHrId = normalizeHrId(current.hrId);
+    const visitedKey = currentHrId || `name:${normalizeKey(current.fullName)}`;
+
+    if (!visitedKey || ancestors.has(visitedKey)) {
+      break;
+    }
+
+    ancestors.add(visitedKey);
+    current = findHierarchyRow(
+      employeeByHrId,
+      rowByName,
+      current.managerHrId,
+      current.managerName,
+    );
   }
 
   return ancestors;
@@ -222,25 +259,32 @@ function collectAncestors(
 
 function collectDescendants(
   employeeByHrId: Map<string, OrganogramReportRow>,
-  rootHrId: string,
+  rowByName: Map<string, OrganogramReportRow>,
+  root: OrganogramReportRow,
 ) {
   const descendants = new Set<string>();
-  let frontier = [rootHrId];
+  let frontier = [root];
 
   while (frontier.length > 0) {
-    const nextFrontier: string[] = [];
+    const nextFrontier: OrganogramReportRow[] = [];
 
-    for (const managerHrId of frontier) {
+    for (const manager of frontier) {
+      const managerHrId = normalizeHrId(manager.hrId);
+      const managerName = normalizeKey(manager.fullName);
+
       for (const employee of employeeByHrId.values()) {
         const employeeHrId = normalizeHrId(employee.hrId);
 
         if (
           employeeHrId &&
           !descendants.has(employeeHrId) &&
-          normalizeHrId(employee.managerHrId) === managerHrId
+          (
+            (managerHrId && normalizeHrId(employee.managerHrId) === managerHrId) ||
+            (!employee.managerHrId && managerName && normalizeKey(employee.managerName) === managerName)
+          )
         ) {
           descendants.add(employeeHrId);
-          nextFrontier.push(employeeHrId);
+          nextFrontier.push(employee);
         }
       }
     }
@@ -248,25 +292,34 @@ function collectDescendants(
     frontier = nextFrontier;
   }
 
-  descendants.delete(rootHrId);
+  descendants.delete(normalizeHrId(root.hrId));
   return descendants;
 }
 
 function hasManagerCycle(
   row: OrganogramReportRow,
   employeeByHrId: Map<string, OrganogramReportRow>,
+  rowByName: Map<string, OrganogramReportRow>,
 ) {
   const rowHrId = normalizeHrId(row.hrId);
   const visited = new Set<string>();
-  let managerHrId = normalizeHrId(row.managerHrId);
+  let current = findHierarchyRow(employeeByHrId, rowByName, row.managerHrId, row.managerName);
 
-  while (managerHrId) {
-    if (managerHrId === rowHrId || visited.has(managerHrId)) {
+  while (current) {
+    const currentHrId = normalizeHrId(current.hrId);
+    const visitedKey = currentHrId || `name:${normalizeKey(current.fullName)}`;
+
+    if ((currentHrId && currentHrId === rowHrId) || visited.has(visitedKey)) {
       return true;
     }
 
-    visited.add(managerHrId);
-    managerHrId = normalizeHrId(employeeByHrId.get(managerHrId)?.managerHrId);
+    visited.add(visitedKey);
+    current = findHierarchyRow(
+      employeeByHrId,
+      rowByName,
+      current.managerHrId,
+      current.managerName,
+    );
   }
 
   return false;
@@ -274,6 +327,7 @@ function hasManagerCycle(
 
 export function findOrganogramDiagnostics(rows: OrganogramReportRow[]) {
   const employeeByHrId = buildEmployeeMap(rows);
+  const rowByName = buildRowNameMap(rows);
   const diagnostics = new Map<OrganogramDiagnostic["code"], number>();
 
   const increment = (code: OrganogramDiagnostic["code"]) => {
@@ -287,22 +341,23 @@ export function findOrganogramDiagnostics(rows: OrganogramReportRow[]) {
 
     const rowHrId = normalizeHrId(row.hrId);
     const managerHrId = normalizeHrId(row.managerHrId);
+    const managerName = normalizeKey(row.managerName);
 
-    if (!managerHrId) {
+    if (!managerHrId && !managerName) {
       continue;
     }
 
-    if (managerHrId === rowHrId) {
+    if (managerHrId && managerHrId === rowHrId) {
       increment("self_manager");
       continue;
     }
 
-    if (!employeeByHrId.has(managerHrId)) {
+    if (!findHierarchyRow(employeeByHrId, rowByName, row.managerHrId, row.managerName)) {
       increment("missing_manager");
       continue;
     }
 
-    if (hasManagerCycle(row, employeeByHrId)) {
+    if (hasManagerCycle(row, employeeByHrId, rowByName)) {
       increment("circular_manager");
     }
   }
@@ -369,6 +424,7 @@ function scopeOrganogramRows(
   }
 
   const employeeByHrId = buildEmployeeMap(rows);
+  const rowByName = buildRowNameMap(rows);
   const viewerHrId = normalizeHrId(access.hrId);
   const viewer = employeeByHrId.get(viewerHrId);
 
@@ -384,7 +440,7 @@ function scopeOrganogramRows(
     }
 
     visibleEmployeeHrIds.add(hrId);
-    for (const ancestorHrId of collectAncestors(employeeByHrId, row.managerHrId)) {
+    for (const ancestorHrId of collectAncestors(employeeByHrId, rowByName, row.managerHrId, row.managerName)) {
       visibleEmployeeHrIds.add(ancestorHrId);
     }
   };
@@ -399,7 +455,7 @@ function scopeOrganogramRows(
     }
   } else if (access.scope === "team" || access.scope === "hierarchy") {
     addWithAncestors(viewer);
-    for (const descendantHrId of collectDescendants(employeeByHrId, viewerHrId)) {
+    for (const descendantHrId of collectDescendants(employeeByHrId, rowByName, viewer)) {
       const descendant = employeeByHrId.get(descendantHrId);
       if (descendant) {
         addWithAncestors(descendant);

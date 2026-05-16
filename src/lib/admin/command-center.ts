@@ -177,19 +177,25 @@ async function fetchPayrollSummary(): Promise<AdminCommandCenterData["overview"]
     if (!batch?.id) return empty;
 
     const batchId = String(batch.id);
-    const [records, flagsResult] = await Promise.all([
-      readAllRows<Record<string, unknown>>(() =>
-        supabase
-          .from("salary_records")
-          .select("gross_salary,net_salary")
-          .eq("batch_id", batchId),
-      ),
+    const [statsResult, flagsResult] = await Promise.all([
+      supabase
+        .from("salary_records")
+        .select("gross_salary,net_salary")
+        .eq("batch_id", batchId),
       supabase
         .from("salary_flags")
-        .select("*", { count: "exact", head: true })
+        .select("id", { count: "exact", head: true })
         .eq("batch_id", batchId),
     ]);
     if (flagsResult.error) throw flagsResult.error;
+    if (statsResult.error) throw statsResult.error;
+
+    const records = statsResult.data || [];
+    const stats = {
+      count: records.length,
+      sum_gross_salary: records.reduce((acc, r: any) => acc + Number(r.gross_salary || 0), 0),
+      sum_net_salary: records.reduce((acc, r: any) => acc + Number(r.net_salary || 0), 0),
+    };
 
     return {
       batch: {
@@ -197,13 +203,16 @@ async function fetchPayrollSummary(): Promise<AdminCommandCenterData["overview"]
         year: safeNumber(batch.year),
       },
       batchLabel: `${safeNumber(batch.month)}/${safeNumber(batch.year)}`,
-      employees: records.length,
+      employees: safeNumber(stats.count),
       error: null,
       flags: flagsResult.count ?? 0,
-      gross: records.reduce((sum, row) => sum + safeNumber(row.gross_salary), 0),
-      net: records.reduce((sum, row) => sum + safeNumber(row.net_salary), 0),
+      gross: safeNumber(stats.sum_gross_salary),
+      net: safeNumber(stats.sum_net_salary),
     };
-  } catch {
+  } catch (error: any) {
+    const errorMsg = error?.message || String(error);
+    console.error("Payroll summary fetch failed. Error:", errorMsg);
+    if (error?.details) console.error("Payroll details:", error.details);
     return { ...empty, error: "Payroll data unavailable." };
   }
 }
@@ -323,33 +332,36 @@ async function fetchExpenseSummary(): Promise<{
   const empty = { approvedAmount: 0, totalAmount: 0, totalRows: 0, reportCount: 0, error: null };
 
   try {
-    // Fetch a capped set of expense rows — total and approved amounts
-    const { data: rows, error: rowErr } = await supabase
-      .from("payroll_expenses")
-      .select("total,hr_approved")
-      .limit(5000);
-    if (rowErr) throw rowErr;
+    const [statsResult, reportCountResult] = await Promise.all([
+      supabase
+        .from("payroll_expenses")
+        .select("total,hr_approved"),
+      supabase
+        .from("payroll_expense_reports")
+        .select("id", { count: "exact", head: true })
+    ]);
 
-    const expenseRows = rows ?? [];
-    const totalAmount = expenseRows.reduce((s, r) => s + safeNumber(r.total), 0);
-    const approvedAmount = expenseRows
-      .filter((r) => r.hr_approved)
-      .reduce((s, r) => s + safeNumber(r.total), 0);
+    if (statsResult.error) throw statsResult.error;
+    if (reportCountResult.error) throw reportCountResult.error;
 
-    // Count expense reports separately
-    const { count: reportCount, error: reportErr } = await supabase
-      .from("payroll_expense_reports")
-      .select("*", { count: "exact", head: true });
-    if (reportErr) throw reportErr;
+    const records = statsResult.data || [];
+    const stats = {
+      count: records.length,
+      sum_total: records.reduce((acc, r) => acc + Number(r.total || 0), 0),
+      approved_total: records.reduce((acc, r) => acc + (r.hr_approved ? Number(r.total || 0) : 0), 0),
+    };
 
     return {
-      approvedAmount,
-      totalAmount,
-      totalRows: expenseRows.length,
-      reportCount: reportCount ?? 0,
+      approvedAmount: safeNumber(stats.approved_total),
+      totalAmount: safeNumber(stats.sum_total),
+      totalRows: safeNumber(stats.count),
+      reportCount: reportCountResult.count ?? 0,
       error: null,
     };
-  } catch {
+  } catch (error: any) {
+    const errorMsg = error?.message || String(error);
+    console.error("Expense summary fetch failed. Error:", errorMsg);
+    if (error?.details) console.error("Expense details:", error.details);
     return { ...empty, error: "Expense data unavailable." };
   }
 }
@@ -373,22 +385,36 @@ async function fetchRecruitmentSummary(): Promise<{
   };
 
   try {
-    const { data: rows, error } = await supabase
-      .from("job_offers")
-      .select("status")
-      .limit(5000);
-    if (error) throw error;
+    const [totalRes, pendingRes, acceptedRes, rejectedRes] = await Promise.all([
+      supabase.from("job_offers").select("id", { count: "exact", head: true }),
+      supabase.from("job_offers").select("id", { count: "exact", head: true }).eq("status", "sent"),
+      supabase.from("job_offers").select("id", { count: "exact", head: true }).eq("status", "accepted"),
+      supabase.from("job_offers").select("id", { count: "exact", head: true }).eq("status", "rejected"),
+    ]);
 
-    const offers = rows ?? [];
-    const totalOffers = offers.length;
-    const acceptedOffers = offers.filter((r) => r.status === "accepted").length;
-    const rejectedOffers = offers.filter((r) => r.status === "rejected").length;
-    const pendingOffers = offers.filter((r) => r.status === "sent" || r.status === "pending").length;
+    if (totalRes.error) throw totalRes.error;
+    if (pendingRes.error) throw pendingRes.error;
+    if (acceptedRes.error) throw acceptedRes.error;
+    if (rejectedRes.error) throw rejectedRes.error;
+
+    const totalOffers = totalRes.count ?? 0;
+    const pendingOffers = pendingRes.count ?? 0;
+    const acceptedOffers = acceptedRes.count ?? 0;
+    const rejectedOffers = rejectedRes.count ?? 0;
     const finalised = acceptedOffers + rejectedOffers;
-    const acceptanceRate = finalised > 0 ? acceptedOffers / finalised : 0;
 
-    return { totalOffers, pendingOffers, acceptedOffers, rejectedOffers, acceptanceRate, error: null };
-  } catch {
+    return {
+      totalOffers,
+      pendingOffers,
+      acceptedOffers,
+      rejectedOffers,
+      acceptanceRate: finalised > 0 ? acceptedOffers / finalised : 0,
+      error: null,
+    };
+  } catch (error: any) {
+    const errorMsg = error?.message || String(error);
+    console.error("Recruitment summary fetch failed. Error:", errorMsg);
+    if (error?.details) console.error("Recruitment details:", error.details);
     return { ...empty, error: "Recruitment data unavailable." };
   }
 }
@@ -435,6 +461,27 @@ async function fetchRiskSummary(): Promise<{
 // ---------------------------------------------------------------------------
 
 export async function getAdminCommandCenterData(accessContext: AccessContext): Promise<AdminCommandCenterData> {
+  try {
+    const { data, error } = await getSupabaseAdmin().rpc("fn_get_admin_command_center_data", {
+      p_access_scope: accessContext.scope,
+      p_access_role: accessContext.role,
+      p_access_hr_id: accessContext.hrId,
+    });
+    if (error) throw error;
+    return data as AdminCommandCenterData;
+  } catch (error: any) {
+    const errorMsg = error?.message || String(error);
+    const errorCode = error?.code || "unknown";
+    console.error("Failed to fetch admin command center data via RPC. Error:", errorMsg, "Code:", errorCode);
+    if (error?.details) console.error("RPC Details:", error.details);
+    if (error?.hint) console.error("RPC Hint:", error.hint);
+    
+    // Fallback to manual fetch if RPC fails (e.g. during migration)
+    return fetchAdminCommandCenterDataManual(accessContext);
+  }
+}
+
+async function fetchAdminCommandCenterDataManual(accessContext: AccessContext): Promise<AdminCommandCenterData> {
   const dataUnavailable: string[] = [];
 
   // Run all fetches in parallel — each is isolated so a single failure doesn't cascade

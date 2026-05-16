@@ -30,7 +30,7 @@ export default async function PayrollExpensesDashboardPage() {
 
   try {
     await assertPermission(access, "expenses", "read");
-    const directory = await getEmployeeDirectory();
+    const directory = await getEmployeeDirectory({ pageSize: -1 });
     employees = directory.employees;
     reports = await listPayrollExpenseReports(access);
     expenses = await listPayrollExpenses(undefined, undefined, undefined, access);

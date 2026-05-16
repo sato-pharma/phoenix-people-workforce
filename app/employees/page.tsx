@@ -38,7 +38,7 @@ export default async function EmployeesPage() {
   let initialError: string | null = null;
 
   try {
-    initialData = filterEmployeeDirectoryForAccess(await getEmployeeDirectory(), access);
+    initialData = filterEmployeeDirectoryForAccess(await getEmployeeDirectory({ status: "all" }), access);
   } catch (error) {
     initialError = employeePageError(error);
   }

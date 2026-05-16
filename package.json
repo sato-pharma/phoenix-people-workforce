@@ -23,6 +23,10 @@
     "db:validate:role-alignment:local:dry-run": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/phoenix-staging-role-alignment-runner.ts --local --dry-run",
     "db:validate:role-alignment:local": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/phoenix-staging-role-alignment-runner.ts --local",
     "db:validate:role-alignment:local:mutations": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/phoenix-staging-role-alignment-runner.ts --local --mutations",
+    "db:supabase": "node scripts/db-supabase.js",
+    "db:remote": "node scripts/supabase-remote.js",
+    "db:local": "node scripts/supabase-local.js",
+    "db:check:leave-requests-schema": "node scripts/check-remote-leave-requests-schema.js",
     "ci": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {

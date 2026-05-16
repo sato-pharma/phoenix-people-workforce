@@ -1,6 +1,6 @@
 "use client";
 
-import { Car, CheckCircle2, MapPin, ReceiptText, Route, TrainFront } from "lucide-react";
+import { Camera, Car, CheckCircle2, MapPin, ReceiptText, Route, TrainFront } from "lucide-react";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { ApprovalRecommendationBadge } from "@/components/outstation/approval-recommendation-badge";
@@ -18,6 +18,7 @@ import type {
   OutstationCaptureResult,
   OutstationExpenseType,
   OutstationTransportationType,
+  OutstationCarEvidenceMetadata,
 } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 
@@ -28,6 +29,10 @@ type MedicalTripOption = {
 
 type LocalDraft = {
   captured: OutstationCaptureResult | null;
+  carEvidenceRequestId: string | null;
+  carEvidenceCapturedAt: string | null;
+  carEvidenceLatitude: number | null;
+  carEvidenceLongitude: number | null;
   expenseType: OutstationExpenseType;
   goTicketAmount: string;
   hasTicketAttachments: boolean;
@@ -40,6 +45,21 @@ type LocalDraft = {
   tripEndDate: string;
   tripStartDate: string;
 };
+
+type CarEvidenceState = {
+  capturedAt: string;
+  capturedLatitude: number;
+  capturedLongitude: number;
+  imagePreviewUrl: string;
+  requestDraftId: string;
+  requestId: string | null;
+};
+
+function buildDraftId() {
+  return typeof crypto === "undefined" || typeof crypto.randomUUID !== "function"
+    ? `car-evidence-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
+    : crypto.randomUUID();
+}
 
 const draftKey = "phoenix-outstation-draft";
 
@@ -85,6 +105,16 @@ function getDurationSummary(start: string, end: string) {
   return `Overnight stay - ${days} nights`;
 }
 
+function formatEvidenceDateTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "N/A" : date.toLocaleString();
+}
+
+function formatCoordinate(value: number) {
+  if (!Number.isFinite(value)) return "N/A";
+  return value.toFixed(5);
+}
+
 function buildTransportIcon(type: OutstationTransportationType) {
   return type === "car" ? Car : type === "train" || type === "bus" ? TrainFront : Route;
 }
@@ -92,12 +122,14 @@ function buildTransportIcon(type: OutstationTransportationType) {
 export function MobileOutstationWizard({
   employeeName,
   employeeRole,
+  employeeHrId,
   hasResidenceCoordinates,
   medicalTripOptions,
   residenceSummary,
 }: {
   employeeName: string;
   employeeRole: string;
+  employeeHrId: string;
   hasResidenceCoordinates: boolean;
   medicalTripOptions: MedicalTripOption[];
   residenceSummary: string;
@@ -114,9 +146,14 @@ export function MobileOutstationWizard({
   const [notes, setNotes] = useState("");
   const [medicalTripHrId, setMedicalTripHrId] = useState("");
   const [captured, setCaptured] = useState<OutstationCaptureResult | null>(null);
+  const [carEvidence, setCarEvidence] = useState<CarEvidenceState | null>(null);
+  const [carEvidenceDraftId, setCarEvidenceDraftId] = useState(() =>
+    buildDraftId(),
+  );
   const [calculation, setCalculation] = useState<OutstationCalculationResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isCapturingCarEvidence, setIsCapturingCarEvidence] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
@@ -137,18 +174,42 @@ export function MobileOutstationWizard({
   useEffect(() => {
     const restore = parseDraft(window.localStorage.getItem(draftKey));
     if (!restore) return;
+    const transportType =
+      restore.transportationType === "car" ||
+      restore.transportationType === "train" ||
+      restore.transportationType === "bus" ||
+      restore.transportationType === "other"
+        ? restore.transportationType
+        : "car";
+    const draftId =
+      restore.carEvidenceRequestId && restore.carEvidenceRequestId.trim().length > 0
+        ? restore.carEvidenceRequestId
+        : buildDraftId();
     // Restore the offline draft once after hydration; this intentionally syncs React state with localStorage.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCaptured(restore.captured);
-    setExpenseType(restore.expenseType);
-    setGoTicketAmount(restore.goTicketAmount);
-    setKilometerReading(restore.kilometerReading);
-    setMedicalTripHrId(restore.medicalTripHrId);
-    setNotes(restore.notes);
-    setReturnTicketAmount(restore.returnTicketAmount);
-    setTransportationType(restore.transportationType);
-    setTripEndDate(restore.tripEndDate);
-    setTripStartDate(restore.tripStartDate);
+    setCaptured(restore.captured ?? null);
+    setCarEvidenceDraftId(draftId);
+    if (restore.carEvidenceCapturedAt && restore.carEvidenceLatitude != null && restore.carEvidenceLongitude != null) {
+      setCarEvidence({
+        capturedAt: restore.carEvidenceCapturedAt,
+        capturedLatitude: restore.carEvidenceLatitude,
+        capturedLongitude: restore.carEvidenceLongitude,
+        imagePreviewUrl: "",
+        requestDraftId: draftId,
+        requestId: null,
+      });
+    } else {
+      setCarEvidence(null);
+    }
+    setExpenseType(restore.expenseType ?? "traveling");
+    setGoTicketAmount(restore.goTicketAmount ?? "");
+    setKilometerReading(restore.kilometerReading ?? "");
+    setMedicalTripHrId(restore.medicalTripHrId ?? "");
+    setNotes(restore.notes ?? "");
+    setReturnTicketAmount(restore.returnTicketAmount ?? "");
+    setTransportationType(transportType);
+    setTripEndDate(restore.tripEndDate ?? "");
+    setTripStartDate(restore.tripStartDate ?? "");
   }, []);
 
   useEffect(() => {
@@ -167,6 +228,10 @@ export function MobileOutstationWizard({
       captured,
       expenseType,
       goTicketAmount,
+      carEvidenceRequestId: carEvidenceDraftId,
+      carEvidenceCapturedAt: carEvidence?.capturedAt ?? null,
+      carEvidenceLatitude: carEvidence?.capturedLatitude ?? null,
+      carEvidenceLongitude: carEvidence?.capturedLongitude ?? null,
       hasTicketAttachments: ticketFiles.length > 0,
       kilometerReading,
       medicalTripHrId,
@@ -179,6 +244,10 @@ export function MobileOutstationWizard({
     };
     window.localStorage.setItem(draftKey, JSON.stringify(draft));
   }, [
+    carEvidence?.capturedAt,
+    carEvidence?.capturedLatitude,
+    carEvidence?.capturedLongitude,
+    carEvidenceDraftId,
     captured,
     expenseType,
     goTicketAmount,
@@ -202,6 +271,8 @@ export function MobileOutstationWizard({
           !draft.captured ||
           !draft.tripStartDate ||
           !draft.tripEndDate ||
+          (draft.transportationType === "car" &&
+            (draft.carEvidenceCapturedAt == null || draft.carEvidenceLatitude == null || draft.carEvidenceLongitude == null)) ||
           syncAttemptedRef.current
         ) {
           return;
@@ -226,6 +297,17 @@ export function MobileOutstationWizard({
                 medicalTripOptions.find((option) => option.hrId === draft.medicalTripHrId)?.name ??
                 "",
               notes: draft.notes,
+              carEvidenceMetadata: draft.carEvidenceRequestId
+                ? {
+                    capturedAt: draft.carEvidenceCapturedAt,
+                    capturedLatitude: draft.carEvidenceLatitude,
+                    capturedLongitude: draft.carEvidenceLongitude,
+                    employeeHrId,
+                    requestDraftId: draft.carEvidenceRequestId,
+                    requestId: null,
+                    source: "live_camera",
+                  }
+                : undefined,
               returnTicketAmount: Number(draft.returnTicketAmount || 0),
               transportationType: draft.transportationType,
               tripEndDate: draft.tripEndDate,
@@ -248,9 +330,32 @@ export function MobileOutstationWizard({
     } else {
       syncAttemptedRef.current = false;
     }
-  }, [isOffline, medicalTripOptions]);
+  }, [employeeHrId, isOffline, medicalTripOptions]);
 
   const hasTicketAttachments = ticketFiles.length > 0;
+  const hasCarEvidence = Boolean(carEvidence);
+
+  const handleTransportationTypeChange = (value: OutstationTransportationType) => {
+    setTransportationType(value);
+    if (value === "car") {
+      setTicketFiles([]);
+    } else {
+      setCarEvidence(null);
+    }
+  };
+
+  const carEvidenceMetadata = useMemo<OutstationCarEvidenceMetadata | undefined>(() => {
+    if (!carEvidence) return undefined;
+    return {
+      capturedAt: carEvidence.capturedAt,
+      capturedLatitude: carEvidence.capturedLatitude,
+      capturedLongitude: carEvidence.capturedLongitude,
+      employeeHrId,
+      requestDraftId: carEvidence.requestDraftId,
+      requestId: carEvidence.requestId,
+      source: "live_camera",
+    };
+  }, [carEvidence, employeeHrId]);
 
   const requestPayload = useMemo(
     () => ({
@@ -259,6 +364,7 @@ export function MobileOutstationWizard({
       capturedAt: captured?.capturedAt,
       capturedLatitude: captured?.capturedLatitude ?? 0,
       capturedLongitude: captured?.capturedLongitude ?? 0,
+      carEvidenceMetadata,
       claimedTotalAmount: 0,
       expenseType,
       goTicketAmount: Number(goTicketAmount || 0),
@@ -283,6 +389,7 @@ export function MobileOutstationWizard({
       medicalTripHrId,
       notes,
       returnTicketAmount,
+      carEvidenceMetadata,
       selectedMedicalTripName,
       ticketFiles.length,
       transportationType,
@@ -469,9 +576,105 @@ export function MobileOutstationWizard({
     }
   }
 
+  async function captureCarEvidence() {
+    setMessage(null);
+    if (!navigator.geolocation) {
+      setMessage("Browser geolocation is not supported on this device.");
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMessage("Camera capture is not available on this device.");
+      return;
+    }
+
+    setIsCapturingCarEvidence(true);
+    let stream: MediaStream | null = null;
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          maximumAge: 0,
+          timeout: 20000,
+        });
+      });
+
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+      });
+
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.autoplay = true;
+      video.playsInline = true;
+      await video.play();
+      if (video.readyState < 2) {
+        await new Promise<void>((resolve) => {
+          const onLoaded = () => {
+            video.removeEventListener("loadeddata", onLoaded);
+            resolve();
+          };
+          video.addEventListener("loadeddata", onLoaded, { once: true });
+        });
+      }
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, 250);
+      });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("Unable to initialize the camera preview.");
+      }
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const previewUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+      setCarEvidence({
+        capturedAt: new Date().toISOString(),
+        capturedLatitude: position.coords.latitude,
+        capturedLongitude: position.coords.longitude,
+        imagePreviewUrl: previewUrl,
+        requestDraftId: carEvidenceDraftId || buildDraftId(),
+        requestId: carEvidence?.requestId ?? null,
+      });
+      setMessage("Live car evidence captured. This photo is attached to this request.");
+    } catch (error) {
+      const typedError = error as GeolocationPositionError | DOMException | Error;
+      if ("code" in typedError && typeof typedError.code === "number" && typedError.code === 1) {
+        setMessage(
+          "Location permission was denied. Car evidence cannot be captured without GPS permission.",
+        );
+        return;
+      }
+      if (
+        typedError instanceof DOMException &&
+        typedError.name === "NotAllowedError"
+      ) {
+        setMessage("Camera permission was denied. Enable camera permission to continue.");
+        return;
+      }
+      setMessage(
+        typedError instanceof Error ? typedError.message : "Unable to capture live car evidence.",
+      );
+    } finally {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+      setIsCapturingCarEvidence(false);
+    }
+  }
+
   async function submit() {
     if (!captured) {
       setMessage("Tap the To field to capture your current destination first.");
+      return;
+    }
+
+    if (transportationType === "car" && !hasCarEvidence) {
+      setMessage("Capture live camera evidence before submitting this car request.");
       return;
     }
 
@@ -493,9 +696,16 @@ export function MobileOutstationWizard({
         return;
       }
 
+      if (payload?.id != null && payload.id > 0 && carEvidence) {
+        setCarEvidence((previous) =>
+          previous ? { ...previous, requestId: String(payload.id) } : previous,
+        );
+      }
+
       window.localStorage.removeItem(draftKey);
       setCalculation(null);
       setCaptured(null);
+      setCarEvidenceDraftId(buildDraftId());
       setExpenseType("traveling");
       setGoTicketAmount("");
       setKilometerReading("");
@@ -506,6 +716,7 @@ export function MobileOutstationWizard({
       setTripEndDate("");
       setTicketFiles([]);
       setTransportationType("car");
+      setCarEvidence(null);
       setStep(1);
       setMessage(
         isOffline
@@ -614,7 +825,7 @@ export function MobileOutstationWizard({
             <select
               className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
               onChange={(event) =>
-                setTransportationType(event.target.value as OutstationTransportationType)
+                handleTransportationTypeChange(event.target.value as OutstationTransportationType)
               }
               value={transportationType}
             >
@@ -798,12 +1009,100 @@ export function MobileOutstationWizard({
         ) : null}
       </Card>
 
-      <TicketUploadCard
-        attachmentCount={ticketFiles.length}
-        onFilesSelected={(files) => setTicketFiles(files ? Array.from(files) : [])}
-        transportationType={transportationType}
-        visible
-      />
+      {transportationType === "car" ? (
+        <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
+            Car Live Evidence
+          </p>
+          <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-slate-950">
+            Capture one live photo from device camera
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+            Car requests require one in-app camera photo as evidence and must be captured live.
+          </p>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                Live Camera Evidence
+              </span>
+              <button
+                className="flex min-h-12 w-full items-center justify-center gap-3 rounded-2xl bg-orange-500 px-5 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:bg-orange-300"
+                disabled={isCapturingCarEvidence || !captured}
+                onClick={() => void captureCarEvidence()}
+                type="button"
+              >
+                {isCapturingCarEvidence ? (
+                  <>
+                    <LoadingSpinner className="text-white" />
+                    Capturing...
+                  </>
+                ) : (
+                  <>
+                    <Camera className="h-4 w-4" />
+                    {carEvidence ? "Retake Evidence Photo" : "Capture Evidence Photo"}
+                  </>
+                )}
+              </button>
+            </label>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                Evidence status
+              </p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">
+                {hasCarEvidence ? "One live camera photo captured" : "No live camera photo captured"}
+              </p>
+              {carEvidence ? (
+                <p className="mt-2 text-sm text-slate-700">
+                  Draft ID: {carEvidence.requestDraftId}
+                  {carEvidence.requestId ? ` | Request ID: ${carEvidence.requestId}` : ""}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          {carEvidence && carEvidence.imagePreviewUrl ? (
+            <div className="relative mt-4 overflow-hidden rounded-2xl border border-slate-200">
+              <img
+                alt="Live car evidence preview"
+                className="h-auto w-full object-cover"
+                src={carEvidence.imagePreviewUrl}
+              />
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(0deg,rgba(3,7,18,0.5)_0%,rgba(3,7,18,0)_38%)] p-4">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-white">
+                  Phoenix Workforce
+                </p>
+                <p className="mt-2 text-[11px] font-semibold leading-relaxed text-white">
+                  HR: {employeeHrId}
+                </p>
+                <p className="text-[11px] font-semibold leading-relaxed text-white">
+                  Captured: {formatEvidenceDateTime(carEvidence.capturedAt)}
+                </p>
+                <p className="text-[11px] font-semibold leading-relaxed text-white">
+                  GPS: {formatCoordinate(carEvidence.capturedLatitude)}, {formatCoordinate(carEvidence.capturedLongitude)}
+                </p>
+                <p className="text-[11px] font-semibold leading-relaxed text-white">
+                  Draft: {carEvidence.requestDraftId}
+                </p>
+                {carEvidence.requestId ? (
+                  <p className="text-[11px] font-semibold leading-relaxed text-white">
+                    Request ID: {carEvidence.requestId}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : carEvidence ? (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              Live evidence metadata is restored, but the image preview cannot be restored. Re-capture the photo before submitting if needed.
+            </div>
+          ) : null}
+        </Card>
+      ) : (
+        <TicketUploadCard
+          attachmentCount={ticketFiles.length}
+          onFilesSelected={(files) => setTicketFiles(files ? Array.from(files) : [])}
+          transportationType={transportationType}
+          visible
+        />
+      )}
 
       <EligibilityResultCard result={calculation} />
       <OutstationCostBreakdown result={calculation} />
@@ -825,7 +1124,10 @@ export function MobileOutstationWizard({
           <div className="mt-4 flex flex-wrap gap-3">
             <Button
               className="min-h-12 rounded-2xl bg-orange-500 px-5 text-white hover:bg-orange-600"
-              disabled={isSubmitting || calculation.eligibilityStatus === "not_eligible"}
+              disabled={
+                isSubmitting || calculation.eligibilityStatus === "not_eligible" ||
+                (transportationType === "car" && !hasCarEvidence)
+              }
               onClick={submit}
               type="button"
             >

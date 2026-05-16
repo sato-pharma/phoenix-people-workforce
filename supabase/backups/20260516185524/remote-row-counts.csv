@@ -1,0 +1,13 @@
+﻿
+> phoenix-workforce@0.1.0 db:remote
+> node scripts/supabase-remote.js db query with counts as (select 'leave_requests' as table_name, count(*)::bigint as row_count from public.leave_requests union all select 'leave_request_events', count(*)::bigint from public.leave_request_events union all select 'leave_notification_attempts', count(*)::bigint from public.leave_notification_attempts union all select 'employees', count(*)::bigint from public.employees union all select 'employee_resignations', count(*)::bigint from public.employee_resignations union all select 'app_auth_users', count(*)::bigint from public.app_auth_users union all select 'user_access_profiles', count(*)::bigint from public.user_access_profiles union all select 'payroll_resignation_candidates', count(*)::bigint from public.payroll_resignation_candidates) select * from counts order by table_name; -o csv
+
+table_name,row_count
+app_auth_users,129
+employee_resignations,8
+employees,149
+leave_notification_attempts,0
+leave_request_events,0
+leave_requests,7
+payroll_resignation_candidates,12
+user_access_profiles,129

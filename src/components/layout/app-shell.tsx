@@ -11,6 +11,7 @@ import {
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { DevPreviewCookieBridge } from "@/components/auth/dev-preview-cookie-bridge";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 
@@ -51,6 +52,13 @@ export async function AppShell({
 
   return (
     <div className={`min-h-screen text-[#0F172A] ${isAdminMode ? adminShellBackgroundClassName : "bg-[#F8FAFC]"}`}>
+      {access.source === "dev-header" ? (
+        <DevPreviewCookieBridge
+          hrId={access.hrId}
+          loginId={access.loginId}
+          role={access.role}
+        />
+      ) : null}
       <SessionSecurityGuard />
       <div className="flex min-h-screen">
         <Sidebar currentRole={access.role} navigationMode={resolvedNavigationMode} permissionLookup={permissionLookup} />

@@ -14,15 +14,17 @@ function isMedicalRepTitle(value: string | null | undefined) {
 export async function resolveEmployeeCoachingPortalMode(
   access: AccessContext,
 ): Promise<EmployeeCoachingPortalMode | null> {
+  const normalizedRole = normalizeRole(access.role);
   if (
-    access.role === "District Manager" ||
-    access.role === "Regional Sales Manager" ||
-    access.role === "National Sales Manager"
+    normalizedRole === "District Manager" ||
+    normalizedRole === "Regional Sales Manager" ||
+    normalizedRole === "National Sales Manager" ||
+    normalizedRole === "Training Manager"
   ) {
     return "team";
   }
 
-  if (access.role === "Medical Rep") {
+  if (normalizedRole === "Medical Rep") {
     return "self";
   }
 

@@ -8,7 +8,7 @@ import {
   EmployeePortalPageShell,
   EmployeePortalEmptyState,
 } from "@/components/employee-portal/enterprise-shell";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, normalizeRole, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getNsmTeamExpenses } from "@/lib/employee-portal/service";
 
@@ -23,7 +23,10 @@ export default async function TeamExpensesPage(
     redirect("/overview");
   }
 
-  if (!access.role.toLowerCase().includes("national sales manager")) {
+  const currentRole = normalizeRole(access.role);
+  const isSalesLineManager =
+    currentRole === "National Sales Manager" || currentRole === "Regional Sales Manager";
+  if (!isSalesLineManager) {
     redirect("/employee-portals");
   }
 

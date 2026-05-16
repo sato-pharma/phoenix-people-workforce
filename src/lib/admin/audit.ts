@@ -6,7 +6,6 @@ export type AuditModule =
   | "auth"
   | "coaching"
   | "governance"
-  | "leave"
   | "outstation"
   | "recruitment"
   | "sales";
@@ -16,7 +15,6 @@ export const AUDIT_MODULES: AuditModule[] = [
   "auth",
   "coaching",
   "governance",
-  "leave",
   "outstation",
   "recruitment",
   "sales",
@@ -26,7 +24,6 @@ export const AUDIT_SOURCE_TABLES = [
   "audit_logs",
   "coaching_report_audit_logs",
   "job_offer_audit_logs",
-  "leave_audit_logs",
   "outstation_location_audit_logs",
   "sales_audit_logs",
 ] as const;
@@ -195,27 +192,6 @@ function normalizeGenericAudit(row: RawRow): FullAuditLogRow {
   };
 }
 
-function normalizeLeaveAudit(row: RawRow): FullAuditLogRow {
-  const eventType = asString(row.event_type);
-  const metadata = asRecord(row.metadata);
-  return {
-    action: eventType,
-    actorHrId: asString(row.actor_hr_id),
-    actorLoginId: asString(row.actor_hr_id) ?? "system",
-    actorRole: asString(row.actor_role),
-    createdAt: String(row.created_at),
-    entityId: asString(row.request_id) ?? asString(row.employee_hr_id),
-    entityType: "leave_request",
-    id: `leave_audit_logs:${String(row.id)}`,
-    metadata,
-    module: "leave",
-    requestIp: null,
-    source: "leave_audit_logs",
-    status: statusFromAction(eventType),
-    summary: eventType ? `Leave ${eventType.replace(/[._]/g, " ")}` : "Leave audit event",
-  };
-}
-
 function normalizeSalesAudit(row: RawRow): FullAuditLogRow {
   const metadata = asRecord(row.metadata);
   return {
@@ -319,7 +295,6 @@ async function fetchRows(
   const sourceModule: Partial<Record<AuditSourceTable, AuditModule>> = {
     coaching_report_audit_logs: "coaching",
     job_offer_audit_logs: "recruitment",
-    leave_audit_logs: "leave",
     outstation_location_audit_logs: "outstation",
     sales_audit_logs: "sales",
   };
@@ -365,82 +340,75 @@ function matchesFilter(log: FullAuditLogRow, filter: AuditLogFilter) {
   return true;
 }
 
-export async function getAuditLogs(filter: AuditLogFilter = {}): Promise<AuditLogPage> {
-  const page = Math.max(1, filter.page ?? 1);
-  const pageSize = Math.min(200, Math.max(1, filter.pageSize ?? 50));
+export async function getAuditLogs(
+  filter: AuditLogFilter = {},
+): Promise<AuditLogPage> {
+  const supabase = getSupabaseAdmin();
+  const page = Number.isFinite(filter.page) && (filter.page ?? 0) > 0 ? Number(filter.page) : 1;
+  const pageSize = Number.isFinite(filter.pageSize) && (filter.pageSize ?? 0) > 0
+    ? Number(filter.pageSize)
+    : 50;
   const offset = (page - 1) * pageSize;
-  const sourceLimit = 5000;
 
-  const rows = await Promise.all([
-    fetchRows(
-      "audit_logs",
-      "id,actor_login_id,entity_id,entity_type,summary,old_values,new_values,created_at",
-      normalizeGenericAudit,
-      filter,
-      sourceLimit,
-    ),
-    fetchRows(
-      "leave_audit_logs",
-      "id,correlation_id,event_type,request_id,employee_hr_id,actor_hr_id,actor_role,metadata,created_at",
-      normalizeLeaveAudit,
-      filter,
-      sourceLimit,
-    ),
-    fetchRows(
-      "sales_audit_logs",
-      "id,action,batch_id,actor_username,actor_display_name,line,period,metadata,created_at",
-      normalizeSalesAudit,
-      filter,
-      sourceLimit,
-    ),
-    fetchRows(
-      "job_offer_audit_logs",
-      "id,offer_id,action,actor_type,actor_reference,details,created_at",
-      normalizeOfferAudit,
-      filter,
-      sourceLimit,
-    ),
-    fetchRows(
-      "coaching_report_audit_logs",
-      "id,report_id,actor_hr_id,action,old_values,new_values,metadata,created_at",
-      normalizeCoachingAudit,
-      filter,
-      sourceLimit,
-    ),
-    fetchRows(
-      "outstation_location_audit_logs",
-      "id,expense_request_id,employee_hr_id,validation_result,validation_reason,fraud_flags_json,suspicious_location_score,created_at",
-      normalizeOutstationAudit,
-      filter,
-      sourceLimit,
-    ),
+  let query = supabase
+    .from("v_unified_audit_logs")
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
+
+  // Apply Filters in SQL
+  if (filter.module) query = query.eq("module", filter.module);
+  if (filter.status) query = query.eq("status", filter.status);
+  if (filter.actor) query = query.ilike("actor_id", `%${filter.actor}%`);
+  if (filter.action) {
+    query = query.or(`summary.ilike.%${filter.action}%,entity_type.ilike.%${filter.action}%,entity_id.ilike.%${filter.action}%`);
+  }
+  if (filter.dateFrom) query = query.gte("created_at", filter.dateFrom);
+  if (filter.dateTo) query = query.lte("created_at", `${filter.dateTo}T23:59:59Z`);
+
+  const [{ data, count, error }, countsResult] = await Promise.all([
+    query,
+    supabase.rpc("fn_get_audit_module_counts"),
   ]);
 
-  const allLogs = rows
-    .flat()
-    .filter((log) => matchesFilter(log, filter))
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  if (error) throw error;
 
-  const moduleCounts = AUDIT_MODULES.reduce((acc, module) => {
-    acc[module] = allLogs.filter((log) => log.module === module).length;
-    return acc;
-  }, {} as Record<AuditModule, number>);
-  const sourceCounts = AUDIT_SOURCE_TABLES.reduce((acc, source) => {
-    const count = allLogs.filter((log) => log.source === source).length;
-    if (count > 0) acc[source] = count;
-    return acc;
-  }, {} as Partial<Record<AuditSourceTable, number>>);
-  const total = allLogs.length;
-  const logs = allLogs.slice(offset, offset + pageSize);
+  const logs: FullAuditLogRow[] = (data ?? []).map((row: any) => ({
+    action: row.action,
+    actorHrId: null,
+    actorLoginId: row.actor_id ?? "system",
+    actorRole: row.actor_type,
+    createdAt: row.created_at,
+    entityId: row.entity_id,
+    entityType: row.entity_type,
+    id: `${row.source}:${row.id}`,
+    metadata: row.metadata,
+    module: row.module as AuditModule,
+    requestIp: row.metadata?.ip ?? null,
+    source: row.source as AuditSourceTable,
+    status: row.status,
+    summary: row.summary,
+  }));
+
+  const moduleCounts = (countsResult.data as any) ?? {
+    access: 0,
+    auth: 0,
+    coaching: 0,
+    governance: 0,
+    outstation: 0,
+    recruitment: 0,
+    sales: 0,
+    total: count ?? 0,
+  };
 
   return {
     logs,
-    moduleCounts,
+    total: count ?? 0,
     page,
-    pageCount: Math.max(1, Math.ceil(total / pageSize)),
     pageSize,
-    sourceCounts,
-    total,
+    pageCount: Math.ceil((count ?? 0) / pageSize),
+    moduleCounts,
+    sourceCounts: {}, // Not implemented in view yet, can be added if needed
   };
 }
 

@@ -136,7 +136,7 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
       label: "Gross Salary",
       value: payslip.grossSalary,
     },
-  ].sort((left, right) => left.value - right.value || left.label.localeCompare(right.label));
+  ];
 
   return (
     <section id="payroll" className="space-y-4">
@@ -251,7 +251,7 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
                             <Badge variant={payrollStatusTone(row.status)}>{row.status.replace(/_/g, " ")}</Badge>
                           </td>
                           <td className="px-3 py-2.5">
-                            <Link href={`/api/payroll/${row.id}/payslips`} target="_blank">
+                            <Link href={`/api/payroll/${row.id}/payslips?employeeHrId=${encodeURIComponent(data.employee.hrId)}`} target="_blank">
                               <Button className="h-8 px-3 text-xs" variant="secondary">
                                 View payslip
                               </Button>

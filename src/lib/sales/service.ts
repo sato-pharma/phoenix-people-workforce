@@ -2,8 +2,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSalesPeopleLabels, linkSalesRecords, summarizeSalesLinkage } from "@/lib/sales/employees";
 import { formatUnits } from "@/lib/sales/format";
 import { isSalesOthersBucket } from "@/lib/sales/others";
+import { buildManagerHierarchyMap, collectHierarchyHrIdsFromMap, getSalesScope, normalizeHrId, normalizeHrIdForAccess, normalizeLineName, resolveEmployeeIdentityId, type AccessContext, type BusinessScope } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { getSalesScope, normalizeHrId, normalizeLineName, resolveEmployeeIdentityId, type AccessContext, type BusinessScope } from "@/lib/auth/permissions";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
 import {
   buildSalesOwnershipContext,
@@ -59,35 +59,6 @@ function normalizeFilterToken(value: unknown) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
-function buildManagerMap(directory: Awaited<ReturnType<typeof getEmployeeDirectory>>) {
-  const managerMap = new Map<string, string[]>();
-  directory.employees.forEach((employee) => {
-    const managerId = normalizeHrId(employee.managerHrId);
-    const employeeId = normalizeHrId(employee.hrId);
-    if (!employeeId || !managerId) return;
-    const list = managerMap.get(managerId) ?? [];
-    list.push(employeeId);
-    managerMap.set(managerId, list);
-  });
-  return managerMap;
-}
-
-function collectHierarchy(managerMap: Map<string, string[]>, rootHrId: string) {
-  const allowedHrIds = new Set<string>();
-  const queue: string[] = [rootHrId];
-  while (queue.length > 0) {
-    const managerId = queue.shift();
-    if (!managerId) continue;
-    for (const subordinateId of managerMap.get(managerId) ?? []) {
-      if (!allowedHrIds.has(subordinateId)) {
-        allowedHrIds.add(subordinateId);
-        queue.push(subordinateId);
-      }
-    }
-  }
-  return allowedHrIds;
-}
-
 async function getPersistedSalesScopeOverride(accessContext: AccessContext): Promise<BusinessScope | null> {
   if (!accessContext.loginId) return null;
 
@@ -128,42 +99,69 @@ async function resolveSalesAccessFilter(accessContext?: AccessContext | null): P
     return { all: false, allowedHrIds: new Set() };
   }
 
-  const directory = await getEmployeeDirectory();
-  const directoryByHrId = new Map(
-    directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]),
-  );
-  const viewer = currentHrId ? directoryByHrId.get(currentHrId) : undefined;
   if (salesScope === "SELF") {
     return { all: false, allowedHrIds: new Set([currentHrId]) };
   }
 
-  const managerMap = buildManagerMap(directory);
+  const supabase = getSupabaseAdmin();
+
   if (salesScope === "TEAM") {
+    const directory = await getEmployeeDirectory({ pageSize: -1 });
+    const managerMap = buildManagerHierarchyMap(directory.employees);
+    const canonicalViewerId = normalizeHrIdForAccess(currentHrId);
+    const directReports = canonicalViewerId ? managerMap.get(canonicalViewerId) ?? [] : [];
+    const allowedHrIds = new Set<string>();
+
+    directReports.forEach((hrId) => {
+      const normalized = normalizeHrId(hrId);
+      if (normalized) allowedHrIds.add(normalized);
+    });
     return {
       all: false,
-      allowedHrIds: new Set(managerMap.get(currentHrId) ?? []),
+      allowedHrIds,
       includeManagerOwnedHrId: currentHrId,
     };
   }
 
   if (salesScope === "HIERARCHY") {
+    const directory = await getEmployeeDirectory({ pageSize: -1 });
+    const managerMap = buildManagerHierarchyMap(directory.employees);
+    const canonicalViewerId = normalizeHrIdForAccess(currentHrId);
+    const hierarchyHrIds = canonicalViewerId
+      ? collectHierarchyHrIdsFromMap(managerMap, canonicalViewerId, { includeSelf: true })
+      : new Set<string>();
+    const allowedHrIds = new Set<string>();
+
+    hierarchyHrIds.forEach((hrId) => {
+      const normalized = normalizeHrId(hrId);
+      if (normalized) allowedHrIds.add(normalized);
+    });
     return {
       all: false,
-      allowedHrIds: collectHierarchy(managerMap, currentHrId),
+      allowedHrIds,
       includeManagerOwnedHrId: currentHrId,
     };
   }
 
-  if (salesScope === "LINE" && viewer?.lineName) {
-    const targetLine = normalizeLineName(viewer.lineName);
-    const allowedHrIds = new Set<string>();
-    directory.employees.forEach((employee) => {
-      if (normalizeLineName(employee.lineName) === targetLine) {
-        const employeeId = normalizeHrId(employee.hrId);
-        if (employeeId) allowedHrIds.add(employeeId);
-      }
-    });
-    return { all: false, allowedHrIds, allowedLine: targetLine };
+  if (salesScope === "LINE") {
+    const directory = await getEmployeeDirectory({ pageSize: -1 });
+    const viewer = directory.employees.find(
+      (employee) => normalizeHrIdForAccess(employee.hrId) === normalizeHrIdForAccess(currentHrId),
+    );
+    const lineName = viewer?.lineName ?? null;
+    if (lineName) {
+      return { all: false, allowedHrIds: new Set(), allowedLine: normalizeLineName(lineName) };
+    }
+
+    const { data: authViewer } = await supabase
+      .from("app_auth_users")
+      .select("line")
+      .eq("hr_id", currentHrId)
+      .maybeSingle();
+    const fallbackLine = String((authViewer as { line?: string | null } | null)?.line ?? "").trim();
+    if (fallbackLine) {
+      return { all: false, allowedHrIds: new Set(), allowedLine: normalizeLineName(fallbackLine) };
+    }
   }
 
   return { all: false, allowedHrIds: new Set() };

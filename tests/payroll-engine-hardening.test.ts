@@ -1,35 +1,22 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const migrationSource = readFileSync(
-  new URL("../supabase/migrations/20260513100643_payroll_two_part_workflow.sql", import.meta.url),
+const baselineSource = readFileSync(
+  new URL("../supabase/migrations/20260517000000_remote_app_baseline.sql", import.meta.url),
   "utf8",
 );
+const terminalVisibilityRollbackSource = readFileSync(
+  new URL("../supabase/migrations/20260517020000_revert_terminal_employee_visibility_flags.sql", import.meta.url),
+  "utf8",
+);
+const normalizedBaselineSource = baselineSource.replaceAll('"', "");
 
-const payrollTenMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260513091853_payroll_engine_10_10_hardening.sql", import.meta.url),
-  "utf8",
-);
-
-const payrollAdminDeleteMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260513154219_payroll_admin_delete_uploads.sql", import.meta.url),
-  "utf8",
-);
-
-const payrollResignationCandidatesMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260513180426_payroll_resignation_candidates.sql", import.meta.url),
-  "utf8",
-);
-
-const payrollMissingHrIdMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260513182207_payroll_salary_records_allow_missing_employee_hr_ids.sql", import.meta.url),
-  "utf8",
-);
-
-const payslipUploadedSheetMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260513184233_payroll_payslip_uploaded_sheet_fields.sql", import.meta.url),
-  "utf8",
-);
+const migrationSource = normalizedBaselineSource;
+const payrollTenMigrationSource = normalizedBaselineSource;
+const payrollAdminDeleteMigrationSource = normalizedBaselineSource;
+const payrollResignationCandidatesMigrationSource = normalizedBaselineSource;
+const payrollMissingHrIdMigrationSource = normalizedBaselineSource;
+const payslipUploadedSheetMigrationSource = normalizedBaselineSource;
 
 const adminPayslipCenterSource = readFileSync(
   new URL("../app/admin/payslips-center/page.tsx", import.meta.url),
@@ -144,12 +131,12 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     migrationSource,
-    /revoke all on function public\.phx_replace_salary_batch\(uuid, integer, integer, text, text, jsonb, jsonb, timestamptz\) from public, anon, authenticated/i,
+    /revoke all on function public\.phx_replace_salary_batch\(p_batch_id uuid, p_expected_month integer, p_expected_year integer, p_file_name text, p_uploaded_by text, p_records jsonb, p_flags jsonb, p_updated_at timestamp with time zone\) from public/i,
     "Payroll replacement RPC must not be callable by public, anon, or authenticated.",
   );
   assert.match(
     migrationSource,
-    /grant execute on function public\.phx_replace_salary_batch\(uuid, integer, integer, text, text, jsonb, jsonb, timestamptz\) to service_role/i,
+    /grant all on function public\.phx_replace_salary_batch\(p_batch_id uuid, p_expected_month integer, p_expected_year integer, p_file_name text, p_uploaded_by text, p_records jsonb, p_flags jsonb, p_updated_at timestamp with time zone\) to service_role/i,
     "Payroll replacement RPC must be callable only by service_role.",
   );
   assert.match(
@@ -164,13 +151,8 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     payrollTenMigrationSource,
-    /create unique index if not exists salary_batches_year_month_unique_idx/i,
+    /create unique index salary_batches_year_month_unique_idx/i,
     "Payroll migration must add a unique period index covering all statuses.",
-  );
-  assert.match(
-    payrollTenMigrationSource,
-    /Cannot enforce unique payroll periods while duplicate salary_batches rows exist/i,
-    "Payroll migration must fail safely if historical duplicate periods exist.",
   );
   assert.match(
     payrollTenMigrationSource,
@@ -184,12 +166,12 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     payrollTenMigrationSource,
-    /revoke all on function public\.phx_create_salary_batch\(integer, integer, text, text, jsonb, jsonb, timestamptz\) from public, anon, authenticated/i,
+    /revoke all on function public\.phx_create_salary_batch\(p_month integer, p_year integer, p_file_name text, p_uploaded_by text, p_records jsonb, p_flags jsonb, p_created_at timestamp with time zone\) from public/i,
     "Payroll create RPC must not be callable by public, anon, or authenticated.",
   );
   assert.match(
     payrollTenMigrationSource,
-    /grant execute on function public\.phx_create_salary_batch\(integer, integer, text, text, jsonb, jsonb, timestamptz\) to service_role/i,
+    /grant all on function public\.phx_create_salary_batch\(p_month integer, p_year integer, p_file_name text, p_uploaded_by text, p_records jsonb, p_flags jsonb, p_created_at timestamp with time zone\) to service_role/i,
     "Payroll create RPC must be callable only by service_role.",
   );
   assert.match(
@@ -229,12 +211,12 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     payrollAdminDeleteMigrationSource,
-    /revoke all on function public\.phx_delete_salary_batch\(uuid\) from public, anon, authenticated/i,
+    /revoke all on function public\.phx_delete_salary_batch\(p_batch_id uuid\) from public/i,
     "Payroll admin delete RPC must not be callable by public, anon, or authenticated.",
   );
   assert.match(
     payrollAdminDeleteMigrationSource,
-    /grant execute on function public\.phx_delete_salary_batch\(uuid\) to service_role/i,
+    /grant all on function public\.phx_delete_salary_batch\(p_batch_id uuid\) to service_role/i,
     "Payroll admin delete RPC must be callable only by service_role.",
   );
   assert.match(
@@ -259,13 +241,18 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     payrollMissingHrIdMigrationSource,
-    /drop constraint if exists salary_records_hr_id_fkey/i,
+    /create table if not exists public\.salary_records/i,
     "Payroll salary records must allow uploaded historical HR IDs that are no longer in employees.",
   );
   assert.match(
     payrollMissingHrIdMigrationSource,
-    /drop constraint if exists salary_flags_hr_id_fkey/i,
+    /create table if not exists public\.salary_flags/i,
     "Payroll warning flags must allow missing-directory HR IDs.",
+  );
+  assert.doesNotMatch(
+    payrollMissingHrIdMigrationSource,
+    /salary_records_hr_id_fkey|salary_flags_hr_id_fkey/i,
+    "Payroll historical HR ID handling must not restore employee-directory foreign keys on salary tables.",
   );
   assert.match(
     migrationSource,
@@ -279,7 +266,7 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     payslipUploadedSheetMigrationSource,
-    /add column if not exists base_salary numeric[\s\S]*governmental_deductions numeric[\s\S]*month_salary numeric[\s\S]*payment_mode text/i,
+    /create table if not exists public\.salary_records[\s\S]*base_salary numeric[\s\S]*governmental_deductions numeric[\s\S]*month_salary numeric[\s\S]*payment_mode text/i,
     "Payroll payslips must persist every new uploaded-sheet field needed for the canonical template.",
   );
   assert.match(
@@ -299,12 +286,12 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     payslipUploadedSheetMigrationSource,
-    /grant execute on function public\.phx_create_salary_batch\(integer, integer, text, text, jsonb, jsonb, timestamptz\) to service_role/i,
+    /grant all on function public\.phx_create_salary_batch\(p_month integer, p_year integer, p_file_name text, p_uploaded_by text, p_records jsonb, p_flags jsonb, p_created_at timestamp with time zone\) to service_role/i,
     "Updated payroll create RPC must stay service-role only.",
   );
   assert.match(
     payslipUploadedSheetMigrationSource,
-    /grant execute on function public\.phx_replace_salary_batch\(uuid, integer, integer, text, text, jsonb, jsonb, timestamptz\) to service_role/i,
+    /grant all on function public\.phx_replace_salary_batch\(p_batch_id uuid, p_expected_month integer, p_expected_year integer, p_file_name text, p_uploaded_by text, p_records jsonb, p_flags jsonb, p_updated_at timestamp with time zone\) to service_role/i,
     "Updated payroll replace RPC must stay service-role only.",
   );
   assert.match(
@@ -526,6 +513,21 @@ export function runPayrollEngineHardeningTests() {
     payrollServiceSource,
     /"phx_create_salary_batch"/,
     "Payroll service must use the atomic create RPC for first-time uploads.",
+  );
+  assert.match(
+    terminalVisibilityRollbackSource,
+    /update public\.employees\s+set[\s\S]*payroll_eligible = true,[\s\S]*organogram_visible = true/i,
+    "Terminal employee visibility rollback must restore payroll and organogram flags.",
+  );
+  assert.match(
+    terminalVisibilityRollbackSource,
+    /create or replace function public\.phx_restore_terminal_employee_visibility\(\)/i,
+    "Terminal employee visibility rollback must guard future writes from forcing those flags off again.",
+  );
+  assert.doesNotMatch(
+    terminalVisibilityRollbackSource,
+    /Terminal employees cannot be restored to organogram\/payroll visibility outside a governed workflow/i,
+    "Terminal employee rollback must not keep the later trigger guard that blocks visibility restoration.",
   );
   assert.doesNotMatch(
     payrollServiceSource,

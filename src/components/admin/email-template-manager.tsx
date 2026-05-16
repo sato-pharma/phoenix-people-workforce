@@ -22,7 +22,6 @@ import type {
 } from "@/lib/email-templates/service";
 import {
   EMAIL_RECIPIENT_ROLE_LABELS,
-  EMAIL_RECIPIENT_ROLES,
   EMAIL_TEMPLATE_KEYS,
   EMAIL_TEMPLATE_LABELS,
   TEMPLATE_VARIABLES,
@@ -474,7 +473,6 @@ function ContentTab({
 type RecipientSlot = "to" | "cc" | "bcc";
 
 function RoleCheckbox({
-  role,
   label,
   toChecked,
   ccChecked,
@@ -482,7 +480,6 @@ function RoleCheckbox({
   onToggle,
   disabled,
 }: {
-  role: EmailRecipientRole;
   label: string;
   toChecked: boolean;
   ccChecked: boolean;
@@ -651,7 +648,6 @@ function RecipientsTab({
                   key={role}
                   label={EMAIL_RECIPIENT_ROLE_LABELS[role]}
                   onToggle={(slot, checked) => toggleRole(role, slot, checked)}
-                  role={role}
                   toChecked={form.toRoles.includes(role)}
                 />
               ))}
@@ -782,11 +778,6 @@ export function EmailTemplateManager({ initialTemplates }: EmailTemplateManagerP
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isPending, startTransition] = useTransition();
-
-  const selectedTemplate = useMemo(
-    () => templates.find((t) => t.templateKey === selectedKey) ?? null,
-    [templates, selectedKey]
-  );
 
   function handleSelectTemplate(key: string) {
     if (isDirty) {

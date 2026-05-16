@@ -1,8 +1,7 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 import {
   assertPermission,
-  canReadEmployeeDirectory,
   filterEmployeeDirectoryForAccess,
 } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -54,19 +53,54 @@ function employeeApiError(error: unknown) {
   };
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const search = searchParams.get("search") ?? undefined;
+  const lineId = searchParams.get("lineId") ? Number(searchParams.get("lineId")) : undefined;
+  const areaId = searchParams.get("areaId") ? Number(searchParams.get("areaId")) : undefined;
+  const departmentId = searchParams.get("departmentId") ? Number(searchParams.get("departmentId")) : undefined;
+  const teamId = searchParams.get("teamId") ? Number(searchParams.get("teamId")) : undefined;
+  const positionId = searchParams.get("positionId") ? Number(searchParams.get("positionId")) : undefined;
+  const status = searchParams.get("status") ?? "all";
+  const region = searchParams.get("region") ?? undefined;
+  const hasBankAccount = searchParams.get("hasBankAccount") ?? undefined;
+  const medicalInsuranceStatus = searchParams.get("medicalInsuranceStatus") ?? undefined;
+  const socialInsuranceStatus = searchParams.get("socialInsuranceStatus") ?? undefined;
+  const salaryPaymentMode = searchParams.get("salaryPaymentMode") ?? undefined;
+  const page = searchParams.get("page") ? Number(searchParams.get("page")) : 1;
+  const pageSize = searchParams.get("pageSize") ? Number(searchParams.get("pageSize")) : 50;
+
   try {
     const access = await resolveAccessContext(request);
-    if (!(await canReadEmployeeDirectory(access))) {
-      await assertPermission(access, "employees", "read");
-    }
-
-    return NextResponse.json(
-      filterEmployeeDirectoryForAccess(await getEmployeeDirectory(), access),
+    await assertPermission(access, "employees", "read");
+      const data = await getEmployeeDirectory(
+      {
+        search,
+        lineId,
+        areaId,
+        departmentId,
+        teamId,
+        positionId,
+        status,
+        region,
+        hasBankAccount,
+        medicalInsuranceStatus,
+        socialInsuranceStatus,
+        salaryPaymentMode,
+        page,
+        pageSize,
+      },
+      access
     );
+
+    return NextResponse.json(data);
   } catch (error) {
-    const { message, status } = employeeApiError(error);
-    return NextResponse.json({ error: "employee_load_failed", message }, { status });
+    console.error("Employee directory API failed:", error);
+    const { message, status: responseStatus } = employeeApiError(error);
+    return NextResponse.json(
+      { error: "Failed to load employee directory.", message },
+      { status: responseStatus },
+    );
   }
 }
 
@@ -89,7 +123,7 @@ export async function POST(request: Request) {
     await upsertEmployee(payload.employee);
 
     return NextResponse.json(
-      filterEmployeeDirectoryForAccess(await getEmployeeDirectory(), access),
+      filterEmployeeDirectoryForAccess(await getEmployeeDirectory({ status: "all" }), access),
     );
   } catch (error) {
     const { message, status } = employeeApiError(error);

@@ -5,6 +5,7 @@ import { Award, BarChart3, ShieldCheck, Target, TrendingUp, Users } from "lucide
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { Card } from "@/components/ui/card";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { normalizeRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
@@ -50,7 +51,11 @@ export default async function MedRepsPerformancePage({
     redirect("/overview");
   }
 
-  if (!access.role.toLowerCase().includes("national sales manager")) {
+  const currentRole = normalizeRole(access.role);
+  const isSalesLineManager =
+    currentRole === "National Sales Manager" || currentRole === "Regional Sales Manager";
+
+  if (!isSalesLineManager) {
     redirect("/employee-portals");
   }
 
@@ -73,11 +78,23 @@ export default async function MedRepsPerformancePage({
   const validPeriod = requestedPeriod && periods.includes(requestedPeriod) ? requestedPeriod : null;
   const eligibleCount = members.filter((member) => member.achievementPercent >= 90).length;
 
-  const groupsMap = new Map<string, { managerName: string; members: typeof members }>();
+  type DsmGroup = {
+    managerId: string;
+    managerName: string;
+    members: typeof members;
+  };
+  const groupsMap = new Map<string, DsmGroup>();
   members.forEach((member) => {
     const managerId = member.managerHrId || "unassigned";
+    const isViewerManagedBucket =
+      isSalesLineManager &&
+      Boolean(access.hrId) &&
+      String(member.managerHrId ?? "").trim().toLowerCase() === String(access.hrId ?? "").trim().toLowerCase();
     const group = groupsMap.get(managerId) ?? {
-      managerName: member.managerName || "Unassigned District",
+      managerId,
+      managerName: isViewerManagedBucket
+        ? "Direct Reports to Line Manager"
+        : (member.managerName || "Unassigned District"),
       members: [],
     };
     group.members.push(member);
@@ -186,13 +203,13 @@ export default async function MedRepsPerformancePage({
         </div>
       </section>
 
-      {dsmGroups.map((group) => {
+      {dsmGroups.map((group, index) => {
         const groupTotalSales = group.members.reduce((sum, member) => sum + member.totalSales, 0);
         const groupTotalTarget = group.members.reduce((sum, member) => sum + member.totalTarget, 0);
         const groupAchievement = groupTotalTarget > 0 ? (groupTotalSales / groupTotalTarget) * 100 : 0;
 
         return (
-          <section className="space-y-5" key={group.managerName}>
+          <section className="space-y-5" key={`${group.managerId}-${index}`}>
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-[26px] border border-orange-100 bg-white/92 px-5 py-4 shadow-[0_16px_42px_rgba(15,23,42,0.06)]">
               <div className="flex items-center gap-3">
                 <div className="h-12 w-1.5 rounded-full bg-orange-500 shadow-[0_0_24px_rgba(249,115,22,0.45)]" />

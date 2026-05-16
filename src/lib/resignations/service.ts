@@ -818,6 +818,16 @@ async function completeEmployeeLifecycleForResignation(
     throw new Error("Unable to finalize employee resignation lifecycle.");
   }
 
+  const { data: verified, error: verifyError } = await supabase
+    .from("employees")
+    .select("hr_id,employment_status")
+    .eq("hr_id", employeeHrId)
+    .single();
+
+  if (!verifyError && verified && verified.employment_status !== "resigned") {
+    throw new Error(`[CRITICAL] Employee ${employeeHrId} update failed. Status is ${verified.employment_status}, not resigned`);
+  }
+
   await deactivateAccessForEmployeeLifecycle({
     actorLoginId: actor,
     employeeHrId,

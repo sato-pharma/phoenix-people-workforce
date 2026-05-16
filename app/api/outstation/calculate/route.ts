@@ -35,6 +35,10 @@ export async function POST(request: Request) {
       notes: typeof body.notes === "string" ? body.notes : undefined,
       offlineCaptured: Boolean(body.offlineCaptured),
       returnTicketAmount: Number(body.returnTicketAmount ?? 0),
+      carEvidenceMetadata:
+        body.carEvidenceMetadata && typeof body.carEvidenceMetadata === "object"
+          ? body.carEvidenceMetadata
+          : undefined,
       transportationType: String(body.transportationType ?? "car") as OutstationTransportationType,
       tripEndDate: String(body.tripEndDate ?? ""),
       tripStartDate: String(body.tripStartDate ?? ""),

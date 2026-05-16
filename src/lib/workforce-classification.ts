@@ -267,6 +267,10 @@ export function classifyEmployeeNode(employee: EmployeeNodeInput): EmployeeNodeC
   const explicit = explicitNodeType(employee);
   const payrollEligible = getBoolean(employee, ["payrollEligible", "payroll_eligible"]);
   const organogramVisible = getBoolean(employee, ["organogramVisible", "organogram_visible"]);
+  const visibleInRuntimeSurfaces = (payrollEligible ?? true) && (organogramVisible ?? true);
+  const isExplicitHistoricalStatus = textContainsAny(status, ["historical", "historical_payroll_record", "payroll record"]);
+  const isTerminalLifecycleStatus =
+    ["inactive", "resigned", "terminated", "left", "suspended"].some((token) => normalize(status).includes(token));
 
   let nodeType: EmployeeNodeType = explicit ?? "active_employee";
   if (!explicit) {
@@ -278,10 +282,7 @@ export function classifyEmployeeNode(employee: EmployeeNodeInput): EmployeeNodeC
       nodeType = "vacancy_node";
     } else if (textContainsAny(combined, ["system placeholder", "placeholder", "system node"])) {
       nodeType = "system_placeholder";
-    } else if (
-      textContainsAny(status, ["historical", "historical_payroll_record", "payroll record"]) ||
-      ["inactive", "resigned", "terminated", "left", "suspended"].some((token) => normalize(status).includes(token))
-    ) {
+    } else if (isExplicitHistoricalStatus || isTerminalLifecycleStatus) {
       nodeType = "historical_record";
     }
   }
@@ -301,16 +302,19 @@ export function classifyEmployeeNode(employee: EmployeeNodeInput): EmployeeNodeC
   }
 
   if (nodeType === "historical_record") {
+    const visibleHistoricalLifecycleRecord = isTerminalLifecycleStatus && !isExplicitHistoricalStatus && visibleInRuntimeSurfaces;
     return {
       node_type: nodeType,
       eligible_for_login: false,
-      eligible_for_headcount: false,
-      eligible_for_payroll_portal: false,
+      eligible_for_headcount: visibleHistoricalLifecycleRecord,
+      eligible_for_payroll_portal: visibleHistoricalLifecycleRecord ? (payrollEligible ?? true) : false,
       eligible_for_sales_personal_dashboard: false,
       eligible_for_sales_aggregation: approvedForAggregation(employee),
-      eligible_for_organogram: organogramVisible ?? false,
+      eligible_for_organogram: visibleHistoricalLifecycleRecord ? (organogramVisible ?? true) : false,
       eligible_for_vacancy_dashboard: false,
-      reason: "Historical or inactive payroll/person record; do not create login access.",
+      reason: visibleHistoricalLifecycleRecord
+        ? "Historical or inactive person record remains visible because runtime visibility flags are enabled."
+        : "Historical or inactive payroll/person record; do not create login access.",
     };
   }
 

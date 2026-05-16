@@ -110,6 +110,10 @@ function asIso(value: string | null | undefined) {
   return value ? new Date(value).toISOString() : null;
 }
 
+function normalizeLifecycleStatus(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 function mapEvaluation(row: ProbationEvaluationDbRow): ProbationWorkflowRecord {
   return {
     areaName: row.area_name,
@@ -402,7 +406,40 @@ async function applyDecisionSideEffects(record: ProbationWorkflowRecord) {
   const employeeUpdates: Record<string, unknown> = { updated_at: now };
   const probationUpdates: Record<string, unknown> = { updated_at: now };
 
+  const { data: employeeRow, error: employeeError } = await supabase
+    .from("employees")
+    .select("employment_status")
+    .eq("hr_id", record.employeeHrId)
+    .maybeSingle();
+  if (employeeError) throw employeeError;
+
+  const currentLifecycleStatus = normalizeLifecycleStatus(
+    (employeeRow as { employment_status?: string | null } | null)?.employment_status,
+  );
+
   if (record.decision === "pass") {
+    if (currentLifecycleStatus === "resigned" || currentLifecycleStatus === "terminated") {
+      throw new Error("Probation workflow cannot reactivate resigned or terminated employees.");
+    }
+
+    const { data: resignationRows, error: resignationError } = await supabase
+      .from("employee_resignations")
+      .select("status,exit_status")
+      .eq("employee_hr_id", record.employeeHrId)
+      .limit(10);
+    if (resignationError && !isProbationSchemaMissing(resignationError)) throw resignationError;
+
+    const hasTerminalResignation = ((resignationRows ?? []) as Array<{ exit_status?: string | null; status?: string | null }>)
+      .some((row) => {
+        const status = normalizeLifecycleStatus(row.status);
+        const exitStatus = normalizeLifecycleStatus(row.exit_status);
+        return status === "approved" || status === "completed" || exitStatus === "approved" || exitStatus === "completed";
+      });
+
+    if (hasTerminalResignation) {
+      throw new Error("Probation workflow cannot reactivate an employee with an approved or completed resignation workflow.");
+    }
+
     employeeUpdates.employment_status = "active";
     probationUpdates.status = "passed";
   } else if (record.decision === "extend") {

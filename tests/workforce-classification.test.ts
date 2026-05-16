@@ -196,6 +196,19 @@ export function runWorkforceClassificationTests() {
   assert.equal(historical.eligible_for_headcount, false);
   assert.equal(shouldFlagMissingAccessForEmployeeNode({ hrId: "H-1", employmentStatus: "historical_payroll_record" }, { hasAuthUser: false, hasAccessProfile: false }), false);
 
+  const visibleInactive = classifyEmployeeNode({
+    hrId: "I-1",
+    fullName: "Inactive But Visible",
+    employmentStatus: "inactive",
+    payrollEligible: true,
+    organogramVisible: true,
+  });
+  assert.equal(visibleInactive.node_type, "historical_record");
+  assert.equal(visibleInactive.eligible_for_login, false);
+  assert.equal(visibleInactive.eligible_for_headcount, true);
+  assert.equal(visibleInactive.eligible_for_payroll_portal, true);
+  assert.equal(visibleInactive.eligible_for_organogram, true);
+
   const system = classifyEmployeeNode({
     hrId: "SYS-1",
     fullName: "System Placeholder",
@@ -244,4 +257,3 @@ export function runWorkforceClassificationTests() {
     null,
   );
 }
-

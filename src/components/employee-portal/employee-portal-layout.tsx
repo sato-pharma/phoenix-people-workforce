@@ -57,7 +57,6 @@ function buildEmployeePortalSections({
   showMedRepsPerformanceTab = false,
   showDsmsPerformanceTab = false,
   showTeamExpensesTab = false,
-  showLeaveApprovalsTab = false,
   showVacanciesTab = false,
   showProbationTab = false,
   showOrganogramTab = false,
@@ -66,6 +65,9 @@ function buildEmployeePortalSections({
   showTrainingManagerCreateCoachingTab = false,
   showTrainingManagerDashboardTab = false,
   showTrainingManagerFieldCoachingTab = false,
+  showSupportTab = true,
+  showVacationRequestTab = false,
+  showVacationReportTab = false,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
     {
@@ -109,16 +111,20 @@ function buildEmployeePortalSections({
       title: "Actions",
       items: [
         ...(showExpenseActionTab ? [{ href: "/employee/outstation/new", label: "Expense", icon: ReceiptText }] : []),
-        { href: "/employee-portals/leave?section=request", label: "Vacation Request", icon: CalendarClock },
-        { href: "/employee-portals/leave?section=reports", label: "Vacation Reports", icon: CalendarClock },
-        ...(showLeaveApprovalsTab ? [{ href: "/employee-portals/leave-approvals", label: "Leave Approvals", icon: CalendarClock }] : []),
+      ],
+    },
+    {
+      title: "Leave",
+      items: [
+        ...(showVacationRequestTab ? [{ href: "/employee-portals/vacation-request", label: "Vacation Request", icon: CalendarClock }] : []),
+        ...(showVacationReportTab ? [{ href: "/employee-portals/vacation-report", label: "Vacation Report", icon: ReceiptText }] : []),
       ],
     },
     {
       title: "Support",
-      items: [
-        { href: "/employee-portals/contact-hr-support", label: "Request Support", icon: HelpCircle },
-      ],
+      items: showSupportTab
+        ? [{ href: "/employee-portals/contact-hr-support", label: "Request Support", icon: HelpCircle }]
+        : [],
     },
   ].filter((section) => section.items.length > 0);
 }

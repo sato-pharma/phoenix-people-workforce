@@ -3,6 +3,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import {
+  buildManagerHierarchyMap,
+  collectHierarchyHrIdsFromMap,
   getPayrollScope,
   normalizeHrId,
   normalizeHrIdForAccess,
@@ -280,38 +282,6 @@ type PayrollAccessFilter = {
   allowedHrIds: Set<string>;
 };
 
-function buildManagerMap(directory: Awaited<ReturnType<typeof getEmployeeDirectory>>) {
-  const managerMap = new Map<string, string[]>();
-  directory.employees.forEach((employee) => {
-    const managerId = normalizeHrId(employee.managerHrId);
-    const employeeId = normalizeHrId(employee.hrId);
-    if (!managerId || !employeeId) return;
-    const list = managerMap.get(managerId) ?? [];
-    list.push(employeeId);
-    managerMap.set(managerId, list);
-  });
-  return managerMap;
-}
-
-function collectPayrollHierarchy(
-  managerMap: Map<string, string[]>,
-  rootHrId: string,
-) {
-  const allowedHrIds = new Set<string>();
-  const queue: string[] = [rootHrId];
-  while (queue.length > 0) {
-    const managerId = queue.shift();
-    if (!managerId) continue;
-    for (const subordinateId of managerMap.get(managerId) ?? []) {
-      if (!allowedHrIds.has(subordinateId)) {
-        allowedHrIds.add(subordinateId);
-        queue.push(subordinateId);
-      }
-    }
-  }
-  return allowedHrIds;
-}
-
 function normalizePayrollAllowedIds(values: readonly string[]) {
   const normalized = new Set<string>();
   values.forEach((value) => {
@@ -384,29 +354,30 @@ async function resolvePayrollAccessFilter(
     return { all: false, allowedHrIds: new Set() };
   }
 
-  const directory = await getEmployeeDirectory();
-  const directoryByHrId = new Map(
-    directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]),
-  );
+  const directory = await getEmployeeDirectory({ pageSize: -1 });
+  const canonicalCurrentHrId = normalizeHrIdForAccess(currentHrId);
+  const managerMap = buildManagerHierarchyMap(directory.employees);
 
   if (payrollScope === "SELF") {
     return { all: false, allowedHrIds: new Set([currentHrId]) };
   }
 
-  const managerMap = buildManagerMap(directory);
   if (payrollScope === "TEAM") {
-    const directReports = managerMap.get(currentHrId) ?? [];
-    const allowed = normalizePayrollAllowedIds([...directReports, currentHrId]);
+    const directReports = canonicalCurrentHrId ? managerMap.get(canonicalCurrentHrId) ?? [] : [];
+    const allowed = normalizePayrollAllowedIds([...directReports, currentHrId, canonicalCurrentHrId ?? ""]);
     return { all: false, allowedHrIds: allowed };
   }
 
   if (payrollScope === "HIERARCHY") {
-    const hierarchy = collectPayrollHierarchy(managerMap, currentHrId);
-    hierarchy.add(currentHrId);
-    return { all: false, allowedHrIds: hierarchy };
+    const hierarchy = canonicalCurrentHrId
+      ? collectHierarchyHrIdsFromMap(managerMap, canonicalCurrentHrId, { includeSelf: true })
+      : new Set([currentHrId]);
+    return { all: false, allowedHrIds: normalizePayrollAllowedIds(Array.from(hierarchy)) };
   }
 
-  const viewer = directoryByHrId.get(currentHrId);
+  const viewer = canonicalCurrentHrId
+    ? directory.employees.find((employee) => normalizeHrIdForAccess(employee.hrId) === canonicalCurrentHrId)
+    : null;
   if (payrollScope === "LINE") {
     const allowed = getPayrollAllowedHrIdsForLine(directory, viewer?.lineName ?? null);
     allowed.add(currentHrId);
@@ -533,37 +504,40 @@ async function withHireDates(records: SalaryRecord[]) {
     return records;
   }
 
+  const hrIds = Array.from(
+    new Set(
+      records
+        .flatMap((r) => [r.hrId, r.employeeCode])
+        .map((id) => normalizeHrId(id))
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+
+  if (hrIds.length === 0) return records;
+
   try {
-    const directory = await getEmployeeDirectory();
-    const hireDateByHrId = new Map<string, string | null>();
+    const supabase = getSupabaseAdmin();
+    // Fetch ONLY the hire dates for the HR IDs in this batch
+    const { data: employees, error } = await supabase
+      .from("employees")
+      .select("hr_id,hire_date")
+      .in("hr_id", hrIds);
 
-    directory.employees.forEach((employee) => {
-      const keys = [
-        employee.hrId,
-        normalizeHrId(employee.hrId),
-        normalizeHrIdForAccess(employee.hrId),
-      ].filter(isNonEmptyString);
+    if (error) throw error;
 
-      keys.forEach((key) => {
-        hireDateByHrId.set(key, employee.hireDate);
-      });
-    });
+    const hireDateByHrId = new Map<string, string | null>(
+      employees.map((e) => [normalizeHrId(e.hr_id) as string, e.hire_date]),
+    );
 
     const getDirectoryHireDate = (record: SalaryRecord) => {
       const keys = [
-        record.hrId,
-        record.employeeCode,
         normalizeHrId(record.hrId),
         normalizeHrId(record.employeeCode),
-        normalizeHrIdForAccess(record.hrId),
-        normalizeHrIdForAccess(record.employeeCode),
-      ].filter(isNonEmptyString);
+      ].filter((k): k is string => Boolean(k));
 
       for (const key of keys) {
         const hireDate = hireDateByHrId.get(key);
-        if (hireDate) {
-          return hireDate;
-        }
+        if (hireDate) return hireDate;
       }
 
       return null;
@@ -573,7 +547,8 @@ async function withHireDates(records: SalaryRecord[]) {
       ...record,
       hireDate: record.hireDate ?? getDirectoryHireDate(record) ?? null,
     }));
-  } catch {
+  } catch (error) {
+    console.error("Failed to load hire dates for payroll records:", error);
     return records;
   }
 }
@@ -849,7 +824,7 @@ export async function getSalaryBatchExport(
     .select("*")
     .eq("id", targetBatchId)
     .maybeSingle();
-  let recordsResult = await buildFilteredRecordsQuery(false);
+  let recordsResult = await buildFilteredRecordsQuery(true);
   if (
     recordsResult.error &&
     !payrollAccessFilter.all &&

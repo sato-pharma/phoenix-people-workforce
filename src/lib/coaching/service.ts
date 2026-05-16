@@ -3,7 +3,10 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import {
   type AccessContext,
   canManageCoachingReports,
+  buildManagerHierarchyMap,
+  collectHierarchyHrIdsFromMap,
   normalizeHrId,
+  normalizeHrIdForAccess,
   resolveEmployeeIdentityId,
 } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -75,8 +78,14 @@ type CoachingQuarterlySummaryDbRow = {
 const editableStatuses = new Set<CoachingReportStatus>(["draft"]);
 const submittedStatuses = new Set<CoachingReportStatus>(["submitted", "reviewed_by_employee"]);
 const companyRoles = new Set<AccessContext["role"]>(["Super Admin", "CEO", "HR Specialist"]);
+const teamCoachingRoles = new Set<AccessContext["role"]>([
+  "District Manager",
+  "Regional Sales Manager",
+  "National Sales Manager",
+]);
 const lineRoles = new Set<AccessContext["role"]>([
   "National Sales Manager",
+  "Regional Sales Manager",
   "Product Manager",
   "Group Product Manager",
   "SFE Manager",
@@ -124,6 +133,10 @@ function actorId(access: AccessContext) {
   return resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
 }
 
+function coachingActorId(access: AccessContext) {
+  return resolveEmployeeIdentityId(access);
+}
+
 function requireActorHrId(access: AccessContext) {
   const hrId = normalizeHrId(access.hrId);
   if (!hrId) {
@@ -140,41 +153,13 @@ function assertCanManageCoachingLifecycle(access: AccessContext) {
 
 function assertOwnDraftOrOverride(access: AccessContext, report: CoachingReportRow) {
   if (access.scope === "system" || access.role === "Super Admin") return;
-  if (!idsMatch(access.hrId, report.coach_hr_id)) {
+  if (!idsMatch(coachingActorId(access), report.coach_hr_id)) {
     throw new Error("Forbidden: Training Manager can only update and submit their own coaching drafts.");
   }
 }
 
 function findEmployee(rows: EmployeeDirectoryRow[], hrId: string) {
   return rows.find((row) => idsMatch(row.hrId, hrId)) ?? null;
-}
-
-function buildManagerGraph(rows: EmployeeDirectoryRow[]) {
-  const reports = new Map<string, string[]>();
-  for (const row of rows) {
-    const manager = normalizeHrId(row.managerHrId);
-    const employee = normalizeHrId(row.hrId);
-    if (!manager || !employee) continue;
-    reports.set(manager, [...(reports.get(manager) ?? []), employee]);
-  }
-  return reports;
-}
-
-function isInHierarchy(rows: EmployeeDirectoryRow[], managerHrId: string, employeeHrId: string) {
-  const reports = buildManagerGraph(rows);
-  const target = normalizeHrId(employeeHrId);
-  const stack = [...(reports.get(normalizeHrId(managerHrId) ?? "") ?? [])];
-  const visited = new Set<string>();
-
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current || visited.has(current)) continue;
-    if (current === target) return true;
-    visited.add(current);
-    stack.push(...(reports.get(current) ?? []));
-  }
-
-  return false;
 }
 
 export function canAccessCoachingEmployee(
@@ -184,18 +169,36 @@ export function canAccessCoachingEmployee(
   coach?: EmployeeDirectoryRow | null,
 ) {
   if (access.scope === "system" || companyRoles.has(access.role)) return true;
-  const currentHrId = normalizeHrId(access.hrId);
-  if (!currentHrId) return false;
+  const currentHrId = normalizeHrId(coachingActorId(access));
+  const viewer = currentHrId ? findEmployee(directory, currentHrId) : null;
+  if (!currentHrId) {
+    if (lineRoles.has(access.role)) {
+      return Boolean(coach?.lineId && employee.lineId && coach.lineId === employee.lineId);
+    }
+    return false;
+  }
   if (idsMatch(currentHrId, employee.hrId)) return true;
   if (access.role === "Training Manager") {
     return Boolean(coach && idsMatch(currentHrId, coach.hrId));
   }
   if (idsMatch(currentHrId, employee.managerHrId)) return true;
   if (access.role === "Regional Manager" || access.role === "Regional Sales Manager" || access.role === "Manager") {
-    return isInHierarchy(directory, currentHrId, employee.hrId);
+    const managerMap = buildManagerHierarchyMap(directory);
+    const hierarchyHrIds = collectHierarchyHrIdsFromMap(
+      managerMap,
+      normalizeHrIdForAccess(currentHrId),
+      { includeSelf: true },
+    );
+    const employeeCanonicalHrId = normalizeHrIdForAccess(employee.hrId);
+    return Boolean(employeeCanonicalHrId && hierarchyHrIds.has(employeeCanonicalHrId));
   }
   if (lineRoles.has(access.role)) {
-    return Boolean(coach?.lineId && employee.lineId && coach.lineId === employee.lineId);
+    if (viewer?.lineId && employee.lineId) {
+      return viewer.lineId === employee.lineId;
+    }
+    const viewerLine = String(viewer?.lineName ?? "").trim().toLowerCase();
+    const employeeLine = String(employee.lineName ?? "").trim().toLowerCase();
+    return Boolean(viewerLine && employeeLine && viewerLine === employeeLine);
   }
   return false;
 }
@@ -240,6 +243,22 @@ function mapSummary(row: CoachingSummaryDbRow): CoachingReportSummaryRow {
     teamName: row.team_name,
     updatedAt: row.updated_at,
   };
+}
+
+async function loadSummaryRow(reportId: string) {
+  const { data, error } = await getSupabaseAdmin()
+    .from("coaching_reports_summary")
+    .select("*")
+    .eq("report_id", reportId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("Could not load coaching summary row.", coachingErrorMessage(error));
+    return null;
+  }
+
+  return data ? (data as CoachingSummaryDbRow) : null;
 }
 
 function mapQuarterly(row: CoachingQuarterlySummaryDbRow): CoachingQuarterlySummaryRow {
@@ -592,42 +611,65 @@ export async function acknowledgeCoachingReport(
 }
 
 export async function getCoachingReportById(id: string, access: AccessContext): Promise<CoachingReportDetail> {
-  const [report, scores, summaries] = await Promise.all([
+  const [report, scores, summaryRow] = await Promise.all([
     loadReport(id),
     loadScores(id),
-    getSupabaseAdmin().from("coaching_reports_summary").select("*").eq("report_id", id).maybeSingle(),
+    loadSummaryRow(id),
   ]);
 
   if (!report) throw new Error("Coaching report was not found.");
 
   const directory = await getEmployeeDirectoryRows();
   const medicalRep = findEmployee(directory, report.medical_rep_hr_id);
-  if (!medicalRep) throw new Error("Medical Rep was not found in employees.");
-  assertCanAccessEmployee(access, medicalRep, directory, findEmployee(directory, report.coach_hr_id));
+  const coach = findEmployee(directory, report.coach_hr_id);
+  const actorHrId = coachingActorId(access);
+  const isCoach = idsMatch(actorHrId, report.coach_hr_id);
 
-  if (summaries.error) throw summaries.error;
+  if (!medicalRep) {
+    const isSelfOrCoach = idsMatch(actorHrId, report.medical_rep_hr_id) || isCoach;
+    const canBypassMissingDirectory =
+      access.scope === "system" ||
+      companyRoles.has(access.role) ||
+      teamCoachingRoles.has(access.role) ||
+      isSelfOrCoach;
+
+    if (!canBypassMissingDirectory) {
+      throw new Error("Medical Rep was not found in employees.");
+    }
+  } else if (!isCoach) {
+    assertCanAccessEmployee(access, medicalRep, directory, coach);
+  } else if (coach === null && access.scope !== "system" && !companyRoles.has(access.role)) {
+    console.warn(
+      `Coaching report ${report.id} coach ${report.coach_hr_id} not found in directory for coach-reader fallback.`,
+    );
+  }
+
   const scoreResult = scores.length === 20 ? calculateCoachingScore(scoreInputFromRows(scores)) : null;
 
   return {
     report,
     scoreResult,
     scores,
-    summary: summaries.data ? mapSummary(summaries.data as CoachingSummaryDbRow) : null,
+    summary: summaryRow ? mapSummary(summaryRow) : null,
   };
 }
 
 async function filterSummariesForAccess(rows: CoachingReportSummaryRow[], access: AccessContext) {
   if (access.scope === "system" || companyRoles.has(access.role)) return rows;
   if (access.role === "Training Manager") {
-    const coachHrId = normalizeHrId(access.hrId);
+    const coachHrId = normalizeHrId(coachingActorId(access));
     if (!coachHrId) return [];
     return rows.filter((row) => idsMatch(coachHrId, row.coachHrId));
   }
   const directory = await getEmployeeDirectoryRows();
-  const coach = access.hrId ? findEmployee(directory, access.hrId) : null;
+  const actorHrId = coachingActorId(access);
+  const coach = actorHrId ? findEmployee(directory, actorHrId) : null;
   return rows.filter((row) => {
     const employee = findEmployee(directory, row.medicalRepHrId);
-    return employee ? canAccessCoachingEmployee(access, employee, directory, coach) : false;
+    const reportCoach = findEmployee(directory, row.coachHrId);
+    return employee
+      ? canAccessCoachingEmployee(access, employee, directory, coach ?? reportCoach)
+      : false;
   });
 }
 
@@ -667,7 +709,6 @@ export async function getMyCoachingReports(access: AccessContext) {
 }
 
 export async function getTeamCoachingReports(access: AccessContext, filters: CoachingReportFilters = {}) {
-  requireActorHrId(access);
   return getCoachingReports(filters, access);
 }
 
