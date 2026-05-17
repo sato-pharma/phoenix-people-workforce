@@ -1,0 +1,5 @@
+-- Seed data for local development
+-- Add INSERT statements here when you want demo data.
+-- Example:
+-- INSERT INTO public.some_table (column_a, column_b)
+-- VALUES ('value_a', 'value_b');

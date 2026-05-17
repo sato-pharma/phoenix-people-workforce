@@ -2293,7 +2293,10 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
         employee = {
           ...employee,
           areaName: employee.areaName || areaResolved || null,
-          fullName: employee.fullName || String(row.full_name ?? "").trim() || access.loginId ?? "",
+          fullName:
+            employee.fullName ||
+            String(row.full_name ?? "").trim() ||
+            (access.loginId ?? ""),
           hireDate: employee.hireDate || resolvedHireDate,
           hrId: employee.hrId || String(row.hr_id ?? rawHrId).trim(),
           lineName: employee.lineName || lineResolved || currentUser.line || null,
