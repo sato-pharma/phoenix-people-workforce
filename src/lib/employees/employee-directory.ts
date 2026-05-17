@@ -529,18 +529,24 @@ async function loadAllOptions(table: string, label = "name") {
     rows = await supabaseRest<Array<LookupRow & { area_id?: number | null; is_active?: boolean | null }>>(`${table}?${params}`);
   } catch (error) {
     const message = employeeDirectoryErrorMessage(error).toLowerCase();
-    if (
-      table !== "teams" ||
-      (!message.includes("is_active") && !message.includes("area_id") && !message.includes("schema cache"))
-    ) {
-      throw error;
-    }
+    if (table !== "teams") throw error;
+
+    const isColumnIssue = message.includes("is_active") || message.includes("area_id") || message.includes("schema cache");
+    const isTableMissing = !isColumnIssue && isMissingRelationMessage(error);
+
+    if (isTableMissing) return [];
+    if (!isColumnIssue) throw error;
 
     const fallbackParams = new URLSearchParams({
       select: `id,${label}`,
       order: `${label}.asc`,
     });
-    rows = await supabaseRest<LookupRow[]>(`${table}?${fallbackParams}`);
+    try {
+      rows = await supabaseRest<LookupRow[]>(`${table}?${fallbackParams}`);
+    } catch (fallbackError) {
+      if (isMissingRelationMessage(fallbackError)) return [];
+      throw fallbackError;
+    }
   }
 
   return rows

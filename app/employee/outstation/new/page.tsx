@@ -6,7 +6,7 @@ import { MobileOutstationWizard } from "@/components/outstation/mobile-outstatio
 import { Card } from "@/components/ui/card";
 import { PageTransition } from "@/components/ui/page-transition";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
-import { getDsmTeamPerformance, getMedicalRepPortalData } from "@/lib/employee-portal/service";
+import { getDsmTeamPerformance, getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { getOutstationEmployeeContext } from "@/lib/outstation/service";
@@ -36,7 +36,7 @@ export default async function EmployeeOutstationNewPage() {
   await assertPermission(access, "outstation", "create");
 
   const [portalDataResult, outstationContextResult, teamPerformanceResult] = await Promise.allSettled([
-    getMedicalRepPortalData(access),
+    getEmployeePortalShellData(access),
     getOutstationEmployeeContext(access),
     getDsmTeamPerformance(access),
   ]);
