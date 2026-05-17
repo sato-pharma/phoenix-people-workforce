@@ -6,6 +6,13 @@ import {
 } from "@/lib/security/csrf";
 
 export function proxy(request: NextRequest) {
+  if (
+    request.method.toUpperCase() === "POST" &&
+    request.nextUrl.pathname === "/api/attendance/raw-punches"
+  ) {
+    return NextResponse.next();
+  }
+
   if (!requiresCsrfProtection(request)) {
     return NextResponse.next();
   }

@@ -1726,8 +1726,7 @@ export async function getEmployeePortalData(
 
   const directory = prefetched?.directory ?? await getEmployeeDirectory();
 
-  const employee = directory.employees.find((row) => normalizeHrId(row.hrId) === currentHrId) ??
-    fallbackEmployee(access);
+  const employee = findDirectoryEmployeeByHrId(directory, currentHrId) ?? fallbackEmployee(access);
   const salesLineFilter = resolvePortalSalesLineFilter(currentUser, employee);
 
   const visibleTeamMembers = directory.employees.filter((row) => {
@@ -1884,8 +1883,8 @@ export async function getEmployeePortalData(
       otherDeductions: latestRecord?.otherDeductions ?? 0,
       socialInsurance: latestRecord?.socialInsurance ?? 0,
       incomeTax: latestRecord?.employmentIncomeTax ?? 0,
-      fuelAllowance: fixedAllowances.fuelAllowance,
-      extraCostOfLiving: fixedAllowances.extraCostOfLiving,
+      fuelAllowance: sourceFuelAllowance,
+      extraCostOfLiving: sourceExtraCostOfLiving,
     },
     payslips: {
       latestBatchId: latestBatch?.id ?? null,
@@ -2080,7 +2079,7 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
   const currentHrId = normalizeHrId(currentUser.hrId);
   const directory = await getEmployeeDirectory();
   const employee = currentHrId
-    ? directory.employees.find((row) => normalizeHrId(row.hrId) === currentHrId) ?? fallbackEmployee(access)
+    ? findDirectoryEmployeeByHrId(directory, currentHrId) ?? fallbackEmployee(access)
     : fallbackEmployee(access);
   const employmentJourney = computeEmploymentJourney(employee);
   const daysUntilProbationEnd = daysFromToday(addDays(employee.hireDate ?? null, 90));
@@ -3004,9 +3003,7 @@ export async function getMedicalRepPortalData(
     });
 
     const directory = await getEmployeeDirectory();
-    const currentEmployee = currentHrId
-      ? directory.employees.find((row) => normalizeHrId(row.hrId) === currentHrId) ?? null
-      : null;
+    const currentEmployee = currentHrId ? findDirectoryEmployeeByHrId(directory, currentHrId) : null;
     const salesLineFilter = resolvePortalSalesLineFilter(currentUser, currentEmployee);
     const visibleTeamMembers = directory.employees.filter((row) => {
       const rowHrId = normalizeHrId(row.hrId);
@@ -3045,7 +3042,8 @@ export async function getMedicalRepPortalData(
   if (!employee) {
     throw new Error("Employee profile not found for the current user.");
   }
-  const profileLinked = currentHrId !== null && normalizeHrId(employee.hrId) === currentHrId;
+  const profileLinked =
+    currentHrId !== null && toCanonicalPortalHrId(employee.hrId) === toCanonicalPortalHrId(currentHrId);
   const workforceRows = resolvePortalWorkforceRows({
     currentUser,
     directory,
@@ -3500,7 +3498,7 @@ export async function getMedicalRepPortalData(
       }, { trips: new Array(7).fill(0), distance: new Array(7).fill(0), expenses: new Array(7).fill(0) }),
       employeePerformance: Array.from(new Set(expenses.map((e) => e.hrId).filter(Boolean))).map((hrId) => {
         const empExpenses = expenses.filter((e) => e.hrId === hrId);
-        const emp = directory.employees.find((d) => normalizeHrId(d.hrId) === normalizeHrId(hrId));
+        const emp = findDirectoryEmployeeByHrId(directory, hrId);
         return {
           name: emp?.fullName ?? hrId!,
           role: emp?.jobTitle ?? "N/A",
