@@ -183,19 +183,17 @@ export function canAccessCoachingEmployee(
   directory: EmployeeDirectoryRow[],
   coach?: EmployeeDirectoryRow | null,
 ) {
-  if (access.scope === "system" || companyRoles.has(access.role)) return true;
+  if (access.scope === "system" || companyRoles.has(access.role) || access.role === "Training Manager") return true;
   const currentHrId = normalizeHrId(access.hrId);
   if (!currentHrId) return false;
   if (idsMatch(currentHrId, employee.hrId)) return true;
-  if (access.role === "Training Manager") {
-    return Boolean(coach && idsMatch(currentHrId, coach.hrId));
-  }
   if (idsMatch(currentHrId, employee.managerHrId)) return true;
   if (access.role === "Regional Manager" || access.role === "Manager") {
     return isInHierarchy(directory, currentHrId, employee.hrId);
   }
   if (lineRoles.has(access.role)) {
-    return Boolean(coach?.lineId && employee.lineId && coach.lineId === employee.lineId);
+    const accessor = findEmployee(directory, currentHrId);
+    return Boolean(accessor?.lineId && employee.lineId && accessor.lineId === employee.lineId);
   }
   return false;
 }
@@ -617,12 +615,7 @@ export async function getCoachingReportById(id: string, access: AccessContext): 
 }
 
 async function filterSummariesForAccess(rows: CoachingReportSummaryRow[], access: AccessContext) {
-  if (access.scope === "system" || companyRoles.has(access.role)) return rows;
-  if (access.role === "Training Manager") {
-    const coachHrId = normalizeHrId(access.hrId);
-    if (!coachHrId) return [];
-    return rows.filter((row) => idsMatch(coachHrId, row.coachHrId));
-  }
+  if (access.scope === "system" || companyRoles.has(access.role) || access.role === "Training Manager") return rows;
   const directory = await getEmployeeDirectoryRows();
   const coach = access.hrId ? findEmployee(directory, access.hrId) : null;
   return rows.filter((row) => {

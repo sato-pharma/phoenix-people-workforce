@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Download,
-  FileText,
   RefreshCw,
   Search,
   Shield,
@@ -35,9 +34,34 @@ import type { ProbationRow, ProbationWorkflowAction, TrafficStatus } from "@/lib
 import { cn } from "@/lib/utils";
 
 type Props = {
+  capabilities?: ProbationTrackerCapabilities;
   initialData: ProbationRow[] | null;
   initialError: string | null;
   presentation?: "default" | "premium";
+};
+
+type ProbationTrackerCapabilities = {
+  canCreate?: boolean;
+  canExport?: boolean;
+  canManageWorkflow?: boolean;
+  canSubmitManagerFeedback?: boolean;
+  viewerMode?: "employee" | "hr" | "manager";
+};
+
+type SelectedWorkflowAction = {
+  action: ProbationWorkflowAction;
+  row: ProbationRow;
+};
+
+type WorkflowActionForm = {
+  confirmationChecked: boolean;
+  decisionReason: string;
+  extensionEndDate: string;
+  managerFeedback: string;
+  probationLetterName: string;
+  probationLetterUrl: string;
+  terminationHrId: string;
+  workflowNote: string;
 };
 
 type SortKey =
@@ -64,6 +88,19 @@ const premiumPanelClassName =
 
 const premiumInputClassName =
   "h-11 rounded-2xl border-[#D8E0EA] bg-white/95 shadow-[0_14px_35px_rgba(15,23,42,0.06)] focus:border-[#FDBA74] focus:ring-[#F97316]/15";
+
+function emptyActionForm(): WorkflowActionForm {
+  return {
+    confirmationChecked: false,
+    decisionReason: "",
+    extensionEndDate: "",
+    managerFeedback: "",
+    probationLetterName: "",
+    probationLetterUrl: "",
+    terminationHrId: "",
+    workflowNote: "",
+  };
+}
 
 function getTrafficStatus(daysRemaining: number): TrafficStatus {
   if (daysRemaining > 60) {
@@ -96,14 +133,30 @@ function statusLabel(status: TrafficStatus) {
 }
 
 function workflowBadgeVariant(status: string | null | undefined) {
-  if (status === "approved" || status === "completed") return "success";
-  if (status === "cancelled") return "danger";
-  if (status === "manager_feedback" || status === "hr_recommendation") return "warning";
+  if (status === "passed") return "success";
+  if (status === "terminated") return "danger";
+  if (status === "extended") return "warning";
   return "neutral";
 }
 
 function workflowLabel(status: string | null | undefined) {
   return status ? status.replace(/_/g, " ") : "not requested";
+}
+
+function actionLabel(action: ProbationWorkflowAction) {
+  const labels: Record<ProbationWorkflowAction, string> = {
+    extend: "Extend",
+    manager_feedback: "Manager feedback",
+    pass: "Pass",
+    terminate: "Terminate",
+    upload_letter: "Attach letter",
+  };
+
+  return labels[action];
+}
+
+function isDestructiveAction(action: ProbationWorkflowAction) {
+  return action === "terminate";
 }
 
 function formatDate(value: string) {
@@ -204,8 +257,16 @@ function SortSelect({
   );
 }
 
-export function ProbationTracker({ initialData, initialError, presentation = "default" }: Props) {
+export function ProbationTracker({
+  capabilities = {},
+  initialData,
+  initialError,
+  presentation = "default",
+}: Props) {
   const isPremium = presentation === "premium";
+  const canCreate = capabilities.canCreate ?? false;
+  const canExport = capabilities.canExport ?? false;
+  const canSubmitManagerFeedback = capabilities.canSubmitManagerFeedback ?? false;
   const panelClassName = isPremium ? premiumPanelClassName : adminPanelClassName;
   const inputClassName = isPremium ? premiumInputClassName : "h-10 bg-white";
   const [areaFilter, setAreaFilter] = useState(allValue);
@@ -216,14 +277,8 @@ export function ProbationTracker({ initialData, initialError, presentation = "de
   const [trafficFilter, setTrafficFilter] = useState<TrafficStatus | "all">("all");
   const [employmentFilter, setEmploymentFilter] = useState<string>(allValue);
   const [rows, setRows] = useState<ProbationRow[]>(initialData ?? []);
-  const [selectedHrId, setSelectedHrId] = useState("");
-  const [managerFeedback, setManagerFeedback] = useState("");
-  const [hrRecommendation, setHrRecommendation] = useState("");
-  const [decisionReason, setDecisionReason] = useState("");
-  const [extensionEndDate, setExtensionEndDate] = useState("");
-  const [letterUrl, setLetterUrl] = useState("");
-  const [letterName, setLetterName] = useState("");
-  const [workflowNotes, setWorkflowNotes] = useState("");
+  const [selectedAction, setSelectedAction] = useState<SelectedWorkflowAction | null>(null);
+  const [actionForm, setActionForm] = useState<WorkflowActionForm>(() => emptyActionForm());
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "danger" | "success"; text: string } | null>(null);
 
@@ -318,22 +373,18 @@ export function ProbationTracker({ initialData, initialError, presentation = "de
     setTrafficFilter("all");
   }
 
-  async function createEvaluation() {
-    if (!selectedHrId) {
-      setMessage({ tone: "danger", text: "Select an employee before creating a probation evaluation." });
+  async function createEvaluation(row: ProbationRow) {
+    if (!canCreate) {
+      setMessage({ tone: "danger", text: "Your role cannot create probation evaluations." });
       return;
     }
 
-    setPendingAction("create");
+    setPendingAction(`create:${row.hr_id}`);
     setMessage(null);
     try {
-      const row = rows.find((item) => item.hr_id === selectedHrId);
       const response = await fetch("/api/probation", {
         body: JSON.stringify({
-          employeeHrId: selectedHrId,
-          managerFeedback,
-          probationEndDate: row?.probation_end_date,
-          workflowNotes,
+          employeeHrId: row.hr_id,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -341,10 +392,7 @@ export function ProbationTracker({ initialData, initialError, presentation = "de
       const payload = await response.json();
       if (!response.ok || !payload.success) throw new Error(payload.error ?? "Unable to create probation evaluation.");
       setRows(payload.rows);
-      setSelectedHrId("");
-      setManagerFeedback("");
-      setWorkflowNotes("");
-      setMessage({ tone: "success", text: "Probation evaluation created." });
+      setMessage({ tone: "success", text: "Probation review started." });
     } catch (error) {
       setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Unable to create probation evaluation." });
     } finally {
@@ -352,40 +400,62 @@ export function ProbationTracker({ initialData, initialError, presentation = "de
     }
   }
 
-  async function runWorkflow(row: ProbationRow, action: ProbationWorkflowAction) {
+  function updateActionForm(field: keyof WorkflowActionForm, value: string | boolean) {
+    setActionForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function openWorkflowAction(row: ProbationRow, action: ProbationWorkflowAction) {
     if (!row.workflow) return;
-    const actionKey = `${row.workflow.id}:${action}`;
+    setSelectedAction({ action, row });
+    setActionForm({
+      ...emptyActionForm(),
+      extensionEndDate: row.workflow.extensionEndDate ?? "",
+      managerFeedback: row.workflow.managerFeedback ?? "",
+      probationLetterName: row.workflow.probationLetterName ?? "",
+      probationLetterUrl: row.workflow.probationLetterUrl ?? "",
+    });
+    setMessage(null);
+  }
+
+  async function runWorkflow() {
+    if (!selectedAction?.row.workflow) return;
+    const { action, row } = selectedAction;
+    const workflow = selectedAction.row.workflow;
+    if (action === "terminate" && actionForm.terminationHrId.trim().toUpperCase() !== row.hr_id.toUpperCase()) {
+      setMessage({ tone: "danger", text: "Type the employee HR ID before termination." });
+      return;
+    }
+    if (action === "extend" && !actionForm.confirmationChecked) {
+      setMessage({ tone: "danger", text: "Confirm the extension date before submitting." });
+      return;
+    }
+    const actionKey = `${workflow.id}:${action}`;
     setPendingAction(actionKey);
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/probation/${row.workflow.id}/workflow`, {
+      const response = await fetch(`/api/probation/${workflow.id}/workflow`, {
         body: JSON.stringify({
           action,
-          decisionReason,
-          extensionEndDate,
-          hrRecommendation,
-          managerFeedback,
-          note: workflowNotes,
-          probationLetterName: letterName,
-          probationLetterUrl: letterUrl,
+          decisionReason: actionForm.decisionReason,
+          expectedUpdatedAt: workflow.updatedAt,
+          extensionEndDate: actionForm.extensionEndDate,
+          managerFeedback: actionForm.managerFeedback,
+          note: actionForm.workflowNote,
+          probationLetterName: actionForm.probationLetterName,
+          probationLetterUrl: actionForm.probationLetterUrl,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
       const payload = await response.json();
-      if (!response.ok || !payload.success) throw new Error(payload.error ?? "Workflow action failed.");
+      if (!response.ok || !payload.success) throw new Error(payload.error ?? "Probation action failed.");
       setRows(payload.rows);
-      setDecisionReason("");
-      setExtensionEndDate("");
-      setHrRecommendation("");
-      setManagerFeedback("");
-      setLetterName("");
-      setLetterUrl("");
-      setWorkflowNotes("");
-      setMessage({ tone: "success", text: "Probation workflow updated." });
+      setSelectedAction(null);
+      setActionForm(emptyActionForm());
+      setMessage({ tone: "success", text: "Probation review updated." });
     } catch (error) {
-      setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Workflow action failed." });
+      setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Probation action failed." });
     } finally {
       setPendingAction(null);
     }
@@ -409,20 +479,24 @@ export function ProbationTracker({ initialData, initialError, presentation = "de
               <RefreshCw className="h-4 w-4" />
               Reset Filters
             </Button>
-            <a
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white/95 px-4 py-2 text-xs font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
-              href="/api/exports?report=probation&format=pdf"
-            >
-              <Download className="h-4 w-4 text-[#EA580C]" />
-              Export PDF
-            </a>
-            <a
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white/95 px-4 py-2 text-xs font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
-              href="/api/exports?report=probation&format=xlsx"
-            >
-              <Download className="h-4 w-4 text-[#EA580C]" />
-              Export Excel
-            </a>
+            {canExport ? (
+              <>
+                <a
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white/95 px-4 py-2 text-xs font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+                  href="/api/exports?report=probation&format=pdf"
+                >
+                  <Download className="h-4 w-4 text-[#EA580C]" />
+                  Export PDF
+                </a>
+                <a
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white/95 px-4 py-2 text-xs font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+                  href="/api/exports?report=probation&format=xlsx"
+                >
+                  <Download className="h-4 w-4 text-[#EA580C]" />
+                  Export Excel
+                </a>
+              </>
+            ) : null}
           </div>
         }
         badges={(
@@ -483,44 +557,11 @@ export function ProbationTracker({ initialData, initialError, presentation = "de
         <AdminCallout tone={message.tone}>
           {message.tone === "success" ? <CheckCircle2 className="mt-0.5 h-4 w-4" /> : <AlertTriangle className="mt-0.5 h-4 w-4" />}
           <div>
-            <h2 className="text-sm font-semibold">{message.tone === "success" ? "Workflow update" : "Workflow action failed"}</h2>
+            <h2 className="text-sm font-semibold">{message.tone === "success" ? "Probation update" : "Probation action failed"}</h2>
             <p className="mt-1 text-sm">{message.text}</p>
           </div>
         </AdminCallout>
       ) : null}
-
-      <AdminTableShell
-        title="Create Probation Evaluation"
-        description="Start the evaluation form, capture manager feedback, and route the case to HR recommendation and approval."
-        action={
-          <Button className="h-11 gap-2 rounded-2xl" disabled={pendingAction === "create"} onClick={createEvaluation}>
-            <FileText className="h-4 w-4" />
-            {pendingAction === "create" ? "Creating..." : "Create Evaluation"}
-          </Button>
-        }
-      >
-        <div className="grid gap-3 p-4 lg:grid-cols-4">
-          <label className="block lg:col-span-2">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Employee</span>
-            <select className={selectClassName} value={selectedHrId} onChange={(event) => setSelectedHrId(event.target.value)}>
-              <option value="">Select employee</option>
-              {rows.map((row) => (
-                <option key={row.hr_id} value={row.hr_id}>
-                  {row.full_name} ({row.hr_id})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block lg:col-span-2">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Manager Feedback</span>
-            <Input className={inputClassName} onChange={(event) => setManagerFeedback(event.target.value)} placeholder="Initial manager feedback" value={managerFeedback} />
-          </label>
-          <label className="block lg:col-span-4">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Workflow Note</span>
-            <Input className={inputClassName} onChange={(event) => setWorkflowNotes(event.target.value)} placeholder="Context for HR review" value={workflowNotes} />
-          </label>
-        </div>
-      </AdminTableShell>
 
       <AdminTableShell
         action={
@@ -534,8 +575,8 @@ export function ProbationTracker({ initialData, initialError, presentation = "de
             {activeFilterCount > 0 ? `Clear (${activeFilterCount})` : "Clear"}
           </Button>
         }
-        description="Use line, area, role, employment status, risk zone, and sort to focus on actionable probation windows."
-        title="Workflow Filters"
+        description="Use line, area, role, employment status, risk zone, and sort to focus on probation windows."
+        title="Probation Filters"
       >
         <div className="grid gap-3 p-4 sm:p-5 xl:grid-cols-[1.5fr_repeat(4,minmax(0,1fr))_auto]">
           <label className="relative block">
@@ -606,7 +647,7 @@ export function ProbationTracker({ initialData, initialError, presentation = "de
                   "Days",
                   "Progress",
                   "Status",
-                  "Workflow",
+                  "Probation Review",
                   "Actions",
                 ].map((column) => (
                   <th className={adminTableHeaderClassName} key={column}>
@@ -676,35 +717,30 @@ export function ProbationTracker({ initialData, initialError, presentation = "de
                       </td>
                       <td className="px-3 py-4">
                         {row.workflow ? (
-                          <div className="flex min-w-[360px] flex-wrap gap-2">
-                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction)} onClick={() => runWorkflow(row, "manager_feedback")} variant="secondary">
-                              <UserCheck className="mr-1 h-3.5 w-3.5" />
-                              Manager
-                            </Button>
-                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction)} onClick={() => runWorkflow(row, "hr_recommendation")} variant="secondary">
-                              HR Rec.
-                            </Button>
-                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction)} onClick={() => runWorkflow(row, "approve_pass")}>
-                              Pass
-                            </Button>
-                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction)} onClick={() => runWorkflow(row, "approve_extend")} variant="secondary">
-                              Extend
-                            </Button>
-                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction)} onClick={() => runWorkflow(row, "approve_terminate")} variant="destructive">
-                              <XCircle className="mr-1 h-3.5 w-3.5" />
-                              Terminate
-                            </Button>
-                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction) || !letterUrl.trim()} onClick={() => runWorkflow(row, "upload_letter")} variant="secondary">
-                              <Upload className="mr-1 h-3.5 w-3.5" />
-                              Letter
-                            </Button>
-                            <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={Boolean(pendingAction)} onClick={() => runWorkflow(row, "complete")} variant="ghost">
-                              Complete
-                            </Button>
+                          <div className="flex min-w-[260px] flex-wrap gap-2">
+                            {(row.workflow.allowedActions ?? row.allowedActions ?? [])
+                              .filter((action) => canSubmitManagerFeedback || action !== "manager_feedback")
+                              .map((action) => (
+                                <Button
+                                  className="h-9 rounded-xl px-2.5 text-xs"
+                                  disabled={Boolean(pendingAction)}
+                                  key={action}
+                                  onClick={() => openWorkflowAction(row, action)}
+                                  variant={isDestructiveAction(action) ? "destructive" : "secondary"}
+                                >
+                                  {action === "manager_feedback" ? <UserCheck className="mr-1 h-3.5 w-3.5" /> : null}
+                                  {action === "upload_letter" ? <Upload className="mr-1 h-3.5 w-3.5" /> : null}
+                                  {action === "terminate" ? <XCircle className="mr-1 h-3.5 w-3.5" /> : null}
+                                  {actionLabel(action)}
+                                </Button>
+                              ))}
+                            {(row.workflow.allowedActions ?? row.allowedActions ?? []).length === 0 ? (
+                              <span className="text-xs font-semibold text-[#64748B]">No available actions</span>
+                            ) : null}
                           </div>
                         ) : (
-                          <Button className="h-9 rounded-xl px-2.5 text-xs" onClick={() => setSelectedHrId(row.hr_id)} variant="secondary">
-                            Start evaluation
+                          <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={!canCreate || Boolean(pendingAction)} onClick={() => createEvaluation(row)} variant="secondary">
+                            Start review
                           </Button>
                         )}
                       </td>
@@ -717,41 +753,83 @@ export function ProbationTracker({ initialData, initialError, presentation = "de
         </div>
       </Card>
 
-      <AdminTableShell
-        title="Recommendation, Decision & Letter Inputs"
-        description="These values apply to the next row action: manager feedback, HR recommendation, pass/extend/terminate decision, or probation letter upload."
-      >
-        <div className="grid gap-3 p-4 lg:grid-cols-3">
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Manager Feedback</span>
-            <Input className={inputClassName} onChange={(event) => setManagerFeedback(event.target.value)} placeholder="Manager evaluation feedback" value={managerFeedback} />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">HR Recommendation</span>
-            <Input className={inputClassName} onChange={(event) => setHrRecommendation(event.target.value)} placeholder="HR recommendation" value={hrRecommendation} />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Decision Reason</span>
-            <Input className={inputClassName} onChange={(event) => setDecisionReason(event.target.value)} placeholder="Reason for decision" value={decisionReason} />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Extension End Date</span>
-            <Input className={inputClassName} onChange={(event) => setExtensionEndDate(event.target.value)} type="date" value={extensionEndDate} />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Probation Letter URL</span>
-            <Input className={inputClassName} onChange={(event) => setLetterUrl(event.target.value)} placeholder="https://..." value={letterUrl} />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Letter Name</span>
-            <Input className={inputClassName} onChange={(event) => setLetterName(event.target.value)} placeholder="Probation decision letter" value={letterName} />
-          </label>
-          <label className="block lg:col-span-3">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Workflow Note</span>
-            <Input className={inputClassName} onChange={(event) => setWorkflowNotes(event.target.value)} placeholder="Optional note for next action" value={workflowNotes} />
-          </label>
-        </div>
-      </AdminTableShell>
+      {selectedAction ? (
+        <AdminTableShell
+          title={`${actionLabel(selectedAction.action)}: ${selectedAction.row.full_name}`}
+          description={`${selectedAction.row.hr_id} | ${workflowLabel(selectedAction.row.workflow?.status)} | ends ${formatDate(selectedAction.row.probation_end_date)}`}
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Button className="h-11 rounded-2xl" onClick={() => setSelectedAction(null)} variant="secondary">
+                Close
+              </Button>
+              <Button
+                className="h-11 rounded-2xl"
+                disabled={Boolean(pendingAction)}
+                onClick={runWorkflow}
+                variant={isDestructiveAction(selectedAction.action) ? "destructive" : "default"}
+              >
+                {pendingAction ? "Submitting..." : actionLabel(selectedAction.action)}
+              </Button>
+            </div>
+          }
+        >
+          <div className="grid gap-3 p-4 lg:grid-cols-3">
+            {selectedAction.action === "manager_feedback" ? (
+              <label className="block lg:col-span-3">
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Manager Feedback</span>
+                <Input className={inputClassName} onChange={(event) => updateActionForm("managerFeedback", event.target.value)} placeholder="Manager evaluation feedback" value={actionForm.managerFeedback} />
+              </label>
+            ) : null}
+            {selectedAction.action === "pass" || selectedAction.action === "extend" || selectedAction.action === "terminate" ? (
+              <label className="block lg:col-span-2">
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">HR Note</span>
+                <Input className={inputClassName} onChange={(event) => updateActionForm("decisionReason", event.target.value)} placeholder={selectedAction.action === "terminate" ? "Termination reason" : "Optional HR note"} value={actionForm.decisionReason} />
+              </label>
+            ) : null}
+            {selectedAction.action === "extend" ? (
+              <label className="block">
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Extension End Date</span>
+                <Input className={inputClassName} onChange={(event) => updateActionForm("extensionEndDate", event.target.value)} type="date" value={actionForm.extensionEndDate} />
+              </label>
+            ) : null}
+            {selectedAction.action === "upload_letter" ? (
+              <>
+                <label className="block lg:col-span-2">
+                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Probation Letter URL</span>
+                  <Input className={inputClassName} onChange={(event) => updateActionForm("probationLetterUrl", event.target.value)} placeholder="https://..." value={actionForm.probationLetterUrl} />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Letter Name</span>
+                  <Input className={inputClassName} onChange={(event) => updateActionForm("probationLetterName", event.target.value)} placeholder="Probation decision letter" value={actionForm.probationLetterName} />
+                </label>
+              </>
+            ) : null}
+            {selectedAction.action === "terminate" ? (
+              <label className="block lg:col-span-3">
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-danger">Type HR ID to confirm termination</span>
+                <Input className={inputClassName} onChange={(event) => updateActionForm("terminationHrId", event.target.value)} placeholder={selectedAction.row.hr_id} value={actionForm.terminationHrId} />
+              </label>
+            ) : null}
+            <label className="block lg:col-span-3">
+              <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Review Note</span>
+              <Input className={inputClassName} onChange={(event) => updateActionForm("workflowNote", event.target.value)} placeholder="Optional note for this row-specific action" value={actionForm.workflowNote} />
+            </label>
+            {selectedAction.action === "extend" ? (
+              <label className="flex items-start gap-3 rounded-2xl border border-[#FED7AA] bg-[#FFF7ED] p-3 text-sm font-semibold text-[#0F172A] lg:col-span-3">
+                <input
+                  checked={actionForm.confirmationChecked}
+                  className="mt-1"
+                  onChange={(event) => updateActionForm("confirmationChecked", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  I confirm the extension end date applies only to {selectedAction.row.full_name} ({selectedAction.row.hr_id}).
+                </span>
+              </label>
+            ) : null}
+          </div>
+        </AdminTableShell>
+      ) : null}
       </div>
     </div>
   );

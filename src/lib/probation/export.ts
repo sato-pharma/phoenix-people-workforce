@@ -49,7 +49,7 @@ export async function generateProbationWorkbook(rows: ProbationRow[]) {
     { header: "Probation End Date", key: "probationEndDate", width: 20 },
     { header: "Days Remaining", key: "daysRemaining", width: 16 },
     { header: "Risk Zone", key: "riskZone", width: 14 },
-    { header: "Workflow Status", key: "workflowStatus", width: 22 },
+    { header: "Probation Status", key: "workflowStatus", width: 22 },
     { header: "Decision", key: "decision", width: 16 },
     { header: "Extension End Date", key: "extensionEndDate", width: 20 },
     { header: "Manager Feedback", key: "managerFeedback", width: 36 },
@@ -146,7 +146,7 @@ export function generateProbationPdf(rows: ProbationRow[]) {
     `Generated: ${generatedAt}`,
     `Records: ${rows.length}`,
     "",
-    "HR ID | Name | Job Title | Line | Area | End Date | Days | Zone | Workflow",
+    "HR ID | Name | Job Title | Line | Area | End Date | Days | Zone | Probation Status",
     ...rows.map(pdfLine),
   ];
   const pages: string[][] = [];

@@ -48,7 +48,7 @@ export default async function ContractsPage() {
   let initialError: string | null = null;
 
   try {
-    initialData = await getContractRenewalDashboardData();
+    initialData = await getContractRenewalDashboardData(access);
   } catch (error) {
     initialError = contractsPageError(error);
   }

@@ -8,6 +8,7 @@ export type ContractRow = {
   hr_id: string;
   job_title: string;
   line: string;
+  manager_hr_id: string | null;
   renewal_day: number;
   workflow: ContractRenewalRecord | null;
 };
@@ -26,8 +27,7 @@ export type ContractRenewalAction =
   | "renew"
   | "not_renew"
   | "upload_signed"
-  | "cancel"
-  | "reopen";
+  | "cancel";
 
 export type ContractRenewalRecord = {
   id: string;

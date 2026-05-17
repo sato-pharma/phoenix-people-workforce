@@ -17,7 +17,6 @@ import {
   AdminInsightChip,
   AdminPageHero,
   AdminSectionHeader,
-  AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +24,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { formatDateOnly } from "@/lib/date-only";
+import {
+  calculateOrganogramStructureKpis,
+  districtBucketMatches,
+  isOrganogramSalesStructureRole,
+} from "@/lib/reports/organogram-safety";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
@@ -33,6 +37,16 @@ type MemberNode = {
   children: MemberNode[];
   key: string;
   row: OrganogramRow;
+};
+type ManagerLane = {
+  dsm: OrganogramRow | null;
+  members: OrganogramRow[];
+  name: string;
+  title: string;
+};
+type TopManagerLane = ManagerLane & {
+  childLanes?: ManagerLane[];
+  rsm?: OrganogramRow | null;
 };
 
 type OrganogramReportProps = {
@@ -123,6 +137,15 @@ function isMarketingDepartment(row: OrganogramRow) {
   return row.departmentName?.trim().toLowerCase() === "marketing";
 }
 
+function isOrganogramVisibleRow(row: OrganogramRow) {
+  return (
+    isSalesDepartment(row) ||
+    isMarketingDepartment(row) ||
+    isOfficeLine(row) ||
+    isOrganogramSalesStructureRole(row)
+  );
+}
+
 function normalizeNameKey(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
 }
@@ -146,6 +169,12 @@ function isNationalSalesManager(row: OrganogramRow) {
   const title = titleText(row);
 
   return title.includes("national sales manager") || title === "nsm";
+}
+
+function isRegionalSalesManager(row: OrganogramRow) {
+  const title = titleText(row);
+
+  return title.includes("regional sales manager") || title === "rsm";
 }
 
 function isChiefExecutive(row: OrganogramRow) {
@@ -176,6 +205,40 @@ function isMedicalRep(row: OrganogramRow) {
     title.includes("medical rep") ||
     title === "mr"
   );
+}
+
+function isManagerLevel(row: OrganogramRow) {
+  return (
+    isNationalSalesManager(row) ||
+    isRegionalSalesManager(row) ||
+    isDistrictSalesManager(row)
+  );
+}
+
+function isSamePersonOrSlot(row: OrganogramRow, manager: OrganogramRow) {
+  const managerHrId = normalizeHrIdKey(manager.hrId);
+  const rowManagerHrId = normalizeHrIdKey(row.managerHrId);
+
+  if (managerHrId && rowManagerHrId && managerHrId === rowManagerHrId) {
+    return true;
+  }
+
+  const managerNameKey = normalizeNameKey(manager.fullName);
+  const rowManagerNameKey = normalizeNameKey(row.managerName);
+
+  return Boolean(managerNameKey && rowManagerNameKey && managerNameKey === rowManagerNameKey);
+}
+
+function reportsToKnownManager(row: OrganogramRow, manager: OrganogramRow, rows: OrganogramRow[]) {
+  return isSamePersonOrSlot(row, manager) || reportsUpTo(row, manager, rows);
+}
+
+function reportsToVacantManagerSlot(row: OrganogramRow, managerSlot: OrganogramRow) {
+  if (managerSlot.type !== "vacancy" || !isDistrictSalesManager(managerSlot) || isManagerLevel(row)) {
+    return false;
+  }
+
+  return isMedicalRep(row) && districtBucketMatches(row, managerSlot);
 }
 
 function isMarketingManager(row: OrganogramRow) {
@@ -310,7 +373,10 @@ function TeamMemberCard({ row }: { row: OrganogramRow }) {
 }
 
 function buildMemberTree(members: OrganogramRow[]) {
-  const memberIds = new Set(members.map((member) => member.hrId).filter(Boolean));
+  const memberIds = new Set(
+    members.map((member) => normalizeHrIdKey(member.hrId)).filter(Boolean),
+  );
+  const parentByNodeKey = new Map<string, string>();
   const nodesByHrId = new Map<string, MemberNode[]>();
   const nodes = members.map((member, index) => ({
     children: [],
@@ -319,18 +385,34 @@ function buildMemberTree(members: OrganogramRow[]) {
   }) satisfies MemberNode);
 
   for (const node of nodes) {
-    nodesByHrId.set(node.row.hrId, [...(nodesByHrId.get(node.row.hrId) ?? []), node]);
+    const hrId = normalizeHrIdKey(node.row.hrId);
+    nodesByHrId.set(hrId, [...(nodesByHrId.get(hrId) ?? []), node]);
   }
 
   const roots: MemberNode[] = [];
 
   for (const node of nodes) {
     const member = node.row;
+    const memberHrId = normalizeHrIdKey(member.hrId);
+    const managerHrId = normalizeHrIdKey(member.managerHrId);
 
-    if (member.managerHrId && memberIds.has(member.managerHrId)) {
-      const managerNode = nodesByHrId.get(member.managerHrId)?.[0];
-      if (managerNode) {
+    if (managerHrId && memberHrId !== managerHrId && memberIds.has(managerHrId)) {
+      const managerNode = nodesByHrId.get(managerHrId)?.[0];
+      let cursor = managerNode?.key;
+      let createsCycle = false;
+
+      while (cursor) {
+        if (cursor === node.key) {
+          createsCycle = true;
+          break;
+        }
+
+        cursor = parentByNodeKey.get(cursor);
+      }
+
+      if (managerNode && !createsCycle) {
         managerNode.children.push(node);
+        parentByNodeKey.set(node.key, managerNode.key);
       } else {
         roots.push(node);
       }
@@ -371,6 +453,124 @@ function TeamMemberNode({ node }: { node: MemberNode }) {
   );
 }
 
+function StructureKpiCard({
+  actual,
+  title,
+  total,
+  vacant,
+}: {
+  actual: number;
+  title: string;
+  total: number;
+  vacant: number;
+}) {
+  const completion = total > 0 ? Math.round((actual / total) * 100) : 0;
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-[#FED7AA]/80 bg-white p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/5">
+      <div className="absolute inset-x-0 top-0 h-1 bg-[#F97316]" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="break-words text-[11px] font-black uppercase tracking-[0.12em] text-[#334155]">
+            {title}
+          </p>
+          <p className="mt-7 text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">
+            Actual / Total Structure
+          </p>
+          <div className="mt-1 flex items-end gap-1.5">
+            <span className="text-3xl font-black leading-none text-[#0F172A]">{actual}</span>
+            <span className="pb-0.5 text-xl font-black leading-none text-[#94A3B8]">/ {total}</span>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-center shadow-inner">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#EA580C]">
+            Vacant
+          </p>
+          <p className="mt-1 text-2xl font-black leading-none text-[#C2410C]">{vacant}</p>
+        </div>
+      </div>
+      <div className="mt-4">
+        <div className="h-2.5 overflow-hidden rounded-full bg-[#E2E8F0] shadow-inner">
+          <div
+            className="h-full rounded-full bg-[#F97316]"
+            style={{ width: `${completion}%` }}
+          />
+        </div>
+        <div className="mt-2 flex items-center justify-between text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">
+          <span>Completion</span>
+          <span className="text-[#EA580C]">{completion}%</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ManagerLaneCard({
+  group,
+  groupKey,
+  topConnector = true,
+}: {
+  group: ManagerLane;
+  groupKey: string;
+  topConnector?: boolean;
+}) {
+  const groupVacancies = group.members.filter((member) => member.type === "vacancy").length;
+
+  return (
+    <div
+      className="group relative min-w-[230px] overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-2 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:border-slate-300 hover:shadow-md"
+      key={groupKey}
+    >
+      {topConnector ? (
+        <div className="absolute -top-5 left-1/2 h-5 w-px -translate-x-1/2 bg-[#CBD5E1]" />
+      ) : null}
+      <div className="absolute left-3 right-3 top-0 h-1 rounded-b-full bg-[#F97316] ring-1 ring-orange-100" />
+      <div className="rounded-xl bg-gradient-to-br from-[#0F172A] to-[#1E293B] px-2 py-2 text-white shadow-[0_4px_12px_rgba(15,23,42,0.15)]">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 text-left">
+            <div className="mb-1 flex h-5 w-5 items-center justify-center rounded-md bg-white/10 ring-1 ring-white/20">
+              <BriefcaseBusiness className="h-3 w-3" />
+            </div>
+            <p className="break-words text-[10px] font-bold uppercase leading-3 tracking-[0.08em]">
+              {formatEmployeeDisplayName(group.name)}
+            </p>
+            <p className="mt-1 break-words text-[9px] font-medium leading-3 opacity-80">
+              {group.title}
+            </p>
+          </div>
+          <div className="shrink-0 rounded-md bg-white/10 px-1.5 py-1 text-center text-[9px] font-bold uppercase tracking-[0.06em] ring-1 ring-white/20">
+            <p className="text-[10px] leading-none">{group.members.length}</p>
+            <p className="mt-0.5 opacity-70">rows</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2 flex items-center justify-between gap-1.5 rounded-lg border border-slate-200/90 bg-gradient-to-br from-slate-50 to-slate-100/50 px-2 py-1.5 text-[9px] text-[#64748B]">
+        <span className="truncate font-medium">{group.members.length} team rows</span>
+        {groupVacancies > 0 ? (
+          <span className="shrink-0 font-bold uppercase tracking-[0.06em] text-primary">
+            {groupVacancies} vacant
+          </span>
+        ) : (
+          <span className="shrink-0">No vacancies</span>
+        )}
+      </div>
+
+      <div className="mt-2 space-y-1.5">
+        {group.members.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-text-secondary">
+            No team rows under this manager.
+          </div>
+        ) : (
+          buildMemberTree(group.members).map((node) => (
+            <TeamMemberNode key={node.key} node={node} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 function OrganogramView({
   rows,
   selectedLine,
@@ -380,12 +580,16 @@ function OrganogramView({
 }) {
   const employees = rows.filter((row) => row.type === "employee");
   const vacancies = rows.filter((row) => row.type === "vacancy");
+  const structureKpis = calculateOrganogramStructureKpis(rows);
   const lineName = selectedLine ?? "Select Line";
   const chiefExecutive = rows.find((row) => isChiefExecutive(row)) ?? null;
   const lineLeader =
     rows.find((row) =>
       isNationalSalesManager(row),
     ) ?? null;
+  const rsmRows = rows
+    .filter((row) => isRegionalSalesManager(row))
+    .sort((left, right) => left.fullName.localeCompare(right.fullName));
   const dsmRows = rows
     .filter((row) => isDistrictSalesManager(row))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
@@ -397,21 +601,21 @@ function OrganogramView({
     (row) =>
       !isChiefExecutive(row) &&
       !isNationalSalesManager(row) &&
+      !isRegionalSalesManager(row) &&
       !isDistrictSalesManager(row),
   );
   const assignedToDsm = new Set<string>();
-  const dsmGroups = groupBy(dsmRows, managerIdentityKey).map(([, dsms]) => {
+  const dsmGroups: ManagerLane[] = groupBy(dsmRows, managerIdentityKey).map(([, dsms]) => {
     const primaryDsm = [...dsms].sort((left, right) =>
       left.fullName.localeCompare(right.fullName),
     )[0];
-    const dsmHrIdsForGroup = new Set(dsms.map((row) => normalizeHrIdKey(row.hrId)));
-    const dsmNameKeysForGroup = new Set(dsms.map((row) => normalizeNameKey(row.fullName)));
     const members = teamRows
       .filter((row) => {
-        const managerHrId = normalizeHrIdKey(row.managerHrId);
-        return managerHrId
-          ? dsmHrIdsForGroup.has(managerHrId)
-          : dsmNameKeysForGroup.has(normalizeNameKey(row.managerName));
+        return dsms.some(
+          (dsm) =>
+            reportsToKnownManager(row, dsm, rows) ||
+            reportsToVacantManagerSlot(row, dsm),
+        );
       })
       .sort((left, right) =>
         left.type === right.type
@@ -432,6 +636,27 @@ function OrganogramView({
       title: primaryDsm.positionTitle ?? primaryDsm.jobTitle ?? "District Sales Manager",
     };
   });
+  const dsmLaneKey = (lane: ManagerLane) =>
+    lane.dsm ? managerIdentityKey(lane.dsm) : `${lane.name}:${lane.title}`;
+  const childDsmLaneKeys = new Set<string>();
+  const rsmGroups: TopManagerLane[] = rsmRows.map((rsm) => {
+    const childLanes = dsmGroups.filter((lane) => {
+      if (!lane.dsm) return false;
+      return reportsToKnownManager(lane.dsm, rsm, rows);
+    });
+
+    childLanes.forEach((lane) => childDsmLaneKeys.add(dsmLaneKey(lane)));
+
+    return {
+      childLanes,
+      dsm: null,
+      members: [],
+      name: rsm.fullName,
+      rsm,
+      title: rsm.positionTitle ?? rsm.jobTitle ?? "Regional Sales Manager",
+    };
+  });
+  const directDsmGroups = dsmGroups.filter((lane) => !childDsmLaneKeys.has(dsmLaneKey(lane)));
   const marketingManagers = teamRows
     .filter((row) => isMarketingManager(row))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
@@ -513,16 +738,25 @@ function OrganogramView({
 
     return !assignedToDsm.has(key) && !row.managerHrId && !row.managerName;
   });
-  const groups = [
-    ...dsmGroups,
+  const allGroups: TopManagerLane[] = [
+    ...directDsmGroups,
+    ...rsmGroups,
     ...marketingGroups,
     ...fallbackManagerGroups,
     ...(unassignedMembers.length > 0
       ? [{ dsm: null, members: unassignedMembers, name: "Unassigned Manager", title: "Manager" }]
       : []),
-  ].filter((group) => group.members.length > 0 || group.dsm);
-  const filledLaneCount = groups.filter((group) => group.members.length > 0).length;
-  const laneCount = Math.max(groups.length, 1);
+  ];
+  const groups = allGroups.filter(
+    (group) => group.members.length > 0 || group.dsm || group.rsm || (group.childLanes?.length ?? 0) > 0,
+  );
+  const filledLaneCount = groups.filter(
+    (group) => group.members.length > 0 || (group.childLanes ?? []).some((lane) => lane.members.length > 0),
+  ).length;
+  const laneCount = Math.max(
+    groups.reduce((count, group) => count + Math.max(group.childLanes?.length ?? 1, 1), 0),
+    1,
+  );
 
   return (
     <Card className={cn(panelClassName, "overflow-hidden p-0")}>
@@ -566,24 +800,36 @@ function OrganogramView({
           </div>
         ) : (
           <div className="w-full">
-            <div className="mb-5 grid w-full gap-2 md:grid-cols-3 xl:max-w-2xl">
-              <AdminStatCard
-                description="Active employees included in this scope."
-                icon={<UsersRound className="h-4 w-4" />}
-                label="Employees"
-                value={employees.length}
+            <div className="mb-5 grid w-full gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <StructureKpiCard
+                actual={structureKpis.medicalRep.actual}
+                title="Medical Sales Representatives"
+                total={structureKpis.medicalRep.total}
+                vacant={structureKpis.medicalRep.vacant}
               />
-              <AdminStatCard
-                description="Vacant positions tracked with active line visibility."
-                icon={<BriefcaseBusiness className="h-4 w-4" />}
-                label="Vacancies"
-                value={vacancies.length}
+              <StructureKpiCard
+                actual={structureKpis.dsm.actual}
+                title="District Sales Managers"
+                total={structureKpis.dsm.total}
+                vacant={structureKpis.dsm.vacant}
               />
-              <AdminStatCard
-                description="Combined records represented in the chart."
-                icon={<Network className="h-4 w-4" />}
-                label="Rows"
-                value={rows.length}
+              <StructureKpiCard
+                actual={structureKpis.nsm.actual}
+                title="National Sales Managers"
+                total={structureKpis.nsm.total}
+                vacant={structureKpis.nsm.vacant}
+              />
+              <StructureKpiCard
+                actual={structureKpis.rsm.actual}
+                title="Regional Sales Managers"
+                total={structureKpis.rsm.total}
+                vacant={structureKpis.rsm.vacant}
+              />
+              <StructureKpiCard
+                actual={structureKpis.total.actual}
+                title="Total Line Structure"
+                total={structureKpis.total.total}
+                vacant={structureKpis.total.vacant}
               />
             </div>
 
@@ -619,75 +865,79 @@ function OrganogramView({
                 No manager lanes found for this line.
               </div>
             ) : (
-              <div className="relative mt-6">
+              <div className="relative mt-6 overflow-x-auto pb-2">
                 <div className="absolute left-0 right-0 top-0 h-px bg-[#CBD5E1]" />
                 <div
-                  className="grid w-full gap-2 pt-5"
+                  className="grid min-w-max gap-3 pt-5"
                   style={{
-                    gridTemplateColumns: `repeat(${laneCount}, minmax(0, 1fr))`,
+                    gridTemplateColumns: `repeat(${laneCount}, minmax(230px, 1fr))`,
                   }}
                 >
                   {groups.map((group, groupIndex) => {
-                    const groupVacancies = group.members.filter(
-                      (member) => member.type === "vacancy",
-                    ).length;
+                    const childLaneCount = Math.max(group.childLanes?.length ?? 1, 1);
+                    const groupVacancies =
+                      group.members.filter((member) => member.type === "vacancy").length +
+                      (group.childLanes ?? []).reduce(
+                        (total, lane) =>
+                          total + lane.members.filter((member) => member.type === "vacancy").length,
+                        0,
+                      );
                     const groupKey = group.dsm
                       ? `manager-${rowKey(group.dsm)}-${groupIndex}`
-                      : `manager-${group.name}-${group.title}-${groupIndex}`;
+                      : group.rsm
+                        ? `regional-${rowKey(group.rsm)}-${groupIndex}`
+                        : `manager-${group.name}-${group.title}-${groupIndex}`;
 
-                    return (
-                      <div
-                        className={cn(
-                          "group relative min-w-0 overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-2 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300",
-                        )}
-                        key={groupKey}
-                      >
-                        <div className="absolute -top-5 left-1/2 h-5 w-px -translate-x-1/2 bg-[#CBD5E1]" />
-                        <div className="absolute left-3 right-3 top-0 h-1 rounded-b-full bg-[#F97316] ring-1 ring-orange-100" />
-                        <div className="rounded-xl bg-gradient-to-br from-[#0F172A] to-[#1E293B] px-2 py-2 text-white shadow-[0_4px_12px_rgba(15,23,42,0.15)]">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 text-left">
-                              <div className="mb-1 flex h-5 w-5 items-center justify-center rounded-md bg-white/10 ring-1 ring-white/20">
-                                <BriefcaseBusiness className="h-3 w-3" />
-                              </div>
-                              <p className="break-words text-[10px] font-bold uppercase tracking-[0.08em] leading-3">
-                                {formatEmployeeDisplayName(group.name)}
-                              </p>
-                              <p className="mt-1 break-words text-[9px] font-medium leading-3 opacity-80">
+                    if (group.rsm) {
+                      return (
+                        <div
+                          className="relative min-w-[230px]"
+                          key={groupKey}
+                          style={{ gridColumn: `span ${childLaneCount}` }}
+                        >
+                          <div className="absolute -top-5 left-1/2 h-5 w-px -translate-x-1/2 bg-[#CBD5E1]" />
+                          <div className="rounded-2xl border border-[#FED7AA]/90 bg-white/95 p-2 shadow-[0_16px_45px_rgba(15,23,42,0.08)]">
+                            <div className="rounded-xl border border-[#FED7AA]/80 bg-[#FFF7ED] px-3 py-2 text-center">
+                              <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#EA580C]">
                                 {group.title}
                               </p>
+                              <p className="mt-1 text-xs font-black text-[#0F172A]">
+                                {formatEmployeeDisplayName(group.name)}
+                              </p>
+                              <p className="mt-1 text-[10px] font-semibold text-[#64748B]">
+                                Reports to NSM:{" "}
+                                {lineLeader ? formatEmployeeDisplayName(lineLeader.fullName) : lineName}
+                              </p>
+                              <p className="mt-1 text-[10px] font-black uppercase tracking-[0.1em] text-[#EA580C]">
+                                {group.childLanes?.length ?? 0} DSM lanes - {groupVacancies} vacant
+                              </p>
                             </div>
-                            <div className="shrink-0 rounded-md bg-white/10 ring-1 ring-white/20 px-1.5 py-1 text-center text-[9px] font-bold uppercase tracking-[0.06em]">
-                              <p className="text-[10px] leading-none">{group.members.length}</p>
-                              <p className="mt-0.5 opacity-70">rows</p>
+                            <div
+                              className="mt-2 grid gap-2"
+                              style={{
+                                gridTemplateColumns: `repeat(${childLaneCount}, minmax(230px, 1fr))`,
+                              }}
+                            >
+                              {(group.childLanes ?? []).length > 0 ? (
+                                group.childLanes?.map((lane, laneIndex) =>
+                                  ManagerLaneCard({
+                                    group: lane,
+                                    groupKey: `${groupKey}-child-${laneIndex}`,
+                                    topConnector: false,
+                                  }),
+                                )
+                              ) : (
+                                <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-text-secondary">
+                                  No DSM lanes under this regional manager.
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
+                      );
+                    }
 
-                        <div className="mt-2 flex items-center justify-between gap-1.5 rounded-lg border border-slate-200/90 bg-gradient-to-br from-slate-50 to-slate-100/50 px-2 py-1.5 text-[9px] text-[#64748B]">
-                          <span className="truncate font-medium">{group.members.length} team rows</span>
-                          {groupVacancies > 0 ? (
-                            <span className="shrink-0 font-bold uppercase tracking-[0.06em] text-primary">
-                              {groupVacancies} vacant
-                            </span>
-                          ) : (
-                            <span className="shrink-0">No vacancies</span>
-                          )}
-                        </div>
-
-                        <div className="mt-2 space-y-1.5">
-                          {group.members.length === 0 ? (
-                            <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-text-secondary">
-                              No team rows under this manager.
-                            </div>
-                          ) : (
-                            buildMemberTree(group.members).map((node) => (
-                              <TeamMemberNode key={node.key} node={node} />
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    );
+                    return ManagerLaneCard({ group, groupKey });
                   })}
                 </div>
               </div>
@@ -738,10 +988,7 @@ export function OrganogramReport({
   const rows = React.useMemo(
     () =>
       (report?.organogramRows ?? []).filter(
-        (row) =>
-          isSalesDepartment(row) ||
-          isMarketingDepartment(row) ||
-          isOfficeLine(row),
+        (row) => isOrganogramVisibleRow(row),
       ),
     [report],
   );
@@ -753,7 +1000,7 @@ export function OrganogramReport({
         continue;
       }
 
-      if (isSalesDepartment(row) || isOfficeLine(row)) {
+      if (isSalesDepartment(row) || isOfficeLine(row) || isOrganogramSalesStructureRole(row)) {
         options.add(row.lineName);
       }
     }
@@ -774,7 +1021,8 @@ export function OrganogramReport({
       ? rows.filter((row) =>
           isOfficeSelected
             ? row.lineName === effectiveLineFilter
-            : row.lineName === effectiveLineFilter && isSalesDepartment(row),
+            : row.lineName === effectiveLineFilter &&
+              (isSalesDepartment(row) || isOrganogramSalesStructureRole(row)),
         )
       : rows;
 
@@ -845,7 +1093,8 @@ export function OrganogramReport({
         !effectiveLineFilter ||
         (isOfficeSelected
           ? row.lineName === effectiveLineFilter || officeDescendantHrIdsToKeep.has(row.hrId)
-          : row.lineName === effectiveLineFilter && isSalesDepartment(row));
+          : row.lineName === effectiveLineFilter &&
+            (isSalesDepartment(row) || isOrganogramSalesStructureRole(row)));
 
       if (keepLeadershipChain) {
         return true;

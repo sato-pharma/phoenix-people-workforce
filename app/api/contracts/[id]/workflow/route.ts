@@ -6,6 +6,7 @@ import {
   contractRenewalErrorMessage,
   getContractRenewalDashboardData,
   isContractRenewalSchemaMissing,
+  isContractRenewalValidationError,
   runContractRenewalWorkflow,
 } from "@/lib/contracts/service";
 import type { ContractRenewalAction } from "@/lib/contracts/types";
@@ -26,7 +27,6 @@ export async function POST(
       "not_renew",
       "upload_signed",
       "cancel",
-      "reopen",
     ];
 
     if (!validActions.includes(action)) {
@@ -54,7 +54,7 @@ export async function POST(
     }
 
     return NextResponse.json({
-      dashboard: await getContractRenewalDashboardData(),
+      dashboard: await getContractRenewalDashboardData(access),
       data,
       success: true,
     });
@@ -65,6 +65,9 @@ export async function POST(
     }
     if (isContractRenewalSchemaMissing(error)) {
       return NextResponse.json({ success: false, error: "Contract renewal workflow schema is not ready." }, { status: 409 });
+    }
+    if (isContractRenewalValidationError(error)) {
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
     }
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }

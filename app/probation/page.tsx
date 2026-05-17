@@ -2,7 +2,6 @@ import { AppShell } from "@/components/layout/app-shell";
 import { ProbationTracker } from "@/components/probation/probation-tracker";
 import { redirect } from "next/navigation";
 
-import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   employeeDirectoryErrorMessage,
@@ -10,7 +9,12 @@ import {
   isEmployeeDirectorySchemaMissing,
   isEmployeeDirectoryTimeout,
 } from "@/lib/employees/employee-directory";
-import { getProbationRows, isProbationSchemaMissing, probationErrorMessage } from "@/lib/probation/service";
+import {
+  getProbationRows,
+  isProbationAdministrator,
+  isProbationSchemaMissing,
+  probationErrorMessage,
+} from "@/lib/probation/service";
 import type { ProbationRow } from "@/lib/probation/types";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +33,7 @@ function probationPageError(error: unknown) {
   }
 
   if (isProbationSchemaMissing(error)) {
-    return "Probation workflow schema is not ready. Run supabase/20260510_probation_workflow.sql in Supabase SQL editor.";
+    return "Probation review schema is not ready. Run supabase/20260510_probation_workflow.sql in Supabase SQL editor.";
   }
 
   return probationErrorMessage(error) || employeeDirectoryErrorMessage(error);
@@ -37,14 +41,14 @@ function probationPageError(error: unknown) {
 
 export default async function ProbationPage() {
   const access = await resolveAccessContextFromPage();
-  if (!await canAccess(access, "probation", "read")) {
+  if (!isProbationAdministrator(access)) {
     redirect("/employee-portals");
   }
   let initialData: ProbationRow[] | null = null;
   let initialError: string | null = null;
 
   try {
-    initialData = await getProbationRows();
+    initialData = await getProbationRows(access);
   } catch (error) {
     initialError = probationPageError(error);
   }
@@ -52,6 +56,7 @@ export default async function ProbationPage() {
   return (
     <AppShell navigationMode="admin">
       <ProbationTracker
+        capabilities={{ canCreate: true, canExport: true, canManageWorkflow: true, canSubmitManagerFeedback: true, viewerMode: "hr" }}
         initialData={initialData}
         initialError={initialError}
         presentation="premium"

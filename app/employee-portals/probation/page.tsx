@@ -6,44 +6,26 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import {
   assertPermission,
-  canSeeEmployee,
-  normalizeHrId,
-  normalizeLineName,
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
 import {
   employeeDirectoryErrorMessage,
-  getEmployeeDirectoryRows,
   isEmployeeDirectoryEnvMissing,
   isEmployeeDirectorySchemaMissing,
   isEmployeeDirectoryTimeout,
 } from "@/lib/employees/employee-directory";
+import { getProbationRows, isProbationSchemaMissing, probationErrorMessage } from "@/lib/probation/service";
 import type { ProbationRow } from "@/lib/probation/types";
 
 export const dynamic = "force-dynamic";
-
-const probationDays = 90;
 
 function probationPageError(error: unknown) {
   if (isEmployeeDirectoryTimeout(error)) return "Supabase request timed out. Check your connection and try again.";
   if (isEmployeeDirectoryEnvMissing(error)) return "Supabase environment variables are missing.";
   if (isEmployeeDirectorySchemaMissing(error)) return "Supabase schema is not ready. Run supabase/phoenix-schema.sql in Supabase SQL editor.";
-  return employeeDirectoryErrorMessage(error);
-}
-
-function addDays(value: string | null, days: number) {
-  return addDaysToDateOnly(value, days) ?? "";
-}
-
-function daysRemaining(value: string) {
-  const endDate = parseDateOnly(value);
-  if (!endDate) return 0;
-  const end = endDate.getTime();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.ceil((end - today.getTime()) / 86400000);
+  if (isProbationSchemaMissing(error)) return "Probation review schema is not ready.";
+  return probationErrorMessage(error) || employeeDirectoryErrorMessage(error);
 }
 
 export default async function EmployeePortalProbationPage() {
@@ -53,45 +35,13 @@ export default async function EmployeePortalProbationPage() {
     redirect("/overview");
   }
 
-  const normalizedRole = access.role.toLowerCase();
-  const isDsm = normalizedRole.includes("district manager");
-  const isNsm = normalizedRole.includes("national sales manager");
-  if (!isDsm && !isNsm) {
-    redirect("/employee-portals");
-  }
-
   await assertPermission(access, "probation", "read");
+  const canSubmitManagerFeedback = access.role === "District Manager" || access.role === "Regional Manager" || access.role === "National Sales Manager" || access.role === "Manager";
   let initialData: ProbationRow[] | null = null;
   let initialError: string | null = null;
 
   try {
-    const employees = await getEmployeeDirectoryRows();
-    const currentHrId = normalizeHrId(access.hrId);
-    const currentEmployee = employees.find((employee) => normalizeHrId(employee.hrId) === currentHrId) ?? null;
-    const currentLine = normalizeLineName(currentEmployee?.lineName);
-
-    initialData = employees
-      .filter((employee) => {
-        if (isNsm) return normalizeLineName(employee.lineName) === currentLine;
-        return canSeeEmployee(access, employee) && normalizeHrId(employee.hrId) !== currentHrId;
-      })
-      .map((employee) => {
-        const probationEndDate = addDays(employee.hireDate, probationDays);
-
-        return {
-          area_name: employee.areaName ?? "Unassigned",
-          crm_id: employee.crmId ?? "",
-          days_remaining: daysRemaining(probationEndDate),
-          employment_status: employee.employmentStatus ?? "",
-          full_name: employee.fullName,
-          hire_date: employee.hireDate ?? "",
-          hr_id: employee.hrId,
-          job_title: employee.positionTitle ?? employee.jobTitle ?? "Unassigned",
-          line_name: employee.lineName ?? "Unassigned",
-          probation_end_date: probationEndDate,
-        };
-      })
-      .filter((row) => row.days_remaining > 0);
+    initialData = await getProbationRows(access);
   } catch (error) {
     initialError = probationPageError(error);
   }
@@ -116,10 +66,14 @@ export default async function EmployeePortalProbationPage() {
 
   return (
     <EmployeePortalPageShell
-      description="Track probation timelines and escalation candidates by area and hierarchy."
+      description="Track probation timelines for your own profile or scoped team."
       title="Probation Tracker"
     >
-      <ProbationTracker initialData={initialData} initialError={initialError} />
+      <ProbationTracker
+        capabilities={{ canCreate: false, canExport: false, canManageWorkflow: false, canSubmitManagerFeedback, viewerMode: canSubmitManagerFeedback ? "manager" : "employee" }}
+        initialData={initialData}
+        initialError={initialError}
+      />
     </EmployeePortalPageShell>
   );
 }

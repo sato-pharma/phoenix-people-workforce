@@ -22,6 +22,7 @@ export type EmployeeDirectoryRow = {
   bankAccount: string | null;
   baseSalary: number | null;
   basicSalary: number | null;
+  contractRenewalDate: string | null;
   contractType: string | null;
   createdAt: string;
   crmId: string | null;
@@ -165,6 +166,7 @@ type EmployeeDbRow = {
   bank_name?: string | null;
   base_salary?: number | null;
   basic_salary?: number | null;
+  contract_renewal_date?: string | null;
   contract_type?: string | null;
   created_at: string;
   crm_id: string | null;
@@ -658,7 +660,7 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
 async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const baseEmployeeSelect =
-    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
 
   // Try to join compensation and other lookups in a single query to reduce N+1 and massive IN filters
   const joinedSelect = `${baseEmployeeSelect},region_name,birth_date,
@@ -765,6 +767,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         baseSalary: row.base_salary ?? null,
         basicSalary: row.basic_salary ?? null,
         birthDate: row.birth_date ?? null,
+        contractRenewalDate: row.contract_renewal_date ?? null,
         contractType: row.contract_type ?? null,
         createdAt: row.created_at,
         crmId: row.crm_id,
@@ -915,6 +918,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         baseSalary: row.base_salary ?? null,
         basicSalary: row.basic_salary ?? null,
         birthDate: row.birth_date ?? null,
+        contractRenewalDate: row.contract_renewal_date ?? null,
         contractType: row.contract_type ?? null,
         createdAt: row.created_at,
         crmId: row.crm_id,
@@ -1024,6 +1028,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       baseSalary: row.base_salary ?? null,
       basicSalary: row.basic_salary ?? null,
       birthDate: row.birth_date ?? null,
+      contractRenewalDate: row.contract_renewal_date ?? null,
       contractType: row.contract_type ?? null,
       createdAt: row.created_at,
       crmId: row.crm_id,
@@ -1111,7 +1116,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
 export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]> {
   const baseEmployeeSelect =
-    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
   const employeeParams = new URLSearchParams({
     select: `${baseEmployeeSelect},region_name,birth_date`,
     order: "full_name.asc",
@@ -1159,6 +1164,7 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       baseSalary: row.base_salary ?? null,
       basicSalary: row.basic_salary ?? null,
       birthDate: row.birth_date ?? null,
+      contractRenewalDate: row.contract_renewal_date ?? null,
       contractType: row.contract_type ?? null,
       createdAt: row.created_at,
       crmId: row.crm_id,

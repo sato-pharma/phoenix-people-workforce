@@ -2,7 +2,9 @@ import { getOfferDashboard } from "@/lib/offers/service";
 import { getPayrollDashboard } from "@/lib/payroll/service";
 import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
 import { getSalesDashboard } from "@/lib/sales/service";
+import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { addDaysToDateOnly } from "@/lib/date-only";
 import {
   canAccess,
   filterEmployeeDirectoryForAccess,
@@ -83,14 +85,8 @@ export type OverviewDashboardData = {
 };
 
 type OverviewContractRow = {
-  contract_renewal_date?: string | null;
-  full_name?: string | null;
-};
-
-type OverviewProbationRow = {
-  days_remaining?: number | null;
-  full_name?: string | null;
-  probation_end_date?: string | null;
+    contract_renewal_date?: string | null;
+    full_name?: string | null;
 };
 
 type OverviewSalaryBatchActivityRow = {
@@ -301,7 +297,6 @@ export async function getOverviewDashboard(
     expenseReports,
     offersData,
     contracts,
-    probations,
     salaryBatchActivity,
     salesAuditActivity,
     offerAuditActivity,
@@ -319,10 +314,14 @@ export async function getOverviewDashboard(
       : Promise.resolve([]),
     canReadOffers ? getOfferDashboard() : Promise.resolve(null),
     canReadContracts
-      ? supabaseRest<OverviewContractRow[]>("v_lifecycle_dashboard").catch(() => [])
-      : Promise.resolve([]),
-    canReadProbation
-      ? supabaseRest<OverviewProbationRow[]>("v_probation_tracker").catch(() => [])
+      ? getContractRenewalDashboardData(accessContext)
+          .then((dashboard) =>
+            dashboard.rows.map((row) => ({
+              contract_renewal_date: row.contract_renewal_date,
+              full_name: row.full_name,
+            })),
+          )
+          .catch(() => [])
       : Promise.resolve([]),
     canReadPayroll
       ? supabaseRest<OverviewSalaryBatchActivityRow[]>(
@@ -533,15 +532,15 @@ export async function getOverviewDashboard(
     }
   });
 
-  (probations || []).forEach((p) => {
-    const probationEndDateValue = p.probation_end_date ?? null;
+  (canReadProbation ? employees?.employees || [] : []).forEach((employee) => {
+    const probationEndDateValue = addDaysToDateOnly(employee.hireDate, 90);
     if (probationEndDateValue && isWithinFutureDays(probationEndDateValue, 30)) {
       const endDate = new Date(probationEndDateValue);
       riskAlerts.push({
         type: "probation",
-        name: p.full_name ?? "Unknown employee",
+        name: employee.fullName ?? "Unknown employee",
         date: probationEndDateValue,
-        days: typeof p.days_remaining === 'number' ? p.days_remaining : daysBetween(endDate, now)
+        days: daysBetween(endDate, now)
       });
     }
   });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   getProbationRows,
@@ -21,27 +21,22 @@ export async function POST(
     const action = String(body.action ?? "") as ProbationWorkflowAction;
     const validActions: ProbationWorkflowAction[] = [
       "manager_feedback",
-      "hr_recommendation",
-      "approve_pass",
-      "approve_extend",
-      "approve_terminate",
+      "pass",
+      "extend",
+      "terminate",
       "upload_letter",
-      "complete",
-      "cancel",
-      "reopen",
     ];
 
     if (!validActions.includes(action)) {
       return NextResponse.json({ success: false, error: "Invalid action." }, { status: 400 });
     }
 
-    await assertPermission(access, "probation", action.startsWith("approve") ? "approve" : "update");
     const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
-    const data = await runProbationWorkflow(id, action, actor, {
+    const data = await runProbationWorkflow(id, action, actor, access, {
       decisionReason: body.decisionReason ? String(body.decisionReason) : undefined,
       evaluationScores: typeof body.evaluationScores === "object" && body.evaluationScores ? body.evaluationScores : undefined,
+      expectedUpdatedAt: body.expectedUpdatedAt ? String(body.expectedUpdatedAt) : undefined,
       extensionEndDate: body.extensionEndDate ? String(body.extensionEndDate) : undefined,
-      hrRecommendation: body.hrRecommendation ? String(body.hrRecommendation) : undefined,
       managerFeedback: body.managerFeedback ? String(body.managerFeedback) : undefined,
       note: body.note ? String(body.note) : undefined,
       probationLetterName: body.probationLetterName ? String(body.probationLetterName) : undefined,
@@ -49,15 +44,26 @@ export async function POST(
     });
 
     if (!data) {
-      return NextResponse.json({ success: false, error: "Probation workflow not found." }, { status: 404 });
+      return NextResponse.json({ success: false, error: "Probation review not found." }, { status: 404 });
     }
 
-    return NextResponse.json({ data, rows: await getProbationRows(), success: true });
+    return NextResponse.json({ data, rows: await getProbationRows(access), success: true });
   } catch (error) {
     const message = probationErrorMessage(error);
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: message }, { status: 403 });
+    if (message.toLowerCase().includes("forbidden")) return NextResponse.json({ success: false, error: message }, { status: 403 });
+    if (message.toLowerCase().includes("updated by another user")) {
+      return NextResponse.json({ success: false, error: message }, { status: 409 });
+    }
+    if (
+      message.toLowerCase().includes("invalid probation transition") ||
+      message.toLowerCase().includes("required") ||
+      message.toLowerCase().includes("must be later")
+    ) {
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
+    }
     if (isProbationSchemaMissing(error)) {
-      return NextResponse.json({ success: false, error: "Probation workflow schema is not ready." }, { status: 409 });
+      return NextResponse.json({ success: false, error: "Probation review schema is not ready." }, { status: 409 });
     }
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }

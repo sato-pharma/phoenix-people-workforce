@@ -1,4 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { getContractRenewalDashboardData } from "@/lib/contracts/service";
+import { addDaysToDateOnly } from "@/lib/date-only";
 import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
 import { getPayrollDashboard } from "@/lib/payroll/service";
@@ -393,36 +395,33 @@ async function fetchRecruitmentSummary(): Promise<{
   }
 }
 
-async function fetchRiskSummary(): Promise<{
+function isFutureDateWithinDays(value: string | null | undefined, days: number) {
+  if (!value) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(`${value.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(target.getTime())) return false;
+  const diffDays = Math.ceil((target.getTime() - today.getTime()) / 86400000);
+  return diffDays > 0 && diffDays <= days;
+}
+
+async function fetchRiskSummary(accessContext: AccessContext): Promise<{
   expiringContracts: number;
   probationEndings: number;
   error: string | null;
 }> {
-  const supabase = getSupabaseAdmin();
   const empty = { expiringContracts: 0, probationEndings: 0, error: null };
 
   try {
-    const now = new Date();
-    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const in15Days = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const today = now.toISOString().slice(0, 10);
-
-    const [contractResult, probationResult] = await Promise.all([
-      supabase
-        .from("employee_contracts")
-        .select("id", { count: "exact", head: true })
-        .gt("contract_renewal_date", today)
-        .lte("contract_renewal_date", in30Days),
-      supabase
-        .from("employee_probation")
-        .select("id", { count: "exact", head: true })
-        .gt("probation_end_date", today)
-        .lte("probation_end_date", in15Days),
+    const [contractResult, employeeDirectory] = await Promise.all([
+      getContractRenewalDashboardData(accessContext),
+      getEmployeeDirectory(),
     ]);
-
     return {
-      expiringContracts: contractResult.count ?? 0,
-      probationEndings: probationResult.count ?? 0,
+      expiringContracts: contractResult.rows.filter((row) => isFutureDateWithinDays(row.contract_renewal_date, 30)).length,
+      probationEndings: employeeDirectory.employees.filter((employee) =>
+        isFutureDateWithinDays(addDaysToDateOnly(employee.hireDate, 90), 15),
+      ).length,
       error: null,
     };
   } catch {
@@ -447,7 +446,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
       getEmployeeDirectory(),
       fetchExpenseSummary(),
       fetchRecruitmentSummary(),
-      fetchRiskSummary(),
+      fetchRiskSummary(accessContext),
       fetchSalesHealthCounts(),
       fetchPayrollEligibleCount(),
     ]);

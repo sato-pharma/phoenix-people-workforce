@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { generateProbationPdf, generateProbationWorkbook } from "@/lib/probation/export";
-import { getProbationRows, isProbationSchemaMissing, probationErrorMessage } from "@/lib/probation/service";
+import {
+  assertCanExportProbation,
+  getProbationRows,
+  isProbationSchemaMissing,
+  probationErrorMessage,
+} from "@/lib/probation/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,8 +27,8 @@ export async function GET(request: Request) {
     }
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "probation", "export");
-    const rows = await getProbationRows();
+    assertCanExportProbation(access);
+    const rows = await getProbationRows(access);
 
     if (format === "xlsx") {
       return new Response(await generateProbationWorkbook(rows), {
@@ -50,8 +54,9 @@ export async function GET(request: Request) {
   } catch (error) {
     const message = probationErrorMessage(error);
     if (isForbiddenError(error)) return NextResponse.json({ error: message }, { status: 403 });
+    if (message.toLowerCase().includes("forbidden")) return NextResponse.json({ error: message }, { status: 403 });
     if (isProbationSchemaMissing(error)) {
-      return NextResponse.json({ error: "Probation workflow schema is not ready." }, { status: 409 });
+      return NextResponse.json({ error: "Probation review schema is not ready." }, { status: 409 });
     }
     return NextResponse.json({ error: message || "Unable to export probation report." }, { status: 500 });
   }

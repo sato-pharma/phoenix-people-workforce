@@ -11,7 +11,8 @@ import {
   type BusinessScope,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
-import { addDaysToDateOnly, addYearsToDateOnly, daysBetweenDateOnly, parseDateOnly } from "@/lib/date-only";
+import { addDaysToDateOnly, daysBetweenDateOnly, parseDateOnly } from "@/lib/date-only";
+import { nextContractAnniversary } from "@/lib/contracts/date-rules";
 import {
   createPortalSalesLineScope,
   employeeMatchesPortalSalesScope,
@@ -321,6 +322,24 @@ function toNumber(value: unknown) {
 function positiveMoneyOrNull(value: number | null | undefined) {
   const num = Number(value);
   return Number.isFinite(num) && num > 0 ? num : null;
+}
+
+async function fetchEmployeeSalaryStructure(hrId: string) {
+  const { data } = await getSupabaseAdmin()
+    .from("employee_salary_structure")
+    .select("base_salary,cost_of_living,fuel_allowance,social_insurance,income_taxes")
+    .ilike("employee_hr_id", hrId)
+    .order("effective_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    baseSalary: Number(data.base_salary),
+    costOfLiving: Number(data.cost_of_living ?? 0),
+    fuelAllowance: Number(data.fuel_allowance ?? 0),
+    socialInsurance: Number(data.social_insurance ?? 0),
+    incomeTaxes: Number(data.income_taxes ?? 0),
+  };
 }
 
 function pickText(row: PortalPayrollSourceRow, keys: string[]) {
@@ -751,10 +770,6 @@ function addDays(dateStr: string | null, days: number): string | null {
   return addDaysToDateOnly(dateStr, days);
 }
 
-function addYears(dateStr: string | null, years: number): string | null {
-  return addYearsToDateOnly(dateStr, years);
-}
-
 function daysFromToday(dateStr: string | null): number | null {
   const target = parseDateOnly(dateStr);
   if (!target || Number.isNaN(target.getTime())) return null;
@@ -766,7 +781,7 @@ function daysFromToday(dateStr: string | null): number | null {
 function computeEmploymentJourney(employee: EmployeeDirectoryRow): EmploymentJourney {
   const hireDate = employee.hireDate ?? null;
   const probationEndDate = addDays(hireDate, 90);
-  const contractRenewalDate = addYears(hireDate, 1);
+  const contractRenewalDate = employee.contractRenewalDate ?? nextContractAnniversary(hireDate);
   const contractSignedDate = hireDate;
 
   const serviceDurationDays = Math.max(0, daysBetweenDateOnly(hireDate) ?? 0);
@@ -1568,6 +1583,7 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     basicSalary: null,
     birthDate: null,
     contractType: null,
+    contractRenewalDate: null,
     createdAt: new Date(0).toISOString(),
     crmId: null,
     crmUsername: null,
@@ -1790,7 +1806,7 @@ export async function getEmployeePortalData(
     },
   };
   const insights = computeInsights(insightInput);
-  const fixedAllowances = resolveStandardSalaryAllowances({
+  const fallbackAllowances = resolveStandardSalaryAllowances({
     departmentName: employee.departmentName,
     jobTitle: employee.jobTitle,
     lineName: employee.lineName,
@@ -1798,24 +1814,30 @@ export async function getEmployeePortalData(
     positionTitle: employee.positionTitle,
     year: latestBatch?.year,
   });
+  const salaryStructure = currentHrId ? await fetchEmployeeSalaryStructure(currentHrId) : null;
+  const sourceExtraCostOfLiving = salaryStructure?.costOfLiving ?? fallbackAllowances.extraCostOfLiving;
+  const sourceFuelAllowance = salaryStructure?.fuelAllowance ?? fallbackAllowances.fuelAllowance;
   const sourceBaseSalary =
+    salaryStructure?.baseSalary ??
     positiveMoneyOrNull(employee.netSalary) ??
     (latestRecord
       ? calculateBaseSalary({
-          extraCostOfLiving: fixedAllowances.extraCostOfLiving,
-          fuelAllowance: fixedAllowances.fuelAllowance,
+          extraCostOfLiving: sourceExtraCostOfLiving,
+          fuelAllowance: sourceFuelAllowance,
           netSalary: latestRecord.netSalary,
         })
       : 0);
   const sourceNetSalary = calculateNetSalary({
     baseSalary: sourceBaseSalary,
-    extraCostOfLiving: fixedAllowances.extraCostOfLiving,
-    fuelAllowance: fixedAllowances.fuelAllowance,
+    extraCostOfLiving: sourceExtraCostOfLiving,
+    fuelAllowance: sourceFuelAllowance,
   });
+  const sourceSocialInsurance = salaryStructure?.socialInsurance ?? employee.socialInsurance;
+  const sourceTaxes = salaryStructure?.incomeTaxes ?? employee.taxes;
   const calculatedSourceGrossSalary = calculateGrossSalary({
     baseSalary: sourceBaseSalary,
-    socialInsurance: employee.socialInsurance,
-    taxes: employee.taxes,
+    socialInsurance: sourceSocialInsurance,
+    taxes: sourceTaxes,
   });
   const sourceGrossSalary = positiveMoneyOrNull(employee.grossSalary) ?? calculatedSourceGrossSalary;
 
@@ -2399,7 +2421,7 @@ function buildPortalWorkforceSummary({
     return days !== null && days >= 0 && days <= 30;
   }).length;
   const probationDue = countRowsWithUpcomingDate(rows, (row) => addDays(row.hireDate, 90));
-  const contractRenewalsDue = countRowsWithUpcomingDate(rows, (row) => addYears(row.hireDate, 1));
+  const contractRenewalsDue = countRowsWithUpcomingDate(rows, (row) => row.contractRenewalDate ?? nextContractAnniversary(row.hireDate));
   const dataCoveragePercent = rows.length > 0
     ? ((rows.length - missingEmployeeData) / rows.length) * 100
     : 0;
@@ -3279,7 +3301,7 @@ export async function getMedicalRepPortalData(
   
   if (!salesTrend.length) insights.push("Sales data has not been uploaded yet.");
   
-  const fixedAllowances = resolveStandardSalaryAllowances({
+  const fallbackAllowances = resolveStandardSalaryAllowances({
     departmentName: employee.departmentName,
     jobTitle: employee.jobTitle,
     lineName: employee.lineName,
@@ -3287,9 +3309,11 @@ export async function getMedicalRepPortalData(
     positionTitle: employee.positionTitle,
     year: latestBatch?.year,
   });
-  const fixedExtraCostOfLiving = fixedAllowances.extraCostOfLiving;
-  const fixedFuelAllowance = fixedAllowances.fuelAllowance;
+  const salaryStructure = currentHrId ? await fetchEmployeeSalaryStructure(currentHrId) : null;
+  const fixedExtraCostOfLiving = salaryStructure?.costOfLiving ?? fallbackAllowances.extraCostOfLiving;
+  const fixedFuelAllowance = salaryStructure?.fuelAllowance ?? fallbackAllowances.fuelAllowance;
   const fixedBaseSalary =
+    salaryStructure?.baseSalary ??
     positiveMoneyOrNull(employee.netSalary) ??
     (latestRecord
       ? calculateBaseSalary({
@@ -3298,8 +3322,8 @@ export async function getMedicalRepPortalData(
           netSalary: latestRecord.netSalary,
         })
       : 0);
-  const fixedSocialInsurance = employee.socialInsurance ?? latestRecord?.socialInsurance ?? 0;
-  const fixedTaxes = employee.taxes ?? latestRecord?.employmentIncomeTax ?? 0;
+  const fixedSocialInsurance = salaryStructure?.socialInsurance ?? employee.socialInsurance ?? latestRecord?.socialInsurance ?? 0;
+  const fixedTaxes = salaryStructure?.incomeTaxes ?? employee.taxes ?? latestRecord?.employmentIncomeTax ?? 0;
   const fixedNetSalary = calculateNetSalary({
     baseSalary: fixedBaseSalary,
     extraCostOfLiving: fixedExtraCostOfLiving,

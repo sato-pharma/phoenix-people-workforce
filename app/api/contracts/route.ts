@@ -7,6 +7,7 @@ import {
   createContractRenewalRequest,
   getContractRenewalDashboardData,
   isContractRenewalSchemaMissing,
+  isContractRenewalValidationError,
 } from "@/lib/contracts/service";
 
 export async function POST(request: Request) {
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
     );
 
     return NextResponse.json({
-      dashboard: await getContractRenewalDashboardData(),
+      dashboard: await getContractRenewalDashboardData(access),
       data,
       success: true,
     });
@@ -41,6 +42,9 @@ export async function POST(request: Request) {
     }
     if (isContractRenewalSchemaMissing(error)) {
       return NextResponse.json({ success: false, error: "Contract renewal workflow schema is not ready." }, { status: 409 });
+    }
+    if (isContractRenewalValidationError(error)) {
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
     }
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
