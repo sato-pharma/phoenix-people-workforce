@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { calculateOutstationExpense } from "@/lib/outstation/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { parseCarEvidenceMetadata } from "@/app/api/outstation/request-body";
 import type {
   OutstationExpenseType,
   OutstationTransportationType,
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "outstation", "create");
 
-    const body = await request.json();
+    const body = (await request.json()) as Record<string, unknown>;
     const result = await calculateOutstationExpense(access, {
       capturedAccuracyMeters: Number(body.capturedAccuracyMeters),
       capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : undefined,
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
       notes: typeof body.notes === "string" ? body.notes : undefined,
       offlineCaptured: Boolean(body.offlineCaptured),
       returnTicketAmount: Number(body.returnTicketAmount ?? 0),
+      carEvidenceMetadata: parseCarEvidenceMetadata(body),
       transportationType: String(body.transportationType ?? "car") as OutstationTransportationType,
       tripEndDate: String(body.tripEndDate ?? ""),
       tripStartDate: String(body.tripStartDate ?? ""),

@@ -4,7 +4,12 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
-import { listBrickReferenceRows, normalizeBrickText } from "@/lib/bricks/service";
+import { validateLiveCarEvidence } from "@/lib/outstation/car-evidence";
+import {
+  createOutstationCarEvidenceSignedUrl,
+  deleteOutstationCarEvidenceImage,
+  uploadOutstationCarEvidenceImage,
+} from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
@@ -18,6 +23,7 @@ import type {
   EmployeeResidenceLocation,
   OutstationAllowanceBreakdown,
   OutstationApprovalRecommendation,
+  OutstationCarEvidenceMetadata,
   OutstationCalculationInput,
   OutstationCalculationResult,
   OutstationCaptureResult,
@@ -70,6 +76,26 @@ function text(value: unknown) {
 function cleanText(value: unknown) {
   const normalized = text(value);
   return normalized.length > 0 ? normalized : null;
+}
+
+function appendCarEvidenceNote(
+  notes: string | null,
+  metadata: OutstationCarEvidenceMetadata | null | undefined,
+) {
+  if (!metadata) return notes;
+
+  const evidenceLine = [
+    "Car live evidence:",
+    `source=${metadata.source}`,
+    `hr_id=${metadata.employeeHrId}`,
+    `captured_at=${metadata.capturedAt}`,
+    `location=${metadata.capturedLocationLabel ?? ""}`,
+    `gps=${metadata.capturedLatitude},${metadata.capturedLongitude}`,
+    `draft_id=${metadata.requestDraftId ?? ""}`,
+    `request_id=${metadata.requestId ?? ""}`,
+  ].join(" ");
+
+  return [notes, evidenceLine].filter(Boolean).join("\n");
 }
 
 function numberValue(value: unknown) {
@@ -225,7 +251,7 @@ function recommendationForResult(params: {
   }
 
   if (
-    params.transportationType !== "car" &&
+    (params.transportationType === "train" || params.transportationType === "bus") &&
     params.policy.requiresTicketAttachment &&
     !params.hasTicketAttachments
   ) {
@@ -500,7 +526,6 @@ async function validateTerritory(input: {
   employeeArea: string | null;
 }) {
   const normalizedCapturedArea = normalizeArea(input.capturedArea);
-  const normalizedCapturedCity = normalizeArea(input.capturedCity);
   const employeeAreaKey = normalizeArea(input.employeeArea);
 
   if (employeeAreaKey && normalizedCapturedArea && employeeAreaKey === normalizedCapturedArea) {
@@ -937,7 +962,7 @@ export async function calculateOutstationExpense(
   if (input.transportationType === "car") {
     const distanceKm = result.distanceFromResidenceKm ?? 0;
     fuelAmount = roundMoney(distanceKm * 2 * policy.fuelRatePerKm);
-  } else {
+  } else if (input.transportationType === "train" || input.transportationType === "bus") {
     ticketAmount = roundMoney(
       numberValue(input.goTicketAmount) + numberValue(input.returnTicketAmount),
     );
@@ -1000,6 +1025,8 @@ export async function calculateOutstationExpense(
     sameDayTrip: allowance.sameDayTrip,
     suspiciousLocationScore: buildSuspiciousScore(result.fraudFlags),
     ticketAmount,
+    carEvidenceImagePath: null,
+    carEvidenceMetadata: input.carEvidenceMetadata,
     transportationType: input.transportationType,
     tripEndDate,
     tripStartDate,
@@ -1015,6 +1042,15 @@ export async function submitOutstationRequest(
   input: OutstationCalculationInput,
 ) {
   const calculation = await calculateOutstationExpense(access, input);
+  const evidenceValidation = validateLiveCarEvidence({
+    carEvidenceMetadata: input.carEvidenceMetadata,
+    transportationType: input.transportationType,
+  });
+
+  if (!evidenceValidation.isValid) {
+    throw new Error(evidenceValidation.message);
+  }
+
   if (calculation.eligibilityStatus === "not_eligible") {
     throw new Error(calculation.eligibilityReason);
   }
@@ -1022,70 +1058,121 @@ export async function submitOutstationRequest(
   const identity = await getEmployeeIdentity(access);
   const residence = await getResidenceLocationForEmployee(identity.employeeHrId);
   const supabase = getSupabaseAdmin();
+  const storedCarEvidenceMetadata =
+    calculation.transportationType === "car" && input.carEvidenceMetadata
+      ? {
+          ...input.carEvidenceMetadata,
+          employeeHrId: calculation.employeeHrId,
+          requestId: input.carEvidenceMetadata.requestId ?? null,
+        }
+      : null;
+  let carEvidenceImagePath: string | null = null;
+
+  if (calculation.transportationType === "car") {
+    if (!input.carEvidenceImageDataUrl) {
+      throw new Error("Car transport requires the live camera evidence image before submitting the request.");
+    }
+    if (!storedCarEvidenceMetadata) {
+      throw new Error("Car live camera evidence metadata is missing.");
+    }
+
+    carEvidenceImagePath = await uploadOutstationCarEvidenceImage({
+      imageDataUrl: input.carEvidenceImageDataUrl,
+      metadata: storedCarEvidenceMetadata,
+    });
+  }
+
+  const insertPayload = {
+    allowance_amount: calculation.allowanceAmount,
+    allowance_breakdown_json: JSON.stringify(calculation.allowanceBreakdown),
+    attachment_count: calculation.attachmentCount,
+    approval_reason: calculation.approvalReason,
+    approval_recommendation: calculation.approvalRecommendation,
+    area: calculation.employeeArea,
+    calculation_status: "submitted",
+    captured_accuracy_meters: calculation.capturedAccuracyMeters,
+    captured_at: calculation.capturedAt,
+    captured_latitude: calculation.capturedLatitude,
+    captured_location_source: calculation.capturedLocationSource,
+    captured_longitude: calculation.capturedLongitude,
+    car_evidence_image_path: carEvidenceImagePath,
+    car_evidence_metadata: storedCarEvidenceMetadata,
+    claimed_total_amount: input.claimedTotalAmount,
+    distance_from_residence_km: calculation.distanceFromResidenceKm,
+    distance_km: calculation.distanceFromResidenceKm,
+    duration_minutes: calculation.durationMinutes,
+    expense_type: calculation.expenseType,
+    eligibility_reason: calculation.eligibilityReason,
+    eligibility_status: calculation.eligibilityStatus,
+    employee_hr_id: calculation.employeeHrId,
+    employee_name: calculation.employeeName,
+    employee_role: calculation.employeeRole,
+    expected_total_amount: calculation.expectedTotalAmount,
+    fraud_flags_json: JSON.stringify(calculation.fraudFlags),
+    fuel_amount: calculation.fuelAmount,
+    kilometer_reading: calculation.kilometerReading,
+    line: calculation.employeeLine,
+    medical_trip_hr_id: calculation.medicalTripHrId,
+    medical_trip_name: calculation.medicalTripName,
+    minimum_required_distance_km: calculation.minimumRequiredDistanceKm,
+    notes: appendCarEvidenceNote(calculation.notes, storedCarEvidenceMetadata),
+    offline_captured: calculation.offlineCaptured,
+    overnight_days: calculation.overnightDays,
+    residence_address: residence?.residenceAddress ?? null,
+    residence_area: residence?.residenceArea ?? null,
+    residence_city: residence?.residenceCity ?? null,
+    residence_latitude: residence?.residenceLatitude ?? null,
+    residence_longitude: residence?.residenceLongitude ?? null,
+    route_polyline: calculation.routePolyline,
+    same_day_trip: calculation.sameDayTrip,
+    status: "submitted",
+    submitted_at: calculation.submittedAt,
+    suspicious_location_score: calculation.suspiciousLocationScore,
+    territory_validation_status: calculation.territoryValidationStatus,
+    territory_validation_reason: calculation.territoryValidationReason,
+    ticket_amount: calculation.ticketAmount,
+    to_area: calculation.toArea,
+    to_city: calculation.toCity,
+    to_label: calculation.toLabel,
+    transportation_type: calculation.transportationType,
+    trip_end_date: calculation.tripEndDate,
+    trip_start_date: calculation.tripStartDate,
+    variance_amount: calculation.varianceAmount,
+    variance_percent: calculation.variancePercent,
+  };
 
   const { data, error } = await supabase
     .from("outstation_expense_requests")
-    .insert({
-      allowance_amount: calculation.allowanceAmount,
-      allowance_breakdown_json: JSON.stringify(calculation.allowanceBreakdown),
-      attachment_count: calculation.attachmentCount,
-      approval_reason: calculation.approvalReason,
-      approval_recommendation: calculation.approvalRecommendation,
-      area: calculation.employeeArea,
-      calculation_status: "submitted",
-      captured_accuracy_meters: calculation.capturedAccuracyMeters,
-      captured_at: calculation.capturedAt,
-      captured_latitude: calculation.capturedLatitude,
-      captured_location_source: calculation.capturedLocationSource,
-      captured_longitude: calculation.capturedLongitude,
-      claimed_total_amount: input.claimedTotalAmount,
-      distance_from_residence_km: calculation.distanceFromResidenceKm,
-      distance_km: calculation.distanceFromResidenceKm,
-      duration_minutes: calculation.durationMinutes,
-      expense_type: calculation.expenseType,
-      eligibility_reason: calculation.eligibilityReason,
-      eligibility_status: calculation.eligibilityStatus,
-      employee_hr_id: calculation.employeeHrId,
-      employee_name: calculation.employeeName,
-      employee_role: calculation.employeeRole,
-      expected_total_amount: calculation.expectedTotalAmount,
-      fraud_flags_json: JSON.stringify(calculation.fraudFlags),
-      fuel_amount: calculation.fuelAmount,
-      kilometer_reading: calculation.kilometerReading,
-      line: calculation.employeeLine,
-      medical_trip_hr_id: calculation.medicalTripHrId,
-      medical_trip_name: calculation.medicalTripName,
-      minimum_required_distance_km: calculation.minimumRequiredDistanceKm,
-      notes: calculation.notes,
-      offline_captured: calculation.offlineCaptured,
-      overnight_days: calculation.overnightDays,
-      residence_address: residence?.residenceAddress ?? null,
-      residence_area: residence?.residenceArea ?? null,
-      residence_city: residence?.residenceCity ?? null,
-      residence_latitude: residence?.residenceLatitude ?? null,
-      residence_longitude: residence?.residenceLongitude ?? null,
-      route_polyline: calculation.routePolyline,
-      same_day_trip: calculation.sameDayTrip,
-      status: "submitted",
-      submitted_at: calculation.submittedAt,
-      suspicious_location_score: calculation.suspiciousLocationScore,
-      territory_validation_status: calculation.territoryValidationStatus,
-      territory_validation_reason: calculation.territoryValidationReason,
-      ticket_amount: calculation.ticketAmount,
-      to_area: calculation.toArea,
-      to_city: calculation.toCity,
-      to_label: calculation.toLabel,
-      transportation_type: calculation.transportationType,
-      trip_end_date: calculation.tripEndDate,
-      trip_start_date: calculation.tripStartDate,
-      variance_amount: calculation.varianceAmount,
-      variance_percent: calculation.variancePercent,
-    })
+    .insert(insertPayload)
     .select("*")
     .single();
 
   if (error) {
+    await deleteOutstationCarEvidenceImage(carEvidenceImagePath);
     throw new Error(error.message);
+  }
+
+  const requestId = String(data.id);
+  const metadataWithRequestId = storedCarEvidenceMetadata
+    ? {
+        ...storedCarEvidenceMetadata,
+        requestId,
+      }
+    : null;
+  let persistedCarEvidenceMetadata = storedCarEvidenceMetadata;
+
+  if (metadataWithRequestId) {
+    const { error: metadataUpdateError } = await supabase
+      .from("outstation_expense_requests")
+      .update({
+        car_evidence_metadata: metadataWithRequestId,
+        notes: appendCarEvidenceNote(calculation.notes, metadataWithRequestId),
+      })
+      .eq("id", data.id);
+
+    if (!metadataUpdateError) {
+      persistedCarEvidenceMetadata = metadataWithRequestId;
+    }
   }
 
   const previousSignal = await getLatestValidationSignal(calculation.employeeHrId);
@@ -1117,7 +1204,14 @@ export async function submitOutstationRequest(
     validationResult: calculation.eligibilityStatus,
   });
 
-  return mapOutstationRequestRow(data);
+  return mapOutstationRequestRow({
+    ...data,
+    car_evidence_image_path: carEvidenceImagePath,
+    car_evidence_metadata: persistedCarEvidenceMetadata,
+    notes: persistedCarEvidenceMetadata
+      ? appendCarEvidenceNote(calculation.notes, persistedCarEvidenceMetadata)
+      : data.notes,
+  });
 }
 
 export async function syncOfflineOutstationRequest(
@@ -1185,6 +1279,12 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     capturedAt: isoString(row.captured_at),
     capturedLatitude: numberValue(row.captured_latitude),
     capturedLongitude: numberValue(row.captured_longitude),
+    carEvidenceImagePath: text(row.car_evidence_image_path) || null,
+    carEvidenceImageUrl: null,
+    carEvidenceMetadata: safeJsonParse<OutstationCarEvidenceMetadata | null>(
+      row.car_evidence_metadata,
+      null,
+    ),
     claimedTotalAmount: numberValue(row.claimed_total_amount),
     createdAt: isoString(row.created_at),
     distanceFromResidenceKm:
@@ -1240,7 +1340,24 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
   };
 }
 
-export async function listOutstationRequests() {
+async function attachCarEvidenceSignedUrls(
+  requests: OutstationExpenseRequest[],
+): Promise<OutstationExpenseRequest[]> {
+  return Promise.all(
+    requests.map(async (request) => {
+      const carEvidenceImageUrl = await createOutstationCarEvidenceSignedUrl(
+        request.carEvidenceImagePath,
+      );
+
+      return {
+        ...request,
+        carEvidenceImageUrl,
+      };
+    }),
+  );
+}
+
+export async function listOutstationRequests(options?: { includeCarEvidenceSignedUrls?: boolean }) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("outstation_expense_requests")
@@ -1251,10 +1368,16 @@ export async function listOutstationRequests() {
     throw new Error(error.message);
   }
 
-  return ((data ?? []) as Array<Record<string, unknown>>).map(mapOutstationRequestRow);
+  const requests = ((data ?? []) as Array<Record<string, unknown>>).map(mapOutstationRequestRow);
+  return options?.includeCarEvidenceSignedUrls
+    ? attachCarEvidenceSignedUrls(requests)
+    : requests;
 }
 
-export async function getOutstationRequestById(requestId: number) {
+export async function getOutstationRequestById(
+  requestId: number,
+  options?: { includeCarEvidenceSignedUrl?: boolean },
+) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("outstation_expense_requests")
@@ -1266,7 +1389,15 @@ export async function getOutstationRequestById(requestId: number) {
     throw new Error(error.message);
   }
 
-  return data ? mapOutstationRequestRow(data as Record<string, unknown>) : null;
+  if (!data) return null;
+
+  const request = mapOutstationRequestRow(data as Record<string, unknown>);
+  if (!options?.includeCarEvidenceSignedUrl) return request;
+
+  return {
+    ...request,
+    carEvidenceImageUrl: await createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
+  };
 }
 
 function uniqueValues(values: Array<string | null | undefined>) {

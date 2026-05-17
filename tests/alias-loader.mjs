@@ -1,6 +1,6 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const projectRoot = process.cwd();
 const aliasRoots = ["", "src"];
@@ -17,40 +17,52 @@ async function fileExists(filePath) {
   }
 }
 
-async function resolveAlias(specifier) {
-  const relativePath = specifier.replace(/^@\//, "");
+async function resolveFile(basePath) {
+  const candidates = [];
 
-  for (const root of aliasRoots) {
-    const basePath = path.resolve(projectRoot, root, relativePath);
-    const candidates = [];
-
-    if (hasExtension(basePath)) {
-      candidates.push(basePath);
-    } else {
-      for (const ext of extensions) {
-        candidates.push(`${basePath}${ext}`);
-      }
-      for (const ext of extensions) {
-        candidates.push(path.join(basePath, `index${ext}`));
-      }
+  if (hasExtension(basePath)) {
+    candidates.push(basePath);
+  } else {
+    for (const ext of extensions) {
+      candidates.push(`${basePath}${ext}`);
     }
+    for (const ext of extensions) {
+      candidates.push(path.join(basePath, `index${ext}`));
+    }
+  }
 
-    for (const candidate of candidates) {
-      if (await fileExists(candidate)) {
-        return pathToFileURL(candidate).href;
-      }
+  for (const candidate of candidates) {
+    if (await fileExists(candidate)) {
+      return pathToFileURL(candidate).href;
     }
   }
 
   return null;
 }
 
-export async function resolve(specifier, context, nextResolve) {
-  if (!specifier.startsWith("@/")) {
-    return nextResolve(specifier, context);
+async function resolveAlias(specifier) {
+  const relativePath = specifier.replace(/^@\//, "");
+
+  for (const root of aliasRoots) {
+    const resolved = await resolveFile(path.resolve(projectRoot, root, relativePath));
+    if (resolved) return resolved;
   }
 
-  const resolved = await resolveAlias(specifier);
+  return null;
+}
+
+async function resolveRelative(specifier, parentURL) {
+  if (!parentURL || !specifier.startsWith(".")) return null;
+
+  const parentPath = fileURLToPath(parentURL);
+  return resolveFile(path.resolve(path.dirname(parentPath), specifier));
+}
+
+export async function resolve(specifier, context, nextResolve) {
+  const resolved = specifier.startsWith("@/")
+    ? await resolveAlias(specifier)
+    : await resolveRelative(specifier, context.parentURL);
+
   if (resolved) {
     return { url: resolved, shortCircuit: true };
   }

@@ -28,6 +28,12 @@ function formatDate(value: string) {
   return date.toLocaleDateString();
 }
 
+function formatEvidenceDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "N/A";
+  return date.toLocaleString();
+}
+
 function statusTone(status: string) {
   const normalized = status.toLowerCase();
   if (normalized === "eligible") return "bg-[#ECFDF5] text-[#047857] ring-[#A7F3D0]";
@@ -352,6 +358,38 @@ export function OutstationRequestsAdmin({
                 <Info label="Transportation" value={selectedRequest.transportationType.replace("_", " ")} />
                 <Info label="Status" value={selectedRequest.status} />
                 <Info label="Destination" value={selectedRequest.toLabel ?? "N/A"} />
+                {selectedRequest.transportationType === "car" ? (
+                  <div className="rounded-[18px] border border-[#FED7AA] bg-[#FFF7ED]/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#EA580C]">Car Evidence</p>
+                    <div className="mt-2 space-y-2 text-sm text-[#0F172A]">
+                      <p className="font-semibold">
+                        {selectedRequest.carEvidenceImagePath ? "Stored in private evidence bucket" : "No stored evidence image"}
+                      </p>
+                      <p className="text-[#64748B]">
+                        {selectedRequest.carEvidenceMetadata?.capturedLocationLabel ?? "Location metadata unavailable"}
+                      </p>
+                      <p className="text-[#64748B]">
+                        {selectedRequest.carEvidenceMetadata?.capturedAt
+                          ? formatEvidenceDateTime(selectedRequest.carEvidenceMetadata.capturedAt)
+                          : "Capture time unavailable"}
+                      </p>
+                      {selectedRequest.carEvidenceImageUrl ? (
+                        <a
+                          className="inline-flex rounded-2xl bg-[#EA580C] px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#C2410C]"
+                          href={selectedRequest.carEvidenceImageUrl}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          Open Signed Evidence Photo
+                        </a>
+                      ) : (
+                        <p className="text-xs font-semibold text-[#B45309]">
+                          Signed photo link is unavailable. Refresh after storage migration is applied.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="pt-1">
                   <ApprovalRecommendationBadge value={selectedRequest.approvalRecommendation} />
                 </div>

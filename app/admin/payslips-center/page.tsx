@@ -20,6 +20,10 @@ import { formatEmployeeDisplayName } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+type AdminPayslipsCenterPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-EG", {
     currency: "EGP",
@@ -40,7 +44,7 @@ function payslipStatusTone(status: string) {
 }
 
 export default async function AdminPayslipsCenterPage(
-  props: PageProps<"/admin/payslips-center">,
+  props: AdminPayslipsCenterPageProps,
 ) {
   const access = await resolveAccessContextFromPage();
   if (getPayrollScope(access) !== "COMPANY") {

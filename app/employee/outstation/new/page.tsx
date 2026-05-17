@@ -87,6 +87,7 @@ export default async function EmployeeOutstationNewPage() {
           <IdentityCard data={portalData} />
           <PageTransition>
             <MobileOutstationWizard
+              employeeHrId={access.hrId ?? portalData.employee.hrId}
               employeeName={employeeName}
               employeeRole={employeeRole}
               hasResidenceCoordinates={hasResidenceCoordinates}

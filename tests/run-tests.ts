@@ -18,6 +18,7 @@ import { runEmployeePortalSalesScopeTests } from "./employee-portal-sales-scope.
 import { runCoachingPermissionTests } from "./coaching-permissions.test.ts";
 import { runCoachingInAppNotificationTests } from "./coaching-in-app-notifications.test.ts";
 import { runRlsGapClosureTests } from "./rls-gap-closure.test.ts";
+import { runOutstationCarEvidenceValidationTests } from "./outstation-car-evidence-validation.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
 import { runEmployeeDisplayNameTests } from "./employee-display-name.test.ts";
@@ -60,6 +61,7 @@ await runTest("sales role mapping", runSalesRoleMappingTests);
 await runTest("sales period", runSalesPeriodTests);
 await runTest("salary allowance policy", runSalaryAllowancePolicyTests);
 await runTest("workforce classification", runWorkforceClassificationTests);
+await runTest("outstation car evidence validation", runOutstationCarEvidenceValidationTests);
 await runTest("outstation policy classification", runOutstationPolicyClassificationTests);
 await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);
 await runTest("employee portal navigation", runEmployeePortalNavigationTests);

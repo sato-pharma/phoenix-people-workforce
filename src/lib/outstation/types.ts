@@ -30,6 +30,19 @@ export type OutstationFraudFlag =
   | "missing_ticket_attachments"
   | "timestamp_mismatch";
 
+export type OutstationCarEvidenceSource = "live_camera";
+
+export type OutstationCarEvidenceMetadata = {
+  capturedAt: string;
+  capturedLatitude: number;
+  capturedLocationLabel: string | null;
+  capturedLongitude: number;
+  employeeHrId: string;
+  requestDraftId: string | null;
+  requestId: string | null;
+  source: OutstationCarEvidenceSource;
+};
+
 export type OutstationTerritoryValidationStatus =
   | "matched"
   | "outside_expected_territory"
@@ -123,6 +136,7 @@ export type OutstationCalculationInput = {
   capturedAt?: string;
   capturedLatitude: number;
   capturedLongitude: number;
+  carEvidenceImageDataUrl?: string;
   claimedTotalAmount: number;
   expenseType: OutstationExpenseType;
   goTicketAmount?: number;
@@ -133,6 +147,7 @@ export type OutstationCalculationInput = {
   notes?: string | null;
   offlineCaptured?: boolean;
   returnTicketAmount?: number;
+  carEvidenceMetadata?: OutstationCarEvidenceMetadata;
   transportationType: OutstationTransportationType;
   tripEndDate: string;
   tripStartDate: string;
@@ -157,6 +172,8 @@ export type OutstationCalculationResult = OutstationCaptureResult & {
   overnightDays: number;
   sameDayTrip: boolean;
   ticketAmount: number;
+  carEvidenceImagePath?: string | null;
+  carEvidenceMetadata?: OutstationCarEvidenceMetadata;
   transportationType: OutstationTransportationType;
   tripEndDate: string;
   tripStartDate: string;
@@ -174,6 +191,9 @@ export type OutstationExpenseRequest = {
   capturedAt: string;
   capturedLatitude: number;
   capturedLongitude: number;
+  carEvidenceImagePath: string | null;
+  carEvidenceImageUrl: string | null;
+  carEvidenceMetadata: OutstationCarEvidenceMetadata | null;
   claimedTotalAmount: number;
   createdAt: string;
   distanceFromResidenceKm: number | null;

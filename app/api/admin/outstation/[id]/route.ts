@@ -22,7 +22,7 @@ export async function GET(
         { status: 400 },
       );
     }
-    const requestRow = await getOutstationRequestById(id);
+    const requestRow = await getOutstationRequestById(id, { includeCarEvidenceSignedUrl: true });
     if (!requestRow) {
       return NextResponse.json(
         { error: "outstation_not_found", message: "Outstation request was not found." },
