@@ -22,9 +22,7 @@ export async function POST(
     const validActions: ProbationWorkflowAction[] = [
       "manager_feedback",
       "pass",
-      "extend",
       "terminate",
-      "upload_letter",
     ];
 
     if (!validActions.includes(action)) {
@@ -36,11 +34,8 @@ export async function POST(
       decisionReason: body.decisionReason ? String(body.decisionReason) : undefined,
       evaluationScores: typeof body.evaluationScores === "object" && body.evaluationScores ? body.evaluationScores : undefined,
       expectedUpdatedAt: body.expectedUpdatedAt ? String(body.expectedUpdatedAt) : undefined,
-      extensionEndDate: body.extensionEndDate ? String(body.extensionEndDate) : undefined,
       managerFeedback: body.managerFeedback ? String(body.managerFeedback) : undefined,
       note: body.note ? String(body.note) : undefined,
-      probationLetterName: body.probationLetterName ? String(body.probationLetterName) : undefined,
-      probationLetterUrl: body.probationLetterUrl ? String(body.probationLetterUrl) : undefined,
     });
 
     if (!data) {

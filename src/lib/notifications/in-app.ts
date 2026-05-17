@@ -114,14 +114,19 @@ export async function listInAppNotificationsForViewer(
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("notification_events")
-      .select("id,category,subject,scheduled_for,sent_at,status,metadata")
-      .ilike("employee_hr_id", employeeHrId)
+      .select("id,category,subject,scheduled_for,sent_at,status,metadata,recipients")
+      .or(`employee_hr_id.ilike.${employeeHrId},recipients.cs.["${employeeHrId.toUpperCase()}"]`)
       .order("created_at", { ascending: false })
       .limit(Math.max(1, Math.min(limit, 20)));
 
     if (error) throw error;
 
-    return (data ?? []).map((row) => {
+    return (data ?? []).filter((row) => {
+      const record = row as Record<string, unknown>;
+      if (String(record.category ?? "").toLowerCase() !== "probation") return true;
+      const recipients = Array.isArray(record.recipients) ? record.recipients : [];
+      return recipients.some((recipient) => normalizeHrId(String(recipient)) === employeeHrId);
+    }).map((row) => {
       const record = row as Record<string, unknown>;
       const metadata = record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)
         ? record.metadata as Record<string, unknown>

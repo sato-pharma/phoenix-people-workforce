@@ -285,6 +285,11 @@ export function ResignationsReport({ initialData, initialError }: Props) {
     });
   }, [lineFilter, payrollCandidates, query]);
 
+  const filteredTerminatedRecords = React.useMemo(
+    () => filteredRecords.filter((record) => String(record.employeeStatus ?? "").toLowerCase() === "terminated"),
+    [filteredRecords],
+  );
+
   const hasActiveFilters = Boolean(
     query ||
     statusFilter !== allValue ||
@@ -615,6 +620,53 @@ export function ResignationsReport({ initialData, initialError }: Props) {
                       <p className="mt-1">Row {candidate.sourceRow ?? "-"}</p>
                       <p className="mt-1">Updated {formatDate(candidate.updatedAt.slice(0, 10))}</p>
                     </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card className={`${panelClassName} overflow-hidden p-0`}>
+        <AdminSectionHeader
+          action={<Badge variant="danger">{filteredTerminatedRecords.length} terminated</Badge>}
+          description="Employees terminated through probation or other lifecycle paths appear here without creating a separate termination system."
+          title="Terminated Employees"
+        />
+        <div className="overflow-x-auto bg-white/80">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-[#FFF7ED]/80 text-xs uppercase tracking-[0.12em] text-[#64748B] backdrop-blur">
+              <tr className="border-b border-[#FED7AA]">
+                <th className={adminTableHeaderClassName}>Employee</th>
+                <th className={adminTableHeaderClassName}>Line</th>
+                <th className={adminTableHeaderClassName}>Effective</th>
+                <th className={adminTableHeaderClassName}>Reason / Reference</th>
+                <th className={adminTableHeaderClassName}>Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E2E8F0]">
+              {filteredTerminatedRecords.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-10 text-center text-sm text-[#64748B]" colSpan={5}>
+                    No terminated employees match the current filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredTerminatedRecords.map((record) => (
+                  <tr className="align-top transition-colors hover:bg-[#FFF7ED]/55" key={`terminated:${record.id}`}>
+                    <td className="px-3 py-4">
+                      <p className="font-medium text-[#0F172A]">{formatEmployeeDisplayName(record.employeeName)}</p>
+                      <p className="mt-1 font-mono text-xs text-[#64748B]">{record.employeeHrId}</p>
+                      <p className="mt-1 text-xs text-[#64748B]">{record.jobTitle ?? "-"}</p>
+                    </td>
+                    <td className="px-3 py-4 text-[#64748B]">{record.lineName ?? "-"}</td>
+                    <td className="px-3 py-4 text-[#64748B]">{formatDate(record.effectiveDate)}</td>
+                    <td className="max-w-[360px] px-3 py-4 text-[#64748B]">
+                      <p>{record.reason ?? "-"}</p>
+                      {record.workflowNotes ? <p className="mt-2 text-xs">{record.workflowNotes}</p> : null}
+                    </td>
+                    <td className="px-3 py-4">{statusBadge(record.status)}</td>
                   </tr>
                 ))
               )}

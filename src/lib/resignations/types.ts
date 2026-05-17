@@ -18,6 +18,7 @@ export type ResignationRecord = {
   id: string;
   employeeHrId: string;
   employeeName: string;
+  employeeStatus?: string | null;
   jobTitle: string | null;
   lineName: string | null;
   submittedDate: string;

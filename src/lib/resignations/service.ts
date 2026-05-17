@@ -224,6 +224,7 @@ function mapResignation(row: ResignationRow): ResignationRecord {
     id: row.id,
     employeeHrId: row.employee_hr_id,
     employeeName: row.employee_name,
+    employeeStatus: null,
     jobTitle: row.job_title,
     lineName: row.line_name,
     submittedDate,
@@ -295,6 +296,7 @@ function mapLegacyResignationEmployee(row: HistoricalResignedEmployeeRow): Resig
     effectiveDate,
     employeeHrId: row.hr_id,
     employeeName: row.full_name,
+    employeeStatus: row.employment_status ?? null,
     id: `legacy:${row.hr_id}`,
     jobTitle: row.job_title ?? firstRelationName(row.positions, "title"),
     lineName: firstRelationName(row.lines, "name"),
@@ -490,7 +492,14 @@ export async function getResignationsDashboardData(): Promise<ResignationDashboa
   if (resignationsResult.error) throw resignationsResult.error;
   if (candidatesResult.error) throw candidatesResult.error;
 
-  const workflowRecords = (resignationsResult.data ?? []).map((row) => mapResignation(row as ResignationRow));
+  const employeesByHrId = new Map(directory.employees.map((employee) => [employee.hrId.trim().toUpperCase(), employee]));
+  const workflowRecords = (resignationsResult.data ?? []).map((row) => {
+    const record = mapResignation(row as ResignationRow);
+    return {
+      ...record,
+      employeeStatus: employeesByHrId.get(record.employeeHrId.trim().toUpperCase())?.employmentStatus ?? record.employeeStatus ?? null,
+    };
+  });
   const workflowHrIds = new Set(workflowRecords.map((record) => record.employeeHrId.trim().toUpperCase()));
   const legacyRecords = historicalEmployees
     .filter((employee) => !workflowHrIds.has(employee.hr_id.trim().toUpperCase()))
@@ -924,6 +933,10 @@ export async function resignEmployeeAndOpenVacancy(
   const directoryForActor = await getEmployeeDirectory();
   const submittedByHrId = resolveSubmittedByHrId(actor, directoryForActor);
   const vacancyCode = vacancyCodeFromEmployee(employeeHrId);
+  const workflowNotesWithReference = [
+    cleanText(input.workflowNotes),
+    `Termination/vacancy reference: ${vacancyCode}`,
+  ].filter(Boolean).join("\n");
 
   if (effectiveDate < submittedDate) {
     throw new Error("Effective resignation date cannot be before the submitted date.");
@@ -938,7 +951,7 @@ export async function resignEmployeeAndOpenVacancy(
     p_submitted_by_hr_id: submittedByHrId,
     p_submitted_date: submittedDate,
     p_vacancy_code: vacancyCode,
-    p_workflow_notes: cleanText(input.workflowNotes),
+    p_workflow_notes: workflowNotesWithReference,
   });
 
   let result: {
@@ -966,7 +979,7 @@ export async function resignEmployeeAndOpenVacancy(
       submittedByHrId,
       submittedDate,
       vacancyCode,
-      workflowNotes: cleanText(input.workflowNotes),
+      workflowNotes: workflowNotesWithReference,
     });
 
     result = {
