@@ -15,6 +15,7 @@ type ValidatedPunch = {
   device_id: string;
   device_user_id: string;
   employee_hr_id: string | null;
+  input_index: number;
   punch_time: string;
   punch_type: string | null;
   verify_mode: string | null;
@@ -68,7 +69,7 @@ function getPunches(payload: unknown): unknown[] {
   throw validationError("Request body must be an array of punches or an object with a punches array.");
 }
 
-function validatePunch(input: unknown): ValidatedPunch {
+function validatePunch(input: unknown, index: number): ValidatedPunch {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw validationError("Each punch must be an object.");
   }
@@ -91,6 +92,7 @@ function validatePunch(input: unknown): ValidatedPunch {
     device_id: deviceId,
     device_user_id: deviceUserId,
     employee_hr_id: normalizeHrId(field(raw, "employee_hr_id", "employeeHrId")),
+    input_index: index,
     punch_time: parsePunchTime(field(raw, "punch_time", "punchTime")),
     punch_type: compact(field(raw, "punch_type", "punchType")),
     verify_mode: compact(field(raw, "verify_mode", "verifyMode")),
@@ -131,6 +133,7 @@ async function resolveMappedHrIds(punches: ValidatedPunch[]) {
     .from("attendance_device_user_map")
     .select("device_id,device_user_id,employee_hr_id")
     .eq("is_active", true)
+    .not("employee_hr_id", "is", null)
     .in("device_id", deviceIds)
     .in("device_user_id", deviceUserIds);
 
@@ -146,17 +149,92 @@ async function resolveMappedHrIds(punches: ValidatedPunch[]) {
   );
 }
 
+async function recordUnmappedDeviceUsers(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  punches: ValidatedPunch[],
+) {
+  const latestByDeviceUser = new Map<string, ValidatedPunch>();
+
+  punches.forEach((punch) => {
+    const key = mapKey(punch);
+    const current = latestByDeviceUser.get(key);
+    if (!current || punch.punch_time > current.punch_time) {
+      latestByDeviceUser.set(key, punch);
+    }
+  });
+
+  for (const punch of latestByDeviceUser.values()) {
+    const { data: existing, error: existingError } = await supabase
+      .from("attendance_device_user_map")
+      .select("id,is_active,employee_hr_id,last_seen_punch_at")
+      .eq("device_id", punch.device_id)
+      .eq("device_user_id", punch.device_user_id)
+      .maybeSingle();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    const row = existing as { id: number; is_active: boolean; employee_hr_id: string | null; last_seen_punch_at: string | null } | null;
+    if (!row) {
+      const { error } = await supabase
+        .from("attendance_device_user_map")
+        .insert({
+          device_id: punch.device_id,
+          device_user_id: punch.device_user_id,
+          employee_hr_id: null,
+          is_active: false,
+          last_seen_punch_at: punch.punch_time,
+          updated_at: new Date().toISOString(),
+        });
+
+      if (error) {
+        throw error;
+      }
+      continue;
+    }
+
+    if (row.is_active && row.employee_hr_id) {
+      continue;
+    }
+
+    if (!row.last_seen_punch_at || punch.punch_time > row.last_seen_punch_at) {
+      const { error } = await supabase
+        .from("attendance_device_user_map")
+        .update({
+          last_seen_punch_at: punch.punch_time,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id);
+
+      if (error) {
+        throw error;
+      }
+    }
+  }
+}
+
 async function insertPunches(punches: ValidatedPunch[]) {
   const supabase = getSupabaseAdmin();
   const mappedHrIds = await resolveMappedHrIds(punches);
   const failures: PunchFailure[] = [];
   let inserted = 0;
   let duplicate = 0;
+  let skipped = 0;
+  const unmappedPunches: ValidatedPunch[] = [];
 
-  for (const [index, punch] of punches.entries()) {
+  for (const punch of punches) {
+    const { input_index, ...punchRow } = punch;
+    const employeeHrId = punch.employee_hr_id ?? mappedHrIds.get(mapKey(punch)) ?? null;
+    if (!employeeHrId) {
+      unmappedPunches.push(punch);
+      skipped += 1;
+      continue;
+    }
+
     const row = {
-      ...punch,
-      employee_hr_id: punch.employee_hr_id ?? mappedHrIds.get(mapKey(punch)) ?? null,
+      ...punchRow,
+      employee_hr_id: employeeHrId,
       ingested_at: new Date().toISOString(),
     };
 
@@ -171,7 +249,7 @@ async function insertPunches(punches: ValidatedPunch[]) {
         continue;
       }
 
-      failures.push({ index, message: error.message });
+      failures.push({ index: input_index, message: error.message });
       continue;
     }
 
@@ -182,7 +260,11 @@ async function insertPunches(punches: ValidatedPunch[]) {
     }
   }
 
-  return { duplicate, failed: failures.length, failures, inserted };
+  if (unmappedPunches.length > 0) {
+    await recordUnmappedDeviceUsers(supabase, unmappedPunches);
+  }
+
+  return { duplicate, failed: failures.length, failures, inserted, skipped };
 }
 
 export async function POST(request: Request) {
@@ -204,7 +286,7 @@ export async function POST(request: Request) {
 
     rawPunches.forEach((rawPunch, index) => {
       try {
-        validated.push(validatePunch(rawPunch));
+        validated.push(validatePunch(rawPunch, index));
       } catch (error) {
         const apiError = toApiError(error, "Punch validation failed.");
         validationFailures.push({ index, message: apiError.message });
@@ -213,7 +295,7 @@ export async function POST(request: Request) {
 
     const result = validated.length > 0
       ? await insertPunches(validated)
-      : { duplicate: 0, failed: 0, failures: [], inserted: 0 };
+      : { duplicate: 0, failed: 0, failures: [], inserted: 0, skipped: 0 };
 
     const failures = [...validationFailures, ...result.failures];
     return NextResponse.json({
@@ -222,6 +304,7 @@ export async function POST(request: Request) {
       failures,
       inserted: result.inserted,
       received: rawPunches.length,
+      skipped: result.skipped,
     });
   } catch (error) {
     const apiError = toApiError(error, "Attendance raw punch ingestion failed.");

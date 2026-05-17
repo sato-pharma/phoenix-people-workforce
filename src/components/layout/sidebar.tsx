@@ -12,6 +12,7 @@ import {
   FileSpreadsheet,
   FilePlus2,
   FileUp,
+  Fingerprint,
   Hourglass,
   IdCard,
   LayoutDashboard,
@@ -95,6 +96,7 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       id: "people-management",
       items: [
         { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }] },
+        { href: "/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
         { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
         { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
         { href: "/offers", icon: IdCard, label: "Offer Lifecycle", permissions: [{ resource: "offers" }] },
