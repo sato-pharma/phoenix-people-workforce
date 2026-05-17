@@ -56,9 +56,20 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
-  --font-sans: var(--font-dm-sans);
-  --font-mono: var(--font-jetbrains-mono);
-  --font-display: var(--font-dm-serif);
+  --font-sans: var(--font-dm-sans, "DM Sans", "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif);
+  --font-mono: var(
+    --font-jetbrains-mono,
+    "JetBrains Mono",
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    "Courier New",
+    monospace
+  );
+  --font-display: var(--font-dm-serif, "DM Serif Display", "Georgia", "Times New Roman", "Times", serif);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
