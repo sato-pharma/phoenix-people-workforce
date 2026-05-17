@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Fingerprint, RefreshCw, Save } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, Download, Fingerprint, RefreshCw, Save, Upload } from "lucide-react";
 
 import {
   AdminCallout,
@@ -20,6 +20,13 @@ type Props = {
   canUpdate: boolean;
   initialData: AttendanceDeviceUserMappingDashboard | null;
   initialError: string | null;
+};
+
+type UploadResult = {
+  failed: number;
+  failures: Array<{ message: string; row: number }>;
+  imported: number;
+  received: number;
 };
 
 function formatDate(value: string | null) {
@@ -58,6 +65,15 @@ function MappingRow({
   const [employeeHrId, setEmployeeHrId] = useState(row.employeeHrId ?? "");
   const [isActive, setIsActive] = useState(row.isActive && Boolean(row.employeeHrId));
   const [saving, setSaving] = useState(false);
+  const savedEmployeeHrId = row.employeeHrId ?? "";
+  const savedIsActive = row.isActive && Boolean(row.employeeHrId);
+  const hasChanges = employeeHrId !== savedEmployeeHrId || isActive !== savedIsActive;
+  const cannotSave = !canUpdate || saving || !hasChanges || (isActive && !employeeHrId);
+
+  useEffect(() => {
+    setEmployeeHrId(row.employeeHrId ?? "");
+    setIsActive(row.isActive && Boolean(row.employeeHrId));
+  }, [row.employeeHrId, row.isActive]);
 
   async function save() {
     setSaving(true);
@@ -114,9 +130,15 @@ function MappingRow({
         </label>
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-right">
-        <Button disabled={!canUpdate || saving || (isActive && !employeeHrId)} size="sm" type="button" onClick={save}>
-          <Save className="h-3.5 w-3.5" />
-          {saving ? "Saving" : "Save"}
+        <Button
+          className={hasChanges ? "px-3 py-1.5 text-xs" : "border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100"}
+          disabled={cannotSave}
+          type="button"
+          variant={hasChanges ? "default" : "secondary"}
+          onClick={save}
+        >
+          {hasChanges ? <Save className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+          {saving ? "Saving" : hasChanges ? "Save" : "Saved"}
         </Button>
       </td>
     </tr>
@@ -129,6 +151,9 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
   const [notice, setNotice] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "unmapped">("all");
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const filteredMappings = useMemo(() => {
     const rows = data?.mappings ?? [];
@@ -170,6 +195,41 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
     setNotice(`Saved mapping for ${input.deviceId} / ${input.deviceUserId}.`);
   }
 
+  async function uploadTemplate(file: File | null) {
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    setNotice(null);
+    setUploadResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/attendance/device-user-mappings/upload", {
+        body: formData,
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.message ?? "Attendance device mapping upload failed.");
+      }
+
+      setData(payload.dashboard);
+      setUploadResult({
+        failed: payload.failed ?? 0,
+        failures: payload.failures ?? [],
+        imported: payload.imported ?? 0,
+        received: payload.received ?? 0,
+      });
+      setNotice(`Template upload complete: ${payload.imported ?? 0} imported, ${payload.failed ?? 0} failed.`);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Attendance device mapping upload failed.");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   return (
     <div className="space-y-5">
       <AdminPageHero
@@ -185,16 +245,53 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
         icon={<Fingerprint className="h-3.5 w-3.5" />}
         title="Device User Mapping"
         actions={(
-          <Button disabled={refreshing} variant="outline" type="button" onClick={load}>
-            <RefreshCw className="h-4 w-4" />
-            {refreshing ? "Refreshing" : "Refresh"}
-          </Button>
+          <>
+            <a
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-transparent px-4 py-2 text-sm font-medium text-text transition hover:bg-bg-muted"
+              href="/api/attendance/device-user-mappings/template"
+            >
+                <Download className="h-4 w-4" />
+                Download template
+            </a>
+            <Button disabled={!canUpdate || uploading} variant="secondary" type="button" onClick={() => fileInputRef.current?.click()}>
+              <Upload className="h-4 w-4" />
+              {uploading ? "Uploading" : "Upload template"}
+            </Button>
+            <input
+              accept=".xlsx"
+              className="sr-only"
+              disabled={!canUpdate || uploading}
+              ref={fileInputRef}
+              type="file"
+              onChange={(event) => void uploadTemplate(event.target.files?.[0] ?? null)}
+            />
+            <Button disabled={refreshing} variant="secondary" type="button" onClick={load}>
+              <RefreshCw className="h-4 w-4" />
+              {refreshing ? "Refreshing" : "Refresh"}
+            </Button>
+          </>
         )}
       />
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
       {!canUpdate ? <AdminCallout tone="warning">You can review mappings, but this account cannot update employee mappings.</AdminCallout> : null}
+      {uploadResult ? (
+        <AdminCallout tone={uploadResult.failed > 0 ? "warning" : "success"}>
+          <div className="space-y-2">
+            <p className="font-bold">
+              Upload summary: {uploadResult.imported} imported from {uploadResult.received} rows, {uploadResult.failed} failed.
+            </p>
+            {uploadResult.failures.length > 0 ? (
+              <ul className="list-disc space-y-1 pl-5">
+                {uploadResult.failures.slice(0, 8).map((failure) => (
+                  <li key={`${failure.row}-${failure.message}`}>Row {failure.row}: {failure.message}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </AdminCallout>
+      ) : null}
 
       <AdminTableShell
         action={(

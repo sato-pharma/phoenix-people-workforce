@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminOutstationRequestsPage() {
   const access = await resolveAccessContextFromPage();
   await assertPermission(access, "outstation", "read");
-  const requests = await listOutstationRequests();
+  const requests = await listOutstationRequests({ includeCarEvidenceSignedUrls: true });
 
   return (
     <AppShell navigationMode="admin">

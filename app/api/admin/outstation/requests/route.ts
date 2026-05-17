@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "outstation", "read");
-    const requests = await listOutstationRequests();
+    const requests = await listOutstationRequests({ includeCarEvidenceSignedUrls: true });
     return NextResponse.json({ requests });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to load outstation requests.";
