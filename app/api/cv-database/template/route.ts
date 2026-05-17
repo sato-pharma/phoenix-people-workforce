@@ -1,0 +1,44 @@
+import { NextResponse } from "next/server";
+
+import { assertPermission } from "@/lib/auth/permissions";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { generateCvDatabaseTemplateWorkbook } from "@/lib/cv/cv-template";
+import { toApiError } from "@/lib/http/api-errors";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function filename() {
+  return `phoenix-cv-database-template-${new Date().toISOString().slice(0, 10)}.xlsx`;
+}
+
+function apiResponse(error: unknown, fallback: string) {
+  if (isForbiddenError(error)) {
+    return NextResponse.json(
+      { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden." },
+      { status: 403 },
+    );
+  }
+
+  const apiError = toApiError(error, fallback);
+  return NextResponse.json({ error: apiError.code, message: apiError.message }, { status: apiError.status });
+}
+
+export async function GET(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "vacancies", "read");
+
+    const workbook = await generateCvDatabaseTemplateWorkbook();
+    const buffer = await workbook.xlsx.writeBuffer();
+
+    return new NextResponse(buffer, {
+      headers: {
+        "Content-Disposition": `attachment; filename="${filename()}"`,
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+    });
+  } catch (error) {
+    return apiResponse(error, "CV database template failed to generate.");
+  }
+}

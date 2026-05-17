@@ -8,11 +8,13 @@ import {
 } from "@/lib/auth/permissions";
 import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type {
   CreateProbationEvaluationInput,
   ProbationDecision,
+  ProbationReminderRecipient,
   ProbationRow,
   ProbationWorkflowAction,
   ProbationWorkflowRecord,
@@ -65,6 +67,7 @@ type ProbationReminderEventDbRow = {
   employee_hr_id: string | null;
   id: string;
   metadata: Record<string, unknown> | null;
+  recipients?: string[] | null;
   scheduled_for: string | null;
   status: string | null;
   subject: string | null;
@@ -78,8 +81,15 @@ type ProbationWorkflowInput = {
   hrRecommendation?: string | null;
   managerFeedback?: string | null;
   note?: string | null;
-  probationLetterName?: string | null;
-  probationLetterUrl?: string | null;
+};
+
+type AuthNotificationRecipientRow = {
+  auth_email?: string | null;
+  email?: string | null;
+  hr_id?: string | null;
+  is_active?: boolean | null;
+  name?: string | null;
+  role?: string | null;
 };
 
 const probationDays = 90;
@@ -123,10 +133,7 @@ function canSubmitManagerFeedback(
   directory: EmployeeScopeRow[] = [],
 ) {
   if (isProbationAdministrator(access)) return true;
-  if (access.role === "National Sales Manager") return isSameLine(employee, viewer);
-  if (access.role === "Regional Manager") return isInManagerHierarchy(directory, viewer, employee);
-  if (access.role === "District Manager" || access.role === "Manager") return canSeeEmployee(access, employee);
-  return false;
+  return isDirectManagerOrManagerOfManager(directory, viewer, employee);
 }
 
 function isInManagerHierarchy(directory: EmployeeScopeRow[], manager: EmployeeScopeRow | null, employee: EmployeeScopeRow) {
@@ -144,6 +151,28 @@ function isInManagerHierarchy(directory: EmployeeScopeRow[], manager: EmployeeSc
   }
 
   return false;
+}
+
+function isDirectManagerOrManagerOfManager(directory: EmployeeScopeRow[], viewer: EmployeeScopeRow | null, employee: EmployeeScopeRow) {
+  if (!viewer) return false;
+  const viewerHrId = normalizeHrId(viewer.hrId);
+  const directManagerHrId = normalizeHrId(employee.managerHrId);
+  if (!viewerHrId || !directManagerHrId) return false;
+  if (viewerHrId === directManagerHrId) return true;
+  const manager = directory.find((row) => normalizeHrId(row.hrId) === directManagerHrId) ?? null;
+  return Boolean(manager && viewerHrId === normalizeHrId(manager.managerHrId));
+}
+
+function employeeLabel(employee: Pick<EmployeeScopeRow, "fullName" | "hrId"> | null | undefined, fallbackHrId: string | null | undefined) {
+  const hrId = String(employee?.hrId ?? fallbackHrId ?? "").trim();
+  const name = String(employee?.fullName ?? "").trim();
+  if (name && hrId) return `${name} (${hrId})`;
+  return name || hrId || "-";
+}
+
+function managerOf(employee: EmployeeScopeRow, directory: EmployeeScopeRow[]) {
+  const managerHrId = normalizeHrId(employee.managerHrId);
+  return managerHrId ? directory.find((row) => normalizeHrId(row.hrId) === managerHrId) ?? null : null;
 }
 
 function actionLabel(action: ProbationWorkflowAction) {
@@ -193,11 +222,7 @@ function baseProbationEndDate(employee: Pick<EmployeeScopeRow, "hireDate">) {
 }
 
 function currentProbationEndDate(employee: EmployeeScopeRow, probation: ProbationDbRow | undefined) {
-  const baseEndDate = baseProbationEndDate(employee);
-  if (probation?.status === extensionProbationStatus && probation.probation_end_date) {
-    return probation.probation_end_date;
-  }
-  return baseEndDate;
+  return baseProbationEndDate(employee);
 }
 
 function appendWorkflowNote(existing: string | null | undefined, actor: string, action: string, note?: string | null) {
@@ -322,9 +347,7 @@ function allowedWorkflowActions(
   if (!isHr) return Array.from(allowed);
 
   allowed.add("pass");
-  allowed.add("extend");
   allowed.add("terminate");
-  allowed.add("upload_letter");
 
   return Array.from(allowed);
 }
@@ -363,9 +386,9 @@ export async function getProbationRows(access: AccessContext): Promise<Probation
     .map((employee) => {
       const probation = probationByHrId.get(employee.hrId);
       const workflow = evaluationsByHrId.get(employee.hrId) ?? null;
-      const probationEndDate = workflow?.decision === "extend" && workflow.extensionEndDate
-        ? workflow.extensionEndDate
-        : currentProbationEndDate(employee, probation);
+      const manager = managerOf(employee, employees);
+      const managerManager = manager ? managerOf(manager, employees) : null;
+      const probationEndDate = currentProbationEndDate(employee, probation);
       const allowedActions = allowedWorkflowActions(access, workflow, employee, viewer, employees);
       if (workflow) workflow.allowedActions = allowedActions;
       return {
@@ -379,9 +402,14 @@ export async function getProbationRows(access: AccessContext): Promise<Probation
         hr_id: employee.hrId,
         job_title: employee.positionTitle ?? employee.jobTitle ?? "Unassigned",
         line_name: employee.lineName ?? "Unassigned",
+        manager_hr_id: employee.managerHrId,
+        manager_manager_hr_id: managerManager?.hrId ?? null,
+        manager_manager_name: managerManager?.fullName ?? null,
+        manager_name: employee.managerName ?? manager?.fullName ?? null,
         has_durable_probation_record: Boolean(probation),
         probation_end_date: probationEndDate,
         probation_id: probation?.id === undefined ? null : String(probation.id),
+        team_name: employee.teamName,
         workflow,
       };
     })
@@ -441,11 +469,85 @@ export function getProbationReminderSchedule(hireDate: string | null | undefined
     .filter((reminder) => Boolean(reminder.scheduledFor));
 }
 
-async function ensureProbationReminderEvents(employee: EmployeeScopeRow) {
+function cleanEmail(value: string | null | undefined) {
+  const email = String(value ?? "").trim().toLowerCase();
+  return email.includes("@") ? email : null;
+}
+
+function recipientKey(recipient: Pick<ProbationReminderRecipient, "hrId" | "role">) {
+  return `${recipient.role}:${normalizeHrId(recipient.hrId)}`;
+}
+
+async function loadHrAndTrainingReminderRecipients(): Promise<ProbationReminderRecipient[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("hr_id,name,email,auth_email,role,is_active")
+    .in("role", ["HR Specialist", "Super Admin", "Training Manager"])
+    .eq("is_active", true);
+
+  if (error) {
+    if (isProbationSchemaMissing(error)) return [];
+    throw error;
+  }
+
+  const recipients: ProbationReminderRecipient[] = [];
+  for (const row of (data ?? []) as AuthNotificationRecipientRow[]) {
+    const role = row.role === "Training Manager" ? "Training Manager" : "HR";
+    const hrId = cleanText(row.hr_id)?.toUpperCase();
+    if (hrId) {
+      recipients.push({
+        email: cleanEmail(row.email) ?? cleanEmail(row.auth_email),
+        hrId,
+        name: cleanText(row.name),
+        role,
+      });
+    }
+  }
+  return recipients;
+}
+
+async function resolveProbationReminderRecipients(
+  employee: EmployeeScopeRow,
+  directory: EmployeeScopeRow[],
+): Promise<ProbationReminderRecipient[]> {
+  const manager = managerOf(employee, directory);
+  const managerManager = manager ? managerOf(manager, directory) : null;
+  const roleRecipients = await loadHrAndTrainingReminderRecipients();
+  const recipients = [
+    ...roleRecipients,
+    manager
+      ? {
+          email: cleanEmail(manager.workEmail),
+          hrId: manager.hrId,
+          name: manager.fullName,
+          role: "Direct Manager" as const,
+        }
+      : null,
+    managerManager
+      ? {
+          email: cleanEmail(managerManager.workEmail),
+          hrId: managerManager.hrId,
+          name: managerManager.fullName,
+          role: "Manager of Manager" as const,
+        }
+      : null,
+  ].filter((recipient): recipient is ProbationReminderRecipient => Boolean(recipient?.hrId));
+
+  const unique = new Map<string, ProbationReminderRecipient>();
+  for (const recipient of recipients) {
+    unique.set(recipientKey(recipient), recipient);
+  }
+  return Array.from(unique.values());
+}
+
+async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directory: EmployeeScopeRow[]) {
   const schedule = getProbationReminderSchedule(employee.hireDate);
   if (schedule.length === 0) return;
 
   const now = new Date().toISOString();
+  const recipients = await resolveProbationReminderRecipients(employee, directory);
+  const recipientHrIds = recipients.map((recipient) => recipient.hrId);
+  const recipientEmails = recipients.map((recipient) => recipient.email).filter((email): email is string => Boolean(email));
   const rows = schedule.map((reminder) => ({
     category: "probation",
     employee_hr_id: employee.hrId,
@@ -457,9 +559,11 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow) {
       days_after_hire: reminder.daysAfterHire,
       days_remaining: reminder.daysRemaining,
       hire_date: employee.hireDate,
+      recipient_emails: recipientEmails,
+      recipient_roles: recipients.map((recipient) => ({ hr_id: recipient.hrId, role: recipient.role })),
       reminder_type: reminder.reminderType,
     },
-    recipients: [employee.managerHrId].filter(Boolean),
+    recipients: recipientHrIds,
     scheduled_for: reminder.scheduledFor,
     status: "pending",
     subject: `Probation reminder: ${employee.fullName}`,
@@ -470,6 +574,41 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow) {
     .from("notification_events")
     .upsert(rows, { onConflict: "event_key" });
   if (error && !isProbationSchemaMissing(error)) throw error;
+}
+
+async function ensureSystemProbationReview(employee: EmployeeScopeRow, probationEndDate: string) {
+  const existingEvaluations = await loadEvaluationsByHrId().catch((error) => {
+    if (isProbationSchemaMissing(error)) return new Map<string, ProbationWorkflowRecord>();
+    throw error;
+  });
+  const existing = existingEvaluations.get(employee.hrId);
+  if (existing && !isFinalWorkflow(existing)) return existing;
+
+  const now = new Date().toISOString();
+  const { data, error } = await getSupabaseAdmin()
+    .from("probation_evaluations")
+    .insert({
+      area_name: employee.areaName,
+      created_by: "system",
+      employee_hr_id: employee.hrId,
+      employee_name: employee.fullName,
+      evaluation_scores: {},
+      job_title: employee.positionTitle ?? employee.jobTitle,
+      line_name: employee.lineName,
+      manager_feedback: null,
+      probation_end_date: probationEndDate,
+      probation_id: null,
+      status: "evaluation_requested",
+      updated_at: now,
+      workflow_notes: appendWorkflowNote(null, "system", "opened probation review from scheduled reminder", null),
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  const record = mapEvaluation(data as ProbationEvaluationDbRow);
+  await insertHistory(record, "created", "system", null, { source: "probation_reminder" });
+  return record;
 }
 
 function todayDateOnly() {
@@ -496,9 +635,21 @@ async function markProbationReminderEvent(id: string, status: "sent" | "failed",
 
 export async function processDueProbationReminderEvents(limit = 25) {
   const supabase = getSupabaseAdmin();
+  const employees = await getEmployeeDirectoryRows();
+  const rows = await getProbationRows(systemAccessContext);
+  const activeRows = new Map(rows.map((row) => [normalizeHrId(row.hr_id), row]));
+  const employeesByHrId = new Map(employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
+
+  await Promise.all(
+    rows
+      .map((row) => employeesByHrId.get(normalizeHrId(row.hr_id)))
+      .filter((employee): employee is EmployeeScopeRow => Boolean(employee))
+      .map((employee) => ensureProbationReminderEvents(employee, employees)),
+  );
+
   const { data, error } = await supabase
     .from("notification_events")
-    .select("id,employee_hr_id,metadata,scheduled_for,status,subject")
+    .select("id,employee_hr_id,metadata,recipients,scheduled_for,status,subject")
     .eq("category", "probation")
     .in("status", ["pending", "scheduled"])
     .lte("scheduled_for", todayDateOnly())
@@ -511,10 +662,6 @@ export async function processDueProbationReminderEvents(limit = 25) {
   }
 
   const events = (data ?? []) as ProbationReminderEventDbRow[];
-  const employees = await getEmployeeDirectoryRows();
-  const rows = await getProbationRows(systemAccessContext);
-  const activeRows = new Map(rows.map((row) => [normalizeHrId(row.hr_id), row]));
-  const employeesByHrId = new Map(employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
   const processedIds: string[] = [];
   let attempted = 0;
   let failed = 0;
@@ -537,11 +684,18 @@ export async function processDueProbationReminderEvents(limit = 25) {
       continue;
     }
 
+    if (!row.workflow) {
+      await ensureSystemProbationReview(employee, row.probation_end_date);
+    }
+
     const daysRemaining = Number(metadata.days_remaining ?? row.days_remaining);
     const daysAfterHire = Number(metadata.days_after_hire ?? 90 - daysRemaining);
+    const recipientEmails = Array.isArray(metadata.recipient_emails)
+      ? metadata.recipient_emails.map((email) => cleanEmail(String(email))).filter((email): email is string => Boolean(email))
+      : [];
     const result = await safeSendNotificationEmail({
-      ctaHref: "/probation",
-      ctaLabel: "Open probation tracker",
+      ctaHref: `/employee-portals/probation?employeeHrId=${encodeURIComponent(employee.hrId)}`,
+      ctaLabel: "Submit Your Feedback",
       employeeHrId: employee.hrId,
       metrics: [
         { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
@@ -549,6 +703,7 @@ export async function processDueProbationReminderEvents(limit = 25) {
         { label: "Days remaining", value: Number.isFinite(daysRemaining) ? String(daysRemaining) : String(row.days_remaining) },
       ],
       notificationType: "probation",
+      recipients: recipientEmails,
       subject: event.subject ?? `Probation reminder: ${employee.fullName}`,
       summary: `${employee.fullName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
       title: event.subject ?? "Probation reminder",
@@ -594,7 +749,7 @@ function assertExpectedVersion(row: ProbationWorkflowRecord, expectedUpdatedAt: 
 
 function validateWorkflowTransition(row: ProbationWorkflowRecord, action: ProbationWorkflowAction, input: ProbationWorkflowInput) {
   assertExpectedVersion(row, input.expectedUpdatedAt);
-  if (isFinalWorkflow(row) && action !== "upload_letter") {
+  if (isFinalWorkflow(row)) {
     throw new Error(`Invalid probation transition: ${actionLabel(action)} is not allowed after final decision.`);
   }
 
@@ -604,14 +759,8 @@ function validateWorkflowTransition(row: ProbationWorkflowRecord, action: Probat
       return;
     case "pass":
       return;
-    case "extend":
-      assertDateAfter(input.extensionEndDate, row.probationEndDate, "Extension end date must be later than the current probation end date.");
-      return;
     case "terminate":
       assertText(input.decisionReason, "Termination decision reason is required.");
-      return;
-    case "upload_letter":
-      assertText(input.probationLetterUrl, "Probation letter URL is required.");
       return;
     default:
       throw new Error("Unsupported probation workflow action.");
@@ -674,7 +823,7 @@ export async function createProbationEvaluation(input: CreateProbationEvaluation
 
   if (error) throw error;
   const record = mapEvaluation(data as ProbationEvaluationDbRow);
-  await ensureProbationReminderEvents(employee);
+  await ensureProbationReminderEvents(employee, employees);
   await insertHistory(record, "created", actor, null, { managerFeedback: cleanText(input.managerFeedback) });
   await notifyProbationWorkflow(record, "Probation Evaluation Created", "warning");
   return record;
@@ -720,21 +869,15 @@ export async function runProbationWorkflow(
       updates.manager_reviewed_by = actor;
       break;
     case "pass":
-    case "extend":
     case "terminate":
       updates.status = "completed";
       updates.decision = action;
       updates.decision_reason = cleanText(input.decisionReason);
-      updates.extension_end_date = action === "extend" ? normalizeDate(input.extensionEndDate) : null;
+      updates.extension_end_date = null;
       updates.approved_at = now;
       updates.approved_by = actor;
       updates.completed_at = now;
       updates.completed_by = actor;
-      break;
-    case "upload_letter":
-      if (!cleanText(input.probationLetterUrl)) throw new Error("Probation letter URL is required.");
-      updates.probation_letter_url = cleanText(input.probationLetterUrl);
-      updates.probation_letter_name = cleanText(input.probationLetterName) ?? "Probation letter";
       break;
     default:
       throw new Error("Unsupported probation workflow action.");
@@ -754,14 +897,14 @@ export async function runProbationWorkflow(
   if (!updatedData) throw new Error("Probation workflow was updated by another user. Refresh and try again.");
 
   const updated = mapEvaluation(updatedData as ProbationEvaluationDbRow);
-  if (action === "pass" || action === "extend" || action === "terminate") {
+  if (action === "pass" || action === "terminate") {
     await applyDecisionSideEffects(updated);
   }
   await insertHistory(updated, action, actor, row.status, { decisionReason: cleanText(input.decisionReason), note });
   await notifyProbationWorkflow(
     updated,
-    action === "pass" || action === "extend" || action === "terminate" ? "Probation Decision Recorded" : "Probation Review Updated",
-    updated.decision === "terminate" ? "danger" : action === "pass" || action === "extend" ? "success" : "warning",
+    action === "pass" || action === "terminate" ? "Probation Decision Recorded" : "Probation Review Updated",
+    updated.decision === "terminate" ? "danger" : action === "pass" ? "success" : "warning",
   );
   return updated;
 }
@@ -779,18 +922,7 @@ async function applyDecisionSideEffects(record: ProbationWorkflowRecord) {
     employeeUpdates.organogram_visible = true;
     employeeUpdates.payroll_eligible = true;
     probationUpdates.status = "passed";
-  } else if (record.decision === "extend") {
-    if (!record.extensionEndDate) throw new Error("Extension end date is required before completion.");
-    employeeUpdates.probation_end_date = record.extensionEndDate;
-    employeeUpdates.employment_status = "active";
-    employeeUpdates.organogram_visible = true;
-    employeeUpdates.payroll_eligible = true;
-    probationUpdates.probation_end_date = record.extensionEndDate;
-    probationUpdates.status = "extended";
   } else if (record.decision === "terminate") {
-    employeeUpdates.employment_status = "terminated";
-    employeeUpdates.organogram_visible = false;
-    employeeUpdates.payroll_eligible = false;
     probationUpdates.status = "terminated";
   }
 
@@ -803,11 +935,18 @@ async function applyDecisionSideEffects(record: ProbationWorkflowRecord) {
     if (error) throw error;
   }
   if (record.decision === "terminate") {
-    const { error } = await supabase
-      .from("app_auth_users")
-      .update({ is_active: false, updated_at: now })
-      .eq("hr_id", record.employeeHrId);
-    if (error && !isProbationSchemaMissing(error)) throw error;
+    await resignEmployeeAndOpenVacancy(
+      record.employeeHrId,
+      {
+        effectiveDate: todayDateOnly(),
+        employeeHrId: record.employeeHrId,
+        employeeStatus: "terminated",
+        reason: record.decisionReason ?? "Probation termination.",
+        submittedDate: todayDateOnly(),
+        workflowNotes: `Probation termination from probation review ${record.id}.`,
+      },
+      record.completedBy ?? record.approvedBy ?? "probation",
+    );
   }
 
   if (record.decision === "pass" || record.decision === "terminate") {

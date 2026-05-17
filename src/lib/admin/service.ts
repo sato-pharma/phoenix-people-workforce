@@ -52,6 +52,9 @@ export type AdminMonitoringStats = {
   };
   recentEvents: Array<{
     actor: string;
+    actorHrId: string | null;
+    actorLoginId: string | null;
+    actorName: string | null;
     createdAt: string | null;
     entityType: string;
     summary: string;
@@ -125,7 +128,7 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
     authUsersWithUid,
     accessProfileUids,
   ] = await Promise.all([
-    supabase.from("app_auth_users").select("login_id,auth_user_id,auth_email"),
+    supabase.from("app_auth_users").select("login_id,hr_id,name,auth_user_id,auth_email"),
     supabase.from("app_auth_users").select("*", { count: "exact", head: true }).gt("locked_until", new Date().toISOString()),
     supabase.from("app_auth_users").select("*", { count: "exact", head: true }).eq("force_password_reset", true),
     supabase.from("auth_login_attempts").select("ip,success,attempted_at").eq("success", false).gte("attempted_at", since24h),
@@ -135,7 +138,7 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
       .select("actor_login_id,entity_type,summary,created_at")
       .or("entity_type.eq.auth_session,entity_type.eq.user")
       .order("created_at", { ascending: false })
-      .limit(12),
+      .limit(100),
     supabase.from("notification_delivery_logs").select("*", { count: "exact", head: true }),
     supabase
       .from("notification_delivery_logs")
@@ -150,6 +153,17 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
   ]);
 
   const bridgeData = bridgeRows.data ?? [];
+  const authUserByLoginId = new Map(
+    bridgeData
+      .filter((row) => typeof row.login_id === "string" && row.login_id.length > 0)
+      .map((row) => [
+        String(row.login_id).toLowerCase(),
+        {
+          hrId: typeof row.hr_id === "string" && row.hr_id.trim() ? row.hr_id.trim() : null,
+          name: typeof row.name === "string" && row.name.trim() ? row.name.trim() : null,
+        },
+      ]),
+  );
   const bridgedUsers = bridgeData.filter((row) => row.auth_user_id && row.auth_email).length;
   const authBridgeCoverageRate = bridgeData.length > 0 ? bridgedUsers / bridgeData.length : 1;
 
@@ -190,18 +204,29 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
       totalLogs: notificationLogCount.count ?? 0,
       totalQueuedEvents: notificationEventRows.length,
     },
-    recentEvents: (recentAuthEvents.data ?? []).map((row) => ({
-      actor: row.actor_login_id ?? "System",
-      createdAt: row.created_at ?? null,
-      entityType: row.entity_type ?? "unknown",
-      summary: row.summary ?? "No summary",
-    })),
+    recentEvents: (recentAuthEvents.data ?? []).map((row) => {
+      const actorLoginId = typeof row.actor_login_id === "string" && row.actor_login_id.trim()
+        ? row.actor_login_id.trim()
+        : null;
+      const actorProfile = actorLoginId ? authUserByLoginId.get(actorLoginId.toLowerCase()) : undefined;
+
+      return {
+        actor: actorLoginId ?? "System",
+        actorHrId: actorProfile?.hrId ?? null,
+        actorLoginId,
+        actorName: actorProfile?.name ?? null,
+        createdAt: row.created_at ?? null,
+        entityType: row.entity_type ?? "unknown",
+        summary: row.summary ?? "No summary",
+      };
+    }),
   };
 }
 
 export type DataHealthStats = {
   summary: {
     totalEmployees: number;
+    structureNodes: number;
     activeEmployees: number;
     healthyEmployees: number;
     issuesCount: number;
@@ -210,6 +235,7 @@ export type DataHealthStats = {
     nonLoginAggregationNodes: number;
     historicalRecords: number;
     vacancyNodes: number;
+    vacantPositions: number;
     employeeLinkageWarnings: number;
     unresolvedSalesExceptions: number;
   };
@@ -247,6 +273,14 @@ export type DataHealthStats = {
     hr_id: string;
     rows_count: number;
     sample_name: string | null;
+  }>;
+  vacancyAudit: Array<{
+    vacancy_id: string | null;
+    vacancy_code: string | null;
+    area_name: string | null;
+    line_name: string | null;
+    manager_hr_id: string | null;
+    status: string | null;
   }>;
 };
 
@@ -502,6 +536,7 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
 
   const employeeIssues: DataHealthStats["employeeIssues"] = [];
   let activeEmployees = 0;
+  let structureNodes = 0;
   let historicalRecords = 0;
   let vacancyNodes = 0;
   let nonLoginAggregationNodes = 0;
@@ -509,6 +544,7 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
   for (const employee of employeeNodes) {
     const node = classifyEmployeeNode(employee);
     if (node.node_type === "active_employee") activeEmployees += 1;
+    if (node.eligible_for_organogram) structureNodes += 1;
     if (node.node_type === "historical_record") historicalRecords += 1;
     if (node.node_type === "vacancy_node") vacancyNodes += 1;
     if (
@@ -602,6 +638,15 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
   const healthyEmployees = Math.max(0, activeEmployees - employeeIssues.length);
   const healthRate = activeEmployees > 0 ? (healthyEmployees / activeEmployees) * 100 : 100;
   const orphans = Array.isArray(orphanAudit.data) ? orphanAudit.data : [];
+  const vacancyAudit = vacancyRows.map((row) => ({
+    area_name: relationName(row.areas, "name"),
+    line_name: relationName(row.lines, "name"),
+    manager_hr_id: rowText(row, "manager_hr_id"),
+    status: rowText(row, "status"),
+    vacancy_code: rowText(row, "vacancy_code"),
+    vacancy_id: rowText(row, "id"),
+  }));
+  const totalStructureNodes = structureNodes + vacancyAudit.length;
 
   return {
     summary: {
@@ -613,13 +658,16 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
       historicalRecords,
       issuesCount,
       nonLoginAggregationNodes,
+      structureNodes: totalStructureNodes,
       totalEmployees: employeeNodes.length,
       unresolvedSalesExceptions: salesIssues.length,
+      vacantPositions: vacancyAudit.length,
       vacancyNodes,
     },
     employeeIssues,
     salesClassification,
     salesIssues,
-    orphanAudit: orphans
+    orphanAudit: orphans,
+    vacancyAudit,
   };
 }

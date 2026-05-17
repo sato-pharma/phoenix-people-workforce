@@ -51,11 +51,9 @@ export async function generateProbationWorkbook(rows: ProbationRow[]) {
     { header: "Risk Zone", key: "riskZone", width: 14 },
     { header: "Probation Status", key: "workflowStatus", width: 22 },
     { header: "Decision", key: "decision", width: 16 },
-    { header: "Extension End Date", key: "extensionEndDate", width: 20 },
     { header: "Manager Feedback", key: "managerFeedback", width: 36 },
     { header: "HR Recommendation", key: "hrRecommendation", width: 36 },
     { header: "Decision Reason", key: "decisionReason", width: 36 },
-    { header: "Letter Name", key: "letterName", width: 28 },
   ];
 
   for (const row of rows) {
@@ -66,13 +64,11 @@ export async function generateProbationWorkbook(rows: ProbationRow[]) {
       decision: decisionLabel(row.workflow?.decision),
       decisionReason: cleanText(row.workflow?.decisionReason),
       employmentStatus: cleanText(row.employment_status),
-      extensionEndDate: cleanText(row.workflow?.extensionEndDate),
       fullName: cleanText(row.full_name),
       hireDate: cleanText(row.hire_date),
       hrId: cleanText(row.hr_id),
       hrRecommendation: cleanText(row.workflow?.hrRecommendation),
       jobTitle: cleanText(row.job_title),
-      letterName: cleanText(row.workflow?.probationLetterName),
       line: cleanText(row.line_name),
       managerFeedback: cleanText(row.workflow?.managerFeedback),
       probationEndDate: cleanText(row.probation_end_date),

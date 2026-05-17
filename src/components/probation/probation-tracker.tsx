@@ -9,7 +9,6 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
-  Upload,
   UserCheck,
   X,
   XCircle,
@@ -56,10 +55,7 @@ type SelectedWorkflowAction = {
 type WorkflowActionForm = {
   confirmationChecked: boolean;
   decisionReason: string;
-  extensionEndDate: string;
   managerFeedback: string;
-  probationLetterName: string;
-  probationLetterUrl: string;
   terminationHrId: string;
   workflowNote: string;
 };
@@ -93,10 +89,7 @@ function emptyActionForm(): WorkflowActionForm {
   return {
     confirmationChecked: false,
     decisionReason: "",
-    extensionEndDate: "",
     managerFeedback: "",
-    probationLetterName: "",
-    probationLetterUrl: "",
     terminationHrId: "",
     workflowNote: "",
   };
@@ -145,11 +138,9 @@ function workflowLabel(status: string | null | undefined) {
 
 function actionLabel(action: ProbationWorkflowAction) {
   const labels: Record<ProbationWorkflowAction, string> = {
-    extend: "Extend",
     manager_feedback: "Manager feedback",
     pass: "Pass",
     terminate: "Terminate",
-    upload_letter: "Attach letter",
   };
 
   return labels[action];
@@ -266,13 +257,17 @@ export function ProbationTracker({
   const isPremium = presentation === "premium";
   const canCreate = capabilities.canCreate ?? false;
   const canExport = capabilities.canExport ?? false;
+  const canManageWorkflow = capabilities.canManageWorkflow ?? false;
   const canSubmitManagerFeedback = capabilities.canSubmitManagerFeedback ?? false;
   const panelClassName = isPremium ? premiumPanelClassName : adminPanelClassName;
   const inputClassName = isPremium ? premiumInputClassName : "h-10 bg-white";
   const [areaFilter, setAreaFilter] = useState(allValue);
   const [jobFilter, setJobFilter] = useState(allValue);
   const [lineFilter, setLineFilter] = useState(allValue);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("employeeHrId") ?? "";
+  });
   const [sortBy, setSortBy] = useState<SortKey>("days-asc");
   const [trafficFilter, setTrafficFilter] = useState<TrafficStatus | "all">("all");
   const [employmentFilter, setEmploymentFilter] = useState<string>(allValue);
@@ -344,6 +339,20 @@ export function ProbationTracker({
     [filteredRows],
   );
 
+  const feedbackReportRows = useMemo(
+    () => filteredRows.map((row) => {
+      const probationDay = Math.max(0, Math.min(90, 90 - Math.max(0, row.days_remaining)));
+      return {
+        ...row,
+        feedbackStatus: row.workflow?.managerFeedback ? "Submitted" : "Pending",
+        probationDayStatus: row.workflow?.decision
+          ? row.workflow.decision
+          : `Day ${probationDay} / ${row.days_remaining} days remaining`,
+      };
+    }),
+    [filteredRows],
+  );
+
   const hasActiveFilters =
     areaFilter !== allValue ||
     jobFilter !== allValue ||
@@ -409,10 +418,7 @@ export function ProbationTracker({
     setSelectedAction({ action, row });
     setActionForm({
       ...emptyActionForm(),
-      extensionEndDate: row.workflow.extensionEndDate ?? "",
       managerFeedback: row.workflow.managerFeedback ?? "",
-      probationLetterName: row.workflow.probationLetterName ?? "",
-      probationLetterUrl: row.workflow.probationLetterUrl ?? "",
     });
     setMessage(null);
   }
@@ -425,10 +431,6 @@ export function ProbationTracker({
       setMessage({ tone: "danger", text: "Type the employee HR ID before termination." });
       return;
     }
-    if (action === "extend" && !actionForm.confirmationChecked) {
-      setMessage({ tone: "danger", text: "Confirm the extension date before submitting." });
-      return;
-    }
     const actionKey = `${workflow.id}:${action}`;
     setPendingAction(actionKey);
     setMessage(null);
@@ -439,11 +441,8 @@ export function ProbationTracker({
           action,
           decisionReason: actionForm.decisionReason,
           expectedUpdatedAt: workflow.updatedAt,
-          extensionEndDate: actionForm.extensionEndDate,
           managerFeedback: actionForm.managerFeedback,
           note: actionForm.workflowNote,
-          probationLetterName: actionForm.probationLetterName,
-          probationLetterUrl: actionForm.probationLetterUrl,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -620,6 +619,74 @@ export function ProbationTracker({
         </div>
       </AdminTableShell>
 
+      {canManageWorkflow ? (
+        <Card className={`${panelClassName} overflow-hidden p-0`}>
+          <AdminSectionHeader
+            action={<Badge variant="neutral">{feedbackReportRows.filter((row) => row.feedbackStatus === "Pending").length} pending</Badge>}
+            description="HR/Admin view of manager feedback status during the fixed 90-day probation period."
+            title="Managers Feedback in Probation Period"
+          />
+          <div className="overflow-x-auto bg-white/80">
+            <table className="w-full min-w-[1280px] text-left text-sm">
+              <thead className="bg-[#FFF7ED]/80 text-xs uppercase tracking-[0.12em] text-text-secondary">
+                <tr className="border-b border-[#FED7AA]">
+                  {[
+                    "Employee HR ID",
+                    "Employee Name",
+                    "Hiring Date",
+                    "Probation Day / Status",
+                    "Direct Manager",
+                    "Manager of Manager",
+                    "Feedback By",
+                    "Feedback Date",
+                    "Feedback Text",
+                    "Recommendation",
+                    "Pending Status",
+                    "Line / Area / Team",
+                  ].map((column) => (
+                    <th className={adminTableHeaderClassName} key={column}>
+                      {column}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E2E8F0]">
+                {feedbackReportRows.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-sm text-text-secondary" colSpan={12}>
+                      No probation feedback records match the current filters.
+                    </td>
+                  </tr>
+                ) : (
+                  feedbackReportRows.map((row) => (
+                    <tr className="align-top transition-colors hover:bg-[#FFF7ED]/55" key={`feedback:${row.hr_id}`}>
+                      <td className="px-3 py-4 font-mono text-xs text-text-secondary">{row.hr_id}</td>
+                      <td className="px-3 py-4 font-semibold text-text">{row.full_name}</td>
+                      <td className="px-3 py-4 text-text-secondary">{formatDate(row.hire_date)}</td>
+                      <td className="px-3 py-4 text-text-secondary">{row.probationDayStatus}</td>
+                      <td className="px-3 py-4 text-text-secondary">{row.manager_name ?? row.manager_hr_id ?? "-"}</td>
+                      <td className="px-3 py-4 text-text-secondary">{row.manager_manager_name ?? row.manager_manager_hr_id ?? "-"}</td>
+                      <td className="px-3 py-4 text-text-secondary">{row.workflow?.managerReviewedBy ?? "-"}</td>
+                      <td className="px-3 py-4 text-text-secondary">{row.workflow?.managerReviewedAt ? formatDate(row.workflow.managerReviewedAt) : "-"}</td>
+                      <td className="max-w-[280px] px-3 py-4 text-text-secondary">{row.workflow?.managerFeedback ?? "-"}</td>
+                      <td className="px-3 py-4 text-text-secondary">{row.workflow?.decision ?? row.workflow?.hrRecommendation ?? "-"}</td>
+                      <td className="px-3 py-4">
+                        <Badge variant={row.feedbackStatus === "Pending" ? "warning" : "success"}>{row.feedbackStatus}</Badge>
+                      </td>
+                      <td className="px-3 py-4 text-text-secondary">
+                        <p>{row.line_name}</p>
+                        <p className="mt-1">{row.area_name}</p>
+                        <p className="mt-1">{row.team_name ?? "-"}</p>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
+
       <Card className={`${panelClassName} overflow-hidden p-0`}>
         <AdminSectionHeader
           action={
@@ -708,11 +775,6 @@ export function ProbationTracker({
                           {row.workflow?.decision ? (
                             <div className="text-xs font-semibold text-[#0F172A]">Decision: {row.workflow.decision}</div>
                           ) : null}
-                          {row.workflow?.probationLetterUrl ? (
-                            <a className="block text-xs font-semibold text-[#C2410C] hover:underline" href={row.workflow.probationLetterUrl} rel="noreferrer" target="_blank">
-                              Probation letter
-                            </a>
-                          ) : null}
                         </div>
                       </td>
                       <td className="px-3 py-4">
@@ -729,7 +791,6 @@ export function ProbationTracker({
                                   variant={isDestructiveAction(action) ? "destructive" : "secondary"}
                                 >
                                   {action === "manager_feedback" ? <UserCheck className="mr-1 h-3.5 w-3.5" /> : null}
-                                  {action === "upload_letter" ? <Upload className="mr-1 h-3.5 w-3.5" /> : null}
                                   {action === "terminate" ? <XCircle className="mr-1 h-3.5 w-3.5" /> : null}
                                   {actionLabel(action)}
                                 </Button>
@@ -780,29 +841,11 @@ export function ProbationTracker({
                 <Input className={inputClassName} onChange={(event) => updateActionForm("managerFeedback", event.target.value)} placeholder="Manager evaluation feedback" value={actionForm.managerFeedback} />
               </label>
             ) : null}
-            {selectedAction.action === "pass" || selectedAction.action === "extend" || selectedAction.action === "terminate" ? (
+            {selectedAction.action === "pass" || selectedAction.action === "terminate" ? (
               <label className="block lg:col-span-2">
                 <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">HR Note</span>
                 <Input className={inputClassName} onChange={(event) => updateActionForm("decisionReason", event.target.value)} placeholder={selectedAction.action === "terminate" ? "Termination reason" : "Optional HR note"} value={actionForm.decisionReason} />
               </label>
-            ) : null}
-            {selectedAction.action === "extend" ? (
-              <label className="block">
-                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Extension End Date</span>
-                <Input className={inputClassName} onChange={(event) => updateActionForm("extensionEndDate", event.target.value)} type="date" value={actionForm.extensionEndDate} />
-              </label>
-            ) : null}
-            {selectedAction.action === "upload_letter" ? (
-              <>
-                <label className="block lg:col-span-2">
-                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Probation Letter URL</span>
-                  <Input className={inputClassName} onChange={(event) => updateActionForm("probationLetterUrl", event.target.value)} placeholder="https://..." value={actionForm.probationLetterUrl} />
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Letter Name</span>
-                  <Input className={inputClassName} onChange={(event) => updateActionForm("probationLetterName", event.target.value)} placeholder="Probation decision letter" value={actionForm.probationLetterName} />
-                </label>
-              </>
             ) : null}
             {selectedAction.action === "terminate" ? (
               <label className="block lg:col-span-3">
@@ -814,19 +857,6 @@ export function ProbationTracker({
               <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Review Note</span>
               <Input className={inputClassName} onChange={(event) => updateActionForm("workflowNote", event.target.value)} placeholder="Optional note for this row-specific action" value={actionForm.workflowNote} />
             </label>
-            {selectedAction.action === "extend" ? (
-              <label className="flex items-start gap-3 rounded-2xl border border-[#FED7AA] bg-[#FFF7ED] p-3 text-sm font-semibold text-[#0F172A] lg:col-span-3">
-                <input
-                  checked={actionForm.confirmationChecked}
-                  className="mt-1"
-                  onChange={(event) => updateActionForm("confirmationChecked", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  I confirm the extension end date applies only to {selectedAction.row.full_name} ({selectedAction.row.hr_id}).
-                </span>
-              </label>
-            ) : null}
           </div>
         </AdminTableShell>
       ) : null}

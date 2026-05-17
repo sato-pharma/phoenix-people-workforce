@@ -1,0 +1,374 @@
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { canSeeHrScopedRecord, type AccessContext } from "@/lib/auth/permissions";
+import type {
+  CreateHiringDocumentDefinitionInput,
+  HiringDocumentDefinition,
+  HiringDocumentEmployeeRow,
+  HiringDocumentEntry,
+  HiringDocumentsDashboardData,
+  HiringDocumentStatus,
+  UpdateHiringDocumentNotesInput,
+  UpdateHiringDocumentStatusInput,
+} from "@/lib/hiring-documents/types";
+
+type EmployeeDbRow = {
+  employment_status: string | null;
+  full_name: string | null;
+  hire_date: string | null;
+  hr_id: string;
+  job_title: string | null;
+  line_id: number | null;
+  manager_hr_id: string | null;
+};
+
+type LineDbRow = {
+  id: number;
+  name: string | null;
+};
+
+type HiringDocumentDefinitionDbRow = {
+  created_at: string;
+  description: string | null;
+  display_order: number;
+  id: string;
+  name: string;
+};
+
+type HiringDocumentStatusDbRow = {
+  document_id: string;
+  due_date: string | null;
+  employee_hr_id: string;
+  notes: string | null;
+  status: HiringDocumentStatus | null;
+  updated_at: string | null;
+};
+
+type HiringDocumentEmployeeNoteDbRow = {
+  employee_hr_id: string;
+  notes: string | null;
+};
+
+const visibleEmployeeStatuses = new Set(["active", "on_leave", "resigned", "terminated", "inactive"]);
+const validDocumentStatuses = new Set<HiringDocumentStatus>(["pending", "submitted", "missing"]);
+
+function cleanText(value: string | null | undefined) {
+  const text = value?.trim();
+  return text ? text : null;
+}
+
+function normalizeHrId(value: string | null | undefined) {
+  return cleanText(value)?.toUpperCase() ?? null;
+}
+
+function normalizeStatus(value: string | null | undefined) {
+  return cleanText(value)?.toLowerCase() ?? "active";
+}
+
+function isVisibleEmployee(row: EmployeeDbRow) {
+  return Boolean(row.hr_id && cleanText(row.full_name) && visibleEmployeeStatuses.has(normalizeStatus(row.employment_status)));
+}
+
+function isSchemaMissingMessage(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("could not find the table") ||
+    normalized.includes("schema cache") ||
+    (normalized.includes("relation") && normalized.includes("does not exist")) ||
+    (normalized.includes("column") && normalized.includes("does not exist"))
+  );
+}
+
+export function hiringDocumentsErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function isHiringDocumentsSchemaMissing(error: unknown) {
+  return isSchemaMissingMessage(hiringDocumentsErrorMessage(error));
+}
+
+function toDefinition(row: HiringDocumentDefinitionDbRow): HiringDocumentDefinition {
+  return {
+    createdAt: row.created_at,
+    description: row.description,
+    displayOrder: row.display_order,
+    id: row.id,
+    name: row.name,
+  };
+}
+
+async function loadLines(lineIds: number[]) {
+  const uniqueIds = Array.from(new Set(lineIds));
+  if (uniqueIds.length === 0) return new Map<number, string>();
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("lines")
+    .select("id,name")
+    .in("id", uniqueIds);
+
+  if (error) throw new Error(error.message);
+
+  return new Map((data as LineDbRow[]).map((row) => [row.id, row.name ?? ""]));
+}
+
+async function loadManagerNames(managerHrIds: string[]) {
+  const uniqueHrIds = Array.from(new Set(managerHrIds.map(normalizeHrId).filter(Boolean))) as string[];
+  if (uniqueHrIds.length === 0) return new Map<string, string>();
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select("hr_id,full_name")
+    .in("hr_id", uniqueHrIds);
+
+  if (error) throw new Error(error.message);
+
+  return new Map((data as Array<{ full_name: string | null; hr_id: string }>).map((row) => [
+    row.hr_id.toUpperCase(),
+    row.full_name ?? "",
+  ]));
+}
+
+async function loadDocumentDefinitions() {
+  const { data, error } = await getSupabaseAdmin()
+    .from("hiring_document_definitions")
+    .select("id,name,description,display_order,created_at")
+    .eq("is_active", true)
+    .order("display_order", { ascending: true })
+    .order("name", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  return (data as HiringDocumentDefinitionDbRow[]).map(toDefinition);
+}
+
+function defaultEntry(documentId: string): HiringDocumentEntry {
+  return {
+    documentId,
+    dueDate: null,
+    notes: null,
+    status: "pending",
+    updatedAt: null,
+  };
+}
+
+function summarize(employees: HiringDocumentEmployeeRow[], documents: HiringDocumentDefinition[]) {
+  let submittedDocuments = 0;
+  let missingDocuments = 0;
+  let pendingDocuments = 0;
+  let dueDocuments = 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  for (const employee of employees) {
+    for (const document of documents) {
+      const entry = employee.documents[document.id] ?? defaultEntry(document.id);
+      if (entry.status === "submitted") submittedDocuments += 1;
+      if (entry.status === "missing") missingDocuments += 1;
+      if (entry.status === "pending") pendingDocuments += 1;
+      if (entry.status === "missing" && entry.dueDate) {
+        const dueDate = new Date(`${entry.dueDate}T00:00:00`);
+        if (!Number.isNaN(dueDate.getTime()) && dueDate <= today) dueDocuments += 1;
+      }
+    }
+  }
+
+  const totalDocumentSlots = employees.length * documents.length;
+
+  return {
+    completeDocuments: submittedDocuments,
+    dueDocuments,
+    employees: employees.length,
+    missingDocuments,
+    pendingDocuments,
+    submittedDocuments,
+    totalDocumentSlots,
+  };
+}
+
+export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDashboardData> {
+  const supabase = getSupabaseAdmin();
+  const { data: employeeData, error: employeeError } = await supabase
+    .from("employees")
+    .select("hr_id,full_name,job_title,hire_date,employment_status,line_id,manager_hr_id")
+    .order("full_name", { ascending: true });
+
+  if (employeeError) throw new Error(employeeError.message);
+
+  const employeeRows = (employeeData as EmployeeDbRow[]).filter(isVisibleEmployee);
+  const employeeHrIds = employeeRows.map((row) => row.hr_id.toUpperCase());
+  const documents = await loadDocumentDefinitions();
+  const [lineNames, managerNames] = await Promise.all([
+    loadLines(employeeRows.map((row) => row.line_id).filter((value): value is number => typeof value === "number")),
+    loadManagerNames(employeeRows.map((row) => row.manager_hr_id).filter(Boolean) as string[]),
+  ]);
+
+  const statusData = employeeHrIds.length > 0
+    ? await supabase
+      .from("hiring_document_statuses")
+      .select("employee_hr_id,document_id,status,due_date,notes,updated_at")
+      .in("employee_hr_id", employeeHrIds)
+    : { data: [], error: null };
+
+  if (statusData.error) throw new Error(statusData.error.message);
+
+  const noteData = employeeHrIds.length > 0
+    ? await supabase
+      .from("hiring_document_employee_notes")
+      .select("employee_hr_id,notes")
+      .in("employee_hr_id", employeeHrIds)
+    : { data: [], error: null };
+
+  if (noteData.error) throw new Error(noteData.error.message);
+
+  const documentIds = new Set(documents.map((document) => document.id));
+  const statusByEmployee = new Map<string, Record<string, HiringDocumentEntry>>();
+  for (const row of statusData.data as HiringDocumentStatusDbRow[]) {
+    const hrId = row.employee_hr_id.toUpperCase();
+    if (!documentIds.has(row.document_id)) continue;
+    const status = row.status && validDocumentStatuses.has(row.status) ? row.status : "pending";
+    const entries = statusByEmployee.get(hrId) ?? {};
+    entries[row.document_id] = {
+      documentId: row.document_id,
+      dueDate: row.due_date,
+      notes: row.notes,
+      status,
+      updatedAt: row.updated_at,
+    };
+    statusByEmployee.set(hrId, entries);
+  }
+
+  const notesByEmployee = new Map(
+    (noteData.data as HiringDocumentEmployeeNoteDbRow[]).map((row) => [row.employee_hr_id.toUpperCase(), row.notes]),
+  );
+
+  const employees = employeeRows.map((row) => {
+    const hrId = row.hr_id.toUpperCase();
+    const documentsById: Record<string, HiringDocumentEntry> = {};
+    for (const document of documents) {
+      documentsById[document.id] = statusByEmployee.get(hrId)?.[document.id] ?? defaultEntry(document.id);
+    }
+
+    return {
+      documents: documentsById,
+      employmentStatus: row.employment_status,
+      fullName: row.full_name ?? "",
+      hireDate: row.hire_date,
+      hrId,
+      jobTitle: row.job_title,
+      lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
+      managerHrId: row.manager_hr_id,
+      managerName: row.manager_hr_id ? managerNames.get(row.manager_hr_id.toUpperCase()) ?? null : null,
+      notes: notesByEmployee.get(hrId) ?? null,
+    };
+  });
+
+  return {
+    documents,
+    employees,
+    summary: summarize(employees, documents),
+  };
+}
+
+export async function createHiringDocumentDefinition(input: CreateHiringDocumentDefinitionInput) {
+  const name = cleanText(input.name);
+  if (!name) throw new Error("Document name is required.");
+
+  const supabase = getSupabaseAdmin();
+  const { data: maxRows, error: maxError } = await supabase
+    .from("hiring_document_definitions")
+    .select("display_order")
+    .eq("is_active", true)
+    .order("display_order", { ascending: false })
+    .limit(1);
+
+  if (maxError) throw new Error(maxError.message);
+
+  const nextOrder = ((maxRows?.[0] as { display_order?: number } | undefined)?.display_order ?? 0) + 10;
+  const { error } = await supabase
+    .from("hiring_document_definitions")
+    .insert({
+      description: cleanText(input.description),
+      display_order: nextOrder,
+      name,
+    });
+
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteHiringDocumentDefinition(documentId: string) {
+  const id = cleanText(documentId);
+  if (!id) throw new Error("Document id is required.");
+
+  const { error } = await getSupabaseAdmin()
+    .from("hiring_document_definitions")
+    .update({
+      is_active: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  if (error) throw new Error(error.message);
+}
+
+export async function updateHiringDocumentStatus(input: UpdateHiringDocumentStatusInput) {
+  const employeeHrId = normalizeHrId(input.employeeHrId);
+  const documentId = cleanText(input.documentId);
+  if (!employeeHrId || !documentId) throw new Error("Employee and document are required.");
+  if (!validDocumentStatuses.has(input.status)) throw new Error(`Invalid document status: ${input.status}.`);
+
+  const dueDate = input.status === "missing" ? cleanText(input.dueDate) : null;
+  const { error } = await getSupabaseAdmin()
+    .from("hiring_document_statuses")
+    .upsert(
+      {
+        document_id: documentId,
+        due_date: dueDate,
+        employee_hr_id: employeeHrId,
+        notes: cleanText(input.notes),
+        status: input.status,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "employee_hr_id,document_id" },
+    );
+
+  if (error) throw new Error(error.message);
+}
+
+export async function updateHiringDocumentEmployeeNotes(input: UpdateHiringDocumentNotesInput) {
+  const employeeHrId = normalizeHrId(input.employeeHrId);
+  if (!employeeHrId) throw new Error("Employee is required.");
+
+  const { error } = await getSupabaseAdmin()
+    .from("hiring_document_employee_notes")
+    .upsert(
+      {
+        employee_hr_id: employeeHrId,
+        notes: cleanText(input.notes),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "employee_hr_id" },
+    );
+
+  if (error) throw new Error(error.message);
+}
+
+export function filterHiringDocumentsForAccess(
+  dashboard: HiringDocumentsDashboardData,
+  access: AccessContext,
+): HiringDocumentsDashboardData {
+  if (access.scope === "system" || access.role === "Super Admin" || access.role === "HR Specialist") {
+    return dashboard;
+  }
+
+  const employees = dashboard.employees.filter((employee) =>
+    canSeeHrScopedRecord(access, {
+      employeeHrId: employee.hrId,
+      managerHrId: employee.managerHrId,
+    }),
+  );
+
+  return {
+    ...dashboard,
+    employees,
+    summary: summarize(employees, dashboard.documents),
+  };
+}

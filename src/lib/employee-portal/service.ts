@@ -879,12 +879,17 @@ async function fetchPortalNotifications(hrId: string): Promise<PortalNotificatio
   try {
     const { data } = await supabase
       .from("notification_events")
-      .select("id,category,subject,scheduled_for,sent_at,status,metadata")
-      .eq("employee_hr_id", hrId)
+      .select("id,category,subject,scheduled_for,sent_at,status,metadata,recipients")
+      .or(`employee_hr_id.eq.${hrId},recipients.cs.["${hrId.toUpperCase()}"]`)
       .order("scheduled_for", { ascending: false })
       .limit(5);
 
-    return (data ?? []).map((row) => {
+    return (data ?? []).filter((row) => {
+      const r = row as Record<string, unknown>;
+      if (String(r.category ?? "").toLowerCase() !== "probation") return true;
+      const recipients = Array.isArray(r.recipients) ? r.recipients : [];
+      return recipients.some((recipient) => String(recipient ?? "").trim().toUpperCase() === hrId.toUpperCase());
+    }).map((row) => {
       const r = row as Record<string, unknown>;
       const metadata = r.metadata && typeof r.metadata === "object" && !Array.isArray(r.metadata)
         ? r.metadata as Record<string, unknown>

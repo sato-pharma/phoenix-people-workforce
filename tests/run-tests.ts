@@ -31,6 +31,7 @@ import { runAccessGovernanceHardeningTests } from "./access-governance-hardening
 import { runVacationCalculationTests } from "./vacation-calculations.test.ts";
 import { runVacationModuleTests } from "./vacation-module.test.ts";
 import { runContractRenewalHardeningTests } from "./contract-renewal-hardening.test.ts";
+import { runCvDatabaseTests } from "./cv-database.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -75,3 +76,4 @@ await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("vacation calculations", runVacationCalculationTests);
 await runTest("vacation module", runVacationModuleTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);
+await runTest("cv database", runCvDatabaseTests);
