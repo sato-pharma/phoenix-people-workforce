@@ -930,7 +930,7 @@ async function resolvePortalCurrentUser(access: AccessContext): Promise<PortalCu
       const { data: loginData, error: loginError } = await supabase
         .from("app_auth_users")
         .select("login_id,hr_id,line,manager_hr_id,name,role,sales_scope_override")
-        .eq("login_id", loginId)
+        .ilike("login_id", loginId)
         .maybeSingle();
       if (loginError) console.warn("--- WARN: app_auth_users login_id lookup failed ---", loginError.message);
       if (loginData) row = loginData as PortalAuthRow;
@@ -940,13 +940,25 @@ async function resolvePortalCurrentUser(access: AccessContext): Promise<PortalCu
       const { data: hrData, error: hrError } = await supabase
         .from("app_auth_users")
         .select("login_id,hr_id,line,manager_hr_id,name,role,sales_scope_override")
-        .eq("hr_id", fallbackHr)
+        .ilike("hr_id", fallbackHr)
         .maybeSingle();
       if (hrError) console.warn("--- WARN: app_auth_users hr_id lookup failed ---", hrError.message);
       if (hrData) row = hrData as PortalAuthRow;
     }
 
-    const resolvedHrId = normalizeHrId(row?.hr_id) ?? normalizeHrId(fallbackHr);
+    // If the auth row has no hr_id, resolve it from employees.work_email using the login id
+    let resolvedHrId = normalizeHrId(row?.hr_id);
+    if (!resolvedHrId && loginId) {
+      const { data: empByEmail } = await supabase
+        .from("employees")
+        .select("hr_id")
+        .ilike("work_email", loginId)
+        .maybeSingle();
+      const emailHrId = normalizeHrId((empByEmail as { hr_id?: string | null } | null)?.hr_id);
+      resolvedHrId = emailHrId ?? normalizeHrId(fallbackHr);
+    } else {
+      resolvedHrId = resolvedHrId ?? normalizeHrId(fallbackHr);
+    }
     const resolvedSalesScopeOverride = normalizeFilter(row?.sales_scope_override);
     const scopedRole = row?.role ? normalizeRole(row.role) : normalizeRole(access.role);
 
@@ -1794,8 +1806,12 @@ export async function getEmployeePortalData(
     });
 
     const filteredDirectory = filterEmployeeDirectoryForAccess(directory, access);
-    const employee = filteredDirectory.employees.find((row) => hrIdsMatch(row.hrId, currentHrId)) ??
-      fallbackEmployee(access);
+    const byHrIdInFiltered = filteredDirectory.employees.find((row) => hrIdsMatch(row.hrId, currentHrId));
+    // Fallback: match by work email when app_auth_users.hr_id was unset and login was used as identity
+    const byEmailInFiltered = !byHrIdInFiltered && currentUser.loginId
+      ? filteredDirectory.employees.find((row) => row.workEmail && normalizeHrId(row.workEmail) === normalizeHrId(currentUser.loginId))
+      : null;
+    const employee = byHrIdInFiltered ?? byEmailInFiltered ?? fallbackEmployee(access);
     const salesLineFilter = resolvePortalSalesLineFilter(currentUser, employee);
 
     const visibleTeamMembers = filteredDirectory.employees.filter((row) => {
@@ -2233,10 +2249,17 @@ export type EmployeePortalShellData = Pick<MedicalRepPortalData, "employee" | "h
 export async function getEmployeePortalShellData(access: AccessContext): Promise<EmployeePortalShellData> {
   const currentUser = await resolvePortalCurrentUser(access);
   const currentHrId = normalizeHrId(currentUser.hrId);
+  const currentLoginId = normalizeHrId(currentUser.loginId);
   const directory = await getEmployeeDirectory({ pageSize: -1 });
-  const employee = currentHrId
-    ? directory.employees.find((row) => normalizeHrId(row.hrId) === currentHrId) ?? fallbackEmployee(access)
-    : fallbackEmployee(access);
+  const byHrId = currentHrId
+    ? directory.employees.find((row) => normalizeHrId(row.hrId) === currentHrId)
+    : null;
+  // Fallback: if the hrId didn't match any employee (e.g. app_auth_users.hr_id was unset and
+  // the loginId was used as a stand-in), try matching by work email so profile data still shows.
+  const byEmail = !byHrId && currentLoginId
+    ? directory.employees.find((row) => normalizeHrId(row.workEmail) === currentLoginId)
+    : null;
+  const employee = byHrId ?? byEmail ?? fallbackEmployee(access);
   const employmentJourney = computeEmploymentJourney(employee);
   const daysUntilProbationEnd = daysFromToday(addDays(employee.hireDate ?? null, 90));
   const probationStatus: MedicalRepPortalData["hrContract"]["probationStatus"] =

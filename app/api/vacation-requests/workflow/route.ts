@@ -766,7 +766,7 @@ async function findEmployeeByHrId(inputHrId: string | null | undefined) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employees")
-    .select("full_name,hire_date,hr_id,manager_hr_id,work_email,area_id,line_id,team_id,area_name,line_name,team_name,areas(name),lines(name),teams(name)")
+    .select("full_name,hire_date,hr_id,manager_hr_id,work_email")
     .ilike("hr_id", cleanString(inputHrId))
     .maybeSingle();
 

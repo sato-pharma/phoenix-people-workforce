@@ -221,7 +221,7 @@ async function resolveEmployeeByHrId(
     for (const column of ["hr_id", "employee_hr_id"] as const) {
       const result = await supabase
         .from("employees")
-        .select("full_name,hire_date,hr_id,work_email,area_id,line_id,team_id,areas(name),lines(name),teams(name)")
+        .select("full_name,hire_date,hr_id,work_email,manager_hr_id")
         .ilike(column, candidate)
         .limit(1)
         .maybeSingle();
