@@ -386,7 +386,7 @@ export function OutstationRequestsAdmin({
                 <ul className="mt-2 space-y-2 text-sm leading-6 text-[#64748B]">
                   <li>Residence coordinates are the only approved origin reference.</li>
                   <li>Client GPS is captured with timestamp and accuracy, but server distance is authoritative.</li>
-                  <li>Requests under 60 KM are not eligible for outstation expense.</li>
+                  <li>Distances below 58 KM are not eligible. Distances from 58 KM to under 60 KM are accepted with warning.</li>
                 </ul>
               </div>
             </div>

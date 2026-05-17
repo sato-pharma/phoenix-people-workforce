@@ -63,6 +63,7 @@ export type OutstationPolicyRule = {
   id: number;
   maxOfflineSyncDelayHours: number;
   minimumDistanceKm: number;
+  toleranceMinimumDistanceKm?: number | null;
   overnightAllowance: number;
   requiresTicketAttachment: boolean;
   returnDayAllowance: number;
