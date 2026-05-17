@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Activity, AlertTriangle, BellRing, Lock, Radar, Search, ShieldAlert, UserRoundCog } from "lucide-react";
+import Link from "next/link";
+import { Activity, AlertTriangle, BellRing, Download, Lock, Radar, Search, ShieldAlert, UserRoundCog } from "lucide-react";
 
 import {
   AdminCallout,
@@ -12,27 +12,8 @@ import {
 import { Card } from "@/components/ui/card";
 import type { AdminMonitoringStats } from "@/lib/admin/service";
 
-const activityPageSizes = [10, 25, 50] as const;
-
-type RecentSecurityEvent = AdminMonitoringStats["recentEvents"][number];
-
 function formatActivityTimestamp(value: string | null) {
   return value ? new Date(value).toLocaleString() : "Unknown time";
-}
-
-function getActivitySearchText(event: RecentSecurityEvent) {
-  return [
-    event.actor,
-    event.actorHrId,
-    event.actorLoginId,
-    event.actorName,
-    event.createdAt,
-    event.entityType,
-    event.summary,
-  ]
-    .filter((value): value is string => typeof value === "string" && value.length > 0)
-    .join(" ")
-    .toLowerCase();
 }
 
 function StatCard({
@@ -69,24 +50,39 @@ function StatCard({
 }
 
 export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) {
-  const [activitySearch, setActivitySearch] = useState("");
-  const [activityTypeFilter, setActivityTypeFilter] = useState("all");
-  const [activityPage, setActivityPage] = useState(1);
-  const [activityPageSize, setActivityPageSize] = useState<(typeof activityPageSizes)[number]>(10);
+  const activitySearch = stats.recentEvents.search;
+  const activityTypeFilter = stats.recentEvents.entityType;
+  const activitySort = stats.recentEvents.sort;
+  const activityPage = stats.recentEvents.page;
+  const activityPageSize = stats.recentEvents.pageSize;
+  const activityTotal = stats.recentEvents.total;
+  const activityTotalPages = Math.max(1, stats.recentEvents.totalPages);
+  const safeActivityPage = Math.min(Math.max(1, activityPage), activityTotalPages);
   const coveragePercent = `${(stats.auth.authBridgeCoverageRate * 100).toFixed(1)}%`;
   const metricTileClass = "rounded-xl border border-slate-200 bg-slate-50 p-4";
-  const normalizedActivitySearch = activitySearch.trim().toLowerCase();
-  const activityTypeOptions = Array.from(new Set(stats.recentEvents.map((event) => event.entityType))).sort();
-  const filteredActivityEvents = stats.recentEvents.filter((event) => {
-    const matchesType = activityTypeFilter === "all" || event.entityType === activityTypeFilter;
-    const matchesSearch = !normalizedActivitySearch || getActivitySearchText(event).includes(normalizedActivitySearch);
-    return matchesType && matchesSearch;
-  });
-  const activityTotalPages = Math.max(1, Math.ceil(filteredActivityEvents.length / activityPageSize));
-  const safeActivityPage = Math.min(activityPage, activityTotalPages);
-  const activityStart = (safeActivityPage - 1) * activityPageSize;
-  const visibleActivityEvents = filteredActivityEvents.slice(activityStart, activityStart + activityPageSize);
-  const activityEnd = activityStart + visibleActivityEvents.length;
+  const activityTypeOptions = Array.from(new Set(stats.recentEvents.entityTypes)).sort();
+  const activityStart = (safeActivityPage - 1) * activityPageSize + 1;
+  const activityEnd = Math.min(safeActivityPage * activityPageSize, activityTotal);
+
+  const currentFilters = {
+    pageSize: stats.recentEvents.pageSize,
+    search: stats.recentEvents.search || "",
+    sort: stats.recentEvents.sort,
+    type: stats.recentEvents.entityType,
+  };
+
+  const createQueryParams = (page: number) => {
+    const params = new URLSearchParams();
+    if (currentFilters.search) params.set("search", currentFilters.search);
+    if (currentFilters.type && currentFilters.type !== "all") params.set("type", currentFilters.type);
+    if (currentFilters.sort) params.set("sort", currentFilters.sort);
+    params.set("pageSize", String(currentFilters.pageSize));
+    params.set("page", String(page));
+    return params;
+  };
+
+  const tableFilterAction = "/admin/monitoring";
+  const csvExportHref = `/api/admin/monitoring/events-csv${createQueryParams(1).toString() ? `?${createQueryParams(1).toString()}` : ""}`;
 
   return (
     <div className="space-y-5">
@@ -175,34 +171,63 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
       <AdminTableShell
         description="Latest authentication and user-admin events ordered by the monitoring data source."
         action={(
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <label className="relative block min-w-[220px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
-                onChange={(event) => {
-                  setActivitySearch(event.target.value);
-                  setActivityPage(1);
-                }}
-                placeholder="Filter HR ID, name, event..."
-                value={activitySearch}
-              />
-            </label>
-            <select
-              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
-              onChange={(event) => {
-                setActivityTypeFilter(event.target.value);
-                setActivityPage(1);
-              }}
-              value={activityTypeFilter}
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <form action={tableFilterAction} method="get" className="flex flex-1 flex-col gap-2 md:flex-row md:items-center">
+              <label className="relative block min-w-[220px]">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                  defaultValue={activitySearch}
+                  name="search"
+                  placeholder="Filter HR ID, name, event..."
+                  type="text"
+                />
+              </label>
+              <select
+                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                defaultValue={activityTypeFilter}
+                name="type"
+              >
+                <option value="all">All types</option>
+                {activityTypeOptions.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                defaultValue={activitySort}
+                name="sort"
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
+              <label className="relative inline-flex h-10 min-w-[120px] items-center rounded-xl border border-slate-200 bg-white pr-3 text-sm font-medium text-slate-700">
+                <span className="px-2 text-xs text-slate-500">Page size</span>
+                <input
+                  className="h-full w-full rounded-r-xl border-l border-slate-200 bg-transparent pl-2 pr-2 text-sm font-semibold text-slate-700 outline-none"
+                  defaultValue={activityPageSize}
+                  min={1}
+                  name="pageSize"
+                  type="number"
+                />
+              </label>
+              <input name="page" type="hidden" value="1" />
+              <button
+                className="h-10 rounded-xl border border-slate-200 bg-slate-950 px-4 text-sm font-black text-white transition hover:bg-orange-500"
+                type="submit"
+              >
+                Apply
+              </button>
+            </form>
+            <Link
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition hover:border-orange-300 hover:text-orange-700"
+              href={csvExportHref}
             >
-              <option value="all">All types</option>
-              {activityTypeOptions.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </Link>
           </div>
         )}
         title="Recent Security Activity"
@@ -219,14 +244,14 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
-              {visibleActivityEvents.length === 0 ? (
+              {stats.recentEvents.rows.length === 0 ? (
                 <tr>
                   <td className="px-4 py-8 text-sm font-medium text-slate-400 sm:px-6" colSpan={5}>
                     No recent auth or user-admin events match the selected filters.
                   </td>
                 </tr>
               ) : (
-                visibleActivityEvents.map((event, index) => (
+                stats.recentEvents.rows.map((event, index) => (
                   <tr key={`${event.entityType}-${event.createdAt ?? index}-${event.actorLoginId ?? "system"}`} className="transition-colors hover:bg-orange-50/40">
                     <td className="whitespace-nowrap px-4 py-4 align-top font-mono text-xs font-semibold text-slate-700 sm:px-6">
                       {event.actorHrId ?? "N/A"}
@@ -254,47 +279,31 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
         </div>
 
         <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/70 px-4 py-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          {filteredActivityEvents.length === 0 ? (
-            <p className="font-medium">Showing 0 of {stats.recentEvents.length} events</p>
+          {activityTotal === 0 ? (
+            <p className="font-medium">Showing 0 of 0 events</p>
           ) : (
             <p className="font-medium">
-              Showing {activityStart + 1}-{activityEnd} of {filteredActivityEvents.length} filtered events
+              Showing {activityStart}-{activityEnd} of {activityTotal} events
             </p>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
-              onChange={(event) => {
-                setActivityPageSize(Number(event.target.value) as (typeof activityPageSizes)[number]);
-                setActivityPage(1);
-              }}
-              value={activityPageSize}
-            >
-              {activityPageSizes.map((size) => (
-                <option key={size} value={size}>
-                  {size} / page
-                </option>
-              ))}
-            </select>
-            <button
+            <Link
               className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-orange-300 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-45"
-              disabled={safeActivityPage <= 1}
-              onClick={() => setActivityPage((current) => Math.max(1, current - 1))}
-              type="button"
+              href={safeActivityPage > 1 ? `/admin/monitoring?${createQueryParams(safeActivityPage - 1).toString()}` : "#"}
+              onClick={safeActivityPage <= 1 ? (event) => event.preventDefault() : undefined}
             >
               Previous
-            </button>
+            </Link>
             <span className="px-1 text-xs font-bold text-slate-500">
               Page {safeActivityPage} of {activityTotalPages}
             </span>
-            <button
+            <Link
               className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-orange-300 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-45"
-              disabled={safeActivityPage >= activityTotalPages}
-              onClick={() => setActivityPage((current) => Math.min(activityTotalPages, current + 1))}
-              type="button"
+              href={safeActivityPage < activityTotalPages ? `/admin/monitoring?${createQueryParams(safeActivityPage + 1).toString()}` : "#"}
+              onClick={safeActivityPage >= activityTotalPages ? (event) => event.preventDefault() : undefined}
             >
               Next
-            </button>
+            </Link>
           </div>
         </div>
       </AdminTableShell>

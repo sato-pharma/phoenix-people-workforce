@@ -33,6 +33,40 @@ export type PhoenixAdminStats = {
   }>;
 };
 
+export type MonitoringEventSort = "newest" | "oldest";
+
+export type AdminMonitoringSecurityEvent = {
+  actor: string;
+  actorHrId: string | null;
+  actorLoginId: string | null;
+  actorName: string | null;
+  createdAt: string | null;
+  entityType: string;
+  summary: string;
+};
+
+export type MonitoringSecurityEventsRequest = {
+  entityType?: string;
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  sort?: MonitoringEventSort;
+  fetchAll?: boolean;
+  maxPageSize?: number;
+};
+
+export type AdminMonitoringSecurityEvents = {
+  entityType: string;
+  entityTypes: string[];
+  page: number;
+  pageSize: number;
+  search: string;
+  sort: MonitoringEventSort;
+  total: number;
+  totalPages: number;
+  rows: AdminMonitoringSecurityEvent[];
+};
+
 export type AdminMonitoringStats = {
   auth: {
     authBridgeCoverageRate: number;
@@ -50,16 +84,95 @@ export type AdminMonitoringStats = {
     totalLogs: number;
     totalQueuedEvents: number;
   };
-  recentEvents: Array<{
-    actor: string;
-    actorHrId: string | null;
-    actorLoginId: string | null;
-    actorName: string | null;
-    createdAt: string | null;
-    entityType: string;
-    summary: string;
-  }>;
+  recentEvents: AdminMonitoringSecurityEvents;
 };
+
+function coerceMonitoringSort(value: string | undefined): MonitoringEventSort {
+  return value === "oldest" ? "oldest" : "newest";
+}
+
+function normalizeMonitoringSearch(value?: string) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function coerceMonitoringPage(value: number | undefined, fallback: number) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return value > 0 ? Math.floor(value) : fallback;
+}
+
+function coerceMonitoringPageSize(value: number | undefined, fallback: number, maxPageSize = 500) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  const safeValue = Math.floor(value);
+  if (safeValue <= 0) return fallback;
+  return Math.min(maxPageSize, safeValue);
+}
+
+function toMonitoringEventRows(
+  rows: Array<{
+    actor_login_id?: unknown;
+    created_at?: string | null;
+    entity_type?: string | null;
+    summary?: string | null;
+  }>,
+  authUserByLoginId: Map<string, { hrId: string | null; name: string | null }>,
+) {
+  return rows.map((row) => {
+    const actorLoginId = typeof row.actor_login_id === "string" && row.actor_login_id.trim()
+      ? row.actor_login_id.trim()
+      : null;
+    const actorProfile = actorLoginId ? authUserByLoginId.get(actorLoginId.toLowerCase()) : undefined;
+
+    return {
+      actor: actorLoginId ?? "System",
+      actorHrId: actorProfile?.hrId ?? null,
+      actorLoginId,
+      actorName: actorProfile?.name ?? null,
+      createdAt: row.created_at ?? null,
+      entityType: row.entity_type ?? "unknown",
+      summary: row.summary ?? "No summary",
+    };
+  });
+}
+
+function buildAuditLoginIdClause(values: string[]) {
+  if (values.length === 0) return "";
+  const escaped = values.map((value) => `"${value.replace(/"/g, "\"\"")}"`);
+  return escaped.join(",");
+}
+
+function buildMonitoringSecurityEventsQuery(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  params: {
+    authFilter: string;
+    entityType: string;
+    matchedActorLoginIds: string[];
+    sortAscending: boolean;
+  },
+) {
+  let query = supabase
+    .from("audit_logs")
+    .select("actor_login_id,entity_type,summary,created_at", { count: "exact" })
+    .or("entity_type.eq.auth_session,entity_type.eq.user")
+    .order("created_at", { ascending: params.sortAscending });
+
+  if (params.entityType !== "all") {
+    query = query.eq("entity_type", params.entityType);
+  }
+
+  if (params.authFilter) {
+    const searchClauses = [
+      `actor_login_id.ilike.%${params.authFilter}%`,
+      `summary.ilike.%${params.authFilter}%`,
+      `entity_type.ilike.%${params.authFilter}%`,
+    ];
+    if (params.matchedActorLoginIds.length > 0) {
+      searchClauses.push(`actor_login_id.in.(${buildAuditLoginIdClause(params.matchedActorLoginIds)})`);
+    }
+    query = query.or(searchClauses.join(","));
+  }
+
+  return query;
+}
 
 export async function getPhoenixAdminStats(): Promise<PhoenixAdminStats> {
   const supabase = getSupabaseAdmin();
@@ -111,9 +224,17 @@ export async function getPhoenixAdminStats(): Promise<PhoenixAdminStats> {
   };
 }
 
-export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
+export async function getAdminMonitoringStats(
+  eventRequest: MonitoringSecurityEventsRequest = {},
+): Promise<AdminMonitoringStats> {
   const supabase = getSupabaseAdmin();
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const normalizedSearch = normalizeMonitoringSearch(eventRequest.search);
+  const requestedSort = coerceMonitoringSort(eventRequest.sort);
+  const safePage = coerceMonitoringPage(eventRequest.page, 1);
+  const safePageSize = coerceMonitoringPageSize(eventRequest.pageSize, 20, eventRequest.maxPageSize ?? 500);
+  const safeEntityType = normalizeMonitoringSearch(eventRequest.entityType) || "all";
+  const safeFetchAll = eventRequest.fetchAll ?? false;
 
   const [
     bridgeRows,
@@ -121,7 +242,6 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
     forcedPasswordResets,
     failedAttempts,
     authAuditCount,
-    recentAuthEvents,
     notificationLogCount,
     notificationLogs24h,
     notificationEvents24h,
@@ -133,12 +253,6 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
     supabase.from("app_auth_users").select("*", { count: "exact", head: true }).eq("force_password_reset", true),
     supabase.from("auth_login_attempts").select("ip,success,attempted_at").eq("success", false).gte("attempted_at", since24h),
     supabase.from("audit_logs").select("*", { count: "exact", head: true }).eq("entity_type", "auth_session").gte("created_at", since24h),
-    supabase
-      .from("audit_logs")
-      .select("actor_login_id,entity_type,summary,created_at")
-      .or("entity_type.eq.auth_session,entity_type.eq.user")
-      .order("created_at", { ascending: false })
-      .limit(100),
     supabase.from("notification_delivery_logs").select("*", { count: "exact", head: true }),
     supabase
       .from("notification_delivery_logs")
@@ -186,6 +300,81 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
 
   const notificationLogRows = notificationLogs24h.data ?? [];
   const notificationEventRows = notificationEvents24h.data ?? [];
+  const authFilter = normalizedSearch.toLowerCase();
+  const allActorTypes = new Set<string>();
+  const matchedActorLogins = bridgeData
+    .filter((row) => {
+      const loginId = typeof row.login_id === "string" ? row.login_id : "";
+      const hrId = typeof row.hr_id === "string" ? row.hr_id : "";
+      const name = typeof row.name === "string" ? row.name : "";
+      const normalizedLoginId = loginId.toLowerCase();
+      const normalizedHrId = hrId.toLowerCase();
+      const normalizedName = name.toLowerCase();
+
+      return authFilter
+        ? (
+          normalizedLoginId.includes(authFilter)
+          || normalizedHrId.includes(authFilter)
+          || normalizedName.includes(authFilter)
+        )
+        : false;
+    })
+    .map((row) => String(row.login_id))
+    .filter((loginId): loginId is string => typeof loginId === "string" && loginId.length > 0);
+
+  const matchedActorLoginIds = Array.from(new Set(matchedActorLogins)).filter((loginId) => loginId.length > 0).slice(0, 500);
+  const eventSortAscending = requestedSort === "oldest";
+  const buildEventsQuery = () => buildMonitoringSecurityEventsQuery(supabase, {
+    authFilter: normalizedSearch,
+    entityType: safeEntityType,
+    matchedActorLoginIds,
+    sortAscending: eventSortAscending,
+  });
+  let mappedRecentEvents: AdminMonitoringSecurityEvent[] = [];
+  let totalRecentAuthEvents = 0;
+
+  if (safeFetchAll) {
+    const fetchPageSize = coerceMonitoringPageSize(
+      eventRequest.pageSize,
+      safePageSize,
+      eventRequest.maxPageSize ?? 5000,
+    );
+    let eventStart = 0;
+
+    while (true) {
+      const { data: eventRows, count: total, error: eventsError } = await buildEventsQuery().range(
+        eventStart,
+        eventStart + fetchPageSize - 1,
+      );
+      if (eventsError) {
+        throw eventsError;
+      }
+      const mappedRows = toMonitoringEventRows(eventRows ?? [], authUserByLoginId);
+      mappedRecentEvents.push(...mappedRows);
+      if (typeof total === "number") {
+        totalRecentAuthEvents = total;
+      }
+      if (mappedRows.length < fetchPageSize) {
+        break;
+      }
+      eventStart += fetchPageSize;
+    }
+    if (totalRecentAuthEvents === 0) {
+      totalRecentAuthEvents = mappedRecentEvents.length;
+    }
+  } else {
+    const eventStart = (safePage - 1) * safePageSize;
+    const eventEnd = eventStart + safePageSize - 1;
+    const { data: recentAuthEventRows, count: total, error: eventsError } = await buildEventsQuery().range(eventStart, eventEnd);
+    if (eventsError) {
+      throw eventsError;
+    }
+    mappedRecentEvents = toMonitoringEventRows(recentAuthEventRows ?? [], authUserByLoginId);
+    totalRecentAuthEvents = total ?? 0;
+  }
+  mappedRecentEvents.forEach((event) => {
+    if (event.entityType) allActorTypes.add(event.entityType);
+  });
 
   return {
     auth: {
@@ -204,22 +393,17 @@ export async function getAdminMonitoringStats(): Promise<AdminMonitoringStats> {
       totalLogs: notificationLogCount.count ?? 0,
       totalQueuedEvents: notificationEventRows.length,
     },
-    recentEvents: (recentAuthEvents.data ?? []).map((row) => {
-      const actorLoginId = typeof row.actor_login_id === "string" && row.actor_login_id.trim()
-        ? row.actor_login_id.trim()
-        : null;
-      const actorProfile = actorLoginId ? authUserByLoginId.get(actorLoginId.toLowerCase()) : undefined;
-
-      return {
-        actor: actorLoginId ?? "System",
-        actorHrId: actorProfile?.hrId ?? null,
-        actorLoginId,
-        actorName: actorProfile?.name ?? null,
-        createdAt: row.created_at ?? null,
-        entityType: row.entity_type ?? "unknown",
-        summary: row.summary ?? "No summary",
-      };
-    }),
+    recentEvents: {
+      entityType: safeEntityType,
+      entityTypes: Array.from(new Set(["auth_session", "user", ...allActorTypes])),
+      page: safePage,
+      pageSize: safePageSize,
+      search: normalizedSearch,
+      sort: requestedSort,
+      rows: mappedRecentEvents,
+      total: totalRecentAuthEvents ?? 0,
+      totalPages: Math.max(1, Math.ceil((totalRecentAuthEvents ?? 0) / safePageSize)),
+    },
   };
 }
 

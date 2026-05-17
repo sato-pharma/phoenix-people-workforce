@@ -1111,6 +1111,7 @@ export async function POST(request: Request) {
         { label: "Recorded vacancies", value: response.recordedVacancies },
         { label: "Warnings", value: response.warnings.length },
       ],
+      notificationType: "general",
       subject: `Phoenix employee import completed - ${file.name}`,
       summary: "An employee import was confirmed and written to the workforce directory.",
       title: "Employee Import Completed",

@@ -146,6 +146,7 @@ export async function POST(request: Request) {
         { label: "Governance warnings", value: result.governanceWarnings },
         { label: "Source file", value: file.name },
       ],
+      notificationType: "general",
       subject: `Phoenix Payroll upload imported - ${month}/${year}`,
       summary: "A payroll salary upload was validated and imported successfully. Review governance warnings before approval.",
       title: "Payroll Upload Imported",
