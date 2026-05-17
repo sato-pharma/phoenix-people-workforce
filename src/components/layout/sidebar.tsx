@@ -30,7 +30,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Fragment, useId, useMemo, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { type NavigationMode, type PermissionAction, type PermissionResource, type PhoenixRole } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
@@ -97,9 +97,6 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       id: "people-management",
       items: [
         { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }] },
-        { href: "/attendance/fingerprint-report", icon: FileSpreadsheet, label: "Fingerprint Report", permissions: [{ resource: "employees" }] },
-        { href: "/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
-        { href: "/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
         { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
         { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
         { href: "/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies" }] },
@@ -110,6 +107,16 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
         { href: "/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
       ],
       label: "People Management",
+    },
+    {
+      id: "attendance-management",
+      items: [
+        { href: "/attendance/fingerprint-report", icon: FileSpreadsheet, label: "Fingerprint Report", permissions: [{ resource: "employees" }] },
+        { href: "/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
+        { href: "/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
+        { href: "/hr-calendar", icon: CalendarDays, label: "HR Calendar", permissions: [{ resource: "hr_calendar" }] },
+      ],
+      label: "Attendance Management",
     },
     {
       id: "sales-performance",
@@ -127,7 +134,7 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
         { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }] },
         { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }] },
       ],
-      label: "Payroll",
+      label: "Payroll Management",
     },
     {
       id: "expenses-outstation",
@@ -153,16 +160,9 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       items: [
         { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
         { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "admin" }] },
-        { href: "/admin/email-notifications", icon: BellRing, label: "Email Governance", permissions: [{ resource: "admin" }] },
+        { href: "/admin/email-templates", icon: BellRing, label: "Email Templates", permissions: [{ resource: "admin" }] },
       ],
       label: "Access & Communication",
-    },
-    {
-      id: "calendar-operations",
-      items: [
-        { href: "/hr-calendar", icon: CalendarDays, label: "HR Calendar", permissions: [{ resource: "hr_calendar" }] },
-      ],
-      label: "Calendar & Operations",
     },
   ];
 
@@ -315,7 +315,20 @@ function SidebarNav({
   );
   const pathname = usePathname();
   const navInstanceId = useId();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<string | null>(pathname === "/payroll" ? "governance" : null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const normalizedSearchQuery = mode === "admin" ? searchQuery.trim().toLowerCase() : "";
+  const visibleSections = useMemo(() => {
+    if (!normalizedSearchQuery) return sections;
+
+    return sections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => item.label.toLowerCase().includes(normalizedSearchQuery)),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [normalizedSearchQuery, sections]);
   const activeHref = getActiveHref(pathname, sections, activeTab);
   const sectionIds = useMemo(() => sections.map((section) => section.id), [sections]);
   const activeSectionId = sections.find((section) => section.items.some((item) => item.href === activeHref))?.id ?? null;
@@ -336,6 +349,21 @@ function SidebarNav({
     return nextCollapsedSectionIds;
   }, [activeSectionId, collapsedSectionSnapshot, sectionIds]);
 
+  useEffect(() => {
+    if (mode !== "admin") return;
+
+    function handleShortcut(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    }
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [mode]);
+
   function toggleSection(sectionId: string) {
     const nextCollapsedSectionIds = new Set(collapsedSectionIds);
 
@@ -354,11 +382,30 @@ function SidebarNav({
 
   return (
     <>
+      {mode === "admin" && (
+        <div className="px-3 pt-3">
+          <input
+            ref={searchInputRef}
+            aria-label="Search sidebar modules"
+            className="h-9 w-full rounded-[14px] border border-[#333333] bg-[#050505] px-3 text-[13px] font-semibold text-[#D4DDE8] outline-none transition placeholder:text-[#64748B] focus:border-[#F97316]/60 focus:ring-2 focus:ring-[#F97316]/30"
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setSearchQuery("");
+                event.currentTarget.blur();
+              }
+            }}
+            placeholder="Search modules..."
+            type="search"
+            value={searchQuery}
+          />
+        </div>
+      )}
       <nav className="phoenix-admin-sidebar-scroll flex-1 overflow-auto px-3 py-5 text-[#000000]">
-        {sections.map((section, sectionIndex) => {
+        {visibleSections.map((section, sectionIndex) => {
           const hasActive = section.items.some((item) => item.href === activeHref);
           const adminSection = mode === "admin";
-          const collapsed = collapsedSectionIds.has(section.id) && !hasActive;
+          const collapsed = !normalizedSearchQuery && collapsedSectionIds.has(section.id) && !hasActive;
           const sectionContentId = `${navInstanceId}-${section.id}-items`;
 
           return (

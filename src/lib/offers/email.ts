@@ -3,8 +3,7 @@ import {
   renderOfferLetterEmailText,
   type OfferLetterEmailProps,
 } from "@/emails/offer-letter";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
-import { emailNotificationsEnabled, resolveNotificationDelivery } from "@/lib/notifications/email";
+import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import type { OfferTemplate } from "@/lib/offers/templates";
 
 type SendEmailResult =
@@ -87,32 +86,25 @@ export function buildOfferEmailText(input: JobOfferEmailInput) {
 }
 
 export async function sendJobOfferEmail(input: JobOfferEmailInput): Promise<SendEmailResult> {
-  if (!emailNotificationsEnabled()) {
-    return { reason: "EMAIL_NOTIFICATIONS_ENABLED is not true.", skipped: true };
-  }
-
-  const from = process.env.JOB_OFFER_EMAIL_FROM || process.env.NOTIFICATION_EMAIL_FROM;
-  const subject = `${input.jobTitle} Job Offer`;
-  const delivery = await resolveNotificationDelivery({
+  return sendTemplatedEmail({
     candidateEmail: input.candidateEmail,
-    notificationType: "offer",
-    recipientMode: "candidate",
-    subject,
-    summary: `Offer prepared for ${input.candidateName}.`,
-    title: subject,
-  });
-
-  if (!from) return { reason: "JOB_OFFER_EMAIL_FROM or NOTIFICATION_EMAIL_FROM is missing.", skipped: true };
-  if (delivery.skipped) return delivery;
-
-  const requestId = `offer-${input.offerCode}-${input.candidateEmail}`.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
-
-  return sendPhoenixEmail({
-    from,
-    html: buildOfferEmailHtml(input),
-    idempotencyKey: requestId,
-    subject,
-    text: buildOfferEmailText(input),
-    to: delivery.recipients,
+    context: {
+      area: input.territoryName || input.territory || "Assigned territory",
+      candidateName: input.candidateName,
+      ctaLabel: "Review Offer",
+      ctaUrl: input.acceptUrl,
+      date: input.issuedAt ?? null,
+      jobTitle: input.jobTitle,
+      line: input.reportingLine || "To be assigned",
+      managerName: input.reportingManager,
+      recipientName: input.candidateName,
+      startDate: formatDate(input.startDate),
+      status: `Offer code ${input.offerCode}`,
+      subject: `${input.jobTitle} Job Offer`,
+      summary: `Offer prepared for ${input.candidateName}.`,
+    },
+    fallbackTo: [input.candidateEmail],
+    from: process.env.JOB_OFFER_EMAIL_FROM || process.env.NOTIFICATION_EMAIL_FROM,
+    templateKey: "offer",
   });
 }

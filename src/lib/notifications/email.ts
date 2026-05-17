@@ -4,6 +4,7 @@ import {
   renderGeneralNotificationEmailHtml,
   renderGeneralNotificationEmailText,
 } from "@/emails/general-notification";
+import { EMAIL_TEMPLATE_KEYS, sendTemplatedEmail } from "@/lib/email-templates/service";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -935,6 +936,31 @@ function notificationDedupeKey(input: NotificationEmailInput) {
     .digest("hex");
 }
 
+function migratedTemplateKeyForNotification(type: EmailNotificationType | undefined) {
+  if (type === "birthday") return EMAIL_TEMPLATE_KEYS.BIRTHDAY;
+  if (type === "contract_renewal") return EMAIL_TEMPLATE_KEYS.CONTRACT_RENEWAL;
+  if (type === "general") return EMAIL_TEMPLATE_KEYS.GENERAL;
+  return null;
+}
+
+function metricValue(input: NotificationEmailInput, label: string) {
+  const expected = label.trim().toLowerCase();
+  return String(
+    input.metrics?.find((metric) => metric.label.trim().toLowerCase() === expected)?.value ?? "",
+  ).trim();
+}
+
+function employeeNameFromNotification(input: NotificationEmailInput) {
+  const employee = metricValue(input, "Employee");
+  return employee.replace(/\s+\([^)]*\)\s*$/, "").trim() || input.employeeHrId || "";
+}
+
+function notificationMetricStatus(input: NotificationEmailInput) {
+  return (input.metrics ?? [])
+    .map((metric) => `${metric.label}: ${metric.value}`)
+    .join(" | ");
+}
+
 function retryDelayMinutes(attemptNumber: number) {
   const delays = [5, 15, 60, 240];
   return delays[Math.min(Math.max(attemptNumber - 1, 0), delays.length - 1)];
@@ -958,6 +984,33 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   if (delivery.skipped) return delivery;
 
   const requestId = notificationDedupeKey(input);
+  const migratedTemplateKey = migratedTemplateKeyForNotification(input.notificationType);
+
+  if (migratedTemplateKey) {
+    return sendTemplatedEmail({
+      candidateEmail: input.candidateEmail,
+      context: {
+        ctaLabel: input.ctaLabel ?? "Open in Phoenix Workforce",
+        ctaUrl: input.ctaHref ? dashboardUrl(input.ctaHref) : "",
+        date: metricValue(input, "Birthday") || metricValue(input, "Date") || new Date().toISOString().slice(0, 10),
+        endDate: metricValue(input, "Renewal date"),
+        employeeHrId: input.employeeHrId ?? "",
+        employeeName: employeeNameFromNotification(input),
+        recipientName: "Phoenix Team",
+        status: notificationMetricStatus(input),
+        subject: input.subject,
+        summary: input.summary,
+      },
+      employeeHrId: input.employeeHrId,
+      fallbackTo: delivery.recipients,
+      from,
+      overrides: {
+        replaceRecipients: true,
+        to: delivery.recipients,
+      },
+      templateKey: migratedTemplateKey,
+    });
+  }
 
   return sendPhoenixEmail({
     from,

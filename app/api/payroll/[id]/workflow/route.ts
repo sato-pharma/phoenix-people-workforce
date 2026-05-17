@@ -46,6 +46,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         { label: "Payroll period", value: `${updated.month}/${updated.year}` },
         { label: "Source file", value: updated.fileName },
       ],
+      notificationType: "general",
       subject: `Phoenix Payroll ${updated.status} - ${updated.month}/${updated.year}`,
       summary:
         action === "reject"
