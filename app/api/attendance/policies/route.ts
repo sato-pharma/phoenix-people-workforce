@@ -1,0 +1,49 @@
+import { NextResponse } from "next/server";
+
+import { getAttendancePolicyDashboard, saveAttendancePolicy } from "@/lib/attendance/policies";
+import { assertPermission } from "@/lib/auth/permissions";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { toApiError, validationError } from "@/lib/http/api-errors";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function apiResponse(error: unknown, fallback: string) {
+  if (isForbiddenError(error)) {
+    return NextResponse.json(
+      { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden." },
+      { status: 403 },
+    );
+  }
+
+  const apiError = toApiError(error, fallback);
+  return NextResponse.json({ error: apiError.code, message: apiError.message }, { status: apiError.status });
+}
+
+export async function GET(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "employees", "read");
+
+    return NextResponse.json(await getAttendancePolicyDashboard());
+  } catch (error) {
+    return apiResponse(error, "Attendance policies failed to load.");
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "employees", "update");
+
+    const payload = await request.json();
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw validationError("Policy payload must be an object.");
+    }
+
+    await saveAttendancePolicy(payload as Parameters<typeof saveAttendancePolicy>[0]);
+    return NextResponse.json(await getAttendancePolicyDashboard());
+  } catch (error) {
+    return apiResponse(error, "Attendance policy failed to save.");
+  }
+}

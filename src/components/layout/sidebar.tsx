@@ -98,6 +98,7 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
         { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }] },
         { href: "/attendance/fingerprint-report", icon: FileSpreadsheet, label: "Fingerprint Report", permissions: [{ resource: "employees" }] },
         { href: "/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
+        { href: "/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
         { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
         { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
         { href: "/offers", icon: IdCard, label: "Offer Lifecycle", permissions: [{ resource: "offers" }] },
