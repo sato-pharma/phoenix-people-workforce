@@ -8,7 +8,6 @@ export type EmployeePortalNavVisibility = {
   showMedRepsPerformanceTab?: boolean;
   showDsmsPerformanceTab?: boolean;
   showTeamExpensesTab?: boolean;
-  showLeaveApprovalsTab?: boolean;
   showVacanciesTab?: boolean;
   showProbationTab?: boolean;
   showOrganogramTab?: boolean;
@@ -44,21 +43,11 @@ export function resolveEmployeePortalNavVisibility(
     roleNormalized.includes("medical rep") ||
     roleNormalized === "medical representative";
   const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
-  const showLeaveApprovalsTab =
-    !isTrainingManager &&
-    (
-      showTeamPerformanceTab ||
-      isNationalSalesManager ||
-      roleNormalized.includes("regional manager") ||
-      roleNormalized.includes("manager")
-    );
-
   return {
     showDashboardTab: !isTrainingManager,
     showDsmsPerformanceTab: isNationalSalesManager,
     showExpenseActionTab,
     showIncentiveTab: !isTrainingManager,
-    showLeaveApprovalsTab,
     showManagementTab,
     showMedRepsPerformanceTab,
     showMyPerformanceTab: !isTrainingManager,

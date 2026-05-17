@@ -1,8 +1,13 @@
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { addYearsToDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
+import {
+  canSeeHrScopedRecord,
+  type AccessContext,
+} from "@/lib/auth/permissions";
+import { parseDateOnly, toDateOnlyString } from "@/lib/date-only";
+import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { isDateOnlyBefore, nextContractAnniversary } from "./date-rules";
 import type {
   ContractRenewalAction,
   ContractRenewalDashboardData,
@@ -11,9 +16,14 @@ import type {
   CreateContractRenewalInput,
 } from "./types";
 
+const activeEmployeeStatuses = new Set(["active", "on_leave"]);
+const activeRequestStatuses: ContractRenewalStatus[] = ["requested", "manager_review", "hr_review"];
+
 type ContractDbRow = {
   id: string | number;
-  employee_hr_id: string;
+  employee_hr_id?: string | null;
+  hr_id?: string | null;
+  contract_type?: string | null;
   contract_signed_date: string | null;
   contract_start_date: string | null;
   contract_end_date: string | null;
@@ -60,6 +70,17 @@ type RenewalRequestDbRow = {
   completed_contract_id: string | number | null;
 };
 
+export class ContractRenewalValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ContractRenewalValidationError";
+  }
+}
+
+export function isContractRenewalValidationError(error: unknown) {
+  return error instanceof ContractRenewalValidationError;
+}
+
 function todayDate() {
   return toDateOnlyString(new Date()) ?? "";
 }
@@ -69,24 +90,60 @@ function cleanText(value: string | null | undefined) {
   return text ? text : null;
 }
 
+function cleanHrId(value: string | null | undefined) {
+  return cleanText(value)?.toUpperCase() ?? null;
+}
+
 function normalizeDate(value: string | null | undefined) {
   const raw = String(value ?? "").trim();
   if (!raw) return null;
-  return raw.slice(0, 10);
+  const dateOnly = raw.slice(0, 10);
+  return parseDateOnly(dateOnly) ? dateOnly : null;
 }
 
-function addYears(value: string | null | undefined, years: number) {
-  return addYearsToDateOnly(normalizeDate(value), years);
+function requireDate(value: string | null | undefined, label: string) {
+  const normalized = normalizeDate(value);
+  if (!normalized) throw new ContractRenewalValidationError(`${label} is invalid.`);
+  return normalized;
 }
 
-function appendWorkflowNote(
-  existing: string | null | undefined,
-  actor: string,
-  action: string,
-  note?: string | null,
-) {
-  const entry = `[${new Date().toISOString()}] ${actor}: ${action}${note ? ` - ${note}` : ""}`;
-  return existing ? `${existing}\n${entry}` : entry;
+function canonicalContractHrId(row: ContractDbRow) {
+  return cleanHrId(row.employee_hr_id ?? row.hr_id);
+}
+
+function isActiveEmployee(employee: Pick<EmployeeDirectoryRow, "employmentStatus" | "organogramVisible" | "payrollEligible">) {
+  return (
+    activeEmployeeStatuses.has(String(employee.employmentStatus ?? "active").trim().toLowerCase()) &&
+    employee.organogramVisible !== false &&
+    employee.payrollEligible !== false
+  );
+}
+
+function isCompanyContractReader(access?: AccessContext) {
+  if (!access) return true;
+  return (
+    access.scope === "system" ||
+    access.scope === "company" ||
+    access.role === "Super Admin" ||
+    access.role === "CEO" ||
+    access.role === "HR Specialist"
+  );
+}
+
+function canSeeContractRow(access: AccessContext | undefined, employee: EmployeeDirectoryRow) {
+  if (!access || isCompanyContractReader(access)) return true;
+  return canSeeHrScopedRecord(access, {
+    employeeHrId: employee.hrId,
+    managerHrId: employee.managerHrId,
+  });
+}
+
+function pickActiveContract(rows: ContractDbRow[]) {
+  return [...rows].sort((left, right) => {
+    const renewalDelta = String(right.contract_renewal_date ?? "").localeCompare(String(left.contract_renewal_date ?? ""));
+    if (renewalDelta !== 0) return renewalDelta;
+    return String(right.created_at ?? "").localeCompare(String(left.created_at ?? ""));
+  })[0] ?? null;
 }
 
 function contractErrorMessage(error: unknown) {
@@ -100,6 +157,8 @@ function contractErrorMessage(error: unknown) {
 export function isContractRenewalSchemaMissing(error: unknown) {
   const message = contractErrorMessage(error).toLowerCase();
   return (
+    message.includes("phx_create_contract_renewal_request") ||
+    message.includes("phx_apply_contract_renewal_workflow") ||
     message.includes("contract_renewal_requests") ||
     message.includes("employee_contracts") ||
     message.includes("could not find the table") ||
@@ -155,56 +214,73 @@ async function getContractRowsByHrId() {
   const { data, error } = await supabase
     .from("employee_contracts")
     .select("*")
+    .eq("status", "active")
     .order("contract_renewal_date", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
 
   if (error) throw error;
 
-  const contractsByHrId = new Map<string, ContractDbRow>();
+  const grouped = new Map<string, ContractDbRow[]>();
   for (const row of (data ?? []) as ContractDbRow[]) {
-    if (!contractsByHrId.has(row.employee_hr_id)) {
-      contractsByHrId.set(row.employee_hr_id, row);
-    }
+    const hrId = canonicalContractHrId(row);
+    if (!hrId) continue;
+    grouped.set(hrId, [...(grouped.get(hrId) ?? []), row]);
   }
+
+  const contractsByHrId = new Map<string, ContractDbRow>();
+  grouped.forEach((rows, hrId) => {
+    const contract = pickActiveContract(rows);
+    if (contract) contractsByHrId.set(hrId, contract);
+  });
   return contractsByHrId;
 }
 
-async function getLatestRequestsByHrId() {
+async function getActiveRequestByHrId() {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("contract_renewal_requests")
     .select("*")
+    .in("status", activeRequestStatuses)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
 
   const requestsByHrId = new Map<string, ContractRenewalRecord>();
   for (const row of (data ?? []) as RenewalRequestDbRow[]) {
-    if (!requestsByHrId.has(row.employee_hr_id)) {
-      requestsByHrId.set(row.employee_hr_id, mapRenewalRequest(row));
+    const hrId = cleanHrId(row.employee_hr_id);
+    if (hrId && !requestsByHrId.has(hrId)) {
+      requestsByHrId.set(hrId, mapRenewalRequest(row));
     }
   }
   return requestsByHrId;
 }
 
-export async function getContractRenewalDashboardData(): Promise<ContractRenewalDashboardData> {
-  const employees = await getEmployeeDirectoryRows();
+function renewalDateForEmployee(employee: EmployeeDirectoryRow, contract?: ContractDbRow | null) {
+  return normalizeDate(contract?.contract_renewal_date) ??
+    normalizeDate(employee.contractRenewalDate) ??
+    nextContractAnniversary(employee.hireDate) ??
+    "";
+}
+
+export async function getContractRenewalDashboardData(access?: AccessContext): Promise<ContractRenewalDashboardData> {
+  const employees = (await getEmployeeDirectoryRows()).filter(
+    (employee) => isActiveEmployee(employee) && canSeeContractRow(access, employee),
+  );
   let contractsByHrId = new Map<string, ContractDbRow>();
   let requestsByHrId = new Map<string, ContractRenewalRecord>();
 
   try {
     [contractsByHrId, requestsByHrId] = await Promise.all([
       getContractRowsByHrId(),
-      getLatestRequestsByHrId(),
+      getActiveRequestByHrId(),
     ]);
   } catch (error) {
     if (!isContractRenewalSchemaMissing(error)) throw error;
   }
 
   const rows = employees.map((employee) => {
-    const contract = contractsByHrId.get(employee.hrId);
-    const fallbackRenewalDate = addYears(employee.hireDate, 1) ?? "";
-    const renewalDate = contract?.contract_renewal_date ?? fallbackRenewalDate;
+    const contract = contractsByHrId.get(employee.hrId.toUpperCase());
+    const renewalDate = renewalDateForEmployee(employee, contract);
     const renewalDay = parseDateOnly(renewalDate)?.getDate() ?? 0;
 
     return {
@@ -217,8 +293,9 @@ export async function getContractRenewalDashboardData(): Promise<ContractRenewal
       hr_id: employee.hrId,
       job_title: employee.jobTitle ?? employee.positionTitle ?? "Unassigned",
       line: employee.lineName ?? "Unassigned",
+      manager_hr_id: employee.managerHrId,
       renewal_day: renewalDay,
-      workflow: requestsByHrId.get(employee.hrId) ?? null,
+      workflow: requestsByHrId.get(employee.hrId.toUpperCase()) ?? null,
     };
   });
 
@@ -226,7 +303,7 @@ export async function getContractRenewalDashboardData(): Promise<ContractRenewal
   return {
     rows,
     summary: {
-      activeRequests: workflows.filter((row) => ["requested", "manager_review", "hr_review"].includes(row.status)).length,
+      activeRequests: workflows.filter((row) => activeRequestStatuses.includes(row.status)).length,
       hrReview: workflows.filter((row) => row.status === "hr_review").length,
       managerReview: workflows.filter((row) => row.status === "manager_review").length,
       notRenewed: workflows.filter((row) => row.status === "not_renewed").length,
@@ -236,79 +313,80 @@ export async function getContractRenewalDashboardData(): Promise<ContractRenewal
   };
 }
 
+function validateCreateInput(
+  employee: EmployeeDirectoryRow,
+  currentContract: ContractDbRow | undefined,
+  input: CreateContractRenewalInput,
+) {
+  if (!isActiveEmployee(employee)) {
+    throw new ContractRenewalValidationError("Contract renewals can only be created for active employees.");
+  }
+
+  const currentRenewalDate = (
+    currentContract?.status === "active" ? currentContract.contract_renewal_date : null
+  ) ?? employee.contractRenewalDate ?? nextContractAnniversary(employee.hireDate);
+  const requestedRenewalDate = normalizeDate(input.requestedRenewalDate) ?? currentRenewalDate ?? todayDate();
+  const proposedStartDate = normalizeDate(input.proposedStartDate) ?? requestedRenewalDate;
+  const proposedEndDate = normalizeDate(input.proposedEndDate) ?? nextContractAnniversary(proposedStartDate) ?? proposedStartDate;
+
+  requireDate(requestedRenewalDate, "Requested renewal date");
+  requireDate(proposedStartDate, "Proposed start date");
+  requireDate(proposedEndDate, "Proposed end date");
+
+  if (employee.hireDate && isDateOnlyBefore(requestedRenewalDate, employee.hireDate)) {
+    throw new ContractRenewalValidationError("Renewal date cannot be before the employee hire date.");
+  }
+  if (currentRenewalDate && isDateOnlyBefore(proposedStartDate, currentRenewalDate)) {
+    throw new ContractRenewalValidationError("Proposed start date cannot be before the current renewal date.");
+  }
+  if (isDateOnlyBefore(proposedEndDate, proposedStartDate)) {
+    throw new ContractRenewalValidationError("Proposed end date cannot be before the proposed start date.");
+  }
+
+  return {
+    currentRenewalDate,
+    proposedEndDate,
+    proposedStartDate,
+    requestedRenewalDate,
+  };
+}
+
 export async function createContractRenewalRequest(input: CreateContractRenewalInput, actor: string) {
-  const employeeHrId = cleanText(input.employeeHrId)?.toUpperCase();
-  if (!employeeHrId) throw new Error("Employee HR ID is required.");
+  const employeeHrId = cleanHrId(input.employeeHrId);
+  if (!employeeHrId) throw new ContractRenewalValidationError("Employee HR ID is required.");
 
   const directory = await getEmployeeDirectoryRows();
   const employee = directory.find((row) => row.hrId.toUpperCase() === employeeHrId);
-  if (!employee) throw new Error("Employee was not found in the directory.");
+  if (!employee) throw new ContractRenewalValidationError("Employee was not found in the active employee directory.");
 
   const contractsByHrId = await getContractRowsByHrId().catch((error) => {
     if (isContractRenewalSchemaMissing(error)) return new Map<string, ContractDbRow>();
     throw error;
   });
-  const currentContract = contractsByHrId.get(employee.hrId);
-  const currentRenewalDate = currentContract?.contract_renewal_date ?? addYears(employee.hireDate, 1);
-  const requestedRenewalDate = normalizeDate(input.requestedRenewalDate) ?? currentRenewalDate ?? todayDate();
-  const proposedStartDate = normalizeDate(input.proposedStartDate) ?? requestedRenewalDate;
-  const proposedEndDate = normalizeDate(input.proposedEndDate) ?? addYears(proposedStartDate, 1);
-  const now = new Date().toISOString();
-  const note = cleanText(input.workflowNotes);
-
+  const currentContract = contractsByHrId.get(employee.hrId.toUpperCase());
+  const dates = validateCreateInput(employee, currentContract, input);
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("contract_renewal_requests")
-    .insert({
-      area_name: employee.areaName,
-      created_by: actor,
-      current_contract_id: currentContract?.id === undefined ? null : String(currentContract.id),
-      current_renewal_date: currentRenewalDate,
-      employee_hr_id: employee.hrId,
-      employee_name: employee.fullName,
-      job_title: employee.jobTitle ?? employee.positionTitle,
-      line_name: employee.lineName,
-      new_contract_document_name: cleanText(input.newContractDocumentName),
-      new_contract_document_url: cleanText(input.newContractDocumentUrl),
-      proposed_end_date: proposedEndDate,
-      proposed_start_date: proposedStartDate,
-      requested_renewal_date: requestedRenewalDate,
-      status: "requested",
-      updated_at: now,
-      workflow_notes: appendWorkflowNote(null, actor, "created renewal request", note),
-    })
-    .select("*")
-    .single();
+  const { data, error } = await supabase.rpc("phx_create_contract_renewal_request", {
+    p_actor: actor,
+    p_area_name: employee.areaName,
+    p_current_contract_id: currentContract?.id === undefined ? null : String(currentContract.id),
+    p_current_renewal_date: dates.currentRenewalDate,
+    p_employee_hr_id: employee.hrId,
+    p_employee_name: employee.fullName,
+    p_job_title: employee.jobTitle ?? employee.positionTitle,
+    p_line_name: employee.lineName,
+    p_new_contract_document_name: cleanText(input.newContractDocumentName),
+    p_new_contract_document_url: cleanText(input.newContractDocumentUrl),
+    p_note: cleanText(input.workflowNotes),
+    p_proposed_end_date: dates.proposedEndDate,
+    p_proposed_start_date: dates.proposedStartDate,
+    p_requested_renewal_date: dates.requestedRenewalDate,
+  });
 
-  if (error) throw error;
+  if (error) throw new ContractRenewalValidationError(error.message);
   const record = mapRenewalRequest(data as RenewalRequestDbRow);
-  await insertHistory(record, "requested", actor, currentRenewalDate, requestedRenewalDate, { note });
   await notifyContractWorkflow(record, "Contract Renewal Request Created", "warning");
   return record;
-}
-
-async function insertHistory(
-  request: ContractRenewalRecord,
-  action: string,
-  actor: string,
-  oldRenewalDate?: string | null,
-  newRenewalDate?: string | null,
-  details: Record<string, unknown> = {},
-) {
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase
-    .from("contract_renewal_history")
-    .insert({
-      action,
-      actor,
-      details,
-      employee_hr_id: request.employeeHrId,
-      new_renewal_date: newRenewalDate ?? null,
-      old_renewal_date: oldRenewalDate ?? null,
-      request_id: request.id,
-    });
-
-  if (error && !isContractRenewalSchemaMissing(error)) throw error;
 }
 
 async function notifyContractWorkflow(
@@ -333,6 +411,15 @@ async function notifyContractWorkflow(
   });
 }
 
+export function validateWorkflowTransition(status: ContractRenewalStatus, action: ContractRenewalAction) {
+  if (action === "manager_review") return status === "requested" || status === "manager_review";
+  if (action === "hr_review") return activeRequestStatuses.includes(status);
+  if (action === "renew" || action === "not_renew") return activeRequestStatuses.includes(status);
+  if (action === "upload_signed") return status === "hr_review" || status === "renewed";
+  if (action === "cancel") return activeRequestStatuses.includes(status);
+  return false;
+}
+
 export async function runContractRenewalWorkflow(
   id: string,
   action: ContractRenewalAction,
@@ -346,115 +433,41 @@ export async function runContractRenewalWorkflow(
     signedContractUrl?: string | null;
   } = {},
 ) {
+  const requestId = cleanText(id);
+  if (!requestId) throw new ContractRenewalValidationError("Contract renewal request ID is required.");
+
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
+  const { data: existingData, error: existingError } = await supabase
     .from("contract_renewal_requests")
     .select("*")
-    .eq("id", id)
+    .eq("id", requestId)
     .maybeSingle();
 
-  if (error) throw error;
-  if (!data) return null;
+  if (existingError) throw existingError;
+  if (!existingData) return null;
 
-  const row = data as RenewalRequestDbRow;
-  const now = new Date().toISOString();
-  const note = cleanText(input.note);
-  const updates: Record<string, unknown> = {
-    updated_at: now,
-    workflow_notes: appendWorkflowNote(row.workflow_notes, actor, action, note),
-  };
-
-  if (input.newContractDocumentUrl !== undefined) {
-    updates.new_contract_document_url = cleanText(input.newContractDocumentUrl);
-    updates.new_contract_document_name = cleanText(input.newContractDocumentName);
+  const existing = existingData as RenewalRequestDbRow;
+  if (!validateWorkflowTransition(existing.status, action)) {
+    throw new ContractRenewalValidationError(`Invalid contract renewal transition from ${existing.status} using ${action}.`);
+  }
+  if (action === "upload_signed" && !cleanText(input.signedContractUrl)) {
+    throw new ContractRenewalValidationError("Signed contract URL is required.");
   }
 
-  switch (action) {
-    case "manager_review":
-      if (!["requested", "manager_review"].includes(row.status)) {
-        throw new Error("Only requested renewals can be marked as manager reviewed.");
-      }
-      updates.status = "manager_review";
-      updates.manager_reviewed_at = now;
-      updates.manager_reviewed_by = actor;
-      break;
-    case "hr_review":
-      if (!["requested", "manager_review", "hr_review"].includes(row.status)) {
-        throw new Error("Only active renewals can be marked as HR reviewed.");
-      }
-      updates.status = "hr_review";
-      updates.hr_reviewed_at = now;
-      updates.hr_reviewed_by = actor;
-      break;
-    case "not_renew":
-      if (["renewed", "cancelled"].includes(row.status)) {
-        throw new Error("Renewed or cancelled requests cannot be marked not renewed.");
-      }
-      updates.status = "not_renewed";
-      updates.decision_at = now;
-      updates.decision_by = actor;
-      updates.decision_reason = cleanText(input.decisionReason) ?? "No reason provided.";
-      break;
-    case "renew":
-      if (!["requested", "manager_review", "hr_review"].includes(row.status)) {
-        throw new Error("Only active renewal requests can be renewed.");
-      }
-      updates.status = "renewed";
-      updates.decision_at = now;
-      updates.decision_by = actor;
-      updates.decision_reason = cleanText(input.decisionReason);
-      break;
-    case "upload_signed":
-      if (!["renewed", "hr_review"].includes(row.status)) {
-        throw new Error("Signed contracts can be uploaded after HR review or renewal.");
-      }
-      if (!cleanText(input.signedContractUrl)) {
-        throw new Error("Signed contract URL is required.");
-      }
-      updates.signed_contract_url = cleanText(input.signedContractUrl);
-      updates.signed_contract_name = cleanText(input.signedContractName);
-      updates.signed_at = now;
-      break;
-    case "cancel":
-      if (row.status === "renewed") throw new Error("Renewed requests cannot be cancelled.");
-      updates.status = "cancelled";
-      updates.decision_at = now;
-      updates.decision_by = actor;
-      updates.decision_reason = cleanText(input.decisionReason) ?? "Cancelled.";
-      break;
-    case "reopen":
-      if (!["not_renewed", "cancelled"].includes(row.status)) {
-        throw new Error("Only cancelled or not-renewed requests can be reopened.");
-      }
-      updates.status = "hr_review";
-      updates.decision_at = null;
-      updates.decision_by = null;
-      updates.decision_reason = null;
-      break;
-    default:
-      throw new Error("Unsupported contract renewal action.");
-  }
-
-  const { data: updatedData, error: updateError } = await supabase
-    .from("contract_renewal_requests")
-    .update(updates)
-    .eq("id", id)
-    .select("*")
-    .single();
-
-  if (updateError) throw updateError;
-  let updated = mapRenewalRequest(updatedData as RenewalRequestDbRow);
-
-  if (action === "renew") {
-    updated = await finalizeRenewal(updated, actor);
-  } else if (action === "not_renew") {
-    await markContractNotRenewed(updated, actor);
-  }
-
-  await insertHistory(updated, action, actor, row.current_renewal_date, updated.requestedRenewalDate, {
-    decisionReason: cleanText(input.decisionReason),
-    note,
+  const { data, error } = await supabase.rpc("phx_apply_contract_renewal_workflow", {
+    p_action: action,
+    p_actor: actor,
+    p_decision_reason: cleanText(input.decisionReason),
+    p_new_contract_document_name: cleanText(input.newContractDocumentName),
+    p_new_contract_document_url: cleanText(input.newContractDocumentUrl),
+    p_note: cleanText(input.note),
+    p_request_id: requestId,
+    p_signed_contract_name: cleanText(input.signedContractName),
+    p_signed_contract_url: cleanText(input.signedContractUrl),
   });
+
+  if (error) throw new ContractRenewalValidationError(error.message);
+  const updated = mapRenewalRequest(data as RenewalRequestDbRow);
 
   await notifyContractWorkflow(
     updated,
@@ -465,65 +478,20 @@ export async function runContractRenewalWorkflow(
   return updated;
 }
 
-async function finalizeRenewal(record: ContractRenewalRecord, actor: string) {
-  const supabase = getSupabaseAdmin();
-  const nextRenewalDate = addYears(record.proposedEndDate ?? record.requestedRenewalDate, 1);
-  const now = new Date().toISOString();
-  const { data: contractData, error: contractError } = await supabase
-    .from("employee_contracts")
-    .insert({
-      contract_end_date: record.proposedEndDate,
-      contract_renewal_date: nextRenewalDate,
-      contract_signed_date: todayDate(),
-      contract_start_date: record.proposedStartDate ?? record.requestedRenewalDate,
-      created_by: actor,
-      document_name: record.newContractDocumentName,
-      document_url: record.newContractDocumentUrl,
-      employee_hr_id: record.employeeHrId,
-      signed_document_name: record.signedContractName,
-      signed_document_url: record.signedContractUrl,
-      status: "active",
-      updated_at: now,
+export async function getContractRenewalReminderCandidates(daysAhead = [60, 30, 7, 0]) {
+  const dashboard = await getContractRenewalDashboardData();
+  const today = parseDateOnly(todayDate());
+  if (!today) return [];
+  const allowed = new Set(daysAhead);
+
+  return dashboard.rows
+    .map((row) => {
+      const date = parseDateOnly(row.contract_renewal_date);
+      if (!date) return null;
+      const daysUntil = Math.round((date.getTime() - today.getTime()) / 86400000);
+      return allowed.has(daysUntil) ? { ...row, daysUntil } : null;
     })
-    .select("*")
-    .single();
-
-  if (contractError) throw contractError;
-
-  await supabase
-    .from("employees")
-    .update({
-      contract_renewal_date: nextRenewalDate,
-      updated_at: now,
-    })
-    .eq("hr_id", record.employeeHrId);
-
-  const contract = contractData as ContractDbRow;
-  const { data, error } = await supabase
-    .from("contract_renewal_requests")
-    .update({
-      completed_contract_id: String(contract.id),
-      updated_at: now,
-    })
-    .eq("id", record.id)
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  return mapRenewalRequest(data as RenewalRequestDbRow);
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
 }
 
-async function markContractNotRenewed(record: ContractRenewalRecord, actor: string) {
-  if (!record.currentContractId) return;
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase
-    .from("employee_contracts")
-    .update({
-      status: "not_renewed",
-      updated_at: new Date().toISOString(),
-      created_by: actor,
-    })
-    .eq("id", record.currentContractId);
-
-  if (error) throw error;
-}
+export { nextContractAnniversary };

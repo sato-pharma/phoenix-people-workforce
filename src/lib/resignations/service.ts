@@ -897,7 +897,8 @@ async function createResignationForEmployee(
 
 function vacancyCodeFromEmployee(hrId: string) {
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
-  return `resignation_${hrId}_${stamp}`;
+  const suffix = String(hrId).trim().toUpperCase().replace(/[^A-Z0-9]+/g, "").slice(-6) || "EMP";
+  return `resignation_vac_${stamp}_${suffix}`;
 }
 
 export async function resignEmployeeAndOpenVacancy(

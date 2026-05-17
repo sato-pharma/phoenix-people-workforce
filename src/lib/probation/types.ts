@@ -1,9 +1,11 @@
 export type TrafficStatus = "critical" | "warning" | "safe";
 
 export type ProbationRow = {
+  allowedActions?: ProbationWorkflowAction[];
   area_name: string;
   crm_id: string;
   employment_status?: string;
+  has_durable_probation_record?: boolean;
   days_remaining: number;
   full_name: string;
   hire_date: string;
@@ -16,27 +18,22 @@ export type ProbationRow = {
 };
 
 export type ProbationWorkflowStatus =
-  | "evaluation_requested"
-  | "manager_feedback"
-  | "hr_recommendation"
-  | "approved"
-  | "completed"
-  | "cancelled";
+  | "active"
+  | "extended"
+  | "passed"
+  | "terminated";
 
 export type ProbationDecision = "pass" | "extend" | "terminate";
 
 export type ProbationWorkflowAction =
   | "manager_feedback"
-  | "hr_recommendation"
-  | "approve_pass"
-  | "approve_extend"
-  | "approve_terminate"
-  | "upload_letter"
-  | "complete"
-  | "cancel"
-  | "reopen";
+  | "pass"
+  | "extend"
+  | "terminate"
+  | "upload_letter";
 
 export type ProbationWorkflowRecord = {
+  allowedActions?: ProbationWorkflowAction[];
   id: string;
   employeeHrId: string;
   employeeName: string;
@@ -70,7 +67,6 @@ export type ProbationWorkflowRecord = {
 
 export type CreateProbationEvaluationInput = {
   employeeHrId: string;
-  probationEndDate?: string | null;
   evaluationScores?: Record<string, number | string | null>;
   managerFeedback?: string | null;
   workflowNotes?: string | null;

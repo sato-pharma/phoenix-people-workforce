@@ -50,7 +50,6 @@ function buildEmployeePortalSections({
   showMedRepsPerformanceTab = false,
   showDsmsPerformanceTab = false,
   showTeamExpensesTab = false,
-  showLeaveApprovalsTab = false,
   showVacanciesTab = false,
   showProbationTab = false,
   showOrganogramTab = false,
@@ -81,6 +80,13 @@ function buildEmployeePortalSections({
       ],
     },
     {
+      title: "Leave Management",
+      items: [
+        { href: "/leave-management/vacation-request", label: "Vacation Request", icon: CalendarClock },
+        { href: "/leave-management/vacation-report", label: "Vacation Report", icon: ReceiptText },
+      ],
+    },
+    {
       title: "Line Performance",
       items: [
         ...(showTeamPerformanceTab ? [{ href: "/employee-portals/team-performance", label: "Team Performance", icon: Trophy }] : []),
@@ -102,8 +108,6 @@ function buildEmployeePortalSections({
       title: "Actions",
       items: [
         ...(showExpenseActionTab ? [{ href: "/employee/outstation/new", label: "Expense", icon: ReceiptText }] : []),
-        { href: "/employee-portals/leave", label: "Vacation / Leave", icon: CalendarClock },
-        ...(showLeaveApprovalsTab ? [{ href: "/employee-portals/leave-approvals", label: "Leave Approvals", icon: CalendarClock }] : []),
       ],
     },
     {

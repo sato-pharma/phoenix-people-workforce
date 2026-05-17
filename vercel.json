@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/notifications/birthdays",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/notifications/contract-renewals",
+      "schedule": "15 4 * * *"
+    },
+    {
+      "path": "/api/notifications/process",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}

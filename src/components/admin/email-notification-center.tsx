@@ -20,7 +20,6 @@ type EmailNotificationType =
   | "birthday"
   | "offer"
   | "resignation"
-  | "leave"
   | "password_reset"
   | "user_created"
   | "general";

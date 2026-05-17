@@ -198,7 +198,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             <AdminInsightChip tone="slate">{summary.upcoming7} due in 7d</AdminInsightChip>
           </div>
         }
-        description="Track annual contract renewals calculated from each employee hire date."
+        description="Track annual contract renewals from active contracts or the next valid hire-date anniversary."
         eyebrow="People Operations"
         icon={<Calendar className="h-3.5 w-3.5" />}
         title="Contract Renewal"
@@ -345,7 +345,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
 
       <Card className={`${panelClassName} overflow-hidden p-0`}>
         <AdminSectionHeader
-          description="Renewal date is calculated from hire date + one year for the selected period."
+          description="Renewal date is sourced from the active contract or the next valid hire-date anniversary."
           title={`Renewals (${filtered.length})`}
           action={
             <div className="flex flex-wrap gap-2">

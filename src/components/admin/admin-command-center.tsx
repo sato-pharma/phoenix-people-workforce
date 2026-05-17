@@ -7,7 +7,6 @@ import {
   Briefcase,
   CheckCircle2,
   FileSpreadsheet,
-  FileUp,
   HeartPulse,
   IdCard,
   LockKeyhole,
@@ -403,7 +402,6 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
                 <QuickAction href="/payroll" icon={Wallet} label="Payroll" />
                 <QuickAction href="/sales" icon={TrendingUp} label="Sales" />
                 <QuickAction href="/admin/access" icon={ShieldCheck} label="Access" />
-                <QuickAction href="/imports/employees" icon={FileUp} label="Import" />
                 <QuickAction href="/organogram" icon={Network} label="Org Chart" />
               </div>
             </div>
@@ -578,7 +576,7 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
               accentColor="rose"
               description="Employee linkage integrity, HR ID orphan detection, and sales data quality."
               health={health.employeeHealthRate >= 90 ? "healthy" : health.employeeHealthRate < 70 ? "warning" : "attention"}
-              href="/imports/employees"
+              href="/admin/data-health"
               icon={HeartPulse}
               lastSync="Live"
               metrics={[

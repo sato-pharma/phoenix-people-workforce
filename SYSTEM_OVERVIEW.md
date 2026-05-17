@@ -1,6 +1,6 @@
 # Phoenix Workforce - System Overview
 
-Current workspace snapshot: 437 TypeScript/TSX files, 77 `app/api` route handlers, and the Next.js App Router under `app/`.
+Current workspace snapshot: 403 TypeScript/TSX files, 66 `app/api` route handlers, and the Next.js App Router under `app/`.
 
 ## Architecture
 
@@ -50,7 +50,6 @@ Current admin pages:
 - `/admin/data-health`
 - `/admin/email-notifications`
 - `/admin/email-reply-composer`
-- `/admin/leave`
 - `/admin/logs`
 - `/admin/monitoring`
 - `/admin/outstation/heatmaps`
@@ -68,7 +67,6 @@ Top-level admin/workforce pages:
 - `/contracts`
 - `/employees`
 - `/hr-calendar`
-- `/imports/employees`
 - `/login`
 - `/offers`, `/offers/[token]/accept`, `/offers/[token]/reject`
 - `/organogram`
@@ -92,8 +90,6 @@ Employee-facing pages:
 - `/employee-portals/expense-dashboard`
 - `/employee-portals/expenses`
 - `/employee-portals/incentive`
-- `/employee-portals/leave`
-- `/employee-portals/leave-approvals`
 - `/employee-portals/med-reps-performance`
 - `/employee-portals/organogram`
 - `/employee-portals/payroll`
@@ -181,21 +177,6 @@ Outstation:
 - `/api/outstation/submit`
 - `/api/outstation/sync-offline`
 
-Leave:
-
-- `/api/leave/accrual/run`
-- `/api/leave/adjustments`
-- `/api/leave/conflicts`
-- `/api/leave/export`
-- `/api/leave/requests`
-- `/api/leave/requests/[id]`
-- `/api/leave/requests/[id]/attachment`
-- `/api/leave/requests/[id]/hr-decision`
-- `/api/leave/requests/[id]/manager-decision`
-- `/api/leave/settings/holidays`
-- `/api/leave/settings/policies`
-- `/api/leave/settings/types`
-
 Lifecycle and HR workflows:
 
 - `/api/contracts`
@@ -236,7 +217,6 @@ Notifications:
 - `src/lib/sales`: monthly closing sheet parsing, validation, role mapping, import workflow, queue, and sales dashboard logic.
 - `src/lib/payroll`: salary import, payroll workflow, payslips, payroll expenses, salary source mapping, and policy logic.
 - `src/lib/outstation`: standalone outstation request capture, Google route validation, policy calculation, request storage, review data, and heatmap aggregation.
-- `src/lib/leave`: leave requests, accruals, settings, conflicts, exports, attachments, audit, and notifications.
 - `src/lib/probation`: probation row loading, workflow actions, notifications, and export generation.
 - `src/lib/contracts`, `src/lib/resignations`, `src/lib/offers`: employee lifecycle workflows.
 - `src/lib/coaching`: coaching reports, scoring, analytics, portal access, and Excel export.
@@ -276,17 +256,11 @@ Sales:
 4. Approve, reject, replace, or delete queued imports through `/api/sales/imports/[id]/[action]`.
 5. View approved sales data on `/sales` or scoped employee portal sales pages.
 
-Imports:
+Employee Master imports:
 
-1. Upload employee workbooks from `/imports/employees`.
+1. Upload employee workbooks from `/employees`.
 2. Run dry-run validation.
 3. Confirm validated imports through the matching confirm API route.
-
-Leave:
-
-1. Employees submit leave requests from employee portal routes.
-2. Managers and HR review through leave workspaces.
-3. Admins manage policies, holidays, accruals, adjustments, and exports from `/admin/leave`.
 
 Probation:
 
@@ -302,14 +276,13 @@ The codebase currently references these major table groups:
 - People and org data: `employees`, `organogram`, employee linkage and directory-related data
 - Payroll: salary batches, salary records, salary flags, payslip outputs, payroll expenses
 - Sales: sales import batches and imported sales records
-- Leave: leave types, policies, balances, requests, approvals, transactions, holidays, audit logs
 - Lifecycle: contracts, resignations, job offers, vacancies, employee probation, probation evaluations/history
 - Notifications and audit: notification events, notification delivery logs, audit logs
 - Outstation: employee residence locations, outstation policy rules, submitted outstation requests, and outstation location audit logs
 
 ## Validation And Tests
 
-Current test coverage includes auth sessions, coaching, employee portal behavior, email notifications, Google routes, i18n, incentives, leave, payroll, role mapping, sales parsing/period logic, salary policy, and workforce classification.
+Current test coverage includes auth sessions, coaching, employee portal behavior, email notifications, Google routes, i18n, incentives, payroll, role mapping, sales parsing/period logic, salary policy, and workforce classification.
 
 Safe local checks:
 

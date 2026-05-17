@@ -25,11 +25,11 @@ export default async function EmployeePortalContactHRSupportPage() {
     data = null;
   }
 
-  if (!data || data.empty.profile) {
+  if (!data) {
     return (
       <EmployeePortalEmptyState
-        message="Your employee profile is not linked yet. Please contact HR."
-        title="Profile Not Linked"
+        message="Unable to load your profile. Please try again or contact your administrator."
+        title="Something Went Wrong"
       />
     );
   }

@@ -159,7 +159,7 @@ const permissionDomains: Array<{
   {
     description: "Employee records, lifecycle workflows, hierarchy, documents, and team visibility.",
     label: "People",
-    resources: ["employees", "employee_profile", "employee_documents", "team", "organogram", "vacancies", "offers", "probation", "resignations", "contracts", "leave"],
+    resources: ["employees", "employee_profile", "employee_documents", "team", "organogram", "vacancies", "offers", "probation", "resignations", "contracts"],
   },
   {
     description: "Payroll dashboards, salary artifacts, and payslip access.",
@@ -199,7 +199,6 @@ const permissionResourceDescriptions: Partial<Record<PermissionResource, string>
   expenses: "Expense request and approval workflows.",
   hr_calendar: "HR calendar and workforce events.",
   imports: "Bulk import workflows and validation.",
-  leave: "Leave requests, approvals, and balances.",
   offers: "Offer generation and candidate decision flows.",
   organogram: "Hierarchy and organization chart visibility.",
   outstation: "Outstation requests and approvals.",

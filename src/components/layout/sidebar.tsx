@@ -98,7 +98,6 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
         { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
         { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
         { href: "/offers", icon: IdCard, label: "Offer Lifecycle", permissions: [{ resource: "offers" }] },
-        { href: "/admin/leave", icon: CalendarDays, label: "Leave Management", permissions: [{ resource: "leave" }] },
         { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },
         { href: "/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
         { href: "/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
@@ -135,12 +134,19 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       label: "Expenses & Outstation",
     },
     {
+      id: "leave-management",
+      items: [
+        { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }] },
+        { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }] },
+      ],
+      label: "Leave Management",
+    },
+    {
       id: "access-communication",
       items: [
         { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
         { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "admin" }] },
         { href: "/admin/email-notifications", icon: BellRing, label: "Email Governance", permissions: [{ resource: "admin" }] },
-        { href: "/imports/employees", icon: FileUp, label: "Bulk Import", permissions: [{ resource: "imports" }] },
       ],
       label: "Access & Communication",
     },
@@ -175,10 +181,16 @@ function getEmployeePortalSections(permissionLookup: PermissionLookup, currentRo
         { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Team Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["District Manager", "National Sales Manager"] },
         { href: "/payslips", icon: ChartColumnBig, label: "Payroll & Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }] },
         { href: "/employee/outstation/new", icon: MapPinned, label: "Outstation", permissions: [{ resource: "outstation" }] },
-        { href: "/employee-portals/leave", icon: CalendarDays, label: "Vacation / Leave", permissions: [{ resource: "leave" }] },
-        { href: "/employee-portals/leave-approvals", icon: CalendarClock, label: "Leave Approvals", excludedRoles: ["Training Manager"], permissions: [{ resource: "leave", action: "approve" }] },
       ],
       label: "Medical Rep Portal",
+    },
+    {
+      id: "leave-management",
+      items: [
+        { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }] },
+        { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }] },
+      ],
+      label: "Leave Management",
     },
   ];
 
