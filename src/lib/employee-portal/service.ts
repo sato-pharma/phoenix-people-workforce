@@ -2250,6 +2250,7 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
   const currentUser = await resolvePortalCurrentUser(access);
   const currentHrId = normalizeHrId(currentUser.hrId);
   const currentLoginId = normalizeHrId(currentUser.loginId);
+
   const directory = await getEmployeeDirectory({ pageSize: -1 });
   const byHrId = currentHrId
     ? directory.employees.find((row) => normalizeHrId(row.hrId) === currentHrId)
@@ -2259,7 +2260,51 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
   const byEmail = !byHrId && currentLoginId
     ? directory.employees.find((row) => normalizeHrId(row.workEmail) === currentLoginId)
     : null;
-  const employee = byHrId ?? byEmail ?? fallbackEmployee(access);
+  let employee: EmployeeDirectoryRow = byHrId ?? byEmail ?? fallbackEmployee(access);
+
+  // Direct DB fallback: when the directory row is missing critical fields (hireDate or lineName),
+  // query the employees table directly so the identity card is never shown as "Unassigned".
+  if (!employee.hireDate || !employee.lineName) {
+    const rawHrId = currentUser.hrId || currentUser.loginId;
+    if (rawHrId) {
+      const supabase = getSupabaseAdmin();
+      const { data: dbRow } = await supabase
+        .from("employees")
+        .select("full_name,hire_date,hr_id,work_email,manager_hr_id,area_id,line_id,team_id")
+        .ilike("hr_id", rawHrId)
+        .maybeSingle();
+      if (dbRow) {
+        const row = dbRow as Record<string, unknown>;
+        const needsArea = !employee.areaName && row.area_id;
+        const needsLine = !employee.lineName && row.line_id;
+        const needsTeam = !employee.teamName && row.team_id;
+        const [areaResolved, lineResolved, teamResolved] = await Promise.all([
+          needsArea
+            ? supabase.from("areas").select("name").eq("id", Number(row.area_id)).maybeSingle().then((r) => String((r.data as { name?: unknown } | null)?.name ?? ""))
+            : Promise.resolve(""),
+          needsLine
+            ? supabase.from("lines").select("name").eq("id", Number(row.line_id)).maybeSingle().then((r) => String((r.data as { name?: unknown } | null)?.name ?? ""))
+            : Promise.resolve(""),
+          needsTeam
+            ? supabase.from("teams").select("name").eq("id", Number(row.team_id)).maybeSingle().then((r) => String((r.data as { name?: unknown } | null)?.name ?? ""))
+            : Promise.resolve(""),
+        ]);
+        const resolvedHireDate = String(row.hire_date ?? "").trim() || null;
+        employee = {
+          ...employee,
+          areaName: employee.areaName || areaResolved || null,
+          fullName: employee.fullName || String(row.full_name ?? "").trim() || access.loginId ?? "",
+          hireDate: employee.hireDate || resolvedHireDate,
+          hrId: employee.hrId || String(row.hr_id ?? rawHrId).trim(),
+          lineName: employee.lineName || lineResolved || currentUser.line || null,
+          managerHrId: employee.managerHrId || String(row.manager_hr_id ?? "").trim() || null,
+          teamName: employee.teamName || teamResolved || null,
+          workEmail: employee.workEmail || String(row.work_email ?? "").trim() || null,
+        };
+      }
+    }
+  }
+
   const employmentJourney = computeEmploymentJourney(employee);
   const daysUntilProbationEnd = daysFromToday(addDays(employee.hireDate ?? null, 90));
   const probationStatus: MedicalRepPortalData["hrContract"]["probationStatus"] =
@@ -2274,8 +2319,8 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
       area: employee.areaName,
       fullName: employee.fullName,
       hrId: employee.hrId,
-      line: employee.lineName,
-      manager: resolveManagerDisplayName(employee),
+      line: employee.lineName || currentUser.line || null,
+      manager: resolveManagerDisplayName(employee) || currentUser.managerHrId || null,
       roleLabel: employee.jobTitle || employee.positionTitle || currentUser.role || "Employee",
       status: employee.employmentStatus ?? "active",
       territory: employee.regionName ?? employee.areaName,
