@@ -34,6 +34,20 @@ export type FingerprintReportRow = Record<FingerprintReportColumnKey, string> & 
   sortKey: string;
 };
 
+export type FingerprintPolicyDetailRow = {
+  department: string;
+  effectiveFrom: string;
+  effectiveTo: string;
+  employeeHrId: string;
+  employeeName: string;
+  graceMinutes: string;
+  jobTitle: string;
+  policyName: string;
+  scheduledEnd: string;
+  scheduledStart: string;
+  targetType: string;
+};
+
 export type FingerprintReportData = {
   columns: FingerprintReportColumn[];
   filters: {
@@ -48,6 +62,8 @@ export type FingerprintReportData = {
     search: string;
     status: string;
   };
+  hasDateRange: boolean;
+  policyDetails: FingerprintPolicyDetailRow[];
   rows: FingerprintReportRow[];
   summary: {
     complete: number;
@@ -76,6 +92,18 @@ type DepartmentRow = {
   name: string | null;
 };
 
+type PolicyRow = {
+  effective_from: string;
+  effective_to: string | null;
+  grace_minutes: number | null;
+  is_active: boolean | null;
+  policy_name: string | null;
+  scheduled_end: string | null;
+  scheduled_start: string | null;
+  target_type: string | null;
+  target_value: string | null;
+};
+
 type PunchBucket = {
   deviceUserId: string;
   employeeHrId: string;
@@ -88,9 +116,6 @@ export const fingerprintReportColumns: FingerprintReportColumn[] = [
   { always: true, key: "employeeHrId", label: "Employee ID" },
   { always: true, key: "employeeName", label: "Name" },
   { always: true, key: "jobTitle", label: "Job Title" },
-  { always: true, key: "scheduledStart", label: "Scheduled Start" },
-  { always: true, key: "scheduledEnd", label: "Scheduled End" },
-  { always: true, key: "graceMinutes", label: "Grace Minutes" },
   { always: true, key: "actualFirstPunch", label: "Actual First Punch" },
   { always: true, key: "actualLastPunch", label: "Actual Last Punch" },
   { always: true, key: "lateMinutes", label: "Late Minutes" },
@@ -111,6 +136,10 @@ function pad(value: number) {
 
 function normalizeDateInput(value: string | undefined, fallback: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? "")) ? String(value) : fallback;
+}
+
+function isDateInput(value: string | undefined) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ""));
 }
 
 function todayKey() {
@@ -134,12 +163,22 @@ function localDateKey(date: Date) {
 }
 
 function localTime(date: Date) {
-  return new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    hour12: false,
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    hour12: true,
     minute: "2-digit",
     timeZone: reportTimeZone,
   }).format(date);
+}
+
+function displayPolicyTime(value: string | null | undefined) {
+  const [hourText, minuteText] = String(value ?? "").slice(0, 5).split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return "";
+  const period = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${pad(minute)} ${period}`;
 }
 
 function displayDate(dateKey: string) {
@@ -160,8 +199,30 @@ function normalizeHrId(value: string | null | undefined) {
   return normalized.length > 0 ? normalized : null;
 }
 
-function statusFor(punches: Date[], durationMs: number) {
-  if (punches.length <= 1) {
+function employeeProfileScore(employee: EmployeeRow) {
+  return [
+    employee.full_name,
+    employee.job_title,
+    typeof employee.department_id === "number" ? String(employee.department_id) : "",
+  ].filter((value) => String(value ?? "").trim().length > 0).length;
+}
+
+function uniqueEmployeesByHrId(rows: EmployeeRow[]) {
+  const byHrId = new Map<string, EmployeeRow>();
+  for (const employee of rows) {
+    const hrId = normalizeHrId(employee.hr_id);
+    if (!hrId) continue;
+    const normalizedEmployee = { ...employee, hr_id: hrId };
+    const existing = byHrId.get(hrId);
+    if (!existing || employeeProfileScore(normalizedEmployee) > employeeProfileScore(existing)) {
+      byHrId.set(hrId, normalizedEmployee);
+    }
+  }
+  return Array.from(byHrId.values());
+}
+
+function statusFor(visiblePunchCount: number, durationMs: number) {
+  if (visiblePunchCount <= 1) {
     return { deductionDays: "", deductionValue: "", recommendedAction: "Review missing punch", status: "Single punch" };
   }
   if (durationMs < standardDayMs) {
@@ -204,6 +265,60 @@ function textMatches(row: FingerprintReportRow, filters: FingerprintReportData["
   return haystack.includes(search.toLowerCase());
 }
 
+function policyMatchesEmployee(policy: PolicyRow, employee: EmployeeRow) {
+  const targetType = String(policy.target_type ?? "");
+  const targetValue = String(policy.target_value ?? "").trim().toUpperCase();
+  if (targetType === "employee_hr_id") return targetValue === normalizeHrId(employee.hr_id);
+  if (targetType === "job_title") return targetValue === String(employee.job_title ?? "").trim().toUpperCase();
+  return targetType === "default";
+}
+
+function rankPolicy(policy: PolicyRow) {
+  if (policy.target_type === "employee_hr_id") return 3;
+  if (policy.target_type === "job_title") return 2;
+  if (policy.target_type === "default") return 1;
+  return 0;
+}
+
+function activePolicyFor(employee: EmployeeRow, policies: PolicyRow[], dateFrom: string, dateTo: string) {
+  return policies
+    .filter((policy) => policy.is_active !== false)
+    .filter((policy) => policyMatchesEmployee(policy, employee))
+    .filter((policy) => {
+      const effectiveFrom = policy.effective_from || "1900-01-01";
+      const effectiveTo = policy.effective_to || "9999-12-31";
+      return effectiveFrom <= dateTo && effectiveTo >= dateFrom;
+    })
+    .sort((left, right) => {
+      const rankDiff = rankPolicy(right) - rankPolicy(left);
+      if (rankDiff !== 0) return rankDiff;
+      return String(right.effective_from ?? "").localeCompare(String(left.effective_from ?? ""));
+    })[0];
+}
+
+function employeePolicyMatches(row: FingerprintPolicyDetailRow, filters: FingerprintReportData["filters"]) {
+  if (
+    !contains(row.employeeHrId, filters.employeeHrId) ||
+    !contains(row.employeeName, filters.employeeName) ||
+    !contains(row.jobTitle, filters.jobTitle) ||
+    !contains(row.department, filters.department)
+  ) {
+    return false;
+  }
+
+  if (!filters.search) return true;
+  return [
+    row.employeeHrId,
+    row.employeeName,
+    row.jobTitle,
+    row.department,
+    row.policyName,
+    row.scheduledStart,
+    row.scheduledEnd,
+    row.graceMinutes,
+  ].join(" ").toLowerCase().includes(filters.search.toLowerCase());
+}
+
 export async function getFingerprintAttendanceReport(input: {
   dateFrom?: string;
   dateTo?: string;
@@ -216,8 +331,9 @@ export async function getFingerprintAttendanceReport(input: {
   search?: string;
   status?: string;
 } = {}): Promise<FingerprintReportData> {
-  const dateFrom = normalizeDateInput(input.dateFrom, "2026-01-01");
-  const dateTo = normalizeDateInput(input.dateTo, todayKey());
+  const hasDateRange = isDateInput(input.dateFrom) && isDateInput(input.dateTo);
+  const dateFrom = normalizeDateInput(input.dateFrom, "");
+  const dateTo = normalizeDateInput(input.dateTo, "");
   const filters = {
     dateFrom,
     dateTo,
@@ -231,6 +347,87 @@ export async function getFingerprintAttendanceReport(input: {
     status: String(input.status ?? "").trim(),
   };
   const supabase = getSupabaseAdmin();
+  const effectiveDateFrom = hasDateRange ? dateFrom : todayKey();
+  const effectiveDateTo = hasDateRange ? dateTo : todayKey();
+
+  const [employeeResult, policyResult] = await Promise.all([
+    supabase
+      .from("employees")
+      .select("hr_id,full_name,job_title,department_id")
+      .order("full_name"),
+    supabase
+      .from("attendance_policy_groups")
+      .select("policy_name,target_type,target_value,scheduled_start,scheduled_end,grace_minutes,is_active,effective_from,effective_to")
+      .eq("is_active", true)
+      .order("target_type")
+      .order("target_value")
+      .order("effective_from", { ascending: false }),
+  ]);
+
+  if (employeeResult.error) throw employeeResult.error;
+  if (policyResult.error) throw policyResult.error;
+
+  const allEmployees = uniqueEmployeesByHrId((employeeResult.data ?? []) as EmployeeRow[]);
+  const allDepartmentIds = new Set<number>();
+  for (const employee of allEmployees) {
+    if (typeof employee.department_id === "number") allDepartmentIds.add(employee.department_id);
+  }
+
+  const departmentMap = new Map<number, string>();
+  if (allDepartmentIds.size > 0) {
+    const { data: departmentData, error: departmentError } = await supabase
+      .from("departments")
+      .select("id,name")
+      .in("id", Array.from(allDepartmentIds));
+
+    if (departmentError) throw departmentError;
+
+    for (const department of (departmentData ?? []) as DepartmentRow[]) {
+      departmentMap.set(department.id, department.name?.trim() || "");
+    }
+  }
+
+  const policyRows = (policyResult.data ?? []) as PolicyRow[];
+  const policyDetails = allEmployees
+    .map((employee) => {
+      const policy = activePolicyFor(employee, policyRows, effectiveDateFrom, effectiveDateTo);
+      const department = typeof employee.department_id === "number"
+        ? departmentMap.get(employee.department_id) ?? ""
+        : "";
+
+      return {
+        department,
+        effectiveFrom: policy?.effective_from ?? "",
+        effectiveTo: policy?.effective_to ?? "",
+        employeeHrId: normalizeHrId(employee.hr_id) ?? employee.hr_id,
+        employeeName: employee.full_name?.trim() || employee.hr_id,
+        graceMinutes: policy?.grace_minutes == null ? "" : String(policy.grace_minutes),
+        jobTitle: employee.job_title?.trim() || "",
+        policyName: policy?.policy_name?.trim() || "No active policy",
+        scheduledEnd: displayPolicyTime(policy?.scheduled_end),
+        scheduledStart: displayPolicyTime(policy?.scheduled_start),
+        targetType: policy?.target_type ?? "",
+      };
+    })
+    .filter((row) => employeePolicyMatches(row, filters))
+    .sort((left, right) => left.employeeName.localeCompare(right.employeeName));
+
+  if (!hasDateRange) {
+    return {
+      columns: fingerprintReportColumns,
+      filters,
+      hasDateRange,
+      policyDetails,
+      rows: [],
+      summary: {
+        complete: 0,
+        deductions: 0,
+        rows: 0,
+        shortDays: 0,
+        singlePunches: 0,
+      },
+    };
+  }
 
   const { data: punchData, error: punchError } = await supabase
     .from("attendance_raw_punches")
@@ -246,38 +443,10 @@ export async function getFingerprintAttendanceReport(input: {
   const punches = (punchData ?? []) as RawPunchRow[];
   const employeeHrIds = Array.from(new Set(punches.map((row) => normalizeHrId(row.employee_hr_id)).filter((value): value is string => Boolean(value))));
   const employeeMap = new Map<string, EmployeeRow>();
-  const departmentIds = new Set<number>();
 
-  if (employeeHrIds.length > 0) {
-    const { data: employeeData, error: employeeError } = await supabase
-      .from("employees")
-      .select("hr_id,full_name,job_title,department_id")
-      .in("hr_id", employeeHrIds);
-
-    if (employeeError) throw employeeError;
-
-    for (const employee of (employeeData ?? []) as EmployeeRow[]) {
-      const hrId = normalizeHrId(employee.hr_id);
-      if (!hrId) continue;
-      employeeMap.set(hrId, employee);
-      if (typeof employee.department_id === "number") {
-        departmentIds.add(employee.department_id);
-      }
-    }
-  }
-
-  const departmentMap = new Map<number, string>();
-  if (departmentIds.size > 0) {
-    const { data: departmentData, error: departmentError } = await supabase
-      .from("departments")
-      .select("id,name")
-      .in("id", Array.from(departmentIds));
-
-    if (departmentError) throw departmentError;
-
-    for (const department of (departmentData ?? []) as DepartmentRow[]) {
-      departmentMap.set(department.id, department.name?.trim() || "");
-    }
+  for (const employee of allEmployees) {
+    const hrId = normalizeHrId(employee.hr_id);
+    if (hrId && employeeHrIds.includes(hrId)) employeeMap.set(hrId, employee);
   }
 
   const buckets = new Map<string, PunchBucket>();
@@ -304,18 +473,22 @@ export async function getFingerprintAttendanceReport(input: {
     bucket.punches.sort((left, right) => left.getTime() - right.getTime());
     const firstPunch = bucket.punches[0];
     const lastPunch = bucket.punches[bucket.punches.length - 1];
-    const durationMs = firstPunch && lastPunch && firstPunch.getTime() !== lastPunch.getTime()
+    const visiblePunchTimes = Array.from(new Set(bucket.punches.map((punch) => localTime(punch))));
+    const firstPunchText = firstPunch ? localTime(firstPunch) : "";
+    const lastPunchText = lastPunch ? localTime(lastPunch) : "";
+    const hasDistinctVisibleLastPunch = firstPunchText.length > 0 && lastPunchText.length > 0 && firstPunchText !== lastPunchText;
+    const durationMs = firstPunch && lastPunch && hasDistinctVisibleLastPunch
       ? lastPunch.getTime() - firstPunch.getTime()
       : 0;
-    const status = statusFor(bucket.punches, durationMs);
+    const status = statusFor(visiblePunchTimes.length, durationMs);
     const employee = employeeMap.get(bucket.employeeHrId);
     const department = typeof employee?.department_id === "number"
       ? departmentMap.get(employee.department_id) ?? ""
       : "";
 
     return {
-      actualFirstPunch: firstPunch ? localTime(firstPunch) : "",
-      actualLastPunch: lastPunch && durationMs > 0 ? localTime(lastPunch) : "",
+      actualFirstPunch: firstPunchText,
+      actualLastPunch: hasDistinctVisibleLastPunch ? lastPunchText : "",
       date: displayDate(bucket.reportDate),
       deductionDays: status.deductionDays,
       deductionValue: status.deductionValue,
@@ -342,6 +515,8 @@ export async function getFingerprintAttendanceReport(input: {
   return {
     columns: fingerprintReportColumns,
     filters,
+    hasDateRange,
+    policyDetails,
     rows,
     summary: {
       complete: rows.filter((row) => row.status === "Complete").length,

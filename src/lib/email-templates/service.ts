@@ -11,13 +11,17 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const emailTemplateKeys = [
   "offer",
-  "probation",
+  "interview_invitation",
+  "interview_feedback",
+  "probation_workflow",
+  "probation_reminder",
   "contract_renewal",
   "birthday",
-  "resignation",
+  "resignation_workflow",
   "leave_request",
   "leave_approval",
   "leave_rejection",
+  "password_setup",
   "password_reset",
   "user_created",
   "general",
@@ -27,13 +31,17 @@ export const EMAIL_TEMPLATE_KEYS = {
   BIRTHDAY: "birthday",
   CONTRACT_RENEWAL: "contract_renewal",
   GENERAL: "general",
+  INTERVIEW_FEEDBACK: "interview_feedback",
+  INTERVIEW_INVITATION: "interview_invitation",
   JOB_OFFER: "offer",
   LEAVE_APPROVAL: "leave_approval",
   LEAVE_REJECTION: "leave_rejection",
   LEAVE_REQUEST: "leave_request",
+  PASSWORD_SETUP: "password_setup",
   PASSWORD_RESET: "password_reset",
-  PROBATION: "probation",
-  RESIGNATION: "resignation",
+  PROBATION_REMINDER: "probation_reminder",
+  PROBATION_WORKFLOW: "probation_workflow",
+  RESIGNATION_WORKFLOW: "resignation_workflow",
   USER_CREATED: "user_created",
 } as const satisfies Record<string, EmailTemplateKey>;
 
@@ -46,8 +54,10 @@ export const emailTemplateRecipientRoleOptions = [
   "hr",
   "hr_manager",
   "finance",
+  "hiring_manager",
   "admin",
   "ceo",
+  "recruiter",
   "district_manager",
   "regional_sales_manager",
   "national_sales_manager",
@@ -69,9 +79,17 @@ export type EmailTemplateContext = {
   endDate?: string | null;
   employeeHrId?: string | null;
   employeeName?: string | null;
+  expiryText?: string | null;
+  feedback?: string | null;
+  interviewDate?: string | null;
+  interviewLocation?: string | null;
+  interviewerName?: string | null;
+  interviewTime?: string | null;
   jobTitle?: string | null;
   line?: string | null;
   managerName?: string | null;
+  meetingUrl?: string | null;
+  nextStep?: string | null;
   recipientName?: string | null;
   startDate?: string | null;
   status?: string | null;
@@ -202,6 +220,14 @@ const placeholderHints = [
   "date",
   "startDate",
   "endDate",
+  "expiryText",
+  "interviewDate",
+  "interviewTime",
+  "interviewLocation",
+  "interviewerName",
+  "meetingUrl",
+  "feedback",
+  "nextStep",
   "ctaUrl",
   "ctaLabel",
   "recipientName",
@@ -212,13 +238,17 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   birthday: emptyRules(["direct_manager"]),
   contract_renewal: emptyRules(["manager_chain"], ["hr"]),
   general: emptyRules(["admin"], ["hr"]),
+  interview_feedback: emptyRules(["hr", "hiring_manager", "recruiter"]),
+  interview_invitation: emptyRules(["candidate"]),
   leave_approval: emptyRules(["employee"], ["hr"]),
   leave_rejection: emptyRules(["employee"], ["hr"]),
   leave_request: emptyRules(["direct_manager"], ["manager_of_manager"]),
   offer: emptyRules(["candidate"]),
+  password_setup: emptyRules(["candidate"]),
   password_reset: emptyRules(["candidate"]),
-  probation: emptyRules(["direct_manager"], ["hr"]),
-  resignation: emptyRules(["manager_chain"], ["hr"]),
+  probation_reminder: emptyRules(["direct_manager"], ["manager_of_manager", "hr"]),
+  probation_workflow: emptyRules(["direct_manager"], ["hr"]),
+  resignation_workflow: emptyRules(["manager_chain"], ["hr"]),
   user_created: emptyRules(["employee"]),
 };
 
@@ -258,6 +288,30 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     subject: "{{subject}}",
     templateKey: "general",
     templateName: "General HR Notification",
+  },
+  interview_feedback: {
+    bodyHtml: "<p>Interview feedback has been submitted for {{candidateName}}.</p><p>Role: {{jobTitle}}.</p><p>Status: {{status}}.</p><p>Feedback: {{feedback}}</p><p>Next step: {{nextStep}}</p>",
+    bodyText: "Interview feedback has been submitted for {{candidateName}}.\n\nRole: {{jobTitle}}.\nStatus: {{status}}.\nFeedback: {{feedback}}\nNext step: {{nextStep}}",
+    closingText: "Please review the feedback and complete the next recruiting step.",
+    description: "Internal interview feedback follow-up for HR and hiring stakeholders.",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "Phoenix Workforce interview feedback update.",
+    subject: "Interview feedback: {{candidateName}} - {{jobTitle}}",
+    templateKey: "interview_feedback",
+    templateName: "Interview Feedback",
+  },
+  interview_invitation: {
+    bodyHtml: "<p>You are invited to interview for {{jobTitle}}.</p><p>Date: {{interviewDate}} at {{interviewTime}}.</p><p>Location: {{interviewLocation}}</p><p>Interviewer: {{interviewerName}}</p><p>Meeting link: {{meetingUrl}}</p>",
+    bodyText: "You are invited to interview for {{jobTitle}}.\n\nDate: {{interviewDate}} at {{interviewTime}}.\nLocation: {{interviewLocation}}\nInterviewer: {{interviewerName}}\nMeeting link: {{meetingUrl}}",
+    closingText: "Please confirm your availability or contact HR if the time needs to change.",
+    description: "Candidate interview invitation template.",
+    greeting: "Dear {{candidateName}},",
+    isActive: true,
+    previewText: "Phoenix Workforce interview invitation for {{jobTitle}}.",
+    subject: "Interview invitation: {{jobTitle}}",
+    templateKey: "interview_invitation",
+    templateName: "Interview Invitation",
   },
   leave_approval: {
     bodyHtml: "<p>Your leave request has been approved.</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>Period: {{startDate}} - {{endDate}}.</p><p>{{status}}</p>",
@@ -308,50 +362,74 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Job Offer",
   },
   password_reset: {
-    bodyHtml: "<p>Use the secure button below to complete your password setup.</p>",
-    bodyText: "Use the secure link to complete your password setup.",
+    bodyHtml: "<p>{{summary}}</p><p>This secure link expires: {{expiryText}}.</p><p>Use the action button below to continue.</p>",
+    bodyText: "{{summary}}\n\nThis secure link expires: {{expiryText}}.\nUse the action link to continue.",
     closingText: "If you did not request this, contact your administrator.",
-    description: "Password setup/reset communication.",
+    description: "Password reset communication.",
+    greeting: "Dear {{recipientName}},",
+    isActive: true,
+    previewText: "Phoenix Workforce password reset link.",
+    subject: "{{subject}}",
+    templateKey: "password_reset",
+    templateName: "Password Reset",
+  },
+  password_setup: {
+    bodyHtml: "<p>{{summary}}</p><p>This secure link expires: {{expiryText}}.</p><p>Use the action button below to continue.</p>",
+    bodyText: "{{summary}}\n\nThis secure link expires: {{expiryText}}.\nUse the action link to continue.",
+    closingText: "Please complete setup before the link expires.",
+    description: "Password setup communication for onboarding and first login.",
     greeting: "Dear {{recipientName}},",
     isActive: true,
     previewText: "Phoenix Workforce password setup link.",
-    subject: "Phoenix Workforce password setup",
-    templateKey: "password_reset",
+    subject: "{{subject}}",
+    templateKey: "password_setup",
     templateName: "Password Setup",
   },
-  probation: {
-    bodyHtml: "<p>Probation workflow status update recorded for {{employeeName}} ({{employeeHrId}}).</p><p>Status: {{status}}.</p>",
-    bodyText: "Probation workflow status update recorded for {{employeeName}} ({{employeeHrId}}). Status: {{status}}.",
+  probation_reminder: {
+    bodyHtml: "<p>{{summary}}</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>Hire date: {{startDate}}.</p><p>{{status}}</p>",
+    bodyText: "{{summary}}\n\nEmployee: {{employeeName}} ({{employeeHrId}}).\nHire date: {{startDate}}.\n{{status}}",
+    closingText: "Please submit the required feedback before the probation checkpoint closes.",
+    description: "Scheduled probation reminders for manager and HR follow-up.",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "Phoenix Workforce probation reminder.",
+    subject: "{{subject}}",
+    templateKey: "probation_reminder",
+    templateName: "Probation Reminder",
+  },
+  probation_workflow: {
+    bodyHtml: "<p>{{summary}}</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>{{status}}</p>",
+    bodyText: "{{summary}}\n\nEmployee: {{employeeName}} ({{employeeHrId}}).\n{{status}}",
     closingText: "Please review and continue the required workflow.",
     description: "Probation tracker updates.",
     greeting: "Dear Team,",
     isActive: true,
     previewText: "Phoenix Workforce probation workflow update.",
-    subject: "Probation update: {{employeeName}}",
-    templateKey: "probation",
+    subject: "{{subject}}",
+    templateKey: "probation_workflow",
     templateName: "Probation Tracker",
   },
-  resignation: {
-    bodyHtml: "<p>Resignation workflow update for {{employeeName}} ({{employeeHrId}}).</p><p>Status: {{status}}.</p>",
-    bodyText: "Resignation workflow update for {{employeeName}} ({{employeeHrId}}). Status: {{status}}.",
+  resignation_workflow: {
+    bodyHtml: "<p>{{summary}}</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>Effective date: {{date}}.</p><p>{{status}}</p>",
+    bodyText: "{{summary}}\n\nEmployee: {{employeeName}} ({{employeeHrId}}).\nEffective date: {{date}}.\n{{status}}",
     closingText: "Please route this according to HR procedure.",
     description: "Resignation workflow updates.",
     greeting: "Dear Team,",
     isActive: true,
     previewText: "Phoenix Workforce resignation workflow update.",
-    subject: "Resignation update: {{employeeName}}",
-    templateKey: "resignation",
+    subject: "{{subject}}",
+    templateKey: "resignation_workflow",
     templateName: "Resignation",
   },
   user_created: {
-    bodyHtml: "<p>Your Phoenix Workforce account is now created.</p><p>Use the secure link to complete setup.</p>",
-    bodyText: "Your Phoenix Workforce account is now created. Use the secure link to complete setup.",
+    bodyHtml: "<p>{{summary}}</p><p>This secure link expires: {{expiryText}}.</p><p>Use the action button below to complete account setup.</p>",
+    bodyText: "{{summary}}\n\nThis secure link expires: {{expiryText}}.\nUse the action link to complete account setup.",
     closingText: "HR will assist if you need support.",
     description: "Welcome message for newly created users.",
     greeting: "Dear {{recipientName}},",
     isActive: true,
     previewText: "Phoenix Workforce account created.",
-    subject: "Welcome to Phoenix Workforce",
+    subject: "{{subject}}",
     templateKey: "user_created",
     templateName: "User Created",
   },
@@ -359,7 +437,9 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
 
 const aliases: Record<string, EmailTemplateKey> = {
   job_offer: "offer",
-  password_setup: "password_reset",
+  probation: "probation_workflow",
+  probation_tracker: "probation_workflow",
+  resignation: "resignation_workflow",
   user_creation: "user_created",
 };
 
@@ -513,8 +593,19 @@ export function validateEmailTemplatePayload(payload: EmailTemplatePayload) {
 }
 
 function tableMissing(error: unknown) {
-  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  const message = (
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" && error && "message" in error
+        ? String((error as { message?: unknown }).message ?? "")
+        : String(error)
+  ).toLowerCase();
+  const code = typeof error === "object" && error && "code" in error
+    ? String((error as { code?: unknown }).code ?? "").toLowerCase()
+    : "";
   return (
+    code === "42703" ||
+    code === "42p01" ||
     message.includes("email_templates") ||
     message.includes("email_template_recipient_rules") ||
     message.includes("does not exist") ||
@@ -731,10 +822,14 @@ function roleMatches(contact: Contact, role: EmailTemplateRecipientRole, employe
       return value.includes("hr");
     case "finance":
       return value.includes("finance");
+    case "hiring_manager":
+      return value.includes("hiring manager") || value.includes("recruiting manager");
     case "admin":
       return value.includes("admin") || value.includes("super admin");
     case "ceo":
       return value.includes("ceo");
+    case "recruiter":
+      return value.includes("recruiter") || value.includes("talent acquisition");
     case "district_manager":
       return value.includes("district manager") || value.includes("district sales manager");
     case "regional_sales_manager":
@@ -846,9 +941,17 @@ function contextVariables(input: Partial<EmailTemplateContext>, recipientName: s
     endDate: text(input.endDate),
     employeeHrId: text(input.employeeHrId),
     employeeName: text(input.employeeName),
+    expiryText: text(input.expiryText),
+    feedback: text(input.feedback),
+    interviewDate: text(input.interviewDate),
+    interviewLocation: text(input.interviewLocation),
+    interviewerName: text(input.interviewerName),
+    interviewTime: text(input.interviewTime),
     jobTitle: text(input.jobTitle),
     line: text(input.line),
     managerName: text(input.managerName),
+    meetingUrl: text(input.meetingUrl),
+    nextStep: text(input.nextStep),
     recipientName,
     startDate: text(input.startDate),
     status: text(input.status),
@@ -1045,9 +1148,16 @@ export async function sendTemplateTestEmail(input: {
     employeeHrId: "PHX-1024",
     employeeName: "Mariam Adel",
     endDate: "2026-06-05",
+    feedback: "Strong technical discussion and positive role alignment.",
+    interviewDate: "2026-06-10",
+    interviewLocation: "Phoenix Workforce Cairo Office",
+    interviewerName: "Nour Samir",
+    interviewTime: "10:30 AM",
     jobTitle: "Medical Rep",
     line: "Cardio Line",
     managerName: "Omar Nabil",
+    meetingUrl: "https://meet.example.com/phoenix-interview",
+    nextStep: "Share final feedback with HR and confirm the next interview round.",
     recipientName: "Test Recipient",
     startDate: "2026-06-01",
     status: "Sample status",

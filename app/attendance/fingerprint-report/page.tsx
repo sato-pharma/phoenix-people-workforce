@@ -39,9 +39,22 @@ export default async function AttendanceFingerprintReportPage({ searchParams }: 
     initialError = error instanceof Error ? error.message : "Fingerprint attendance report failed to load.";
   }
 
+  const reportKey = [
+    filters?.dateFrom ?? "",
+    filters?.dateTo ?? "",
+    filters?.deduction ?? "",
+    filters?.department ?? "",
+    filters?.deviceUserId ?? "",
+    filters?.employeeHrId ?? "",
+    filters?.employeeName ?? "",
+    filters?.jobTitle ?? "",
+    filters?.search ?? "",
+    filters?.status ?? "",
+  ].join("|");
+
   return (
     <AppShell navigationMode="admin">
-      <FingerprintReport initialData={initialData} initialError={initialError} />
+      <FingerprintReport key={reportKey} initialData={initialData} initialError={initialError} />
     </AppShell>
   );
 }
