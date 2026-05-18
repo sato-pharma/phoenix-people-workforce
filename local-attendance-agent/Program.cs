@@ -162,6 +162,7 @@ sealed record AgentConfig(
   string DeviceIp,
   int DevicePort,
   int DeviceCommPassword,
+  string DeviceReadMethod,
   DateTime SyncStartDate,
   int DeviceOperationTimeoutSeconds
 ) {
@@ -173,6 +174,7 @@ sealed record AgentConfig(
       Required("DEVICE_IP"),
       ParseInt("DEVICE_PORT", "4370"),
       ParseInt("DEVICE_COMM_PASSWORD", "0"),
+      ReadMethod("DEVICE_READ_METHOD", "legacy"),
       ParseDate("SYNC_START_DATE", "2026-01-01"),
       ParseInt("DEVICE_OPERATION_TIMEOUT_SECONDS", "30")
     );
@@ -192,6 +194,12 @@ sealed record AgentConfig(
     return int.TryParse(value, out var parsed)
       ? parsed
       : throw new InvalidOperationException($"{key} must be a number.");
+  }
+
+  static string ReadMethod(string key, string defaultValue) {
+    var value = Environment.GetEnvironmentVariable(key)?.Trim().ToLowerInvariant();
+    if (string.IsNullOrWhiteSpace(value)) value = defaultValue;
+    return value is "legacy" or "ssr" ? value : throw new InvalidOperationException($"{key} must be legacy or ssr.");
   }
 
   static DateTime ParseDate(string key, string defaultValue) {
@@ -272,59 +280,136 @@ sealed class ZktecoDeviceClient(AgentConfig config) {
         using var device = Connect();
         dynamic zkem = device.Instance;
 
-        if (!zkem.ReadGeneralLogData(1)) {
-          throw new InvalidOperationException("Connected to device, but ReadGeneralLogData failed.");
-        }
-
-        var punches = new List<DevicePunch>();
-        while (true) {
-          string enrollNumber = "";
-          int verifyMode = 0;
-          int inOutMode = 0;
-          int year = 0;
-          int month = 0;
-          int day = 0;
-          int hour = 0;
-          int minute = 0;
-          int second = 0;
-          int workCode = 0;
-
-          bool ok = zkem.SSR_GetGeneralLogData(
-            1,
-            out enrollNumber,
-            out verifyMode,
-            out inOutMode,
-            out year,
-            out month,
-            out day,
-            out hour,
-            out minute,
-            out second,
-            ref workCode
-          );
-
-          if (!ok) break;
-          if (string.IsNullOrWhiteSpace(enrollNumber)) continue;
-          if (!IsValidDeviceDate(year, month, day, hour, minute, second)) continue;
-
-          var localTime = new DateTime(year, month, day, hour, minute, second, DateTimeKind.Local);
-          var punchTime = new DateTimeOffset(localTime);
-          punches.Add(new DevicePunch(
-            config.DeviceId,
-            enrollNumber.Trim(),
-            localTime,
-            punchTime,
-            inOutMode.ToString(),
-            verifyMode.ToString(),
-            workCode
-          ));
-        }
-
-        return punches;
+        Log.Info("device_log_read_started", new { method = config.DeviceReadMethod });
+        return config.DeviceReadMethod switch {
+          "ssr" => ReadPunchesSsr(zkem),
+          _ => ReadPunchesLegacy(zkem),
+        };
       }), "device attendance log read");
     } finally {
       deviceLock.Release();
     }
+  }
+
+  List<DevicePunch> ReadPunchesLegacy(dynamic zkem) {
+    return ReadPunchesWithDeviceDisabled((object)zkem, () => {
+      if (!zkem.ReadGeneralLogData(1)) {
+        throw new InvalidOperationException("Connected to device, but ReadGeneralLogData failed.");
+      }
+
+      var punches = new List<DevicePunch>();
+      while (true) {
+        int terminalMachineNumber = 0;
+        int enrollNumber = 0;
+        int enrollMachineNumber = 0;
+        int verifyMode = 0;
+        int inOutMode = 0;
+        int year = 0;
+        int month = 0;
+        int day = 0;
+        int hour = 0;
+        int minute = 0;
+
+        bool ok = zkem.GetGeneralLogData(
+          1,
+          ref terminalMachineNumber,
+          ref enrollNumber,
+          ref enrollMachineNumber,
+          ref verifyMode,
+          ref inOutMode,
+          ref year,
+          ref month,
+          ref day,
+          ref hour,
+          ref minute
+        );
+
+        if (!ok) break;
+        if (enrollNumber <= 0) continue;
+        if (!IsValidDeviceDate(year, month, day, hour, minute, 0)) continue;
+
+        punches.Add(BuildPunch(enrollNumber.ToString(), year, month, day, hour, minute, 0, inOutMode, verifyMode, 0));
+      }
+
+      return punches;
+    });
+  }
+
+  List<DevicePunch> ReadPunchesSsr(dynamic zkem) {
+    return ReadPunchesWithDeviceDisabled((object)zkem, () => {
+      if (!zkem.ReadGeneralLogData(1)) {
+        throw new InvalidOperationException("Connected to device, but ReadGeneralLogData failed.");
+      }
+
+      var punches = new List<DevicePunch>();
+      while (true) {
+        string enrollNumber = "";
+        int verifyMode = 0;
+        int inOutMode = 0;
+        int year = 0;
+        int month = 0;
+        int day = 0;
+        int hour = 0;
+        int minute = 0;
+        int second = 0;
+        int workCode = 0;
+
+        bool ok = zkem.SSR_GetGeneralLogData(
+          1,
+          out enrollNumber,
+          out verifyMode,
+          out inOutMode,
+          out year,
+          out month,
+          out day,
+          out hour,
+          out minute,
+          out second,
+          ref workCode
+        );
+
+        if (!ok) break;
+        if (string.IsNullOrWhiteSpace(enrollNumber)) continue;
+        if (!IsValidDeviceDate(year, month, day, hour, minute, second)) continue;
+
+        punches.Add(BuildPunch(enrollNumber.Trim(), year, month, day, hour, minute, second, inOutMode, verifyMode, workCode));
+      }
+
+      return punches;
+    });
+  }
+
+  List<DevicePunch> ReadPunchesWithDeviceDisabled(object zkemObject, Func<List<DevicePunch>> read) {
+    dynamic zkem = zkemObject;
+    var disabled = false;
+    try {
+      disabled = zkem.EnableDevice(1, false);
+      var punches = read();
+      Log.Info("device_log_read_completed", new { method = config.DeviceReadMethod, totalRead = punches.Count });
+      return punches;
+    } finally {
+      if (disabled) {
+        try {
+          zkem.EnableDevice(1, true);
+        } catch {
+          // Best-effort device re-enable after SDK read.
+        }
+      }
+    }
+  }
+
+  DevicePunch BuildPunch(string enrollNumber, int year, int month, int day, int hour, int minute, int second, int inOutMode, int verifyMode, int workCode) {
+    var localTime = new DateTime(year, month, day, hour, minute, second, DateTimeKind.Local);
+    var punchTime = new DateTimeOffset(localTime);
+    return new DevicePunch(
+      config.DeviceId,
+      enrollNumber,
+      localTime,
+      punchTime,
+      inOutMode.ToString(),
+      verifyMode.ToString(),
+      workCode
+    );
   }
 
   async Task<T> WithDeviceTimeout<T>(Task<T> operation, string label) {

@@ -14,11 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import {
-  emailTemplateRecipientRoleOptions,
-  type EmailTemplateRecipientRole,
-  type EmailTemplateRow,
-} from "@/lib/email-templates/service";
+import type { EmailTemplateRecipientRole, EmailTemplateRow } from "@/lib/email-templates/service";
 import { cn } from "@/lib/utils";
 
 type RoutingOptions = {
@@ -62,12 +58,14 @@ const roleLabels: Record<EmailTemplateRecipientRole, string> = {
   district_manager: "District Manager",
   employee: "Employee",
   finance: "Finance",
+  hiring_manager: "Hiring Manager",
   hr: "HR",
   hr_manager: "HR Manager",
   line_manager: "Line Manager",
   manager_chain: "Full Manager Chain",
   manager_of_manager: "Manager of Manager",
   national_sales_manager: "National Sales Manager",
+  recruiter: "Recruiter",
   regional_sales_manager: "Regional Sales Manager",
   same_line_selected_titles: "Same Line Selected Titles",
   selected_lines_selected_titles: "Selected Lines + Selected Titles",
@@ -537,7 +535,7 @@ export function EmailTemplateManager({
                   <div className={cn(adminSoftPanelClassName, "p-4")} key={group.key}>
                     <p className="text-sm font-black text-[#0F172A]">{group.label}</p>
                     <div className="mt-3 space-y-2">
-                      {emailTemplateRecipientRoleOptions.map((role) => (
+                      {initialRoutingOptions.recipientRoles.map(({ label, value: role }) => (
                         <label className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm text-[#334155] hover:bg-[#FFF7ED]" key={`${group.key}-${role}`}>
                           <input
                             checked={roleChecked(draft, group.key, role)}
@@ -545,7 +543,7 @@ export function EmailTemplateManager({
                             onChange={() => toggleRole(group.key, role)}
                             type="checkbox"
                           />
-                          <span className="leading-5">{roleLabels[role]}</span>
+                          <span className="leading-5">{roleLabels[role] ?? label}</span>
                         </label>
                       ))}
                     </div>

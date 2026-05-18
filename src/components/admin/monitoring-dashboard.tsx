@@ -16,6 +16,23 @@ function formatActivityTimestamp(value: string | null) {
   return value ? new Date(value).toLocaleString() : "Unknown time";
 }
 
+function deliveryStatusClass(status: string) {
+  switch (status.toLowerCase()) {
+    case "delivered":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "bounced":
+    case "failed":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    case "complained":
+    case "suppressed":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "sent":
+      return "border-sky-200 bg-sky-50 text-sky-700";
+    default:
+      return "border-slate-200 bg-slate-50 text-slate-600";
+  }
+}
+
 function StatCard({
   icon: Icon,
   label,
@@ -169,6 +186,83 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
       </div>
 
       <AdminTableShell
+        description="Actual provider delivery status from Resend webhooks. These statuses show what happened after Resend accepted the send request."
+        title="Resend Delivery Events"
+      >
+        <div className="grid gap-4 border-b border-slate-100 p-4 sm:grid-cols-3 xl:grid-cols-6">
+          <div className={metricTileClass}>
+            <p className="text-xs font-semibold text-slate-500">Delivered (24h)</p>
+            <p className="mt-2 text-[1.35rem] font-semibold leading-tight text-emerald-700">{stats.notifications.actualDelivery24h.delivered}</p>
+          </div>
+          <div className={metricTileClass}>
+            <p className="text-xs font-semibold text-slate-500">Bounced (24h)</p>
+            <p className="mt-2 text-[1.35rem] font-semibold leading-tight text-rose-700">{stats.notifications.actualDelivery24h.bounced}</p>
+          </div>
+          <div className={metricTileClass}>
+            <p className="text-xs font-semibold text-slate-500">Failed (24h)</p>
+            <p className="mt-2 text-[1.35rem] font-semibold leading-tight text-rose-700">{stats.notifications.actualDelivery24h.failed}</p>
+          </div>
+          <div className={metricTileClass}>
+            <p className="text-xs font-semibold text-slate-500">Suppressed (24h)</p>
+            <p className="mt-2 text-[1.35rem] font-semibold leading-tight text-amber-700">{stats.notifications.actualDelivery24h.suppressed}</p>
+          </div>
+          <div className={metricTileClass}>
+            <p className="text-xs font-semibold text-slate-500">Complaints (24h)</p>
+            <p className="mt-2 text-[1.35rem] font-semibold leading-tight text-amber-700">{stats.notifications.actualDelivery24h.complained}</p>
+          </div>
+          <div className={metricTileClass}>
+            <p className="text-xs font-semibold text-slate-500">Sent Events (24h)</p>
+            <p className="mt-2 text-[1.35rem] font-semibold leading-tight text-sky-700">{stats.notifications.actualDelivery24h.sent}</p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-100 text-left">
+            <thead className="bg-slate-50/80">
+              <tr>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Status</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Subject</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Recipients</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Reason</th>
+                <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Timestamp</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {stats.notifications.recentDeliveryEvents.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-8 text-sm font-medium text-slate-400 sm:px-6" colSpan={5}>
+                    No Resend webhook delivery events recorded yet.
+                  </td>
+                </tr>
+              ) : (
+                stats.notifications.recentDeliveryEvents.map((event) => (
+                  <tr key={event.id} className="transition-colors hover:bg-orange-50/40">
+                    <td className="whitespace-nowrap px-4 py-4 align-top sm:px-6">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${deliveryStatusClass(event.status)}`}>
+                        {event.status}
+                      </span>
+                    </td>
+                    <td className="min-w-[220px] px-4 py-4 align-top text-sm font-semibold text-slate-900">
+                      {event.subject ?? "No subject"}
+                    </td>
+                    <td className="min-w-[220px] px-4 py-4 align-top font-mono text-xs text-slate-600">
+                      {event.recipients.length > 0 ? event.recipients.join(", ") : "N/A"}
+                    </td>
+                    <td className="min-w-[220px] px-4 py-4 align-top text-sm text-slate-600">
+                      {event.failureReason ?? "N/A"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right align-top text-xs font-medium text-slate-500 sm:px-6">
+                      {formatActivityTimestamp(event.occurredAt)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </AdminTableShell>
+
+      <AdminTableShell
         description="Latest authentication and user-admin events ordered by the monitoring data source."
         action={(
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
@@ -251,8 +345,8 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
                   </td>
                 </tr>
               ) : (
-                stats.recentEvents.rows.map((event, index) => (
-                  <tr key={`${event.entityType}-${event.createdAt ?? index}-${event.actorLoginId ?? "system"}`} className="transition-colors hover:bg-orange-50/40">
+                stats.recentEvents.rows.map((event) => (
+                  <tr key={event.id} className="transition-colors hover:bg-orange-50/40">
                     <td className="whitespace-nowrap px-4 py-4 align-top font-mono text-xs font-semibold text-slate-700 sm:px-6">
                       {event.actorHrId ?? "N/A"}
                     </td>

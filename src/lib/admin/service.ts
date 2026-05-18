@@ -42,6 +42,7 @@ export type AdminMonitoringSecurityEvent = {
   actorName: string | null;
   createdAt: string | null;
   entityType: string;
+  id: string;
   summary: string;
 };
 
@@ -78,8 +79,25 @@ export type AdminMonitoringStats = {
     uniqueFailedIps24h: number;
   };
   notifications: {
+    actualDelivery24h: {
+      bounced: number;
+      complained: number;
+      delivered: number;
+      failed: number;
+      sent: number;
+      suppressed: number;
+      unknown: number;
+    };
     failed24h: number;
     pending24h: number;
+    recentDeliveryEvents: Array<{
+      failureReason: string | null;
+      id: string;
+      occurredAt: string | null;
+      recipients: string[];
+      status: string;
+      subject: string | null;
+    }>;
     sent24h: number;
     totalLogs: number;
     totalQueuedEvents: number;
@@ -112,6 +130,7 @@ function toMonitoringEventRows(
     actor_login_id?: unknown;
     created_at?: string | null;
     entity_type?: string | null;
+    id?: unknown;
     summary?: string | null;
   }>,
   authUserByLoginId: Map<string, { hrId: string | null; name: string | null }>,
@@ -129,6 +148,7 @@ function toMonitoringEventRows(
       actorName: actorProfile?.name ?? null,
       createdAt: row.created_at ?? null,
       entityType: row.entity_type ?? "unknown",
+      id: String(row.id),
       summary: row.summary ?? "No summary",
     };
   });
@@ -151,9 +171,10 @@ function buildMonitoringSecurityEventsQuery(
 ) {
   let query = supabase
     .from("audit_logs")
-    .select("actor_login_id,entity_type,summary,created_at", { count: "exact" })
+    .select("id,actor_login_id,entity_type,summary,created_at", { count: "exact" })
     .or("entity_type.eq.auth_session,entity_type.eq.user")
-    .order("created_at", { ascending: params.sortAscending });
+    .order("created_at", { ascending: params.sortAscending })
+    .order("id", { ascending: params.sortAscending });
 
   if (params.entityType !== "all") {
     query = query.eq("entity_type", params.entityType);
@@ -172,6 +193,66 @@ function buildMonitoringSecurityEventsQuery(
   }
 
   return query;
+}
+
+function isMissingEmailDeliveryEventsTable(error: unknown) {
+  const code = typeof error === "object" && error && "code" in error
+    ? String((error as { code?: unknown }).code ?? "").toLowerCase()
+    : "";
+  const message = typeof error === "object" && error && "message" in error
+    ? String((error as { message?: unknown }).message ?? "").toLowerCase()
+    : String(error).toLowerCase();
+
+  return code === "42p01" || message.includes("email_delivery_events");
+}
+
+async function getEmailDeliveryMonitoring(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  sinceIso: string,
+) {
+  const emptyCounts = {
+    bounced: 0,
+    complained: 0,
+    delivered: 0,
+    failed: 0,
+    sent: 0,
+    suppressed: 0,
+    unknown: 0,
+  };
+
+  const [recent, recent24h] = await Promise.all([
+    supabase
+      .from("email_delivery_events")
+      .select("id,status,subject,recipients,failure_reason,occurred_at")
+      .order("occurred_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("email_delivery_events")
+      .select("status,occurred_at")
+      .gte("occurred_at", sinceIso),
+  ]);
+
+  if (recent.error) throw recent.error;
+  if (recent24h.error) throw recent24h.error;
+
+  const counts = { ...emptyCounts };
+  for (const row of recent24h.data ?? []) {
+    const status = String(row.status ?? "unknown").toLowerCase() as keyof typeof counts;
+    if (status in counts) counts[status] += 1;
+    else counts.unknown += 1;
+  }
+
+  return {
+    counts,
+    rows: (recent.data ?? []).map((row) => ({
+      failureReason: typeof row.failure_reason === "string" ? row.failure_reason : null,
+      id: String(row.id),
+      occurredAt: typeof row.occurred_at === "string" ? row.occurred_at : null,
+      recipients: Array.isArray(row.recipients) ? row.recipients.map(String) : [],
+      status: String(row.status ?? "unknown"),
+      subject: typeof row.subject === "string" ? row.subject : null,
+    })),
+  };
 }
 
 export async function getPhoenixAdminStats(): Promise<PhoenixAdminStats> {
@@ -300,6 +381,21 @@ export async function getAdminMonitoringStats(
 
   const notificationLogRows = notificationLogs24h.data ?? [];
   const notificationEventRows = notificationEvents24h.data ?? [];
+  const emailDeliveryMonitoring = await getEmailDeliveryMonitoring(supabase, since24h).catch((error) => {
+    if (!isMissingEmailDeliveryEventsTable(error)) throw error;
+    return {
+      counts: {
+        bounced: 0,
+        complained: 0,
+        delivered: 0,
+        failed: 0,
+        sent: 0,
+        suppressed: 0,
+        unknown: 0,
+      },
+      rows: [],
+    };
+  });
   const authFilter = normalizedSearch.toLowerCase();
   const allActorTypes = new Set<string>();
   const matchedActorLogins = bridgeData
@@ -387,8 +483,10 @@ export async function getAdminMonitoringStats(
       uniqueFailedIps24h,
     },
     notifications: {
+      actualDelivery24h: emailDeliveryMonitoring.counts,
       failed24h: notificationLogRows.filter((row) => String(row.status ?? "").toLowerCase() === "failed").length,
       pending24h: notificationEventRows.filter((row) => String(row.status ?? "").toLowerCase() === "pending").length,
+      recentDeliveryEvents: emailDeliveryMonitoring.rows,
       sent24h: notificationLogRows.filter((row) => String(row.status ?? "").toLowerCase() === "sent").length,
       totalLogs: notificationLogCount.count ?? 0,
       totalQueuedEvents: notificationEventRows.length,

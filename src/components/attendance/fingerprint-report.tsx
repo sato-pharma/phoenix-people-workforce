@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Download, FileSpreadsheet, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -33,10 +33,21 @@ function hasCellValue(row: FingerprintReportRow, column: FingerprintReportColumn
   return String(row[column.key] ?? "").trim().length > 0;
 }
 
+function stickyClass(column: FingerprintReportColumn, area: "body" | "head") {
+  const base = area === "head" ? "bg-slate-50" : "bg-white group-hover:bg-slate-50";
+  if (column.key === "deviceUserId") return `sticky left-0 z-30 w-24 min-w-24 ${base}`;
+  if (column.key === "employeeHrId") return `sticky left-24 z-30 w-32 min-w-32 ${base}`;
+  if (column.key === "employeeName") return `sticky left-56 z-30 w-60 min-w-60 shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)] ${base}`;
+  return "";
+}
+
 export function FingerprintReport({ initialData, initialError }: Props) {
   const router = useRouter();
-  const [dateFrom, setDateFrom] = useState(initialData?.filters.dateFrom ?? "2026-01-01");
-  const [dateTo, setDateTo] = useState(initialData?.filters.dateTo ?? new Date().toISOString().slice(0, 10));
+  const topScrollRef = useRef<HTMLDivElement | null>(null);
+  const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const [activeTab, setActiveTab] = useState<"daily" | "policies">("daily");
+  const [dateFrom, setDateFrom] = useState(initialData?.filters.dateFrom ?? "");
+  const [dateTo, setDateTo] = useState(initialData?.filters.dateTo ?? "");
   const [deduction, setDeduction] = useState(initialData?.filters.deduction ?? "");
   const [department, setDepartment] = useState(initialData?.filters.department ?? "");
   const [deviceUserId, setDeviceUserId] = useState(initialData?.filters.deviceUserId ?? "");
@@ -50,6 +61,14 @@ export function FingerprintReport({ initialData, initialError }: Props) {
     const rows = initialData?.rows ?? [];
     return (initialData?.columns ?? []).filter((column) => column.always || rows.some((row) => hasCellValue(row, column)));
   }, [initialData?.columns, initialData?.rows]);
+
+  function syncScroll(source: "top" | "table") {
+    const top = topScrollRef.current;
+    const table = tableScrollRef.current;
+    if (!top || !table) return;
+    if (source === "top") table.scrollLeft = top.scrollLeft;
+    else top.scrollLeft = table.scrollLeft;
+  }
 
   function filterParams() {
     const params = new URLSearchParams();
@@ -72,6 +91,8 @@ export function FingerprintReport({ initialData, initialError }: Props) {
   }
 
   const rows = initialData?.rows ?? [];
+  const policyDetails = initialData?.policyDetails ?? [];
+  const hasDateRange = Boolean(initialData?.hasDateRange);
   const exportHref = `/api/attendance/fingerprint-report/export${filterParams().toString() ? `?${filterParams().toString()}` : ""}`;
 
   return (
@@ -90,7 +111,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
         title="Fingerprint Attendance Report"
         actions={(
           <a
-            className={`inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-transparent px-4 py-2 text-sm font-medium text-text transition hover:bg-bg-muted ${rows.length === 0 ? "pointer-events-none opacity-50" : ""}`}
+            className={`inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-transparent px-4 py-2 text-sm font-medium text-text transition hover:bg-bg-muted ${!hasDateRange || rows.length === 0 ? "pointer-events-none opacity-50" : ""}`}
             href={exportHref}
           >
             <Download className="h-4 w-4" />
@@ -100,8 +121,13 @@ export function FingerprintReport({ initialData, initialError }: Props) {
       />
 
       {initialError ? <AdminCallout tone="danger">{initialError}</AdminCallout> : null}
+      {!hasDateRange ? (
+        <AdminCallout tone="warning">
+          Choose a From and To date, then click Apply. The daily fingerprint report will not load all historical logs by default.
+        </AdminCallout>
+      ) : null}
       <AdminCallout tone="neutral">
-        Deduction is a report flag only: it is marked Yes for single-punch days and days under 8 hours. It does not update payroll.
+        Schedule Start, Schedule End, and Grace Minutes are in the Policy Details tab. The daily report only shows punch/report columns.
       </AdminCallout>
 
       <AdminTableShell
@@ -209,24 +235,92 @@ export function FingerprintReport({ initialData, initialError }: Props) {
         </div>
       </AdminTableShell>
 
+      <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+        <Button type="button" variant={activeTab === "daily" ? "default" : "secondary"} onClick={() => setActiveTab("daily")}>
+          Daily Report
+        </Button>
+        <Button type="button" variant={activeTab === "policies" ? "default" : "secondary"} onClick={() => setActiveTab("policies")}>
+          Policy Details
+        </Button>
+      </div>
+
+      {activeTab === "policies" ? (
+        <AdminTableShell
+          description="Schedule and grace details resolved from employee HR_ID policy, then job title policy, then default policy."
+          title="Employee Policy Details"
+        >
+          <div className="phoenix-horizontal-scroll overflow-x-auto">
+            <table className="min-w-[1100px] border-separate border-spacing-0 text-left">
+              <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                <tr>
+                  <th className="border-b border-r border-slate-200 px-4 py-3">Employee ID</th>
+                  <th className="border-b border-r border-slate-200 px-4 py-3">Name</th>
+                  <th className="border-b border-r border-slate-200 px-4 py-3">Job Title</th>
+                  <th className="border-b border-r border-slate-200 px-4 py-3">Department</th>
+                  <th className="border-b border-r border-slate-200 px-4 py-3">Scheduled Start</th>
+                  <th className="border-b border-r border-slate-200 px-4 py-3">Scheduled End</th>
+                  <th className="border-b border-r border-slate-200 px-4 py-3">Grace Minutes</th>
+                  <th className="border-b border-r border-slate-200 px-4 py-3">Policy</th>
+                  <th className="border-b border-slate-200 px-4 py-3">Effective</th>
+                </tr>
+              </thead>
+              <tbody>
+                {policyDetails.map((row) => (
+                  <tr className="text-sm hover:bg-slate-50/60" key={row.employeeHrId}>
+                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 font-semibold text-slate-800">{row.employeeHrId}</td>
+                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.employeeName}</td>
+                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.jobTitle || "-"}</td>
+                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.department || "-"}</td>
+                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.scheduledStart || "-"}</td>
+                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.scheduledEnd || "-"}</td>
+                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.graceMinutes || "-"}</td>
+                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.policyName}</td>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-slate-700">
+                      {row.effectiveFrom || "-"}{row.effectiveTo ? ` to ${row.effectiveTo}` : ""}
+                    </td>
+                  </tr>
+                ))}
+                {policyDetails.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={9}>
+                      No employee policy details match this filter.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </AdminTableShell>
+      ) : (
       <AdminTableShell
-        description="Matches the populated fingerprint export columns, plus Status and Deduction."
+        description="Choose a From/To duration first. The first columns are frozen through Name."
         title="Fingerprint Daily Report"
       >
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left">
+        <div
+          className="phoenix-horizontal-scroll overflow-x-auto border-b border-slate-100 bg-slate-50/60"
+          ref={topScrollRef}
+          onScroll={() => syncScroll("top")}
+        >
+          <div className="h-3 min-w-[1900px]" />
+        </div>
+        <div
+          className="phoenix-horizontal-scroll max-h-[70vh] overflow-auto"
+          ref={tableScrollRef}
+          onScroll={() => syncScroll("table")}
+        >
+          <table className="min-w-[1900px] table-fixed border-separate border-spacing-0 text-left">
             <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
               <tr>
                 {visibleColumns.map((column) => (
-                  <th className="whitespace-nowrap px-4 py-3" key={column.key}>{column.label}</th>
+                  <th className={`whitespace-nowrap border-b border-r border-slate-200 px-4 py-3 ${stickyClass(column, "head")}`} key={column.key}>{column.label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr className="border-b border-slate-100 text-sm last:border-0 hover:bg-slate-50/60" key={row.sortKey}>
+                <tr className="group text-sm hover:bg-slate-50/60" key={row.sortKey}>
                   {visibleColumns.map((column) => (
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-700" key={`${row.sortKey}-${column.key}`}>
+                    <td className={`whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700 ${stickyClass(column, "body")}`} key={`${row.sortKey}-${column.key}`}>
                       {column.key === "status" ? statusBadge(row.status) : row[column.key] || "-"}
                     </td>
                   ))}
@@ -243,6 +337,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           </table>
         </div>
       </AdminTableShell>
+      )}
     </div>
   );
 }

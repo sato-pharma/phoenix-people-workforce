@@ -36,19 +36,29 @@ export default async function DataHealthPage() {
       {stats ? (
         <DataHealthDashboard salaryFlags={salaryFlagsData} stats={stats} />
       ) : (
-        <div className="p-8">
-          <Card className="mx-auto max-w-2xl border-rose-100 bg-rose-50 p-6">
-            <div className="mb-4 flex items-center gap-3 text-rose-600">
-              <AlertCircle className="h-6 w-6" />
-              <h2 className="text-lg font-bold">Data Governance Error</h2>
-            </div>
-            <p className="mb-4 text-sm text-rose-700">
-              There was a problem loading the data health audit from Supabase. Please ensure your governance views are correctly configured.
-            </p>
-            <div className="rounded-lg border border-rose-200 bg-white/50 p-3">
-              <p className="break-all font-mono text-xs text-rose-800">
-                {loadError ?? "Unknown error occurred"}
-              </p>
+        <div className="p-6 sm:p-8">
+          <Card className="relative mx-auto max-w-2xl overflow-hidden rounded-2xl border border-rose-200 bg-white p-6 shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-40 -top-44 h-[520px] w-[520px] rounded-full bg-rose-500/6 blur-3xl"
+            />
+            <div className="relative z-10">
+              <div className="mb-4 flex items-center gap-3 text-rose-700">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 ring-1 ring-rose-200">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black tracking-tight text-rose-900">Data Governance Error</h2>
+                  <p className="mt-0.5 text-sm text-rose-700">
+                    There was a problem loading the data health audit from Supabase. Please ensure your governance views are correctly configured.
+                  </p>
+                </div>
+              </div>
+              <div className="rounded-xl border border-rose-200 bg-rose-50/30 p-4">
+                <p className="break-all font-mono text-xs font-semibold text-rose-800">
+                  {loadError ?? "Unknown error occurred"}
+                </p>
+              </div>
             </div>
           </Card>
         </div>

@@ -936,10 +936,37 @@ function notificationDedupeKey(input: NotificationEmailInput) {
     .digest("hex");
 }
 
-function migratedTemplateKeyForNotification(type: EmailNotificationType | undefined) {
-  if (type === "birthday") return EMAIL_TEMPLATE_KEYS.BIRTHDAY;
-  if (type === "contract_renewal") return EMAIL_TEMPLATE_KEYS.CONTRACT_RENEWAL;
-  if (type === "general") return EMAIL_TEMPLATE_KEYS.GENERAL;
+function isProbationReminderNotification(input: NotificationEmailInput) {
+  return input.notificationType === "probation" && (
+    Boolean(metricValue(input, "Days remaining")) ||
+    Boolean(metricValue(input, "Hire date")) ||
+    input.ctaHref?.includes("/employee-portals/probation")
+  );
+}
+
+function isPasswordSetupNotification(input: NotificationEmailInput) {
+  return input.notificationType === "user_created" && (
+    input.ctaHref?.includes("/password-setup/") ||
+    input.title.toLowerCase().includes("create your phoenix workforce password")
+  );
+}
+
+function migratedTemplateKeyForNotification(input: NotificationEmailInput) {
+  if (input.notificationType === "birthday") return EMAIL_TEMPLATE_KEYS.BIRTHDAY;
+  if (input.notificationType === "contract_renewal") return EMAIL_TEMPLATE_KEYS.CONTRACT_RENEWAL;
+  if (input.notificationType === "general") return EMAIL_TEMPLATE_KEYS.GENERAL;
+  if (input.notificationType === "password_reset") return EMAIL_TEMPLATE_KEYS.PASSWORD_RESET;
+  if (input.notificationType === "probation") {
+    return isProbationReminderNotification(input)
+      ? EMAIL_TEMPLATE_KEYS.PROBATION_REMINDER
+      : EMAIL_TEMPLATE_KEYS.PROBATION_WORKFLOW;
+  }
+  if (input.notificationType === "user_created") {
+    return isPasswordSetupNotification(input)
+      ? EMAIL_TEMPLATE_KEYS.PASSWORD_SETUP
+      : EMAIL_TEMPLATE_KEYS.USER_CREATED;
+  }
+  if (input.notificationType === "resignation") return EMAIL_TEMPLATE_KEYS.RESIGNATION_WORKFLOW;
   return null;
 }
 
@@ -952,13 +979,21 @@ function metricValue(input: NotificationEmailInput, label: string) {
 
 function employeeNameFromNotification(input: NotificationEmailInput) {
   const employee = metricValue(input, "Employee");
-  return employee.replace(/\s+\([^)]*\)\s*$/, "").trim() || input.employeeHrId || "";
+  return employee.replace(/\s+\([^)]*\)\s*$/, "").trim() || metricValue(input, "Login ID") || input.employeeHrId || "";
 }
 
 function notificationMetricStatus(input: NotificationEmailInput) {
   return (input.metrics ?? [])
     .map((metric) => `${metric.label}: ${metric.value}`)
     .join(" | ");
+}
+
+function isAuthTemplateKey(templateKey: string) {
+  return (
+    templateKey === EMAIL_TEMPLATE_KEYS.PASSWORD_SETUP ||
+    templateKey === EMAIL_TEMPLATE_KEYS.PASSWORD_RESET ||
+    templateKey === EMAIL_TEMPLATE_KEYS.USER_CREATED
+  );
 }
 
 function retryDelayMinutes(attemptNumber: number) {
@@ -984,7 +1019,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   if (delivery.skipped) return delivery;
 
   const requestId = notificationDedupeKey(input);
-  const migratedTemplateKey = migratedTemplateKeyForNotification(input.notificationType);
+  const migratedTemplateKey = migratedTemplateKeyForNotification(input);
 
   if (migratedTemplateKey) {
     return sendTemplatedEmail({
@@ -992,11 +1027,13 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
       context: {
         ctaLabel: input.ctaLabel ?? "Open in Phoenix Workforce",
         ctaUrl: input.ctaHref ? dashboardUrl(input.ctaHref) : "",
-        date: metricValue(input, "Birthday") || metricValue(input, "Date") || new Date().toISOString().slice(0, 10),
+        date: metricValue(input, "Birthday") || metricValue(input, "Effective date") || metricValue(input, "Date") || new Date().toISOString().slice(0, 10),
         endDate: metricValue(input, "Renewal date"),
-        employeeHrId: input.employeeHrId ?? "",
+        employeeHrId: input.employeeHrId || metricValue(input, "HR_ID") || metricValue(input, "Login ID"),
         employeeName: employeeNameFromNotification(input),
-        recipientName: "Phoenix Team",
+        expiryText: metricValue(input, "Expires"),
+        recipientName: isAuthTemplateKey(migratedTemplateKey) ? "Phoenix User" : employeeNameFromNotification(input) || "Phoenix Team",
+        startDate: metricValue(input, "Hire date"),
         status: notificationMetricStatus(input),
         subject: input.subject,
         summary: input.summary,

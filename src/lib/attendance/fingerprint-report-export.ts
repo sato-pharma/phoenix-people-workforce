@@ -92,17 +92,52 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
     to: { column: columnCount, row: 4 },
   };
 
-  const policySheet = workbook.addWorksheet("Notes");
-  policySheet.columns = [{ width: 32 }, { width: 100 }];
-  policySheet.addRows([
+  const policySheet = workbook.addWorksheet("Policy Details", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+  policySheet.addRow([
+    "Employee ID",
+    "Name",
+    "Job Title",
+    "Department",
+    "Scheduled Start",
+    "Scheduled End",
+    "Grace Minutes",
+    "Policy",
+    "Effective From",
+    "Effective To",
+  ]);
+  styleHeader(policySheet.getRow(1));
+  for (const row of data.policyDetails) {
+    const excelRow = policySheet.addRow([
+      row.employeeHrId,
+      row.employeeName,
+      row.jobTitle,
+      row.department,
+      row.scheduledStart,
+      row.scheduledEnd,
+      row.graceMinutes,
+      row.policyName,
+      row.effectiveFrom,
+      row.effectiveTo,
+    ]);
+    styleBody(excelRow);
+  }
+  policySheet.columns.forEach((column) => {
+    column.width = 18;
+  });
+
+  const notesSheet = workbook.addWorksheet("Notes");
+  notesSheet.columns = [{ width: 32 }, { width: 100 }];
+  notesSheet.addRows([
     ["Note", "Details"],
     ["Source", "Rows are calculated from attendance_raw_punches after active device user mappings resolve to employee HR_ID."],
     ["Deduction Days / Value", "Reserved for the attendance policy engine. Current report does not mutate payroll."],
-    ["Scheduled Times", "Reserved for title/HR_ID policy rules."],
+    ["Scheduled Times", "Shown separately in the Policy Details sheet."],
   ]);
-  styleHeader(policySheet.getRow(1));
-  for (let row = 2; row <= policySheet.rowCount; row += 1) {
-    styleBody(policySheet.getRow(row));
+  styleHeader(notesSheet.getRow(1));
+  for (let row = 2; row <= notesSheet.rowCount; row += 1) {
+    styleBody(notesSheet.getRow(row));
   }
 
   return workbook;

@@ -29,6 +29,19 @@ type UploadResult = {
   received: number;
 };
 
+type SyncResult = {
+  duplicate?: number;
+  elapsedMs?: number;
+  errors?: string[];
+  failed?: number;
+  filteredBeforeStart?: number;
+  inserted?: number;
+  runId?: string;
+  sent?: number;
+  skipped?: number;
+  totalRead?: number;
+};
+
 function formatDate(value: string | null) {
   if (!value) return "No punches seen";
   return new Intl.DateTimeFormat(undefined, {
@@ -151,6 +164,8 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
   const [notice, setNotice] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "unmapped">("all");
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -193,6 +208,33 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
 
     setData(payload);
     setNotice(`Saved mapping for ${input.deviceId} / ${input.deviceUserId}.`);
+  }
+
+  async function syncNow() {
+    setSyncing(true);
+    setError(null);
+    setNotice(null);
+    setSyncResult(null);
+
+    try {
+      const response = await fetch("/api/attendance/sync-now", {
+        body: "{}",
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.message ?? "Attendance sync failed.");
+      }
+
+      setSyncResult(payload);
+      setNotice(`Sync complete: ${payload.inserted ?? 0} inserted, ${payload.duplicate ?? 0} duplicates, ${payload.skipped ?? 0} skipped.`);
+      await load();
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : "Attendance sync failed.");
+    } finally {
+      setSyncing(false);
+    }
   }
 
   async function uploadTemplate(file: File | null) {
@@ -246,6 +288,10 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
         title="Device User Mapping"
         actions={(
           <>
+            <Button disabled={!canUpdate || syncing} type="button" onClick={() => void syncNow()}>
+              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Syncing" : "Sync Now"}
+            </Button>
             <a
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-transparent px-4 py-2 text-sm font-medium text-text transition hover:bg-bg-muted"
               href="/api/attendance/device-user-mappings/template"
@@ -276,6 +322,13 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
       {!canUpdate ? <AdminCallout tone="warning">You can review mappings, but this account cannot update employee mappings.</AdminCallout> : null}
+      {syncResult ? (
+        <AdminCallout tone={(syncResult.failed ?? 0) > 0 ? "warning" : "success"}>
+          Sync summary: {syncResult.totalRead ?? 0} read, {syncResult.filteredBeforeStart ?? 0} before 2026-01-01 filtered,
+          {" "}{syncResult.sent ?? 0} sent, {syncResult.inserted ?? 0} inserted, {syncResult.duplicate ?? 0} duplicates,
+          {" "}{syncResult.skipped ?? 0} skipped, {syncResult.failed ?? 0} failed.
+        </AdminCallout>
+      ) : null}
       {uploadResult ? (
         <AdminCallout tone={uploadResult.failed > 0 ? "warning" : "success"}>
           <div className="space-y-2">
