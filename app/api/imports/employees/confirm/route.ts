@@ -14,9 +14,11 @@ import type {
   VacantPositionImportRecord,
 } from "@/lib/imports/employee-import-types";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { closeVacancyForOffer } from "@/lib/offers/service";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { shouldCloseVacancyForHire } from "@/lib/workforce/seat-lifecycle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -861,6 +863,50 @@ async function upsertEmployeeResidenceLocations(
   return { upserted: residenceRecords.length };
 }
 
+async function closeVacanciesForImportedEmployees(
+  records: EmployeeImportRecord[],
+  ids: {
+    areaIds: IdMap;
+    lineIds: IdMap;
+    positionIds: IdMap;
+  },
+) {
+  let closed = 0;
+
+  for (const record of records) {
+    const areaId = record.codes.areaCode ? ids.areaIds.get(record.codes.areaCode) ?? null : null;
+    const lineId = record.codes.lineCode ? ids.lineIds.get(record.codes.lineCode) ?? null : null;
+    const positionId = record.codes.positionCode ? ids.positionIds.get(record.codes.positionCode) ?? null : null;
+
+    if (
+      !record.hrId ||
+      !shouldCloseVacancyForHire({
+        areaId,
+        employmentStatus: record.employmentStatus,
+        lineId,
+        managerHrId: record.managerHrId,
+        positionId,
+      })
+    ) {
+      continue;
+    }
+
+    const closedVacancy = await closeVacancyForOffer({
+      area_id: areaId,
+      filled_by_hr_id: record.hrId,
+      line_id: lineId,
+      manager_hr_id: record.managerHrId,
+      position_id: positionId,
+    });
+
+    if (closedVacancy) {
+      closed += 1;
+    }
+  }
+
+  return { closed };
+}
+
 async function existingVacancyCodes(
   supabase: SupabaseClient,
   vacancyCodes: string[],
@@ -1074,6 +1120,14 @@ export async function POST(request: Request) {
       supabase,
       [...dryRunResult.rowsToInsert, ...dryRunResult.rowsToUpdate],
     );
+    const closedVacancyResult = await closeVacanciesForImportedEmployees(
+      dryRunResult.rowsToInsert,
+      {
+        areaIds,
+        lineIds,
+        positionIds,
+      },
+    );
     const vacancyResult = await upsertVacancies(
       supabase,
       dryRunResult.vacantPositionsToCreate,
@@ -1092,6 +1146,7 @@ export async function POST(request: Request) {
       createdPositions: positionResult.created,
       createdTeams: teamResult.created,
       createdVacancies: vacancyResult.created,
+      closedVacancies: closedVacancyResult.closed,
       importedEmployees: employeeResult.imported,
       importedCompensationRows: compensationResult.upserted,
       importedResidenceRows: residenceResult.upserted,
@@ -1109,6 +1164,7 @@ export async function POST(request: Request) {
         { label: "Imported employees", value: response.importedEmployees },
         { label: "Updated employees", value: response.updatedEmployees },
         { label: "Recorded vacancies", value: response.recordedVacancies },
+        { label: "Closed vacancies", value: response.closedVacancies },
         { label: "Warnings", value: response.warnings.length },
       ],
       notificationType: "general",

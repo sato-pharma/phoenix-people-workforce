@@ -1,10 +1,12 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { getDataHealthStats, type DataHealthStats } from "@/lib/admin/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { addDaysToDateOnly } from "@/lib/date-only";
 import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
 import { getPayrollDashboard } from "@/lib/payroll/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecycle";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -14,6 +16,8 @@ export type DataHealthMetrics = {
   employeeHealthRate: number;
   healthyEmployees: number;
   totalEmployees: number;
+  totalStructure: number;
+  vacantPositions: number;
   missingManager: number;
   missingJobTitle: number;
   salesLinkageRate: number;
@@ -26,6 +30,8 @@ export type AdminCommandCenterData = {
     hr: {
       activeEmployees: number;
       totalEmployees: number;
+      totalStructure: number;
+      vacantPositions: number;
       uniqueLines: number;
       uniqueAreas: number;
       employeesWithoutManagers: number;
@@ -128,13 +134,17 @@ function buildDataHealth(
 ): DataHealthMetrics {
   const employees = directory?.employees ?? [];
   const activeEmployees = employees.filter((employee) =>
-    String(employee.employmentStatus ?? "").trim().toLowerCase() !== "inactive"
+    ["active", "on_leave"].includes(String(employee.employmentStatus ?? "").trim().toLowerCase())
   );
   const missingManager = activeEmployees.filter(isMissingRequiredManager).length;
   const missingJobTitle = activeEmployees.filter((employee) => !employee.jobTitle && !employee.positionTitle).length;
   const healthyEmployees = Math.max(0, activeEmployees.length - missingManager - missingJobTitle);
   const employeeHealthRate = activeEmployees.length > 0 ? (healthyEmployees / activeEmployees.length) * 100 : 100;
   const salesLinkageRate = salesCounts.totalRows > 0 ? (salesCounts.linkedRows / salesCounts.totalRows) * 100 : 100;
+  const workforceStructure = calculateWorkforceStructureSummary({
+    activeEmployees: activeEmployees.length,
+    openVacancies: directory?.lookups.workforceVacancies.length ?? 0,
+  });
 
   return {
     employeeHealthRate,
@@ -143,7 +153,30 @@ function buildDataHealth(
     missingManager,
     salesLinkageBatch: null,
     salesLinkageRate,
-    totalEmployees: activeEmployees.length,
+    totalEmployees: workforceStructure.activeEmployees,
+    totalStructure: workforceStructure.totalStructure,
+    vacantPositions: workforceStructure.openVacancies,
+  };
+}
+
+function buildDataHealthFromStats(
+  stats: DataHealthStats,
+  salesCounts: { linkedRows: number; totalRows: number },
+): DataHealthMetrics {
+  const missingManager = stats.employeeIssues.filter((issue) => issue.health_status === "missing_manager").length;
+  const missingJobTitle = stats.employeeIssues.filter((issue) => issue.health_status === "missing_job_title").length;
+  const salesLinkageRate = salesCounts.totalRows > 0 ? (salesCounts.linkedRows / salesCounts.totalRows) * 100 : 100;
+
+  return {
+    employeeHealthRate: stats.summary.healthRate,
+    healthyEmployees: stats.summary.healthyEmployees,
+    missingJobTitle,
+    missingManager,
+    salesLinkageBatch: null,
+    salesLinkageRate,
+    totalEmployees: stats.summary.activeEmployees,
+    totalStructure: stats.summary.structureNodes,
+    vacantPositions: stats.summary.vacantPositions,
   };
 }
 
@@ -437,13 +470,14 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   const dataUnavailable: string[] = [];
 
   // Run all fetches in parallel — each is isolated so a single failure doesn't cascade
-  const [payrollResult, salesResult, employeesResult, expensesResult, recruitmentResult, riskResult, salesHealthResult, eligibleResult] =
+  const [payrollResult, salesResult, employeesResult, dataHealthResult, expensesResult, recruitmentResult, riskResult, salesHealthResult, eligibleResult] =
     await Promise.allSettled([
       canUseCompanyPayrollSummary(accessContext)
         ? fetchPayrollSummary()
         : fetchScopedPayrollSummary(accessContext),
       fetchSalesSummary(),
       getEmployeeDirectory(),
+      getDataHealthStats(),
       fetchExpenseSummary(),
       fetchRecruitmentSummary(),
       fetchRiskSummary(accessContext),
@@ -497,20 +531,29 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   let hr: AdminCommandCenterData["overview"]["hr"] = {
     activeEmployees: 0,
     totalEmployees: 0,
+    totalStructure: 0,
+    vacantPositions: 0,
     uniqueLines: 0,
     uniqueAreas: 0,
     employeesWithoutManagers: 0,
   };
-  if (employeesResult.status === "fulfilled") {
-    const e = employeesResult.value.summary;
+  const dataHealthStats = dataHealthResult.status === "fulfilled" ? dataHealthResult.value : null;
+  if (dataHealthResult.status === "rejected") {
+    dataUnavailable.push("Data health structure totals unavailable.");
+  }
+  if (employeesResult.status === "fulfilled" || dataHealthStats) {
+    const e = employeesResult.status === "fulfilled" ? employeesResult.value.summary : null;
     hr = {
-      activeEmployees: e.activeEmployees,
-      totalEmployees: e.totalEmployees,
-      uniqueLines: e.uniqueLines,
-      uniqueAreas: e.uniqueAreas,
-      employeesWithoutManagers: e.employeesWithoutManagers,
+      activeEmployees: dataHealthStats?.summary.activeEmployees ?? e?.activeEmployees ?? 0,
+      totalEmployees: e?.totalEmployees ?? dataHealthStats?.summary.totalEmployees ?? 0,
+      totalStructure: dataHealthStats?.summary.structureNodes ?? e?.totalEmployees ?? 0,
+      vacantPositions: dataHealthStats?.summary.vacantPositions ?? 0,
+      uniqueLines: e?.uniqueLines ?? 0,
+      uniqueAreas: e?.uniqueAreas ?? 0,
+      employeesWithoutManagers: e?.employeesWithoutManagers ?? 0,
     };
-  } else {
+  }
+  if (employeesResult.status === "rejected") {
     dataUnavailable.push("Employee directory unavailable.");
   }
 
@@ -563,10 +606,12 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     ? salesHealthResult.value
     : { error: "Sales linkage data unavailable.", linkedRows: 0, totalRows: 0 };
   if (salesHealth.error) dataUnavailable.push(salesHealth.error);
-  const health = buildDataHealth(
-    employeesResult.status === "fulfilled" ? employeesResult.value : null,
-    salesHealth,
-  );
+  const health = dataHealthStats
+    ? buildDataHealthFromStats(dataHealthStats, salesHealth)
+    : buildDataHealth(
+      employeesResult.status === "fulfilled" ? employeesResult.value : null,
+      salesHealth,
+    );
 
   // ── Payroll eligible count ────────────────────────────────────────────────
   const payrollEligibleCount =

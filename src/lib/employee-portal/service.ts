@@ -20,6 +20,7 @@ import {
 } from "@/lib/employee-portal/sales-scope";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
+import { salesRecordMatchesSeatContinuity } from "@/lib/workforce/seat-lifecycle";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
 import {
@@ -1174,9 +1175,156 @@ async function fetchPortalSalesRecords(
     };
 
     const data = await fetchAllRows(buildSalesQuery);
-    return data.map((row) => mapSalesRow(row as PortalSalesSourceRow));
+    const directRecords = data.map((row) => mapSalesRow(row as PortalSalesSourceRow));
+    const continuityRecords = await fetchPortalSalesSeatContinuityRecords({
+      currentHrIds: queryHrIds,
+      filters,
+      normalizedFilters,
+      supabase,
+    });
+    return mergePortalSalesRecords([...directRecords, ...continuityRecords]);
   } catch (error) {
     logPortalDebug("sales query exception", { error, hr_ids: queryHrIds });
+    return [];
+  }
+}
+
+function portalSalesRecordKey(record: PortalSalesNormalized) {
+  return [
+    record.hrId,
+    record.managerHrId ?? "",
+    record.line ?? "",
+    record.territory,
+    record.period,
+    record.product,
+    record.salesType,
+    record.salesUnits,
+    record.salesValue,
+    record.targetValue,
+  ].join("|").toLowerCase();
+}
+
+function mergePortalSalesRecords(records: PortalSalesNormalized[]) {
+  const seen = new Set<string>();
+  const merged: PortalSalesNormalized[] = [];
+
+  for (const record of records) {
+    const key = portalSalesRecordKey(record);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(record);
+  }
+
+  return merged;
+}
+
+async function fetchPreviousSeatHrIdsForReplacement(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  currentHrId: string,
+) {
+  try {
+    const { data, error } = await supabase
+      .from("position_vacancies")
+      .select("replacement_for_hr_id")
+      .eq("filled_by_hr_id", currentHrId)
+      .eq("status", "filled");
+
+    if (error) {
+      if (isMissingColumnError(error, "filled_by_hr_id") || isMissingColumnError(error, "replacement_for_hr_id")) {
+        return [];
+      }
+      throw error;
+    }
+
+    return Array.from(
+      new Set(
+        ((data ?? []) as Array<{ replacement_for_hr_id?: string | null }>)
+          .map((row) => normalizeHrId(row.replacement_for_hr_id))
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+  } catch (error) {
+    logPortalDebug("sales continuity vacancy lookup failed", { currentHrId, error });
+    return [];
+  }
+}
+
+async function fetchPortalSalesSeatContinuityRecords({
+  currentHrIds,
+  filters,
+  normalizedFilters,
+  supabase,
+}: {
+  currentHrIds: string[];
+  filters: PortalSalesFilters;
+  normalizedFilters: ReturnType<typeof resolveSalesFilterValues>;
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+}) {
+  if (currentHrIds.length === 0 || filters.line) return [];
+
+  const directory = await getEmployeeDirectory();
+  const seats = (
+    await Promise.all(
+      currentHrIds.map(async (currentHrId) => {
+        const employee = findDirectoryEmployeeByHrId(directory, currentHrId);
+        if (!employee?.lineName && !employee?.areaName) return null;
+        const previousHrIds = await fetchPreviousSeatHrIdsForReplacement(supabase, currentHrId);
+        return { currentHrId, employee, previousHrIds };
+      }),
+    )
+  ).filter((seat): seat is {
+    currentHrId: string;
+    employee: EmployeeDirectoryRow;
+    previousHrIds: string[];
+  } => Boolean(seat));
+
+  if (seats.length === 0) return [];
+
+  const continuityLines = Array.from(
+    new Set(seats.map((seat) => seat.employee.lineName).filter((line): line is string => Boolean(line))),
+  );
+  const continuityFilters = {
+    ...normalizedFilters,
+    line: normalizedFilters.line ?? (continuityLines.length > 0 ? continuityLines : undefined),
+  };
+
+  const buildContinuityQuery = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q: any = supabase.from("v_employee_portal_sales").select("*");
+    q = applySalesFiltersToQuery(q, continuityFilters);
+    return q.order("year", { ascending: false }).order("month", { ascending: false });
+  };
+
+  try {
+    const data = await fetchAllRows(buildContinuityQuery);
+    return data
+      .map((row) => mapSalesRow(row as PortalSalesSourceRow))
+      .filter((record) =>
+        seats.some(({ currentHrId, employee, previousHrIds }) =>
+          salesRecordMatchesSeatContinuity(
+            {
+              employeeHrId: record.hrId,
+              hrId: record.hrId,
+              line: record.line,
+              managerHrId: record.managerHrId,
+              territory: record.territory,
+            },
+            {
+              areaId: employee.areaId,
+              areaName: employee.areaName,
+              currentHrId,
+              lineId: employee.lineId,
+              lineName: employee.lineName,
+              managerHrId: employee.managerHrId,
+              positionId: employee.positionId,
+              positionTitle: employee.positionTitle,
+              previousHrIds,
+            },
+          ),
+        ),
+      );
+  } catch (error) {
+    logPortalDebug("sales continuity query failed", { currentHrIds, error });
     return [];
   }
 }
