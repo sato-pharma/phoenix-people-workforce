@@ -4,6 +4,7 @@ import {
 } from "@/lib/auth/permissions";
 import { parseDateOnly, toDateOnlyString } from "@/lib/date-only";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { daysUntilLifecycleDate, lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -478,7 +479,12 @@ export async function runContractRenewalWorkflow(
   return updated;
 }
 
-export async function getContractRenewalReminderCandidates(daysAhead = [60, 30, 7, 0]) {
+export async function getContractRenewalReminderCandidates(daysAhead = [
+  lifecycleRiskWindows.contractUpcomingDays,
+  lifecycleRiskWindows.contractRiskDays,
+  lifecycleRiskWindows.contractCriticalDays,
+  0,
+]) {
   const dashboard = await getContractRenewalDashboardData();
   const today = parseDateOnly(todayDate());
   if (!today) return [];
@@ -486,9 +492,8 @@ export async function getContractRenewalReminderCandidates(daysAhead = [60, 30, 
 
   return dashboard.rows
     .map((row) => {
-      const date = parseDateOnly(row.contract_renewal_date);
-      if (!date) return null;
-      const daysUntil = Math.round((date.getTime() - today.getTime()) / 86400000);
+      const daysUntil = daysUntilLifecycleDate(row.contract_renewal_date, today);
+      if (daysUntil === null) return null;
       return allowed.has(daysUntil) ? { ...row, daysUntil } : null;
     })
     .filter((row): row is NonNullable<typeof row> => Boolean(row));

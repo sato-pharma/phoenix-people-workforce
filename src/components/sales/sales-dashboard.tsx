@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/sales/format";
+import { buildSalesDashboardView } from "@/lib/sales/metrics";
 import type { SalesDashboardData } from "@/lib/sales/types";
 import { cn } from "@/lib/utils";
 
@@ -45,20 +46,6 @@ type Filters = {
   periods: string[];
   product: string;
   salesType: string;
-};
-
-type DashboardView = {
-  channelMix: AnyRow[];
-  currentPeriod?: AnyRow;
-  familyRows: AnyRow[];
-  lineRows: AnyRow[];
-  managerRows: AnyRow[];
-  previousPeriod?: AnyRow;
-  productRows: AnyRow[];
-  repRows: AnyRow[];
-  summary: AnyRow;
-  territoryRows: AnyRow[];
-  trendRows: AnyRow[];
 };
 
 const panelClassName =
@@ -132,109 +119,6 @@ function areaLabel(items: AnyRow[]) {
   if (areas.length === 0) return "-";
   if (areas.length <= 2) return areas.join(", ");
   return `${areas.slice(0, 2).join(", ")} +${areas.length - 2}`;
-}
-
-function calculateView(rows: AnyRow[], fallbackSummary: AnyRow): DashboardView {
-  const reportRows = rows.filter((row) => !isC01Row(row));
-  const totalSales = sumRows(rows, "salesValue");
-  const totalTarget = sumRows(rows, "targetValue");
-  const unitsSold = sumRows(rows, "salesUnits");
-  const activeProducts = new Set(reportRows.map((row) => valueAsText(row.product)).filter(Boolean)).size;
-  const linkedEmployees = new Set(reportRows.map((row) => valueAsText(row.employeeHrId)).filter(Boolean)).size;
-  const dsmIds = new Set(reportRows.map((row) => valueAsText(row.managerHrId)).filter(Boolean));
-  const prices = rows.map((row) => valueAsNumber(row.factoryPrice)).filter((price) => price > 0);
-  const averageFactoryPrice = prices.length ? prices.reduce((total, price) => total + price, 0) / prices.length : 0;
-
-  const trendRows = [...aggregateRows(rows, "period").entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([period, items]) => {
-      const sales = sumRows(items, "salesValue");
-      const target = sumRows(items, "targetValue");
-      return { period, sales, target, achievementRate: achievement(sales, target), linkedEmployees: new Set(items.map((item) => valueAsText(item.employeeHrId)).filter(Boolean)).size };
-    });
-
-  const managerRows = [...aggregateRows(reportRows, "managerName").entries()]
-    .map(([manager, items]) => {
-      const sales = sumRows(items, "salesValue");
-      const target = sumRows(items, "targetValue");
-      const topProduct = [...aggregateRows(items, "product").entries()]
-        .map(([product, productRows]) => ({ product, sales: sumRows(productRows, "salesValue") }))
-        .sort((left, right) => right.sales - left.sales)[0]?.product ?? "Unknown";
-      return { area: areaLabel(items), manager: cleanPersonName(manager), sales, target, achievementRate: achievement(sales, target), topProduct };
-    })
-    .sort((left, right) => valueAsNumber(right.sales) - valueAsNumber(left.sales));
-
-  const lineRows = [...aggregateRows(reportRows, "line").entries()]
-    .map(([line, items]) => {
-      const sales = sumRows(items, "salesValue");
-      const target = sumRows(items, "targetValue");
-      return { line, sales, target, achievementRate: achievement(sales, target), rows: items.length };
-    })
-    .sort((left, right) => valueAsNumber(right.sales) - valueAsNumber(left.sales));
-
-  const productRows = [...aggregateRows(reportRows, "product").entries()]
-    .map(([product, items]) => {
-      const sales = sumRows(items, "salesValue");
-      const target = sumRows(items, "targetValue");
-      return { product, family: valueAsText(items[0]?.family) || "Unknown", sales, target, achievementRate: achievement(sales, target) };
-    })
-    .sort((left, right) => valueAsNumber(right.sales) - valueAsNumber(left.sales));
-
-  const repRows = [...aggregateRows(reportRows.filter((row) => valueAsText(row.employeeName)), "employeeName").entries()]
-    .map(([rep, items]) => {
-      const sales = sumRows(items, "salesValue");
-      const target = sumRows(items, "targetValue");
-      return { area: areaLabel(items), rep: cleanPersonName(rep), sales, target, achievementRate: achievement(sales, target) };
-    })
-    .sort((left, right) => valueAsNumber(right.sales) - valueAsNumber(left.sales));
-
-  const territoryRows = [...aggregateRows(reportRows, "territory").entries()]
-    .map(([name, items]) => {
-      const sales = sumRows(items, "salesValue");
-      const target = sumRows(items, "targetValue");
-      return { name, sales, target, achievementRate: achievement(sales, target) };
-    })
-    .sort((left, right) => valueAsNumber(right.sales) - valueAsNumber(left.sales));
-
-  const familyRows = [...aggregateRows(reportRows, "family").entries()]
-    .map(([name, items]) => {
-      const sales = sumRows(items, "salesValue");
-      const target = sumRows(items, "targetValue");
-      return { name, units: sumRows(items, "salesUnits"), sales, target, achievementRate: achievement(sales, target) };
-    })
-    .sort((left, right) => valueAsNumber(right.sales) - valueAsNumber(left.sales));
-
-  const channelMix = [...aggregateRows(reportRows, "salesType").entries()]
-    .map(([name, items]) => ({ name, value: sumRows(items, "salesValue") }))
-    .sort((left, right) => valueAsNumber(right.value) - valueAsNumber(left.value));
-
-  return {
-    channelMix,
-    currentPeriod: trendRows[trendRows.length - 1],
-    familyRows,
-    lineRows,
-    managerRows,
-    previousPeriod: trendRows[trendRows.length - 2],
-    productRows,
-    repRows,
-    summary: {
-      ...fallbackSummary,
-      activeProducts,
-      approvedRecords: rows.length,
-      averageFactoryPrice,
-      dataQualityRate: dsmIds.size > 0 ? 1 : Number(fallbackSummary.dataQualityRate ?? 1),
-      dsmLinkedRecords: dsmIds.size,
-      dsmTotalRecords: dsmIds.size,
-      linkedEmployees,
-      totalApprovedSales: totalSales,
-      totalApprovedTarget: totalTarget,
-      unitsSold,
-      achievementRate: achievement(totalSales, totalTarget),
-      topManager: valueAsText(managerRows[0]?.manager) || "-",
-    },
-    territoryRows,
-    trendRows,
-  };
 }
 
 function MetricCard({
@@ -1027,7 +911,7 @@ function SalesDashboardContent({
         trendRows: data.trend ?? [],
       };
     }
-    return calculateView(filteredTransactions, data.summary ?? {});
+    return buildSalesDashboardView(filteredTransactions, data.summary ?? {});
   }, [data, filteredTransactions, transactions.length]);
   const summary = view.summary;
   const hasData = summary.approvedRecords > 0;

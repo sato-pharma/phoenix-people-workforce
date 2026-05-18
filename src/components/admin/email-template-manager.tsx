@@ -6,6 +6,7 @@ import { useMemo, useState, useTransition } from "react";
 
 import {
   AdminCallout,
+  AdminInsightChip,
   AdminPageHero,
   adminPanelClassName,
   adminSoftPanelClassName,
@@ -41,6 +42,15 @@ type Props = {
   initialPlaceholderHints: string[];
   initialRoutingOptions: RoutingOptions;
   initialTemplates: EmailTemplateRow[];
+  templateReadiness: {
+    activeTemplates: number;
+    missingBody: number;
+    missingRecipients: number;
+    missingSubject: number;
+    readinessRate: number;
+    readyTemplates: number;
+    totalTemplates: number;
+  };
 };
 
 const recipientGroups = [
@@ -175,6 +185,7 @@ export function EmailTemplateManager({
   initialPlaceholderHints,
   initialRoutingOptions,
   initialTemplates,
+  templateReadiness,
 }: Props) {
   const [templates, setTemplates] = useState(initialTemplates);
   const firstTemplate = initialTemplates[0];
@@ -364,6 +375,15 @@ export function EmailTemplateManager({
           eyebrow="Admin Communication"
           icon={<Mail className="h-3.5 w-3.5" />}
           title="Email Templates"
+          badges={
+            <div className="flex flex-wrap gap-2">
+              <AdminInsightChip>{templateReadiness.readyTemplates}/{templateReadiness.totalTemplates} ready</AdminInsightChip>
+              <AdminInsightChip tone="slate">{templateReadiness.activeTemplates} active</AdminInsightChip>
+              <AdminInsightChip tone={templateReadiness.missingRecipients > 0 ? "orange" : "slate"}>
+                {templateReadiness.missingRecipients} routing gaps
+              </AdminInsightChip>
+            </div>
+          }
           actions={
             <>
               <Button

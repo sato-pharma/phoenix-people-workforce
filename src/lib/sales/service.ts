@@ -1,10 +1,17 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { getSalesPeopleLabels, linkSalesRecords, summarizeSalesLinkage } from "@/lib/sales/employees";
+import { isDisposableSalesBatchRow, isDisposableSalesRecordRow } from "@/lib/fixture-hygiene";
 import { formatUnits } from "@/lib/sales/format";
 import { isSalesOthersBucket } from "@/lib/sales/others";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSalesScope, normalizeHrId, normalizeLineName, resolveEmployeeIdentityId, type AccessContext, type BusinessScope } from "@/lib/auth/permissions";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
+import {
+  isActiveSalesImportBatch,
+  salesAchievementRate,
+  selectCurrentSalesRecords,
+} from "@/lib/sales/metrics";
 import {
   buildSalesOwnershipContext,
   classifySalesOwnership,
@@ -261,7 +268,7 @@ function buildBatchReconciliation(records: ScopedRecord[]): SalesBatchReconcilia
 }
 
 function performanceMetric(sales: number, target: number) {
-  return target > 0 ? sales / target : 0;
+  return salesAchievementRate(sales, target);
 }
 
 function sumTargetValues(items: ScopedRecord[]) {
@@ -496,21 +503,6 @@ function chainForBatch(history: SalesHistoryRow[], batchId: string) {
   return chain;
 }
 
-function dashboardBatchSortValue(batch: SalesBatch) {
-  const statusPriority: Record<string, number> = {
-    approved: 3,
-    validated: 2,
-    needs_review: 1,
-    staged: 0,
-  };
-  return [
-    String(statusPriority[batch.status] ?? 0).padStart(2, "0"),
-    batch.approvedAt ?? "",
-    batch.createdAt,
-    String(batch.version).padStart(6, "0"),
-  ].join("|");
-}
-
 async function readAllSupabaseRows(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   table: string,
@@ -629,7 +621,10 @@ async function readSalesData(options?: { batchId?: string; approvedOnly?: boolea
   const batchResult = options?.batchId
     ? await batchesQuery
     : await readAllSupabaseRows(supabase, "sales_import_batches", { orderBy: "created_at", ascending: false });
-  const batchRows = (Array.isArray(batchResult) ? batchResult : toSafeArray(batchResult.data)) as DbRow[];
+  const rawBatchRows = (Array.isArray(batchResult) ? batchResult : toSafeArray(batchResult.data)) as DbRow[];
+  const batchRows = options?.batchId
+    ? rawBatchRows
+    : rawBatchRows.filter((row) => !isDisposableSalesBatchRow(row));
   const batchIds = batchRows.map((row) => String(row.id)).filter(Boolean);
   const recordResult = includeRecords
     ? options?.batchId
@@ -640,7 +635,10 @@ async function readSalesData(options?: { batchId?: string; approvedOnly?: boolea
           })
         : []
     : { data: [] as DbRow[] };
-  const recordRows = (Array.isArray(recordResult) ? recordResult : toSafeArray(recordResult.data)) as DbRow[];
+  const rawRecordRows = (Array.isArray(recordResult) ? recordResult : toSafeArray(recordResult.data)) as DbRow[];
+  const recordRows = options?.batchId
+    ? rawRecordRows
+    : rawRecordRows.filter((row) => !isDisposableSalesRecordRow(row));
 
   const batches = batchRows.map((row) => {
     const batch: SalesBatch = {
@@ -826,7 +824,7 @@ export async function getSalesDashboard(
     approvalBlockedReason: null,
   }));
 
-  const activeBatches = batches.filter((batch) => batch.status !== "rejected" && batch.status !== "replaced" && !batch.replacedByBatchId);
+  const activeBatches = batches.filter(isActiveSalesImportBatch);
   const activeBatchIds = activeBatches.map((batch) => batch.id);
 
   if (activeBatchIds.length === 0) {
@@ -899,28 +897,7 @@ export async function getSalesDashboard(
   }));
   records = await filterSalesRecordsForAccess(records, accessContext);
 
-  const activeBatchMap = new Map(activeBatches.map((batch) => [batch.id, batch] as const));
-  const latestBatchByRecordPeriod = new Map<string, SalesBatch>();
-
-  records.forEach((record) => {
-    const batch = activeBatchMap.get(record.batchId);
-    if (!batch || record.validationState === "failed") return;
-
-    const key = `${batch.line || record.line}::${record.year}::${record.month}`;
-    const current = latestBatchByRecordPeriod.get(key);
-    if (!current || dashboardBatchSortValue(batch) > dashboardBatchSortValue(current)) {
-      latestBatchByRecordPeriod.set(key, batch);
-    }
-  });
-
-  const approvedRecords = records.flatMap((record) => {
-    const batch = activeBatchMap.get(record.batchId);
-    if (!batch) return [];
-    if (record.validationState === "failed") return [];
-    const key = `${batch.line || record.line}::${record.year}::${record.month}`;
-    if (latestBatchByRecordPeriod.get(key)?.id !== batch.id) return [];
-    return [{ ...record, line: batch.line || record.line }];
-  });
+  const approvedRecords = selectCurrentSalesRecords(records, activeBatches);
 
   const productFilter = [...new Set([
     ...toFilterStringList(filters.product),
@@ -1178,6 +1155,17 @@ export async function getSalesDashboard(
   };
 }
 
+export async function getSalesPlatformMetrics(accessContext?: AccessContext | null) {
+  const sales = await getSalesDashboard({}, accessContext);
+  return {
+    achievementRate: Number(sales.summary.achievementRate ?? 0),
+    activeProducts: Number(sales.summary.activeProducts ?? 0),
+    dataQualityRate: Number(sales.summary.dataQualityRate ?? 1),
+    salesValue: Number(sales.summary.totalApprovedSales ?? 0),
+    targetValue: Number(sales.summary.totalApprovedTarget ?? 0),
+  };
+}
+
 export async function createSalesImport(payload: SalesImportPayload) {
   const supabase = getSupabaseAdmin();
   const linked = await linkSalesRecords(payload.records);
@@ -1276,32 +1264,75 @@ export async function updateSalesBatchStatus(
   actorDisplayName: string
 ) {
   const supabase = getSupabaseAdmin();
-  const updateData: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+  const { data: existing, error: existingError } = await supabase
+    .from("sales_import_batches")
+    .select("id,status,failed_records,is_duplicate,line,period")
+    .eq("id", batchId)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (!existing) return null;
+
+  const currentStatus = String(existing.status ?? "");
+  if (currentStatus === "replaced") {
+    throw new Error("Replaced sales batches cannot be changed.");
+  }
+  if (status === "approved") {
+    if (currentStatus === "approved") throw new Error("This sales batch is already approved.");
+    if (currentStatus === "rejected") throw new Error("Rejected sales batches must be replaced or re-uploaded.");
+    if (Number(existing.failed_records ?? 0) > 0 || existing.is_duplicate === true) {
+      throw new Error("Sales batch cannot be approved while it has failed rows or duplicate status.");
+    }
+  }
+
+  const now = new Date().toISOString();
+  const updateData: Record<string, unknown> = { status, updated_at: now };
 
   if (status === "approved") {
     updateData.approved_by = actorUsername;
-    updateData.approved_at = new Date().toISOString();
+    updateData.approved_at = now;
   } else if (status === "rejected") {
     updateData.rejected_by = actorUsername;
-    updateData.rejected_at = new Date().toISOString();
+    updateData.rejected_at = now;
   }
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("sales_import_batches")
     .update(updateData)
     .eq("id", batchId)
+    .eq("status", currentStatus)
     .select()
     .maybeSingle();
 
-  if (!data) return null;
+  if (error) {
+    throw error;
+  }
 
-  await supabase.from("sales_audit_logs").insert({
+  if (!data) throw new Error("Sales batch state changed. Refresh and retry.");
+
+  const auditResult = await supabase.from("sales_audit_logs").insert({
     action: status === "approved" ? "import.approved" : "import.rejected",
     batch_id: batchId,
     actor_username: actorUsername,
     actor_display_name: actorDisplayName,
     line: String(data.line),
     period: String(data.period),
+  });
+  if (auditResult.error) {
+    throw auditResult.error;
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: actorUsername,
+    entityId: batchId,
+    entityType: "sales_import_batch",
+    newValues: {
+      actorDisplayName,
+      line: String(data.line),
+      period: String(data.period),
+      status,
+    },
+    oldValues: { status: currentStatus },
+    summary: status === "approved" ? "Sales import approved." : "Sales import rejected.",
   });
 
   return getSalesBatchDetail(batchId);
@@ -1316,15 +1347,39 @@ export async function replaceSalesBatch(
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
 
-  await supabase.from("sales_import_batches").update({ status: "replaced", replaced_by_batch_id: replacementId, updated_at: now }).eq("id", originalId);
-  await supabase.from("sales_import_batches").update({ status: "approved", replacement_for_batch_id: originalId, approved_by: actorUsername, approved_at: now, updated_at: now }).eq("id", replacementId);
+  const originalUpdate = await supabase.from("sales_import_batches").update({ status: "replaced", replaced_by_batch_id: replacementId, updated_at: now }).eq("id", originalId);
+  if (originalUpdate.error) {
+    throw originalUpdate.error;
+  }
 
-  await supabase.from("sales_audit_logs").insert({
+  const replacementUpdate = await supabase.from("sales_import_batches").update({ status: "approved", replacement_for_batch_id: originalId, approved_by: actorUsername, approved_at: now, updated_at: now }).eq("id", replacementId);
+  if (replacementUpdate.error) {
+    throw replacementUpdate.error;
+  }
+
+  const auditResult = await supabase.from("sales_audit_logs").insert({
     action: "import.replaced",
     batch_id: originalId,
     actor_username: actorUsername,
     actor_display_name: actorDisplayName,
     metadata: { replacementId },
+  });
+  if (auditResult.error) {
+    throw auditResult.error;
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: actorUsername,
+    entityId: originalId,
+    entityType: "sales_import_batch",
+    newValues: {
+      actorDisplayName,
+      replacementId,
+      replacementStatus: "approved",
+      status: "replaced",
+    },
+    oldValues: { replacementId: null },
+    summary: "Sales import replaced.",
   });
 
   return getSalesBatchDetail(replacementId);
@@ -1332,17 +1387,40 @@ export async function replaceSalesBatch(
 
 export async function deleteSalesBatch(batchId: string, actorUsername: string, actorDisplayName: string) {
   const supabase = getSupabaseAdmin();
-  const { data } = await supabase.from("sales_import_batches").select("line, period").eq("id", batchId).maybeSingle();
+  const { data, error } = await supabase.from("sales_import_batches").select("line, period").eq("id", batchId).maybeSingle();
+  if (error) {
+    throw error;
+  }
   if (!data) return null;
 
-  await supabase.from("sales_import_batches").delete().eq("id", batchId);
-  await supabase.from("sales_audit_logs").insert({
+  const deleteResult = await supabase.from("sales_import_batches").delete().eq("id", batchId);
+  if (deleteResult.error) {
+    throw deleteResult.error;
+  }
+
+  const auditResult = await supabase.from("sales_audit_logs").insert({
     action: "import.deleted",
     batch_id: batchId,
     actor_username: actorUsername,
     actor_display_name: actorDisplayName,
     line: String(data.line),
     period: String(data.period),
+  });
+  if (auditResult.error) {
+    throw auditResult.error;
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: actorUsername,
+    entityId: batchId,
+    entityType: "sales_import_batch",
+    newValues: { deleted: true },
+    oldValues: {
+      actorDisplayName,
+      line: String(data.line),
+      period: String(data.period),
+    },
+    summary: "Sales import deleted.",
   });
 
   return true;

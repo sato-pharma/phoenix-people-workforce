@@ -1,10 +1,10 @@
-import { getOfferDashboard } from "@/lib/offers/service";
 import { getPayrollDashboard } from "@/lib/payroll/service";
-import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
+import { getPayrollExpenseDashboardData } from "@/lib/payroll/expenses";
+import { payrollExpensePeriodKey } from "@/lib/payroll/expense-metrics";
 import { getSalesDashboard } from "@/lib/sales/service";
-import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { addDaysToDateOnly } from "@/lib/date-only";
+import { getOperationalRecentActivity } from "@/lib/operations/events";
+import { getPlatformMetrics } from "@/lib/platform/metrics";
 import {
   canAccess,
   filterEmployeeDirectoryForAccess,
@@ -12,6 +12,25 @@ import {
 } from "@/lib/auth/permissions";
 
 export type OverviewDashboardData = {
+  attendance: {
+    activeMappings: number;
+    activePolicies: number;
+    currentMonthWorkingDays: number;
+    mappingReadinessRate: number;
+    missingDeviceMappings: number;
+    policyCoverageRate: number;
+    totalDeviceMappings: number;
+    totalPolicies: number;
+  };
+  leave: {
+    approvedRequests: number;
+    managerDecisionActions: number;
+    paidDays: number;
+    pendingRequests: number;
+    rejectedRequests: number;
+    totalRequests: number;
+    unpaidDays: number;
+  };
   expenses: {
     approvedAmount: number;
     reportCount: number;
@@ -84,111 +103,8 @@ export type OverviewDashboardData = {
   };
 };
 
-type OverviewContractRow = {
-    contract_renewal_date?: string | null;
-    full_name?: string | null;
-};
-
-type OverviewSalaryBatchActivityRow = {
-  approved_at?: string | null;
-  approved_by?: string | null;
-  created_at?: string | null;
-  month?: number | null;
-  status?: string | null;
-  updated_at?: string | null;
-  uploaded_by?: string | null;
-  year?: number | null;
-};
-
-type OverviewSalesAuditRow = {
-  action?: string | null;
-  actor_display_name?: string | null;
-  actor_username?: string | null;
-  created_at?: string | null;
-  line?: string | null;
-  period?: string | null;
-};
-
-type OverviewOfferAuditRow = {
-  action?: string | null;
-  actor_reference?: string | null;
-  actor_type?: string | null;
-  created_at?: string | null;
-  details?: Record<string, unknown> | null;
-};
-
-const databaseQueryTimeoutMs = 8000;
-
-function getRequiredEnv(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is required.`);
-  return value;
-}
-
-async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const url = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL").replace(/\/+$/g, "");
-  const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), databaseQueryTimeoutMs);
-
-  try {
-    const response = await fetch(`${url}/rest/v1/${path}`, {
-      ...init,
-      cache: "no-store",
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        "Content-Type": "application/json",
-        ...(init.headers ?? {}),
-      },
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    const payload = text ? JSON.parse(text) : null;
-
-    if (!response.ok) {
-      throw new Error(
-        typeof payload?.message === "string"
-          ? payload.message
-          : `Supabase request failed with ${response.status}.`,
-      );
-    }
-
-    return payload as T;
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("Supabase request timed out.");
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 function sum<T>(items: T[], fn: (item: T) => number) {
   return items.reduce((acc, item) => acc + (fn(item) || 0), 0);
-}
-
-function isValidDate(date: unknown): boolean {
-  if (!date) return false;
-  if (!(typeof date === "string" || typeof date === "number" || date instanceof Date)) {
-    return false;
-  }
-  const d = new Date(date);
-  return d instanceof Date && !isNaN(d.getTime());
-}
-
-function daysBetween(date1: Date, date2: Date): number {
-  const diffTime = date1.getTime() - date2.getTime();
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-}
-
-function isWithinFutureDays(date: string | Date, days: number): boolean {
-  if (!isValidDate(date)) return false;
-  const now = new Date();
-  const targetDate = new Date(date);
-  const diff = daysBetween(targetDate, now);
-  return diff > 0 && diff <= days;
 }
 
 function monthKey(dateStr: string) {
@@ -215,155 +131,56 @@ function periodLabel(period: string) {
   return date.toLocaleString("en-US", { month: "short" });
 }
 
-function expensePeriodKey(row: { payoutMonth: number; payoutYear: number; date: string }) {
-  if (row.payoutMonth && row.payoutYear) {
-    return periodKeyFromMonthYear(row.payoutMonth, row.payoutYear);
-  }
-  return monthKey(row.date);
-}
-
-function payrollActivityDescription(row: OverviewSalaryBatchActivityRow) {
-  const period = row.month && row.year ? `${row.month}/${row.year}` : "the selected period";
-  if (row.status === "part1_ready") return `Payroll Part 1 ready for ${period}`;
-  if (row.status === "part1_paid") return `Payroll Part 1 paid for ${period}`;
-  if (row.status === "adjustments_open") return `Payroll adjustments open for ${period}`;
-  if (row.status === "part2_ready") return `Payroll Part 2 ready for ${period}`;
-  if (row.status === "under_review") return `Payroll under review for ${period}`;
-  if (row.status === "approved") return `Payroll approved for ${period}`;
-  if (row.status === "locked") return `Payroll locked for ${period}`;
-  if (row.status === "rejected") return `Payroll rejected for ${period}`;
-  return `Payroll uploaded for ${period}`;
-}
-
-function salesActivityDescription(row: OverviewSalesAuditRow) {
-  switch (row.action) {
-    case "import.approved":
-      return `Sales batch approved for ${row.period ?? "the selected period"}`;
-    case "import.rejected":
-      return `Sales batch rejected for ${row.period ?? "the selected period"}`;
-    case "import.replaced":
-      return `Sales batch replaced for ${row.period ?? "the selected period"}`;
-    case "import.deleted":
-      return `Sales batch deleted for ${row.period ?? "the selected period"}`;
-    default:
-      return `Sales activity recorded for ${row.period ?? row.line ?? "the selected scope"}`;
-  }
-}
-
-function offerActivityDescription(row: OverviewOfferAuditRow) {
-  switch (row.action) {
-    case "offer_sent":
-      return "Job offer sent";
-    case "offer_accepted":
-      return "Job offer accepted";
-    case "offer_rejected":
-      return "Job offer rejected";
-    case "offer_expired":
-    case "offer_expired_on_click":
-      return "Job offer expired";
-    default:
-      return "Offer activity recorded";
-  }
-}
-
 export async function getOverviewDashboard(
   accessContext: AccessContext,
 ): Promise<OverviewDashboardData> {
   const [
     canReadEmployees,
     canReadExpenses,
-    canReadOffers,
     canReadPayroll,
     canReadSales,
-    canReadVacancies,
-    canReadContracts,
-    canReadProbation,
   ] = await Promise.all([
     canAccess(accessContext, "employees", "read"),
     canAccess(accessContext, "expenses", "read"),
-    canAccess(accessContext, "offers", "read"),
     canAccess(accessContext, "payroll", "read"),
     canAccess(accessContext, "sales", "read"),
-    canAccess(accessContext, "vacancies", "read"),
-    canAccess(accessContext, "contracts", "read"),
-    canAccess(accessContext, "probation", "read"),
   ]);
 
   const [
+    platformMetrics,
     payroll,
     sales,
     employees,
-    expenses,
-    expenseReports,
-    offersData,
-    contracts,
-    salaryBatchActivity,
-    salesAuditActivity,
-    offerAuditActivity,
+    expenseDashboard,
+    operationalActivity,
   ] = await Promise.all([
+    getPlatformMetrics(accessContext),
     canReadPayroll ? getPayrollDashboard(undefined, accessContext) : Promise.resolve(null),
     canReadSales ? getSalesDashboard({}, accessContext) : Promise.resolve(null),
     canReadEmployees
       ? getEmployeeDirectory().then((directory) => filterEmployeeDirectoryForAccess(directory, accessContext))
       : Promise.resolve(null),
     canReadExpenses
-      ? listPayrollExpenses(undefined, undefined, undefined, accessContext)
-      : Promise.resolve([]),
-    canReadExpenses
-      ? listPayrollExpenseReports(accessContext)
-      : Promise.resolve([]),
-    canReadOffers ? getOfferDashboard() : Promise.resolve(null),
-    canReadContracts
-      ? getContractRenewalDashboardData(accessContext)
-          .then((dashboard) =>
-            dashboard.rows.map((row) => ({
-              contract_renewal_date: row.contract_renewal_date,
-              full_name: row.full_name,
-            })),
-          )
-          .catch(() => [])
-      : Promise.resolve([]),
-    canReadPayroll
-      ? supabaseRest<OverviewSalaryBatchActivityRow[]>(
-          `salary_batches?${new URLSearchParams({
-            order: "updated_at.desc",
-            select: "month,year,status,uploaded_by,approved_by,approved_at,created_at,updated_at",
-          })}`,
-        ).catch(() => [])
-      : Promise.resolve([]),
-    canReadSales
-      ? supabaseRest<OverviewSalesAuditRow[]>(
-          `sales_audit_logs?${new URLSearchParams({
-            limit: "5",
-            order: "created_at.desc",
-            select: "action,actor_username,actor_display_name,line,period,created_at",
-          })}`,
-        ).catch(() => [])
-      : Promise.resolve([]),
-    canReadOffers
-      ? supabaseRest<OverviewOfferAuditRow[]>(
-          `job_offer_audit_logs?${new URLSearchParams({
-            limit: "5",
-            order: "created_at.desc",
-            select: "action,actor_type,actor_reference,details,created_at",
-          })}`,
-        ).catch(() => [])
-      : Promise.resolve([]),
+      ? getPayrollExpenseDashboardData(accessContext)
+      : Promise.resolve(null),
+    getOperationalRecentActivity(accessContext, { limit: 5 }).catch(() => ({
+      failureCount24h: 0,
+      lastEventAt: null,
+      recent: [],
+      staleSources: ["Operational activity unavailable."],
+      totalEvents24h: 0,
+    })),
   ]);
 
   const payrollRecords = payroll?.records ?? [];
-  const expenseRows = Array.isArray(expenses) ? expenses : [];
-  const salesSummary = sales?.summary ?? {};
+  const expenseRows = expenseDashboard?.expenses ?? [];
   const salesLinePerformance = Array.isArray(sales?.linePerformance)
     ? (sales.linePerformance as Array<Record<string, unknown>>)
     : [];
   const salesTrend = Array.isArray(sales?.trend)
     ? (sales.trend as Array<Record<string, unknown>>)
     : [];
-  const activeEmployees = employees?.summary.activeEmployees ?? 0;
-  const totalEmployees = employees?.summary.totalEmployees ?? 0;
-  const totalExpenses = sum(expenseRows, (row) => row.total);
-  const approvedExpenses = sum(expenseRows.filter((row) => row.hrApproved), (row) => row.total);
+  const totalEmployees = platformMetrics.workforce.totalEmployees;
   
   const statusDistribution = Array.from(
     (employees?.employees ?? []).reduce((map, emp) => {
@@ -395,20 +212,7 @@ export async function getOverviewDashboard(
     color: ["#F97316", "#3B82F6", "#10B981", "#EF4444", "#94A3B8"][i] || "#94A3B8"
   }));
 
-  const expenseBreakdown = Array.from(
-    expenseRows.reduce((map, row) => {
-      const category = row.requestType || row.tripType || "Others";
-      map.set(category, (map.get(category) || 0) + row.total);
-      return map;
-    }, new Map<string, number>())
-  )
-    .map(([name, val]) => ({ 
-      name, 
-      val,
-      breakdown: `Total for ${name}`
-    }))
-    .sort((a, b) => b.val - a.val)
-    .slice(0, 5);
+  const expenseBreakdown = expenseDashboard?.breakdown ?? [];
 
   const salesByProduct = salesLinePerformance.slice(0, 4).map((lp, i) => ({
     name: asString(lp.line) || `Product ${String.fromCharCode(65 + i)}`,
@@ -447,29 +251,21 @@ export async function getOverviewDashboard(
     .sort((a, b) => a.m.localeCompare(b.m))
     .slice(-6);
 
-  const expenseTrend = Array.from(
-    expenseRows.reduce((map, row) => {
-      if (row.date) {
-        const key = expensePeriodKey(row);
-        map.set(key, (map.get(key) || 0) + row.total);
-      }
-      return map;
-    }, new Map<string, number>())
-  )
-    .map(([period, amount]) => ({ period, amount }))
-    .sort((a, b) => a.period.localeCompare(b.period))
-    .slice(-6);
+  const expenseTrend = (expenseDashboard?.trend ?? []).map((row) => ({
+    amount: row.amount,
+    period: row.period,
+  }));
 
-  const totalRevenue = Number(salesSummary.totalApprovedSales ?? 0);
+  const totalRevenue = platformMetrics.sales.salesValue;
   const latestPayrollPeriod = payroll?.batch
     ? periodKeyFromMonthYear(payroll.batch.month, payroll.batch.year)
     : null;
   const currentPeriodExpenses = latestPayrollPeriod
     ? expenseRows
-        .filter((row) => expensePeriodKey(row) === latestPayrollPeriod)
+        .filter((row) => payrollExpensePeriodKey(row) === latestPayrollPeriod)
         .reduce((total, row) => total + row.total, 0)
     : 0;
-  const peopleCost = (payroll?.summary.totalNet ?? 0) + currentPeriodExpenses;
+  const peopleCost = platformMetrics.payroll.net + currentPeriodExpenses;
 
   const visiblePayrollBatches = (payroll?.batches ?? []).slice(0, 6);
   const payrollTrendDashboards = await Promise.all(
@@ -495,7 +291,7 @@ export async function getOverviewDashboard(
   const expenseCostByPeriod = new Map<string, number>();
   expenseRows.forEach((row) => {
     if (!row.date) return;
-    const key = expensePeriodKey(row);
+    const key = payrollExpensePeriodKey(row);
     expenseCostByPeriod.set(key, (expenseCostByPeriod.get(key) ?? 0) + row.total);
   });
 
@@ -515,106 +311,68 @@ export async function getOverviewDashboard(
     cost: (payrollCostByPeriod.get(period) ?? 0) + (expenseCostByPeriod.get(period) ?? 0),
   }));
 
-  // Risk calculation
-  const now = new Date();
-  const riskAlerts: OverviewDashboardData["risk"]["alerts"] = [];
-  
-  (contracts || []).forEach((c) => {
-    const renewalDateValue = c.contract_renewal_date ?? null;
-    if (renewalDateValue && isWithinFutureDays(renewalDateValue, 30)) {
-      const renewalDate = new Date(renewalDateValue);
-      riskAlerts.push({
-        type: "contract",
-        name: c.full_name ?? "Unknown employee",
-        date: renewalDateValue,
-        days: daysBetween(renewalDate, now)
-      });
-    }
-  });
-
-  (canReadProbation ? employees?.employees || [] : []).forEach((employee) => {
-    const probationEndDateValue = addDaysToDateOnly(employee.hireDate, 90);
-    if (probationEndDateValue && isWithinFutureDays(probationEndDateValue, 30)) {
-      const endDate = new Date(probationEndDateValue);
-      riskAlerts.push({
-        type: "probation",
-        name: employee.fullName ?? "Unknown employee",
-        date: probationEndDateValue,
-        days: daysBetween(endDate, now)
-      });
-    }
-  });
-
-  const openVacancies = canReadVacancies
-    ? (
-        await supabaseRest<Array<{ id: number }>>(
-          `position_vacancies?${new URLSearchParams({ select: "id", status: "eq.open" })}`,
-        ).catch(() => [])
-      ).length
-    : 0;
-
-  const recentActivity = [
-    ...salaryBatchActivity.slice(0, 3).map((row) => ({
-      description: payrollActivityDescription(row),
-      module: "Payroll",
-      status: asString(row.status ?? "uploaded"),
-      timestamp: asString(row.updated_at ?? row.created_at ?? new Date().toISOString()),
-      userName: asString(row.approved_by ?? row.uploaded_by ?? "system"),
-    })),
-    ...salesAuditActivity.slice(0, 3).map((row) => ({
-      description: salesActivityDescription(row),
-      module: "Sales",
-      status: asString(row.action ?? "recorded").replace(/^import\./, ""),
-      timestamp: asString(row.created_at ?? new Date().toISOString()),
-      userName: asString(row.actor_display_name ?? row.actor_username ?? "system"),
-    })),
-    ...offerAuditActivity.slice(0, 3).map((row) => ({
-      description: offerActivityDescription(row),
-      module: "Recruitment",
-      status: asString(row.action ?? "recorded").replace(/^offer_/, ""),
-      timestamp: asString(row.created_at ?? new Date().toISOString()),
-      userName: asString(row.actor_reference ?? row.actor_type ?? "system"),
-    })),
-  ]
-    .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
-    .slice(0, 5);
+  const riskAlerts = platformMetrics.lifecycleRisk.alerts.map((alert) => ({
+    date: alert.date,
+    days: alert.days,
+    name: alert.name,
+    type: alert.type,
+  }));
 
   return {
+    attendance: {
+      activeMappings: platformMetrics.attendance.activeMappings,
+      activePolicies: platformMetrics.attendance.activePolicies,
+      currentMonthWorkingDays: platformMetrics.attendance.currentMonthWorkingDays,
+      mappingReadinessRate: platformMetrics.attendance.mappingReadinessRate,
+      missingDeviceMappings: platformMetrics.attendance.missingDeviceMappings,
+      policyCoverageRate: platformMetrics.attendance.policyCoverageRate,
+      totalDeviceMappings: platformMetrics.attendance.totalDeviceMappings,
+      totalPolicies: platformMetrics.attendance.totalPolicies,
+    },
+    leave: {
+      approvedRequests: platformMetrics.leave.approvedRequests,
+      managerDecisionActions: platformMetrics.leave.managerDecisionActions,
+      paidDays: platformMetrics.leave.paidDays,
+      pendingRequests: platformMetrics.leave.pendingRequests,
+      rejectedRequests: platformMetrics.leave.rejectedRequests,
+      totalRequests: platformMetrics.leave.totalRequests,
+      unpaidDays: platformMetrics.leave.unpaidDays,
+    },
     expenses: {
-      approvedAmount: approvedExpenses,
-      reportCount: Array.isArray(expenseReports) ? expenseReports.length : 0,
-      totalAmount: totalExpenses,
-      totalRows: expenseRows.length,
+      approvedAmount: platformMetrics.expenses.approvedAmount,
+      reportCount: platformMetrics.expenses.reportCount,
+      totalAmount: platformMetrics.expenses.totalAmount,
+      totalRows: platformMetrics.expenses.totalRows,
       trend: expenseTrend,
       breakdown: expenseBreakdown,
     },
     hr: {
-      activeEmployees,
-      employeeHealthRate: totalEmployees ? activeEmployees / totalEmployees : 1,
-      employeesWithoutManagers: employees?.summary.employeesWithoutManagers ?? 0,
-      totalEmployees,
-      uniqueAreas: employees?.summary.uniqueAreas ?? 0,
-      uniqueLines: employees?.summary.uniqueLines ?? 0,
+      activeEmployees: platformMetrics.workforce.activeEmployees,
+      employeeHealthRate: platformMetrics.workforce.employeeHealthRate,
+      employeesWithoutManagers: platformMetrics.workforce.employeesWithoutManagers,
+      totalEmployees: platformMetrics.workforce.totalEmployees,
+      uniqueAreas: platformMetrics.workforce.uniqueAreas,
+      uniqueLines: platformMetrics.workforce.uniqueLines,
       statusDistribution,
       hireExitTrend,
     },
     payroll: {
-      additions: payroll?.summary.totalAdditions ?? 0,
-      batchLabel: payroll?.batch ? `${payroll.batch.month}/${payroll.batch.year}` : "No batch",
-      employees: payroll?.summary.totalEmployees ?? 0,
-      flags: payroll?.flags.length ?? 0,
-      gross: payroll?.summary.totalGross ?? 0,
-      governmentDeductions: payroll?.summary.totalGovernmentDeductions ?? 0,
-      net: payroll?.summary.totalNet ?? 0,
-      readinessRate: payroll?.summary.readinessRate ?? 1,
+      additions: platformMetrics.payroll.additions,
+      batchLabel: platformMetrics.payroll.batchLabel,
+      employees: platformMetrics.payroll.employees,
+      flags: platformMetrics.payroll.flags,
+      gross: platformMetrics.payroll.gross,
+      governmentDeductions: platformMetrics.payroll.governmentDeductions,
+      net: platformMetrics.payroll.net,
+      readinessRate: platformMetrics.payroll.readinessRate,
       distribution: payrollDistribution,
     },
     sales: {
-      achievementRate: Number(salesSummary.achievementRate ?? 0),
-      activeProducts: Number(salesSummary.activeProducts ?? 0),
-      dataQualityRate: Number(salesSummary.dataQualityRate ?? 1),
-      salesValue: totalRevenue,
-      targetValue: Number(salesSummary.totalApprovedTarget ?? 0),
+      achievementRate: platformMetrics.sales.achievementRate,
+      activeProducts: platformMetrics.sales.activeProducts,
+      dataQualityRate: platformMetrics.sales.dataQualityRate,
+      salesValue: platformMetrics.sales.salesValue,
+      targetValue: platformMetrics.sales.targetValue,
       trend: salesTrend.map((row) => ({
         period: asString(row.period),
         sales: asNumber(row.sales),
@@ -623,21 +381,21 @@ export async function getOverviewDashboard(
       distribution: salesDistribution,
     },
     recruitment: {
-      acceptanceRate: offersData?.summary.acceptanceRate ?? 0,
-      totalOffers: offersData?.summary.totalOffers ?? 0,
-      pendingOffers: offersData?.summary.pendingOffers ?? 0,
-      acceptedOffers: offersData?.summary.acceptedOffers ?? 0,
-      rejectedOffers: offersData?.summary.rejectedOffers ?? 0,
+      acceptanceRate: platformMetrics.recruitment.acceptanceRate,
+      totalOffers: platformMetrics.recruitment.totalOffers,
+      pendingOffers: platformMetrics.recruitment.pendingOffers,
+      acceptedOffers: platformMetrics.recruitment.acceptedOffers,
+      rejectedOffers: platformMetrics.recruitment.rejectedOffers,
       pipeline: [
-        { name: "Accepted", value: offersData?.summary.acceptedOffers ?? 0, color: "#10B981" },
-        { name: "Pending", value: offersData?.summary.pendingOffers ?? 0, color: "#3B82F6" },
-        { name: "Rejected", value: offersData?.summary.rejectedOffers ?? 0, color: "#EF4444" },
+        { name: "Accepted", value: platformMetrics.recruitment.acceptedOffers, color: "#10B981" },
+        { name: "Pending", value: platformMetrics.recruitment.pendingOffers, color: "#3B82F6" },
+        { name: "Rejected", value: platformMetrics.recruitment.rejectedOffers, color: "#EF4444" },
       ]
     },
     risk: {
-      expiringContracts: riskAlerts.filter(a => a.type === "contract").length,
-      probationEndings: riskAlerts.filter(a => a.type === "probation").length,
-      alerts: riskAlerts.sort((a, b) => a.days - b.days),
+      expiringContracts: platformMetrics.lifecycleRisk.expiringContracts,
+      probationEndings: platformMetrics.lifecycleRisk.probationEndings,
+      alerts: riskAlerts,
     },
     financial: {
       revenue: totalRevenue,
@@ -646,10 +404,10 @@ export async function getOverviewDashboard(
       trend: financialTrend,
     },
     activity: {
-      recent: recentActivity,
+      recent: operationalActivity.recent,
     },
     vacancies: {
-      openVacancies,
+      openVacancies: platformMetrics.workforce.openVacancies,
     },
   };
 }

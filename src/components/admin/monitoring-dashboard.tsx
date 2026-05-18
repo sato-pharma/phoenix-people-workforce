@@ -10,7 +10,7 @@ import {
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { Card } from "@/components/ui/card";
-import type { AdminMonitoringStats } from "@/lib/admin/service";
+import type { AdminMonitoringStats } from "@/lib/operations/events";
 
 function formatActivityTimestamp(value: string | null) {
   return value ? new Date(value).toLocaleString() : "Unknown time";
@@ -80,6 +80,9 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
   const activityTypeOptions = Array.from(new Set(stats.recentEvents.entityTypes)).sort();
   const activityStart = (safeActivityPage - 1) * activityPageSize + 1;
   const activityEnd = Math.min(safeActivityPage * activityPageSize, activityTotal);
+  const lastOperationalEvent = stats.operations.lastEventAt
+    ? formatActivityTimestamp(stats.operations.lastEventAt)
+    : "No events";
 
   const currentFilters = {
     pageSize: stats.recentEvents.pageSize,
@@ -109,6 +112,7 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
             <AdminInsightChip>{coveragePercent} auth coverage</AdminInsightChip>
             <AdminInsightChip tone="slate">{stats.auth.failedAttempts24h} failed logins</AdminInsightChip>
             <AdminInsightChip tone="orange">{stats.notifications.pending24h} queued events</AdminInsightChip>
+            <AdminInsightChip tone="slate">{stats.operations.totalEvents24h} workflow events</AdminInsightChip>
           </>
         )}
         description="Operational monitoring for auth stability, notification throughput, and security-sensitive activity using live Supabase data."
@@ -135,12 +139,13 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
         </AdminCallout>
       )}
 
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-6">
         <StatCard icon={Radar} label="Auth Bridge Coverage" tone="emerald" value={coveragePercent} />
         <StatCard icon={ShieldAlert} label="Failed Logins (24h)" tone={stats.auth.failedAttempts24h > 0 ? "rose" : "slate"} value={stats.auth.failedAttempts24h} />
         <StatCard icon={Lock} label="Locked Accounts" tone={stats.auth.lockedAccounts > 0 ? "rose" : "slate"} value={stats.auth.lockedAccounts} />
         <StatCard icon={UserRoundCog} label="Forced Password Reset" tone={stats.auth.forcedPasswordResets > 0 ? "amber" : "slate"} value={stats.auth.forcedPasswordResets} />
         <StatCard icon={BellRing} label="Queued Notification Events" tone={stats.notifications.pending24h > 0 ? "amber" : "slate"} value={stats.notifications.pending24h} />
+        <StatCard icon={Activity} label="Workflow Failures (24h)" tone={stats.operations.failureCount24h > 0 ? "rose" : "slate"} value={stats.operations.failureCount24h} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -184,6 +189,65 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
           </div>
         </AdminTableShell>
       </div>
+
+      <AdminTableShell
+        description="Workflow activity collected from payroll, sales import, and offer audit sources."
+        title="Operational Activity"
+      >
+        <div className="grid gap-4 border-b border-slate-100 p-4 md:grid-cols-3">
+          <div className={metricTileClass}>
+            <p className="text-xs font-semibold text-slate-500">Workflow events (24h)</p>
+            <p className="mt-2 text-[1.6rem] font-semibold leading-tight text-slate-950">{stats.operations.totalEvents24h}</p>
+          </div>
+          <div className={metricTileClass}>
+            <p className="text-xs font-semibold text-slate-500">Failures (24h)</p>
+            <p className="mt-2 text-[1.6rem] font-semibold leading-tight text-slate-950">{stats.operations.failureCount24h}</p>
+          </div>
+          <div className={metricTileClass}>
+            <p className="text-xs font-semibold text-slate-500">Latest workflow event</p>
+            <p className="mt-2 break-words text-sm font-semibold leading-tight text-slate-950">{lastOperationalEvent}</p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-100 text-left">
+            <thead className="bg-slate-50/80">
+              <tr>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Module</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Activity</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">User</th>
+                <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Timestamp</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {stats.operations.recent.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-8 text-sm font-medium text-slate-400 sm:px-6" colSpan={4}>
+                    No payroll, sales, or recruitment workflow events recorded yet.
+                  </td>
+                </tr>
+              ) : (
+                stats.operations.recent.map((event, index) => (
+                  <tr key={`${event.module}-${event.timestamp}-${index}`} className="transition-colors hover:bg-orange-50/40">
+                    <td className="whitespace-nowrap px-4 py-4 align-top sm:px-6">
+                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">
+                        {event.module}
+                      </span>
+                    </td>
+                    <td className="min-w-[260px] px-4 py-4 align-top">
+                      <p className="text-sm font-medium leading-5 text-slate-800">{event.description}</p>
+                      <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">{event.status}</p>
+                    </td>
+                    <td className="min-w-[180px] px-4 py-4 align-top text-sm font-semibold text-slate-900">{event.userName}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right align-top text-xs font-medium text-slate-500 sm:px-6">
+                      {formatActivityTimestamp(event.timestamp)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </AdminTableShell>
 
       <AdminTableShell
         description="Actual provider delivery status from Resend webhooks. These statuses show what happened after Resend accepted the send request."

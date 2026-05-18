@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { adminShellBackgroundClassName } from "@/components/admin/admin-design-system";
+import { adminShellBackgroundClassName } from "@/components/admin/admin-design-tokens";
 import {
   getPermissionMatrix,
   permissionActions,

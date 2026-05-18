@@ -1,4 +1,10 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import {
+  attendanceDeviceUserKey,
+  normalizeAttendanceHrId,
+  resolveDeviceMappingStatus,
+  summarizeDeviceUserMappings,
+} from "@/lib/attendance/metrics";
 
 export type AttendanceEmployeeOption = {
   fullName: string;
@@ -52,18 +58,8 @@ type RawPunchDbRow = {
   punch_time: string;
 };
 
-function mapKey(deviceId: string, deviceUserId: string) {
-  return `${deviceId}\u0000${deviceUserId}`;
-}
-
 function normalizeHrId(value: string | null | undefined) {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  return normalized.length > 0 ? normalized : null;
-}
-
-function statusFor(row: Pick<AttendanceDeviceUserMappingRow, "employeeHrId" | "isActive">): AttendanceDeviceUserMappingRow["status"] {
-  if (!row.employeeHrId) return "unmapped";
-  return row.isActive ? "active" : "inactive";
+  return normalizeAttendanceHrId(value);
 }
 
 export async function getAttendanceDeviceUserMappingDashboard(): Promise<AttendanceDeviceUserMappingDashboard> {
@@ -100,7 +96,7 @@ export async function getAttendanceDeviceUserMappingDashboard(): Promise<Attenda
 
   const latestPunchByDeviceUser = new Map<string, string>();
   for (const punch of (punchResult.data ?? []) as RawPunchDbRow[]) {
-    const key = mapKey(punch.device_id, punch.device_user_id);
+    const key = attendanceDeviceUserKey(punch.device_id, punch.device_user_id);
     if (!latestPunchByDeviceUser.has(key)) {
       latestPunchByDeviceUser.set(key, punch.punch_time);
     }
@@ -108,7 +104,7 @@ export async function getAttendanceDeviceUserMappingDashboard(): Promise<Attenda
 
   const mappings: AttendanceDeviceUserMappingRow[] = ((mappingResult.data ?? []) as MappingDbRow[]).map((row) => {
     const employeeHrId = normalizeHrId(row.employee_hr_id);
-    const key = mapKey(row.device_id, row.device_user_id);
+    const key = attendanceDeviceUserKey(row.device_id, row.device_user_id);
     const latestPunchAt = latestPunchByDeviceUser.get(key) ?? row.last_seen_punch_at ?? null;
     const mapped = {
       createdAt: row.created_at,
@@ -125,7 +121,7 @@ export async function getAttendanceDeviceUserMappingDashboard(): Promise<Attenda
 
     return {
       ...mapped,
-      status: statusFor(mapped),
+      status: resolveDeviceMappingStatus(mapped),
     };
   });
 
@@ -138,12 +134,7 @@ export async function getAttendanceDeviceUserMappingDashboard(): Promise<Attenda
     employees,
     mappings,
     recentUnmapped,
-    summary: {
-      active: mappings.filter((mapping) => mapping.status === "active").length,
-      inactive: mappings.filter((mapping) => mapping.status === "inactive").length,
-      total: mappings.length,
-      unmapped: mappings.filter((mapping) => mapping.status === "unmapped").length,
-    },
+    summary: summarizeDeviceUserMappings(mappings),
   };
 }
 

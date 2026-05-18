@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canSeeHrScopedRecord, type AccessContext } from "@/lib/auth/permissions";
+import { summarizeHiringDocumentReadiness } from "@/lib/recruitment/onboarding-metrics";
 import type {
   CreateHiringDocumentDefinitionInput,
   HiringDocumentDefinition,
@@ -151,37 +152,7 @@ function defaultEntry(documentId: string): HiringDocumentEntry {
 }
 
 function summarize(employees: HiringDocumentEmployeeRow[], documents: HiringDocumentDefinition[]) {
-  let submittedDocuments = 0;
-  let missingDocuments = 0;
-  let pendingDocuments = 0;
-  let dueDocuments = 0;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  for (const employee of employees) {
-    for (const document of documents) {
-      const entry = employee.documents[document.id] ?? defaultEntry(document.id);
-      if (entry.status === "submitted") submittedDocuments += 1;
-      if (entry.status === "missing") missingDocuments += 1;
-      if (entry.status === "pending") pendingDocuments += 1;
-      if (entry.status === "missing" && entry.dueDate) {
-        const dueDate = new Date(`${entry.dueDate}T00:00:00`);
-        if (!Number.isNaN(dueDate.getTime()) && dueDate <= today) dueDocuments += 1;
-      }
-    }
-  }
-
-  const totalDocumentSlots = employees.length * documents.length;
-
-  return {
-    completeDocuments: submittedDocuments,
-    dueDocuments,
-    employees: employees.length,
-    missingDocuments,
-    pendingDocuments,
-    submittedDocuments,
-    totalDocumentSlots,
-  };
+  return summarizeHiringDocumentReadiness(employees, documents);
 }
 
 export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDashboardData> {

@@ -5,7 +5,16 @@ import { useState } from "react";
 
 import type { AuditLogFilter, AuditLogPage } from "@/lib/admin/audit";
 
-const ENTITY_TYPES = ["all", "auth_session", "user", "permission_override", "salary_flag"];
+const ENTITY_TYPES = [
+  "all",
+  "auth_session",
+  "user",
+  "permission_override",
+  "salary_flag",
+  "sales_import_batch",
+  "payroll_batch",
+  "vacation_request",
+];
 
 function formatDate(iso: string) {
   try {

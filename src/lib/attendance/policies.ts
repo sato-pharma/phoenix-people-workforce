@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { summarizeAttendancePolicies } from "@/lib/attendance/metrics";
 
 export type AttendancePolicyTargetType = "default" | "employee_hr_id" | "job_title";
 export type AttendancePolicyEventType = "absence" | "early_leave" | "late" | "single_punch";
@@ -192,13 +193,7 @@ export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDa
     employees,
     jobTitles,
     policies,
-    summary: {
-      active: policies.filter((policy) => policy.isActive).length,
-      defaultPolicies: policies.filter((policy) => policy.targetType === "default").length,
-      employeePolicies: policies.filter((policy) => policy.targetType === "employee_hr_id").length,
-      jobTitlePolicies: policies.filter((policy) => policy.targetType === "job_title").length,
-      total: policies.length,
-    },
+    summary: summarizeAttendancePolicies(policies),
   };
 }
 

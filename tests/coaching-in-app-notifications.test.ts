@@ -51,4 +51,14 @@ export function runCoachingInAppNotificationTests() {
     /event_key: eventKey/,
     "In-app notifications must store the dedupe key as event_key.",
   );
+  assert.doesNotMatch(
+    notificationSource,
+    /recipients\.cs\.\[/,
+    "In-app notification reads must not hand-build invalid text[] contains filters.",
+  );
+  assert.match(
+    notificationSource,
+    /\.overlaps\("recipients"/,
+    "In-app notification reads must use Supabase's array filter builder for recipient matching.",
+  );
 }

@@ -592,7 +592,13 @@ function OrganogramView({
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
   const dsmRows = rows
     .filter((row) => isDistrictSalesManager(row))
-    .sort((left, right) => left.fullName.localeCompare(right.fullName));
+    .sort((left, right) =>
+      left.type === right.type
+        ? left.fullName.localeCompare(right.fullName)
+        : left.type === "employee"
+          ? -1
+          : 1,
+    );
   const dsmHrIds = new Set(dsmRows.map((row) => normalizeHrIdKey(row.hrId)));
   const dsmNameKeys = new Set(
     dsmRows.map((row) => normalizeNameKey(row.fullName)),
@@ -607,10 +613,19 @@ function OrganogramView({
   const assignedToDsm = new Set<string>();
   const dsmGroups: ManagerLane[] = groupBy(dsmRows, managerIdentityKey).map(([, dsms]) => {
     const primaryDsm = [...dsms].sort((left, right) =>
-      left.fullName.localeCompare(right.fullName),
+      left.type === right.type
+        ? left.fullName.localeCompare(right.fullName)
+        : left.type === "employee"
+          ? -1
+          : 1,
     )[0];
     const members = teamRows
       .filter((row) => {
+        const key = rowKey(row);
+        if (assignedToDsm.has(key)) {
+          return false;
+        }
+
         return dsms.some(
           (dsm) =>
             reportsToKnownManager(row, dsm, rows) ||
@@ -638,9 +653,12 @@ function OrganogramView({
   });
   const dsmLaneKey = (lane: ManagerLane) =>
     lane.dsm ? managerIdentityKey(lane.dsm) : `${lane.name}:${lane.title}`;
+  const visibleDsmGroups = dsmGroups.filter(
+    (lane) => lane.members.length > 0 || lane.dsm?.type !== "vacancy",
+  );
   const childDsmLaneKeys = new Set<string>();
   const rsmGroups: TopManagerLane[] = rsmRows.map((rsm) => {
-    const childLanes = dsmGroups.filter((lane) => {
+    const childLanes = visibleDsmGroups.filter((lane) => {
       if (!lane.dsm) return false;
       return reportsToKnownManager(lane.dsm, rsm, rows);
     });
@@ -656,7 +674,7 @@ function OrganogramView({
       title: rsm.positionTitle ?? rsm.jobTitle ?? "Regional Sales Manager",
     };
   });
-  const directDsmGroups = dsmGroups.filter((lane) => !childDsmLaneKeys.has(dsmLaneKey(lane)));
+  const directDsmGroups = visibleDsmGroups.filter((lane) => !childDsmLaneKeys.has(dsmLaneKey(lane)));
   const marketingManagers = teamRows
     .filter((row) => isMarketingManager(row))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));

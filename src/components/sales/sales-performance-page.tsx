@@ -36,6 +36,7 @@ import {
   YAxis,
 } from "recharts";
 import { formatCurrency, formatPercent } from "@/lib/sales/format";
+import { buildSalesProductAnalytics } from "@/lib/sales/metrics";
 import type {
   SalesDashboardData,
   SalesProductPerformanceRow,
@@ -220,100 +221,10 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
     };
   }, [data, normalizedSearchQuery]);
 
-  const salesAnalytics = useMemo(() => {
-    if (!filteredData) return null;
-
-    const products = filteredData.productPerformance;
-    const totalSales = data?.summary?.totalApprovedSales ?? 0;
-    const totalTarget = data?.summary?.totalApprovedTarget ?? 0;
-
-    const achievementRate = totalTarget > 0 ? totalSales / totalTarget : 0;
-    const remainingGap = Math.max(0, totalTarget - totalSales);
-    const kpis = {
-      totalSales,
-      totalTarget,
-      achievementRate,
-      remainingGap,
-    };
-
-    const topBySales = [...products].sort((a, b) => b.sales - a.sales);
-    const topProducts = topBySales.slice(0, 5);
-
-    const bottomProducts = [...products]
-      .sort((a, b) => a.achievementRate - b.achievementRate)
-      .slice(0, 5);
-
-    const top5Sales = topBySales.slice(0, 5);
-    const top5SalesTotal = top5Sales.reduce((sum, product) => sum + product.sales, 0);
-    const others = Math.max(0, totalSales - top5SalesTotal);
-
-    const productMix = [
-      ...top5Sales.map((product) => ({
-        name: product.product,
-        value: product.sales,
-        contribution: totalSales > 0 ? (product.sales / totalSales) * 100 : 0,
-      })),
-      ...(others > 0 ? [{ name: "Remaining Products", value: others, contribution: totalSales > 0 ? (others / totalSales) * 100 : 0 }] : []),
-    ];
-
-    const insights: Array<{
-      type: "positive" | "warning" | "risk" | "info";
-      title: string;
-      description: string;
-    }> = [];
-
-      if (products.length === 0) {
-        insights.push({
-          type: "info",
-          title: "No Product Data",
-          description: "No product performance data available. Adjust filters or check data linkage.",
-        });
-      } else {
-        let topProduct = products[0];
-        let belowTargetCount = 0;
-        let aboveTargetCount = 0;
-        for (const product of products) {
-          if ((product.achievementRate ?? 0) < 0.5) belowTargetCount++;
-          if ((product.achievementRate ?? 0) >= 1) aboveTargetCount++;
-          if (topProduct && (product.sales || 0) > (topProduct.sales || 0)) {
-            topProduct = product;
-          }
-      }
-
-      if (topProduct) {
-        const contribution = totalSales > 0 ? (topProduct.sales / totalSales) * 100 : 0;
-        insights.push({
-          type: "positive",
-          title: "Top Performing Product",
-          description: `${topProduct.product} contributes ${contribution.toFixed(1)}% of total sales with EGP ${formatCurrency(topProduct.sales)}.`,
-        });
-      }
-
-      if (belowTargetCount > 0) {
-        insights.push({
-          type: "risk",
-          title: "Products Below 50% Achievement",
-          description: `${belowTargetCount} product(s) are below 50% of target. Review performance and support.`,
-        });
-      }
-
-      if (aboveTargetCount > 0) {
-        insights.push({
-          type: "positive",
-          title: "Exceeding Target",
-          description: `${aboveTargetCount} product(s) have achieved or exceeded their target.`,
-        });
-      }
-    }
-
-    return {
-      kpis,
-      topProducts,
-      bottomProducts,
-      productMix,
-      insights,
-    };
-  }, [data, filteredData]);
+  const salesAnalytics = useMemo(
+    () => data ? buildSalesProductAnalytics(data, normalizedSearchQuery) : null,
+    [data, normalizedSearchQuery],
+  );
 
   const kpis = salesAnalytics?.kpis ?? null;
   const topProducts = salesAnalytics?.topProducts ?? [];

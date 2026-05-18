@@ -1,7 +1,12 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import {
+  normalizeAttendanceHrId,
+  resolveActiveAttendancePolicy,
+  resolveAttendanceStatus,
+  summarizeFingerprintRows,
+} from "@/lib/attendance/metrics";
 
 const reportTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
-const standardDayMs = 8 * 60 * 60 * 1000;
 
 export type FingerprintReportColumnKey =
   | "deviceUserId"
@@ -195,8 +200,7 @@ function durationText(milliseconds: number) {
 }
 
 function normalizeHrId(value: string | null | undefined) {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  return normalized.length > 0 ? normalized : null;
+  return normalizeAttendanceHrId(value);
 }
 
 function employeeProfileScore(employee: EmployeeRow) {
@@ -219,16 +223,6 @@ function uniqueEmployeesByHrId(rows: EmployeeRow[]) {
     }
   }
   return Array.from(byHrId.values());
-}
-
-function statusFor(visiblePunchCount: number, durationMs: number) {
-  if (visiblePunchCount <= 1) {
-    return { deductionDays: "", deductionValue: "", recommendedAction: "Review missing punch", status: "Single punch" };
-  }
-  if (durationMs < standardDayMs) {
-    return { deductionDays: "", deductionValue: "", recommendedAction: "Review short day", status: "Short day" };
-  }
-  return { deductionDays: "0", deductionValue: "0", recommendedAction: "No action", status: "Complete" };
 }
 
 function contains(value: string, filter: string) {
@@ -263,37 +257,6 @@ function textMatches(row: FingerprintReportRow, filters: FingerprintReportData["
     row.deductionValue,
   ].join(" ").toLowerCase();
   return haystack.includes(search.toLowerCase());
-}
-
-function policyMatchesEmployee(policy: PolicyRow, employee: EmployeeRow) {
-  const targetType = String(policy.target_type ?? "");
-  const targetValue = String(policy.target_value ?? "").trim().toUpperCase();
-  if (targetType === "employee_hr_id") return targetValue === normalizeHrId(employee.hr_id);
-  if (targetType === "job_title") return targetValue === String(employee.job_title ?? "").trim().toUpperCase();
-  return targetType === "default";
-}
-
-function rankPolicy(policy: PolicyRow) {
-  if (policy.target_type === "employee_hr_id") return 3;
-  if (policy.target_type === "job_title") return 2;
-  if (policy.target_type === "default") return 1;
-  return 0;
-}
-
-function activePolicyFor(employee: EmployeeRow, policies: PolicyRow[], dateFrom: string, dateTo: string) {
-  return policies
-    .filter((policy) => policy.is_active !== false)
-    .filter((policy) => policyMatchesEmployee(policy, employee))
-    .filter((policy) => {
-      const effectiveFrom = policy.effective_from || "1900-01-01";
-      const effectiveTo = policy.effective_to || "9999-12-31";
-      return effectiveFrom <= dateTo && effectiveTo >= dateFrom;
-    })
-    .sort((left, right) => {
-      const rankDiff = rankPolicy(right) - rankPolicy(left);
-      if (rankDiff !== 0) return rankDiff;
-      return String(right.effective_from ?? "").localeCompare(String(left.effective_from ?? ""));
-    })[0];
 }
 
 function employeePolicyMatches(row: FingerprintPolicyDetailRow, filters: FingerprintReportData["filters"]) {
@@ -390,7 +353,7 @@ export async function getFingerprintAttendanceReport(input: {
   const policyRows = (policyResult.data ?? []) as PolicyRow[];
   const policyDetails = allEmployees
     .map((employee) => {
-      const policy = activePolicyFor(employee, policyRows, effectiveDateFrom, effectiveDateTo);
+      const policy = resolveActiveAttendancePolicy(employee, policyRows, effectiveDateFrom, effectiveDateTo);
       const department = typeof employee.department_id === "number"
         ? departmentMap.get(employee.department_id) ?? ""
         : "";
@@ -480,7 +443,7 @@ export async function getFingerprintAttendanceReport(input: {
     const durationMs = firstPunch && lastPunch && hasDistinctVisibleLastPunch
       ? lastPunch.getTime() - firstPunch.getTime()
       : 0;
-    const status = statusFor(visiblePunchTimes.length, durationMs);
+    const status = resolveAttendanceStatus(visiblePunchTimes.length, durationMs);
     const employee = employeeMap.get(bucket.employeeHrId);
     const department = typeof employee?.department_id === "number"
       ? departmentMap.get(employee.department_id) ?? ""
@@ -518,12 +481,6 @@ export async function getFingerprintAttendanceReport(input: {
     hasDateRange,
     policyDetails,
     rows,
-    summary: {
-      complete: rows.filter((row) => row.status === "Complete").length,
-      deductions: rows.filter((row) => row.recommendedAction !== "No action").length,
-      rows: rows.length,
-      shortDays: rows.filter((row) => row.status === "Short day").length,
-      singlePunches: rows.filter((row) => row.status === "Single punch").length,
-    },
+    summary: summarizeFingerprintRows(rows),
   };
 }

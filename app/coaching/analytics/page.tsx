@@ -19,6 +19,10 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
+  buildCoachingReportAnalytics,
+  filterCoachingQuarterlySummaryByReports,
+} from "@/lib/coaching/analytics";
+import {
   getCoachingQuarterlySummary,
   getCoachingReports,
   getCoachingScoreAnalyticsForReports,
@@ -35,44 +39,8 @@ import { formatEmployeeDisplayName } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-const completedStatuses = new Set(["submitted", "reviewed_by_employee", "locked"]);
-
 function isEmployeePortalRole(access: AccessContext) {
   return access.role === "Employee" || access.role === "Medical Rep";
-}
-
-function average(values: number[]) {
-  if (values.length === 0) return 0;
-  return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2));
-}
-
-function buildAnalytics(reports: CoachingReportSummaryRow[]) {
-  const completed = reports.filter((report) => completedStatuses.has(report.status));
-  const scores = completed.map((report) => report.finalScorePercent).filter(Number.isFinite);
-  const zoneCounts = completed.reduce<Record<string, number>>((accumulator, report) => {
-    const zone = report.performanceZone ?? "unclassified";
-    accumulator[zone] = (accumulator[zone] ?? 0) + 1;
-    return accumulator;
-  }, {});
-
-  return {
-    averageScore: average(scores),
-    bestScore: scores.length ? Math.max(...scores) : 0,
-    coachingCount: completed.length,
-    draftCount: reports.filter((report) => report.status === "draft").length,
-    latestReport: completed[0] ?? null,
-    lowestScore: scores.length ? Math.min(...scores) : 0,
-    pendingAcknowledgmentCount: completed.filter((report) => report.status === "submitted" && !report.acknowledged).length,
-    zoneCounts,
-  };
-}
-
-function filterQuarterlyByReports(
-  quarterlySummary: CoachingQuarterlySummaryRow[],
-  reports: CoachingReportSummaryRow[],
-) {
-  const visibleHrIds = new Set(reports.map((report) => report.medicalRepHrId.toLowerCase()));
-  return quarterlySummary.filter((row) => visibleHrIds.has(row.medicalRepHrId.toLowerCase()));
 }
 
 function toOptionMap(
@@ -151,10 +119,10 @@ export default async function CoachingAnalyticsPage() {
     getEmployeeDirectoryRows(),
   ]);
 
-  const visibleQuarterlySummary = filterQuarterlyByReports(quarterlySummary, reports);
+  const visibleQuarterlySummary = filterCoachingQuarterlySummaryByReports(quarterlySummary, reports, true);
   const scoreAnalytics = await getCoachingScoreAnalyticsForReports(reports);
   const payload: CoachingAnalyticsPayload = {
-    analytics: buildAnalytics(reports),
+    analytics: buildCoachingReportAnalytics(reports),
     ...scoreAnalytics,
     quarterlySummary: visibleQuarterlySummary,
     reports,

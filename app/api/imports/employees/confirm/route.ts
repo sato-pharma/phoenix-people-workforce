@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import { invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
@@ -1128,6 +1129,11 @@ export async function POST(request: Request) {
         positionIds,
       },
     );
+    const accessProvisioning = await provisionNewHireAccess({
+      actor: { loginId: access.loginId ?? null, role: access.role },
+      hrIds: dryRunResult.rowsToInsert.map((record) => record.hrId),
+      source: "bulk employee import",
+    });
     const vacancyResult = await upsertVacancies(
       supabase,
       dryRunResult.vacantPositionsToCreate,
@@ -1140,6 +1146,9 @@ export async function POST(request: Request) {
     );
 
     const response = {
+      accessUsersCreated: accessProvisioning.created,
+      accessUsersFailed: accessProvisioning.failed,
+      accessUsersSkipped: accessProvisioning.skipped,
       createdAreas: areaResult.created,
       createdDepartments: departmentResult.created,
       createdLines: lineResult.created,
@@ -1154,6 +1163,7 @@ export async function POST(request: Request) {
       skippedVacantRows: 0,
       updatedEmployees: employeeResult.updated,
       updatedVacancies: vacancyResult.updated,
+      userAccessProvisioning: accessProvisioning.results,
       warnings: dryRunResult.validationWarnings,
     };
 
@@ -1162,6 +1172,7 @@ export async function POST(request: Request) {
       ctaLabel: "Open employee directory",
       metrics: [
         { label: "Imported employees", value: response.importedEmployees },
+        { label: "Access users created", value: response.accessUsersCreated },
         { label: "Updated employees", value: response.updatedEmployees },
         { label: "Recorded vacancies", value: response.recordedVacancies },
         { label: "Closed vacancies", value: response.closedVacancies },

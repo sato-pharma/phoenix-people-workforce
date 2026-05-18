@@ -11,17 +11,26 @@ import {
   type BusinessScope,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
-import { addDaysToDateOnly, daysBetweenDateOnly, parseDateOnly } from "@/lib/date-only";
-import { nextContractAnniversary } from "@/lib/contracts/date-rules";
+import { daysBetweenDateOnly } from "@/lib/date-only";
 import {
   createPortalSalesLineScope,
   employeeMatchesPortalSalesScope,
   salesRecordMatchesPortalSalesScope,
 } from "@/lib/employee-portal/sales-scope";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import {
+  isDateWithinLifecycleRiskWindow,
+  lifecycleRiskWindows,
+  probationEndDateFromHire,
+  resolveEmployeeLifecycleJourney,
+} from "@/lib/lifecycle-risk/metrics";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { salesRecordMatchesSeatContinuity } from "@/lib/workforce/seat-lifecycle";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
+import {
+  buildPayrollExpenseDsmSummaries,
+  summarizePayrollExpenses,
+} from "@/lib/payroll/expense-metrics";
 import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
 import {
   calculateBaseSalary,
@@ -37,6 +46,7 @@ import type {
   PayrollExpenseReport,
   SalaryRecord,
 } from "@/lib/payroll/types";
+import { buildPortalSalesDashboardMetrics } from "@/lib/sales/metrics";
 import type { SalesDashboardData } from "@/lib/sales/types";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { canonicalSalesLine } from "@/lib/sales/others";
@@ -767,56 +777,12 @@ async function listEmployeeDocuments(hrId: string): Promise<EmployeePortalDocume
   return [];
 }
 
-function addDays(dateStr: string | null, days: number): string | null {
-  return addDaysToDateOnly(dateStr, days);
-}
-
-function daysFromToday(dateStr: string | null): number | null {
-  const target = parseDateOnly(dateStr);
-  if (!target || Number.isNaN(target.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-}
-
 function computeEmploymentJourney(employee: EmployeeDirectoryRow): EmploymentJourney {
-  const hireDate = employee.hireDate ?? null;
-  const probationEndDate = addDays(hireDate, 90);
-  const contractRenewalDate = employee.contractRenewalDate ?? nextContractAnniversary(hireDate);
-  const contractSignedDate = hireDate;
-
-  const serviceDurationDays = Math.max(0, daysBetweenDateOnly(hireDate) ?? 0);
-
-  const daysUntilRenewal = daysFromToday(contractRenewalDate);
-  const daysUntilProbationEnd = daysFromToday(probationEndDate);
-  const probationActive = daysUntilProbationEnd !== null && daysUntilProbationEnd > 0;
-
-  let renewalRisk: EmploymentJourney["renewalRisk"] = "missing";
-  if (daysUntilRenewal !== null) {
-    if (daysUntilRenewal < 0) {
-      renewalRisk = "healthy";
-    } else if (daysUntilRenewal <= 7) {
-      renewalRisk = "critical";
-    } else if (daysUntilRenewal <= 30) {
-      renewalRisk = "warning";
-    } else if (daysUntilRenewal <= 60) {
-      renewalRisk = "upcoming";
-    } else {
-      renewalRisk = "healthy";
-    }
-  }
-
-  return {
-    contractRenewalDate,
-    contractSignedDate,
-    daysUntilProbationEnd,
-    daysUntilRenewal,
-    hireDate,
-    probationActive,
-    probationEndDate,
-    renewalRisk,
-    serviceDurationDays,
-  };
+  return resolveEmployeeLifecycleJourney({
+    contractRenewalDate: employee.contractRenewalDate,
+    contractSignedDate: employee.hireDate,
+    hireDate: employee.hireDate,
+  });
 }
 
 async function fetchSalaryTrend(
@@ -1353,7 +1319,7 @@ async function getEmployeePortalSalesDashboard(
   filters: PortalSalesFilters = {},
 ): Promise<SalesDashboardData> {
   const salesRecords = await fetchPortalSalesRecords(hrId, filters);
-  const dashboard = buildEmployeeSalesDashboard(salesRecords);
+  const dashboard = buildPortalSalesDashboardMetrics(salesRecords);
 
   const products = Array.from(new Set(salesRecords.map((record) => record.product).filter(Boolean))).sort();
   const families = Array.from(new Set(salesRecords.map((record) => record.family).filter(Boolean))).sort();
@@ -1934,8 +1900,7 @@ export async function getEmployeePortalData(
 
   const employmentJourney = computeEmploymentJourney(employee);
 
-  const approvedExpenses = expenses.filter((row) => row.hrApproved);
-  const pendingExpenses = expenses.filter((row) => !row.hrApproved);
+  const expenseSummary = summarizePayrollExpenses(expenses);
   const latestEntries = expenses.slice(0, 5).map((row) => ({
     date: row.date ?? "",
     description: row.description ?? row.requestType ?? "Expense",
@@ -1947,7 +1912,7 @@ export async function getEmployeePortalData(
 
   const insightInput = {
     employmentJourney,
-    expenses: { approvedAmount: approvedExpenses.reduce((s, r) => s + r.total, 0) },
+    expenses: { approvedAmount: expenseSummary.approvedAmount },
     latestRecord,
     previousRecord,
     salaryTrend,
@@ -2005,14 +1970,14 @@ export async function getEmployeePortalData(
     employee,
     employmentJourney,
     expenses: {
-      approvedAmount: approvedExpenses.reduce((sum, row) => sum + row.total, 0),
-      approvedCount: approvedExpenses.length,
+      approvedAmount: expenseSummary.approvedAmount,
+      approvedCount: expenseSummary.approvedRows,
       latestEntries,
       latestSubmittedAt: latestExpense?.date ?? expenseReports[0]?.createdAt ?? null,
-      pendingAmount: pendingExpenses.reduce((sum, row) => sum + row.total, 0),
-      pendingCount: pendingExpenses.length,
-      totalAmount: expenses.reduce((sum, row) => sum + row.total, 0),
-      totalRows: expenses.length,
+      pendingAmount: expenseSummary.pendingAmount,
+      pendingCount: expenseSummary.pendingRows,
+      totalAmount: expenseSummary.totalAmount,
+      totalRows: expenseSummary.totalRows,
     },
     insights,
     latestRecord,
@@ -2235,7 +2200,7 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
     ? findDirectoryEmployeeByHrId(directory, currentHrId) ?? fallbackEmployee(access)
     : fallbackEmployee(access);
   const employmentJourney = computeEmploymentJourney(employee);
-  const daysUntilProbationEnd = daysFromToday(addDays(employee.hireDate ?? null, 90));
+  const daysUntilProbationEnd = employmentJourney.daysUntilProbationEnd;
   const probationStatus: MedicalRepPortalData["hrContract"]["probationStatus"] =
     daysUntilProbationEnd === null
       ? "Not Started"
@@ -2546,11 +2511,9 @@ function resolvePortalWorkforceScopeLabel({
 function countRowsWithUpcomingDate(
   rows: EmployeeDirectoryRow[],
   resolveDate: (row: EmployeeDirectoryRow) => string | null,
+  windowDays: number,
 ) {
-  return rows.filter((row) => {
-    const days = daysFromToday(resolveDate(row));
-    return days !== null && days >= 0 && days <= 30;
-  }).length;
+  return rows.filter((row) => isDateWithinLifecycleRiskWindow(resolveDate(row), windowDays)).length;
 }
 
 function buildPortalWorkforceSummary({
@@ -2572,8 +2535,16 @@ function buildPortalWorkforceSummary({
     const days = daysBetweenDateOnly(row.hireDate, today);
     return days !== null && days >= 0 && days <= 30;
   }).length;
-  const probationDue = countRowsWithUpcomingDate(rows, (row) => addDays(row.hireDate, 90));
-  const contractRenewalsDue = countRowsWithUpcomingDate(rows, (row) => row.contractRenewalDate ?? nextContractAnniversary(row.hireDate));
+  const probationDue = countRowsWithUpcomingDate(
+    rows,
+    (row) => probationEndDateFromHire(row.hireDate),
+    lifecycleRiskWindows.probationRiskDays,
+  );
+  const contractRenewalsDue = countRowsWithUpcomingDate(
+    rows,
+    (row) => computeEmploymentJourney(row).contractRenewalDate,
+    lifecycleRiskWindows.contractRiskDays,
+  );
   const dataCoveragePercent = rows.length > 0
     ? ((rows.length - missingEmployeeData) / rows.length) * 100
     : 0;
@@ -3526,6 +3497,9 @@ export async function getMedicalRepPortalData(
     ...fixedIncentiveSalary,
     achievementPercent: allPeriodsAchievementPercent,
   });
+  const workloadExpenseSummary = summarizePayrollExpenses(expenses);
+  const activeExpenseEmployeeCount = new Set(expenses.map((expense) => expense.hrId).filter(Boolean)).size;
+  const activeExpenseDays = new Set(expenses.map((expense) => expense.date?.slice(0, 10)).filter(Boolean)).size;
 
   return {
     employee: {
@@ -3617,16 +3591,16 @@ export async function getMedicalRepPortalData(
       units: Number(salesDashboard?.summary?.unitsSold ?? 0),
     },
     workload: {
-      totalTrips: expenses.length,
-      totalDistance: expenses.reduce((sum, e) => sum + (e.km || 0), 0),
-      totalExpenses: expenses.reduce((sum, e) => sum + (e.total || 0), 0),
-      activeEmployees: new Set(expenses.map((e) => e.hrId).filter(Boolean)).size,
-      avgCostPerTrip: expenses.length > 0 ? expenses.reduce((sum, e) => sum + (e.total || 0), 0) / expenses.length : 0,
+      totalTrips: workloadExpenseSummary.totalRows,
+      totalDistance: workloadExpenseSummary.totalDistance,
+      totalExpenses: workloadExpenseSummary.totalAmount,
+      activeEmployees: activeExpenseEmployeeCount,
+      avgCostPerTrip: workloadExpenseSummary.averageCostPerTrip,
       workloadOverview: [
-        { label: "Avg Trips / Day", value: (expenses.length / 22).toFixed(1), delta: "0" },
-        { label: "Avg Distance / Day", value: `${(expenses.reduce((sum, e) => sum + (e.km || 0), 0) / 22).toFixed(0)} km`, delta: "0 km" },
-        { label: "Active Days", value: new Set(expenses.map(e => e.date?.slice(0, 10)).filter(Boolean)).size.toString(), delta: "0" },
-        { label: "Avg Trips / Active Day", value: (new Set(expenses.map(e => e.hrId).filter(Boolean)).size > 0 && new Set(expenses.map(e => e.date?.slice(0, 10)).filter(Boolean)).size > 0) ? (expenses.length / new Set(expenses.map(e => e.date?.slice(0, 10)).filter(Boolean)).size).toFixed(1) : "0", delta: "0" },
+        { label: "Avg Trips / Day", value: (workloadExpenseSummary.totalRows / 22).toFixed(1), delta: "0" },
+        { label: "Avg Distance / Day", value: `${(workloadExpenseSummary.totalDistance / 22).toFixed(0)} km`, delta: "0 km" },
+        { label: "Active Days", value: activeExpenseDays.toString(), delta: "0" },
+        { label: "Avg Trips / Active Day", value: activeExpenseDays > 0 ? (workloadExpenseSummary.totalRows / activeExpenseDays).toFixed(1) : "0", delta: "0" },
       ],
       tripsVsDistanceTrend: Array.from(new Set(expenses.map((e) => expensePeriodKey(e)).filter(Boolean) as string[])).sort().map(period => {
         const periodExpenses = expenses.filter((e) => expensePeriodKey(e) === period);
@@ -3661,9 +3635,9 @@ export async function getMedicalRepPortalData(
         };
       }).sort((a, b) => b.trips - a.trips),
       expenseAnalysis: [
-        { label: "Total Expenses", value: egp(expenses.reduce((sum, e) => sum + (e.total || 0), 0)), delta: "0%" },
-        { label: "Cost per Trip", value: egp(expenses.length > 0 ? expenses.reduce((sum, e) => sum + (e.total || 0), 0) / expenses.length : 0), delta: "0%" },
-        { label: "Cost per KM", value: expenses.reduce((sum, e) => sum + (e.km || 0), 0) > 0 ? `EGP ${(expenses.reduce((sum, e) => sum + (e.total || 0), 0) / expenses.reduce((sum, e) => sum + (e.km || 0), 0)).toFixed(1)}` : "EGP 0", delta: "0%" },
+        { label: "Total Expenses", value: egp(workloadExpenseSummary.totalAmount), delta: "0%" },
+        { label: "Cost per Trip", value: egp(workloadExpenseSummary.averageCostPerTrip), delta: "0%" },
+        { label: "Cost per KM", value: workloadExpenseSummary.totalDistance > 0 ? `EGP ${(workloadExpenseSummary.totalAmount / workloadExpenseSummary.totalDistance).toFixed(1)}` : "EGP 0", delta: "0%" },
         { label: "Highest Single Trip", value: egp(Math.max(0, ...expenses.map(t => t.total))), delta: "N/A" },
       ],
       expenseTrend: Array.from(new Set(expenses.map((e) => expensePeriodKey(e)).filter(Boolean) as string[])).sort().map(period => {
@@ -4658,84 +4632,14 @@ export async function getNsmTeamExpenses(
       new Set(lineExpenses.map((expense) => normalizeExpenseRequestType(expense.requestType))),
     ).sort((left, right) => left.localeCompare(right));
 
-    const summaryByDsm = new Map<string, NsmTeamExpensesDsmSummary>();
-
-    scopedDsms.forEach((employee) => {
-      const canonicalHrId = normalizeHrIdForAccess(employee.hrId);
-      if (!canonicalHrId) return;
-
-      summaryByDsm.set(canonicalHrId, {
-        activeDays: 0,
-        approvedAmount: 0,
-        approvedTrips: 0,
-        avgCostPerTrip: 0,
+    const dsms = buildPayrollExpenseDsmSummaries({
+      dsms: scopedDsms.map((employee) => ({
+        fullName: employee.fullName,
         hrId: employee.hrId,
-        lastTripDate: null,
         lineName: employee.lineName ?? null,
-        name: employee.fullName,
-        pendingAmount: 0,
-        pendingTrips: 0,
-        totalDistance: 0,
-        totalExpenses: 0,
-        totalTrips: 0,
-      });
+      })),
+      expenses: dsmExpenses,
     });
-
-    dsmExpenses.forEach((expense) => {
-      const canonicalHrId = normalizeHrIdForAccess(expense.hrId);
-      if (!canonicalHrId) return;
-
-      const employee = dsmByCanonicalHrId.get(canonicalHrId);
-      if (!employee) return;
-
-      const existing = summaryByDsm.get(canonicalHrId);
-      if (!existing) return;
-
-      existing.totalTrips += 1;
-      existing.totalExpenses += expense.total || 0;
-      existing.totalDistance += expense.km || 0;
-
-      if (expense.hrApproved) {
-        existing.approvedTrips += 1;
-        existing.approvedAmount += expense.total || 0;
-      } else {
-        existing.pendingTrips += 1;
-        existing.pendingAmount += expense.total || 0;
-      }
-
-      if (expense.date) {
-        const tripDate = expense.date.slice(0, 10);
-        if (!existing.lastTripDate || tripDate > existing.lastTripDate) {
-          existing.lastTripDate = tripDate;
-        }
-      }
-
-      summaryByDsm.set(canonicalHrId, existing);
-    });
-
-    const dsms = Array.from(summaryByDsm.values())
-      .map((dsm) => {
-        const dsmCanonicalHrId = normalizeHrIdForAccess(dsm.hrId);
-        const dsmRows = dsmExpenses.filter(
-          (expense) =>
-            normalizeHrIdForAccess(expense.hrId) === dsmCanonicalHrId,
-        );
-
-        return {
-          ...dsm,
-          activeDays: new Set(
-            dsmRows.map((expense) => expense.date?.slice(0, 10)).filter(Boolean),
-          ).size,
-          avgCostPerTrip:
-            dsm.totalTrips > 0 ? dsm.totalExpenses / dsm.totalTrips : 0,
-        };
-      })
-      .sort(
-        (left, right) =>
-          right.totalExpenses - left.totalExpenses ||
-          right.totalTrips - left.totalTrips ||
-          left.name.localeCompare(right.name),
-      );
 
     const monthlyTrend = Array.from(
       new Set(
@@ -4775,24 +4679,17 @@ export async function getNsmTeamExpenses(
         return rightDate - leftDate;
       });
 
+    const teamExpenseSummary = summarizePayrollExpenses(dsmExpenses);
     const summary = {
       activeDsms: dsms.length,
-      approvedAmount: dsmExpenses
-        .filter((expense) => expense.hrApproved)
-        .reduce((sum, expense) => sum + (expense.total || 0), 0),
-      approvedTrips: dsmExpenses.filter((expense) => expense.hrApproved).length,
-      avgCostPerTrip:
-        dsmExpenses.length > 0
-          ? dsmExpenses.reduce((sum, expense) => sum + (expense.total || 0), 0) /
-            dsmExpenses.length
-          : 0,
-      pendingAmount: dsmExpenses
-        .filter((expense) => !expense.hrApproved)
-        .reduce((sum, expense) => sum + (expense.total || 0), 0),
-      pendingTrips: dsmExpenses.filter((expense) => !expense.hrApproved).length,
-      totalDistance: dsmExpenses.reduce((sum, expense) => sum + (expense.km || 0), 0),
-      totalExpenses: dsmExpenses.reduce((sum, expense) => sum + (expense.total || 0), 0),
-      totalTrips: dsmExpenses.length,
+      approvedAmount: teamExpenseSummary.approvedAmount,
+      approvedTrips: teamExpenseSummary.approvedRows,
+      avgCostPerTrip: teamExpenseSummary.averageCostPerTrip,
+      pendingAmount: teamExpenseSummary.pendingAmount,
+      pendingTrips: teamExpenseSummary.pendingRows,
+      totalDistance: teamExpenseSummary.totalDistance,
+      totalExpenses: teamExpenseSummary.totalAmount,
+      totalTrips: teamExpenseSummary.totalRows,
     };
 
     return {

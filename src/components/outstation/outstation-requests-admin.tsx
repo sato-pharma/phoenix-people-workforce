@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { ReceiptText, Search, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Loader2, ReceiptText, Search, ShieldAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 
@@ -9,6 +9,7 @@ import { ApprovalRecommendationBadge } from "@/components/outstation/approval-re
 import { FraudFlagsPanel } from "@/components/outstation/fraud-flags-panel";
 import { OutstationReviewMap } from "@/components/outstation/outstation-review-map";
 import { TerritoryValidationPanel } from "@/components/outstation/territory-validation-panel";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
@@ -104,19 +105,23 @@ export function OutstationRequestsAdmin({
 }: {
   requests: OutstationExpenseRequest[];
 }) {
+  const [localRequests, setLocalRequests] = useState(requests);
   const [search, setSearch] = useState("");
   const [eligibility, setEligibility] = useState("");
   const [role, setRole] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(requests[0]?.id ?? null);
+  const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const roles = useMemo(
-    () => [...new Set(requests.map((request) => request.employeeRole).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    [requests],
+    () => [...new Set(localRequests.map((request) => request.employeeRole).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [localRequests],
   );
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return requests.filter((request) => {
+    return localRequests.filter((request) => {
       const matchesSearch =
         !term ||
         request.employeeName.toLowerCase().includes(term) ||
@@ -130,11 +135,11 @@ export function OutstationRequestsAdmin({
         (!role || request.employeeRole === role)
       );
     });
-  }, [eligibility, requests, role, search]);
+  }, [eligibility, localRequests, role, search]);
 
   const selectedRequest =
     filtered.find((request) => request.id === selectedId) ??
-    requests.find((request) => request.id === selectedId) ??
+    localRequests.find((request) => request.id === selectedId) ??
     filtered[0] ??
     null;
 
@@ -157,9 +162,38 @@ export function OutstationRequestsAdmin({
     setRole("");
   }
 
+  async function approveSelectedRequest() {
+    if (!selectedRequest) return;
+    setApprovingId(selectedRequest.id);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const response = await fetch(`/api/admin/outstation/${selectedRequest.id}`, {
+        body: JSON.stringify({ comment: "Approved from admin outstation review." }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null) as {
+        message?: string;
+        request?: OutstationExpenseRequest;
+      } | null;
+      if (!response.ok || !payload?.request) {
+        throw new Error(payload?.message ?? "Unable to approve outstation request.");
+      }
+      setLocalRequests((current) =>
+        current.map((request) => request.id === payload.request!.id ? payload.request! : request),
+      );
+      setActionMessage(payload.message ?? "Outstation request approved for payroll.");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Unable to approve outstation request.");
+    } finally {
+      setApprovingId(null);
+    }
+  }
+
   const hasActiveFilters = Boolean(search || eligibility || role);
 
-  if (requests.length === 0) {
+  if (localRequests.length === 0) {
     return (
       <OutstationAdminShell>
         <AdminPageHero
@@ -358,6 +392,30 @@ export function OutstationRequestsAdmin({
                 <Info label="Transportation" value={selectedRequest.transportationType.replace("_", " ")} />
                 <Info label="Status" value={selectedRequest.status} />
                 <Info label="Destination" value={selectedRequest.toLabel ?? "N/A"} />
+                <div className="rounded-[18px] border border-[#E2E8F0] bg-[#F8FAFC]/85 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Payroll action</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <Button
+                      className="gap-2 rounded-xl bg-[#0F172A] px-4 py-2 text-xs font-black text-white hover:bg-[#EA580C]"
+                      disabled={
+                        approvingId === selectedRequest.id ||
+                        selectedRequest.status === "approved" ||
+                        selectedRequest.status === "rejected" ||
+                        selectedRequest.eligibilityStatus === "not_eligible"
+                      }
+                      onClick={approveSelectedRequest}
+                      type="button"
+                    >
+                      {approvingId === selectedRequest.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                      Approve for payroll
+                    </Button>
+                    {selectedRequest.status === "approved" ? (
+                      <span className="text-xs font-black uppercase tracking-[0.12em] text-[#047857]">Approved for payroll</span>
+                    ) : null}
+                  </div>
+                  {actionMessage ? <p className="mt-3 text-sm font-semibold text-[#047857]">{actionMessage}</p> : null}
+                  {actionError ? <p className="mt-3 text-sm font-semibold text-[#B91C1C]">{actionError}</p> : null}
+                </div>
                 {selectedRequest.transportationType === "car" ? (
                   <div className="rounded-[18px] border border-[#FED7AA] bg-[#FFF7ED]/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
                     <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#EA580C]">Car Evidence</p>

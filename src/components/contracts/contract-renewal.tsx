@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
+import { daysUntilLifecycleDate, summarizeContractRenewalRows } from "@/lib/lifecycle-risk/metrics";
 import type { ContractRenewalDashboardData } from "@/lib/contracts/types";
 
 type Props = {
@@ -49,10 +50,7 @@ function ContractsPageShell({ children }: { children: React.ReactNode }) {
 }
 
 function daysUntilDate(value: string) {
-  const date = parseDateOnly(value);
-  if (!date) return 0;
-
-  return Math.ceil((date.getTime() - today.getTime()) / 86400000);
+  return daysUntilLifecycleDate(value) ?? 0;
 }
 
 function datePart(value: string, part: "month" | "year") {
@@ -103,15 +101,17 @@ export function ContractRenewal({ initialData, initialError }: Props) {
   }, [rows, selectedMonth, selectedYear, search, lineFilter, areaFilter]);
 
   const summary = useMemo(() => {
-    const upcoming7 = filtered.filter((r) => {
-      const days = daysUntilDate(r.contract_renewal_date);
-      return days >= 0 && days <= 7;
-    }).length;
-    const upcoming30 = filtered.filter((r) => {
-      const days = daysUntilDate(r.contract_renewal_date);
-      return days >= 0 && days <= 30;
-    }).length;
-    return { total: filtered.length, upcoming7, upcoming30 };
+    const riskSummary = summarizeContractRenewalRows(filtered.map((row) => ({
+      contractRenewalDate: row.contract_renewal_date,
+      employeeHrId: row.hr_id,
+      employeeName: row.full_name,
+      workflowStatus: row.workflow?.status ?? null,
+    })));
+    return {
+      total: riskSummary.totalRenewals,
+      upcoming7: riskSummary.dueIn7Days,
+      upcoming30: riskSummary.dueIn30Days,
+    };
   }, [filtered]);
 
   // Calendar heatmap: count by day-of-month

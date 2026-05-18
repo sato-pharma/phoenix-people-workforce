@@ -110,6 +110,7 @@ export type VacationReportData = {
   rows: VacationRequestRecord[];
   summary: {
     approved: number;
+    managerDecisionActions: number;
     paidDays: number;
     pending: number;
     rejected: number;

@@ -1,4 +1,5 @@
 import { addYearsToDateOnly, parseDateOnly, toDateOnlyString } from "../date-only.ts";
+import { countHrWorkingDays, isHrWorkingDay } from "@/lib/hr-calendar/calendar-logic";
 import type {
   VacationBalanceSnapshot,
   VacationDayPart,
@@ -39,11 +40,6 @@ function compareDateOnly(left: string, right: string) {
   return leftDate.getTime() - rightDate.getTime();
 }
 
-function isWorkingDay(date: Date) {
-  const day = date.getDay();
-  return day !== 5 && day !== 6;
-}
-
 export function normalizeVacationType(value: unknown): VacationType | null {
   const normalized = String(value ?? "").trim().toLowerCase();
   return VACATION_TYPES.some((option) => option.value === normalized)
@@ -76,6 +72,7 @@ export function vacationDayPartLabel(value: string | null | undefined) {
 export function calculateVacationDurationDays(input: {
   dayPart: VacationDayPart;
   endDate: string;
+  holidays?: string[];
   startDate: string;
 }) {
   const startDate = dateOnlyOrNull(input.startDate);
@@ -91,18 +88,13 @@ export function calculateVacationDurationDays(input: {
     if (startDate.getTime() !== endDate.getTime()) {
       throw new Error("AM only and PM only requests must be for one date.");
     }
-    if (!isWorkingDay(startDate)) {
+    if (!isHrWorkingDay(startDate, input.holidays)) {
       throw new Error("Vacation date must be a working day.");
     }
     return 0.5;
   }
 
-  const cursor = new Date(startDate);
-  let workingDays = 0;
-  while (cursor.getTime() <= endDate.getTime()) {
-    if (isWorkingDay(cursor)) workingDays += 1;
-    cursor.setDate(cursor.getDate() + 1);
-  }
+  const workingDays = countHrWorkingDays(input.startDate, input.endDate, input.holidays);
 
   if (workingDays <= 0) {
     throw new Error("Vacation range must include at least one working day.");

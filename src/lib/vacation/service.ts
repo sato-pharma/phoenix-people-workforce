@@ -6,6 +6,7 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { enqueueInAppNotification } from "@/lib/notifications/in-app";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -19,6 +20,7 @@ import {
   normalizeVacationType,
   vacationTypeLabel,
 } from "@/lib/vacation/calculations";
+import { summarizeVacationRequests } from "@/lib/vacation/metrics";
 import {
   buildVacationDecisionUrl,
   sendVacationDecisionResultEmail,
@@ -658,6 +660,28 @@ async function applyVacationDecision(input: {
     },
     requestId: updated.id,
   });
+  await writeRequiredAuditLog({
+    actorLoginId: input.actorLoginId ?? input.actorHrId ?? "system",
+    entityId: updated.id,
+    entityType: "vacation_request",
+    newValues: {
+      balanceAfterDays: updated.balanceAfterDays,
+      decisionComment: input.decisionComment ?? null,
+      managerDecision,
+      paymentStatus: updated.paymentStatus,
+      status: updated.status,
+      unpaidReason: updated.unpaidReason,
+      usedPaidDays: updated.usedPaidDays,
+    },
+    oldValues: {
+      balanceAfterDays: input.request.balanceAfterDays,
+      paymentStatus: input.request.paymentStatus,
+      status: input.request.status,
+      unpaidReason: input.request.unpaidReason,
+      usedPaidDays: input.request.usedPaidDays,
+    },
+    summary: `Vacation request ${managerDecision}.`,
+  });
 
   await dispatchVacationDecision({ decision: input.decision, directory, request: updated }).catch(async (error) => {
     await insertVacationEvent({
@@ -822,14 +846,7 @@ function buildReportOptions(rows: VacationRequestRecord[]): VacationReportData["
 }
 
 function buildReportSummary(rows: VacationRequestRecord[]): VacationReportData["summary"] {
-  return {
-    approved: rows.filter((row) => row.status === "approved").length,
-    paidDays: rows.filter((row) => row.paymentStatus === "paid").reduce((sum, row) => sum + row.durationDays, 0),
-    pending: rows.filter((row) => row.status === "pending_manager").length,
-    rejected: rows.filter((row) => row.status === "rejected").length,
-    total: rows.length,
-    unpaidDays: rows.filter((row) => row.paymentStatus === "unpaid").reduce((sum, row) => sum + row.durationDays, 0),
-  };
+  return summarizeVacationRequests(rows);
 }
 
 export async function getVacationReportData(access: AccessContext, filters: VacationReportFilters = {}): Promise<VacationReportData> {

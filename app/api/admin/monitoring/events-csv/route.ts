@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { type MonitoringEventSort, getAdminMonitoringStats } from "@/lib/admin/service";
 import { canAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { getOperationalMonitoringStats, type MonitoringEventSort } from "@/lib/operations/events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url);
     const pageSize = coerceMonitoringPageSize(url.searchParams.get("pageSize"));
-    const result = await getAdminMonitoringStats({
+    const result = await getOperationalMonitoringStats({
       entityType: url.searchParams.get("type") ?? undefined,
       page: 1,
       pageSize,

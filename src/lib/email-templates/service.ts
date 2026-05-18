@@ -5,6 +5,7 @@ import {
   renderPhoenixEmailHtml,
   renderPhoenixEmailText,
 } from "@/emails/phoenix-email-layout";
+import { summarizeEmailTemplateReadiness } from "@/lib/communication/metrics";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -688,6 +689,18 @@ export async function getEmailTemplateCatalog(): Promise<EmailTemplateRow[]> {
       .map((key) => toTemplateRow(templateDefaults[key], null, null))
       .sort((left, right) => left.templateName.localeCompare(right.templateName));
   }
+}
+
+export async function getEmailTemplateReadinessMetrics() {
+  const templates = await getEmailTemplateCatalog();
+  return summarizeEmailTemplateReadiness(templates.map((template) => ({
+    bodyHtml: template.bodyHtml,
+    bodyText: template.bodyText,
+    isActive: template.isActive,
+    rules: template.rules,
+    subject: template.subject,
+    templateKey: template.templateKey,
+  })));
 }
 
 export async function getEmailTemplate(templateKey: string): Promise<EmailTemplateRow | null> {

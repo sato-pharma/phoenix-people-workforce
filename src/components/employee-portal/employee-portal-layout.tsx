@@ -76,6 +76,7 @@ function buildEmployeePortalSections({
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Calculator }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         { href: "/payslips", label: "Payslips", icon: CircleDollarSign },
+        { href: "/employee-portals/expenses", label: "Expenses", icon: ReceiptText },
         ...(showManagementTab ? [{ href: "/employee-portals/expense-dashboard", label: "Workload & Expense", icon: ReceiptText }] : []),
       ],
     },
