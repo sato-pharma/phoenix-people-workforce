@@ -1,5 +1,15 @@
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import {
+  buildPayrollExpenseBreakdown,
+  buildPayrollExpenseTrend,
+  getApprovedExpenseTotalsByHrId,
+  summarizePayrollExpenses,
+  type PayrollExpenseBreakdownRow,
+  type PayrollExpenseSummary,
+  type PayrollExpenseTrendPoint,
+} from "@/lib/payroll/expense-metrics";
 import { PayrollConflictError } from "@/lib/payroll/errors";
+import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -13,10 +23,26 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import type {
+  EmployeeDirectoryRow,
+} from "@/lib/employees/employee-directory";
+import type {
   ExpenseTripRecord,
   PayrollExpenseApproval,
   PayrollExpenseReport,
 } from "@/lib/payroll/types";
+
+export type PayrollExpenseMetrics = PayrollExpenseSummary & {
+  reportCount: number;
+};
+
+export type PayrollExpenseDashboardData = {
+  breakdown: PayrollExpenseBreakdownRow[];
+  employees: EmployeeDirectoryRow[];
+  expenses: PayrollExpenseApproval[];
+  metrics: PayrollExpenseMetrics;
+  reports: PayrollExpenseReport[];
+  trend: PayrollExpenseTrendPoint[];
+};
 
 function expenseErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -375,7 +401,9 @@ export async function listPayrollExpenseReports(accessContext: AccessContext) {
       throw error;
     }
 
-    return (data ?? []).map((row) => mapExpenseReport(row as Record<string, unknown>));
+    return (data ?? [])
+      .filter((row) => !isDisposableExpenseReportRow(row as Record<string, unknown>))
+      .map((row) => mapExpenseReport(row as Record<string, unknown>));
   }
 
   const visibleReportIds = await getVisibleExpenseReportIds(supabase, accessFilter);
@@ -395,7 +423,9 @@ export async function listPayrollExpenseReports(accessContext: AccessContext) {
     throw error;
   }
 
-  return (data ?? []).map((row) => mapExpenseReport(row as Record<string, unknown>));
+  return (data ?? [])
+    .filter((row) => !isDisposableExpenseReportRow(row as Record<string, unknown>))
+    .map((row) => mapExpenseReport(row as Record<string, unknown>));
 }
 
 export async function listPayrollExpenses(
@@ -432,7 +462,49 @@ export async function listPayrollExpenses(
     throw error;
   }
 
-  return (data ?? []).map((row) => mapExpense(row as Record<string, unknown>));
+  return (data ?? [])
+    .filter((row) => !isDisposableExpenseRow(row as Record<string, unknown>))
+    .map((row) => mapExpense(row as Record<string, unknown>));
+}
+
+export function buildPayrollExpenseMetrics(input: {
+  expenses: PayrollExpenseApproval[];
+  reports?: PayrollExpenseReport[];
+}): PayrollExpenseMetrics {
+  return {
+    ...summarizePayrollExpenses(input.expenses),
+    reportCount: input.reports?.length ?? 0,
+  };
+}
+
+export async function getPayrollExpenseMetrics(
+  accessContext: AccessContext,
+): Promise<PayrollExpenseMetrics> {
+  const [expenses, reports] = await Promise.all([
+    listPayrollExpenses(undefined, undefined, undefined, accessContext),
+    listPayrollExpenseReports(accessContext),
+  ]);
+
+  return buildPayrollExpenseMetrics({ expenses, reports });
+}
+
+export async function getPayrollExpenseDashboardData(
+  accessContext: AccessContext,
+): Promise<PayrollExpenseDashboardData> {
+  const [directory, expenses, reports] = await Promise.all([
+    getEmployeeDirectory(),
+    listPayrollExpenses(undefined, undefined, undefined, accessContext),
+    listPayrollExpenseReports(accessContext),
+  ]);
+
+  return {
+    breakdown: buildPayrollExpenseBreakdown(expenses),
+    employees: directory.employees,
+    expenses,
+    metrics: buildPayrollExpenseMetrics({ expenses, reports }),
+    reports,
+    trend: buildPayrollExpenseTrend(expenses),
+  };
 }
 
 export async function deletePayrollExpenseReport(reportId: string) {
@@ -470,16 +542,7 @@ export async function getApprovedExpenseTotalsForPayroll(
   accessContext: AccessContext,
 ) {
   const expenses = await listPayrollExpenses(month, year, undefined, accessContext);
-  const totals = new Map<string, number>();
-
-  expenses
-    .filter((expense) => expense.hrApproved && expense.hrId)
-    .forEach((expense) => {
-      const hrId = String(expense.hrId);
-      totals.set(hrId, (totals.get(hrId) ?? 0) + expense.total);
-    });
-
-  return totals;
+  return getApprovedExpenseTotalsByHrId(expenses);
 }
 
 export async function savePayrollExpenseApprovals(input: {

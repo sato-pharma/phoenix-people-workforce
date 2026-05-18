@@ -8,6 +8,7 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
+import { buildSalesManagerPerformanceGroups } from "@/lib/sales/metrics";
 
 import {
   TeamAchievementChart,
@@ -72,19 +73,7 @@ export default async function MedRepsPerformancePage({
   const { members, periods, teamAchievementPercent, teamMemberCount, teamTotalSales, teamTotalTarget } = data;
   const validPeriod = requestedPeriod && periods.includes(requestedPeriod) ? requestedPeriod : null;
   const eligibleCount = members.filter((member) => member.achievementPercent >= 90).length;
-
-  const groupsMap = new Map<string, { managerName: string; members: typeof members }>();
-  members.forEach((member) => {
-    const managerId = member.managerHrId || "unassigned";
-    const group = groupsMap.get(managerId) ?? {
-      managerName: member.managerName || "Unassigned District",
-      members: [],
-    };
-    group.members.push(member);
-    groupsMap.set(managerId, group);
-  });
-
-  const dsmGroups = Array.from(groupsMap.values()).sort((left, right) => left.managerName.localeCompare(right.managerName));
+  const dsmGroups = buildSalesManagerPerformanceGroups(members);
 
   const stats = [
     { icon: Target, label: "Line Target", tone: "text-orange-600", value: egp(teamTotalTarget) },
@@ -186,12 +175,7 @@ export default async function MedRepsPerformancePage({
         </div>
       </section>
 
-      {dsmGroups.map((group) => {
-        const groupTotalSales = group.members.reduce((sum, member) => sum + member.totalSales, 0);
-        const groupTotalTarget = group.members.reduce((sum, member) => sum + member.totalTarget, 0);
-        const groupAchievement = groupTotalTarget > 0 ? (groupTotalSales / groupTotalTarget) * 100 : 0;
-
-        return (
+      {dsmGroups.map((group) => (
           <section className="space-y-5" key={group.managerName}>
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-[26px] border border-orange-100 bg-white/92 px-5 py-4 shadow-[0_16px_42px_rgba(15,23,42,0.06)]">
               <div className="flex items-center gap-3">
@@ -199,7 +183,7 @@ export default async function MedRepsPerformancePage({
                 <div>
                   <h2 className="text-xl font-black text-slate-950">{group.managerName}</h2>
                   <p className="mt-1 text-sm font-medium text-slate-500">
-                    District Performance: <span className="font-black text-slate-800">{groupAchievement.toFixed(1)}%</span>
+                    District Performance: <span className="font-black text-slate-800">{group.achievementPercent.toFixed(1)}%</span>
                     {" | "}
                     {group.members.length} Medical Reps
                   </p>
@@ -207,14 +191,14 @@ export default async function MedRepsPerformancePage({
               </div>
               <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-2 text-right">
                 <p className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-600">District sales</p>
-                <p className="mt-1 text-sm font-black text-slate-950">{egp(groupTotalSales)}</p>
+                <p className="mt-1 text-sm font-black text-slate-950">{egp(group.totalSales)}</p>
               </div>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">
               <Card className={chartCardClass}>
                 <h3 className="mb-6 text-lg font-black text-slate-950">District Achievement Ranking</h3>
-                <TeamAchievementChart members={group.members} teamAchievementPercent={groupAchievement} />
+                <TeamAchievementChart members={group.members} teamAchievementPercent={group.achievementPercent} />
               </Card>
 
               <Card className={chartCardClass}>
@@ -231,8 +215,7 @@ export default async function MedRepsPerformancePage({
               <TeamMembersBreakdown members={group.members} />
             </Card>
           </section>
-        );
-      })}
+      ))}
     </div>
   );
 }

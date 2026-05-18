@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { mapInAppNotificationRows } from "@/lib/communication/metrics";
 
 export type InAppNotificationCategory = "coaching_report" | "general";
 
@@ -27,6 +28,18 @@ export type InAppNotificationView = {
   sentAt: string | null;
   status: string;
   title: string;
+};
+
+type InAppNotificationEventRow = {
+  category?: string | null;
+  created_at?: string | null;
+  id?: string | number | null;
+  metadata?: unknown;
+  recipients?: unknown;
+  scheduled_for?: string | null;
+  sent_at?: string | null;
+  status?: string | null;
+  subject?: string | null;
 };
 
 function cleanHrId(value: string | null | undefined) {
@@ -112,37 +125,55 @@ export async function listInAppNotificationsForViewer(
   if (!employeeHrId) return [];
 
   try {
-    const { data, error } = await getSupabaseAdmin()
-      .from("notification_events")
-      .select("id,category,subject,scheduled_for,sent_at,status,metadata,recipients")
-      .or(`employee_hr_id.ilike.${employeeHrId},recipients.cs.["${employeeHrId.toUpperCase()}"]`)
-      .order("created_at", { ascending: false })
-      .limit(Math.max(1, Math.min(limit, 20)));
+    const supabase = getSupabaseAdmin();
+    const boundedLimit = Math.max(1, Math.min(limit, 20));
+    const recipientVariants = Array.from(new Set([employeeHrId, employeeHrId.toUpperCase()]));
+    const selectColumns = "id,category,subject,scheduled_for,sent_at,status,metadata,recipients,created_at";
 
-    if (error) throw error;
+    const [employeeResult, recipientResult] = await Promise.all([
+      supabase
+        .from("notification_events")
+        .select(selectColumns)
+        .ilike("employee_hr_id", employeeHrId)
+        .order("created_at", { ascending: false })
+        .limit(boundedLimit),
+      supabase
+        .from("notification_events")
+        .select(selectColumns)
+        .overlaps("recipients", recipientVariants)
+        .order("created_at", { ascending: false })
+        .limit(boundedLimit),
+    ]);
 
-    return (data ?? []).filter((row) => {
-      const record = row as Record<string, unknown>;
-      if (String(record.category ?? "").toLowerCase() !== "probation") return true;
-      const recipients = Array.isArray(record.recipients) ? record.recipients : [];
-      return recipients.some((recipient) => normalizeHrId(String(recipient)) === employeeHrId);
-    }).map((row) => {
-      const record = row as Record<string, unknown>;
-      const metadata = record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)
-        ? record.metadata as Record<string, unknown>
+    if (employeeResult.error) throw employeeResult.error;
+    if (recipientResult.error) throw recipientResult.error;
+
+    const rowsById = new Map<string, InAppNotificationEventRow>();
+    for (const row of [...(employeeResult.data ?? []), ...(recipientResult.data ?? [])] as InAppNotificationEventRow[]) {
+      const id = String(row.id ?? "");
+      if (id) rowsById.set(id, row);
+    }
+
+    const rows = Array.from(rowsById.values())
+      .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))
+      .slice(0, boundedLimit);
+
+    return mapInAppNotificationRows(rows.map((row) => {
+      const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+        ? row.metadata as Record<string, unknown>
         : {};
 
       return {
-        category: String(record.category ?? "general"),
-        href: typeof metadata.href === "string" ? metadata.href : null,
-        id: String(record.id ?? ""),
-        message: typeof metadata.message === "string" ? metadata.message : String(record.subject ?? "Notification"),
-        scheduledFor: record.scheduled_for ? new Date(String(record.scheduled_for)).toISOString() : null,
-        sentAt: record.sent_at ? new Date(String(record.sent_at)).toISOString() : null,
-        status: String(record.status ?? "pending"),
-        title: typeof metadata.title === "string" ? metadata.title : String(record.subject ?? "Notification"),
+        category: String(row.category ?? "general"),
+        id: String(row.id ?? ""),
+        metadata,
+        recipients: Array.isArray(row.recipients) ? row.recipients : [],
+        scheduledFor: row.scheduled_for ? new Date(String(row.scheduled_for)).toISOString() : null,
+        sentAt: row.sent_at ? new Date(String(row.sent_at)).toISOString() : null,
+        status: String(row.status ?? "pending"),
+        subject: String(row.subject ?? "Notification"),
       };
-    });
+    }), employeeHrId);
   } catch (error) {
     if (notificationSchemaMissing(error)) return [];
     throw error;

@@ -133,7 +133,7 @@ export function runWorkforceLifecycleSeatTests() {
   const dataHealthSource = readFileSync("src/lib/admin/service.ts", "utf8");
   assert.match(commandCenterSource, /calculateWorkforceStructureSummary/);
   assert.match(commandCenterSource, /getDataHealthStats/);
-  assert.match(dataHealthSource, /calculateWorkforceStructureSummary/);
+  assert.match(dataHealthSource, /getWorkforceMetrics/);
 
   const portalSource = readFileSync("src/lib/employee-portal/service.ts", "utf8");
   assert.match(portalSource, /fetchPortalSalesSeatContinuityRecords/);

@@ -1,0 +1,191 @@
+import { addDaysToDateOnly, daysBetweenDateOnly, parseDateOnly } from "@/lib/date-only";
+import { nextContractAnniversary } from "@/lib/contracts/date-rules";
+import type { ContractRenewalStatus } from "@/lib/contracts/types";
+import type { ProbationDecision } from "@/lib/probation/types";
+
+export const lifecycleRiskWindows = {
+  contractCriticalDays: 7,
+  contractRiskDays: 30,
+  contractUpcomingDays: 60,
+  probationCriticalDays: 30,
+  probationDays: 90,
+  probationRiskDays: 15,
+  probationWarningDays: 60,
+} as const;
+
+export type LifecycleRiskAlert = {
+  date: string;
+  days: number;
+  employeeHrId: string | null;
+  name: string;
+  type: "contract" | "probation";
+};
+
+export type ContractRiskInput = {
+  contractRenewalDate: string | null;
+  employeeHrId?: string | null;
+  employeeName?: string | null;
+  workflowStatus?: ContractRenewalStatus | null;
+};
+
+export type ProbationRiskInput = {
+  daysRemaining?: number | null;
+  employeeHrId?: string | null;
+  employeeName?: string | null;
+  hireDate?: string | null;
+  probationEndDate?: string | null;
+  workflowDecision?: ProbationDecision | null;
+};
+
+const activeContractRequestStatuses: ContractRenewalStatus[] = ["requested", "manager_review", "hr_review"];
+
+function startOfToday(referenceDate = new Date()) {
+  const today = new Date(referenceDate);
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+export function daysUntilLifecycleDate(value: string | null | undefined, referenceDate = new Date()) {
+  const target = parseDateOnly(value);
+  if (!target) return null;
+  return Math.ceil((target.getTime() - startOfToday(referenceDate).getTime()) / 86400000);
+}
+
+export function isDateWithinLifecycleRiskWindow(
+  value: string | null | undefined,
+  days: number,
+  referenceDate = new Date(),
+) {
+  const daysUntil = daysUntilLifecycleDate(value, referenceDate);
+  return daysUntil !== null && daysUntil >= 0 && daysUntil <= days;
+}
+
+export function probationEndDateFromHire(hireDate: string | null | undefined) {
+  return addDaysToDateOnly(hireDate, lifecycleRiskWindows.probationDays);
+}
+
+export function classifyContractRenewalRisk(daysUntilRenewal: number | null) {
+  if (daysUntilRenewal === null) return "missing" as const;
+  if (daysUntilRenewal < 0) return "healthy" as const;
+  if (daysUntilRenewal <= lifecycleRiskWindows.contractCriticalDays) return "critical" as const;
+  if (daysUntilRenewal <= lifecycleRiskWindows.contractRiskDays) return "warning" as const;
+  if (daysUntilRenewal <= lifecycleRiskWindows.contractUpcomingDays) return "upcoming" as const;
+  return "healthy" as const;
+}
+
+export function classifyProbationTrafficStatus(daysRemaining: number) {
+  if (daysRemaining > lifecycleRiskWindows.probationWarningDays) return "safe" as const;
+  if (daysRemaining >= lifecycleRiskWindows.probationCriticalDays) return "warning" as const;
+  return "critical" as const;
+}
+
+export function calculateProbationProgress(daysRemaining: number) {
+  return Math.max(
+    0,
+    Math.min(100, Math.round(((lifecycleRiskWindows.probationDays - Math.max(0, daysRemaining)) / lifecycleRiskWindows.probationDays) * 100)),
+  );
+}
+
+export function resolveEmployeeLifecycleJourney(input: {
+  contractRenewalDate?: string | null;
+  contractSignedDate?: string | null;
+  hireDate?: string | null;
+}, referenceDate = new Date()) {
+  const hireDate = input.hireDate ?? null;
+  const probationEndDate = probationEndDateFromHire(hireDate);
+  const contractRenewalDate = input.contractRenewalDate ?? nextContractAnniversary(hireDate);
+  const daysUntilRenewal = daysUntilLifecycleDate(contractRenewalDate, referenceDate);
+  const daysUntilProbationEnd = daysUntilLifecycleDate(probationEndDate, referenceDate);
+
+  return {
+    contractRenewalDate,
+    contractSignedDate: input.contractSignedDate ?? hireDate,
+    daysUntilProbationEnd,
+    daysUntilRenewal,
+    hireDate,
+    probationActive: daysUntilProbationEnd !== null && daysUntilProbationEnd > 0,
+    probationEndDate,
+    renewalRisk: classifyContractRenewalRisk(daysUntilRenewal),
+    serviceDurationDays: Math.max(0, daysBetweenDateOnly(hireDate, referenceDate) ?? 0),
+  };
+}
+
+export function summarizeContractRenewalRows(rows: ContractRiskInput[], referenceDate = new Date()) {
+  return {
+    activeRequests: rows.filter((row) => row.workflowStatus && activeContractRequestStatuses.includes(row.workflowStatus)).length,
+    dueIn7Days: rows.filter((row) =>
+      isDateWithinLifecycleRiskWindow(row.contractRenewalDate, lifecycleRiskWindows.contractCriticalDays, referenceDate),
+    ).length,
+    dueIn30Days: rows.filter((row) =>
+      isDateWithinLifecycleRiskWindow(row.contractRenewalDate, lifecycleRiskWindows.contractRiskDays, referenceDate),
+    ).length,
+    hrReview: rows.filter((row) => row.workflowStatus === "hr_review").length,
+    managerReview: rows.filter((row) => row.workflowStatus === "manager_review").length,
+    notRenewed: rows.filter((row) => row.workflowStatus === "not_renewed").length,
+    renewed: rows.filter((row) => row.workflowStatus === "renewed").length,
+    totalRenewals: rows.length,
+    totalRequests: rows.filter((row) => Boolean(row.workflowStatus)).length,
+  };
+}
+
+export function summarizeProbationRiskRows(rows: ProbationRiskInput[]) {
+  const activeRows = rows.filter((row) => row.workflowDecision !== "pass" && row.workflowDecision !== "terminate");
+  return {
+    critical: activeRows.filter((row) => classifyProbationTrafficStatus(Number(row.daysRemaining ?? 0)) === "critical").length,
+    openWorkflows: activeRows.filter((row) => row.workflowDecision == null || row.workflowDecision === "extend").length,
+    safe: activeRows.filter((row) => classifyProbationTrafficStatus(Number(row.daysRemaining ?? 0)) === "safe").length,
+    total: activeRows.length,
+    warning: activeRows.filter((row) => classifyProbationTrafficStatus(Number(row.daysRemaining ?? 0)) === "warning").length,
+  };
+}
+
+export function buildLifecycleRiskMetrics(input: {
+  contracts?: ContractRiskInput[];
+  probations?: ProbationRiskInput[];
+  referenceDate?: Date;
+}) {
+  const referenceDate = input.referenceDate ?? new Date();
+  const contracts = input.contracts ?? [];
+  const probations = input.probations ?? [];
+  const alerts: LifecycleRiskAlert[] = [];
+
+  for (const contract of contracts) {
+    const date = contract.contractRenewalDate;
+    const days = daysUntilLifecycleDate(date, referenceDate);
+    if (!date || days === null || days < 0 || days > lifecycleRiskWindows.contractRiskDays) continue;
+    alerts.push({
+      date,
+      days,
+      employeeHrId: contract.employeeHrId ?? null,
+      name: contract.employeeName ?? "Unknown employee",
+      type: "contract",
+    });
+  }
+
+  for (const probation of probations) {
+    const date = probation.probationEndDate ?? probationEndDateFromHire(probation.hireDate);
+    const days = probation.daysRemaining ?? daysUntilLifecycleDate(date, referenceDate);
+    if (!date || days === null || days < 0 || days > lifecycleRiskWindows.probationRiskDays) continue;
+    if (probation.workflowDecision === "pass" || probation.workflowDecision === "terminate") continue;
+    alerts.push({
+      date,
+      days,
+      employeeHrId: probation.employeeHrId ?? null,
+      name: probation.employeeName ?? "Unknown employee",
+      type: "probation",
+    });
+  }
+
+  const contractSummary = summarizeContractRenewalRows(contracts, referenceDate);
+  const probationSummary = summarizeProbationRiskRows(probations);
+
+  return {
+    activeContractRenewalRequests: contractSummary.activeRequests,
+    alerts: alerts.sort((left, right) => left.days - right.days || left.name.localeCompare(right.name)),
+    contractRiskWindowDays: lifecycleRiskWindows.contractRiskDays,
+    expiringContracts: alerts.filter((alert) => alert.type === "contract").length,
+    probationEndings: alerts.filter((alert) => alert.type === "probation").length,
+    probationRiskWindowDays: lifecycleRiskWindows.probationRiskDays,
+    probationWorkflowActions: probationSummary.openWorkflows,
+  };
+}

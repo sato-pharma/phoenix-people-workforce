@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { buildHrCalendarEvents } from "@/lib/hr-calendar/calendar-logic";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -52,33 +53,50 @@ async function runBirthdayNotifications(request: Request) {
 
   if (error) throw error;
 
-  const employees = ((data ?? []) as BirthdayEmployeeRow[]).filter((employee) => {
+  const activeEmployees = ((data ?? []) as BirthdayEmployeeRow[]).filter((employee) => {
     const active = !employee.employment_status || employee.employment_status === "active";
-    return active && employee.birth_date?.slice(5, 10) === today;
+    return active && employee.birth_date;
   });
+  const [monthText, dayText] = today.split("-");
+  const birthdayEvents = buildHrCalendarEvents(
+    activeEmployees.map((employee) => ({
+      areaName: "",
+      birthDate: employee.birth_date ?? "",
+      fullName: employee.full_name,
+      hireDate: "",
+      hrId: employee.hr_id,
+      jobTitle: "",
+      lineName: "",
+      managerName: "",
+      workEmail: null,
+    })),
+    Number(monthText),
+    Number(year),
+  ).filter((event) => event.eventType === "birthday" && event.date.slice(5, 10) === `${monthText}-${dayText}`);
   const results = [];
 
-  for (const employee of employees) {
+  for (const event of birthdayEvents) {
+    const employee = event.employee;
     const result = await safeSendNotificationEmail({
       ctaHref: "/hr-calendar",
       ctaLabel: "Open HR calendar",
-      employeeHrId: employee.hr_id,
+      employeeHrId: employee.hrId,
       metrics: [
-        { label: "Employee", value: `${employee.full_name} (${employee.hr_id})` },
+        { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
         { label: "Birthday", value: today },
         { label: "Year", value: year },
       ],
       notificationType: "birthday",
-      subject: `Phoenix Birthday Reminder - ${employee.full_name} - ${year}`,
-      summary: `Birthday reminder for ${employee.full_name}. Prepare a timely people-care follow-up.`,
+      subject: `Phoenix Birthday Reminder - ${employee.fullName} - ${year}`,
+      summary: `Birthday reminder for ${employee.fullName}. Prepare a timely people-care follow-up.`,
       title: "Birthday Reminder",
       tone: "neutral",
     });
-    results.push({ employeeHrId: employee.hr_id, result });
+    results.push({ employeeHrId: employee.hrId, result });
   }
 
   return NextResponse.json({
-    matched: employees.length,
+    matched: birthdayEvents.length,
     results,
     today,
   });

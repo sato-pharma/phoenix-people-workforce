@@ -521,7 +521,10 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
                 </tr>
               ) : (
                 visibleIssues.map((issue, index) => (
-                  <tr className={tableRowClass} key={`${issue.batch_id ?? "row"}-${issue.row_number ?? index}`}>
+                  <tr
+                    className={tableRowClass}
+                    key={issue.record_id ?? `${issue.batch_id ?? "row"}-${issue.row_number ?? "missing"}-${index}`}
+                  >
                     <td className="px-6 py-4 font-mono text-xs font-bold text-slate-500">
                       {issue.batch_id ? `${issue.batch_id.slice(0, 8)}...` : "-"} / {issue.row_number ?? "-"}
                     </td>

@@ -10,5 +10,5 @@ export default async function EmployeePortalExpensesPage() {
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/payroll/expenses/dashboard");
   }
-  redirect("/employee-portals");
+  redirect("/employee-portals/expense-dashboard");
 }

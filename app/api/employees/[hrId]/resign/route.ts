@@ -15,6 +15,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function apiError(error: unknown) {
+  const message = error instanceof Error ? error.message : employeeDirectoryErrorMessage(error);
   if (isForbiddenError(error)) {
     return { message: resignationErrorMessage(error), status: 403 };
   }
@@ -26,8 +27,24 @@ function apiError(error: unknown) {
       status: 409,
     };
   }
+  if (message.toLowerCase().includes("not found")) {
+    return {
+      message,
+      status: 404,
+    };
+  }
+  if (
+    message.toLowerCase().includes("required") ||
+    message.toLowerCase().includes("cannot be before") ||
+    message.toLowerCase().includes("must be")
+  ) {
+    return {
+      message,
+      status: 400,
+    };
+  }
   return {
-    message: error instanceof Error ? error.message : employeeDirectoryErrorMessage(error),
+    message,
     status: 500,
   };
 }

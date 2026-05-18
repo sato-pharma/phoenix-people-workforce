@@ -1,7 +1,9 @@
 import { isDevelopment } from "@/lib/env";
+import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { isDisposablePayrollBatchRow } from "@/lib/fixture-hygiene";
 import {
   getPayrollScope,
   normalizeHrId,
@@ -606,7 +608,9 @@ export async function listSalaryBatches(): Promise<SalaryBatch[]> {
     throw error;
   }
 
-  return (data ?? []).map((row) => mapBatch(row as Record<string, unknown>));
+  return (data ?? [])
+    .filter((row) => !isDisposablePayrollBatchRow(row as Record<string, unknown>))
+    .map((row) => mapBatch(row as Record<string, unknown>));
 }
 
 export async function findSalaryBatchForPeriod(month: number, year: number): Promise<SalaryBatch | null> {
@@ -1349,5 +1353,20 @@ export async function runPayrollWorkflow(
     throw new PayrollConflictError("Payroll workflow state changed. Refresh and retry.");
   }
 
-  return mapBatch(data as Record<string, unknown>);
+  const updatedBatch = mapBatch(data as Record<string, unknown>);
+  await writeRequiredAuditLog({
+    actorLoginId: actorName,
+    entityId: batchId,
+    entityType: "payroll_batch",
+    newValues: {
+      action,
+      approvedBy: transition.setApproved ? actorName : null,
+      rejectedReason: rejectedReason?.trim() ?? null,
+      status: transition.nextStatus,
+    },
+    oldValues: { status: currentStatus },
+    summary: `Payroll workflow ${action}.`,
+  });
+
+  return updatedBatch;
 }

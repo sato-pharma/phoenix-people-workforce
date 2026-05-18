@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { getOutstationRequestById } from "@/lib/outstation/service";
+import { approveOutstationRequestForPayroll, getOutstationRequestById } from "@/lib/outstation/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +34,43 @@ export async function GET(
     const message = error instanceof Error ? error.message : "Unable to load outstation request.";
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_request_failed", message },
+      { status: isForbiddenError(error) ? 403 : 500 },
+    );
+  }
+}
+
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "outstation", "approve");
+    const { id: rawId } = await params;
+    const id = Number(rawId);
+    if (!Number.isFinite(id)) {
+      return NextResponse.json(
+        { error: "invalid_outstation_id", message: "Request id is invalid." },
+        { status: 400 },
+      );
+    }
+
+    const body = await request.json().catch(() => ({})) as { comment?: string | null };
+    const result = await approveOutstationRequestForPayroll(id, access, {
+      comment: typeof body.comment === "string" ? body.comment : null,
+    });
+
+    return NextResponse.json({
+      expenseTripId: result.expenseTripId,
+      message: "Outstation request approved and queued for payroll expense import.",
+      payrollExpenseRows: result.payrollExpenseRows,
+      request: result.request,
+      success: true,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to approve outstation request.";
+    return NextResponse.json(
+      { error: isForbiddenError(error) ? "forbidden" : "outstation_approval_failed", message, success: false },
       { status: isForbiddenError(error) ? 403 : 500 },
     );
   }

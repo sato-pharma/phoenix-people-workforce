@@ -29,6 +29,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
+import {
+  calculateProbationProgress,
+  classifyProbationTrafficStatus,
+  summarizeProbationRiskRows,
+} from "@/lib/lifecycle-risk/metrics";
 import type { ProbationRow, ProbationWorkflowAction, TrafficStatus } from "@/lib/probation/types";
 import { cn } from "@/lib/utils";
 
@@ -96,21 +101,11 @@ function emptyActionForm(): WorkflowActionForm {
 }
 
 function getTrafficStatus(daysRemaining: number): TrafficStatus {
-  if (daysRemaining > 60) {
-    return "safe";
-  }
-
-  if (daysRemaining >= 30) {
-    return "warning";
-  }
-
-  return "critical";
+  return classifyProbationTrafficStatus(daysRemaining);
 }
 
 function getProbationProgress(daysRemaining: number) {
-  const total = 90;
-
-  return Math.max(0, Math.min(100, Math.round(((total - Math.max(0, daysRemaining)) / total) * 100)));
+  return calculateProbationProgress(daysRemaining);
 }
 
 function statusLabel(status: TrafficStatus) {
@@ -330,12 +325,14 @@ export function ProbationTracker({
   }, [areaFilter, employmentFilter, jobFilter, lineFilter, query, rows, sortBy, trafficFilter]);
 
   const summary = useMemo(
-    () => ({
-      critical: filteredRows.filter((row) => getTrafficStatus(row.days_remaining) === "critical").length,
-      safe: filteredRows.filter((row) => getTrafficStatus(row.days_remaining) === "safe").length,
-      total: filteredRows.length,
-      warning: filteredRows.filter((row) => getTrafficStatus(row.days_remaining) === "warning").length,
-    }),
+    () => summarizeProbationRiskRows(filteredRows.map((row) => ({
+      daysRemaining: row.days_remaining,
+      employeeHrId: row.hr_id,
+      employeeName: row.full_name,
+      hireDate: row.hire_date,
+      probationEndDate: row.probation_end_date,
+      workflowDecision: row.workflow?.decision ?? null,
+    }))),
     [filteredRows],
   );
 

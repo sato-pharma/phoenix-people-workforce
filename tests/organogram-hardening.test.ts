@@ -139,5 +139,25 @@ export function runOrganogramHardeningTests() {
   assert.match(componentSource, /Reports to NSM/);
   assert.match(componentSource, /childLanes/);
   assert.match(componentSource, /Medical Sales Representatives/);
+  assert.match(
+    componentSource,
+    /if \(assignedToDsm\.has\(key\)\) \{\s*return false;\s*\}/,
+    "Organogram DSM lanes must not duplicate the same member or vacancy across multiple manager columns.",
+  );
+  assert.match(
+    componentSource,
+    /left\.type === "employee"[\s\S]*\? -1/,
+    "Organogram lane assignment must prioritize real employee managers before broad vacant manager slots.",
+  );
+  assert.match(
+    componentSource,
+    /const visibleDsmGroups = dsmGroups\.filter\([\s\S]*lane\.members\.length > 0 \|\| lane\.dsm\?\.type !== "vacancy"/,
+    "Organogram must not render empty vacant DSM lanes after their vacancies are still counted in structure totals.",
+  );
+  assert.match(
+    componentSource,
+    /const directDsmGroups = visibleDsmGroups\.filter/,
+    "Organogram direct DSM rendering must use the visible lane set instead of raw vacant manager slots.",
+  );
   assert.doesNotMatch(componentSource, /AdminStatCard/);
 }

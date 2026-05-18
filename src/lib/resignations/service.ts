@@ -1,3 +1,4 @@
+import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { getEmployeeDirectory, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
@@ -769,6 +770,36 @@ async function updateEmployeeLifecycleFallback(
   throw new Error("Unable to update employee lifecycle after removing unsupported optional columns.");
 }
 
+async function normalizeTerminalEmployeeLifecycleFlags(
+  supabase: SupabaseClient,
+  employeeHrId: string,
+) {
+  const { error: rpcError } = await supabase.rpc(
+    "phx_normalize_terminal_employee_lifecycle_flags",
+    { p_employee_hr_id: employeeHrId },
+  );
+
+  if (rpcError && !isMissingSchemaMessage(rpcError)) {
+    throw schemaReadinessError("normalizing terminal employee lifecycle flags", rpcError);
+  }
+
+  if (rpcError) {
+    const { error } = await supabase
+      .from("employees")
+      .update({
+        organogram_visible: false,
+        payroll_eligible: false,
+        updated_at: new Date().toISOString(),
+      })
+      .ilike("hr_id", employeeHrId)
+      .in("employment_status", ["resigned", "terminated", "inactive"]);
+
+    if (error && !isMissingSchemaMessage(error)) {
+      throw schemaReadinessError("normalizing terminal employee lifecycle flags", error);
+    }
+  }
+}
+
 async function deactivateEmployeeAccessIfSupported(supabase: SupabaseClient, employeeHrId: string) {
   const appAuthResult = await supabase
     .from("app_auth_users")
@@ -996,6 +1027,43 @@ export async function resignEmployeeAndOpenVacancy(
       resignation_id?: string;
       vacancy_code?: string;
     };
+  }
+
+  await updateEmployeeLifecycleFallback(supabase, employeeHrId, {
+    effectiveDate,
+    employeeStatus: result.employee_status ?? employeeStatus,
+    reason: cleanText(input.reason),
+    submittedDate,
+  });
+  await normalizeTerminalEmployeeLifecycleFlags(supabase, employeeHrId);
+
+  const { data: existingAuditRows, error: auditLookupError } = await supabase
+    .from("audit_logs")
+    .select("id")
+    .eq("entity_type", "employee_resignation")
+    .eq("entity_id", employeeHrId)
+    .limit(1);
+  if (auditLookupError) throw auditLookupError;
+
+  if ((existingAuditRows ?? []).length === 0) {
+    await writeRequiredAuditLog({
+      actorLoginId: actor,
+      entityId: employeeHrId,
+      entityType: "employee_resignation",
+      newValues: {
+        employeeStatus: result.employee_status ?? employeeStatus,
+        organogramVisible: false,
+        payrollEligible: false,
+        resignationId: result.resignation_id ?? null,
+        vacancyCode: result.vacancy_code ?? vacancyCode,
+      },
+      oldValues: {
+        employeeStatus: employee.employmentStatus,
+        organogramVisible: employee.organogramVisible,
+        payrollEligible: employee.payrollEligible,
+      },
+      summary: "Employee resigned or terminated and vacancy was opened.",
+    });
   }
 
   await notifyResignationWorkflow(

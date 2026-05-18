@@ -15,6 +15,27 @@ import type {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function outstationSubmitStatus(error: unknown) {
+  if (isForbiddenError(error)) {
+    return 403;
+  }
+
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  if (
+    message.includes("required") ||
+    message.includes("invalid") ||
+    message.includes("missing") ||
+    message.includes("not linked") ||
+    message.includes("not available") ||
+    message.includes("not eligible") ||
+    message.includes("requires")
+  ) {
+    return 400;
+  }
+
+  return 500;
+}
+
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -50,9 +71,10 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to submit outstation request.";
+    const status = outstationSubmitStatus(error);
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_submit_failed", message },
-      { status: isForbiddenError(error) ? 403 : 500 },
+      { status },
     );
   }
 }

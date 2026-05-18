@@ -4,6 +4,7 @@ import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { sendJobOfferEmail } from "@/lib/offers/email";
 import { getOfferTemplate } from "@/lib/offers/templates";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
+import { summarizeOfferLifecycleRows } from "@/lib/recruitment/onboarding-metrics";
 
 export type OfferStatus = "draft" | "sent" | "accepted" | "rejected" | "expired";
 
@@ -125,10 +126,16 @@ export type OfferDashboardData = {
   summary: {
     acceptanceRate: number;
     acceptedOffers: number;
+    acceptedToEmployeeConversions: number;
+    acceptedToEmployeeConversionRate: number;
     averageHoursToAccept: number;
+    expiredOffers: number;
+    pendingHrApprovalOffers: number;
     pendingOffers: number;
     rejectedOffers: number;
     totalOffers: number;
+    vacancyLinkedOffers: number;
+    vacancyLinkageRate: number;
   };
   lookups: OfferLookupData;
 };
@@ -740,26 +747,11 @@ export async function getOfferDashboard(): Promise<OfferDashboardData> {
       "id,offer_code,candidate_name,candidate_email,candidate_phone,job_title,template_key,area_scope,area_id,department_id,line_id,manager_hr_id,position_id,salary_amount,start_date,expires_at,status,accepted_at,rejected_at,employee_hr_id,onboarding_status,created_at,updated_at",
   });
   const rows = await hydrateOffers(await supabaseRest<OfferDbRow[]>(`job_offers?${params}`));
-  const accepted = rows.filter((row) => row.status === "accepted");
-  const final = rows.filter((row) => row.status === "accepted" || row.status === "rejected");
-  const averageHoursToAccept =
-    accepted.length === 0
-      ? 0
-      : accepted.reduce((sum, row) => {
-          if (!row.acceptedAt) return sum;
-          return sum + (new Date(row.acceptedAt).getTime() - new Date(row.createdAt).getTime()) / 36e5;
-        }, 0) / accepted.length;
+  const summary = summarizeOfferLifecycleRows(rows);
 
   return {
     rows,
-    summary: {
-      acceptanceRate: final.length ? accepted.length / final.length : 0,
-      acceptedOffers: accepted.length,
-      averageHoursToAccept,
-      pendingOffers: rows.filter((row) => row.status === "sent").length,
-      rejectedOffers: rows.filter((row) => row.status === "rejected").length,
-      totalOffers: rows.length,
-    },
+    summary,
     lookups: await getOfferLookups(),
   };
 }
@@ -1017,6 +1009,7 @@ export async function approveAcceptedOffer(
 
   return {
     dashboard: await getOfferDashboard(),
+    employeeHrId,
     offer: (await hydrateOffers([refreshedOffer]))[0],
   };
 }

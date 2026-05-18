@@ -5,6 +5,8 @@ import {
   type CoachingScoreItemKey,
 } from "./constants.ts";
 import type {
+  CoachingQuarterlySummaryRow,
+  CoachingReportSummaryRow,
   CoachingParameterDistributionRow,
   CoachingScoreAnalytics,
 } from "./types.ts";
@@ -33,6 +35,57 @@ function round(value: number, fractionDigits = 2) {
 function average(total: number, count: number) {
   if (count === 0) return 0;
   return round(total / count);
+}
+
+const completedReportStatuses = new Set(["submitted", "reviewed_by_employee", "locked"]);
+
+export type CoachingReportAnalyticsSummary = {
+  averageScore: number;
+  bestScore: number;
+  coachingCount: number;
+  draftCount: number;
+  latestReport: CoachingReportSummaryRow | null;
+  lowestScore: number;
+  pendingAcknowledgmentCount: number;
+  zoneCounts: Record<string, number>;
+};
+
+function averageValues(values: number[]) {
+  if (values.length === 0) return 0;
+  return round(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+export function buildCoachingReportAnalytics(
+  reports: CoachingReportSummaryRow[],
+): CoachingReportAnalyticsSummary {
+  const completed = reports.filter((report) => completedReportStatuses.has(report.status));
+  const scores = completed.map((report) => report.finalScorePercent).filter(Number.isFinite);
+  const zoneCounts = completed.reduce<Record<string, number>>((accumulator, report) => {
+    const zone = report.performanceZone ?? "unclassified";
+    accumulator[zone] = (accumulator[zone] ?? 0) + 1;
+    return accumulator;
+  }, {});
+
+  return {
+    averageScore: averageValues(scores),
+    bestScore: scores.length ? Math.max(...scores) : 0,
+    coachingCount: completed.length,
+    draftCount: reports.filter((report) => report.status === "draft").length,
+    latestReport: completed[0] ?? null,
+    lowestScore: scores.length ? Math.min(...scores) : 0,
+    pendingAcknowledgmentCount: completed.filter((report) => report.status === "submitted" && !report.acknowledged).length,
+    zoneCounts,
+  };
+}
+
+export function filterCoachingQuarterlySummaryByReports(
+  quarterlySummary: CoachingQuarterlySummaryRow[],
+  reports: CoachingReportSummaryRow[],
+  shouldFilter: boolean,
+) {
+  if (!shouldFilter) return quarterlySummary;
+  const visibleHrIds = new Set(reports.map((report) => report.medicalRepHrId.trim().toLowerCase()));
+  return quarterlySummary.filter((row) => visibleHrIds.has(row.medicalRepHrId.trim().toLowerCase()));
 }
 
 function averagePercent(score: number) {

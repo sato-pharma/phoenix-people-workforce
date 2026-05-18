@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import {
+  invalidCommunicationEmails,
+  splitCommunicationEmailList,
+} from "@/lib/communication/metrics";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import {
   buildPhoenixHrReplyEmail,
@@ -26,21 +30,6 @@ type EmailReplySendBody = {
   to?: unknown;
   tone?: unknown;
 };
-
-function splitEmails(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.flatMap(splitEmails);
-  }
-
-  return String(value ?? "")
-    .split(/[;,\n\r]+/)
-    .map((email) => email.trim())
-    .filter(Boolean);
-}
-
-function validEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
 
 function isLocalUrl(value: string) {
   try {
@@ -149,9 +138,9 @@ export async function POST(request: Request) {
     await assertPermission(access, "admin", "read");
 
     const body = (await request.json().catch(() => ({}))) as EmailReplySendBody;
-    const to = splitEmails(body.to);
-    const cc = splitEmails(body.cc);
-    const bcc = splitEmails(body.bcc);
+    const to = splitCommunicationEmailList(body.to);
+    const cc = splitCommunicationEmailList(body.cc);
+    const bcc = splitCommunicationEmailList(body.bcc);
     const subject = stringField(body.subject);
     const replyMessage = stringField(body.replyMessage);
     const recipientName = stringField(body.recipientName);
@@ -164,7 +153,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "missing_to", message: "Add at least one recipient." }, { status: 400 });
     }
 
-    const invalidRecipients = [...to, ...cc, ...bcc].filter((email) => !validEmail(email));
+    const invalidRecipients = invalidCommunicationEmails([...to, ...cc, ...bcc]);
     if (invalidRecipients.length > 0) {
       return NextResponse.json(
         { error: "invalid_email", message: `Invalid email address: ${invalidRecipients[0]}` },

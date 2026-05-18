@@ -4,9 +4,9 @@ import { redirect } from "next/navigation";
 import { MonitoringDashboard } from "@/components/admin/monitoring-dashboard";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
-import { type MonitoringEventSort, getAdminMonitoringStats } from "@/lib/admin/service";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { getOperationalMonitoringStats, type MonitoringEventSort } from "@/lib/operations/events";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +46,7 @@ export default async function AdminMonitoringPage({
   let loadError: string | null = null;
 
   try {
-    stats = await getAdminMonitoringStats({
+    stats = await getOperationalMonitoringStats({
       entityType: entityType,
       page,
       pageSize,

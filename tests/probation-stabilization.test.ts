@@ -37,9 +37,9 @@ export function runProbationStabilizationTests() {
   assert.doesNotMatch(serviceSource, /probation\?\.status === extensionProbationStatus/);
   assert.doesNotMatch(serviceSource, /Extension end date must be later than the current probation end date/);
   assert.match(serviceSource, /getProbationReminderSchedule/);
-  assert.match(serviceSource, /daysAfterHire: 30/);
-  assert.match(serviceSource, /daysAfterHire: 60/);
-  assert.match(serviceSource, /daysAfterHire: 75/);
+  assert.match(serviceSource, /lifecycleRiskWindows\.probationWarningDays/);
+  assert.match(serviceSource, /lifecycleRiskWindows\.probationCriticalDays/);
+  assert.match(serviceSource, /lifecycleRiskWindows\.probationRiskDays/);
   assert.match(serviceSource, /loadHrAndTrainingReminderRecipients/);
   assert.match(serviceSource, /Direct Manager/);
   assert.match(serviceSource, /Manager of Manager/);
@@ -51,8 +51,8 @@ export function runProbationStabilizationTests() {
   assert.match(serviceSource, /ensureSystemProbationReview/);
   assert.match(notificationProcessRouteSource, /processDueProbationReminderEvents/);
   assert.match(notificationProcessRouteSource, /processNotificationOutbox/);
-  assert.match(inAppNotificationsSource, /recipients\.cs/);
-  assert.match(inAppNotificationsSource, /category.*probation/);
+  assert.match(inAppNotificationsSource, /\.overlaps\("recipients"/);
+  assert.match(inAppNotificationsSource, /mapInAppNotificationRows/);
   assert.match(portalServiceSource, /recipients\.cs/);
   assert.match(portalServiceSource, /category.*probation/);
   assert.match(workflowRouteSource, /expectedUpdatedAt/);

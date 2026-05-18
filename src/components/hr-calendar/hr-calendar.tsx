@@ -23,22 +23,18 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
-import type { HrCalendarEmployee } from "@/lib/hr-calendar/types";
+import {
+  buildHrCalendarDays,
+  buildHrCalendarEvents,
+  labelHrCalendarEvent,
+} from "@/lib/hr-calendar/calendar-logic";
+import type { HrCalendarEmployee, HrCalendarEvent, HrCalendarEventType } from "@/lib/hr-calendar/types";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 type Props = {
   initialData: HrCalendarEmployee[] | null;
   initialError: string | null;
-};
-
-type CalendarEventType = "anniversary" | "birthday" | "new_hire";
-
-type CalendarEvent = {
-  date: string;
-  employee: HrCalendarEmployee;
-  eventType: CalendarEventType;
-  tenureYears: number;
 };
 
 const allValue = "__all__";
@@ -75,18 +71,6 @@ function parseDate(value: string | null) {
   return parseDateOnly(value);
 }
 
-function toDateInputValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
-
-function monthDayDate(sourceDate: Date, selectedYear: number) {
-  return new Date(selectedYear, sourceDate.getMonth(), sourceDate.getDate());
-}
-
 function formatDate(value: string) {
   return formatDateOnly(value, "en", {
     day: "2-digit",
@@ -105,94 +89,11 @@ function uniqueOptions(values: string[]) {
   );
 }
 
-function buildEvents(
-  employees: HrCalendarEmployee[],
-  selectedMonth: number,
-  selectedYear: number,
-) {
-  const events: CalendarEvent[] = [];
-
-  for (const employee of employees) {
-    const hireDate = parseDate(employee.hireDate);
-    const birthDate = parseDate(employee.birthDate);
-
-    if (hireDate && hireDate.getMonth() + 1 === selectedMonth) {
-      const hireYear = hireDate.getFullYear();
-
-      if (hireYear === selectedYear) {
-        events.push({
-          date: employee.hireDate,
-          employee,
-          eventType: "new_hire",
-          tenureYears: 0,
-        });
-      }
-
-      if (hireYear < selectedYear) {
-        events.push({
-          date: toDateInputValue(monthDayDate(hireDate, selectedYear)),
-          employee,
-          eventType: "anniversary",
-          tenureYears: selectedYear - hireYear,
-        });
-      }
-    }
-
-    if (birthDate && birthDate.getMonth() + 1 === selectedMonth) {
-      events.push({
-        date: toDateInputValue(monthDayDate(birthDate, selectedYear)),
-        employee,
-        eventType: "birthday",
-        tenureYears: 0,
-      });
-    }
-  }
-
-  return events.sort((left, right) => {
-    const dayDiff = dayOfMonth(left.date) - dayOfMonth(right.date);
-
-    if (dayDiff !== 0) {
-      return dayDiff;
-    }
-
-    return left.employee.fullName.localeCompare(right.employee.fullName);
-  });
+function eventLabel(event: HrCalendarEvent) {
+  return labelHrCalendarEvent(event.eventType, event.tenureYears);
 }
 
-function buildCalendarDays(selectedMonth: number, selectedYear: number) {
-  const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
-  const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
-  const leadingEmptyDays = firstDay.getDay();
-  const cells: Array<Date | null> = [];
-
-  for (let index = 0; index < leadingEmptyDays; index += 1) {
-    cells.push(null);
-  }
-
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    cells.push(new Date(selectedYear, selectedMonth - 1, day));
-  }
-
-  while (cells.length % 7 !== 0) {
-    cells.push(null);
-  }
-
-  return cells;
-}
-
-function eventLabel(event: CalendarEvent) {
-  if (event.eventType === "new_hire") {
-    return "New hire";
-  }
-
-  if (event.eventType === "birthday") {
-    return "Birthday";
-  }
-
-  return `${event.tenureYears} year anniversary`;
-}
-
-function eventClass(eventType: CalendarEventType) {
+function eventClass(eventType: HrCalendarEventType) {
   if (eventType === "new_hire") {
     return "border-[#A7F3D0] bg-[#ECFDF5] text-[#065F46]";
   }
@@ -204,7 +105,7 @@ function eventClass(eventType: CalendarEventType) {
   return "border-[#FED7AA] bg-[#FFF7ED] text-[#C2410C]";
 }
 
-function eventBadgeVariant(eventType: CalendarEventType) {
+function eventBadgeVariant(eventType: HrCalendarEventType) {
   if (eventType === "new_hire") {
     return "success" as const;
   }
@@ -216,7 +117,7 @@ function eventBadgeVariant(eventType: CalendarEventType) {
   return "warning" as const;
 }
 
-function eventDayLabel(eventType: CalendarEventType) {
+function eventDayLabel(eventType: HrCalendarEventType) {
   if (eventType === "new_hire") {
     return "New hire";
   }
@@ -235,7 +136,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
 
   const [areaFilter, setAreaFilter] = useState(allValue);
   const [eventTypeFilter, setEventTypeFilter] = useState<
-    CalendarEventType | "all"
+    HrCalendarEventType | "all"
   >("all");
   const [lineFilter, setLineFilter] = useState(allValue);
   const [query, setQuery] = useState("");
@@ -244,7 +145,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
   const rows = useMemo(() => initialData ?? [], [initialData]);
 
   const allEvents = useMemo(
-    () => buildEvents(rows, selectedMonth, selectedYear),
+    () => buildHrCalendarEvents(rows, selectedMonth, selectedYear),
     [rows, selectedMonth, selectedYear],
   );
 
@@ -279,7 +180,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
   }, [allEvents, areaFilter, eventTypeFilter, lineFilter, query]);
 
   const eventsByDay = useMemo(() => {
-    const map = new Map<number, CalendarEvent[]>();
+    const map = new Map<number, HrCalendarEvent[]>();
 
     for (const event of filteredEvents) {
       const day = dayOfMonth(event.date);
@@ -290,7 +191,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
   }, [filteredEvents]);
 
   const calendarCells = useMemo(
-    () => buildCalendarDays(selectedMonth, selectedYear),
+    () => buildHrCalendarDays(selectedMonth, selectedYear),
     [selectedMonth, selectedYear],
   );
   const selectedMonthLabel =
@@ -482,7 +383,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
               className={selectClassName}
               onChange={(event) =>
                 setEventTypeFilter(
-                  event.target.value as CalendarEventType | "all",
+                  event.target.value as HrCalendarEventType | "all",
                 )
               }
               value={eventTypeFilter}

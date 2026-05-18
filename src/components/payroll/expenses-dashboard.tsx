@@ -20,6 +20,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatCurrencyValue, formatNumberValue } from "@/lib/i18n/format";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import {
+  groupPayrollExpenses,
+  summarizePayrollExpenses,
+  type PayrollExpenseGroupRow,
+  type PayrollExpenseSummary,
+} from "@/lib/payroll/expense-metrics";
 import type {
   PayrollExpenseApproval,
   PayrollExpenseReport,
@@ -61,19 +67,12 @@ type Props = {
   initialError: string | null;
   initialEmployees: EmployeeDirectoryRow[];
   initialExpenses: PayrollExpenseApproval[];
+  initialMetrics?: PayrollExpenseSummary | null;
   initialReports: PayrollExpenseReport[];
   portalMode?: boolean;
 };
 
-type GroupRow = {
-  allowance: number;
-  count: number;
-  key: string;
-  km: number;
-  meeting: number;
-  total: number;
-  travel: number;
-};
+type GroupRow = PayrollExpenseGroupRow;
 
 type EnrichedExpense = PayrollExpenseApproval & {
   employeeArea: string;
@@ -115,33 +114,6 @@ function formatNumber(value: number) {
 
 function uniqueSorted(values: string[]) {
   return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right));
-}
-
-function groupBy<TExpense extends PayrollExpenseApproval>(expenses: TExpense[], getKey: (expense: TExpense) => string) {
-  const map = new Map<string, GroupRow>();
-
-  expenses.forEach((expense) => {
-    const key = getKey(expense) || "Unassigned";
-    const current = map.get(key) ?? {
-      allowance: 0,
-      count: 0,
-      key,
-      km: 0,
-      meeting: 0,
-      total: 0,
-      travel: 0,
-    };
-
-    current.allowance += expense.allowance;
-    current.count += 1;
-    current.km += expense.km;
-    current.meeting += expense.meetingAmount;
-    current.total += expense.total;
-    current.travel += expense.travelCost;
-    map.set(key, current);
-  });
-
-  return Array.from(map.values()).sort((left, right) => right.total - left.total);
 }
 
 function normalizeDestination(value: string) {
@@ -427,6 +399,7 @@ export function ExpensesDashboard({
   initialEmployees,
   initialError,
   initialExpenses,
+  initialMetrics,
   initialReports,
   portalMode = false,
 }: Props) {
@@ -487,32 +460,30 @@ export function ExpensesDashboard({
   }, [enrichedExpenses, filters]);
 
   const summary = useMemo(() => {
-    const total = filteredExpenses.reduce((sum, expense) => sum + expense.total, 0);
-    const approved = filteredExpenses.filter((expense) => expense.hrApproved);
-    const km = filteredExpenses.reduce((sum, expense) => sum + expense.km, 0);
-
+    const metrics = summarizePayrollExpenses(filteredExpenses);
     return {
-      approvedAmount: approved.reduce((sum, expense) => sum + expense.total, 0),
-      approvedRows: approved.length,
-      km,
-      meeting: filteredExpenses.reduce((sum, expense) => sum + expense.meetingAmount, 0),
-      specialists: new Set(filteredExpenses.map((expense) => expense.specialist).filter(Boolean)).size,
-      total,
-      travel: filteredExpenses.reduce((sum, expense) => sum + expense.travelCost, 0),
-      trips: filteredExpenses.length,
+      approvedAmount: metrics.approvedAmount,
+      approvedRows: metrics.approvedRows,
+      allowance: metrics.totalAllowance,
+      km: metrics.totalDistance,
+      meeting: metrics.totalMeetingAmount,
+      specialists: metrics.specialistCount,
+      total: metrics.totalAmount,
+      travel: metrics.totalTravelCost,
+      trips: metrics.totalRows,
     };
   }, [filteredExpenses]);
 
   const monthlyRows = useMemo(
-    () => groupBy(filteredExpenses, (expense) => monthKey(expense.date)).sort((left, right) => left.key.localeCompare(right.key)),
+    () => groupPayrollExpenses(filteredExpenses, (expense) => monthKey(expense.date)).sort((left, right) => left.key.localeCompare(right.key)),
     [filteredExpenses],
   );
-  const payoutRows = useMemo(() => groupBy(filteredExpenses, payoutKey), [filteredExpenses]);
-  const specialistRows = useMemo(() => groupBy(filteredExpenses, (expense) => expense.specialist), [filteredExpenses]);
-  const destinationRows = useMemo(() => groupBy(filteredExpenses, (expense) => normalizeDestination(expense.to || expense.location)), [filteredExpenses]);
-  const requestRows = useMemo(() => groupBy(filteredExpenses, (expense) => expense.requestType), [filteredExpenses]);
-  const transportRows = useMemo(() => groupBy(filteredExpenses, (expense) => expense.transportationType || "No Transportation"), [filteredExpenses]);
-  const statusRows = useMemo(() => groupBy(filteredExpenses, (expense) => expense.status), [filteredExpenses]);
+  const payoutRows = useMemo(() => groupPayrollExpenses(filteredExpenses, payoutKey), [filteredExpenses]);
+  const specialistRows = useMemo(() => groupPayrollExpenses(filteredExpenses, (expense) => expense.specialist), [filteredExpenses]);
+  const destinationRows = useMemo(() => groupPayrollExpenses(filteredExpenses, (expense) => normalizeDestination(expense.to || expense.location)), [filteredExpenses]);
+  const requestRows = useMemo(() => groupPayrollExpenses(filteredExpenses, (expense) => expense.requestType), [filteredExpenses]);
+  const transportRows = useMemo(() => groupPayrollExpenses(filteredExpenses, (expense) => expense.transportationType || "No Transportation"), [filteredExpenses]);
+  const statusRows = useMemo(() => groupPayrollExpenses(filteredExpenses, (expense) => expense.status), [filteredExpenses]);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
   const compactFilterValue = (name: keyof ExpenseFilters) => {
@@ -604,7 +575,7 @@ export function ExpensesDashboard({
         badges={(
           <div className="flex flex-wrap gap-2 text-xs">
             <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Reports: {formatNumber(initialReports.length)}</span>
-            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Saved rows: {formatNumber(initialExpenses.length)}</span>
+            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Saved rows: {formatNumber(initialMetrics?.totalRows ?? initialExpenses.length)}</span>
             <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Filtered: {formatNumber(summary.trips)} trips</span>
             <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">{formatEGP(summary.total)} total</span>
           </div>
@@ -698,7 +669,7 @@ export function ExpensesDashboard({
             <MapPinned className="h-5 w-5 text-[#F97316]" />
             <div>
               <p className="text-xs text-[#64748B]">Travel + Allowance</p>
-              <p className="font-bold text-[#0F172A]">{formatEGP(summary.travel + filteredExpenses.reduce((sum, expense) => sum + expense.allowance, 0))}</p>
+              <p className="font-bold text-[#0F172A]">{formatEGP(summary.travel + summary.allowance)}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

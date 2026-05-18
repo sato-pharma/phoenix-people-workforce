@@ -12,8 +12,17 @@ import {
   type SalesOwnershipVacancySignal,
 } from "@/lib/workforce-classification";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { isDisposableFixtureText, isDisposableSalesRecordRow } from "@/lib/fixture-hygiene";
 import { isManagerOptionalHrId } from "@/lib/employees/hierarchy-governance";
-import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecycle";
+import {
+  getOperationalMonitoringStats,
+  type AdminMonitoringStats,
+  type MonitoringSecurityEventsRequest,
+} from "@/lib/operations/events";
+import { summarizeDeviceUserMappings } from "@/lib/attendance/metrics";
+import { buildVacationPlatformMetrics } from "@/lib/vacation/metrics";
+import { getWorkforceMetrics } from "@/lib/platform/metrics";
+import type { AccessContext } from "@/lib/auth/permissions";
 
 export type PhoenixAdminStats = {
   totalEmployees: number;
@@ -33,228 +42,6 @@ export type PhoenixAdminStats = {
     created_at: string | null;
   }>;
 };
-
-export type MonitoringEventSort = "newest" | "oldest";
-
-export type AdminMonitoringSecurityEvent = {
-  actor: string;
-  actorHrId: string | null;
-  actorLoginId: string | null;
-  actorName: string | null;
-  createdAt: string | null;
-  entityType: string;
-  id: string;
-  summary: string;
-};
-
-export type MonitoringSecurityEventsRequest = {
-  entityType?: string;
-  page?: number;
-  pageSize?: number;
-  search?: string;
-  sort?: MonitoringEventSort;
-  fetchAll?: boolean;
-  maxPageSize?: number;
-};
-
-export type AdminMonitoringSecurityEvents = {
-  entityType: string;
-  entityTypes: string[];
-  page: number;
-  pageSize: number;
-  search: string;
-  sort: MonitoringEventSort;
-  total: number;
-  totalPages: number;
-  rows: AdminMonitoringSecurityEvent[];
-};
-
-export type AdminMonitoringStats = {
-  auth: {
-    authBridgeCoverageRate: number;
-    brokenAccounts: string[];
-    failedAttempts24h: number;
-    forcedPasswordResets: number;
-    lockedAccounts: number;
-    recentAuthEvents: number;
-    uniqueFailedIps24h: number;
-  };
-  notifications: {
-    actualDelivery24h: {
-      bounced: number;
-      complained: number;
-      delivered: number;
-      failed: number;
-      sent: number;
-      suppressed: number;
-      unknown: number;
-    };
-    failed24h: number;
-    pending24h: number;
-    recentDeliveryEvents: Array<{
-      failureReason: string | null;
-      id: string;
-      occurredAt: string | null;
-      recipients: string[];
-      status: string;
-      subject: string | null;
-    }>;
-    sent24h: number;
-    totalLogs: number;
-    totalQueuedEvents: number;
-  };
-  recentEvents: AdminMonitoringSecurityEvents;
-};
-
-function coerceMonitoringSort(value: string | undefined): MonitoringEventSort {
-  return value === "oldest" ? "oldest" : "newest";
-}
-
-function normalizeMonitoringSearch(value?: string) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function coerceMonitoringPage(value: number | undefined, fallback: number) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
-  return value > 0 ? Math.floor(value) : fallback;
-}
-
-function coerceMonitoringPageSize(value: number | undefined, fallback: number, maxPageSize = 500) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
-  const safeValue = Math.floor(value);
-  if (safeValue <= 0) return fallback;
-  return Math.min(maxPageSize, safeValue);
-}
-
-function toMonitoringEventRows(
-  rows: Array<{
-    actor_login_id?: unknown;
-    created_at?: string | null;
-    entity_type?: string | null;
-    id?: unknown;
-    summary?: string | null;
-  }>,
-  authUserByLoginId: Map<string, { hrId: string | null; name: string | null }>,
-) {
-  return rows.map((row) => {
-    const actorLoginId = typeof row.actor_login_id === "string" && row.actor_login_id.trim()
-      ? row.actor_login_id.trim()
-      : null;
-    const actorProfile = actorLoginId ? authUserByLoginId.get(actorLoginId.toLowerCase()) : undefined;
-
-    return {
-      actor: actorLoginId ?? "System",
-      actorHrId: actorProfile?.hrId ?? null,
-      actorLoginId,
-      actorName: actorProfile?.name ?? null,
-      createdAt: row.created_at ?? null,
-      entityType: row.entity_type ?? "unknown",
-      id: String(row.id),
-      summary: row.summary ?? "No summary",
-    };
-  });
-}
-
-function buildAuditLoginIdClause(values: string[]) {
-  if (values.length === 0) return "";
-  const escaped = values.map((value) => `"${value.replace(/"/g, "\"\"")}"`);
-  return escaped.join(",");
-}
-
-function buildMonitoringSecurityEventsQuery(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  params: {
-    authFilter: string;
-    entityType: string;
-    matchedActorLoginIds: string[];
-    sortAscending: boolean;
-  },
-) {
-  let query = supabase
-    .from("audit_logs")
-    .select("id,actor_login_id,entity_type,summary,created_at", { count: "exact" })
-    .or("entity_type.eq.auth_session,entity_type.eq.user")
-    .order("created_at", { ascending: params.sortAscending })
-    .order("id", { ascending: params.sortAscending });
-
-  if (params.entityType !== "all") {
-    query = query.eq("entity_type", params.entityType);
-  }
-
-  if (params.authFilter) {
-    const searchClauses = [
-      `actor_login_id.ilike.%${params.authFilter}%`,
-      `summary.ilike.%${params.authFilter}%`,
-      `entity_type.ilike.%${params.authFilter}%`,
-    ];
-    if (params.matchedActorLoginIds.length > 0) {
-      searchClauses.push(`actor_login_id.in.(${buildAuditLoginIdClause(params.matchedActorLoginIds)})`);
-    }
-    query = query.or(searchClauses.join(","));
-  }
-
-  return query;
-}
-
-function isMissingEmailDeliveryEventsTable(error: unknown) {
-  const code = typeof error === "object" && error && "code" in error
-    ? String((error as { code?: unknown }).code ?? "").toLowerCase()
-    : "";
-  const message = typeof error === "object" && error && "message" in error
-    ? String((error as { message?: unknown }).message ?? "").toLowerCase()
-    : String(error).toLowerCase();
-
-  return code === "42p01" || message.includes("email_delivery_events");
-}
-
-async function getEmailDeliveryMonitoring(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  sinceIso: string,
-) {
-  const emptyCounts = {
-    bounced: 0,
-    complained: 0,
-    delivered: 0,
-    failed: 0,
-    sent: 0,
-    suppressed: 0,
-    unknown: 0,
-  };
-
-  const [recent, recent24h] = await Promise.all([
-    supabase
-      .from("email_delivery_events")
-      .select("id,status,subject,recipients,failure_reason,occurred_at")
-      .order("occurred_at", { ascending: false })
-      .limit(20),
-    supabase
-      .from("email_delivery_events")
-      .select("status,occurred_at")
-      .gte("occurred_at", sinceIso),
-  ]);
-
-  if (recent.error) throw recent.error;
-  if (recent24h.error) throw recent24h.error;
-
-  const counts = { ...emptyCounts };
-  for (const row of recent24h.data ?? []) {
-    const status = String(row.status ?? "unknown").toLowerCase() as keyof typeof counts;
-    if (status in counts) counts[status] += 1;
-    else counts.unknown += 1;
-  }
-
-  return {
-    counts,
-    rows: (recent.data ?? []).map((row) => ({
-      failureReason: typeof row.failure_reason === "string" ? row.failure_reason : null,
-      id: String(row.id),
-      occurredAt: typeof row.occurred_at === "string" ? row.occurred_at : null,
-      recipients: Array.isArray(row.recipients) ? row.recipients.map(String) : [],
-      status: String(row.status ?? "unknown"),
-      subject: typeof row.subject === "string" ? row.subject : null,
-    })),
-  };
-}
 
 export async function getPhoenixAdminStats(): Promise<PhoenixAdminStats> {
   const supabase = getSupabaseAdmin();
@@ -309,201 +96,7 @@ export async function getPhoenixAdminStats(): Promise<PhoenixAdminStats> {
 export async function getAdminMonitoringStats(
   eventRequest: MonitoringSecurityEventsRequest = {},
 ): Promise<AdminMonitoringStats> {
-  const supabase = getSupabaseAdmin();
-  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const normalizedSearch = normalizeMonitoringSearch(eventRequest.search);
-  const requestedSort = coerceMonitoringSort(eventRequest.sort);
-  const safePage = coerceMonitoringPage(eventRequest.page, 1);
-  const safePageSize = coerceMonitoringPageSize(eventRequest.pageSize, 20, eventRequest.maxPageSize ?? 500);
-  const safeEntityType = normalizeMonitoringSearch(eventRequest.entityType) || "all";
-  const safeFetchAll = eventRequest.fetchAll ?? false;
-
-  const [
-    bridgeRows,
-    lockedAccounts,
-    forcedPasswordResets,
-    failedAttempts,
-    authAuditCount,
-    notificationLogCount,
-    notificationLogs24h,
-    notificationEvents24h,
-    authUsersWithUid,
-    accessProfileUids,
-  ] = await Promise.all([
-    supabase.from("app_auth_users").select("login_id,hr_id,name,auth_user_id,auth_email"),
-    supabase.from("app_auth_users").select("*", { count: "exact", head: true }).gt("locked_until", new Date().toISOString()),
-    supabase.from("app_auth_users").select("*", { count: "exact", head: true }).eq("force_password_reset", true),
-    supabase.from("auth_login_attempts").select("ip,success,attempted_at").eq("success", false).gte("attempted_at", since24h),
-    supabase.from("audit_logs").select("*", { count: "exact", head: true }).eq("entity_type", "auth_session").gte("created_at", since24h),
-    supabase.from("notification_delivery_logs").select("*", { count: "exact", head: true }),
-    supabase
-      .from("notification_delivery_logs")
-      .select("status,sent_at")
-      .gte("sent_at", since24h),
-    supabase
-      .from("notification_events")
-      .select("status,created_at")
-      .gte("created_at", since24h),
-    supabase.from("app_auth_users").select("login_id,auth_user_id").not("auth_user_id", "is", null),
-    supabase.from("user_access_profiles").select("auth_user_id"),
-  ]);
-
-  const bridgeData = bridgeRows.data ?? [];
-  const authUserByLoginId = new Map(
-    bridgeData
-      .filter((row) => typeof row.login_id === "string" && row.login_id.length > 0)
-      .map((row) => [
-        String(row.login_id).toLowerCase(),
-        {
-          hrId: typeof row.hr_id === "string" && row.hr_id.trim() ? row.hr_id.trim() : null,
-          name: typeof row.name === "string" && row.name.trim() ? row.name.trim() : null,
-        },
-      ]),
-  );
-  const bridgedUsers = bridgeData.filter((row) => row.auth_user_id && row.auth_email).length;
-  const authBridgeCoverageRate = bridgeData.length > 0 ? bridgedUsers / bridgeData.length : 1;
-
-  const profileUidSet = new Set(
-    (accessProfileUids.data ?? [])
-      .map((row) => row.auth_user_id)
-      .filter((uid): uid is string => typeof uid === "string" && uid.length > 0),
-  );
-  const brokenAccounts = (authUsersWithUid.data ?? [])
-    .filter((row) => typeof row.auth_user_id === "string" && !profileUidSet.has(row.auth_user_id))
-    .map((row) => row.login_id as string)
-    .filter(Boolean);
-
-  const failedAttemptsData = failedAttempts.data ?? [];
-  const uniqueFailedIps24h = new Set(
-    failedAttemptsData
-      .map((row) => row.ip)
-      .filter((value): value is string => typeof value === "string" && value.length > 0),
-  ).size;
-
-  const notificationLogRows = notificationLogs24h.data ?? [];
-  const notificationEventRows = notificationEvents24h.data ?? [];
-  const emailDeliveryMonitoring = await getEmailDeliveryMonitoring(supabase, since24h).catch((error) => {
-    if (!isMissingEmailDeliveryEventsTable(error)) throw error;
-    return {
-      counts: {
-        bounced: 0,
-        complained: 0,
-        delivered: 0,
-        failed: 0,
-        sent: 0,
-        suppressed: 0,
-        unknown: 0,
-      },
-      rows: [],
-    };
-  });
-  const authFilter = normalizedSearch.toLowerCase();
-  const allActorTypes = new Set<string>();
-  const matchedActorLogins = bridgeData
-    .filter((row) => {
-      const loginId = typeof row.login_id === "string" ? row.login_id : "";
-      const hrId = typeof row.hr_id === "string" ? row.hr_id : "";
-      const name = typeof row.name === "string" ? row.name : "";
-      const normalizedLoginId = loginId.toLowerCase();
-      const normalizedHrId = hrId.toLowerCase();
-      const normalizedName = name.toLowerCase();
-
-      return authFilter
-        ? (
-          normalizedLoginId.includes(authFilter)
-          || normalizedHrId.includes(authFilter)
-          || normalizedName.includes(authFilter)
-        )
-        : false;
-    })
-    .map((row) => String(row.login_id))
-    .filter((loginId): loginId is string => typeof loginId === "string" && loginId.length > 0);
-
-  const matchedActorLoginIds = Array.from(new Set(matchedActorLogins)).filter((loginId) => loginId.length > 0).slice(0, 500);
-  const eventSortAscending = requestedSort === "oldest";
-  const buildEventsQuery = () => buildMonitoringSecurityEventsQuery(supabase, {
-    authFilter: normalizedSearch,
-    entityType: safeEntityType,
-    matchedActorLoginIds,
-    sortAscending: eventSortAscending,
-  });
-  let mappedRecentEvents: AdminMonitoringSecurityEvent[] = [];
-  let totalRecentAuthEvents = 0;
-
-  if (safeFetchAll) {
-    const fetchPageSize = coerceMonitoringPageSize(
-      eventRequest.pageSize,
-      safePageSize,
-      eventRequest.maxPageSize ?? 5000,
-    );
-    let eventStart = 0;
-
-    while (true) {
-      const { data: eventRows, count: total, error: eventsError } = await buildEventsQuery().range(
-        eventStart,
-        eventStart + fetchPageSize - 1,
-      );
-      if (eventsError) {
-        throw eventsError;
-      }
-      const mappedRows = toMonitoringEventRows(eventRows ?? [], authUserByLoginId);
-      mappedRecentEvents.push(...mappedRows);
-      if (typeof total === "number") {
-        totalRecentAuthEvents = total;
-      }
-      if (mappedRows.length < fetchPageSize) {
-        break;
-      }
-      eventStart += fetchPageSize;
-    }
-    if (totalRecentAuthEvents === 0) {
-      totalRecentAuthEvents = mappedRecentEvents.length;
-    }
-  } else {
-    const eventStart = (safePage - 1) * safePageSize;
-    const eventEnd = eventStart + safePageSize - 1;
-    const { data: recentAuthEventRows, count: total, error: eventsError } = await buildEventsQuery().range(eventStart, eventEnd);
-    if (eventsError) {
-      throw eventsError;
-    }
-    mappedRecentEvents = toMonitoringEventRows(recentAuthEventRows ?? [], authUserByLoginId);
-    totalRecentAuthEvents = total ?? 0;
-  }
-  mappedRecentEvents.forEach((event) => {
-    if (event.entityType) allActorTypes.add(event.entityType);
-  });
-
-  return {
-    auth: {
-      authBridgeCoverageRate,
-      brokenAccounts,
-      failedAttempts24h: failedAttemptsData.length,
-      forcedPasswordResets: forcedPasswordResets.count ?? 0,
-      lockedAccounts: lockedAccounts.count ?? 0,
-      recentAuthEvents: authAuditCount.count ?? 0,
-      uniqueFailedIps24h,
-    },
-    notifications: {
-      actualDelivery24h: emailDeliveryMonitoring.counts,
-      failed24h: notificationLogRows.filter((row) => String(row.status ?? "").toLowerCase() === "failed").length,
-      pending24h: notificationEventRows.filter((row) => String(row.status ?? "").toLowerCase() === "pending").length,
-      recentDeliveryEvents: emailDeliveryMonitoring.rows,
-      sent24h: notificationLogRows.filter((row) => String(row.status ?? "").toLowerCase() === "sent").length,
-      totalLogs: notificationLogCount.count ?? 0,
-      totalQueuedEvents: notificationEventRows.length,
-    },
-    recentEvents: {
-      entityType: safeEntityType,
-      entityTypes: Array.from(new Set(["auth_session", "user", ...allActorTypes])),
-      page: safePage,
-      pageSize: safePageSize,
-      search: normalizedSearch,
-      sort: requestedSort,
-      rows: mappedRecentEvents,
-      total: totalRecentAuthEvents ?? 0,
-      totalPages: Math.max(1, Math.ceil((totalRecentAuthEvents ?? 0) / safePageSize)),
-    },
-  };
+  return getOperationalMonitoringStats(eventRequest);
 }
 
 export type DataHealthStats = {
@@ -520,6 +113,11 @@ export type DataHealthStats = {
     vacancyNodes: number;
     vacantPositions: number;
     employeeLinkageWarnings: number;
+    attendanceMappingIssues: number;
+    attendanceReadinessRate: number;
+    leaveApprovedRequests: number;
+    leavePendingRequests: number;
+    leaveRejectedRequests: number;
     unresolvedSalesExceptions: number;
   };
   salesClassification: Record<SalesOwnershipClassification, {
@@ -539,6 +137,7 @@ export type DataHealthStats = {
     reason: string;
   }>;
   salesIssues: Array<{
+    record_id: string | null;
     batch_id: string | null;
     row_number: number | null;
     employee_hr_id: string | null;
@@ -638,6 +237,14 @@ const salesOwnershipClassifications: SalesOwnershipClassification[] = [
   "others_unassigned_sales",
   "unresolved_sales_exception",
 ];
+
+const dataHealthAccessContext: AccessContext = {
+  hrId: "DATA_HEALTH_SYSTEM",
+  loginId: "data-health.system",
+  role: "Super Admin",
+  scope: "system",
+  source: "system",
+};
 
 function normalizeHealthKey(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
@@ -752,6 +359,8 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
     accessProfiles,
     salesRows,
     vacancyRows,
+    attendanceMappings,
+    vacationRows,
     orphanAudit,
   ] = await Promise.all([
     getEmployeeDirectory(),
@@ -764,17 +373,34 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
     fetchAllDataHealthRows<Record<string, unknown>>(() =>
       supabase
         .from("sales_records")
-        .select("batch_id,row_number,employee_hr_id,employee_crm_id,employee_lookup_key,employee_name,manager_hr_id,line,territory,product,sales_value,validation_state"),
+        .select("id,batch_id,row_number,employee_hr_id,employee_crm_id,employee_lookup_key,employee_name,manager_hr_id,line,territory,product,sales_value,validation_state,month,year"),
     ),
     fetchAllDataHealthRows<Record<string, unknown>>(() =>
       supabase
         .from("position_vacancies")
         .select("id,vacancy_code,area_id,line_id,manager_hr_id,status,areas(name),lines(name)"),
     ),
+    fetchAllDataHealthRows<Record<string, unknown>>(() =>
+      supabase
+        .from("attendance_device_user_map")
+        .select("employee_hr_id,is_active"),
+    ),
+    fetchAllDataHealthRows<Record<string, unknown>>(() =>
+      supabase
+        .from("v2_vacation_requests")
+        .select("employee_hr_id,status,payment_status,duration_days,manager_decision"),
+    ).catch(() => []),
     supabase.from("v_hr_id_orphan_audit").select("*"),
   ]);
 
-  const employeeNodes = directory.employees.map(employeeToNodeInput);
+  const businessEmployees = directory.employees.filter((employee) =>
+    !isDisposableFixtureText(employee.hrId) && !isDisposableFixtureText(employee.fullName),
+  );
+  const businessSalesRows = salesRows.filter((row) => !isDisposableSalesRecordRow(row));
+  const businessVacancyRows = vacancyRows.filter((row) => !isDisposableFixtureText(rowText(row, "vacancy_code")));
+  const businessVacationRows = vacationRows.filter((row) => !isDisposableFixtureText(rowText(row, "employee_hr_id")));
+
+  const employeeNodes = businessEmployees.map(employeeToNodeInput);
   const authHrIds = new Set(
     appAuthUsers
       .filter((row) => row.is_active !== false)
@@ -803,31 +429,29 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
       if (typeof area.lineId === "number") lineIdByAreaId.set(areaId, area.lineId);
     }
   }
-  for (const employee of directory.employees) {
+  for (const employee of businessEmployees) {
     addLineLookup(lineIdByName, employee.lineName, employee.lineId);
     if (employee.areaName && typeof employee.areaId === "number") areaIdByName.set(normalizeHealthKey(employee.areaName), employee.areaId);
     if (typeof employee.areaId === "number" && typeof employee.lineId === "number") lineIdByAreaId.set(employee.areaId, employee.lineId);
   }
+
+  const openVacancyRows = businessVacancyRows.filter((row) => rowText(row, "status") === "open");
 
   const ownershipContext = buildSalesOwnershipContext({
     areaIdByName,
     employees: employeeNodes,
     lineIdByAreaId,
     lineIdByName,
-    vacancies: vacancyRows.map(vacancySignalFromRow),
+    vacancies: openVacancyRows.map(vacancySignalFromRow),
   });
 
   const employeeIssues: DataHealthStats["employeeIssues"] = [];
-  let activeEmployees = 0;
-  let structureNodes = 0;
   let historicalRecords = 0;
   let vacancyNodes = 0;
   let nonLoginAggregationNodes = 0;
 
   for (const employee of employeeNodes) {
     const node = classifyEmployeeNode(employee);
-    if (node.node_type === "active_employee") activeEmployees += 1;
-    if (node.eligible_for_organogram) structureNodes += 1;
     if (node.node_type === "historical_record") historicalRecords += 1;
     if (node.node_type === "vacancy_node") vacancyNodes += 1;
     if (
@@ -890,7 +514,7 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
   const salesClassification = emptySalesClassificationSummary();
   const salesIssues: DataHealthStats["salesIssues"] = [];
 
-  for (const row of salesRows) {
+  for (const row of businessSalesRows) {
     const ownership = classifySalesOwnership(salesOwnershipRecordFromRow(row), ownershipContext);
     const salesValue = rowNumber(row, "sales_value") ?? 0;
     salesClassification[ownership.classification].records += 1;
@@ -898,6 +522,7 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
 
     if (ownership.classification === "unresolved_sales_exception") {
       salesIssues.push({
+        record_id: rowText(row, "id"),
         batch_id: rowText(row, "batch_id"),
         classification: ownership.classification,
         employee_hr_id: rowText(row, "employee_hr_id"),
@@ -918,10 +543,32 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
   ).length;
   const employeeLinkageWarnings = employeeIssues.length - activeEmployeesMissingAuthAccess;
   const issuesCount = employeeIssues.length + salesIssues.length;
-  const healthyEmployees = Math.max(0, activeEmployees - employeeIssues.length);
-  const healthRate = activeEmployees > 0 ? (healthyEmployees / activeEmployees) * 100 : 100;
-  const orphans = Array.isArray(orphanAudit.data) ? orphanAudit.data : [];
-  const vacancyAudit = vacancyRows.map((row) => ({
+  const attendanceMappingSummary = summarizeDeviceUserMappings(
+    attendanceMappings.map((row) => ({
+      employeeHrId: rowText(row, "employee_hr_id"),
+      isActive: row.is_active !== false,
+    })),
+  );
+  const leaveMetrics = buildVacationPlatformMetrics(
+    businessVacationRows.map((row) => ({
+      durationDays: rowNumber(row, "duration_days") ?? 0,
+      managerDecision: rowText(row, "manager_decision") === "approved" || rowText(row, "manager_decision") === "rejected"
+        ? rowText(row, "manager_decision") as "approved" | "rejected"
+        : null,
+      paymentStatus: rowText(row, "payment_status") === "paid" ? "paid" : "unpaid",
+      status:
+        rowText(row, "status") === "approved" || rowText(row, "status") === "rejected" || rowText(row, "status") === "pending_manager"
+          ? rowText(row, "status") as "approved" | "rejected" | "pending_manager"
+          : "pending_manager",
+    })),
+  );
+  const sharedWorkforce = await getWorkforceMetrics(dataHealthAccessContext);
+  const sharedActiveEmployees = sharedWorkforce.activeEmployees;
+  const healthyEmployees = Math.max(0, sharedActiveEmployees - employeeIssues.length);
+  const healthRate = sharedActiveEmployees > 0 ? (healthyEmployees / sharedActiveEmployees) * 100 : 100;
+  const orphans = (Array.isArray(orphanAudit.data) ? orphanAudit.data : [])
+    .filter((row) => !isDisposableFixtureText(rowText(row as Record<string, unknown>, "hr_id")));
+  const vacancyAudit = openVacancyRows.map((row) => ({
     area_name: relationName(row.areas, "name"),
     line_name: relationName(row.lines, "name"),
     manager_hr_id: rowText(row, "manager_hr_id"),
@@ -929,25 +576,25 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
     vacancy_code: rowText(row, "vacancy_code"),
     vacancy_id: rowText(row, "id"),
   }));
-  const workforceStructure = calculateWorkforceStructureSummary({
-    activeEmployees: structureNodes,
-    openVacancies: vacancyAudit.length,
-  });
-
   return {
     summary: {
-      activeEmployees,
+      activeEmployees: sharedActiveEmployees,
       activeEmployeesMissingAuthAccess,
+      attendanceMappingIssues: attendanceMappingSummary.unmapped,
+      attendanceReadinessRate: attendanceMappingSummary.readinessRate,
       employeeLinkageWarnings,
       healthRate,
       healthyEmployees,
       historicalRecords,
       issuesCount,
+      leaveApprovedRequests: leaveMetrics.approvedRequests,
+      leavePendingRequests: leaveMetrics.pendingRequests,
+      leaveRejectedRequests: leaveMetrics.rejectedRequests,
       nonLoginAggregationNodes,
-      structureNodes: workforceStructure.totalStructure,
-      totalEmployees: employeeNodes.length,
+      structureNodes: sharedWorkforce.totalStructure,
+      totalEmployees: sharedWorkforce.totalEmployees,
       unresolvedSalesExceptions: salesIssues.length,
-      vacantPositions: vacancyAudit.length,
+      vacantPositions: sharedWorkforce.openVacancies,
       vacancyNodes,
     },
     employeeIssues,

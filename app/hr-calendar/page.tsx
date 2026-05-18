@@ -4,32 +4,10 @@ import { redirect } from "next/navigation";
 
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import {
-  employeeDirectoryErrorMessage,
-  getEmployeeDirectoryRows,
-  isEmployeeDirectoryEnvMissing,
-  isEmployeeDirectorySchemaMissing,
-  isEmployeeDirectoryTimeout,
-} from "@/lib/employees/employee-directory";
+import { getHrCalendarData, hrCalendarErrorMessage } from "@/lib/hr-calendar/service";
 import type { HrCalendarEmployee } from "@/lib/hr-calendar/types";
 
 export const dynamic = "force-dynamic";
-
-function calendarPageError(error: unknown) {
-  if (isEmployeeDirectoryTimeout(error)) {
-    return "Supabase request timed out. Check your connection and try again.";
-  }
-
-  if (isEmployeeDirectoryEnvMissing(error)) {
-    return "Supabase environment variables are missing.";
-  }
-
-  if (isEmployeeDirectorySchemaMissing(error)) {
-    return "Supabase schema is not ready. Run supabase/phoenix-schema.sql in Supabase SQL editor.";
-  }
-
-  return employeeDirectoryErrorMessage(error);
-}
 
 export default async function HrCalendarPage() {
   const access = await resolveAccessContextFromPage();
@@ -40,20 +18,9 @@ export default async function HrCalendarPage() {
   let initialError: string | null = null;
 
   try {
-    const rows = await getEmployeeDirectoryRows();
-    initialData = rows.map((employee) => ({
-      areaName: employee.areaName ?? "Unassigned",
-      birthDate: employee.birthDate ?? "",
-      fullName: employee.fullName,
-      hireDate: employee.hireDate ?? "",
-      hrId: employee.hrId,
-      jobTitle: employee.positionTitle ?? employee.jobTitle ?? "Unassigned",
-      lineName: employee.lineName ?? "Unassigned",
-      managerName: employee.managerName ?? "Unassigned",
-      workEmail: employee.workEmail,
-    }));
+    initialData = await getHrCalendarData();
   } catch (error) {
-    initialError = calendarPageError(error);
+    initialError = hrCalendarErrorMessage(error);
   }
 
   return (

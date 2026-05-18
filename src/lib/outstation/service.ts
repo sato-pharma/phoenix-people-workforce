@@ -4,6 +4,7 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { validateLiveCarEvidence } from "@/lib/outstation/car-evidence";
 import {
   createOutstationCarEvidenceSignedUrl,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { savePayrollExpenseApprovals } from "@/lib/payroll/expenses";
 import {
   googleDirectionsRoute,
   googleDistanceMatrix,
@@ -1397,6 +1399,108 @@ export async function getOutstationRequestById(
   return {
     ...request,
     carEvidenceImageUrl: await createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
+  };
+}
+
+function outstationPayrollTripId(requestId: number) {
+  return `OUTSTATION-${requestId}`;
+}
+
+function outstationRequestToPayrollExpenseRecord(request: OutstationExpenseRequest) {
+  const tripStartDate = request.tripStartDate ? request.tripStartDate.slice(0, 10) : "";
+  const tripEndDate = request.tripEndDate ? request.tripEndDate.slice(0, 10) : tripStartDate;
+  const total = request.claimedTotalAmount || request.expectedTotalAmount;
+
+  return {
+    allowance: request.allowanceAmount,
+    amWorkload: 0,
+    date: tripStartDate,
+    description: request.notes ?? request.approvalReason ?? "Approved outstation request",
+    from: request.residenceCity ?? request.residenceArea ?? "Residence",
+    hr: "Approved",
+    hrApproved: true,
+    hrComment: "Approved from outstation workflow.",
+    hrId: request.employeeHrId,
+    hrNotes: request.approvalReason,
+    km: request.distanceFromResidenceKm ?? 0,
+    location: request.toLabel ?? request.toCity ?? request.toArea ?? "",
+    meetingAmount: request.expenseType === "meeting" ? total : 0,
+    open: "",
+    pmWorkload: 0,
+    requestType: "Outstation",
+    row: 1,
+    specialist: request.employeeName,
+    status: "Approved",
+    to: request.toLabel ?? request.toCity ?? request.toArea ?? "",
+    toDate: tripEndDate,
+    total,
+    transportationType: request.transportationType,
+    travelCost: request.fuelAmount + request.ticketAmount,
+    tripId: outstationPayrollTripId(request.id),
+    tripType: request.expenseType,
+  };
+}
+
+export async function approveOutstationRequestForPayroll(
+  requestId: number,
+  access: AccessContext,
+  options: { comment?: string | null } = {},
+) {
+  const existing = await getOutstationRequestById(requestId);
+  if (!existing) throw new Error("Outstation request was not found.");
+  if (existing.status === "rejected") {
+    throw new Error("Rejected outstation requests cannot be approved for payroll.");
+  }
+  if (existing.eligibilityStatus === "not_eligible") {
+    throw new Error("Not eligible outstation requests cannot be approved for payroll.");
+  }
+
+  const now = new Date().toISOString();
+  const approvedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .update({
+      approval_reason: cleanText(options.comment) ?? existing.approvalReason,
+      calculation_status: "approved",
+      status: "approved",
+      updated_at: now,
+    })
+    .eq("id", requestId)
+    .in("status", ["submitted", "approved"])
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) {
+    throw new Error("Outstation request state changed. Refresh and retry.");
+  }
+
+  const request = mapOutstationRequestRow(data as Record<string, unknown>);
+  const expenseRecord = outstationRequestToPayrollExpenseRecord(request);
+  const savedExpenses = await savePayrollExpenseApprovals({
+    fileName: `outstation-request-${request.id}.workflow`,
+    records: [expenseRecord],
+  }, access);
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? approvedBy,
+    entityId: String(request.id),
+    entityType: "outstation_request",
+    newValues: {
+      expenseTripId: expenseRecord.tripId,
+      payrollExpenseRows: savedExpenses.length,
+      status: request.status,
+    },
+    oldValues: {
+      status: existing.status,
+    },
+    summary: `Outstation request ${request.id} approved for payroll expense import.`,
+  });
+
+  return {
+    expenseTripId: expenseRecord.tripId,
+    payrollExpenseRows: savedExpenses.length,
+    request,
   };
 }
 

@@ -1,10 +1,16 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getDataHealthStats, type DataHealthStats } from "@/lib/admin/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
-import { addDaysToDateOnly } from "@/lib/date-only";
 import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
+import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
+import { buildLifecycleRiskMetrics } from "@/lib/lifecycle-risk/metrics";
+import { getOperationalRecentActivity, type OperationalActivitySummary } from "@/lib/operations/events";
 import { getPayrollDashboard } from "@/lib/payroll/service";
+import { getPlatformMetrics } from "@/lib/platform/metrics";
+import { getProbationRows } from "@/lib/probation/service";
+import { buildRecruitmentOnboardingMetrics } from "@/lib/recruitment/onboarding-metrics";
+import { getSalesPlatformMetrics } from "@/lib/sales/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecycle";
 
@@ -13,6 +19,11 @@ import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecyc
 // ---------------------------------------------------------------------------
 
 export type DataHealthMetrics = {
+  attendanceMappingIssues: number;
+  attendanceReadinessRate: number;
+  leaveApprovedRequests: number;
+  leavePendingRequests: number;
+  leaveRejectedRequests: number;
   employeeHealthRate: number;
   healthyEmployees: number;
   totalEmployees: number;
@@ -66,8 +77,28 @@ export type AdminCommandCenterData = {
       expiringContracts: number;
       probationEndings: number;
     };
+    leave: {
+      approvedRequests: number;
+      managerDecisionActions: number;
+      paidDays: number;
+      pendingRequests: number;
+      rejectedRequests: number;
+      totalRequests: number;
+      unpaidDays: number;
+    };
+    attendance: {
+      activeMappings: number;
+      activePolicies: number;
+      currentMonthWorkingDays: number;
+      mappingReadinessRate: number;
+      missingDeviceMappings: number;
+      policyCoverageRate: number;
+      totalDeviceMappings: number;
+      totalPolicies: number;
+    };
   };
   health: DataHealthMetrics;
+  operations: OperationalActivitySummary;
   payrollEligibleCount: number;
   dataUnavailable: string[];
 };
@@ -113,8 +144,8 @@ async function fetchSalesHealthCounts(): Promise<{
   const supabase = getSupabaseAdmin();
   try {
     const [totalResult, linkedResult] = await Promise.all([
-      supabase.from("sales_records").select("*", { count: "exact", head: true }),
-      supabase.from("sales_records").select("*", { count: "exact", head: true }).eq("link_status", "linked"),
+      supabase.from("sales_records").select("*", { count: "exact", head: true }).lt("year", 2090),
+      supabase.from("sales_records").select("*", { count: "exact", head: true }).lt("year", 2090).eq("link_status", "linked"),
     ]);
     if (totalResult.error) throw totalResult.error;
     if (linkedResult.error) throw linkedResult.error;
@@ -147,6 +178,11 @@ function buildDataHealth(
   });
 
   return {
+    attendanceMappingIssues: 0,
+    attendanceReadinessRate: 1,
+    leaveApprovedRequests: 0,
+    leavePendingRequests: 0,
+    leaveRejectedRequests: 0,
     employeeHealthRate,
     healthyEmployees,
     missingJobTitle,
@@ -168,6 +204,11 @@ function buildDataHealthFromStats(
   const salesLinkageRate = salesCounts.totalRows > 0 ? (salesCounts.linkedRows / salesCounts.totalRows) * 100 : 100;
 
   return {
+    attendanceMappingIssues: stats.summary.attendanceMappingIssues,
+    attendanceReadinessRate: stats.summary.attendanceReadinessRate,
+    leaveApprovedRequests: stats.summary.leaveApprovedRequests,
+    leavePendingRequests: stats.summary.leavePendingRequests,
+    leaveRejectedRequests: stats.summary.leaveRejectedRequests,
     employeeHealthRate: stats.summary.healthRate,
     healthyEmployees: stats.summary.healthyEmployees,
     missingJobTitle,
@@ -204,6 +245,7 @@ async function fetchPayrollSummary(): Promise<AdminCommandCenterData["overview"]
     const { data: batch, error: batchError } = await supabase
       .from("salary_batches")
       .select("id,month,year")
+      .lt("year", 2090)
       .order("year", { ascending: false })
       .order("month", { ascending: false })
       .limit(1)
@@ -274,74 +316,11 @@ async function fetchScopedPayrollSummary(accessContext: AccessContext): Promise<
   }
 }
 
-function salesBatchSortValue(row: Record<string, unknown>) {
-  const statusPriority: Record<string, number> = {
-    approved: 3,
-    validated: 2,
-    needs_review: 1,
-    staged: 0,
-  };
-  return [
-    String(statusPriority[String(row.status)] ?? 0).padStart(2, "0"),
-    String(row.approved_at ?? ""),
-    String(row.created_at ?? ""),
-    String(row.version ?? 0).padStart(6, "0"),
-  ].join("|");
-}
-
-async function fetchSalesSummary(): Promise<AdminCommandCenterData["overview"]["sales"] & { error: string | null }> {
-  const supabase = getSupabaseAdmin();
+async function fetchSalesSummary(accessContext: AccessContext): Promise<AdminCommandCenterData["overview"]["sales"] & { error: string | null }> {
   const empty = { achievementRate: 0, activeProducts: 0, error: null, salesValue: 0, targetValue: 0 };
 
   try {
-    const batchRows = await readAllRows<Record<string, unknown>>(() =>
-      supabase
-        .from("sales_import_batches")
-        .select("id,line,month,year,status,approved_at,created_at,version,replaced_by_batch_id")
-        .is("replaced_by_batch_id", null),
-    );
-    const activeBatches = batchRows.filter((batch) => {
-      const status = String(batch.status ?? "");
-      return status !== "rejected" && status !== "replaced" && !batch.replaced_by_batch_id;
-    });
-    const activeBatchIds = activeBatches.map((batch) => String(batch.id)).filter(Boolean);
-    if (activeBatchIds.length === 0) return empty;
-
-    const records = await readAllRows<Record<string, unknown>>(() =>
-      supabase
-        .from("sales_records")
-        .select("batch_id,line,month,year,product,sales_value,target_value,validation_state")
-        .in("batch_id", activeBatchIds),
-    );
-    const activeBatchMap = new Map(activeBatches.map((batch) => [String(batch.id), batch] as const));
-    const latestBatchByRecordPeriod = new Map<string, Record<string, unknown>>();
-
-    records.forEach((record) => {
-      const batch = activeBatchMap.get(String(record.batch_id));
-      if (!batch || record.validation_state === "failed") return;
-      const key = `${String(batch.line || record.line)}::${safeNumber(record.year)}::${safeNumber(record.month)}`;
-      const current = latestBatchByRecordPeriod.get(key);
-      if (!current || salesBatchSortValue(batch) > salesBatchSortValue(current)) {
-        latestBatchByRecordPeriod.set(key, batch);
-      }
-    });
-
-    const approvedRecords = records.filter((record) => {
-      const batch = activeBatchMap.get(String(record.batch_id));
-      if (!batch || record.validation_state === "failed") return false;
-      const key = `${String(batch.line || record.line)}::${safeNumber(record.year)}::${safeNumber(record.month)}`;
-      return latestBatchByRecordPeriod.get(key)?.id === batch.id;
-    });
-    const salesValue = approvedRecords.reduce((sum, row) => sum + safeNumber(row.sales_value), 0);
-    const targetValue = approvedRecords.reduce((sum, row) => sum + safeNumber(row.target_value), 0);
-
-    return {
-      achievementRate: targetValue > 0 ? salesValue / targetValue : 0,
-      activeProducts: new Set(approvedRecords.map((row) => String(row.product ?? "")).filter(Boolean)).size,
-      error: null,
-      salesValue,
-      targetValue,
-    };
+    return { ...await getSalesPlatformMetrics(accessContext), error: null };
   } catch {
     return { ...empty, error: "Sales data unavailable." };
   }
@@ -365,23 +344,24 @@ async function fetchExpenseSummary(): Promise<{
       .limit(5000);
     if (rowErr) throw rowErr;
 
-    const expenseRows = rows ?? [];
+    const expenseRows = (rows ?? []).filter((row) => !isDisposableExpenseRow(row as Record<string, unknown>));
     const totalAmount = expenseRows.reduce((s, r) => s + safeNumber(r.total), 0);
     const approvedAmount = expenseRows
       .filter((r) => r.hr_approved)
       .reduce((s, r) => s + safeNumber(r.total), 0);
 
     // Count expense reports separately
-    const { count: reportCount, error: reportErr } = await supabase
+    const { data: reports, error: reportErr } = await supabase
       .from("payroll_expense_reports")
-      .select("*", { count: "exact", head: true });
+      .select("file_name")
+      .limit(5000);
     if (reportErr) throw reportErr;
 
     return {
       approvedAmount,
       totalAmount,
       totalRows: expenseRows.length,
-      reportCount: reportCount ?? 0,
+      reportCount: (reports ?? []).filter((row) => !isDisposableExpenseReportRow(row as Record<string, unknown>)).length,
       error: null,
     };
   } catch {
@@ -410,32 +390,51 @@ async function fetchRecruitmentSummary(): Promise<{
   try {
     const { data: rows, error } = await supabase
       .from("job_offers")
-      .select("status")
+      .select("id,offer_code,candidate_name,candidate_email,candidate_phone,job_title,template_key,area_scope,area_id,department_id,line_id,manager_hr_id,position_id,salary_amount,start_date,expires_at,status,accepted_at,rejected_at,employee_hr_id,onboarding_status,created_at,updated_at")
       .limit(5000);
     if (error) throw error;
 
-    const offers = rows ?? [];
-    const totalOffers = offers.length;
-    const acceptedOffers = offers.filter((r) => r.status === "accepted").length;
-    const rejectedOffers = offers.filter((r) => r.status === "rejected").length;
-    const pendingOffers = offers.filter((r) => r.status === "sent" || r.status === "pending").length;
-    const finalised = acceptedOffers + rejectedOffers;
-    const acceptanceRate = finalised > 0 ? acceptedOffers / finalised : 0;
+    const offers = (rows ?? []).map((row) => ({
+      acceptedAt: row.accepted_at,
+      areaId: row.area_id,
+      areaScope: row.area_scope,
+      candidateEmail: row.candidate_email,
+      candidateName: row.candidate_name,
+      candidatePhone: row.candidate_phone,
+      createdAt: row.created_at,
+      departmentId: row.department_id,
+      departmentName: null,
+      employeeHrId: row.employee_hr_id,
+      expiresAt: row.expires_at,
+      id: row.id,
+      jobTitle: row.job_title,
+      lineId: row.line_id,
+      lineName: null,
+      managerHrId: row.manager_hr_id,
+      managerName: null,
+      offerCode: row.offer_code,
+      onboardingStatus: row.onboarding_status,
+      positionId: row.position_id,
+      rejectedAt: row.rejected_at,
+      salaryAmount: row.salary_amount,
+      startDate: row.start_date,
+      status: row.status,
+      templateKey: row.template_key,
+      updatedAt: row.updated_at,
+    }));
+    const recruitment = buildRecruitmentOnboardingMetrics({ offerRows: offers });
 
-    return { totalOffers, pendingOffers, acceptedOffers, rejectedOffers, acceptanceRate, error: null };
+    return {
+      totalOffers: recruitment.totalOffers,
+      pendingOffers: recruitment.pendingOffers,
+      acceptedOffers: recruitment.acceptedOffers,
+      rejectedOffers: recruitment.rejectedOffers,
+      acceptanceRate: recruitment.acceptanceRate,
+      error: null,
+    };
   } catch {
     return { ...empty, error: "Recruitment data unavailable." };
   }
-}
-
-function isFutureDateWithinDays(value: string | null | undefined, days: number) {
-  if (!value) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(`${value.slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(target.getTime())) return false;
-  const diffDays = Math.ceil((target.getTime() - today.getTime()) / 86400000);
-  return diffDays > 0 && diffDays <= days;
 }
 
 async function fetchRiskSummary(accessContext: AccessContext): Promise<{
@@ -446,15 +445,29 @@ async function fetchRiskSummary(accessContext: AccessContext): Promise<{
   const empty = { expiringContracts: 0, probationEndings: 0, error: null };
 
   try {
-    const [contractResult, employeeDirectory] = await Promise.all([
+    const [contractResult, probations] = await Promise.all([
       getContractRenewalDashboardData(accessContext),
-      getEmployeeDirectory(),
+      getProbationRows(accessContext),
     ]);
+    const lifecycleRisk = buildLifecycleRiskMetrics({
+      contracts: contractResult.rows.map((row) => ({
+        contractRenewalDate: row.contract_renewal_date,
+        employeeHrId: row.hr_id,
+        employeeName: row.full_name,
+        workflowStatus: row.workflow?.status ?? null,
+      })),
+      probations: probations.map((row) => ({
+        daysRemaining: row.days_remaining,
+        employeeHrId: row.hr_id,
+        employeeName: row.full_name,
+        hireDate: row.hire_date,
+        probationEndDate: row.probation_end_date,
+        workflowDecision: row.workflow?.decision ?? null,
+      })),
+    });
     return {
-      expiringContracts: contractResult.rows.filter((row) => isFutureDateWithinDays(row.contract_renewal_date, 30)).length,
-      probationEndings: employeeDirectory.employees.filter((employee) =>
-        isFutureDateWithinDays(addDaysToDateOnly(employee.hireDate, 90), 15),
-      ).length,
+      expiringContracts: lifecycleRisk.expiringContracts,
+      probationEndings: lifecycleRisk.probationEndings,
       error: null,
     };
   } catch {
@@ -468,14 +481,108 @@ async function fetchRiskSummary(accessContext: AccessContext): Promise<{
 
 export async function getAdminCommandCenterData(accessContext: AccessContext): Promise<AdminCommandCenterData> {
   const dataUnavailable: string[] = [];
+  const emptyOperations: OperationalActivitySummary = {
+    failureCount24h: 0,
+    lastEventAt: null,
+    recent: [],
+    staleSources: [],
+    totalEvents24h: 0,
+  };
+
+  try {
+    const [platformMetrics, dataHealthStats, salesHealth, eligibleResult, operations] = await Promise.all([
+      getPlatformMetrics(accessContext),
+      getDataHealthStats().catch(() => null),
+      fetchSalesHealthCounts(),
+      fetchPayrollEligibleCount(),
+      getOperationalRecentActivity(accessContext, { limit: 5 }),
+    ]);
+    dataUnavailable.push(...platformMetrics.dataUnavailable);
+    if (salesHealth.error) dataUnavailable.push(salesHealth.error);
+    if (eligibleResult.error) dataUnavailable.push(eligibleResult.error);
+    if (!dataHealthStats) dataUnavailable.push("Data health structure totals unavailable.");
+
+    const health = dataHealthStats
+      ? buildDataHealthFromStats(dataHealthStats, salesHealth)
+      : buildDataHealth(null, salesHealth);
+
+    return {
+      dataUnavailable,
+      health,
+      operations,
+      overview: {
+        attendance: {
+          activeMappings: platformMetrics.attendance.activeMappings,
+          activePolicies: platformMetrics.attendance.activePolicies,
+          currentMonthWorkingDays: platformMetrics.attendance.currentMonthWorkingDays,
+          mappingReadinessRate: platformMetrics.attendance.mappingReadinessRate,
+          missingDeviceMappings: platformMetrics.attendance.missingDeviceMappings,
+          policyCoverageRate: platformMetrics.attendance.policyCoverageRate,
+          totalDeviceMappings: platformMetrics.attendance.totalDeviceMappings,
+          totalPolicies: platformMetrics.attendance.totalPolicies,
+        },
+        expenses: {
+          approvedAmount: platformMetrics.expenses.approvedAmount,
+          reportCount: platformMetrics.expenses.reportCount,
+          totalAmount: platformMetrics.expenses.totalAmount,
+          totalRows: platformMetrics.expenses.totalRows,
+        },
+        hr: {
+          activeEmployees: platformMetrics.workforce.activeEmployees,
+          employeesWithoutManagers: platformMetrics.workforce.employeesWithoutManagers,
+          totalEmployees: platformMetrics.workforce.totalEmployees,
+          totalStructure: platformMetrics.workforce.totalStructure,
+          uniqueAreas: platformMetrics.workforce.uniqueAreas,
+          uniqueLines: platformMetrics.workforce.uniqueLines,
+          vacantPositions: platformMetrics.workforce.openVacancies,
+        },
+        payroll: {
+          batchLabel: platformMetrics.payroll.batchLabel,
+          employees: platformMetrics.payroll.employees,
+          flags: platformMetrics.payroll.flags,
+          gross: platformMetrics.payroll.gross,
+          net: platformMetrics.payroll.net,
+        },
+        recruitment: {
+          acceptanceRate: platformMetrics.recruitment.acceptanceRate,
+          acceptedOffers: platformMetrics.recruitment.acceptedOffers,
+          pendingOffers: platformMetrics.recruitment.pendingOffers,
+          rejectedOffers: platformMetrics.recruitment.rejectedOffers,
+          totalOffers: platformMetrics.recruitment.totalOffers,
+        },
+        risk: {
+          expiringContracts: platformMetrics.lifecycleRisk.expiringContracts,
+          probationEndings: platformMetrics.lifecycleRisk.probationEndings,
+        },
+        leave: {
+          approvedRequests: platformMetrics.leave.approvedRequests,
+          managerDecisionActions: platformMetrics.leave.managerDecisionActions,
+          paidDays: platformMetrics.leave.paidDays,
+          pendingRequests: platformMetrics.leave.pendingRequests,
+          rejectedRequests: platformMetrics.leave.rejectedRequests,
+          totalRequests: platformMetrics.leave.totalRequests,
+          unpaidDays: platformMetrics.leave.unpaidDays,
+        },
+        sales: {
+          achievementRate: platformMetrics.sales.achievementRate,
+          activeProducts: platformMetrics.sales.activeProducts,
+          salesValue: platformMetrics.sales.salesValue,
+          targetValue: platformMetrics.sales.targetValue,
+        },
+      },
+      payrollEligibleCount: eligibleResult.count,
+    };
+  } catch {
+    dataUnavailable.push("Platform metrics unavailable.");
+  }
 
   // Run all fetches in parallel — each is isolated so a single failure doesn't cascade
-  const [payrollResult, salesResult, employeesResult, dataHealthResult, expensesResult, recruitmentResult, riskResult, salesHealthResult, eligibleResult] =
+  const [payrollResult, salesResult, employeesResult, dataHealthResult, expensesResult, recruitmentResult, riskResult, salesHealthResult, eligibleResult, operationsResult] =
     await Promise.allSettled([
       canUseCompanyPayrollSummary(accessContext)
         ? fetchPayrollSummary()
         : fetchScopedPayrollSummary(accessContext),
-      fetchSalesSummary(),
+      fetchSalesSummary(accessContext),
       getEmployeeDirectory(),
       getDataHealthStats(),
       fetchExpenseSummary(),
@@ -483,6 +590,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
       fetchRiskSummary(accessContext),
       fetchSalesHealthCounts(),
       fetchPayrollEligibleCount(),
+      getOperationalRecentActivity(accessContext, { limit: 5 }),
     ]);
 
   // ── Payroll ──────────────────────────────────────────────────────────────
@@ -593,12 +701,96 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     expiringContracts: 0,
     probationEndings: 0,
   };
+  let leave: AdminCommandCenterData["overview"]["leave"] = {
+    approvedRequests: 0,
+    managerDecisionActions: 0,
+    paidDays: 0,
+    pendingRequests: 0,
+    rejectedRequests: 0,
+    totalRequests: 0,
+    unpaidDays: 0,
+  };
+  let attendance: AdminCommandCenterData["overview"]["attendance"] = {
+    activeMappings: 0,
+    activePolicies: 0,
+    currentMonthWorkingDays: 0,
+    mappingReadinessRate: 1,
+    missingDeviceMappings: 0,
+    policyCoverageRate: 1,
+    totalDeviceMappings: 0,
+    totalPolicies: 0,
+  };
   if (riskResult.status === "fulfilled") {
     const rv = riskResult.value;
     if (rv.error) dataUnavailable.push(rv.error);
     else risk = { expiringContracts: rv.expiringContracts, probationEndings: rv.probationEndings };
   } else {
     dataUnavailable.push("Risk data unavailable.");
+  }
+
+  try {
+    const platformMetrics = await getPlatformMetrics(accessContext);
+    dataUnavailable.push(...platformMetrics.dataUnavailable);
+    payroll = {
+      batchLabel: platformMetrics.payroll.batchLabel,
+      employees: platformMetrics.payroll.employees,
+      flags: platformMetrics.payroll.flags,
+      gross: platformMetrics.payroll.gross,
+      net: platformMetrics.payroll.net,
+    };
+    sales = {
+      achievementRate: platformMetrics.sales.achievementRate,
+      activeProducts: platformMetrics.sales.activeProducts,
+      salesValue: platformMetrics.sales.salesValue,
+      targetValue: platformMetrics.sales.targetValue,
+    };
+    hr = {
+      activeEmployees: platformMetrics.workforce.activeEmployees,
+      employeesWithoutManagers: platformMetrics.workforce.employeesWithoutManagers,
+      totalEmployees: platformMetrics.workforce.totalEmployees,
+      totalStructure: platformMetrics.workforce.totalStructure,
+      uniqueAreas: platformMetrics.workforce.uniqueAreas,
+      uniqueLines: platformMetrics.workforce.uniqueLines,
+      vacantPositions: platformMetrics.workforce.openVacancies,
+    };
+    expenses = {
+      approvedAmount: platformMetrics.expenses.approvedAmount,
+      reportCount: platformMetrics.expenses.reportCount,
+      totalAmount: platformMetrics.expenses.totalAmount,
+      totalRows: platformMetrics.expenses.totalRows,
+    };
+    recruitment = {
+      acceptanceRate: platformMetrics.recruitment.acceptanceRate,
+      acceptedOffers: platformMetrics.recruitment.acceptedOffers,
+      pendingOffers: platformMetrics.recruitment.pendingOffers,
+      rejectedOffers: platformMetrics.recruitment.rejectedOffers,
+      totalOffers: platformMetrics.recruitment.totalOffers,
+    };
+    risk = {
+      expiringContracts: platformMetrics.lifecycleRisk.expiringContracts,
+      probationEndings: platformMetrics.lifecycleRisk.probationEndings,
+    };
+    leave = {
+      approvedRequests: platformMetrics.leave.approvedRequests,
+      managerDecisionActions: platformMetrics.leave.managerDecisionActions,
+      paidDays: platformMetrics.leave.paidDays,
+      pendingRequests: platformMetrics.leave.pendingRequests,
+      rejectedRequests: platformMetrics.leave.rejectedRequests,
+      totalRequests: platformMetrics.leave.totalRequests,
+      unpaidDays: platformMetrics.leave.unpaidDays,
+    };
+    attendance = {
+      activeMappings: platformMetrics.attendance.activeMappings,
+      activePolicies: platformMetrics.attendance.activePolicies,
+      currentMonthWorkingDays: platformMetrics.attendance.currentMonthWorkingDays,
+      mappingReadinessRate: platformMetrics.attendance.mappingReadinessRate,
+      missingDeviceMappings: platformMetrics.attendance.missingDeviceMappings,
+      policyCoverageRate: platformMetrics.attendance.policyCoverageRate,
+      totalDeviceMappings: platformMetrics.attendance.totalDeviceMappings,
+      totalPolicies: platformMetrics.attendance.totalPolicies,
+    };
+  } catch {
+    dataUnavailable.push("Platform metrics unavailable.");
   }
 
   // ── Health ───────────────────────────────────────────────────────────────
@@ -621,12 +813,18 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   } else if (eligibleResult.status === "rejected") {
     dataUnavailable.push("Payroll eligible count unavailable.");
   }
+  const operations =
+    operationsResult.status === "fulfilled" ? operationsResult.value : emptyOperations;
+  if (operationsResult.status === "rejected") {
+    dataUnavailable.push("Operational activity unavailable.");
+  }
 
   return {
-    overview: { hr, payroll, sales, expenses, recruitment, risk },
-    health,
-    payrollEligibleCount,
     dataUnavailable,
+    health,
+    operations,
+    overview: { hr, payroll, sales, expenses, recruitment, risk, leave, attendance },
+    payrollEligibleCount,
   };
 }
 

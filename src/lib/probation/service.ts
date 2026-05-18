@@ -7,6 +7,7 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
+import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -456,9 +457,21 @@ async function notifyProbationWorkflow(record: ProbationWorkflowRecord, title: s
 
 export function getProbationReminderSchedule(hireDate: string | null | undefined) {
   const reminders = [
-    { daysAfterHire: 30, daysRemaining: 60, reminderType: "probation_day_30_check" },
-    { daysAfterHire: 60, daysRemaining: 30, reminderType: "probation_30_days_remaining" },
-    { daysAfterHire: 75, daysRemaining: 15, reminderType: "probation_15_days_remaining" },
+    {
+      daysAfterHire: lifecycleRiskWindows.probationDays - lifecycleRiskWindows.probationWarningDays,
+      daysRemaining: lifecycleRiskWindows.probationWarningDays,
+      reminderType: "probation_day_30_check",
+    },
+    {
+      daysAfterHire: lifecycleRiskWindows.probationDays - lifecycleRiskWindows.probationCriticalDays,
+      daysRemaining: lifecycleRiskWindows.probationCriticalDays,
+      reminderType: "probation_30_days_remaining",
+    },
+    {
+      daysAfterHire: lifecycleRiskWindows.probationDays - lifecycleRiskWindows.probationRiskDays,
+      daysRemaining: lifecycleRiskWindows.probationRiskDays,
+      reminderType: "probation_15_days_remaining",
+    },
   ] as const;
 
   return reminders

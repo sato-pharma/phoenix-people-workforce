@@ -6,6 +6,7 @@ import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   getEmailTemplateCatalog,
+  getEmailTemplateReadinessMetrics,
   getEmailTemplateRoutingOptions,
   getTemplatePlaceholderHints,
 } from "@/lib/email-templates/service";
@@ -18,9 +19,10 @@ export default async function AdminEmailTemplatesPage() {
     redirect("/employee-portals");
   }
 
-  const [templates, routingOptions] = await Promise.all([
+  const [templates, routingOptions, templateReadiness] = await Promise.all([
     getEmailTemplateCatalog(),
     getEmailTemplateRoutingOptions(),
+    getEmailTemplateReadinessMetrics(),
   ]);
 
   return (
@@ -29,6 +31,7 @@ export default async function AdminEmailTemplatesPage() {
         initialPlaceholderHints={getTemplatePlaceholderHints()}
         initialRoutingOptions={routingOptions}
         initialTemplates={templates}
+        templateReadiness={templateReadiness}
       />
     </AppShell>
   );

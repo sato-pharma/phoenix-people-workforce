@@ -6,6 +6,7 @@ import {
 } from "@/emails/general-notification";
 import { EMAIL_TEMPLATE_KEYS, sendTemplatedEmail } from "@/lib/email-templates/service";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const emailNotificationTypes = [
@@ -869,14 +870,14 @@ export async function getEmailNotificationOutboxStats() {
     }>;
     const allowed = new Set<EmailNotificationType>(emailNotificationTypes);
 
-    return {
-      failed: rows.filter((row) => row.status === "failed").length,
-      lastSentAt: rows.find((row) => row.status === "sent")?.created_at ?? null,
-      pending: rows.filter((row) => row.status === "pending").length,
-      recentAllowed: rows.filter((row) => allowed.has(row.payload?.notificationType as EmailNotificationType)).length,
-      recentTotal: rows.length,
-      sent: rows.filter((row) => row.status === "sent").length,
-    };
+    return summarizeNotificationOutboxRows(
+      rows.map((row) => ({
+        createdAt: row.created_at,
+        payload: row.payload,
+        status: row.status,
+      })),
+      Array.from(allowed),
+    );
   } catch (error) {
     if (notificationSchemaMissing(error)) {
       return {

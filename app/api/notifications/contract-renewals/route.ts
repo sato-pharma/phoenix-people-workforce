@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getContractRenewalReminderCandidates } from "@/lib/contracts/service";
+import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 
 export const runtime = "nodejs";
@@ -27,7 +28,12 @@ async function runContractRenewalNotifications(request: Request) {
   }
 
   const runDate = cairoDate();
-  const candidates = await getContractRenewalReminderCandidates([60, 30, 7, 0]);
+  const candidates = await getContractRenewalReminderCandidates([
+    lifecycleRiskWindows.contractUpcomingDays,
+    lifecycleRiskWindows.contractRiskDays,
+    lifecycleRiskWindows.contractCriticalDays,
+    0,
+  ]);
   const results = [];
 
   for (const row of candidates) {

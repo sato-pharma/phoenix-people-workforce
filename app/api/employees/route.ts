@@ -6,6 +6,7 @@ import {
   filterEmployeeDirectoryForAccess,
 } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import {
   employeeDirectoryErrorMessage,
   getEmployeeDirectory,
@@ -20,9 +21,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function employeeApiError(error: unknown) {
+  const message = employeeDirectoryErrorMessage(error);
+
   if (isForbiddenError(error)) {
     return {
-      message: employeeDirectoryErrorMessage(error),
+      message,
       status: 403,
     };
   }
@@ -48,8 +51,31 @@ function employeeApiError(error: unknown) {
     };
   }
 
+  if (
+    message.includes("required") ||
+    message.includes("not allowed") ||
+    message.includes("Invalid HR_ID") ||
+    message.includes("format is invalid") ||
+    message.includes("cannot be the same employee") ||
+    message.includes("Use the resignation workflow") ||
+    message.includes("already exists") ||
+    message.includes("immutable")
+  ) {
+    return {
+      message,
+      status: 400,
+    };
+  }
+
+  if (message.includes("was not found")) {
+    return {
+      message,
+      status: 404,
+    };
+  }
+
   return {
-    message: employeeDirectoryErrorMessage(error),
+    message,
     status: 500,
   };
 }
@@ -86,10 +112,21 @@ export async function POST(request: Request) {
       );
     }
 
-    await upsertEmployee(payload.employee);
+    const savedRows = await upsertEmployee(payload.employee);
+    const accessProvisioning = payload.employee.originalHrId?.trim()
+      ? null
+      : await provisionNewHireAccess({
+        actor: { loginId: access.loginId ?? null, role: access.role },
+        hrIds: [savedRows[0]?.hr_id ?? payload.employee.hrId],
+        source: "manual employee add",
+      });
+    const directory = await getEmployeeDirectory();
 
     return NextResponse.json(
-      filterEmployeeDirectoryForAccess(await getEmployeeDirectory(), access),
+      {
+        ...filterEmployeeDirectoryForAccess(directory, access),
+        ...(accessProvisioning ? { accessProvisioning } : {}),
+      },
     );
   } catch (error) {
     const { message, status } = employeeApiError(error);
