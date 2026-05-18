@@ -443,8 +443,9 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
         <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-semibold text-slate-700">
-              <span>{n(o.hr.totalEmployees)} employees</span>
+              <span>{n(o.hr.totalStructure)} structure positions</span>
               <span>{n(o.hr.activeEmployees)} active</span>
+              <span>{n(o.hr.vacantPositions)} vacant</span>
               <span>{pendingRisk} pending risks</span>
               <span>{n(o.payroll.flags)} payroll flags</span>
             </div>
@@ -468,7 +469,7 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
             title="Key operating signals"
           />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard icon={CheckCircle2} label="Active Employees" primary sub={`of ${n(o.hr.totalEmployees)} total`} trend="up" value={n(o.hr.activeEmployees)} />
+            <KpiCard icon={CheckCircle2} label="Active Employees" primary sub={`of ${n(o.hr.totalStructure)} structure`} trend="up" value={n(o.hr.activeEmployees)} />
             <KpiCard accent icon={Wallet} label="Net Payroll" primary sub={`Gross ${egp(o.payroll.gross)}`} value={egp(o.payroll.net)} />
             <KpiCard
               accent={salesAchievement >= 90}
@@ -480,7 +481,7 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
               value={pct(salesAchievement)}
               warn={salesAchievement < 70}
             />
-            <KpiCard icon={Users} label="Total Employees" sub={`${n(o.hr.uniqueLines)} lines / ${n(o.hr.uniqueAreas)} areas`} value={n(o.hr.totalEmployees)} />
+            <KpiCard icon={Users} label="Total Structure" sub={`${n(o.hr.activeEmployees)} active / ${n(o.hr.vacantPositions)} vacant`} value={n(o.hr.totalStructure)} />
             <KpiCard icon={IdCard} label="Payroll Eligible" sub={o.payroll.batchLabel || "Latest batch"} value={n(payrollEligibleCount)} />
             <KpiCard icon={TrendingUp} label="Total Sales" sub={`vs ${egp(o.sales.targetValue)} target`} value={egp(o.sales.salesValue)} />
             <KpiCard icon={Receipt} label="Expense Claims" sub={`${n(o.expenses.totalRows)} entries`} value={egp(o.expenses.approvedAmount)} />
@@ -488,7 +489,7 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
               accent={health.employeeHealthRate >= 90}
               icon={HeartPulse}
               label="Data Health"
-              sub={`${n(health.healthyEmployees)} / ${n(health.totalEmployees || o.hr.totalEmployees)} healthy`}
+              sub={`${n(health.healthyEmployees)} / ${n(health.totalEmployees || o.hr.activeEmployees)} healthy employees`}
               trend={health.employeeHealthRate >= 90 ? "up" : health.employeeHealthRate < 70 ? "down" : "neutral"}
               value={pct(health.employeeHealthRate)}
               warn={health.employeeHealthRate < 70}
@@ -511,9 +512,9 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
               icon={Users}
               lastSync="Live"
               metrics={[
-                { label: "Total", value: n(o.hr.totalEmployees) },
+                { label: "Structure", value: n(o.hr.totalStructure) },
                 { label: "Active", value: n(o.hr.activeEmployees) },
-                { label: "Lines", value: n(o.hr.uniqueLines) },
+                { label: "Vacant", value: n(o.hr.vacantPositions) },
               ]}
               title="People and Organogram"
             />

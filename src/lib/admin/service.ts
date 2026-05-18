@@ -13,6 +13,7 @@ import {
 } from "@/lib/workforce-classification";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { isManagerOptionalHrId } from "@/lib/employees/hierarchy-governance";
+import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecycle";
 
 export type PhoenixAdminStats = {
   totalEmployees: number;
@@ -928,7 +929,10 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
     vacancy_code: rowText(row, "vacancy_code"),
     vacancy_id: rowText(row, "id"),
   }));
-  const totalStructureNodes = structureNodes + vacancyAudit.length;
+  const workforceStructure = calculateWorkforceStructureSummary({
+    activeEmployees: structureNodes,
+    openVacancies: vacancyAudit.length,
+  });
 
   return {
     summary: {
@@ -940,7 +944,7 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
       historicalRecords,
       issuesCount,
       nonLoginAggregationNodes,
-      structureNodes: totalStructureNodes,
+      structureNodes: workforceStructure.totalStructure,
       totalEmployees: employeeNodes.length,
       unresolvedSalesExceptions: salesIssues.length,
       vacantPositions: vacancyAudit.length,

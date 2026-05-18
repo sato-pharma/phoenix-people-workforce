@@ -984,6 +984,14 @@ export async function approveAcceptedOffer(
     p_offer_id: offer.id,
   });
   const employeeHrId = String(rpcResult.employee_hr_id);
+  await closeVacancyForOffer({
+    area_id: offer.area_id,
+    filled_by_hr_id: employeeHrId,
+    line_id: offer.line_id,
+    manager_hr_id: offer.manager_hr_id,
+    position_id: offer.position_id,
+  });
+
   const refreshedOffer = (await supabaseRest<OfferDbRow[]>(`job_offers?${params}`))[0];
   if (!refreshedOffer) {
     throw new Error("Offer approval succeeded but the updated offer could not be reloaded.");
