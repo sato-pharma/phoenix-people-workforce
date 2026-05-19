@@ -42,6 +42,20 @@ type SyncResult = {
   totalRead?: number;
 };
 
+type AgentHealth = {
+  ok: boolean;
+  reachable: boolean;
+  payload?: {
+    checks?: {
+      deviceTcpReachable?: boolean;
+      phoenixReachable?: boolean;
+      sdkRegistered?: boolean;
+      tokenConfigured?: boolean;
+    };
+    status?: string;
+  };
+};
+
 function formatDate(value: string | null) {
   if (!value) return "No punches seen";
   return new Intl.DateTimeFormat(undefined, {
@@ -163,6 +177,8 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
   const [error, setError] = useState(initialError);
   const [notice, setNotice] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [agentHealth, setAgentHealth] = useState<AgentHealth | null>(null);
+  const [startingAgent, setStartingAgent] = useState(false);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "unmapped">("all");
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
@@ -176,6 +192,20 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
     return rows.filter((row) => row.status === statusFilter);
   }, [data?.mappings, statusFilter]);
 
+  async function loadAgentHealth() {
+    try {
+      const response = await fetch("/api/attendance/agent/health", { cache: "no-store" });
+      const payload = await response.json();
+      setAgentHealth(payload);
+    } catch {
+      setAgentHealth({ ok: false, reachable: false });
+    }
+  }
+
+  useEffect(() => {
+    void loadAgentHealth();
+  }, []);
+
   async function load() {
     setRefreshing(true);
     setError(null);
@@ -186,6 +216,7 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
         throw new Error(payload.message ?? "Device user mappings failed to load.");
       }
       setData(payload);
+      await loadAgentHealth();
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Device user mappings failed to load.");
     } finally {
@@ -230,10 +261,36 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
       setSyncResult(payload);
       setNotice(`Sync complete: ${payload.inserted ?? 0} inserted, ${payload.duplicate ?? 0} duplicates, ${payload.skipped ?? 0} skipped.`);
       await load();
+      await loadAgentHealth();
     } catch (syncError) {
       setError(syncError instanceof Error ? syncError.message : "Attendance sync failed.");
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function startAgent() {
+    setStartingAgent(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const response = await fetch("/api/attendance/agent/start", {
+        body: "{}",
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.message ?? "Attendance agent failed to start.");
+      }
+
+      setAgentHealth(payload.health ?? null);
+      setNotice(payload.alreadyRunning ? "Local attendance agent is already running." : "Local attendance agent start requested.");
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : "Attendance agent failed to start.");
+    } finally {
+      setStartingAgent(false);
     }
   }
 
@@ -288,6 +345,10 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
         title="Device User Mapping"
         actions={(
           <>
+            <Button disabled={!canUpdate || startingAgent} variant="secondary" type="button" onClick={() => void startAgent()}>
+              <RefreshCw className={`h-4 w-4 ${startingAgent ? "animate-spin" : ""}`} />
+              {startingAgent ? "Starting Agent" : "Run Local Agent"}
+            </Button>
             <Button disabled={!canUpdate || syncing} type="button" onClick={() => void syncNow()}>
               <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
               {syncing ? "Syncing" : "Sync Now"}
@@ -321,6 +382,12 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
+      {agentHealth ? (
+        <AdminCallout tone={agentHealth.reachable ? "success" : "warning"}>
+          Local agent: {agentHealth.reachable ? "running" : "not running"}. Device:
+          {" "}{agentHealth.payload?.checks?.deviceTcpReachable ? "reachable" : "not checked/unreachable"}.
+        </AdminCallout>
+      ) : null}
       {!canUpdate ? <AdminCallout tone="warning">You can review mappings, but this account cannot update employee mappings.</AdminCallout> : null}
       {syncResult ? (
         <AdminCallout tone={(syncResult.failed ?? 0) > 0 ? "warning" : "success"}>

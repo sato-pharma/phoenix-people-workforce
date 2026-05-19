@@ -753,6 +753,15 @@ export function isDirectReport(managerHrId: string | null, employee: Pick<Employ
   return hrIdsMatch(managerHrId, employee.managerHrId);
 }
 
+function canSeeDirectReportsByRole(role: PhoenixRole) {
+  return (
+    role === "District Manager" ||
+    role === "Manager" ||
+    role === "Regional Manager" ||
+    role === "National Sales Manager"
+  );
+}
+
 export function canSeeEmployee(context: AccessContext, employee: Pick<EmployeeDirectoryRow, "hrId" | "managerHrId">) {
   if (context.scope === "system" || context.role === "Super Admin" || context.role === "HR Specialist") return true;
 
@@ -760,13 +769,12 @@ export function canSeeEmployee(context: AccessContext, employee: Pick<EmployeeDi
   const employeeHrId = normalizeHrId(employee.hrId);
 
   if (!currentHrId || !employeeHrId) return false;
-  
-  // Allow managers to see their direct reports regardless of role
-  if (hrIdsMatch(currentHrId, employeeHrId) || isDirectReport(currentHrId, employee)) {
+
+  if (hrIdsMatch(currentHrId, employeeHrId)) {
     return true;
   }
 
-  return false;
+  return canSeeDirectReportsByRole(context.role) && isDirectReport(currentHrId, employee);
 }
 
 export function canSeeHrScopedRecord(

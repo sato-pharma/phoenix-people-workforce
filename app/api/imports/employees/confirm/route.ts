@@ -19,7 +19,7 @@ import { closeVacancyForOffer } from "@/lib/offers/service";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
-import { generateShortVacancyCode } from "@/lib/workforce/vacancy-code";
+import { generateVacancySeatCode } from "@/lib/workforce/vacancy-code";
 import { shouldCloseVacancyForHire } from "@/lib/workforce/seat-lifecycle";
 
 export const runtime = "nodejs";
@@ -37,15 +37,14 @@ function compactCodePart(value: string | null) {
 }
 
 function vacancyCodeFor(record: VacantPositionImportRecord) {
-  return generateShortVacancyCode({
-    parts: [
-      record.rowNumber,
-      compactCodePart(record.codes.departmentCode),
-      compactCodePart(record.codes.lineCode),
-      compactCodePart(record.codes.areaCode),
-      compactCodePart(record.codes.positionCode),
-    ],
-    primary: record.hrId ?? record.codes.positionCode ?? record.rowNumber,
+  return generateVacancySeatCode({
+    areaCode: compactCodePart(record.codes.areaCode),
+    departmentCode: compactCodePart(record.codes.departmentCode),
+    lineCode: compactCodePart(record.codes.lineCode),
+    managerHrId: record.managerHrId,
+    positionCode: compactCodePart(record.codes.positionCode),
+    positionTitle: record.positionTitle ?? record.jobTitle,
+    teamCode: compactCodePart(record.codes.teamCode),
   });
 }
 
@@ -981,10 +980,13 @@ async function upsertVacancies(
     return { created: 0, recorded: 0, updated: 0 };
   }
 
-  const vacancyCodes = records.map(vacancyCodeFor);
+  const uniqueRecords = Array.from(
+    new Map(records.map((record) => [vacancyCodeFor(record), record])).values(),
+  );
+  const vacancyCodes = uniqueRecords.map(vacancyCodeFor);
   const existingCodes = await existingVacancyCodes(supabase, vacancyCodes);
   const { error } = await supabase.from("position_vacancies").upsert(
-    records.map((record) => vacancyValues(record, ids)),
+    uniqueRecords.map((record) => vacancyValues(record, ids)),
     { onConflict: "vacancy_code" },
   );
 
@@ -993,10 +995,10 @@ async function upsertVacancies(
   }
 
   return {
-    created: records.filter((record) => !existingCodes.has(vacancyCodeFor(record)))
+    created: uniqueRecords.filter((record) => !existingCodes.has(vacancyCodeFor(record)))
       .length,
     recorded: records.length,
-    updated: records.filter((record) => existingCodes.has(vacancyCodeFor(record)))
+    updated: uniqueRecords.filter((record) => existingCodes.has(vacancyCodeFor(record)))
       .length,
   };
 }

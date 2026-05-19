@@ -1303,3 +1303,302 @@ Remaining Phase 21 risks:
 3. The app still uses service-role-backed server services broadly; this is acceptable only while every API/page entrypoint keeps explicit permission checks.
 4. Password/session security is improved by session version checks, but full Supabase Auth token/session revocation policy should still be reviewed before public launch.
 5. Deployment remains out of scope.
+
+## Phase 22 Completion Update
+
+Role Matrix Staging Verification and Employee Portal Isolation scope completed:
+
+- Added a read-only Phase 22 role-matrix smoke covering Super Admin, HR Specialist, Finance Manager, CEO, Manager, District Manager, Medical Rep, and Employee contexts.
+- Verified payroll, sales, expenses, probation, contract, leave, admin, and user-admin permissions against the current permission matrix and DB overrides where available.
+- Tightened shared employee visibility so Employee and Medical Rep roles remain self-only even if bad source data accidentally assigns direct reports to them.
+- Verified manager team visibility remains available for Manager and District Manager roles.
+- Verified admin payroll, sales, and expenses surfaces redirect portal-mode roles away from admin dashboards before loading admin data.
+- Verified mutation routes for payroll upload/workflow, sales upload/actions, and user bulk access require the expected permission resources/actions.
+- Added read-only live DB alignment checks for role names and RLS-enabled posture on role-sensitive tables when `SUPABASE_DB_URL` is available.
+- No deployment, protected payroll fixture deletion, or production employee mutation was performed.
+
+Security score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Employee portal self-only isolation | 4.5 | 4.8 | Employee and Medical Rep visibility now blocks accidental direct-report leakage unless the actor has a manager role. |
+| Role matrix verification | 4.3 | 4.7 | Phase 22 smoke proves expected allow/deny behavior across core roles and resources. |
+| Admin route access denial | 4.5 | 4.8 | Admin payroll/sales/expenses entrypoints and critical mutation APIs are covered by static and permission checks. |
+| Payroll visibility by role | 4.6 | 4.8 | Admin payroll remains company-scope only; portal payroll remains current-HR-ID only. |
+| Sales and expenses role scope | 4.5 | 4.7 | Smoke verifies self/team/company role scope helpers and route boundaries. |
+| RLS/API alignment proof | 4.2 | 4.6 | Read-only smoke validates sensitive table RLS posture where database credentials are available. |
+
+Remaining Phase 22 risks:
+
+1. The smoke is staging-safe and read-only; it does not create real Supabase Auth JWTs for every role.
+2. Service-role-backed server services still require disciplined page/API permission checks until a full token-based RLS exercise is completed.
+3. CEO and Finance Manager navigation intentionally lands in the employee portal while some direct admin URLs remain permitted or redirected based on page-level rules; final UX policy can be reviewed separately.
+4. Complete browser role walkthroughs with seeded role accounts should be run before public launch.
+5. Deployment remains out of scope.
+
+## Phase 23 Completion Update
+
+Browser Role Walkthrough and Real Session Access Verification scope completed:
+
+- Added a local browser role walkthrough using controlled dev-preview sessions for Super Admin, HR Specialist, Finance Manager, CEO, District Manager, Medical Rep, and Employee.
+- Verified Super Admin and HR Specialist admin access through real browser page loads.
+- Verified Finance Manager payroll/expense visibility and confirmed `/employees` redirects away from the employee directory when `employees:read` is not granted.
+- Verified CEO read visibility for Command Center and payroll through browser routes.
+- Verified District Manager portal access, team-performance visibility, and payroll redirect to self-service payslips.
+- Verified Medical Rep and Employee portal-only access for payroll, sales, expenses, probation, and admin dashboard denial where applicable.
+- Verified unauthorized Employee UI/API mutation attempts are rejected for payroll upload, sales import upload, payroll workflow approval, and Users & Access bulk mutation.
+- Added regression coverage proving the Phase 23 browser smoke is read-only, role-complete, uses local-only dev auth, and checks the critical denied mutation paths.
+- No deployment, protected payroll fixture deletion, production employee mutation, or PHASE23 fixture write was performed.
+
+Access score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Browser role walkthrough coverage | 3.8 | 4.7 | Core role routes are now verified in Playwright with real local browser sessions. |
+| Admin route access denial | 4.8 | 4.9 | Portal-mode roles are browser-verified away from admin dashboard surfaces. |
+| Employee portal self-only isolation | 4.8 | 4.9 | Employee and Medical Rep portal views are verified through rendered pages. |
+| Finance and CEO visibility | 4.6 | 4.8 | Finance and CEO read paths were checked through real routes rather than static tests only. |
+| Unauthorized mutation denial | 4.7 | 4.9 | Payroll, sales, and user-admin mutation denials are browser-session verified as 403 responses. |
+| RLS/API alignment proof | 4.6 | 4.7 | App-layer browser checks now complement the Phase 22 read-only RLS posture checks. |
+
+Remaining Phase 23 risks:
+
+1. The walkthrough uses local dev-preview sessions, not real Supabase Auth JWTs for each role.
+2. It is intentionally read-only except denied no-op mutation attempts; it does not create PHASE23 fixture business records.
+3. Service-role-backed server services still rely on page/API permission guards, so staging token-based RLS testing remains the next stronger proof.
+4. Deployment remains out of scope.
+
+## Phase 24 Completion Update
+
+Real Supabase Auth Token RLS/API Staging Verification scope completed:
+
+- Added a read-only Phase 24 real-auth smoke that signs into the approved Phoenix RLS staging sandbox with Supabase Auth for Super Admin, HR Specialist, Finance Manager, CEO, District Manager, Medical Rep, and Employee.
+- Verified real Supabase JWTs resolve through `current_phoenix_role`, `current_access_role`, `current_access_scope`, and the `current_access_*` helper functions for every Phase 24 role.
+- Verified each role can see its own `user_access_profiles` row and that the row aligns with Phoenix role, coarse access role, and scope type.
+- Verified employee RLS scope: Super Admin/HR see company staging rows, Finance/CEO are limited to their own staging employee row, District Manager sees self/direct team rows, and Medical Rep/Employee are self-only.
+- Verified payroll, expenses, and sales Data API reads are accepted through authenticated RLS tokens, with salary rows staying inside allowed scope for non-payroll-manager roles.
+- Verified service-role-backed app routes still keep explicit Phoenix permission guards for login token bridging, payroll upload/workflow, sales import, Users & Access bulk mutation, and employee directory routing.
+- Verified the existing staging role-alignment dry run remains safe: 10 checks passed, mutation mode disabled, and no database connection opened in dry-run mode.
+- No deployment, production employee mutation, protected payroll fixture deletion, or PHASE24 fixture creation was performed.
+
+RLS/API score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Real Supabase Auth role proof | 3.8 | 4.6 | Seven core roles now sign in with real staging Supabase Auth sessions and JWTs. |
+| RLS helper alignment | 4.6 | 4.8 | JWT-backed helper outputs match Phoenix role/scope expectations across core roles. |
+| Employee portal self/team isolation via RLS | 4.7 | 4.9 | Self-only and manager-team employee visibility is proven at the Data API/RLS layer. |
+| Payroll/expense/sales RLS reads | 4.5 | 4.7 | Authenticated staging tokens can read the intended scoped surfaces without broad leakage. |
+| Service-role API guard proof | 4.8 | 4.9 | Static regression coverage now ties service-role-backed routes to explicit permission checks. |
+| Probation/leave RLS staging proof | 3.8 | 4.0 | App code has guards, but the staging API schema does not currently expose these tables for real-token proof. |
+
+Remaining Phase 24 risks:
+
+1. The approved staging sandbox does not currently expose `employee_probation` or `v2_vacation_requests` in the Supabase API schema cache, so probation/leave real-token RLS coverage was skipped and recorded as a staging coverage gap.
+2. The Phase 24 smoke is read-only; it does not perform successful or denied write mutations with PHASE24 fixtures.
+3. The local app was not repointed to the staging Supabase project for full browser login with staging Auth cookies; this phase verifies Supabase Auth/RLS directly and app guard sources statically.
+4. Service-role-backed server services remain acceptable only while page/API permission guards stay intact.
+5. Deployment remains out of scope.
+
+## Phase 25 Completion Update
+
+Staging RLS Mutation Proof and Probation/Leave Schema Parity Closure scope completed:
+
+- Added a staging-only Phase 25 real-auth mutation smoke for the approved Phoenix RLS sandbox.
+- Aligned missing staging `employee_probation` and `v2_vacation_requests` proof tables with RLS enabled, anon access revoked, authenticated grants scoped through Phoenix access helpers, and PostgREST schema reload requested.
+- Proved denied write mutations for Employee employee-master creation, Employee payroll-expense mutation, Employee probation decision mutation, Employee vacation creation for another employee, District Manager employee governance mutation outside team, District Manager probation mutation outside team/scope, and District Manager vacation mutation outside team.
+- Proved allowed safe write mutations for HR employee governance fixture creation, Super Admin employee governance fixture creation, Finance payroll-expense fixture creation/update, HR probation fixture creation, HR outside-manager leave fixture creation, and Employee own vacation request creation.
+- Verified service-role-backed app routes still retain explicit Phoenix permission guards for vacation decisions, approved expense import, employee mutation, and probation workflow decisions.
+- Cleaned PHASE25 disposable staging fixtures after the smoke: employee, payroll expense, probation, and vacation rows were removed by PHASE25-only identifiers.
+- No deployment, production employee mutation, protected payroll fixture deletion, or production Supabase project access was performed.
+
+RLS/API score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Staging RLS write-mutation proof | 3.6 | 4.6 | Real staging JWTs now prove both denied and allowed mutations with PHASE25 disposable rows. |
+| Probation/leave RLS staging proof | 4.0 | 4.7 | Missing staging proof surfaces were aligned and exercised through authenticated RLS policies. |
+| Employee governance RLS writes | 4.5 | 4.8 | HR/Super Admin allowed writes and Employee/Manager denied writes are proven through the Data API. |
+| Finance expense mutation scope | 4.6 | 4.8 | Finance allowed expense writes and Employee denied expense mutation are proven with real tokens. |
+| Service-role API guard alignment | 4.9 | 4.9 | Guard sources remain explicitly tied to Phoenix permission checks while RLS covers direct Data API access. |
+
+Remaining Phase 25 risks:
+
+1. Phase 25 verifies direct Supabase Auth/Data API behavior; it does not perform full browser UI mutations against staging Auth cookies.
+2. The staging parity alignment is sandbox-only proof infrastructure, not a deployment action.
+3. Leave/probation production policy rollout should be reviewed as a formal migration before deployment if the same authenticated direct-write behavior is required outside staging.
+4. Service-role-backed server routes remain acceptable only while explicit Phoenix permission guards are preserved.
+5. Deployment remains out of scope.
+
+## Phase 26 Completion Update
+
+Staging Browser Auth Mutation Walkthrough and API/RLS Alignment Proof scope completed:
+
+- Added a PHASE26 browser smoke that signs into the approved staging Supabase sandbox through real browser `fetch` calls to Supabase Auth for Super Admin, HR Specialist, Finance Manager, CEO, District Manager, Medical Rep, and Employee.
+- Verified a browser context can hold Phoenix Supabase auth bridge cookies using the staging Supabase access/refresh tokens.
+- Reused the staging-only probation/leave parity proof tables with RLS enabled, anon revoked, and Phoenix access-helper policies.
+- Proved browser-executed RLS mutation outcomes through Supabase Data API tokens:
+  - Employee denied employee-master creation.
+  - HR and Super Admin allowed disposable employee governance fixture creation.
+  - District Manager denied employee mutation outside team.
+  - Finance allowed disposable payroll expense creation/update.
+  - Employee denied payroll expense mutation.
+  - HR allowed disposable probation fixture creation.
+  - Employee denied probation decision mutation.
+  - Employee allowed own vacation request creation and denied creating vacation for another employee.
+  - HR allowed outside-manager leave fixture creation.
+  - District Manager denied vacation approval outside team.
+- Verified local browser/API permission guards reject Employee attempts for employee creation, approved expense import, probation workflow, and vacation approval before mutation.
+- Cleaned all PHASE26 disposable rows and verified dashboard-impacting fixture residue is zero across employees, payroll expenses, probation, and vacation.
+- No deployment, production employee mutation, protected payroll fixture deletion, or production Supabase project access was performed.
+
+RLS/API score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Browser Supabase Auth proof | 3.8 | 4.7 | Real browser-executed Supabase Auth logins now return staging JWTs for all core roles. |
+| Browser RLS mutation proof | 4.6 | 4.8 | Allowed and denied write paths are proven from a browser context, not only Node clients. |
+| App API guard alignment | 4.9 | 4.9 | Browser API calls verify Employee denial on critical service-role-backed mutation routes before data work. |
+| Probation/leave browser RLS proof | 4.7 | 4.8 | Probation and leave parity surfaces are now exercised through browser-origin Data API calls. |
+| Fixture cleanup confidence | 4.8 | 4.9 | PHASE26 cleanup includes a post-smoke residue report showing zero fixture rows. |
+
+Remaining Phase 26 risks:
+
+1. The successful HR/Finance mutations are browser-executed against Supabase Data API/RLS directly; the local app lacks a staging service-role key, so allowed app-route service mutations were not executed through the UI.
+2. Local app API guard checks verify denied Employee mutations only; full staging UI form submission with real Phoenix session plus staging service role remains a separate launch-hardening step.
+3. The staging probation/leave parity alignment remains sandbox-only proof infrastructure until reviewed as a formal migration.
+4. Service-role-backed server routes remain acceptable only while explicit Phoenix permission guards are preserved.
+5. Deployment remains out of scope.
+
+## Phase 27 Closure Update
+
+Staging App-Service Mutation Proof closed safely:
+
+- Added a PHASE27 app-service smoke that invokes the production API route handlers in-process against the approved staging Supabase sandbox only, avoiding a second local Next dev server and preserving the user's running app.
+- Added a hard staging service-role gate: the smoke requires `PHOENIX_STAGING_SUPABASE_SERVICE_ROLE_KEY`, validates it against the approved staging Auth admin endpoint, and refuses to reuse `.env.local` because `.env.local` points at the production Supabase ref.
+- Added staging-only app route environment wiring for `NEXT_PUBLIC_SUPABASE_URL`, staging anon key, staging DB URL, and staging service-role key.
+- Proved real staging Supabase auth bridge token creation for HR Specialist, Finance Manager, Employee, District Manager, and Super Admin.
+- Proved allowed app-service mutations through direct route invocation for HR employee governance update, Finance approved expense save, HR probation decision, and Manager vacation approval.
+- Proved denied app-service mutations for Employee attempts to update employee governance, save approved expenses, run probation decisions, and approve vacation.
+- Burned down staging schema parity gaps found during the smoke: `app_auth_users.session_version`, employee governance fields selected by the app, area/team linkage fields, probation evaluation fields, and vacation decision/event fields.
+- Added PHASE27 cleanup and residue reporting for employees, payroll expenses, payroll expense reports, probation, and vacation rows.
+- Ran PHASE27 staging app-service smoke successfully: 17 checks passed, 0 failed, and zero PHASE27 fixture residue remained in business tables.
+- No deployment, production employee mutation, protected payroll fixture deletion, production Supabase service-role usage, or production data mutation was performed.
+
+RLS/API score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Staging app-service safety | 4.7 | 4.9 | The smoke validates the staging service key and blocks the production ref before any route mutation. |
+| App-service mutation proof | 3.4 | 4.8 | HR, Finance, probation, and vacation allowed route mutations now run through production route handlers with staging service-role configuration. |
+| Service-role guard alignment | 4.9 | 5.0 | Employee denied mutations are proven before data work on employee, expense, probation, and vacation routes. |
+| Staging schema parity | 4.2 | 4.7 | Missing staging-only columns needed by the current app service layer were aligned during the smoke. |
+| Fixture cleanup confidence | 4.9 | 5.0 | The final PHASE27 run reports zero residue across employees, payroll expenses, payroll reports, probation, and vacation fixture tables. |
+
+Remaining Phase 27 risks:
+
+1. The Phase 27 proof is staging-only and should be treated as launch evidence, not a production migration.
+2. Staging schema parity changes need formal migration review before any equivalent production schema change.
+3. Browser UI form submission remains covered by prior Phase 26 browser-origin checks; Phase 27 focuses on app-service route mutation proof without starting a second dev server.
+4. Raw audit/auth traces may retain PHASE27 evidence for accountability.
+5. Deployment remains out of scope.
+
+## Phase 28 Completion Update
+
+Production Migration Readiness Review completed without deployment or production mutation:
+
+- Added a read-only production migration readiness smoke that requires `SUPABASE_DB_URL` and uses direct Postgres `select` queries only.
+- Prepared additive, idempotent migration-ready SQL for the schema parity gaps proven by Phases 25-27.
+- Covered `app_auth_users.session_version`, employee governance/master columns, `areas.line_id`, `teams.area_id/is_active`, probation parity tables, vacation parity tables, service-role grants, service-role RLS policies, indexes, and PostgREST schema reload.
+- Verified production schema gaps by read-only smoke:
+  - `employee_probation.manager_hr_id`
+  - `employee_probation.notes`
+  - `v2_vacation_email_tokens.decision`
+  - `v2_vacation_request_events.note`
+  - `v2_vacation_requests.working_days`
+  - `v2_vacation_requests.calendar_days`
+  - `v2_vacation_requests.notes`
+- Verified every discovered gap is covered by the prepared migration SQL.
+- Verified protected PHASE payroll fixtures remain retained: 11 protected PHASE payroll batches and 11 protected salary records.
+- Verified no cleanup-safe PHASE payroll candidates and no PHASE employee residue are visible.
+- Verified dashboard fixture-safe source coverage remains represented in shared fixture hygiene, Platform Metrics, Command Center, Data Health, Monitoring, and Phase 20 smoke sources.
+- Added regression coverage proving the smoke stays read-only and the migration SQL contains no `drop`, payroll unlock, fixture delete, employee rewrite, or direct authenticated probation/vacation policy rollout.
+- No production migration was applied.
+
+Migration plan:
+
+1. Apply `app_auth_users.session_version`.
+2. Apply employee governance/master columns and lookup linkage columns.
+3. Apply area/team linkage columns and indexes.
+4. Apply probation schema parity.
+5. Apply vacation schema parity.
+6. Apply RLS/grants/policies last.
+7. Run `notify pgrst, 'reload schema'`.
+
+Rollback safety:
+
+- No destructive rollback SQL is provided.
+- If a problem is found before apply, disable the migration before applying it.
+- After apply, rollback is operational: leave additive columns/tables in place and revert app usage if needed.
+- Removing columns/tables after production app code has started depending on them is riskier than leaving additive schema in place.
+
+Production risks prevented:
+
+1. No updates to real employees.
+2. No deletion of protected PHASE payroll fixtures.
+3. No payroll lock weakening.
+4. No staging direct authenticated probation/vacation write policies were copied into production SQL.
+5. No dashboard fixture logic changes were made because the smoke did not find fixture leakage.
+6. No deployment or production migration apply happened in Phase 28.
+
+Phase 28 score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Production migration readiness | 3.8 | 4.7 | Migration-ready SQL now covers all read-only discovered parity gaps without applying it. |
+| Schema parity confidence | 4.2 | 4.8 | Production smoke proves remaining probation/vacation gaps and SQL coverage. |
+| Migration data safety | 4.5 | 4.9 | SQL is additive/idempotent and regression-tested against destructive employee/payroll operations. |
+| Fixture retention safety | 4.9 | 5.0 | Protected PHASE payroll fixtures remain retained and business dashboards remain fixture-safe. |
+| RLS production posture | 4.7 | 4.8 | Direct anon/authenticated grants are absent; existing authenticated `employee_probation` policies are recorded for pre-apply review. |
+
+Remaining Phase 28 risks:
+
+1. Existing production `employee_probation` authenticated policies still exist, but the read-only smoke found no anon/authenticated grants on the service-owned probation/vacation tables. They are recorded as a pre-apply policy cleanup decision instead of being dropped in Phase 28.
+2. The SQL is migration-ready but was not applied to production.
+3. Any production apply still needs a controlled dry-run/pre-apply approval gate.
+4. Deployment remains out of scope.
+
+Prompt 29:
+
+Start Phase 29: Controlled Production Migration Dry-Run Review + Pre-Apply Approval Gate.
+
+Use the Phase 28 migration-ready SQL and read-only smoke evidence to perform a controlled production migration dry-run review without applying production migrations.
+
+Focus on:
+- confirming the exact production migration SQL file to apply
+- reviewing the seven discovered production schema gaps
+- reviewing existing inert `employee_probation` authenticated policies and deciding whether policy cleanup belongs in a separate approved migration
+- confirming no employee data rewrite
+- confirming no payroll fixture deletion
+- confirming no payroll lock weakening
+- confirming RLS/grant posture remains service-route guarded
+- confirming rollback/operational fallback plan
+- producing the final pre-apply checklist
+
+Rules:
+- do not deploy
+- do not apply production migrations without explicit approval
+- do not touch real production employee records
+- do not delete protected PHASE payroll fixtures
+- do not weaken RLS or service-route guards
+- keep review read-only unless explicit approval is given
+- preserve existing business logic and dashboard fixture filtering
+
+Run:
+- typecheck
+- tests
+- build
+- Phase 28 read-only migration readiness smoke
+- dry-run/pre-apply checklist generation
+
+After finishing, give me files changed, dry-run review result, pre-apply checklist, policy cleanup recommendation, old score -> new score, remaining risks, and Prompt 30.

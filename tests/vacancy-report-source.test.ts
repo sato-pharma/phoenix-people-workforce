@@ -5,7 +5,10 @@ import {
   dedupeVacancyReportRows,
   type VacancySeatRow,
 } from "../src/lib/reports/vacancy-report-safety.ts";
-import { generateShortVacancyCode } from "../src/lib/workforce/vacancy-code.ts";
+import {
+  generateShortVacancyCode,
+  generateVacancySeatCode,
+} from "../src/lib/workforce/vacancy-code.ts";
 
 type TestVacancyRow = VacancySeatRow & {
   createdAt: string;
@@ -67,7 +70,7 @@ export function runVacancyReportSourceTests() {
 
   assert.deepEqual(
     rows.map((row) => row.vacancyCode),
-    ["VAC-DSM-001", "VAC-MR-001", "VAC-MR-002", "VAC-DSM-CLOSED"],
+    ["VAC-DSM-001", "VAC-MR-001", "VAC-DSM-CLOSED"],
   );
 
   const cairoDsmRows = dedupeVacancyReportRows([
@@ -101,6 +104,22 @@ export function runVacancyReportSourceTests() {
 
   assert.match(generated, /^VAC-B180-[A-Z0-9]{3}$/);
   assert.ok(generated.length <= 13);
+  assert.equal(
+    generateVacancySeatCode({
+      areaCode: "cairo-east",
+      departmentCode: "sales",
+      lineCode: "pedia",
+      positionCode: "medical_rep",
+      teamCode: null,
+    }),
+    generateVacancySeatCode({
+      areaCode: "cairo-east",
+      departmentCode: "sales",
+      lineCode: "pedia",
+      positionCode: "medical_rep",
+      teamCode: null,
+    }),
+  );
   assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-B180");
   assert.equal(publicVacancyLabel("resignation_b-180_20260101000000"), "VAC-B180");
 }

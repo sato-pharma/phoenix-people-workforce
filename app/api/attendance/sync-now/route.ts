@@ -3,24 +3,10 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { ApiError, toApiError } from "@/lib/http/api-errors";
+import { attendanceAgentToken, attendanceAgentUrl, ensureLocalAttendanceAgent } from "@/lib/attendance/local-agent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const defaultAgentUrl = "http://127.0.0.1:8787";
-
-function agentUrl(path: string) {
-  const baseUrl = process.env.ATTENDANCE_AGENT_LOCAL_URL?.trim() || defaultAgentUrl;
-  return new URL(path, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
-}
-
-function attendanceAgentToken() {
-  const token = process.env.ATTENDANCE_AGENT_TOKEN?.trim();
-  if (!token) {
-    throw new ApiError(500, "attendance_agent_token_missing", "ATTENDANCE_AGENT_TOKEN is required.");
-  }
-  return token;
-}
 
 function apiResponse(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {
@@ -39,7 +25,25 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employees", "update");
 
-    const response = await fetch(agentUrl("sync-now"), {
+    try {
+      attendanceAgentToken();
+    } catch {
+      throw new ApiError(500, "attendance_agent_token_missing", "ATTENDANCE_AGENT_TOKEN is required.");
+    }
+
+    const agent = await ensureLocalAttendanceAgent();
+    if (!agent.health.reachable) {
+      return NextResponse.json(
+        {
+          error: "attendance_agent_unreachable",
+          message: `Local attendance agent could not be started at ${attendanceAgentUrl("").toString()}.`,
+          agent,
+        },
+        { status: 503 },
+      );
+    }
+
+    const response = await fetch(attendanceAgentUrl("sync-now"), {
       body: "{}",
       cache: "no-store",
       headers: {
@@ -67,6 +71,16 @@ export async function POST(request: Request) {
           message: "Attendance agent sync timed out while reading the fingerprint device.",
         },
         { status: 504 },
+      );
+    }
+
+    if (error instanceof TypeError && error.message.toLowerCase().includes("fetch failed")) {
+      return NextResponse.json(
+        {
+          error: "attendance_agent_unreachable",
+          message: `Local attendance agent is not reachable at ${attendanceAgentUrl("").toString()}. Start local-attendance-agent\\start-agent.ps1, then try Sync Now again.`,
+        },
+        { status: 503 },
       );
     }
 

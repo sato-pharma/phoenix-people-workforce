@@ -22,6 +22,10 @@
     "db:validate:role-alignment:local:dry-run": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/phoenix-staging-role-alignment-runner.ts --local --dry-run",
     "db:validate:role-alignment:local": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/phoenix-staging-role-alignment-runner.ts --local",
     "db:validate:role-alignment:local:mutations": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/phoenix-staging-role-alignment-runner.ts --local --mutations",
+    "phase25:staging-rls-mutation-smoke": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase25-staging-rls-mutation-smoke.ts",
+    "phase26:staging-browser-auth-mutation-smoke": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase26-staging-browser-auth-mutation-smoke.ts",
+    "phase27:staging-app-service-mutation-smoke": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/phase27-alias-loader.mjs scripts/phase27-staging-app-service-mutation-smoke.ts",
+    "phase28:production-migration-readiness-smoke": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase28-production-migration-readiness-smoke.ts",
     "ci": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {

@@ -54,12 +54,27 @@ export function vacancyReportSeatKey(row: VacancySeatRow) {
   if (normalizeSeatPart(row.status) !== "open") return null;
 
   const level = classifyOrganogramStructureLevel(row);
-  if (!level || level === "medicalRep") return null;
+  if (!level) return null;
 
   const line = vacancySeatPart(row.lineId, row.lineName);
-  const market = managerMarketScope(row);
   const position = vacancySeatPart(row.positionId, row.positionTitle ?? row.jobTitle);
 
+  if (level === "medicalRep") {
+    const area = vacancySeatPart(row.areaId, row.areaName);
+    const team = vacancySeatPart(row.teamId, row.teamName);
+
+    if (!line || !area || !position) return null;
+
+    return [
+      `level:${level}`,
+      `line:${line}`,
+      `area:${area}`,
+      team ? `team:${team}` : "team:none",
+      `position:${position}`,
+    ].join("|");
+  }
+
+  const market = managerMarketScope(row);
   if (!line || !market || !position) return null;
 
   return [
