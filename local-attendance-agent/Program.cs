@@ -28,6 +28,7 @@ builder.Services.ConfigureHttpJsonOptions(options => {
 builder.Services.AddSingleton(AgentConfig.FromEnvironment());
 builder.Services.AddSingleton<StartupValidator>();
 builder.Services.AddSingleton<ZktecoDeviceClient>();
+builder.Services.AddSingleton<AttendanceSyncRunner>();
 builder.Services.AddHttpClient<PhoenixClient>((services, client) => {
   var config = services.GetRequiredService<AgentConfig>();
   client.BaseAddress = new Uri(config.PhoenixBaseUrl.TrimEnd('/') + "/");
@@ -46,10 +47,17 @@ Log.Info("attendance_agent_starting", new {
   config.DevicePort,
   config.PhoenixBaseUrl,
   syncStartDate = config.SyncStartDate.ToString("yyyy-MM-dd"),
+  config.AutoSyncEnabled,
+  config.AutoSyncIntervalMinutes,
+  requiredTimes = config.AutoSyncRequiredTimes,
 });
 
 var startupChecks = await validator.CheckAsync(includeDeviceConnect: false);
 Log.Info("attendance_agent_startup_checks", startupChecks);
+
+if (config.AutoSyncEnabled) {
+  AutoSyncScheduler.Start(app.Services, config);
+}
 
 app.MapGet("/health", async (StartupValidator startupValidator) => {
   var checks = await startupValidator.CheckAsync(includeDeviceConnect: false);
@@ -84,65 +92,17 @@ app.MapPost("/test-device", async (HttpRequest request, AgentConfig cfg, ZktecoD
   }
 });
 
-app.MapPost("/sync-now", async (HttpRequest request, AgentConfig cfg, ZktecoDeviceClient deviceClient, PhoenixClient phoenixClient) => {
+app.MapPost("/sync-now", async (HttpRequest request, AgentConfig cfg, AttendanceSyncRunner syncRunner) => {
   if (!Auth.IsAuthorized(request, cfg.AttendanceAgentToken)) {
     return Results.Unauthorized();
   }
 
-  var runId = $"{cfg.DeviceId}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}";
-  var startedAt = Stopwatch.GetTimestamp();
-  Log.Info("sync_started", new { runId, cfg.DeviceId, syncStartDate = cfg.SyncStartDate.ToString("yyyy-MM-dd") });
-
   try {
-    var tcpReachable = await NetworkChecks.CanConnectTcpAsync(cfg.DeviceIp, cfg.DevicePort, TimeSpan.FromSeconds(5));
-    if (!tcpReachable) {
-      return Results.Json(new {
-        runId,
-        totalRead = 0,
-        filteredBeforeStart = 0,
-        sent = 0,
-        inserted = 0,
-        duplicate = 0,
-        skipped = 0,
-        failed = 1,
-        errors = new[] { $"Device TCP port is not reachable at {cfg.DeviceIp}:{cfg.DevicePort}." },
-      }, statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-
-    var punches = await Retry.DoAsync(
-      () => deviceClient.ReadPunchesAsync(),
-      "device-read",
-      attempts: 2
-    );
-
-    var eligible = punches
-      .Where(p => p.DeviceLocalTime.Date >= cfg.SyncStartDate.Date)
-      .OrderBy(p => p.PunchTimeUtc)
-      .ToList();
-
-    var filteredBeforeStart = punches.Count - eligible.Count;
-    var response = await phoenixClient.SendPunchesAsync(eligible, runId);
-    var elapsedMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
-
-    var summary = new {
-      runId,
-      totalRead = punches.Count,
-      filteredBeforeStart,
-      sent = eligible.Count,
-      response.Inserted,
-      response.Duplicate,
-      response.Skipped,
-      response.Failed,
-      errors = response.Failures.Select(f => $"#{f.Index}: {f.Message}").ToArray(),
-      elapsedMs = Math.Round(elapsedMs),
-    };
-
-    Log.Info("sync_completed", summary);
-    return Results.Json(summary);
+    var result = await syncRunner.SyncAsync("manual");
+    return Results.Json(result.Body, statusCode: result.StatusCode);
   } catch (Exception ex) {
-    Log.Error("sync_failed", ex, new { runId });
+    Log.Error("sync_failed", ex, new { trigger = "manual" });
     return Results.Json(new {
-      runId,
       totalRead = 0,
       inserted = 0,
       duplicate = 0,
@@ -164,7 +124,10 @@ sealed record AgentConfig(
   int DeviceCommPassword,
   string DeviceReadMethod,
   DateTime SyncStartDate,
-  int DeviceOperationTimeoutSeconds
+  int DeviceOperationTimeoutSeconds,
+  bool AutoSyncEnabled,
+  int AutoSyncIntervalMinutes,
+  string[] AutoSyncRequiredTimes
 ) {
   public static AgentConfig FromEnvironment() {
     return new AgentConfig(
@@ -176,7 +139,10 @@ sealed record AgentConfig(
       ParseInt("DEVICE_COMM_PASSWORD", "0"),
       ReadMethod("DEVICE_READ_METHOD", "legacy"),
       ParseDate("SYNC_START_DATE", "2026-01-01"),
-      ParseInt("DEVICE_OPERATION_TIMEOUT_SECONDS", "30")
+      ParseInt("DEVICE_OPERATION_TIMEOUT_SECONDS", "30"),
+      ParseBool("AUTO_SYNC_ENABLED", "false"),
+      ParseInt("AUTO_SYNC_INTERVAL_MINUTES", "120"),
+      ParseList("AUTO_SYNC_REQUIRED_TIMES", "17:00")
     );
   }
 
@@ -200,6 +166,20 @@ sealed record AgentConfig(
     var value = Environment.GetEnvironmentVariable(key)?.Trim().ToLowerInvariant();
     if (string.IsNullOrWhiteSpace(value)) value = defaultValue;
     return value is "legacy" or "ssr" ? value : throw new InvalidOperationException($"{key} must be legacy or ssr.");
+  }
+
+  static bool ParseBool(string key, string defaultValue) {
+    var value = Environment.GetEnvironmentVariable(key)?.Trim();
+    if (string.IsNullOrWhiteSpace(value)) value = defaultValue;
+    return value.Equals("true", StringComparison.OrdinalIgnoreCase)
+      || value.Equals("1", StringComparison.OrdinalIgnoreCase)
+      || value.Equals("yes", StringComparison.OrdinalIgnoreCase);
+  }
+
+  static string[] ParseList(string key, string defaultValue) {
+    var value = Environment.GetEnvironmentVariable(key)?.Trim();
+    if (string.IsNullOrWhiteSpace(value)) value = defaultValue;
+    return value.Split(",", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
   }
 
   static DateTime ParseDate(string key, string defaultValue) {
@@ -248,6 +228,128 @@ sealed class StartupValidator(AgentConfig config) {
 }
 
 sealed record DeviceConnectionResult(bool Connected, string DeviceId, string DeviceIp, int DevicePort);
+
+sealed record AttendanceSyncResult(int StatusCode, object Body);
+
+sealed class AttendanceSyncRunner(AgentConfig config, ZktecoDeviceClient deviceClient, PhoenixClient phoenixClient) {
+  readonly SemaphoreSlim syncLock = new(1, 1);
+
+  public async Task<AttendanceSyncResult> SyncAsync(string trigger) {
+    if (!await syncLock.WaitAsync(0)) {
+      return new AttendanceSyncResult(StatusCodes.Status409Conflict, new {
+        totalRead = 0,
+        inserted = 0,
+        duplicate = 0,
+        skipped = 0,
+        failed = 1,
+        errors = new[] { "Attendance sync is already running." },
+      });
+    }
+
+    var runId = $"{config.DeviceId}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}";
+    var startedAt = Stopwatch.GetTimestamp();
+    Log.Info("sync_started", new { runId, config.DeviceId, trigger, syncStartDate = config.SyncStartDate.ToString("yyyy-MM-dd") });
+
+    try {
+      var tcpReachable = await NetworkChecks.CanConnectTcpAsync(config.DeviceIp, config.DevicePort, TimeSpan.FromSeconds(5));
+      if (!tcpReachable) {
+        var unreachable = new {
+          runId,
+          trigger,
+          totalRead = 0,
+          filteredBeforeStart = 0,
+          sent = 0,
+          inserted = 0,
+          duplicate = 0,
+          skipped = 0,
+          failed = 1,
+          errors = new[] { $"Device TCP port is not reachable at {config.DeviceIp}:{config.DevicePort}." },
+        };
+        Log.Warn("sync_device_unreachable", unreachable);
+        return new AttendanceSyncResult(StatusCodes.Status503ServiceUnavailable, unreachable);
+      }
+
+      var punches = await Retry.DoAsync(
+        () => deviceClient.ReadPunchesAsync(),
+        "device-read",
+        attempts: 2
+      );
+
+      var eligible = punches
+        .Where(p => p.DeviceLocalTime.Date >= config.SyncStartDate.Date)
+        .OrderBy(p => p.PunchTimeUtc)
+        .ToList();
+
+      var filteredBeforeStart = punches.Count - eligible.Count;
+      var response = await phoenixClient.SendPunchesAsync(eligible, runId);
+      var elapsedMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+
+      var summary = new {
+        runId,
+        trigger,
+        totalRead = punches.Count,
+        filteredBeforeStart,
+        sent = eligible.Count,
+        response.Inserted,
+        response.Duplicate,
+        response.Skipped,
+        response.Failed,
+        errors = response.Failures.Select(f => $"#{f.Index}: {f.Message}").ToArray(),
+        elapsedMs = Math.Round(elapsedMs),
+      };
+
+      Log.Info("sync_completed", summary);
+      return new AttendanceSyncResult(StatusCodes.Status200OK, summary);
+    } catch (Exception ex) {
+      Log.Error("sync_failed", ex, new { runId, trigger });
+      return new AttendanceSyncResult(StatusCodes.Status500InternalServerError, new {
+        runId,
+        trigger,
+        totalRead = 0,
+        inserted = 0,
+        duplicate = 0,
+        skipped = 0,
+        failed = 1,
+        errors = new[] { ex.Message },
+      });
+    } finally {
+      syncLock.Release();
+    }
+  }
+}
+
+static class AutoSyncScheduler {
+  public static void Start(IServiceProvider services, AgentConfig config) {
+    _ = Task.Run(async () => {
+      Log.Info("auto_sync_scheduler_started", new {
+        config.AutoSyncIntervalMinutes,
+        config.AutoSyncRequiredTimes,
+      });
+
+      var runner = services.GetRequiredService<AttendanceSyncRunner>();
+      var lastIntervalSync = DateTimeOffset.UtcNow;
+      var requiredRuns = new HashSet<string>();
+
+      while (true) {
+        await Task.Delay(TimeSpan.FromMinutes(1));
+        var now = DateTimeOffset.Now;
+
+        if ((DateTimeOffset.UtcNow - lastIntervalSync).TotalMinutes >= Math.Max(15, config.AutoSyncIntervalMinutes)) {
+          lastIntervalSync = DateTimeOffset.UtcNow;
+          await runner.SyncAsync("auto-interval");
+        }
+
+        var currentTime = now.ToString("HH:mm");
+        if (config.AutoSyncRequiredTimes.Contains(currentTime, StringComparer.OrdinalIgnoreCase)) {
+          var key = $"{now:yyyy-MM-dd}-{currentTime}";
+          if (requiredRuns.Add(key)) {
+            await runner.SyncAsync($"auto-required-{currentTime}");
+          }
+        }
+      }
+    });
+  }
+}
 
 sealed class ZktecoDeviceClient(AgentConfig config) {
   static readonly string[] ProgIds = ["zkemkeeper.CZKEM", "zkemkeeper.ZKEM", "zkemkeeper.ZKEM.1"];

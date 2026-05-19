@@ -46,6 +46,11 @@ import type {
   EmployeeLookupOption,
   EmployeeMutationInput,
 } from "@/lib/employees/employee-directory";
+import {
+  getMissingEmployeeRecordFields,
+  hasMissingEmployeeRecordData,
+  missingEmployeeRecordSummary,
+} from "@/lib/employees/employee-record-health";
 import { cn } from "@/lib/utils";
 
 type EmployeeManagementProps = {
@@ -127,6 +132,8 @@ type EmployeeFormState = {
   teamId: string;
   workEmail: string;
 };
+
+type EmployeeDirectoryTab = "all" | "missing";
 
 const emptyForm: EmployeeFormState = {
   areaId: "",
@@ -553,6 +560,7 @@ export function EmployeeManagement({
   const [isLoading, setIsLoading] = React.useState(false);
   const [isImportingTemplate, setIsImportingTemplate] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [directoryTab, setDirectoryTab] = React.useState<EmployeeDirectoryTab>("all");
   const [areaFilter, setAreaFilter] = React.useState("");
   const [departmentFilter, setDepartmentFilter] = React.useState("");
   const [hasBankAccountFilter, setHasBankAccountFilter] = React.useState("");
@@ -579,6 +587,14 @@ export function EmployeeManagement({
   const templateInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const employees = React.useMemo(() => data?.employees ?? [], [data?.employees]);
+  const missingRecordEmployees = React.useMemo(
+    () => employees.filter(hasMissingEmployeeRecordData),
+    [employees],
+  );
+  const tabEmployees = React.useMemo(
+    () => (directoryTab === "missing" ? missingRecordEmployees : employees),
+    [directoryTab, employees, missingRecordEmployees],
+  );
   const lookups = React.useMemo(
     () =>
       data?.lookups ?? {
@@ -688,7 +704,7 @@ export function EmployeeManagement({
   const filteredEmployees = React.useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return employees.filter((employee) => {
+    return tabEmployees.filter((employee) => {
       const searchable = [
         employee.hrId,
         employee.fullName,
@@ -730,7 +746,6 @@ export function EmployeeManagement({
   }, [
     areaFilter,
     departmentFilter,
-    employees,
     hasBankAccountFilter,
     lineFilter,
     medicalInsuranceStatusFilter,
@@ -739,6 +754,7 @@ export function EmployeeManagement({
     regionFilter,
     salaryPaymentModeFilter,
     socialInsuranceStatusFilter,
+    tabEmployees,
   ]);
   const hasActiveFilters = Boolean(
     areaFilter ||
@@ -1271,6 +1287,58 @@ export function EmployeeManagement({
             title="Workforce Directory"
           >
             <div className="h-1 w-full bg-gradient-to-r from-[#F97316] via-[#3B82F6] to-[#8B5CF6] opacity-80" />
+            <div className="border-b border-[#E2E8F0] bg-white px-4 py-3">
+              <div
+                aria-label="Employee directory views"
+                className="inline-flex flex-wrap items-center gap-1 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-1 shadow-sm"
+                role="tablist"
+              >
+                {[
+                  {
+                    count: employees.length,
+                    icon: Users,
+                    label: "Employees",
+                    value: "all" as const,
+                  },
+                  {
+                    count: missingRecordEmployees.length,
+                    icon: AlertCircle,
+                    label: "Employees Missing Records",
+                    value: "missing" as const,
+                  },
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = directoryTab === tab.value;
+
+                  return (
+                    <button
+                      aria-selected={isActive}
+                      className={cn(
+                        "inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1",
+                        isActive
+                          ? "bg-white text-[#0F172A] shadow-sm"
+                          : "text-[#64748B] hover:bg-white/70 hover:text-[#0F172A]",
+                      )}
+                      key={tab.value}
+                      onClick={() => setDirectoryTab(tab.value)}
+                      role="tab"
+                      type="button"
+                    >
+                      <Icon className={cn("h-4 w-4", tab.value === "missing" ? "text-[#F97316]" : "text-[#3B82F6]")} />
+                      <span>{tab.label}</span>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px] font-black",
+                          isActive ? "bg-[#F1F5F9] text-[#0F172A]" : "bg-white text-[#64748B]",
+                        )}
+                      >
+                        {formatNumberValue(tab.count)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div className="flex flex-col gap-4 border-b border-[#E2E8F0] bg-[#F8FAFC]/50 p-4">
               <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
                 <label className="relative">
@@ -1394,16 +1462,23 @@ export function EmployeeManagement({
                           <div className="h-12 w-12 rounded-full bg-[#F1F5F9] flex items-center justify-center">
                             <Users className="h-6 w-6 text-[#CBD5E1]" />
                           </div>
-                          <span>No employee records match your current filter criteria.</span>
+                          <span>
+                            {directoryTab === "missing" && !hasActiveFilters
+                              ? "No employee records are missing master data."
+                              : "No employee records match your current filter criteria."}
+                          </span>
                         </div>
                       </td>
                     </tr>
                   ) : (
-                    filteredEmployees.map((employee, index) => (
-                      <tr
-                        className="group transition-all duration-200 hover:bg-[#F8FAFC] data-[state=selected]:bg-[#FFF7ED]"
-                        key={employeeRowKey(employee, index)}
-                      >
+                    filteredEmployees.map((employee, index) => {
+                      const missingFields = getMissingEmployeeRecordFields(employee);
+
+                      return (
+                        <tr
+                          className="group transition-all duration-200 hover:bg-[#F8FAFC] data-[state=selected]:bg-[#FFF7ED]"
+                          key={employeeRowKey(employee, index)}
+                        >
                         <td className="px-6 py-4">
                           <button
                             className="flex flex-col text-left group/name"
@@ -1421,6 +1496,17 @@ export function EmployeeManagement({
                                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               )}
                             </div>
+                            {directoryTab === "missing" && missingFields.length > 0 ? (
+                              <span
+                                className="mt-2 inline-flex max-w-[280px] items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700"
+                                title={missingFields.join(", ")}
+                              >
+                                <AlertCircle className="h-3 w-3 shrink-0" />
+                                <span className="truncate">
+                                  {missingEmployeeRecordSummary(employee)}
+                                </span>
+                              </span>
+                            ) : null}
                           </button>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -1507,8 +1593,9 @@ export function EmployeeManagement({
                             </Button>
                           </div>
                         </td>
-                      </tr>
-                    ))
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

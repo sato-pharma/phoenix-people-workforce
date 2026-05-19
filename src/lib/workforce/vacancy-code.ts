@@ -32,3 +32,26 @@ export function generateShortVacancyCode(input: {
   return `${prefix}-${readable}-${stableHash(seed)}`;
 }
 
+export function generateVacancySeatCode(input: {
+  areaCode?: string | null;
+  departmentCode?: string | null;
+  lineCode?: string | null;
+  managerHrId?: string | null;
+  positionCode?: string | null;
+  positionTitle?: string | null;
+  teamCode?: string | null;
+}) {
+  const primary = input.positionCode ?? input.positionTitle ?? "seat";
+
+  return generateShortVacancyCode({
+    parts: [
+      input.departmentCode,
+      input.lineCode,
+      input.areaCode,
+      input.teamCode,
+      input.positionCode,
+      input.managerHrId,
+    ],
+    primary,
+  });
+}
