@@ -1262,3 +1262,44 @@ Remaining Phase 20 production gaps:
 5. Organogram dense vacancy rendering needs UI polish; the underlying workforce/vacancy logic is connected.
 6. CV Database, Attendance, Field Coaching, Coaching Analytics, and some Access/Communication areas are usable but below the 4.8+ core workflow readiness band.
 7. Security/RLS/auth hardening and deployment remain intentionally out of scope for this closure pass.
+
+## Phase 21 Completion Update
+
+Security, RLS, Auth, and Access Governance scope completed:
+
+- Tightened admin bulk access mutation to require an authenticated actor and `user_admin:update` instead of broad admin-access mutation authority.
+- Tightened live notification test email and HR reply email send routes to require `admin:update` instead of read-level access.
+- Added permission-matrix enforcement to probation creation and probation workflow mutations.
+- Added a Phase 21 Supabase migration that removes direct `anon`/`authenticated` grants from hiring-document workflow tables and keeps service-role policies in place.
+- Revoked direct public/authenticated execution from PHX trigger functions that should only run through table triggers.
+- Added a read-only security smoke covering mutation route auth guards, service-role client exposure, RLS posture, direct anon grants, and sensitive security-definer function exposure.
+- Applied the Phase 21 security migration to the configured Supabase database; no employee records, payroll fixtures, or business rows were changed.
+
+Security score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| API mutation authorization | 4.3 | 4.7 | Critical mutation routes now have tighter permission resources and probation uses the permission matrix. |
+| Users & Access governance | 4.0 | 4.6 | Bulk enable/disable now matches user-admin governance and requires an authenticated actor. |
+| Communication send governance | 4.4 | 4.7 | Live email send/test routes require update-level admin permission. |
+| Supabase RLS posture | 4.0 | 4.7 | Smoke verified 33 critical public tables with RLS enabled and removed direct anon hiring-document grants. |
+| Service-role boundary | 4.5 | 4.8 | Smoke verifies service-role usage is not imported into client components. |
+| Security-definer exposure | 4.0 | 4.7 | Direct execute grants were revoked from PHX trigger functions; authenticated `current_access_*` helpers remain for RLS policy support. |
+| Auditability of privileged actions | 4.5 | 4.6 | Existing required audit persistence remains covered; Phase 21 did not weaken audit paths. |
+
+Access rules protected:
+
+1. Non-public mutation routes must resolve Phoenix access context or use explicit signed-token/cron/webhook authorization.
+2. Users & Access mutations must use `user_admin` or `permission_admin` resources, not generic dashboard read access.
+3. Probation mutations must pass both route-level permission checks and service-level scope/workflow checks.
+4. Communication routes that send live email require update-level admin authority.
+5. Service-role database access remains server-only and guarded by app permission checks.
+6. Hiring-document tables are now server-owned through service-role API paths, not direct anon/authenticated Data API grants.
+
+Remaining Phase 21 risks:
+
+1. Auth/RLS security is materially stronger, but a complete table-by-table policy proof still needs a dedicated staging role matrix run with real anon/authenticated tokens.
+2. Some `current_access_*` security-definer helpers remain executable by `authenticated` because existing RLS policies depend on them.
+3. The app still uses service-role-backed server services broadly; this is acceptable only while every API/page entrypoint keeps explicit permission checks.
+4. Password/session security is improved by session version checks, but full Supabase Auth token/session revocation policy should still be reviewed before public launch.
+5. Deployment remains out of scope.

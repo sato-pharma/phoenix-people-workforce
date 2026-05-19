@@ -19,6 +19,7 @@ import { closeVacancyForOffer } from "@/lib/offers/service";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { generateShortVacancyCode } from "@/lib/workforce/vacancy-code";
 import { shouldCloseVacancyForHire } from "@/lib/workforce/seat-lifecycle";
 
 export const runtime = "nodejs";
@@ -36,16 +37,16 @@ function compactCodePart(value: string | null) {
 }
 
 function vacancyCodeFor(record: VacantPositionImportRecord) {
-  const parts = [
-    "vacancy",
-    compactCodePart(record.hrId) ?? String(record.rowNumber),
-    compactCodePart(record.codes.departmentCode),
-    compactCodePart(record.codes.lineCode),
-    compactCodePart(record.codes.areaCode),
-    compactCodePart(record.codes.positionCode),
-  ].filter(Boolean);
-
-  return parts.join("_").slice(0, 160);
+  return generateShortVacancyCode({
+    parts: [
+      record.rowNumber,
+      compactCodePart(record.codes.departmentCode),
+      compactCodePart(record.codes.lineCode),
+      compactCodePart(record.codes.areaCode),
+      compactCodePart(record.codes.positionCode),
+    ],
+    primary: record.hrId ?? record.codes.positionCode ?? record.rowNumber,
+  });
 }
 
 async function parseExcelRows(file: File) {

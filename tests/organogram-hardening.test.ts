@@ -70,6 +70,30 @@ export function runOrganogramHardeningTests() {
   ]);
   assert.equal(sameLineDifferentTeam.length, 2);
 
+  const sameCairoDsmAcrossChildAreas = applyOrganogramMirrorSafety([
+    vacancy({
+      areaId: 101,
+      areaName: "Cairo East 1",
+      hrId: "vacancy_dsm_1",
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+      teamId: 20,
+      teamName: "Nasr City",
+      vacancyCode: "vacancy_dsm_1",
+    }),
+    vacancy({
+      areaId: 102,
+      areaName: "Cairo East 2",
+      hrId: "vacancy_dsm_2",
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+      teamId: 21,
+      teamName: "Heliopolis",
+      vacancyCode: "vacancy_dsm_2",
+    }),
+  ]);
+  assert.equal(sameCairoDsmAcrossChildAreas.length, 1);
+
   const sameLineTeamDifferentManager = applyOrganogramMirrorSafety([
     vacancy({ hrId: "vacancy_5", managerHrId: "DSM-1", vacancyCode: "vacancy_5" }),
     vacancy({ hrId: "vacancy_6", managerHrId: "DSM-2", vacancyCode: "vacancy_6" }),
@@ -97,8 +121,8 @@ export function runOrganogramHardeningTests() {
       vacancyCode: "resignation_b-180_20260101000000",
     }),
   ]);
-  assert.equal(resignationVacancy[0]?.hrId, "VAC-RES-000000");
-  assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-RES-123456");
+  assert.equal(resignationVacancy[0]?.hrId, "VAC-B180");
+  assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-B180");
 
   const kpis = calculateOrganogramStructureKpis([
     row({ hrId: "MR-3", positionTitle: "Medical Representative" }),
@@ -112,6 +136,31 @@ export function runOrganogramHardeningTests() {
   expectKpi(kpis, "nsm", { actual: 1, total: 1, vacant: 0 });
   expectKpi(kpis, "rsm", { actual: 0, total: 0, vacant: 0 });
   expectKpi(kpis, "total", { actual: 3, total: 5, vacant: 2 });
+
+  const duplicateDsmKpis = calculateOrganogramStructureKpis([
+    vacancy({
+      areaId: 101,
+      areaName: "Cairo East 1",
+      hrId: "vacancy_dsm_3",
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+      teamId: 20,
+      teamName: "Nasr City",
+      vacancyCode: "vacancy_dsm_3",
+    }),
+    vacancy({
+      areaId: 102,
+      areaName: "Cairo East 2",
+      hrId: "vacancy_dsm_4",
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+      teamId: 21,
+      teamName: "Heliopolis",
+      vacancyCode: "vacancy_dsm_4",
+    }),
+  ]);
+  expectKpi(duplicateDsmKpis, "dsm", { actual: 0, total: 1, vacant: 1 });
+  expectKpi(duplicateDsmKpis, "total", { actual: 0, total: 1, vacant: 1 });
 
   assert.equal(
     districtBucketMatches(

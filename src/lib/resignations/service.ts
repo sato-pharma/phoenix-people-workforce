@@ -3,6 +3,7 @@ import { getEmployeeDirectory, invalidateEmployeeDirectoryCache } from "@/lib/em
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { generateShortVacancyCode } from "@/lib/workforce/vacancy-code";
 
 import type {
   CreateResignationInput,
@@ -935,10 +936,11 @@ async function createResignationForEmployee(
   return resignationId;
 }
 
-function vacancyCodeFromEmployee(hrId: string) {
-  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
-  const suffix = String(hrId).trim().toUpperCase().replace(/[^A-Z0-9]+/g, "").slice(-6) || "EMP";
-  return `resignation_vac_${stamp}_${suffix}`;
+function vacancyCodeFromEmployee(hrId: string, effectiveDate: string) {
+  return generateShortVacancyCode({
+    parts: [effectiveDate],
+    primary: hrId,
+  });
 }
 
 export async function resignEmployeeAndOpenVacancy(
@@ -963,7 +965,7 @@ export async function resignEmployeeAndOpenVacancy(
   const employeeStatus = normalizeEmployeeExitStatus(input.employeeStatus);
   const directoryForActor = await getEmployeeDirectory();
   const submittedByHrId = resolveSubmittedByHrId(actor, directoryForActor);
-  const vacancyCode = vacancyCodeFromEmployee(employeeHrId);
+  const vacancyCode = vacancyCodeFromEmployee(employeeHrId, effectiveDate);
   const workflowNotesWithReference = [
     cleanText(input.workflowNotes),
     `Termination/vacancy reference: ${vacancyCode}`,

@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin_access", "read");
+    await assertPermission(access, "admin", "update");
 
     if (!emailNotificationsEnabled()) {
       return NextResponse.json({

@@ -10,7 +10,10 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin_access", "update");
+    if (!access.loginId && !access.hrId) {
+      return NextResponse.json({ message: "Authentication is required." }, { status: 401 });
+    }
+    await assertPermission(access, "user_admin", "update");
 
     const body = await request.json() as { action?: string; loginIds?: unknown };
     const { action, loginIds } = body;
@@ -21,9 +24,13 @@ export async function POST(request: Request) {
     if (!Array.isArray(loginIds) || loginIds.length === 0) {
       return NextResponse.json({ message: "loginIds must be a non-empty array." }, { status: 400 });
     }
+    if (!loginIds.every((loginId) => typeof loginId === "string" && loginId.trim())) {
+      return NextResponse.json({ message: "loginIds must contain non-empty strings only." }, { status: 400 });
+    }
     if (loginIds.length > 100) {
       return NextResponse.json({ message: "Cannot process more than 100 users at once." }, { status: 400 });
     }
+    const requestedLoginIds = loginIds.map((loginId) => String(loginId).trim());
 
     const isActive = action === "enable";
     const actor = {
@@ -33,14 +40,14 @@ export async function POST(request: Request) {
     };
 
     const results = await Promise.allSettled(
-      (loginIds as string[]).map((loginId) =>
+      requestedLoginIds.map((loginId) =>
         updateAccessUserStatus(loginId, isActive, actor, `Bulk ${action} action`),
       ),
     );
 
     const succeeded = results.filter((r) => r.status === "fulfilled").length;
     const failed = results
-      .map((r, i) => ({ loginId: (loginIds as string[])[i], result: r }))
+      .map((r, i) => ({ loginId: requestedLoginIds[i], result: r }))
       .filter((r) => r.result.status === "rejected")
       .map((r) => ({
         loginId: r.loginId,

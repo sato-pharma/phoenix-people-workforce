@@ -1,6 +1,7 @@
 ﻿import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 
 import { applyOrganogramMirrorSafety, publicVacancyLabel } from "@/lib/reports/organogram-safety";
+import { dedupeVacancyReportRows } from "@/lib/reports/vacancy-report-safety";
 
 type LookupRow = {
   id: number;
@@ -298,7 +299,7 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
       loadEmployeeNames(textValues(vacancyRows, "manager_hr_id")),
     ]);
 
-  const rows = vacancyRows.map((row) => ({
+  const rows = dedupeVacancyReportRows(vacancyRows.map((row): VacancyReportRow => ({
     areaId: row.area_id,
     areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
     createdAt: row.created_at,
@@ -325,7 +326,7 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
     teamId: row.team_id ?? null,
     teamName: row.team_id ? teamNames.get(row.team_id) ?? null : null,
     vacancyCode: row.vacancy_code,
-  }));
+  })));
   const openRows = rows.filter((row) => row.status === "open");
   const employeeOrganogramRows: OrganogramReportRow[] =
     employeeDirectory.employees

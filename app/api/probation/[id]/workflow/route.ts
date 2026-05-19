@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   getProbationRows,
@@ -28,6 +28,8 @@ export async function POST(
     if (!validActions.includes(action)) {
       return NextResponse.json({ success: false, error: "Invalid action." }, { status: 400 });
     }
+
+    await assertPermission(access, "probation", action === "pass" || action === "terminate" ? "approve" : "update");
 
     const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
     const data = await runProbationWorkflow(id, action, actor, access, {

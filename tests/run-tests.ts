@@ -36,6 +36,7 @@ import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.t
 import { runEmployeePortalPayslipSalaryTests } from "./employee-portal-payslip-salary.test.ts";
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
+import { runVacancyReportSourceTests } from "./vacancy-report-source.test.ts";
 import { runProbationStabilizationTests } from "./probation-stabilization.test.ts";
 import { runGoogleRoutesShortestTests } from "./google-routes-shortest.test.ts";
 import { runAccessGovernanceHardeningTests } from "./access-governance-hardening.test.ts";
@@ -52,6 +53,7 @@ import { runPhase17WorkflowUiActionClosureTests } from "./phase17-workflow-ui-ac
 import { runPhase18FixtureHygieneTests } from "./phase18-fixture-hygiene.test.ts";
 import { runPhase19FixtureCleanupTests } from "./phase19-fixture-cleanup.test.ts";
 import { runPhase20ProductionReadinessTests } from "./phase20-production-readiness.test.ts";
+import { runPhase21SecurityHardeningTests } from "./phase21-security-hardening.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -99,6 +101,7 @@ await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("employee portal payslip salary", runEmployeePortalPayslipSalaryTests);
 await runTest("employee access provisioning", runEmployeeAccessProvisioningTests);
 await runTest("organogram hardening", runOrganogramHardeningTests);
+await runTest("vacancy report source", runVacancyReportSourceTests);
 await runTest("probation stabilization", runProbationStabilizationTests);
   await runTest("google routes fastest", runGoogleRoutesShortestTests);
 await runTest("auth session", runAuthSessionTests);
@@ -117,3 +120,4 @@ await runTest("phase 17 workflow UI action closure", runPhase17WorkflowUiActionC
 await runTest("phase 18 fixture hygiene", runPhase18FixtureHygieneTests);
 await runTest("phase 19 fixture cleanup", runPhase19FixtureCleanupTests);
 await runTest("phase 20 production readiness", runPhase20ProductionReadinessTests);
+await runTest("phase 21 security hardening", runPhase21SecurityHardeningTests);
