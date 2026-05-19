@@ -1602,3 +1602,876 @@ Run:
 - dry-run/pre-apply checklist generation
 
 After finishing, give me files changed, dry-run review result, pre-apply checklist, policy cleanup recommendation, old score -> new score, remaining risks, and Prompt 30.
+
+## Phase 29 Completion Update
+
+Controlled Production Migration Dry-Run Review and Pre-Apply Approval Gate completed without deployment, production migration apply, or production data mutation:
+
+- Added a repeatable Phase 29 pre-apply review script.
+- Confirmed the exact migration file selected for any future approval gate:
+  - `supabase/migrations/20260519102840_phase28_production_schema_parity_readiness.sql`
+- Confirmed migration checksum:
+  - `e001a0d5c530262056f803ea656a529320a71e49a38ba71af063ee02fabb95ce`
+- Confirmed the migration is additive and idempotent with `if not exists` coverage.
+- Confirmed the seven Phase 28 production schema gaps are covered:
+  - `employee_probation.manager_hr_id`
+  - `employee_probation.notes`
+  - `v2_vacation_email_tokens.decision`
+  - `v2_vacation_request_events.note`
+  - `v2_vacation_requests.working_days`
+  - `v2_vacation_requests.calendar_days`
+  - `v2_vacation_requests.notes`
+- Confirmed no employee data rewrite is present.
+- Confirmed no payroll fixture deletion is present.
+- Confirmed no payroll lock weakening is present.
+- Confirmed probation/vacation production posture remains service-route guarded in the migration SQL.
+- Re-ran the Phase 28 read-only production migration readiness smoke successfully.
+- Added regression coverage for the Phase 29 pre-apply review.
+- No production migration was applied.
+
+Dry-run review result:
+
+`READY_FOR_APPROVAL_GATE_ONLY_NOT_APPLIED`
+
+Pre-apply checklist:
+
+| Item | Status |
+|---|---|
+| Confirm production backup/PITR window before any future apply | Required before apply |
+| Confirm exact migration file and checksum | Ready |
+| Run Phase 28 read-only smoke immediately before apply | Required before apply |
+| Confirm no employee data rewrite | Passed |
+| Confirm no payroll fixture deletion | Passed |
+| Confirm no payroll lock weakening | Passed |
+| Confirm RLS/grants remain service-route guarded | Passed |
+| Approve or defer separate `employee_probation` policy cleanup | Manual approval required |
+| Apply only after explicit user approval | Blocked until approved |
+
+Policy cleanup recommendation:
+
+- Keep the Phase 28 schema parity migration additive.
+- Do not mix policy drops into the schema parity migration.
+- Review the existing `employee_probation_*_access` authenticated policies as a separate explicit policy-cleanup migration only if the approval gate confirms they are obsolete.
+- Reason: dropping policies is a different risk class from adding missing columns/tables.
+
+Rollback/operational fallback:
+
+- Before apply: disable or edit the migration if review finds a problem.
+- After apply: leave additive columns/tables in place and revert app usage if needed.
+- No destructive rollback SQL is provided because removing columns/tables could break running app code after apply.
+
+Phase 29 score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Production migration approval readiness | 4.7 | 4.9 | Exact migration file, checksum, covered gaps, and pre-apply checklist are now repeatable. |
+| Schema parity apply safety | 4.8 | 4.9 | Dry-run review proves no employee rewrite, payroll fixture delete, payroll unlock, or destructive DDL. |
+| RLS policy decision clarity | 4.8 | 4.9 | Existing inert `employee_probation` authenticated policies are separated from schema parity apply. |
+| Rollback/fallback clarity | 4.5 | 4.8 | Operational fallback is documented without unsafe destructive rollback SQL. |
+| Launch gate discipline | 4.7 | 5.0 | Apply remains blocked until explicit approval after smoke and backup/PITR confirmation. |
+
+Remaining Phase 29 risks:
+
+1. The migration has not been applied to production.
+2. Backup/PITR readiness must be confirmed immediately before any future production apply.
+3. Existing `employee_probation_*_access` authenticated policies still need an explicit keep/drop decision, preferably as a separate policy-cleanup migration.
+4. The approval gate is ready, but production apply remains blocked until explicit user approval.
+5. Deployment remains out of scope.
+
+Prompt 30:
+
+Start Phase 30: Production Migration Apply Approval Gate + Backup Confirmation.
+
+Use the Phase 29 dry-run review output to perform the final approval gate for the Phase 28 schema parity migration. Do not apply anything until explicit approval is given.
+
+Focus on:
+- confirming production backup/PITR readiness
+- confirming the exact migration file and checksum
+- re-running Phase 28 read-only smoke immediately before apply
+- re-running Phase 29 pre-apply checklist
+- confirming no employee data rewrite
+- confirming no payroll fixture deletion
+- confirming no payroll lock weakening
+- confirming service-route guarded RLS posture
+- confirming whether `employee_probation` policy cleanup is deferred to a separate migration
+- preparing the exact apply command but not running it until approved
+
+Rules:
+- do not deploy
+- do not apply production migrations without explicit approval
+- do not touch real production employee records
+- do not delete protected PHASE payroll fixtures
+- do not weaken payroll locks
+- do not mix policy cleanup into the schema parity migration unless explicitly approved as a separate migration
+- keep all checks read-only until approval
+
+Run before asking for approval:
+- typecheck
+- tests
+- build
+- Phase 28 read-only migration readiness smoke
+- Phase 29 pre-apply checklist
+
+After finishing the approval gate, give me files changed, final apply recommendation, exact command prepared, backup/PITR checklist, policy cleanup decision, old score -> new score, remaining risks, and Prompt 31.
+
+## Phase 30 Completion Update
+
+Production Migration Apply Approval Gate and Backup Confirmation completed without deployment, production migration apply, or production data mutation:
+
+- Added a repeatable Phase 30 approval-gate script.
+- Confirmed exact migration file:
+  - `supabase/migrations/20260519102840_phase28_production_schema_parity_readiness.sql`
+- Confirmed migration checksum:
+  - `e001a0d5c530262056f803ea656a529320a71e49a38ba71af063ee02fabb95ce`
+- Confirmed no employee data rewrite.
+- Confirmed no employee deletion.
+- Confirmed no payroll fixture deletion.
+- Confirmed no payroll lock weakening.
+- Confirmed service-route guarded RLS posture remains represented in the migration SQL.
+- Re-ran Phase 28 read-only production migration readiness smoke successfully.
+- Re-ran Phase 29 pre-apply checklist successfully.
+- Added regression coverage proving Phase 30 stays blocked until explicit approval and does not execute apply/deploy commands.
+- No production migration was applied.
+
+Final apply recommendation:
+
+`READY_FOR_EXPLICIT_APPROVAL_AFTER_BACKUP_AND_DRY_RUN_CONFIRMATION`
+
+Prepared commands, not executed:
+
+```powershell
+npx supabase db push --db-url "$env:SUPABASE_DB_URL" --dry-run
+```
+
+```powershell
+npx supabase db push --db-url "$env:SUPABASE_DB_URL" --yes
+```
+
+Apply condition:
+
+- Do not run the apply command unless the dry-run output shows only `20260519102840_phase28_production_schema_parity_readiness.sql`.
+- Confirm production backup/PITR immediately before apply.
+- Apply only after explicit approval in the active thread.
+
+Backup/PITR checklist:
+
+1. Confirm Supabase project is the Phoenix production project before apply.
+2. Confirm a recent backup or PITR recovery window is available immediately before apply.
+3. Run the Phase 28 read-only smoke immediately before apply.
+4. Run the Supabase dry-run command and confirm it lists only the Phase 28 migration.
+5. Apply only after explicit approval in this thread.
+
+Policy cleanup decision:
+
+- `employee_probation` authenticated policy cleanup is deferred to a separate migration.
+- Reason: the Phase 28 schema parity migration is additive; dropping existing policies is a separate policy-risk decision.
+
+Phase 30 score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Production apply gate discipline | 5.0 | 5.0 | Apply command is prepared but blocked until explicit approval, dry-run confirmation, and backup/PITR confirmation. |
+| Backup/PITR readiness clarity | 4.2 | 4.8 | Backup/PITR is now an explicit manual gate before any future apply. |
+| Exact migration confidence | 4.9 | 5.0 | File checksum and selected migration are locked into the approval gate. |
+| Policy cleanup separation | 4.9 | 5.0 | `employee_probation` policy cleanup remains deferred to a separate explicit migration. |
+| Production mutation safety | 5.0 | 5.0 | No production writes, migration apply, or deployment occurred. |
+
+Remaining Phase 30 risks:
+
+1. Production migration has not been applied.
+2. Backup/PITR availability still requires owner confirmation immediately before apply.
+3. A Supabase dry-run must be executed and reviewed before any apply.
+4. The apply command should only run if the dry-run lists exactly the Phase 28 schema parity migration.
+5. `employee_probation` policy cleanup remains deferred to a separate migration.
+6. Deployment remains out of scope.
+
+Prompt 31:
+
+Start Phase 31: Production Migration Dry-Run Execution + Apply Approval Decision.
+
+Use the Phase 30 approval gate. Execute only the Supabase migration dry-run, not the apply command, and review whether production would apply exactly the Phase 28 schema parity migration.
+
+Focus on:
+- running the prepared Supabase dry-run command only
+- confirming the dry-run lists exactly `20260519102840_phase28_production_schema_parity_readiness.sql`
+- confirming no other pending migrations would apply
+- confirming backup/PITR readiness remains required before actual apply
+- confirming the apply command remains blocked unless explicitly approved
+- keeping `employee_probation` policy cleanup deferred to a separate migration
+- updating the final go/no-go recommendation
+
+Rules:
+- do not deploy
+- do not apply production migrations unless explicitly approved after dry-run review
+- do not touch real production employee records
+- do not delete protected PHASE payroll fixtures
+- do not weaken payroll locks
+- run dry-run only
+- stop and report if dry-run lists any migration other than the Phase 28 schema parity migration
+
+Run:
+- typecheck
+- tests
+- build
+- Phase 28 read-only migration readiness smoke
+- Phase 30 approval gate
+- Supabase migration dry-run only
+
+After finishing, give me files changed, dry-run output summary, go/no-go recommendation, exact blocked apply command, backup/PITR status, policy cleanup status, old score -> new score, remaining risks, and Prompt 32.
+
+## Phase 31 Completion Update
+
+Production Migration Dry-Run Execution and Apply Approval Decision completed without deployment, production migration apply, or production data mutation:
+
+- Re-ran `typecheck`, full tests, and production build successfully.
+- Re-ran Phase 28 read-only production migration readiness smoke successfully.
+- Re-ran Phase 30 approval gate successfully.
+- Executed the Supabase migration dry-run only.
+- Did not run the apply command.
+
+Dry-run output summary:
+
+```text
+DRY RUN: migrations will *not* be pushed to the database.
+Connecting to remote database...
+Would push these migrations:
+ • 20260518232733_phase21_security_access_governance_hardening.sql
+ • 20260519102840_phase28_production_schema_parity_readiness.sql
+Finished supabase db push.
+```
+
+Go/no-go recommendation:
+
+`NO-GO_FOR_APPLY`
+
+Reason:
+
+- The dry-run lists two pending production migrations, not exactly the Phase 28 schema parity migration.
+- The extra pending migration is `20260518232733_phase21_security_access_governance_hardening.sql`.
+- This violates the Phase 31 apply condition, so the apply command remains blocked.
+
+Blocked apply command:
+
+```powershell
+npx supabase db push --db-url "$env:SUPABASE_DB_URL" --yes
+```
+
+Backup/PITR status:
+
+- Still required before any future apply.
+- Not sufficient to proceed because dry-run scope is not clean.
+
+Policy cleanup status:
+
+- `employee_probation` policy cleanup remains deferred to a separate migration.
+- No policy cleanup was applied.
+
+Phase 31 score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Dry-run execution confidence | 0.0 | 4.8 | Supabase dry-run was executed successfully without mutation. |
+| Apply readiness | 4.8 | 3.8 | Apply is blocked because dry-run includes an extra pending Phase 21 migration. |
+| Migration queue clarity | 4.0 | 5.0 | Pending production migration queue is now known exactly. |
+| Production mutation safety | 5.0 | 5.0 | No production write, migration apply, or deployment occurred. |
+| Approval gate discipline | 5.0 | 5.0 | The gate correctly stopped apply when dry-run scope was not exactly Phase 28. |
+
+Remaining Phase 31 risks:
+
+1. Production has at least two pending migrations in the local queue: Phase 21 and Phase 28.
+2. Phase 28 cannot be safely applied alone through normal `supabase db push` until the Phase 21 pending state is resolved or explicitly included in an approved apply plan.
+3. Phase 21 security migration must be reviewed as part of the production migration queue before any apply.
+4. Backup/PITR confirmation is still required before any future apply.
+5. Deployment remains out of scope.
+
+Prompt 32:
+
+Start Phase 32: Pending Production Migration Queue Review + Phase 21/28 Apply Scope Decision.
+
+Use the Phase 31 dry-run output to review why production has both Phase 21 and Phase 28 pending. Do not apply migrations.
+
+Focus on:
+- reviewing `20260518232733_phase21_security_access_governance_hardening.sql`
+- reviewing `20260519102840_phase28_production_schema_parity_readiness.sql`
+- confirming whether Phase 21 is safe, already manually applied, or still genuinely pending
+- checking production read-only posture for the Phase 21 hiring-document/server-owned changes
+- deciding whether the correct future apply plan should include Phase 21 + Phase 28 together or mark Phase 21 as already handled through migration history only after proof
+- keeping Phase 28 apply blocked until the queue is clean and approved
+- keeping `employee_probation` policy cleanup deferred
+
+Rules:
+- do not deploy
+- do not apply production migrations
+- do not touch real production employee records
+- do not delete protected PHASE payroll fixtures
+- do not weaken payroll locks
+- use read-only checks only
+- do not modify Supabase migration history unless explicitly approved after proof
+
+Run:
+- typecheck
+- tests
+- build
+- Phase 28 read-only migration readiness smoke
+- Supabase migration dry-run only
+- read-only Phase 21 production posture check
+
+After finishing, give me files changed, Phase 21 review result, migration queue decision, go/no-go recommendation, blocked apply command, old score -> new score, remaining risks, and Prompt 33.
+
+## Phase 32 Completion Update
+
+Pending Production Migration Queue Review and Phase 21/28 Apply Scope Decision completed without deployment, production migration apply, migration-history edits, or production data mutation:
+
+- Added a read-only Phase 32 production migration queue review script.
+- Re-ran `typecheck`, full tests, and production build successfully.
+- Re-ran Phase 28 read-only migration readiness smoke successfully.
+- Re-ran Supabase migration dry-run only.
+- Ran read-only Phase 21 production posture checks against:
+  - `hiring_document_definitions`
+  - `hiring_document_statuses`
+  - `hiring_document_employee_notes`
+  - `phx_autofill_replacement_vacancy_from_employee_insert`
+  - `phx_enforce_terminal_employee_lifecycle_flags`
+  - `phx_release_terminal_manager_ownership_trigger`
+- No production migration was applied.
+
+Dry-run output remained:
+
+```text
+Would push these migrations:
+ • 20260518232733_phase21_security_access_governance_hardening.sql
+ • 20260519102840_phase28_production_schema_parity_readiness.sql
+```
+
+Phase 21 review result:
+
+- Phase 21 migration source is limited to hiring-document server-owned hardening and trigger-function execute revokes.
+- Phase 21 migration does not touch employees, payroll batches, or salary records.
+- Production migration history does not include Phase 21 or Phase 28.
+- Production already reflects the intended Phase 21 posture:
+  - Hiring-document tables have RLS enabled.
+  - Direct `anon`/`authenticated` grants are absent.
+  - `service_role` grants are present.
+  - `service_role` policies are present for all three hiring-document tables.
+  - The three PHX trigger functions are not executable by `public`, `anon`, or `authenticated`.
+
+Migration queue decision:
+
+`NO_GO_FOR_APPLY_UNTIL_PHASE21_HISTORY_STRATEGY_IS_APPROVED`
+
+Reason:
+
+- Phase 21 appears already reflected in production posture but is missing from Supabase migration history.
+- Normal `supabase db push` will continue to include Phase 21 before Phase 28.
+- Phase 28 remains blocked until the queue is clean or the combined Phase 21 + Phase 28 apply scope is explicitly approved.
+
+Recommendation:
+
+1. Prefer a controlled, non-mutating migration-history reconciliation for Phase 21 after backup/PITR confirmation and explicit approval.
+2. Do not mark migration history manually without approval.
+3. If migration-history reconciliation is not approved, the alternative is explicitly approving a combined Phase 21 + Phase 28 apply after confirming Phase 21’s idempotent behavior is acceptable.
+4. Keep `employee_probation` policy cleanup deferred.
+
+Blocked apply command:
+
+```powershell
+npx supabase db push --db-url "$env:SUPABASE_DB_URL" --yes
+```
+
+Phase 32 score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Migration queue clarity | 5.0 | 5.0 | Queue is confirmed: Phase 21 and Phase 28 are pending in Supabase migration history. |
+| Phase 21 production posture confidence | 3.5 | 4.9 | Read-only checks prove the intended Phase 21 posture is already reflected. |
+| Apply readiness | 3.8 | 3.9 | We understand the blocker, but apply remains blocked until queue strategy is approved. |
+| Migration-history safety | 4.0 | 4.8 | No migration history edits were made; reconciliation is isolated as a future approval decision. |
+| Production mutation safety | 5.0 | 5.0 | No production write, migration apply, or deployment occurred. |
+
+Remaining Phase 32 risks:
+
+1. Phase 21 and Phase 28 are both absent from Supabase migration history.
+2. Phase 28 cannot be applied alone through normal `supabase db push` while Phase 21 remains pending.
+3. Marking Phase 21 as applied in migration history would be a production write and requires explicit approval.
+4. Applying Phase 21 + Phase 28 together is possible only after explicit approval, backup/PITR confirmation, and acceptance of Phase 21’s idempotent policy recreation.
+5. `employee_probation` policy cleanup remains deferred to a separate migration.
+6. Deployment remains out of scope.
+
+Prompt 33:
+
+Start Phase 33: Phase 21 Migration History Reconciliation Approval Gate.
+
+Use the Phase 32 evidence to prepare a safe approval gate for resolving the pending Phase 21 migration-history mismatch. Do not apply migrations and do not edit migration history until explicitly approved.
+
+Focus on:
+- confirming Phase 21 production posture is already reflected
+- confirming Phase 21 is absent from `supabase_migrations.schema_migrations`
+- preparing a read-only proof package for Phase 21
+- preparing the exact migration-history reconciliation SQL but not running it
+- confirming backup/PITR is required before any migration-history write
+- confirming Phase 28 remains blocked until Phase 21 queue state is resolved
+- keeping `employee_probation` policy cleanup deferred
+
+Rules:
+- do not deploy
+- do not apply production migrations
+- do not modify migration history without explicit approval
+- do not touch real production employee records
+- do not delete protected PHASE payroll fixtures
+- do not weaken payroll locks
+- use read-only checks unless explicit approval is given
+
+Run:
+- typecheck
+- tests
+- build
+- Phase 32 production migration queue review
+- Supabase migration dry-run only
+
+After finishing, give me files changed, reconciliation recommendation, exact SQL prepared but not run, approval checklist, go/no-go recommendation, old score -> new score, remaining risks, and Prompt 34.
+
+## Phase 33 Completion Update
+
+Phase 21 Migration History Reconciliation Approval Gate completed without deployment, production migration apply, migration-history edit, or production data mutation:
+
+- Added a Phase 33 migration-history reconciliation approval-gate script.
+- Confirmed Phase 21 migration file:
+  - `supabase/migrations/20260518232733_phase21_security_access_governance_hardening.sql`
+- Confirmed Phase 21 checksum:
+  - `e50dce046b3167a976d704099b6518f2cfcb46fc829c33d8710828a6a26482c0`
+- Confirmed Phase 21 scope is limited to hiring-document hardening and trigger-function execute revokes.
+- Confirmed Phase 32 read-only proof package exists.
+- Re-ran Phase 32 production migration queue review successfully.
+- Re-ran Supabase dry-run only; it still lists Phase 21 and Phase 28.
+- Prepared reconciliation commands but did not run them.
+
+Reconciliation recommendation:
+
+`PREPARED_NOT_APPROVED`
+
+Preferred command, prepared but not run:
+
+```powershell
+npx supabase migration repair 20260518232733 --status applied --db-url "$env:SUPABASE_DB_URL"
+```
+
+SQL fallback, prepared but not run:
+
+```sql
+insert into supabase_migrations.schema_migrations (version, statements, name)
+values ('20260518232733', array[]::text[], 'phase21_security_access_governance_hardening')
+on conflict (version) do nothing;
+```
+
+Approval checklist:
+
+1. Confirm Phase 32 read-only posture check passes immediately before reconciliation.
+2. Confirm Supabase dry-run still lists Phase 21 and Phase 28 only.
+3. Confirm Phase 21 production posture is already reflected.
+4. Confirm Phase 21 is absent from `supabase_migrations.schema_migrations`.
+5. Confirm production backup/PITR window before any migration-history write.
+6. Run migration repair only after explicit approval.
+7. Run Supabase dry-run after repair and confirm only Phase 28 remains pending.
+
+Go/no-go recommendation:
+
+`NO-GO_UNTIL_EXPLICIT_APPROVAL_AND_BACKUP_PITR_CONFIRMATION`
+
+Reason:
+
+- Migration-history reconciliation is a production write even though it does not change app business tables.
+- It must not run until explicitly approved.
+
+Phase 33 score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Phase 21 reconciliation readiness | 3.0 | 4.8 | Exact repair command and SQL fallback are prepared and blocked. |
+| Migration-history safety | 4.8 | 4.9 | The preferred path uses Supabase CLI migration repair and remains approval-gated. |
+| Apply readiness | 3.9 | 4.1 | The queue blocker now has a prepared resolution path, but no write has been approved. |
+| Approval discipline | 5.0 | 5.0 | Reconciliation remains blocked until explicit approval and backup/PITR confirmation. |
+| Production mutation safety | 5.0 | 5.0 | No production write, migration apply, or deployment occurred. |
+
+Remaining Phase 33 risks:
+
+1. Phase 21 is still missing from migration history.
+2. Phase 28 remains blocked until Phase 21 history is reconciled or both migrations are explicitly approved together.
+3. Backup/PITR confirmation is required before any migration-history repair.
+4. The prepared SQL fallback should only be used if Supabase CLI repair is unavailable or fails after approval.
+5. `employee_probation` policy cleanup remains deferred to a separate migration.
+6. Deployment remains out of scope.
+
+Prompt 34:
+
+Start Phase 34: Execute Approved Phase 21 Migration History Repair + Post-Repair Dry-Run.
+
+Use the Phase 33 approval-gate evidence to repair only the Phase 21 migration-history mismatch, but only after explicit approval and backup/PITR confirmation.
+
+Focus on:
+- confirming backup/PITR readiness
+- re-running Phase 32 read-only posture check
+- re-running Supabase dry-run and confirming it lists Phase 21 and Phase 28 before repair
+- executing only the approved Phase 21 migration repair command
+- re-running Supabase dry-run after repair
+- confirming only Phase 28 remains pending
+- keeping Phase 28 apply blocked until separately approved
+- keeping `employee_probation` policy cleanup deferred
+
+Rules:
+- do not deploy
+- do not apply production migrations
+- do not touch real production employee records
+- do not delete protected PHASE payroll fixtures
+- do not weaken payroll locks
+- do not modify migration history unless explicit approval and backup/PITR confirmation are present
+- repair only version `20260518232733`
+
+Run:
+- typecheck
+- tests
+- build
+- Phase 32 production migration queue review
+- pre-repair Supabase dry-run only
+- approved Phase 21 migration repair only if explicitly approved
+- post-repair Supabase dry-run only
+
+After finishing, give me files changed, repair result, post-repair dry-run output, go/no-go for Phase 28, old score -> new score, remaining risks, and Prompt 35.
+
+## Phase 34 Blocked Approval Update
+
+Phase 34 was started but the production migration-history repair was not executed.
+
+Reason:
+
+- The user requested repair only after explicit approval and backup/PITR confirmation.
+- Backup/PITR confirmation has not yet been provided in the thread.
+- Migration-history repair is a production write, even though it does not touch business tables.
+
+Safe checks completed:
+
+- `npm run typecheck` passed.
+- `npm run test` passed.
+- `npm run build` passed.
+- `npm run phase32:production-migration-queue-review` passed.
+- Supabase migration dry-run still lists Phase 21 and Phase 28.
+- `npm run phase33:migration-history-reconciliation-gate` passed.
+
+Repair result:
+
+`NOT_EXECUTED_BLOCKED_PENDING_EXPLICIT_APPROVAL_AND_BACKUP_PITR_CONFIRMATION`
+
+Prepared repair command, not run:
+
+```powershell
+npx supabase migration repair 20260518232733 --status applied --db-url "$env:SUPABASE_DB_URL"
+```
+
+Post-repair dry-run output:
+
+- Not available because repair was not executed.
+
+Current go/no-go for Phase 28:
+
+`NO-GO`
+
+Reason:
+
+- Phase 21 still appears before Phase 28 in the migration dry-run.
+- Phase 28 remains blocked until Phase 21 migration-history reconciliation is explicitly approved and completed, or until applying Phase 21 + Phase 28 together is explicitly approved.
+
+Phase 34 score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Repair execution readiness | 4.8 | 4.8 | Gate is ready, but backup/PITR and explicit approval are missing. |
+| Approval discipline | 5.0 | 5.0 | Repair was correctly blocked instead of executed without confirmation. |
+| Phase 28 apply readiness | 4.1 | 4.1 | Still blocked by Phase 21 migration-history mismatch. |
+| Production mutation safety | 5.0 | 5.0 | No production write, migration apply, or deployment occurred. |
+
+Remaining Phase 34 risks:
+
+1. Phase 21 is still missing from migration history.
+2. Phase 28 remains blocked behind Phase 21 in normal `supabase db push`.
+3. Backup/PITR confirmation is still required before running `migration repair`.
+4. `employee_probation` policy cleanup remains deferred.
+5. Deployment remains out of scope.
+
+Prompt 35:
+
+Start Phase 35: Approved Phase 21 Migration History Repair Execution.
+
+I confirm Phoenix production backup/PITR is ready, and I explicitly approve running only:
+
+`npx supabase migration repair 20260518232733 --status applied --db-url "$env:SUPABASE_DB_URL"`
+
+Do not apply migrations and do not deploy. After repair, run Supabase dry-run only and confirm only Phase 28 remains pending.
+
+## Phase 34 Execution Update
+
+Approved Phase 21 migration-history repair was executed after explicit approval and backup/PITR confirmation:
+
+- Ran only the approved command:
+
+```powershell
+npx supabase migration repair 20260518232733 --status applied --db-url "$env:SUPABASE_DB_URL"
+```
+
+- Supabase CLI result:
+
+```text
+Repaired migration history: [20260518232733] => applied
+```
+
+- No production migrations were applied.
+- No deployment occurred.
+- No business tables were changed.
+
+Post-repair dry-run:
+
+- Supabase CLI dry-run connected but failed while parsing rows:
+
+```text
+DRY RUN: migrations will *not* be pushed to the database.
+Connecting to remote database...
+failed to parse rows: ERROR: prepared statement "lrupsc_1_0" already exists (SQLSTATE 42P05)
+```
+
+Fallback read-only verification:
+
+- Added and ran a direct read-only pending migration verifier using `prepare: false`.
+- Result:
+  - Phase 21 is now reflected in migration history.
+  - Phase 28 remains pending.
+  - Only pending local migration is `20260519102840_phase28_production_schema_parity_readiness.sql`.
+
+Repair result:
+
+`SUCCESS_PHASE21_MARKED_APPLIED`
+
+Post-repair pending queue result:
+
+`ONLY_PHASE28_PENDING_CONFIRMED_BY_READ_ONLY_SCHEMA_MIGRATIONS_COMPARISON`
+
+Go/no-go for Phase 28:
+
+`GO_TO_PHASE28_APPLY_APPROVAL_GATE_ONLY`
+
+Meaning:
+
+- The queue blocker is resolved.
+- Phase 28 is now the only pending local migration by direct migration-history comparison.
+- Phase 28 still must not be applied without its own explicit approval.
+
+Phase 34 score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Phase 21 history reconciliation | 4.8 | 5.0 | Approved repair marked Phase 21 applied. |
+| Pending migration queue clarity | 5.0 | 5.0 | Direct read-only comparison confirms only Phase 28 remains pending. |
+| Phase 28 apply readiness | 4.1 | 4.8 | Queue blocker is resolved; Phase 28 still needs explicit apply approval. |
+| Production mutation safety | 5.0 | 5.0 | Only migration history was repaired; no business data, migration apply, or deployment occurred. |
+
+Remaining Phase 34 risks:
+
+1. Supabase CLI `db push --dry-run` currently hits a prepared-statement parse error after repair, so direct read-only migration-history comparison was used as fallback evidence.
+2. Phase 28 is pending and not applied.
+3. Phase 28 apply requires a separate explicit approval.
+4. `employee_probation` policy cleanup remains deferred.
+5. Deployment remains out of scope.
+
+Prompt 35:
+
+Start Phase 35: Phase 28 Production Schema Parity Apply Approval Gate.
+
+Use the Phase 34 result showing Phase 21 is repaired and only Phase 28 remains pending by read-only migration-history comparison. Do not apply Phase 28 until explicitly approved.
+
+Focus on:
+- re-running typecheck, tests, and build
+- re-running Phase 28 read-only migration readiness smoke
+- re-running Phase 34 post-repair pending migration verifier
+- confirming Phase 28 is the only pending migration
+- confirming Supabase CLI dry-run behavior or documenting the prepared-statement CLI issue
+- confirming backup/PITR remains ready
+- preparing the exact Phase 28 apply command but not running it
+- keeping `employee_probation` policy cleanup deferred
+
+Rules:
+- do not deploy
+- do not apply Phase 28 without explicit approval
+- do not touch real production employee records
+- do not delete protected PHASE payroll fixtures
+- do not weaken payroll locks
+
+After finishing, give me files changed, Phase 28 apply recommendation, exact blocked apply command, verification results, old score -> new score, remaining risks, and Prompt 36.
+
+## Phase 35 Completion Update
+
+Phase 28 Production Schema Parity Apply Approval Gate completed without deployment, production migration apply, or production data mutation:
+
+- Re-ran `typecheck`, full tests, and production build successfully.
+- Re-ran Phase 28 read-only migration readiness smoke successfully.
+- Re-ran Phase 34 post-repair pending migration verifier successfully.
+- Confirmed Phase 21 remains marked applied in migration history.
+- Confirmed Phase 28 is the only pending local migration by read-only migration-history comparison.
+- Re-ran Supabase CLI dry-run successfully.
+
+Supabase dry-run output:
+
+```text
+DRY RUN: migrations will *not* be pushed to the database.
+Connecting to remote database...
+Would push these migrations:
+ • 20260519102840_phase28_production_schema_parity_readiness.sql
+Finished supabase db push.
+```
+
+Phase 28 apply recommendation:
+
+`READY_FOR_EXPLICIT_PHASE28_APPLY_APPROVAL`
+
+Exact blocked apply command:
+
+```powershell
+npx supabase db push --db-url "$env:SUPABASE_DB_URL" --yes
+```
+
+Apply condition:
+
+- Run only after explicit approval.
+- Backup/PITR remains ready.
+- Do not deploy.
+- Do not mix `employee_probation` policy cleanup into this migration.
+
+Verification results:
+
+| Check | Result |
+|---|---|
+| Typecheck | Passed |
+| Tests | Passed |
+| Build | Passed |
+| Phase 28 read-only smoke | Passed |
+| Phase 34 pending migration verifier | Passed |
+| Supabase CLI dry-run | Passed, only Phase 28 listed |
+
+Phase 35 score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Phase 28 apply readiness | 4.8 | 5.0 | CLI dry-run and read-only verifier both confirm only Phase 28 remains pending. |
+| Migration queue clarity | 5.0 | 5.0 | Queue is clean for Phase 28 only. |
+| Backup/PITR gate | 4.8 | 5.0 | Backup/PITR was confirmed before prior write and remains required for apply approval. |
+| Production mutation safety | 5.0 | 5.0 | No migration apply, deployment, or business data mutation occurred. |
+| Policy cleanup separation | 5.0 | 5.0 | `employee_probation` policy cleanup remains deferred. |
+
+Remaining Phase 35 risks:
+
+1. Phase 28 has not been applied.
+2. Applying Phase 28 is a production schema write and requires explicit approval.
+3. `employee_probation` policy cleanup remains deferred to a separate migration.
+4. Deployment remains out of scope.
+
+Prompt 36:
+
+Start Phase 36: Approved Phase 28 Production Schema Parity Apply + Post-Apply Verification.
+
+I confirm Phoenix production backup/PITR remains ready, and I explicitly approve running only:
+
+`npx supabase db push --db-url "$env:SUPABASE_DB_URL" --yes`
+
+Do not deploy. Do not run any policy cleanup. Apply only the pending Phase 28 schema parity migration, then run post-apply verification.
+
+Focus on:
+- applying only `20260519102840_phase28_production_schema_parity_readiness.sql`
+- verifying no other migrations are pending after apply
+- running Phase 28 read-only migration readiness smoke after apply
+- running typecheck, tests, and build
+- confirming production schema gaps are closed
+- confirming protected PHASE payroll fixtures remain retained
+- confirming dashboard fixture-safe behavior remains represented
+- keeping `employee_probation` policy cleanup deferred
+
+After finishing, give me files changed, apply result, post-apply verification, final go/no-go, old score -> new score, remaining risks, and Prompt 37 only if needed.
+
+## Phase 36 Completion Update
+
+Approved Phase 28 Production Schema Parity Apply and Post-Apply Verification completed without deployment or policy cleanup:
+
+- Applied only `20260519102840_phase28_production_schema_parity_readiness.sql`.
+- Supabase apply completed successfully.
+- Apply output contained expected idempotent notices for objects that already existed.
+- No additional migrations were applied.
+- No deployment occurred.
+- No `employee_probation` policy cleanup was run.
+
+Apply result:
+
+`SUCCESS_PHASE28_SCHEMA_PARITY_APPLIED`
+
+Post-apply migration queue verification:
+
+- Supabase CLI dry-run connected but again hit the prepared-statement parse issue:
+
+```text
+failed to parse rows: ERROR: prepared statement "lrupsc_1_0" already exists (SQLSTATE 42P05)
+```
+
+- Direct read-only migration-history verifier with prepared statements disabled confirmed:
+  - Phase 21 remains applied.
+  - Phase 28 is applied.
+  - No local migrations remain pending.
+
+Post-apply schema verification:
+
+- Phase 28 read-only migration readiness smoke passed.
+- Schema gaps are now closed:
+
+```json
+"schemaGaps": []
+```
+
+- Protected PHASE payroll fixtures remain retained.
+- No cleanup-safe PHASE payroll candidates are visible.
+- No PHASE employee residue is visible.
+- Dashboard fixture-safe source coverage remains represented.
+- Probation/vacation service-owned tables keep RLS enabled and direct app grants remain absent.
+
+Verification results:
+
+| Check | Result |
+|---|---|
+| Phase 28 apply | Passed |
+| No pending local migrations | Passed by direct read-only verifier |
+| Phase 28 read-only smoke | Passed |
+| Typecheck | Passed |
+| Tests | Passed |
+| Build | Passed |
+
+Final go/no-go:
+
+`GO_SCHEMA_PARITY_COMPLETE`
+
+Phase 36 score updates:
+
+| Area | Before | After | Reason |
+|---|---:|---:|---|
+| Production schema parity | 4.8 | 5.0 | Phase 28 applied and schema gaps are closed. |
+| Migration queue state | 5.0 | 5.0 | Read-only verifier confirms no pending local migrations. |
+| Production migration safety | 5.0 | 5.0 | Migration was additive/idempotent and no deployment occurred. |
+| Fixture safety | 5.0 | 5.0 | Protected PHASE payroll fixtures remain retained and filtered. |
+| Policy cleanup separation | 5.0 | 5.0 | `employee_probation` policy cleanup remains deferred and was not mixed into this apply. |
+
+Remaining Phase 36 risks:
+
+1. Supabase CLI `db push --dry-run` can still hit a prepared-statement parse issue after connecting; direct read-only verifier confirms the queue instead.
+2. Existing `employee_probation` authenticated policies remain deferred to a separate explicit policy-cleanup migration if needed later.
+3. Deployment remains out of scope.
+
+Prompt 37:
+
+No Prompt 37 is required for the Phase 28 schema parity migration track. The migration track is closed.
+
+Optional future prompt only if policy cleanup is desired:
+
+Start Optional Policy Cleanup: Employee Probation Authenticated Policy Review.
+
+Review existing `employee_probation_*_access` authenticated policies and decide whether they should be retained or removed in a separate explicit migration. Do not deploy and do not touch business data.

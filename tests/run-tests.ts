@@ -62,6 +62,10 @@ import { runPhase25StagingRlsMutationSmokeTests } from "./phase25-staging-rls-mu
 import { runPhase26StagingBrowserAuthMutationSmokeTests } from "./phase26-staging-browser-auth-mutation-smoke.test.ts";
 import { runPhase27StagingAppServiceMutationSmokeTests } from "./phase27-staging-app-service-mutation-smoke.test.ts";
 import { runPhase28ProductionMigrationReadinessTests } from "./phase28-production-migration-readiness.test.ts";
+import { runPhase29ProductionMigrationPreapplyReviewTests } from "./phase29-production-migration-preapply-review.test.ts";
+import { runPhase30ProductionMigrationApprovalGateTests } from "./phase30-production-migration-approval-gate.test.ts";
+import { runPhase32ProductionMigrationQueueReviewTests } from "./phase32-production-migration-queue-review.test.ts";
+import { runPhase33MigrationHistoryReconciliationGateTests } from "./phase33-migration-history-reconciliation-gate.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -137,3 +141,7 @@ await runTest("phase 25 staging RLS mutation smoke", runPhase25StagingRlsMutatio
 await runTest("phase 26 staging browser auth mutation smoke", runPhase26StagingBrowserAuthMutationSmokeTests);
 await runTest("phase 27 staging app-service mutation smoke", runPhase27StagingAppServiceMutationSmokeTests);
 await runTest("phase 28 production migration readiness", runPhase28ProductionMigrationReadinessTests);
+await runTest("phase 29 production migration pre-apply review", runPhase29ProductionMigrationPreapplyReviewTests);
+await runTest("phase 30 production migration approval gate", runPhase30ProductionMigrationApprovalGateTests);
+await runTest("phase 32 production migration queue review", runPhase32ProductionMigrationQueueReviewTests);
+await runTest("phase 33 migration history reconciliation gate", runPhase33MigrationHistoryReconciliationGateTests);
