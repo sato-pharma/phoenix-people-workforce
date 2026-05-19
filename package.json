@@ -26,6 +26,12 @@
     "phase26:staging-browser-auth-mutation-smoke": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase26-staging-browser-auth-mutation-smoke.ts",
     "phase27:staging-app-service-mutation-smoke": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/phase27-alias-loader.mjs scripts/phase27-staging-app-service-mutation-smoke.ts",
     "phase28:production-migration-readiness-smoke": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase28-production-migration-readiness-smoke.ts",
+    "phase29:production-migration-preapply-review": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase29-production-migration-preapply-review.ts",
+    "phase30:production-migration-approval-gate": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase30-production-migration-approval-gate.ts",
+    "phase32:production-migration-queue-review": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase32-production-migration-queue-review.ts",
+    "phase33:migration-history-reconciliation-gate": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase33-migration-history-reconciliation-gate.ts",
+    "phase34:post-repair-pending-migrations": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase34-post-repair-pending-migrations.ts",
+    "phase36:post-apply-no-pending-migrations": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase36-post-apply-no-pending-migrations.ts",
     "ci": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
