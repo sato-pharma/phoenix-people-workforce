@@ -27,6 +27,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { formatDateOnly } from "@/lib/date-only";
+import { publicVacancyLabel } from "@/lib/reports/organogram-safety";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { cn } from "@/lib/utils";
 
@@ -59,9 +60,7 @@ function emptyText(value: string | number | null | undefined) {
 }
 
 function vacancyLabel(vacancyCode: string) {
-  const match = vacancyCode.match(/^vacancy_(?:vac_)?(\d+)/i);
-
-  return match ? `VAC-${match[1]}` : vacancyCode;
+  return publicVacancyLabel(vacancyCode);
 }
 
 function uniqueOptions(values: Array<string | null>) {

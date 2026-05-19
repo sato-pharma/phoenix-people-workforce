@@ -29,6 +29,7 @@ import {
   districtBucketMatches,
   isOrganogramSalesStructureRole,
 } from "@/lib/reports/organogram-safety";
+import { vacancyReportSeatKey } from "@/lib/reports/vacancy-report-safety";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
@@ -159,6 +160,11 @@ function rowKey(row: OrganogramRow) {
 }
 
 function managerIdentityKey(row: OrganogramRow) {
+  if (row.type === "vacancy" && isManagerLevel(row)) {
+    const vacancySeatKey = vacancyReportSeatKey(row);
+    if (vacancySeatKey) return `vacancy-seat:${vacancySeatKey}`;
+  }
+
   const hrId = normalizeHrIdKey(row.hrId);
   if (hrId) return `hr:${hrId}`;
 
@@ -782,8 +788,8 @@ function OrganogramView({
         action={
           <div className="flex flex-wrap gap-2">
             <Badge variant="neutral">{employees.length} employees</Badge>
-            <Badge variant={vacancies.length > 0 ? "warning" : "neutral"}>
-              {vacancies.length} vacancies
+            <Badge variant={structureKpis.total.vacant > 0 ? "warning" : "neutral"}>
+              {structureKpis.total.vacant} vacancies
             </Badge>
             <Badge variant="neutral">{filledLaneCount} lanes</Badge>
           </div>

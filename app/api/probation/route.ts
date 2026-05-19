@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   createProbationEvaluation,
@@ -12,6 +12,7 @@ import {
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    await assertPermission(access, "probation", "update");
     const body = await request.json();
     const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
     const data = await createProbationEvaluation(

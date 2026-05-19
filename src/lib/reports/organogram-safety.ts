@@ -71,7 +71,11 @@ export function calculateOrganogramStructureKpis(rows: OrganogramReportRow[]) {
 
   rows.forEach((row, index) => {
     const level = classifyOrganogramStructureLevel(row);
-    const key = `${row.type}:${row.hrId}:${row.vacancyCode ?? ""}:${row.sourceRowNumber ?? ""}:${index}`;
+    const vacancySlotKey =
+      row.type === "vacancy" ? organogramPositionSlotKey(row) : null;
+    const key = row.type === "vacancy" && vacancySlotKey
+      ? `vacancy:${vacancySlotKey}`
+      : `${row.type}:${normalizeCode(row.hrId)}:${row.vacancyCode ?? ""}:${row.sourceRowNumber ?? ""}:${index}`;
 
     if (!level || counted.has(key)) {
       return;
@@ -95,17 +99,30 @@ export function calculateOrganogramStructureKpis(rows: OrganogramReportRow[]) {
 
 export function publicVacancyLabel(vacancyCode: string | null | undefined) {
   const raw = String(vacancyCode ?? "").trim();
-  const legacyResignationMatch = raw.match(/^resignation_[^_]+_(\d{8,})$/i);
-  const generatedResignationMatch = raw.match(/^resignation_vac_(\d{8,})(?:_[a-z0-9]+)?$/i);
-  const resignationStamp = generatedResignationMatch?.[1] ?? legacyResignationMatch?.[1];
+  const legacyResignationMatch = raw.match(/^resignation_([^_]+)_(\d{8,})$/i);
+  const generatedResignationMatch = raw.match(/^resignation_vac_(\d{8,})(?:_([a-z0-9]+))?$/i);
+  const resignationEmployee = generatedResignationMatch?.[2] ?? legacyResignationMatch?.[1];
+  const resignationStamp = generatedResignationMatch?.[1] ?? legacyResignationMatch?.[2];
 
+  if (resignationEmployee) {
+    return `VAC-${normalizeCode(resignationEmployee).replace(/[^A-Z0-9]+/g, "").slice(-6)}`;
+  }
   if (resignationStamp) {
-    return `VAC-RES-${resignationStamp.slice(-6)}`;
+    return `VAC-${resignationStamp.slice(-4)}`;
   }
 
   const vacancyMatch = raw.match(/^vacancy_(?:vac_)?(\d+)/i);
 
-  return vacancyMatch ? `VAC-${vacancyMatch[1]}` : raw;
+  if (vacancyMatch) {
+    return `VAC-${vacancyMatch[1]}`;
+  }
+
+  if (raw.length > 18 && !raw.toUpperCase().startsWith("VAC-")) {
+    const compact = normalizeCode(raw).replace(/[^A-Z0-9]+/g, "");
+    return compact ? `VAC-${compact.slice(-6)}` : raw;
+  }
+
+  return raw;
 }
 
 function slotPart(id: string | number | null | undefined, label: string | null | undefined) {
@@ -116,13 +133,46 @@ function slotPart(id: string | number | null | undefined, label: string | null |
   return normalizedLabel ? `name:${normalizedLabel}` : "";
 }
 
+function managerMarketSlot(row: OrganogramReportRow) {
+  if (
+    isCairoMarketName(row.areaName) ||
+    isCairoMarketName(row.regionName) ||
+    isCairoMarketName(row.teamName)
+  ) {
+    return "market:cairo";
+  }
+
+  return (
+    slotPart(row.areaId, row.areaName) ||
+    normalizeText(row.regionName) ||
+    normalizeText(row.teamName)
+  );
+}
+
 export function organogramPositionSlotKey(row: OrganogramReportRow) {
+  const level = classifyOrganogramStructureLevel(row);
   const manager = normalizeCode(row.managerHrId);
   const line = slotPart(row.lineId, row.lineName);
-  const area = slotPart(row.areaId, row.areaName);
+  const area = level && level !== "medicalRep"
+    ? managerMarketSlot(row)
+    : slotPart(row.areaId, row.areaName);
   const team = slotPart(row.teamId, row.teamName);
   const position = slotPart(row.positionId, row.positionTitle ?? row.jobTitle);
   const department = slotPart(row.departmentId, row.departmentName);
+
+  if (level && level !== "medicalRep") {
+    if (!line || !area || !position) {
+      return null;
+    }
+
+    return [
+      `level:${level}`,
+      `line:${line}`,
+      `market:${area}`,
+      `position:${position}`,
+      department ? `department:${department}` : "department:none",
+    ].join("|");
+  }
 
   if (!manager || !line || !area || !position) {
     return null;
@@ -132,7 +182,11 @@ export function organogramPositionSlotKey(row: OrganogramReportRow) {
     `manager:${manager}`,
     `line:${line}`,
     `area:${area}`,
-    team ? `team:${team}` : "team:none",
+    level && level !== "medicalRep"
+      ? "team:manager-scope"
+      : team
+        ? `team:${team}`
+        : "team:none",
     `position:${position}`,
     department ? `department:${department}` : "department:none",
   ].join("|");

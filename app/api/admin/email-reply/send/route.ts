@@ -135,7 +135,7 @@ async function sendEmail({
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin", "read");
+    await assertPermission(access, "admin", "update");
 
     const body = (await request.json().catch(() => ({}))) as EmailReplySendBody;
     const to = splitCommunicationEmailList(body.to);
