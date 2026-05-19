@@ -1,8 +1,10 @@
 node_modules/
 .next/
+.claude/
 .env
 .env.local
 .env.*.local
+.env.github-secrets
 coverage/
 *.log
 .playwright-mcp/

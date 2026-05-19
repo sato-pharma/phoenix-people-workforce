@@ -10,6 +10,8 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Check out repository
@@ -32,6 +34,56 @@ jobs:
 
       - name: Test
         run: npm run test
+        env:
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+          APP_URL: ${{ secrets.APP_URL }}
+          ATTENDANCE_AGENT_TOKEN: ${{ secrets.ATTENDANCE_AGENT_TOKEN }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          EMAIL_NOTIFICATIONS_ENABLED: ${{ secrets.EMAIL_NOTIFICATIONS_ENABLED }}
+          GOOGLE_CALENDAR_API_KEY: ${{ secrets.GOOGLE_CALENDAR_API_KEY }}
+          GOOGLE_HOLIDAY_CALENDAR_ID_EG: ${{ secrets.GOOGLE_HOLIDAY_CALENDAR_ID_EG }}
+          GOOGLE_HOLIDAY_ICAL_URL_EG: ${{ secrets.GOOGLE_HOLIDAY_ICAL_URL_EG }}
+          GOOGLE_MAPS_SERVER_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_KEY }}
+          HR_NOTIFICATION_EMAILS: ${{ secrets.HR_NOTIFICATION_EMAILS }}
+          JOB_OFFER_EMAIL_FROM: ${{ secrets.JOB_OFFER_EMAIL_FROM }}
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+          NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NOTIFICATION_DASHBOARD_URL: ${{ secrets.NOTIFICATION_DASHBOARD_URL }}
+          NOTIFICATION_EMAIL_FROM: ${{ secrets.NOTIFICATION_EMAIL_FROM }}
+          NOTIFICATION_REPLY_TO: ${{ secrets.NOTIFICATION_REPLY_TO }}
+          NOTIFICATION_TEST_MODE: ${{ secrets.NOTIFICATION_TEST_MODE }}
+          PHOENIX_AUTH_SECRET: ${{ secrets.PHOENIX_AUTH_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Build
         run: npm run build
+        env:
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+          APP_URL: ${{ secrets.APP_URL }}
+          ATTENDANCE_AGENT_TOKEN: ${{ secrets.ATTENDANCE_AGENT_TOKEN }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          EMAIL_NOTIFICATIONS_ENABLED: ${{ secrets.EMAIL_NOTIFICATIONS_ENABLED }}
+          GOOGLE_CALENDAR_API_KEY: ${{ secrets.GOOGLE_CALENDAR_API_KEY }}
+          GOOGLE_HOLIDAY_CALENDAR_ID_EG: ${{ secrets.GOOGLE_HOLIDAY_CALENDAR_ID_EG }}
+          GOOGLE_HOLIDAY_ICAL_URL_EG: ${{ secrets.GOOGLE_HOLIDAY_ICAL_URL_EG }}
+          GOOGLE_MAPS_SERVER_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_KEY }}
+          HR_NOTIFICATION_EMAILS: ${{ secrets.HR_NOTIFICATION_EMAILS }}
+          JOB_OFFER_EMAIL_FROM: ${{ secrets.JOB_OFFER_EMAIL_FROM }}
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+          NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NOTIFICATION_DASHBOARD_URL: ${{ secrets.NOTIFICATION_DASHBOARD_URL }}
+          NOTIFICATION_EMAIL_FROM: ${{ secrets.NOTIFICATION_EMAIL_FROM }}
+          NOTIFICATION_REPLY_TO: ${{ secrets.NOTIFICATION_REPLY_TO }}
+          NOTIFICATION_TEST_MODE: ${{ secrets.NOTIFICATION_TEST_MODE }}
+          PHOENIX_AUTH_SECRET: ${{ secrets.PHOENIX_AUTH_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
