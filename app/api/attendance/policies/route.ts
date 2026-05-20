@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getAttendancePolicyDashboard, saveAttendancePolicy } from "@/lib/attendance/policies";
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertAttendanceSetupPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, validationError } from "@/lib/http/api-errors";
 
@@ -23,7 +23,7 @@ function apiResponse(error: unknown, fallback: string) {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employees", "read");
+    await assertAttendanceSetupPermission(access, "read");
 
     return NextResponse.json(await getAttendancePolicyDashboard());
   } catch (error) {
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employees", "update");
+    await assertAttendanceSetupPermission(access, "update");
 
     const payload = await request.json();
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {

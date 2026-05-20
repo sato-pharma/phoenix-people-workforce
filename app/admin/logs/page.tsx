@@ -17,7 +17,7 @@ export default async function AdminLogsPage({
 }) {
   const access = await resolveAccessContextFromPage();
 
-  if (!await canAccess(access, "admin", "read") && !await canAccess(access, "overview", "read")) {
+  if (!await canAccess(access, "admin", "read")) {
     redirect("/employee-portals");
   }
 

@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -10,18 +11,52 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function formText(formData: FormData, key: string) {
+  return String(formData.get(key) ?? "").trim();
+}
+
+function isFormFile(value: FormDataEntryValue | null): value is File {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "arrayBuffer" in value &&
+    "name" in value &&
+    "size" in value &&
+    Number((value as { size?: unknown }).size) > 0
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    const body = await request.json();
+    const contentType = request.headers.get("content-type") ?? "";
+    const body = contentType.includes("multipart/form-data")
+      ? await request.formData()
+      : await request.json();
+    const sickDocument = body instanceof FormData ? body.get("sickDocument") : null;
     const result = await createVacationRequest(
       access,
-      {
-        dayPart: body.dayPart,
-        endDate: body.endDate,
-        startDate: body.startDate,
-        vacationType: body.vacationType,
-      },
+      body instanceof FormData
+        ? {
+            dayPart: formText(body, "dayPart"),
+            endDate: formText(body, "endDate"),
+            sickAttachment: isFormFile(sickDocument)
+              ? {
+                  bytes: Buffer.from(await sickDocument.arrayBuffer()),
+                  contentType: sickDocument.type || "application/octet-stream",
+                  fileName: sickDocument.name || "sick-document",
+                  size: sickDocument.size,
+                }
+              : null,
+            startDate: formText(body, "startDate"),
+            vacationType: formText(body, "vacationType"),
+          }
+        : {
+            dayPart: body.dayPart,
+            endDate: body.endDate,
+            startDate: body.startDate,
+            vacationType: body.vacationType,
+          },
       { baseUrl: new URL(request.url).origin },
     );
 

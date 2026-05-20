@@ -51,8 +51,6 @@ function managerMarketScope(row: VacancySeatRow) {
 }
 
 export function vacancyReportSeatKey(row: VacancySeatRow) {
-  if (normalizeSeatPart(row.status) !== "open") return null;
-
   const level = classifyOrganogramStructureLevel(row);
   if (!level) return null;
 
@@ -86,14 +84,14 @@ export function vacancyReportSeatKey(row: VacancySeatRow) {
 }
 
 export function dedupeVacancyReportRows<Row extends VacancySeatRow>(rows: Row[]) {
-  const seenManagerSeats = new Set<string>();
+  const seenSeats = new Set<string>();
 
   return rows.filter((row) => {
     const key = vacancyReportSeatKey(row);
     if (!key) return true;
-    if (seenManagerSeats.has(key)) return false;
+    if (seenSeats.has(key)) return false;
 
-    seenManagerSeats.add(key);
+    seenSeats.add(key);
     return true;
   });
 }

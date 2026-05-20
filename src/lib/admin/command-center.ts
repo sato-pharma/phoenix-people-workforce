@@ -1,4 +1,4 @@
-import type { AccessContext } from "@/lib/auth/permissions";
+import { isDesignatedHrSpecialist, type AccessContext } from "@/lib/auth/permissions";
 import { getDataHealthStats, type DataHealthStats } from "@/lib/admin/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
@@ -37,6 +37,10 @@ export type DataHealthMetrics = {
 
 /** Flat snapshot that AdminCommandCenter renders — avoids OverviewDashboardData entirely. */
 export type AdminCommandCenterData = {
+  access: {
+    showAdminModules: boolean;
+    showFinancialModules: boolean;
+  };
   overview: {
     hr: {
       activeEmployees: number;
@@ -291,7 +295,6 @@ function canUseCompanyPayrollSummary(accessContext: AccessContext) {
     accessContext.scope === "company" ||
     accessContext.role === "Super Admin" ||
     accessContext.role === "CEO" ||
-    accessContext.role === "HR Specialist" ||
     accessContext.role === "Finance Manager"
   );
 }
@@ -481,6 +484,9 @@ async function fetchRiskSummary(accessContext: AccessContext): Promise<{
 
 export async function getAdminCommandCenterData(accessContext: AccessContext): Promise<AdminCommandCenterData> {
   const dataUnavailable: string[] = [];
+  const showFinancialModules = !isDesignatedHrSpecialist(accessContext);
+  const showAdminModules = showFinancialModules;
+  const showSalesModules = !isDesignatedHrSpecialist(accessContext);
   const emptyOperations: OperationalActivitySummary = {
     failureCount24h: 0,
     lastEventAt: null,
@@ -493,8 +499,8 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     const [platformMetrics, dataHealthStats, salesHealth, eligibleResult, operations] = await Promise.all([
       getPlatformMetrics(accessContext),
       getDataHealthStats().catch(() => null),
-      fetchSalesHealthCounts(),
-      fetchPayrollEligibleCount(),
+      showSalesModules ? fetchSalesHealthCounts() : Promise.resolve({ error: null, linkedRows: 0, totalRows: 0 }),
+      showFinancialModules ? fetchPayrollEligibleCount() : Promise.resolve({ count: 0, error: null }),
       getOperationalRecentActivity(accessContext, { limit: 5 }),
     ]);
     dataUnavailable.push(...platformMetrics.dataUnavailable);
@@ -506,71 +512,78 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
       ? buildDataHealthFromStats(dataHealthStats, salesHealth)
       : buildDataHealth(null, salesHealth);
 
+    const overview = {
+      attendance: {
+        activeMappings: platformMetrics.attendance.activeMappings,
+        activePolicies: platformMetrics.attendance.activePolicies,
+        currentMonthWorkingDays: platformMetrics.attendance.currentMonthWorkingDays,
+        mappingReadinessRate: platformMetrics.attendance.mappingReadinessRate,
+        missingDeviceMappings: platformMetrics.attendance.missingDeviceMappings,
+        policyCoverageRate: platformMetrics.attendance.policyCoverageRate,
+        totalDeviceMappings: platformMetrics.attendance.totalDeviceMappings,
+        totalPolicies: platformMetrics.attendance.totalPolicies,
+      },
+      expenses: showFinancialModules
+        ? {
+            approvedAmount: platformMetrics.expenses.approvedAmount,
+            reportCount: platformMetrics.expenses.reportCount,
+            totalAmount: platformMetrics.expenses.totalAmount,
+            totalRows: platformMetrics.expenses.totalRows,
+          }
+        : { approvedAmount: 0, reportCount: 0, totalAmount: 0, totalRows: 0 },
+      hr: {
+        activeEmployees: platformMetrics.workforce.activeEmployees,
+        employeesWithoutManagers: platformMetrics.workforce.employeesWithoutManagers,
+        totalEmployees: platformMetrics.workforce.totalEmployees,
+        totalStructure: platformMetrics.workforce.totalStructure,
+        uniqueAreas: platformMetrics.workforce.uniqueAreas,
+        uniqueLines: platformMetrics.workforce.uniqueLines,
+        vacantPositions: platformMetrics.workforce.openVacancies,
+      },
+      payroll: showFinancialModules
+        ? {
+            batchLabel: platformMetrics.payroll.batchLabel,
+            employees: platformMetrics.payroll.employees,
+            flags: platformMetrics.payroll.flags,
+            gross: platformMetrics.payroll.gross,
+            net: platformMetrics.payroll.net,
+          }
+        : { batchLabel: "Self only", employees: 0, flags: 0, gross: 0, net: 0 },
+      recruitment: {
+        acceptanceRate: platformMetrics.recruitment.acceptanceRate,
+        acceptedOffers: platformMetrics.recruitment.acceptedOffers,
+        pendingOffers: platformMetrics.recruitment.pendingOffers,
+        rejectedOffers: platformMetrics.recruitment.rejectedOffers,
+        totalOffers: platformMetrics.recruitment.totalOffers,
+      },
+      risk: {
+        expiringContracts: platformMetrics.lifecycleRisk.expiringContracts,
+        probationEndings: platformMetrics.lifecycleRisk.probationEndings,
+      },
+      leave: {
+        approvedRequests: platformMetrics.leave.approvedRequests,
+        managerDecisionActions: platformMetrics.leave.managerDecisionActions,
+        paidDays: platformMetrics.leave.paidDays,
+        pendingRequests: platformMetrics.leave.pendingRequests,
+        rejectedRequests: platformMetrics.leave.rejectedRequests,
+        totalRequests: platformMetrics.leave.totalRequests,
+        unpaidDays: platformMetrics.leave.unpaidDays,
+      },
+      sales: {
+        achievementRate: showSalesModules ? platformMetrics.sales.achievementRate : 0,
+        activeProducts: showSalesModules ? platformMetrics.sales.activeProducts : 0,
+        salesValue: showSalesModules ? platformMetrics.sales.salesValue : 0,
+        targetValue: showSalesModules ? platformMetrics.sales.targetValue : 0,
+      },
+    };
+
     return {
+      access: { showAdminModules, showFinancialModules },
       dataUnavailable,
       health,
       operations,
-      overview: {
-        attendance: {
-          activeMappings: platformMetrics.attendance.activeMappings,
-          activePolicies: platformMetrics.attendance.activePolicies,
-          currentMonthWorkingDays: platformMetrics.attendance.currentMonthWorkingDays,
-          mappingReadinessRate: platformMetrics.attendance.mappingReadinessRate,
-          missingDeviceMappings: platformMetrics.attendance.missingDeviceMappings,
-          policyCoverageRate: platformMetrics.attendance.policyCoverageRate,
-          totalDeviceMappings: platformMetrics.attendance.totalDeviceMappings,
-          totalPolicies: platformMetrics.attendance.totalPolicies,
-        },
-        expenses: {
-          approvedAmount: platformMetrics.expenses.approvedAmount,
-          reportCount: platformMetrics.expenses.reportCount,
-          totalAmount: platformMetrics.expenses.totalAmount,
-          totalRows: platformMetrics.expenses.totalRows,
-        },
-        hr: {
-          activeEmployees: platformMetrics.workforce.activeEmployees,
-          employeesWithoutManagers: platformMetrics.workforce.employeesWithoutManagers,
-          totalEmployees: platformMetrics.workforce.totalEmployees,
-          totalStructure: platformMetrics.workforce.totalStructure,
-          uniqueAreas: platformMetrics.workforce.uniqueAreas,
-          uniqueLines: platformMetrics.workforce.uniqueLines,
-          vacantPositions: platformMetrics.workforce.openVacancies,
-        },
-        payroll: {
-          batchLabel: platformMetrics.payroll.batchLabel,
-          employees: platformMetrics.payroll.employees,
-          flags: platformMetrics.payroll.flags,
-          gross: platformMetrics.payroll.gross,
-          net: platformMetrics.payroll.net,
-        },
-        recruitment: {
-          acceptanceRate: platformMetrics.recruitment.acceptanceRate,
-          acceptedOffers: platformMetrics.recruitment.acceptedOffers,
-          pendingOffers: platformMetrics.recruitment.pendingOffers,
-          rejectedOffers: platformMetrics.recruitment.rejectedOffers,
-          totalOffers: platformMetrics.recruitment.totalOffers,
-        },
-        risk: {
-          expiringContracts: platformMetrics.lifecycleRisk.expiringContracts,
-          probationEndings: platformMetrics.lifecycleRisk.probationEndings,
-        },
-        leave: {
-          approvedRequests: platformMetrics.leave.approvedRequests,
-          managerDecisionActions: platformMetrics.leave.managerDecisionActions,
-          paidDays: platformMetrics.leave.paidDays,
-          pendingRequests: platformMetrics.leave.pendingRequests,
-          rejectedRequests: platformMetrics.leave.rejectedRequests,
-          totalRequests: platformMetrics.leave.totalRequests,
-          unpaidDays: platformMetrics.leave.unpaidDays,
-        },
-        sales: {
-          achievementRate: platformMetrics.sales.achievementRate,
-          activeProducts: platformMetrics.sales.activeProducts,
-          salesValue: platformMetrics.sales.salesValue,
-          targetValue: platformMetrics.sales.targetValue,
-        },
-      },
-      payrollEligibleCount: eligibleResult.count,
+      overview,
+      payrollEligibleCount: showFinancialModules ? eligibleResult.count : 0,
     };
   } catch {
     dataUnavailable.push("Platform metrics unavailable.");
@@ -579,17 +592,25 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   // Run all fetches in parallel — each is isolated so a single failure doesn't cascade
   const [payrollResult, salesResult, employeesResult, dataHealthResult, expensesResult, recruitmentResult, riskResult, salesHealthResult, eligibleResult, operationsResult] =
     await Promise.allSettled([
-      canUseCompanyPayrollSummary(accessContext)
-        ? fetchPayrollSummary()
-        : fetchScopedPayrollSummary(accessContext),
-      fetchSalesSummary(accessContext),
+      showFinancialModules
+        ? canUseCompanyPayrollSummary(accessContext)
+          ? fetchPayrollSummary()
+          : fetchScopedPayrollSummary(accessContext)
+        : Promise.resolve({ batch: null, batchLabel: "Self only", employees: 0, error: null, flags: 0, gross: 0, net: 0 }),
+      showSalesModules
+        ? fetchSalesSummary(accessContext)
+        : Promise.resolve({ achievementRate: 0, activeProducts: 0, error: null, salesValue: 0, targetValue: 0 }),
       getEmployeeDirectory(),
       getDataHealthStats(),
-      fetchExpenseSummary(),
+      showFinancialModules
+        ? fetchExpenseSummary()
+        : Promise.resolve({ approvedAmount: 0, error: null, reportCount: 0, totalAmount: 0, totalRows: 0 }),
       fetchRecruitmentSummary(),
       fetchRiskSummary(accessContext),
-      fetchSalesHealthCounts(),
-      fetchPayrollEligibleCount(),
+      showSalesModules ? fetchSalesHealthCounts() : Promise.resolve({ error: null, linkedRows: 0, totalRows: 0 }),
+      showFinancialModules
+        ? fetchPayrollEligibleCount()
+        : Promise.resolve({ count: 0, error: null }),
       getOperationalRecentActivity(accessContext, { limit: 5 }),
     ]);
 
@@ -731,19 +752,23 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   try {
     const platformMetrics = await getPlatformMetrics(accessContext);
     dataUnavailable.push(...platformMetrics.dataUnavailable);
-    payroll = {
-      batchLabel: platformMetrics.payroll.batchLabel,
-      employees: platformMetrics.payroll.employees,
-      flags: platformMetrics.payroll.flags,
-      gross: platformMetrics.payroll.gross,
-      net: platformMetrics.payroll.net,
-    };
-    sales = {
-      achievementRate: platformMetrics.sales.achievementRate,
-      activeProducts: platformMetrics.sales.activeProducts,
-      salesValue: platformMetrics.sales.salesValue,
-      targetValue: platformMetrics.sales.targetValue,
-    };
+    if (showFinancialModules) {
+      payroll = {
+        batchLabel: platformMetrics.payroll.batchLabel,
+        employees: platformMetrics.payroll.employees,
+        flags: platformMetrics.payroll.flags,
+        gross: platformMetrics.payroll.gross,
+        net: platformMetrics.payroll.net,
+      };
+    }
+    if (showSalesModules) {
+      sales = {
+        achievementRate: platformMetrics.sales.achievementRate,
+        activeProducts: platformMetrics.sales.activeProducts,
+        salesValue: platformMetrics.sales.salesValue,
+        targetValue: platformMetrics.sales.targetValue,
+      };
+    }
     hr = {
       activeEmployees: platformMetrics.workforce.activeEmployees,
       employeesWithoutManagers: platformMetrics.workforce.employeesWithoutManagers,
@@ -753,12 +778,14 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
       uniqueLines: platformMetrics.workforce.uniqueLines,
       vacantPositions: platformMetrics.workforce.openVacancies,
     };
-    expenses = {
-      approvedAmount: platformMetrics.expenses.approvedAmount,
-      reportCount: platformMetrics.expenses.reportCount,
-      totalAmount: platformMetrics.expenses.totalAmount,
-      totalRows: platformMetrics.expenses.totalRows,
-    };
+    if (showFinancialModules) {
+      expenses = {
+        approvedAmount: platformMetrics.expenses.approvedAmount,
+        reportCount: platformMetrics.expenses.reportCount,
+        totalAmount: platformMetrics.expenses.totalAmount,
+        totalRows: platformMetrics.expenses.totalRows,
+      };
+    }
     recruitment = {
       acceptanceRate: platformMetrics.recruitment.acceptanceRate,
       acceptedOffers: platformMetrics.recruitment.acceptedOffers,
@@ -807,7 +834,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
 
   // ── Payroll eligible count ────────────────────────────────────────────────
   const payrollEligibleCount =
-    eligibleResult.status === "fulfilled" ? eligibleResult.value.count : 0;
+    showFinancialModules && eligibleResult.status === "fulfilled" ? eligibleResult.value.count : 0;
   if (eligibleResult.status === "fulfilled" && eligibleResult.value.error) {
     dataUnavailable.push(eligibleResult.value.error);
   } else if (eligibleResult.status === "rejected") {
@@ -820,6 +847,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   }
 
   return {
+    access: { showAdminModules, showFinancialModules },
     dataUnavailable,
     health,
     operations,

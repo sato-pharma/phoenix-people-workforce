@@ -4,7 +4,9 @@ import {
   calculateFirstYearVacationEntitlement,
   calculateVacationDurationDays,
   calculateVacationPayment,
+  getEmergencyVacationBalancePeriod,
   getVacationBalancePeriod,
+  validateVacationRequestPolicy,
 } from "../src/lib/vacation/calculations.ts";
 
 export function runVacationCalculationTests() {
@@ -95,4 +97,72 @@ export function runVacationCalculationTests() {
   });
   assert.equal(standardWindow.entitlementDays, 21);
   assert.equal(standardWindow.balanceAfterDays, 16);
+
+  assert.deepEqual(
+    getEmergencyVacationBalancePeriod("2026-05-19"),
+    {
+      entitlementDays: 6,
+      periodEnd: "2027-01-01",
+      periodStart: "2026-01-01",
+    },
+    "Emergency vacation should use a fixed 6-day calendar-year balance",
+  );
+
+  const emergencyWindow = calculateVacationPayment({
+    approvedPaidDaysInPeriod: 2,
+    durationDays: 1,
+    hireDate: null,
+    startDate: "2026-05-19",
+    vacationType: "emergency",
+  });
+  assert.equal(emergencyWindow.entitlementDays, 6);
+  assert.equal(emergencyWindow.balanceBeforeDays, 4);
+  assert.equal(emergencyWindow.balanceAfterDays, 3);
+
+  assert.throws(
+    () =>
+      validateVacationRequestPolicy({
+        dayPart: "full_day",
+        endDate: "2026-05-20",
+        now: new Date("2026-05-19T07:30:00Z"),
+        startDate: "2026-05-20",
+        vacationType: "emergency",
+      }),
+    /today only/i,
+    "Emergency vacation must be locked to the request day",
+  );
+
+  assert.throws(
+    () =>
+      validateVacationRequestPolicy({
+        dayPart: "am_only",
+        endDate: "2026-05-19",
+        now: new Date("2026-05-19T08:00:00Z"),
+        startDate: "2026-05-19",
+        vacationType: "emergency",
+      }),
+    /before 10:00 AM/i,
+    "Emergency AM-only requests must be submitted before 10 AM Cairo time",
+  );
+
+  validateVacationRequestPolicy({
+    dayPart: "pm_only",
+    endDate: "2026-05-19",
+    now: new Date("2026-05-19T14:00:00Z"),
+    startDate: "2026-05-19",
+    vacationType: "emergency",
+  });
+
+  assert.throws(
+    () =>
+      validateVacationRequestPolicy({
+        dayPart: "full_day",
+        endDate: "2026-05-19",
+        now: new Date("2026-05-19T06:00:00Z"),
+        startDate: "2026-05-19",
+        vacationType: "annual",
+      }),
+    /tomorrow or later/i,
+    "Annual vacation must start from the next day or later",
+  );
 }

@@ -220,20 +220,25 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
               </div>
             </Card>
 
-            <Card className="rounded-[18px] border border-slate-200 bg-white p-5">
+            <Card className="rounded-[18px] border border-slate-200 bg-white p-4 sm:p-5">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-sm font-semibold text-slate-900">Payslip History</p>
                 <span className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-500">
                   {historyRows.length} record{historyRows.length === 1 ? "" : "s"}
                 </span>
               </div>
-              <div className="max-h-[320px] overflow-auto rounded-2xl border border-slate-100">
-                <table className="w-full text-left text-sm">
+              <div className="max-h-[320px] overflow-y-auto overflow-x-hidden rounded-2xl border border-slate-100">
+                <table className="w-full table-fixed text-left text-xs sm:text-sm">
+                  <colgroup>
+                    <col className="w-[32%]" />
+                    <col className="w-[34%]" />
+                    <col className="w-[34%]" />
+                  </colgroup>
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
-                      <th className="px-3 py-2">Month</th>
-                      <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2">Action</th>
+                      <th className="px-2 py-2 sm:px-3">Month</th>
+                      <th className="px-2 py-2 sm:px-3">Status</th>
+                      <th className="px-2 py-2 text-right sm:px-3">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -246,14 +251,17 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
                     ) : (
                       historyRows.map((row) => (
                         <tr className="border-b border-slate-100 transition hover:bg-slate-50" key={row.id}>
-                          <td className="px-3 py-2.5 text-slate-900">{row.label}</td>
-                          <td className="px-3 py-2.5">
-                            <Badge variant={payrollStatusTone(row.status)}>{row.status.replace(/_/g, " ")}</Badge>
+                          <td className="px-2 py-2.5 font-medium text-slate-900 sm:px-3">{row.label}</td>
+                          <td className="px-2 py-2.5 sm:px-3">
+                            <Badge className="max-w-full truncate px-2 py-0.5 text-[10px] sm:px-2.5 sm:text-xs" variant={payrollStatusTone(row.status)}>
+                              {row.status.replace(/_/g, " ")}
+                            </Badge>
                           </td>
-                          <td className="px-3 py-2.5">
+                          <td className="px-2 py-2.5 text-right sm:px-3">
                             <Link href={`/api/payroll/${row.id}/payslips`} target="_blank">
-                              <Button className="h-8 px-3 text-xs" variant="secondary">
-                                View payslip
+                              <Button className="h-8 max-w-full px-2 text-[11px] sm:px-3 sm:text-xs" variant="secondary">
+                                <span className="sm:hidden">View</span>
+                                <span className="hidden sm:inline">View payslip</span>
                               </Button>
                             </Link>
                           </td>

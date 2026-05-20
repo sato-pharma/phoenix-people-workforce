@@ -23,10 +23,10 @@ const shellCardClass =
   "rounded-[30px] border border-orange-100/80 bg-white/95 shadow-[0_24px_70px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03]";
 
 const chartCardClass =
-  "rounded-[28px] border border-orange-100/80 bg-white/96 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.075)] ring-1 ring-slate-950/[0.03]";
+  "min-w-0 overflow-hidden rounded-[24px] border border-orange-100/80 bg-white/96 p-4 shadow-[0_20px_56px_rgba(15,23,42,0.075)] ring-1 ring-slate-950/[0.03] sm:rounded-[28px] sm:p-6";
 
 const statCardClass =
-  "group relative overflow-hidden rounded-[24px] border border-orange-100 bg-white/90 p-5 shadow-[0_16px_42px_rgba(15,23,42,0.065)] transition hover:-translate-y-1 hover:shadow-[0_24px_58px_rgba(249,115,22,0.13)]";
+  "group relative min-w-0 overflow-hidden rounded-[20px] border border-orange-100 bg-white/90 p-4 shadow-[0_16px_42px_rgba(15,23,42,0.065)] transition hover:-translate-y-1 hover:shadow-[0_24px_58px_rgba(249,115,22,0.13)] sm:rounded-[24px] sm:p-5";
 
 function egp(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -83,16 +83,16 @@ export default async function MedRepsPerformancePage({
   ];
 
   return (
-    <div className="space-y-8 text-slate-950">
-      <Card className={`${shellCardClass} relative overflow-hidden p-6 md:p-7`}>
+    <div className="max-w-full min-w-0 overflow-x-hidden space-y-5 text-slate-950 sm:space-y-8">
+      <Card className={`${shellCardClass} relative overflow-hidden p-4 sm:p-6 md:p-7`}>
         <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-orange-200/45 blur-3xl" />
         <div className="absolute -bottom-24 left-12 h-56 w-56 rounded-full bg-amber-100/70 blur-3xl" />
-        <div className="relative mb-6 flex flex-wrap items-end justify-between gap-5">
-          <div>
+        <div className="relative mb-5 grid gap-4 sm:mb-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <div className="min-w-0">
             <span className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">
               Line-wide performance
             </span>
-            <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Medical Reps Performance</h1>
+            <h1 className="mt-4 break-words text-2xl font-black tracking-tight text-slate-950 sm:text-3xl md:text-4xl">Medical Reps Performance</h1>
             <p className="mt-2 max-w-2xl text-sm font-medium text-slate-600">
               {validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"}
               {" | "}
@@ -100,19 +100,19 @@ export default async function MedRepsPerformancePage({
             </p>
           </div>
 
-          <div className="rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-right shadow-[0_14px_35px_rgba(15,23,42,0.07)]">
+          <div className="w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-left shadow-[0_14px_35px_rgba(15,23,42,0.07)] sm:w-auto sm:text-right">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Line achievement</p>
             <p className="mt-1 text-2xl font-black text-orange-600">{teamAchievementPercent.toFixed(1)}%</p>
           </div>
         </div>
 
         {periods.length > 0 ? (
-          <div className="relative mb-6 flex flex-wrap items-center gap-2">
+          <div className="relative mb-5 flex flex-wrap gap-2 pb-1 sm:mb-6">
             {[null, ...periods.slice(0, 5)].map((period) => {
               const active = period === null ? !validPeriod : validPeriod === period;
               return (
                 <Link
-                  className={`rounded-2xl border px-3 py-2 text-xs font-black transition ${
+                  className={`shrink-0 rounded-2xl border px-3 py-2 text-xs font-black transition ${
                     active
                       ? "border-orange-500 bg-orange-500 text-white shadow-[0_14px_30px_rgba(249,115,22,0.26)]"
                       : "border-orange-100 bg-white/85 text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
@@ -137,20 +137,20 @@ export default async function MedRepsPerformancePage({
                   <Icon className="h-4 w-4" />
                 </div>
                 <p className="relative text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{stat.label}</p>
-                <p className="relative mt-2 text-2xl font-black text-slate-950">{stat.value}</p>
+                <p className="relative mt-2 break-words text-2xl font-black text-slate-950">{stat.value}</p>
               </div>
             );
           })}
         </div>
       </Card>
 
-      <Card className={`${shellCardClass} overflow-hidden p-6`}>
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
+      <Card className={`${shellCardClass} min-w-0 overflow-hidden p-4 sm:p-6`}>
+        <div className="mb-5 grid gap-3 sm:mb-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <div className="min-w-0">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Leadership board</p>
-            <h2 className="mt-1 text-xl font-black text-slate-950">Medical Reps Comparison</h2>
+            <h2 className="mt-1 break-words text-xl font-black text-slate-950">Medical Reps Comparison</h2>
           </div>
-          <div className="inline-flex items-center gap-2 rounded-2xl border border-orange-100 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700">
+          <div className="inline-flex w-fit items-center gap-2 rounded-2xl border border-orange-100 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700">
             <BarChart3 className="h-4 w-4" />
             Ranked by performance
           </div>
@@ -158,17 +158,17 @@ export default async function MedRepsPerformancePage({
         <TeamLeaderboardTable members={members} />
       </Card>
 
-      <section className="relative overflow-hidden rounded-[30px] border border-orange-100 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_48%,#fff1e6_100%)] p-6 shadow-[0_22px_64px_rgba(15,23,42,0.075)]">
+      <section className="relative overflow-hidden rounded-[24px] border border-orange-100 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_48%,#fff1e6_100%)] p-4 shadow-[0_22px_64px_rgba(15,23,42,0.075)] sm:rounded-[30px] sm:p-6">
         <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full bg-orange-200/45 blur-3xl" />
-        <div className="relative flex flex-wrap items-end justify-between gap-4">
-          <div>
+        <div className="relative grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <div className="min-w-0">
             <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">DSM breakdown</p>
-            <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">District-Wise Performance</h2>
+          <h2 className="mt-2 break-words text-xl font-black tracking-tight text-slate-950 sm:text-2xl">District-Wise Performance</h2>
             <p className="mt-2 max-w-2xl text-sm font-medium text-slate-600">
               Performance breakdown and product analysis grouped by District Sales Manager.
             </p>
           </div>
-          <div className="inline-flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm font-black text-slate-700 shadow-[0_14px_35px_rgba(15,23,42,0.07)]">
+          <div className="inline-flex w-fit items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm font-black text-slate-700 shadow-[0_14px_35px_rgba(15,23,42,0.07)]">
             <ShieldCheck className="h-4 w-4 text-orange-600" />
             {dsmGroups.length} districts
           </div>
@@ -176,12 +176,12 @@ export default async function MedRepsPerformancePage({
       </section>
 
       {dsmGroups.map((group) => (
-          <section className="space-y-5" key={group.managerName}>
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[26px] border border-orange-100 bg-white/92 px-5 py-4 shadow-[0_16px_42px_rgba(15,23,42,0.06)]">
-              <div className="flex items-center gap-3">
+          <section className="min-w-0 space-y-5" key={group.managerName}>
+            <div className="grid gap-3 rounded-[22px] border border-orange-100 bg-white/92 px-4 py-4 shadow-[0_16px_42px_rgba(15,23,42,0.06)] sm:rounded-[26px] sm:px-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="h-12 w-1.5 rounded-full bg-orange-500 shadow-[0_0_24px_rgba(249,115,22,0.45)]" />
-                <div>
-                  <h2 className="text-xl font-black text-slate-950">{group.managerName}</h2>
+                <div className="min-w-0">
+                  <h2 className="break-words text-lg font-black text-slate-950 sm:text-xl">{group.managerName}</h2>
                   <p className="mt-1 text-sm font-medium text-slate-500">
                     District Performance: <span className="font-black text-slate-800">{group.achievementPercent.toFixed(1)}%</span>
                     {" | "}
@@ -189,7 +189,7 @@ export default async function MedRepsPerformancePage({
                   </p>
                 </div>
               </div>
-              <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-2 text-right">
+              <div className="w-full rounded-2xl border border-orange-100 bg-orange-50 px-4 py-2 text-left md:w-auto md:text-right">
                 <p className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-600">District sales</p>
                 <p className="mt-1 text-sm font-black text-slate-950">{egp(group.totalSales)}</p>
               </div>
@@ -197,20 +197,20 @@ export default async function MedRepsPerformancePage({
 
             <div className="grid gap-6 lg:grid-cols-2">
               <Card className={chartCardClass}>
-                <h3 className="mb-6 text-lg font-black text-slate-950">District Achievement Ranking</h3>
+                <h3 className="mb-6 break-words text-lg font-black text-slate-950">District Achievement Ranking</h3>
                 <TeamAchievementChart members={group.members} teamAchievementPercent={group.achievementPercent} />
               </Card>
 
               <Card className={chartCardClass}>
-                <h3 className="mb-6 text-lg font-black text-slate-950">District Sales vs Target</h3>
+                <h3 className="mb-6 break-words text-lg font-black text-slate-950">District Sales vs Target</h3>
                 <TeamSalesVsTargetChart members={group.members} />
               </Card>
             </div>
 
-            <Card className={`${shellCardClass} p-6`}>
+            <Card className={`${shellCardClass} min-w-0 p-4 sm:p-6`}>
               <div className="mb-5">
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Product depth</p>
-                <h3 className="mt-1 text-lg font-black text-slate-950">Medical Reps Product Breakdown</h3>
+                <h3 className="mt-1 break-words text-lg font-black text-slate-950">Medical Reps Product Breakdown</h3>
               </div>
               <TeamMembersBreakdown members={group.members} />
             </Card>

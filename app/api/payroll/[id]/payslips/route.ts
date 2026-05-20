@@ -472,6 +472,7 @@ function page(records: SalaryRecord[], month: number, year: number, batchStatus:
           display: block;
           font-size: 22px;
           margin-top: 12px;
+          overflow-wrap: anywhere;
           white-space: nowrap;
         }
         .metric.muted { background: #f1f5f9; color: #334155; }
@@ -487,7 +488,8 @@ function page(records: SalaryRecord[], month: number, year: number, batchStatus:
         }
         .sheet-scroll {
           max-height: 660px;
-          overflow: auto;
+          overflow-x: hidden;
+          overflow-y: auto;
           scrollbar-color: #94a3b8 #f1f5f9;
           scrollbar-width: thin;
         }
@@ -505,7 +507,6 @@ function page(records: SalaryRecord[], month: number, year: number, batchStatus:
         }
         table {
           border-collapse: collapse;
-          min-width: 620px;
           table-layout: fixed;
           width: 100%;
         }
@@ -514,6 +515,8 @@ function page(records: SalaryRecord[], month: number, year: number, batchStatus:
           font-size: 15px;
           padding: 16px 22px;
           text-align: left;
+          overflow-wrap: anywhere;
+          word-break: break-word;
         }
         th {
           background: #e2e8f0;
@@ -543,8 +546,11 @@ function page(records: SalaryRecord[], month: number, year: number, batchStatus:
         }
         .component-name {
           color: #334155;
+          display: block;
           font-size: 15px;
           font-weight: 800;
+          line-height: 1.35;
+          overflow-wrap: anywhere;
         }
         .section-row td {
           background: var(--navy);
@@ -604,6 +610,7 @@ function page(records: SalaryRecord[], month: number, year: number, batchStatus:
           display: block;
           font-size: 22px;
           margin-top: 10px;
+          overflow-wrap: anywhere;
           white-space: nowrap;
         }
         .part-card.net {
@@ -690,6 +697,9 @@ function page(records: SalaryRecord[], month: number, year: number, batchStatus:
             border-radius: 12px;
             padding: 16px;
           }
+          .table-card {
+            padding: 0;
+          }
           .card-title {
             gap: 10px;
             margin-bottom: 14px;
@@ -717,6 +727,7 @@ function page(records: SalaryRecord[], month: number, year: number, batchStatus:
           .metric strong,
           .part-card strong {
             font-size: 20px;
+            white-space: normal;
           }
           .sheet-scroll {
             max-height: 68vh;
@@ -724,14 +735,14 @@ function page(records: SalaryRecord[], month: number, year: number, batchStatus:
           }
           th, td {
             font-size: 14px;
-            padding: 14px 16px;
+            padding: 12px 10px;
           }
           .component-name {
             font-size: 14px;
           }
           .section-row td {
             font-size: 10px;
-            padding: 10px 16px;
+            padding: 10px;
           }
         }
         @media (max-width: 520px) {
@@ -773,15 +784,12 @@ function page(records: SalaryRecord[], month: number, year: number, batchStatus:
           .parts {
             margin-top: 14px;
           }
-          table {
-            min-width: 560px;
-          }
           th, td {
-            font-size: 13px;
-            padding: 13px 14px;
+            font-size: 12px;
+            padding: 11px 8px;
           }
           .component-name {
-            font-size: 13px;
+            font-size: 12px;
           }
           .metric,
           .part-card {

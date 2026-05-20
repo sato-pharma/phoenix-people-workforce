@@ -19,7 +19,7 @@ type RouteContext = {
 export async function GET(request: Request, context: RouteContext) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin", "read");
+    await assertPermission(access, "communication", "read");
     const { templateKey } = await context.params;
     const template = await getEmailTemplate(templateKey);
     if (!template) {
@@ -38,7 +38,7 @@ export async function GET(request: Request, context: RouteContext) {
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin", "update");
+    await assertPermission(access, "communication", "update");
     const { templateKey } = await context.params;
     const body = (await request.json().catch(() => ({}))) as EmailTemplatePayload;
     const template = await saveEmailTemplate(templateKey, body, access.loginId ?? access.hrId);

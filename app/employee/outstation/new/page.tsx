@@ -77,7 +77,7 @@ export default async function EmployeeOutstationNewPage() {
     })) ?? [];
 
   return (
-    <div className="min-h-screen bg-[#f6f7fb]">
+    <div className="min-h-screen overflow-x-hidden bg-[#f6f7fb]">
       <EmployeePortalTopNav data={portalData} visibility={visibility} />
 
       <div className="mx-auto flex w-full max-w-[1600px] gap-6 px-4 py-6 lg:gap-8 lg:px-8 lg:py-8">

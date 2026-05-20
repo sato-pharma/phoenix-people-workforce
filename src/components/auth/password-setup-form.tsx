@@ -3,6 +3,8 @@
 import { Lock, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 
+import { formatHrIdForDisplay } from "@/lib/hr-id";
+
 type Props = {
   expiresAt: string;
   hrId: string | null;
@@ -18,6 +20,7 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+  const displayLoginId = formatHrIdForDisplay(hrId) ?? loginId;
 
   async function submitForm(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -53,7 +56,7 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
           <p className="text-sm font-black uppercase tracking-[0.24em] text-[#ff7900]">Phoenix Workforce</p>
           <h1 className="mt-5 text-3xl font-black text-white">Password saved</h1>
           <p className="mt-3 text-base leading-7 text-white/72">
-            Your password is ready. Sign in with <span className="font-semibold text-white">{hrId ?? loginId}</span> and the password you just created.
+            Your password is ready. Sign in with <span className="font-semibold text-white">{displayLoginId}</span> and the password you just created.
           </p>
           <a
             className="mt-8 inline-flex h-12 items-center justify-center rounded-xl bg-gradient-to-b from-[#ff8a00] to-[#ff4d00] px-5 text-sm font-black text-white"
@@ -74,7 +77,7 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
           {purpose === "setup" ? "Create your password" : "Reset your password"}
         </h1>
         <p className="mt-3 text-base leading-7 text-white/72">
-          {name} will sign in with <span className="font-semibold text-white">{hrId ?? loginId}</span> after this step.
+          {name} will sign in with <span className="font-semibold text-white">{displayLoginId}</span> after this step.
         </p>
 
         <div className="mt-6 rounded-2xl border border-[#ff7900]/20 bg-[#ff7900]/8 p-4 text-sm text-white/80">

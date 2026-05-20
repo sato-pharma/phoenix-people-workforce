@@ -9,6 +9,30 @@ import { toApiError, unauthorizedError } from "@/lib/http/api-errors";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function firstForwardedValue(value: string | null) {
+  return value?.split(",")[0]?.trim() || null;
+}
+
+function requestPublicOrigin(request: Request) {
+  const forwardedHost = firstForwardedValue(request.headers.get("x-forwarded-host"));
+  const forwardedProto = firstForwardedValue(request.headers.get("x-forwarded-proto")) ?? "https";
+
+  if (forwardedHost) {
+    return new URL("/", `${forwardedProto}://${forwardedHost}`).origin;
+  }
+
+  const origin = request.headers.get("origin");
+  if (origin) {
+    try {
+      return new URL(origin).origin;
+    } catch {
+      // Fall back to request.url below.
+    }
+  }
+
+  return new URL(request.url).origin;
+}
+
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -24,7 +48,7 @@ export async function POST(request: Request) {
       deliveryMode: payload.deliveryMode,
       governanceReason: payload.governanceReason,
       loginId: payload.loginId,
-      origin: new URL(request.url).origin,
+      origin: requestPublicOrigin(request),
       purpose: payload.purpose,
     });
 

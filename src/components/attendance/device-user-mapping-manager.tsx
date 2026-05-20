@@ -56,6 +56,15 @@ type AgentHealth = {
   };
 };
 
+async function fetchAgentHealth(): Promise<AgentHealth> {
+  try {
+    const response = await fetch("/api/attendance/agent/health", { cache: "no-store" });
+    return await response.json();
+  } catch {
+    return { ok: false, reachable: false };
+  }
+}
+
 function formatDate(value: string | null) {
   if (!value) return "No punches seen";
   return new Intl.DateTimeFormat(undefined, {
@@ -96,11 +105,6 @@ function MappingRow({
   const savedIsActive = row.isActive && Boolean(row.employeeHrId);
   const hasChanges = employeeHrId !== savedEmployeeHrId || isActive !== savedIsActive;
   const cannotSave = !canUpdate || saving || !hasChanges || (isActive && !employeeHrId);
-
-  useEffect(() => {
-    setEmployeeHrId(row.employeeHrId ?? "");
-    setIsActive(row.isActive && Boolean(row.employeeHrId));
-  }, [row.employeeHrId, row.isActive]);
 
   async function save() {
     setSaving(true);
@@ -193,17 +197,17 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
   }, [data?.mappings, statusFilter]);
 
   async function loadAgentHealth() {
-    try {
-      const response = await fetch("/api/attendance/agent/health", { cache: "no-store" });
-      const payload = await response.json();
-      setAgentHealth(payload);
-    } catch {
-      setAgentHealth({ ok: false, reachable: false });
-    }
+    setAgentHealth(await fetchAgentHealth());
   }
 
   useEffect(() => {
-    void loadAgentHealth();
+    let cancelled = false;
+    void fetchAgentHealth().then((health) => {
+      if (!cancelled) setAgentHealth(health);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function load() {
@@ -448,7 +452,7 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
                 <MappingRow
                   canUpdate={canUpdate}
                   employees={data?.employees ?? []}
-                  key={`${row.deviceId}-${row.deviceUserId}`}
+                  key={`${row.deviceId}-${row.deviceUserId}-${row.employeeHrId ?? ""}-${row.isActive ? "active" : "inactive"}`}
                   row={row}
                   onSave={save}
                 />

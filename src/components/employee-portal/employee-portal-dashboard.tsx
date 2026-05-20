@@ -61,6 +61,7 @@ import { daysBetweenDateOnly, formatDateOnly } from "@/lib/date-only";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employee-portal/service";
+import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 
 export { PayrollPayslipsSection } from "@/components/employee-portal/dashboard/payroll-payslips-section";
@@ -482,6 +483,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
   const growthNegative = (sales.growthVsLastMonthPercent ?? 0) < 0;
   const hiredLabel = prettyDate(data.hrContract.hireDate);
   const statusVariant = asStatus(employee.status);
+  const displayHrId = formatHrIdForDisplay(employee.hrId) ?? employee.hrId;
   const identityInitials = employee.fullName
     .split(/\s+/)
     .slice(0, 2)
@@ -540,7 +542,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
 
             <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 text-slate-900">
               <div className="flex items-center gap-2.5">
-                <span className="text-[22px]">HR ID: {employee.hrId}</span>
+                <span className="text-[22px]">HR ID: {displayHrId}</span>
               </div>
 
               <span className="h-7 w-px bg-slate-200" />
@@ -569,7 +571,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
           Reports to {employee.manager ?? "Unassigned Manager"}
         </p>
         <p className="mt-1 text-sm text-slate-600">
-          HR ID: {employee.hrId} <span className="text-slate-400">·</span>{" "}
+          HR ID: {displayHrId} <span className="text-slate-400">·</span>{" "}
           <span className="inline-flex items-center gap-1">
             {employee.status}
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
@@ -588,7 +590,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
               <p className="mt-1 text-sm text-slate-600">{employee.roleLabel}</p>
               <div className="mt-2 flex items-center gap-2">
                 <Badge variant={asStatus(employee.status)}>Active</Badge>
-                <Badge variant="neutral">HR ID {employee.hrId}</Badge>
+                <Badge variant="neutral">HR ID {displayHrId}</Badge>
               </div>
             </div>
           </div>
@@ -1649,6 +1651,27 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
 }
 
 function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
+  const [activeTrendIndex, setActiveTrendIndex] = useState<number | null>(null);
+  const trendData = Array.isArray(data.sales.trend) ? data.sales.trend : [];
+  const chartWidth = 720;
+  const chartHeight = 232;
+  const padding = { bottom: 34, left: 58, right: 22, top: 20 };
+  const innerWidth = chartWidth - padding.left - padding.right;
+  const innerHeight = chartHeight - padding.top - padding.bottom;
+  const values = trendData.flatMap((point) => [point.sales, point.target]).filter(Number.isFinite);
+  const maxValue = Math.max(1, ...values);
+  const roundedMax = Math.ceil(maxValue / 100000) * 100000;
+  const xFor = (index: number) => padding.left + (trendData.length <= 1 ? innerWidth / 2 : (index / (trendData.length - 1)) * innerWidth);
+  const yFor = (value: number) => padding.top + (1 - Math.max(0, Math.min(1, value / roundedMax))) * innerHeight;
+  const salesPoints = trendData.map((point, index) => `${xFor(index)},${yFor(point.sales)}`).join(" ");
+  const targetPoints = trendData.map((point, index) => `${xFor(index)},${yFor(point.target)}`).join(" ");
+  const latestPoint = trendData.at(-1);
+  const activeTrendPoint = activeTrendIndex === null ? null : trendData[activeTrendIndex] ?? null;
+  const activeTrendX = activeTrendIndex === null ? 0 : xFor(activeTrendIndex);
+  const activeTrendY = activeTrendPoint ? yFor(activeTrendPoint.sales) : 0;
+  const tooltipLeft = `${Math.max(18, Math.min(82, (activeTrendX / chartWidth) * 100))}%`;
+  const tooltipTop = `${Math.max(14, Math.min(72, (activeTrendY / chartHeight) * 100))}%`;
+
   return (
     <div
       className="flex h-full flex-col"
@@ -1656,30 +1679,151 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
       <OverviewPagePanel
         title="Performance Overview"
       >
-        <StableChartFrame
-          className="h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
-          height={232}
-        >
-            <AreaChart data={data.sales.trend} margin={chartMargin}>
-              <defs>
-                <linearGradient id="overviewSalesFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.28} />
-                  <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} vertical={false} />
-              <XAxis {...chartAxisProps()} dataKey="period" tickFormatter={periodLabel} />
-              <YAxis {...chartAxisProps()} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
-              <Tooltip
-                contentStyle={chartTooltipStyle()}
-                cursor={chartCursor}
-                formatter={(value: unknown) => tooltipCurrency(value)}
-                labelFormatter={(value) => `Period: ${periodLabel(String(value))}`}
-              />
-              <Area activeDot={{ r: 5, stroke: "#ffffff", strokeWidth: 3 }} dataKey="sales" dot={false} fill="url(#overviewSalesFill)" name="Achievement" stroke="#f97316" strokeWidth={3} type="monotone" />
-              <Area dataKey="target" dot={false} fillOpacity={0} name="Target" stroke="#64748b" strokeDasharray="5 5" strokeWidth={2.25} type="monotone" />
-            </AreaChart>
-        </StableChartFrame>
+        <div className="relative h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
+          {trendData.length === 0 ? (
+            <div className="flex h-full items-center justify-center rounded-2xl bg-slate-50 text-sm font-semibold text-slate-500">
+              No trend data available
+            </div>
+          ) : (
+            <div className="h-full min-w-0" onPointerLeave={() => setActiveTrendIndex(null)}>
+              <svg
+                aria-label="Sales and target performance trend"
+                className="h-full w-full overflow-visible"
+                preserveAspectRatio="none"
+                role="img"
+                viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+              >
+                <defs>
+                  <linearGradient id="overviewSalesStaticFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.26} />
+                    <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+                  const y = padding.top + ratio * innerHeight;
+                  const labelValue = Math.round((roundedMax * (1 - ratio)) / 1000);
+                  return (
+                    <g key={ratio}>
+                      <line
+                        stroke="#e8edf4"
+                        strokeDasharray="3 3"
+                        strokeWidth="1"
+                        vectorEffect="non-scaling-stroke"
+                        x1={padding.left}
+                        x2={chartWidth - padding.right}
+                        y1={y}
+                        y2={y}
+                      />
+                      <text fill="#64748b" fontSize="11" fontWeight="700" textAnchor="end" x={padding.left - 10} y={y + 4}>
+                        {labelValue}k
+                      </text>
+                    </g>
+                  );
+                })}
+                {trendData.length > 1 ? (
+                  <polygon
+                    fill="url(#overviewSalesStaticFill)"
+                    points={`${padding.left},${chartHeight - padding.bottom} ${salesPoints} ${chartWidth - padding.right},${chartHeight - padding.bottom}`}
+                  />
+                ) : null}
+                {targetPoints ? (
+                  <polyline
+                    fill="none"
+                    points={targetPoints}
+                    stroke="#64748b"
+                    strokeDasharray="5 5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2.25"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : null}
+                {salesPoints ? (
+                  <polyline
+                    fill="none"
+                    points={salesPoints}
+                    stroke="#f97316"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="3"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : null}
+                {trendData.map((point, index) => (
+                  <g
+                    aria-label={`${periodLabel(point.period)} sales ${egp(point.sales)} target ${egp(point.target)}`}
+                    key={point.period}
+                    onClick={() => setActiveTrendIndex(index)}
+                    onFocus={() => setActiveTrendIndex(index)}
+                    onPointerEnter={() => setActiveTrendIndex(index)}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <circle
+                      cx={xFor(index)}
+                      cy={yFor(point.sales)}
+                      fill="transparent"
+                      r="16"
+                    />
+                    <circle
+                      cx={xFor(index)}
+                      cy={yFor(point.sales)}
+                      fill="#f97316"
+                      r={activeTrendIndex === index ? 5.5 : index === trendData.length - 1 ? 4.5 : 3}
+                      stroke="#ffffff"
+                      strokeWidth="2"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                    {activeTrendIndex === index ? (
+                      <line
+                        stroke="#f97316"
+                        strokeDasharray="4 4"
+                        strokeOpacity="0.45"
+                        strokeWidth="1.5"
+                        vectorEffect="non-scaling-stroke"
+                        x1={xFor(index)}
+                        x2={xFor(index)}
+                        y1={padding.top}
+                        y2={chartHeight - padding.bottom}
+                      />
+                    ) : null}
+                  </g>
+                ))}
+                {trendData.map((point, index) => {
+                  if (index !== 0 && index !== trendData.length - 1) return null;
+                  return (
+                    <text fill="#64748b" fontSize="11" fontWeight="700" key={`label-${point.period}`} textAnchor={index === 0 ? "start" : "end"} x={xFor(index)} y={chartHeight - 9}>
+                      {periodLabel(point.period)}
+                    </text>
+                  );
+                })}
+              </svg>
+              <div className="-mt-7 flex flex-wrap items-center justify-end gap-3 pr-2 text-[11px] font-bold text-slate-500">
+                <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-500" />Sales</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-4 rounded-full bg-slate-500" />Target</span>
+                {latestPoint ? <span className="text-slate-700">{egp(latestPoint.sales)}</span> : null}
+              </div>
+              {activeTrendPoint ? (
+                <div
+                  className="pointer-events-none absolute z-10 min-w-[160px] -translate-x-1/2 -translate-y-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-[0_16px_35px_rgba(15,23,42,0.16)]"
+                  style={{ left: tooltipLeft, top: tooltipTop }}
+                >
+                  <p className="font-black text-slate-900">{periodLabel(activeTrendPoint.period)}</p>
+                  <div className="mt-1.5 space-y-1">
+                    <p className="flex items-center justify-between gap-4 text-slate-600">
+                      <span>Sales</span>
+                      <span className="font-black text-orange-600">{egp(activeTrendPoint.sales)}</span>
+                    </p>
+                    <p className="flex items-center justify-between gap-4 text-slate-600">
+                      <span>Target</span>
+                      <span className="font-black text-slate-700">{egp(activeTrendPoint.target)}</span>
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
       </OverviewPagePanel>
     </div>
   );
@@ -2583,6 +2727,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
   const employee = data.employee;
   const hiredLabel = prettyDate(data.hrContract.hireDate);
   const statusVariant = asStatus(employee.status);
+  const displayHrId = formatHrIdForDisplay(employee.hrId) ?? employee.hrId;
 
   const statusPillClass =
     statusVariant === "success"
@@ -2645,7 +2790,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
           <div className="mt-1 flex flex-wrap items-center gap-2 text-slate-400">
             <p className="text-[14px] font-semibold tracking-tight lg:text-[16px]">{employee.roleLabel}</p>
             <span className="h-1 w-1 rounded-full bg-slate-200" />
-            <p className="text-[13px] font-medium tabular-nums lg:text-[14px]">HR ID: {employee.hrId}</p>
+            <p className="text-[13px] font-medium tabular-nums lg:text-[14px]">HR ID: {displayHrId}</p>
           </div>
 
           {/* Line · Territory · Manager - Enhanced Grid */}
@@ -2772,6 +2917,8 @@ export function EmployeePortalDashboard({ data }: { data: MedicalRepPortalData }
 }
 
 export function EmployeePortalProfile({ data }: { data: MedicalRepPortalData }) {
+  const displayHrId = formatHrIdForDisplay(data.employee.hrId) ?? data.employee.hrId;
+
   return (
     <>
       <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
@@ -2780,7 +2927,7 @@ export function EmployeePortalProfile({ data }: { data: MedicalRepPortalData }) 
           <p className="text-lg font-semibold text-slate-900">{data.employee.fullName}</p>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <MetricCard label="HR ID" value={data.employee.hrId} />
+          <MetricCard label="HR ID" value={displayHrId} />
           <MetricCard label="Line" value={data.employee.line ?? "Not assigned"} />
           <MetricCard label="Area" value={data.employee.area ?? "Not assigned"} />
           <MetricCard label="Territory" value={data.employee.territory ?? "Not assigned"} />

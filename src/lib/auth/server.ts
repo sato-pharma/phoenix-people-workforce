@@ -13,6 +13,7 @@ import {
   verifySessionToken,
 } from "@/lib/auth/session";
 import { writeAuthAudit } from "@/lib/auth/audit";
+import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cookies, headers } from "next/headers";
 
@@ -251,7 +252,7 @@ function buildInitials(input: string) {
 
 export async function resolveViewerIdentityFromPage(accessContext?: AccessContext): Promise<ViewerIdentity> {
   const access = accessContext ?? await resolveAccessContextFromPage();
-  const fallbackName = access.loginId || access.hrId || "User";
+  const fallbackName = access.loginId || formatHrIdForDisplay(access.hrId) || "User";
   const fallbackRole = access.role;
 
   if (access.source === "dev-header" || (!access.loginId && !access.hrId)) {

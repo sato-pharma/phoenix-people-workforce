@@ -16,6 +16,12 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 
 const rememberedLoginIdKey = "phoenix_remembered_login_id";
 
+const loginErrorMessages: Record<string, string> = {
+  invalid_credentials: "Invalid login ID or password.",
+  password_setup_required: "Your password must be set or reset from the admin link before you can sign in.",
+  rate_limited: "Too many failed login attempts. Please try again later.",
+};
+
 const embers = Array.from({ length: 42 }, (_, index) => ({
   delay: `${(index % 12) * 0.42}s`,
   duration: `${6.5 + (index % 7)}s`,
@@ -65,16 +71,24 @@ export function PremiumLoginPage() {
   }, []);
 
   useEffect(() => {
+    const frames: number[] = [];
+    const loginError = new URLSearchParams(window.location.search).get("error");
+    if (loginError && loginErrorMessages[loginError]) {
+      frames.push(window.requestAnimationFrame(() => setError(loginErrorMessages[loginError])));
+    }
+
     const rememberedLoginId = window.localStorage.getItem(rememberedLoginIdKey);
 
     if (rememberedLoginId) {
-      const frame = window.requestAnimationFrame(() => {
+      frames.push(window.requestAnimationFrame(() => {
         setLoginId(rememberedLoginId);
         setRemember(true);
-      });
-
-      return () => window.cancelAnimationFrame(frame);
+      }));
     }
+
+    return () => {
+      frames.forEach((frame) => window.cancelAnimationFrame(frame));
+    };
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -260,7 +274,9 @@ function AccessPanel({
     <section className="relative order-1 flex min-h-[690px] items-center justify-center px-4 py-8 sm:px-8 lg:order-2 lg:px-9 xl:px-14">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,106,0,0.08),transparent_34%)]" />
       <form
+        action="/api/auth/login"
         className={`relative w-full max-w-[620px] rounded-[36px] border border-white/12 bg-[linear-gradient(145deg,rgba(19,22,27,0.9),rgba(5,6,8,0.98))] px-6 py-8 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_32px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:px-10 sm:py-12 lg:px-12 xl:px-14 ${shakeError ? "login-card-shake" : ""}`}
+        method="post"
         onSubmit={onSubmit}
       >
         <div className="text-center">
@@ -285,6 +301,7 @@ function AccessPanel({
                 autoComplete="username"
                 className="h-16 w-full rounded-2xl border border-white/14 bg-white/[0.045] px-6 pr-14 text-lg text-white outline-none shadow-[inset_0_1px_18px_rgba(255,255,255,0.035)] transition placeholder:text-white/36 focus:border-[#ff7900] focus:bg-white/[0.065] focus:ring-4 focus:ring-[#ff6a00]/16"
                 id="login-id"
+                name="loginId"
                 onChange={(event) => onLoginIdChange(event.target.value)}
                 placeholder="Enter HR_ID or login ID"
                 type="text"
@@ -301,6 +318,7 @@ function AccessPanel({
                 autoComplete="current-password"
                 className="h-16 w-full rounded-2xl border border-white/14 bg-white/[0.045] px-6 pr-14 text-lg text-white outline-none shadow-[inset_0_1px_18px_rgba(255,255,255,0.035)] transition placeholder:text-white/36 focus:border-[#ff7900] focus:bg-white/[0.065] focus:ring-4 focus:ring-[#ff6a00]/16"
                 id="login-password"
+                name="password"
                 onChange={(event) => onPasswordChange(event.target.value)}
                 placeholder="Enter your password"
                 type={showPassword ? "text" : "password"}
@@ -324,8 +342,10 @@ function AccessPanel({
               checked={remember}
               className="peer sr-only"
               id="remember-login"
+              name="remember"
               onChange={(event) => onRememberChange(event.target.checked)}
               type="checkbox"
+              value="true"
             />
             <span
               className={`flex h-7 w-7 items-center justify-center rounded-lg border bg-white/[0.035] transition peer-focus-visible:ring-4 peer-focus-visible:ring-[#ff6a00]/30 ${

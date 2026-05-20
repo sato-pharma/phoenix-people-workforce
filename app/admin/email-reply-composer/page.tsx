@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminEmailReplyComposerPage() {
   const access = await resolveAccessContextFromPage();
-  if (!await canAccess(access, "admin", "read")) {
+  if (!await canAccess(access, "communication", "read")) {
     redirect("/employee-portals");
   }
 

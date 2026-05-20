@@ -3,6 +3,7 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import {
   type AccessContext,
   canManageCoachingReports,
+  isDesignatedHrSpecialist,
   normalizeHrId,
   resolveEmployeeIdentityId,
 } from "@/lib/auth/permissions";
@@ -74,7 +75,7 @@ type CoachingQuarterlySummaryDbRow = {
 
 const editableStatuses = new Set<CoachingReportStatus>(["draft"]);
 const submittedStatuses = new Set<CoachingReportStatus>(["submitted", "reviewed_by_employee"]);
-const companyRoles = new Set<AccessContext["role"]>(["Super Admin", "CEO", "HR Specialist"]);
+const companyRoles = new Set<AccessContext["role"]>(["Super Admin", "CEO"]);
 const lineRoles = new Set<AccessContext["role"]>([
   "National Sales Manager",
   "Product Manager",
@@ -183,7 +184,7 @@ export function canAccessCoachingEmployee(
   directory: EmployeeDirectoryRow[],
   coach?: EmployeeDirectoryRow | null,
 ) {
-  if (access.scope === "system" || companyRoles.has(access.role)) return true;
+  if (access.scope === "system" || companyRoles.has(access.role) || isDesignatedHrSpecialist(access)) return true;
   const currentHrId = normalizeHrId(access.hrId);
   if (!currentHrId) return false;
   if (access.role === "Training Manager") {
@@ -618,7 +619,7 @@ export async function getCoachingReportById(id: string, access: AccessContext): 
 }
 
 async function filterSummariesForAccess(rows: CoachingReportSummaryRow[], access: AccessContext) {
-  if (access.scope === "system" || companyRoles.has(access.role)) return rows;
+  if (access.scope === "system" || companyRoles.has(access.role) || isDesignatedHrSpecialist(access)) return rows;
   if (access.role === "Training Manager") {
     const coachHrId = normalizeHrId(access.hrId);
     if (!coachHrId) return [];
@@ -687,7 +688,7 @@ export async function getCoachingQuarterlySummary(filters: Pick<CoachingReportFi
   if (error) throw error;
 
   const rows = ((data ?? []) as CoachingQuarterlySummaryDbRow[]).map(mapQuarterly);
-  if (access.scope === "system" || companyRoles.has(access.role)) return rows;
+  if (access.scope === "system" || companyRoles.has(access.role) || isDesignatedHrSpecialist(access)) return rows;
 
   const visibleReports = await getCoachingReports({ medicalRepHrId: filters.medicalRepHrId }, access);
   const visibleHrIds = new Set(visibleReports.map((row) => normalizeHrId(row.medicalRepHrId)));

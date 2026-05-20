@@ -1,7 +1,8 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import {
   assertPermission,
+  isDesignatedHrSpecialist,
   normalizeHrIdForAccess,
   resolveEmployeeIdentityId,
   type AccessContext,
@@ -14,10 +15,13 @@ import { toDateOnlyString } from "@/lib/date-only";
 import {
   calculateVacationDurationDays,
   calculateVacationPayment,
+  getAnnualVacationMinimumStartDate,
+  getEmergencyVacationBalancePeriod,
   getVacationBalancePeriod,
   normalizeVacationDayPart,
   normalizeVacationPaymentStatus,
   normalizeVacationType,
+  validateVacationRequestPolicy,
   vacationTypeLabel,
 } from "@/lib/vacation/calculations";
 import { summarizeVacationRequests } from "@/lib/vacation/metrics";
@@ -36,13 +40,24 @@ import type {
   VacationRequestInput,
   VacationRequestRecord,
   VacationRequestStatus,
+  VacationType,
 } from "@/lib/vacation/types";
 import { VACATION_DAY_PARTS, VACATION_TYPES } from "@/lib/vacation/types";
 
 const vacationRequestsTable = "v2_vacation_requests";
 const vacationEventsTable = "v2_vacation_request_events";
 const vacationTokensTable = "v2_vacation_email_tokens";
+const vacationAttachmentBucket = "leave-attachments";
 const emailTokenTtlDays = 14;
+const sickAttachmentMaxUploadBytes = 10 * 1024 * 1024;
+const sickAttachmentAllowedContentTypes = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 type VacationRequestDbRow = {
   balance_after_days: number | string | null;
@@ -70,6 +85,12 @@ type VacationRequestDbRow = {
   payment_status: string | null;
   period_end: string | null;
   period_start: string | null;
+  sick_attachment_bucket?: string | null;
+  sick_attachment_content_type?: string | null;
+  sick_attachment_object_path?: string | null;
+  sick_attachment_original_name?: string | null;
+  sick_attachment_size_bytes?: number | string | null;
+  sick_attachment_uploaded_at?: string | null;
   start_date: string | null;
   status: string | null;
   submitted_by_hr_id: string | null;
@@ -90,6 +111,21 @@ type HrRecipient = {
   email: string | null;
   hrId: string;
   name: string;
+};
+
+export type VacationAttachmentUpload = {
+  bytes: Buffer;
+  contentType: string;
+  fileName: string;
+  size: number;
+};
+
+type CreateVacationRequestInput = Omit<VacationRequestInput, "dayPart" | "endDate" | "startDate" | "vacationType"> & {
+  dayPart: unknown;
+  endDate: unknown;
+  sickAttachment?: VacationAttachmentUpload | null;
+  startDate: unknown;
+  vacationType: unknown;
 };
 
 function text(value: unknown) {
@@ -117,7 +153,7 @@ function hrIdsMatch(left: string | null | undefined, right: string | null | unde
 }
 
 function isAllVacationVisibility(access: AccessContext) {
-  return access.scope === "system" || access.role === "Super Admin" || access.role === "HR Specialist";
+  return access.scope === "system" || access.role === "Super Admin" || isDesignatedHrSpecialist(access);
 }
 
 function isVacationSchemaMissingError(error: unknown) {
@@ -196,6 +232,12 @@ function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationR
     endDate: text(row.end_date),
     entitlementDays: numberValue(row.entitlement_days),
     id: row.id,
+    sickAttachmentBucket: row.sick_attachment_bucket ?? null,
+    sickAttachmentContentType: row.sick_attachment_content_type ?? null,
+    sickAttachmentObjectPath: row.sick_attachment_object_path ?? null,
+    sickAttachmentOriginalName: row.sick_attachment_original_name ?? null,
+    sickAttachmentSizeBytes: numberValue(row.sick_attachment_size_bytes),
+    sickAttachmentUploadedAt: row.sick_attachment_uploaded_at ?? null,
     lineName: row.line_name,
     managerDecision:
       row.manager_decision === "approved" || row.manager_decision === "rejected"
@@ -286,7 +328,8 @@ async function getHrRecipients(directory: EmployeeDirectoryData): Promise<HrReci
       .from("app_auth_users")
       .select("login_id,hr_id,role,is_active")
       .eq("is_active", true)
-      .eq("role", "HR Specialist");
+      .eq("role", "HR Specialist")
+      .ilike("hr_id", "A-16");
 
     if (error) return [];
 
@@ -423,10 +466,11 @@ async function approvedPaidDaysInPeriod(input: {
   excludeRequestId?: string;
   periodEnd: string | null;
   periodStart: string | null;
+  vacationType: VacationType;
 }) {
   if (!input.periodStart || !input.periodEnd) return 0;
 
-  const { data, error } = await getSupabaseAdmin()
+  let query = getSupabaseAdmin()
     .from(vacationRequestsTable)
     .select("id,duration_days")
     .ilike("employee_hr_id", input.employeeHrId)
@@ -434,6 +478,14 @@ async function approvedPaidDaysInPeriod(input: {
     .eq("payment_status", "paid")
     .gte("start_date", input.periodStart)
     .lt("start_date", input.periodEnd);
+
+  if (input.vacationType === "emergency") {
+    query = query.eq("vacation_type", "emergency");
+  } else {
+    query = query.neq("vacation_type", "emergency");
+  }
+
+  const { data, error } = await query;
 
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
 
@@ -448,16 +500,20 @@ async function calculatePaymentForRequest(input: {
   excludeRequestId?: string;
   hireDate: string | null;
   startDate: string;
+  vacationType: VacationType;
 }) {
-  const period = getVacationBalancePeriod({
-    hireDate: input.hireDate,
-    referenceDate: input.startDate,
-  });
+  const period = input.vacationType === "emergency"
+    ? getEmergencyVacationBalancePeriod(input.startDate)
+    : getVacationBalancePeriod({
+        hireDate: input.hireDate,
+        referenceDate: input.startDate,
+      });
   const usedPaidDays = await approvedPaidDaysInPeriod({
     employeeHrId: input.employeeHrId,
     excludeRequestId: input.excludeRequestId,
     periodEnd: period?.periodEnd ?? null,
     periodStart: period?.periodStart ?? null,
+    vacationType: input.vacationType,
   });
 
   return calculateVacationPayment({
@@ -465,7 +521,82 @@ async function calculatePaymentForRequest(input: {
     durationDays: input.durationDays,
     hireDate: input.hireDate,
     startDate: input.startDate,
+    vacationType: input.vacationType,
   });
+}
+
+function sanitizeStorageSegment(value: string | null | undefined, fallback: string) {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || fallback;
+}
+
+function buildSickAttachmentPath(input: {
+  employeeHrId: string;
+  fileName: string;
+  requestId: string;
+}) {
+  const employeeHrId = sanitizeStorageSegment(input.employeeHrId, "unknown-employee");
+  const requestId = sanitizeStorageSegment(input.requestId, "unknown-request");
+  const fileName = sanitizeStorageSegment(input.fileName, "sick-document");
+  return `sick/${employeeHrId}/${requestId}/${fileName}`;
+}
+
+function validateSickAttachment(attachment: VacationAttachmentUpload | null | undefined) {
+  if (!attachment) {
+    throw new Error("Sick vacation requires an uploaded medical document.");
+  }
+  if (attachment.bytes.length === 0) {
+    throw new Error("Sick vacation document is empty. Upload a valid file.");
+  }
+  if (attachment.bytes.length > sickAttachmentMaxUploadBytes) {
+    throw new Error("Sick vacation document is too large. Maximum size is 10MB.");
+  }
+  if (!sickAttachmentAllowedContentTypes.has(attachment.contentType)) {
+    throw new Error("Sick vacation document must be a PDF, Word document, JPG, PNG, or WEBP file.");
+  }
+}
+
+async function uploadSickAttachment(input: {
+  attachment: VacationAttachmentUpload;
+  employeeHrId: string;
+  requestId: string;
+}) {
+  validateSickAttachment(input.attachment);
+  const objectPath = buildSickAttachmentPath({
+    employeeHrId: input.employeeHrId,
+    fileName: input.attachment.fileName,
+    requestId: input.requestId,
+  });
+
+  const { error } = await getSupabaseAdmin().storage
+    .from(vacationAttachmentBucket)
+    .upload(objectPath, input.attachment.bytes, {
+      cacheControl: "31536000",
+      contentType: input.attachment.contentType,
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`Unable to store sick vacation document: ${error.message}`);
+  }
+
+  return {
+    bucket: vacationAttachmentBucket,
+    contentType: input.attachment.contentType,
+    objectPath,
+    originalName: input.attachment.fileName,
+    sizeBytes: input.attachment.size,
+    uploadedAt: new Date().toISOString(),
+  };
+}
+
+async function deleteSickAttachment(objectPath: string | null | undefined) {
+  if (!objectPath) return;
+  await getSupabaseAdmin().storage.from(vacationAttachmentBucket).remove([objectPath]);
 }
 
 export async function getVacationRequestPageData(access: AccessContext) {
@@ -474,15 +605,28 @@ export async function getVacationRequestPageData(access: AccessContext) {
   const today = toDateOnlyString(new Date()) ?? "";
   const { manager, managerOfManager } = managerChain(directory, employee);
 
+  const balanceReferenceDates: Record<VacationType, string> = {
+    annual: getAnnualVacationMinimumStartDate(),
+    emergency: today,
+    other: today,
+    sick: today,
+  };
+  const balances: Partial<Record<VacationType, VacationBalanceSnapshot | null>> = {};
   let balance: VacationBalanceSnapshot | null = null;
   let balanceError: string | null = null;
   try {
-    balance = await calculatePaymentForRequest({
-      durationDays: 0,
-      employeeHrId: employee.hrId,
-      hireDate: employee.hireDate,
-      startDate: today,
-    });
+    await Promise.all(
+      VACATION_TYPES.map(async (option) => {
+        balances[option.value] = await calculatePaymentForRequest({
+          durationDays: 0,
+          employeeHrId: employee.hrId,
+          hireDate: employee.hireDate,
+          startDate: balanceReferenceDates[option.value],
+          vacationType: option.value,
+        });
+      }),
+    );
+    balance = balances.annual ?? null;
   } catch (err) {
     balanceError = isVacationSchemaMissingError(err)
       ? "Vacation schema is not ready. Apply the new v2 vacation migration before using this module."
@@ -491,6 +635,7 @@ export async function getVacationRequestPageData(access: AccessContext) {
 
   return {
     balance,
+    balances,
     balanceError,
     dayPartOptions: VACATION_DAY_PARTS,
     employee: summarizeEmployee(employee),
@@ -500,16 +645,21 @@ export async function getVacationRequestPageData(access: AccessContext) {
   };
 }
 
-export async function createVacationRequest(access: AccessContext, input: VacationRequestInput, options: { baseUrl: string }) {
+export async function createVacationRequest(access: AccessContext, input: CreateVacationRequestInput, options: { baseUrl: string }) {
   await assertPermission(access, "leave", "create");
   const vacationType = normalizeVacationType(input.vacationType);
   const dayPart = normalizeVacationDayPart(input.dayPart);
-  const startDate = toDateOnlyString(input.startDate);
-  const endDate = toDateOnlyString(input.endDate);
+  const startDate = toDateOnlyString(String(input.startDate ?? ""));
+  const endDate = toDateOnlyString(String(input.endDate ?? ""));
 
   if (!vacationType) throw new Error("Vacation type is invalid.");
   if (!dayPart) throw new Error("Vacation day part is invalid.");
   if (!startDate || !endDate) throw new Error("Vacation start and end dates are required.");
+
+  validateVacationRequestPolicy({ dayPart, endDate, startDate, vacationType });
+  if (vacationType === "sick") {
+    validateSickAttachment(input.sickAttachment);
+  }
 
   const durationDays = calculateVacationDurationDays({ dayPart, endDate, startDate });
   const { directory, employee } = await getCurrentEmployee(access);
@@ -523,12 +673,19 @@ export async function createVacationRequest(access: AccessContext, input: Vacati
     employeeHrId: employee.hrId,
     hireDate: employee.hireDate,
     startDate,
+    vacationType,
   });
+
+  const requestId = randomUUID();
+  const sickAttachment = vacationType === "sick" && input.sickAttachment
+    ? await uploadSickAttachment({ attachment: input.sickAttachment, employeeHrId: employee.hrId, requestId })
+    : null;
 
   const now = new Date().toISOString();
   const { data, error } = await getSupabaseAdmin()
     .from(vacationRequestsTable)
     .insert({
+      id: requestId,
       balance_after_days: balance.balanceAfterDays,
       balance_before_days: balance.balanceBeforeDays,
       day_part: dayPart,
@@ -548,6 +705,12 @@ export async function createVacationRequest(access: AccessContext, input: Vacati
       payment_status: balance.paymentStatus,
       period_end: balance.periodEnd,
       period_start: balance.periodStart,
+      sick_attachment_bucket: sickAttachment?.bucket ?? null,
+      sick_attachment_content_type: sickAttachment?.contentType ?? null,
+      sick_attachment_object_path: sickAttachment?.objectPath ?? null,
+      sick_attachment_original_name: sickAttachment?.originalName ?? null,
+      sick_attachment_size_bytes: sickAttachment?.sizeBytes ?? null,
+      sick_attachment_uploaded_at: sickAttachment?.uploadedAt ?? null,
       start_date: startDate,
       status: "pending_manager",
       submitted_by_hr_id: employee.hrId,
@@ -560,7 +723,10 @@ export async function createVacationRequest(access: AccessContext, input: Vacati
     .select("*")
     .single();
 
-  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  if (error) {
+    await deleteSickAttachment(sickAttachment?.objectPath).catch(() => undefined);
+    throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  }
 
   const request = mapVacationRow(data as VacationRequestDbRow);
   await insertVacationEvent({
@@ -568,7 +734,11 @@ export async function createVacationRequest(access: AccessContext, input: Vacati
     actorLoginId: access.loginId,
     eventType: "submitted",
     message: "Vacation request submitted.",
-    metadata: { paymentStatus: request.paymentStatus, unpaidReason: request.unpaidReason },
+    metadata: {
+      hasSickAttachment: Boolean(request.sickAttachmentObjectPath),
+      paymentStatus: request.paymentStatus,
+      unpaidReason: request.unpaidReason,
+    },
     requestId: request.id,
   });
 
@@ -617,6 +787,7 @@ async function applyVacationDecision(input: {
       excludeRequestId: input.request.id,
       hireDate: input.request.employeeHireDate,
       startDate: input.request.startDate,
+      vacationType: input.request.vacationType,
     });
   }
 

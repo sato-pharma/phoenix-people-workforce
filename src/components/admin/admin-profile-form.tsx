@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 type Profile = {
   loginId: string;
@@ -82,7 +83,7 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
             {[
               { label: "Login ID", value: profile.loginId },
               { label: "Role", value: profile.role ?? "—" },
-              { label: "Linked HR ID", value: profile.hrId ?? "—" },
+              { label: "Linked HR ID", value: formatHrIdForDisplay(profile.hrId) ?? "—" },
               { label: "Account created", value: formattedCreatedAt },
             ].map(({ label, value }) => (
               <div className="flex flex-col gap-0.5" key={label}>

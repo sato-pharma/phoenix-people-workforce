@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin", "read");
+    await assertPermission(access, "communication", "read");
 
     const [templates, routingOptions] = await Promise.all([
       getEmailTemplateCatalog(),

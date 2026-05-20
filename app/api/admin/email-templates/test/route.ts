@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin", "update");
+    await assertPermission(access, "communication", "update");
     const body = (await request.json().catch(() => ({}))) as {
       template?: EmailTemplatePayload;
       templateKey?: string;

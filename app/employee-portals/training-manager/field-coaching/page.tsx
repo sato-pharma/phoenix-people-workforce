@@ -27,6 +27,7 @@ import {
   getEmployeeDirectoryRows,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
+import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +60,7 @@ function buildFilterOptions(
       ...reports.map((report) => ({ label: report.areaName, value: report.areaId })),
     ]),
     coaches: toOptionMap(reports.map((report) => ({
-      label: `${formatEmployeeDisplayName(report.coachName, report.coachHrId)} (${report.coachHrId})`,
+      label: `${formatEmployeeDisplayName(report.coachName, report.coachHrId)} (${formatHrIdForDisplay(report.coachHrId) ?? report.coachHrId})`,
       value: report.coachHrId,
     }))),
     lines: toOptionMap([
@@ -68,11 +69,11 @@ function buildFilterOptions(
     ]),
     medicalReps: toOptionMap([
       ...employees.map((employee) => ({
-        label: `${formatEmployeeDisplayName(employee.fullName, employee.hrId)} (${employee.hrId})`,
+        label: `${formatEmployeeDisplayName(employee.fullName, employee.hrId)} (${formatHrIdForDisplay(employee.hrId) ?? employee.hrId})`,
         value: employee.hrId,
       })),
       ...reports.map((report) => ({
-        label: `${formatEmployeeDisplayName(report.medicalRepName, report.medicalRepHrId)} (${report.medicalRepHrId})`,
+        label: `${formatEmployeeDisplayName(report.medicalRepName, report.medicalRepHrId)} (${formatHrIdForDisplay(report.medicalRepHrId) ?? report.medicalRepHrId})`,
         value: report.medicalRepHrId,
       })),
     ]),

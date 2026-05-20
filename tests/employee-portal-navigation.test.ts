@@ -7,6 +7,7 @@ export function runEmployeePortalNavigationTests() {
   const medicalRep = resolveEmployeePortalNavVisibility("Medical Rep");
   assert.equal(medicalRep.showDashboardTab, true, "Medical Rep should see Dashboard");
   assert.equal(medicalRep.showMyPerformanceTab, true, "Medical Rep should see My Performance");
+  assert.equal(medicalRep.showExpenseActionTab, false, "Medical Rep should not see the manager expense action");
   assert.equal(medicalRep.showMyCoachingTab, true, "Medical Rep should see My Coaching Reports");
   assert.equal(medicalRep.showTeamCoachingTab, false, "Medical Rep should not see Team Coaching Reports");
   assert.equal(medicalRep.showTrainingManagerCreateCoachingTab, false, "Medical Rep should not see Create Coaching Report");

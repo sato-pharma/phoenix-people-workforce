@@ -5,6 +5,7 @@ import postgres from "postgres";
 
 import {
   canAccess,
+  canAccessAttendanceSetup,
   canSeeEmployee,
   createAccessContext,
   getExpensesScope,
@@ -55,8 +56,11 @@ function loadLocalEnv() {
 }
 
 function contextFor(role: PhoenixRole): AccessContext {
+  const hrId = role === "HR Specialist"
+    ? "A-16"
+    : `PHASE22-${role.replace(/[^A-Z0-9]+/gi, "").toUpperCase()}`;
   return createAccessContext({
-    hrId: `PHASE22-${role.replace(/[^A-Z0-9]+/gi, "").toUpperCase()}`,
+    hrId,
     loginId: `phase22.${role.toLowerCase().replace(/[^a-z0-9]+/g, ".")}`,
     role,
     source: "session",
@@ -99,9 +103,23 @@ async function verifyRoleMatrix() {
 
   const hr = contextFor("HR Specialist");
   await expectAccess(hr, "employees", "update", true);
-  await expectAccess(hr, "user_admin", "update", true);
-  await expectAccess(hr, "payroll", "import", true);
+  await expectAccess(hr, "overview", "read", true);
+  await expectAccess(hr, "communication", "update", true);
+  await expectAccess(hr, "payslips", "read", true);
+  await expectAccess(hr, "user_admin", "update", false);
+  await expectAccess(hr, "payroll", "import", false);
+  await expectAccess(hr, "expenses", "read", false);
   await expectAccess(hr, "probation", "approve", true);
+  addCheck("HR Specialist cannot access attendance setup", !await canAccessAttendanceSetup(hr, "read"));
+  addCheck("HR Specialist cannot update attendance setup", !await canAccessAttendanceSetup(hr, "update"));
+  const nonDesignatedHr = createAccessContext({
+    hrId: "A-17",
+    loginId: "phase22.hr.specialist.extra",
+    role: "HR Specialist",
+    source: "session",
+  });
+  await expectAccess(nonDesignatedHr, "employees", "read", false);
+  await expectAccess(nonDesignatedHr, "overview", "read", false);
 
   const finance = contextFor("Finance Manager");
   await expectAccess(finance, "payroll", "approve", true);
@@ -159,7 +177,7 @@ function verifyScopeHelpers() {
   expectScope("Medical Rep payroll scope is SELF", getPayrollScope(contextFor("Medical Rep")), "SELF");
   expectScope("District Manager payroll scope is SELF", getPayrollScope(contextFor("District Manager")), "SELF");
   expectScope("Finance Manager payroll scope is COMPANY", getPayrollScope(contextFor("Finance Manager")), "COMPANY");
-  expectScope("HR Specialist payroll scope is COMPANY", getPayrollScope(contextFor("HR Specialist")), "COMPANY");
+  expectScope("HR Specialist payroll scope is SELF", getPayrollScope(contextFor("HR Specialist")), "SELF");
   expectScope("CEO payroll scope is COMPANY", getPayrollScope(contextFor("CEO")), "COMPANY");
 
   expectScope("Employee sales scope is SELF", getSalesScope(contextFor("Employee")), "SELF");
@@ -205,8 +223,27 @@ function verifyStaticEntryPoints() {
   const salesActionRoute = readFileSync("app/api/sales/imports/[id]/[action]/route.ts", "utf8");
   const bulkUsersRoute = readFileSync("app/api/admin/users/bulk-action/route.ts", "utf8");
   const probationPortalPage = readFileSync("app/employee-portals/probation/page.tsx", "utf8");
+  const attendancePoliciesPage = readFileSync("app/attendance/policies/page.tsx", "utf8");
+  const attendanceDeviceMappingPage = readFileSync("app/attendance/device-user-mapping/page.tsx", "utf8");
+  const attendancePoliciesRoute = readFileSync("app/api/attendance/policies/route.ts", "utf8");
+  const attendanceDeviceMappingRoute = readFileSync("app/api/attendance/device-user-mappings/route.ts", "utf8");
+  const adminCommandCenterPage = readFileSync("app/admin/page.tsx", "utf8");
+  const adminDataHealthPage = readFileSync("app/admin/data-health/page.tsx", "utf8");
+  const adminMonitoringPage = readFileSync("app/admin/monitoring/page.tsx", "utf8");
+  const adminLogsPage = readFileSync("app/admin/logs/page.tsx", "utf8");
+  const adminCommandCenter = readFileSync("src/components/admin/admin-command-center.tsx", "utf8");
+  const adminCommandCenterService = readFileSync("src/lib/admin/command-center.ts", "utf8");
 
   addCheck("Admin payroll page redirects non-company payroll scopes to payslips", /getPayrollScope\(access\)[\s\S]*redirect\("\/payslips"\)/.test(payrollPage));
+  addCheck("Admin command center allows overview read without full admin", /canAccess\(access, "admin", "read"\)[\s\S]*canAccess\(access, "overview", "read"\)/.test(adminCommandCenterPage));
+  addCheck("Admin data health remains full-admin gated", !/canAccess\(access, "overview", "read"\)/.test(adminDataHealthPage));
+  addCheck("Admin monitoring remains full-admin gated", !/canAccess\(access, "overview", "read"\)/.test(adminMonitoringPage));
+  addCheck("Admin audit logs remain full-admin gated", !/canAccess\(access, "overview", "read"\)/.test(adminLogsPage));
+  addCheck("HR command center hides financial and admin modules behind access flags", /showFinancialModules[\s\S]*Payroll Operations/.test(adminCommandCenter) && /showAdminModules[\s\S]*Access Control/.test(adminCommandCenter));
+  addCheck("HR command center hides sales modules and renders concise HR modules", /showSalesModules[\s\S]*Sales Performance/.test(adminCommandCenter) && /People Management/.test(adminCommandCenter) && /Hiring Pipeline/.test(adminCommandCenter) && /HR Communication/.test(adminCommandCenter));
+  addCheck("HR command center skips sales data fetches", /showSalesModules \? fetchSalesSummary/.test(adminCommandCenterService) && /showSalesModules \? fetchSalesHealthCounts/.test(adminCommandCenterService));
+  addCheck("Attendance setup pages use dedicated non-HR gate", /canAccessAttendanceSetup\(access, "read"\)/.test(attendancePoliciesPage) && /canAccessAttendanceSetup\(access, "read"\)/.test(attendanceDeviceMappingPage));
+  addCheck("Attendance setup APIs use dedicated non-HR gate", /assertAttendanceSetupPermission\(access, "read"\)/.test(attendancePoliciesRoute) && /assertAttendanceSetupPermission\(access, "update"\)/.test(attendancePoliciesRoute) && /assertAttendanceSetupPermission\(access, "read"\)/.test(attendanceDeviceMappingRoute) && /assertAttendanceSetupPermission\(access, "update"\)/.test(attendanceDeviceMappingRoute));
   addCheck("Admin sales page redirects employee-portal roles to portal sales", /resolveNavigationMode\(accessContext\) === "employee-portal"[\s\S]*redirect\("\/employee-portals\/sales"\)/.test(salesPage));
   addCheck("Admin expenses dashboard redirects employee-portal roles", /resolveNavigationMode\(access\) === "employee-portal"[\s\S]*redirect\("\/employee-portals\/expenses"\)/.test(expensesDashboardPage));
   addCheck("Employee portal layout requires employee profile read permission", /assertPermission\(access, "employee_profile", "read"\)/.test(portalLayout));

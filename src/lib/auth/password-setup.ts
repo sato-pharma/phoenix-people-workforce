@@ -56,7 +56,7 @@ function createToken() {
 }
 
 function publicBaseUrl(originHint?: string | null) {
-  const base = (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || originHint || "").replace(/\/+$/, "");
+  const base = (originHint || process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/+$/, "");
 
   if (!base) {
     throw new Error("APP_URL or NEXT_PUBLIC_APP_URL is required to send password setup links.");
