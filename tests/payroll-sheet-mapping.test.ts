@@ -133,7 +133,7 @@ export async function runPayrollSheetMappingTests() {
   const invalidHireDateWorkbook = new ExcelJS.Workbook();
   const invalidHireDateSheet = invalidHireDateWorkbook.addWorksheet("Payroll");
   invalidHireDateSheet.addRow(["HR_ID", "Full Name", "Gross Salary", "Net Salary", "Hire Date"]);
-  invalidHireDateSheet.addRow(["B-61", "Invalid Hire Date", 1000, 900, "Head office"]);
+  invalidHireDateSheet.addRow(["B-61", "Invalid Hire Date", 900, 900, "Head office"]);
   const invalidHireDateFile = new File([await invalidHireDateWorkbook.xlsx.writeBuffer() as BlobPart], "invalid-hire-date.xlsx");
   const invalidHireDateResult = await validateSalaryWorkbook(invalidHireDateFile);
 
@@ -143,7 +143,7 @@ export async function runPayrollSheetMappingTests() {
   const unknownEmployeeWorkbook = new ExcelJS.Workbook();
   const unknownEmployeeSheet = unknownEmployeeWorkbook.addWorksheet("Payroll");
   unknownEmployeeSheet.addRow(["HR_ID", "Full Name", "Gross Salary", "Net Salary"]);
-  unknownEmployeeSheet.addRow(["B-404", "Missing Employee", 1000, 900]);
+  unknownEmployeeSheet.addRow(["B-404", "Missing Employee", 900, 900]);
   const unknownEmployeeFile = new File([await unknownEmployeeWorkbook.xlsx.writeBuffer() as BlobPart], "unknown-employee.xlsx");
   const unknownEmployeeResult = await validateSalaryWorkbook(unknownEmployeeFile, {
     expectedPeriod: { month: 1, year: 2026 },
@@ -153,7 +153,7 @@ export async function runPayrollSheetMappingTests() {
   assert.equal(unknownEmployeeResult.failedRows, 0);
   assert.equal(unknownEmployeeResult.rowsToImport.length, 1);
   assert.equal(unknownEmployeeResult.rowsToImport[0].hrId, "B-404");
-  assert.equal(unknownEmployeeResult.validationTotals.grossSalary, 1000);
+  assert.equal(unknownEmployeeResult.validationTotals.grossSalary, 900);
   assert.equal(unknownEmployeeResult.validationTotals.netSalary, 900);
   assert.deepEqual(unknownEmployeeResult.payrollResignationCandidates, [
     {
@@ -180,8 +180,8 @@ export async function runPayrollSheetMappingTests() {
   const mixedEmployeeWorkbook = new ExcelJS.Workbook();
   const mixedEmployeeSheet = mixedEmployeeWorkbook.addWorksheet("Payroll");
   mixedEmployeeSheet.addRow(["HR_ID", "Full Name", "Gross Salary", "Net Salary"]);
-  mixedEmployeeSheet.addRow(["B-405", "Known Employee", 1000, 900]);
-  mixedEmployeeSheet.addRow(["B-406", "Missing Employee", 2000, 1800]);
+  mixedEmployeeSheet.addRow(["B-405", "Known Employee", 900, 900]);
+  mixedEmployeeSheet.addRow(["B-406", "Missing Employee", 1800, 1800]);
   const mixedEmployeeFile = new File([await mixedEmployeeWorkbook.xlsx.writeBuffer() as BlobPart], "mixed-employee.xlsx");
   const mixedEmployeeSource: PayrollSalarySource = {
     baseSalary: null,
@@ -200,7 +200,7 @@ export async function runPayrollSheetMappingTests() {
 
   assert.equal(mixedEmployeeResult.failedRows, 0);
   assert.deepEqual(mixedEmployeeResult.rowsToImport.map((item) => item.hrId), ["B-405", "B-406"]);
-  assert.equal(mixedEmployeeResult.validationTotals.grossSalary, 3000);
+  assert.equal(mixedEmployeeResult.validationTotals.grossSalary, 2700);
   assert.equal(mixedEmployeeResult.validationTotals.netSalary, 2700);
   assert.deepEqual(mixedEmployeeResult.payrollResignationCandidates.map((item) => item.hrId), ["B-406"]);
 
@@ -228,8 +228,8 @@ export async function runPayrollSheetMappingTests() {
   sourceSheet.addRow([
     "B-58",
     "Source Truth Employee",
-    11111,
-    99999,
+    18000,
+    18000,
     88888,
     300,
     999,
@@ -263,12 +263,12 @@ export async function runPayrollSheetMappingTests() {
   const sourceResult = await validateSalaryWorkbook(sourceFile, { salarySources });
   const sourceRow = sourceResult.rowsToImport[0];
 
-  assert.equal(sourceRow.netSalary, 99999);
+  assert.equal(sourceRow.netSalary, 18000);
   assert.equal(sourceRow.extraCostOfLiving, 999);
   assert.equal(sourceRow.fuelAllowance, 999);
   assert.equal(sourceRow.socialInsurance, 999);
   assert.equal(sourceRow.employmentIncomeTax, 999);
-  assert.equal(sourceRow.grossSalary, 11111);
+  assert.equal(sourceRow.grossSalary, 18000);
   assert.equal(sourceRow.firstPart, 44444);
   assert.equal(sourceRow.secondPart, -123);
   assert.equal(sourceRow.totalAdditions, 2298);
@@ -308,7 +308,7 @@ export async function runPayrollSheetMappingTests() {
     "first_part",
     "second_part",
   ]);
-  blankSheet.addRow(["B-99", "Blank Explicit Parts", 10000, 9000, 4, 2026, "", "", "", ""]);
+  blankSheet.addRow(["B-99", "Blank Explicit Parts", 9000, 9000, 4, 2026, "", "", "", ""]);
   const blankFile = new File([await blankWorkbook.xlsx.writeBuffer() as BlobPart], "blank-payroll.xlsx");
   const blankResult = await validateSalaryWorkbook(blankFile, { expectedPeriod: { month: 4, year: 2026 } });
   assert.equal(blankResult.failedRows, 1);
@@ -331,7 +331,7 @@ export async function runPayrollSheetMappingTests() {
     "first_part",
     "second_part",
   ]);
-  zeroSheet.addRow(["B-100", "Zero Explicit Parts", 10000, 9000, 4, 2026, 0, 0, 0, 0]);
+  zeroSheet.addRow(["B-100", "Zero Explicit Parts", 9000, 9000, 4, 2026, 0, 0, 0, 0]);
   const zeroFile = new File([await zeroWorkbook.xlsx.writeBuffer() as BlobPart], "zero-payroll.xlsx");
   const zeroResult = await validateSalaryWorkbook(zeroFile, { expectedPeriod: { month: 4, year: 2026 } });
   assert.equal(zeroResult.failedRows, 0);
@@ -364,7 +364,7 @@ export async function runPayrollSheetMappingTests() {
   formulaMismatchSheet.addRow([
     "B-103",
     "Formula Mismatch",
-    10000,
+    8500,
     9000,
     100,
     50,
@@ -412,7 +412,7 @@ export async function runPayrollSheetMappingTests() {
   separatedDeductionsSheet.addRow([
     "B-104",
     "Separated Deductions",
-    10000,
+    9200,
     9000,
     120,
     80,
@@ -434,7 +434,7 @@ export async function runPayrollSheetMappingTests() {
   const mismatchWorkbook = new ExcelJS.Workbook();
   const mismatchSheet = mismatchWorkbook.addWorksheet("Payroll");
   mismatchSheet.addRow(["HR_ID", "Full Name", "gross_salary", "Net Salary", "Month", "Year"]);
-  mismatchSheet.addRow(["B-101", "Wrong Period", 10000, 9000, 5, 2027]);
+  mismatchSheet.addRow(["B-101", "Wrong Period", 9000, 9000, 5, 2027]);
   const mismatchFile = new File([await mismatchWorkbook.xlsx.writeBuffer() as BlobPart], "wrong-period.xlsx");
   const mismatchResult = await validateSalaryWorkbook(mismatchFile, { expectedPeriod: { month: 4, year: 2026 } });
   assert.equal(mismatchResult.failedRows, 1);
@@ -450,7 +450,7 @@ export async function runPayrollSheetMappingTests() {
   const noPeriodWorkbook = new ExcelJS.Workbook();
   const noPeriodSheet = noPeriodWorkbook.addWorksheet("Payroll");
   noPeriodSheet.addRow(["HR_ID", "Full Name", "gross_salary", "Net Salary"]);
-  noPeriodSheet.addRow(["B-102", "No Period Columns", 10000, 9000]);
+  noPeriodSheet.addRow(["B-102", "No Period Columns", 9000, 9000]);
   const noPeriodFile = new File([await noPeriodWorkbook.xlsx.writeBuffer() as BlobPart], "no-period.xlsx");
   const noPeriodResult = await validateSalaryWorkbook(noPeriodFile, { expectedPeriod: { month: 4, year: 2026 } });
   assert.equal(noPeriodResult.failedRows, 0);
@@ -535,11 +535,11 @@ export async function runPayrollSheetMappingTests() {
   const uploadedFixedFile = new File([await uploadedFixedWorkbook.xlsx.writeBuffer() as BlobPart], "uploaded-fixed.xlsx");
   const uploadedFixedResult = await validateSalaryWorkbook(uploadedFixedFile);
 
-  assert.equal(uploadedFixedResult.rowsToImport[0].baseSalary, 100);
-  assert.equal(uploadedFixedResult.rowsToImport[0].grossSalary, 999);
-  assert.equal(uploadedFixedResult.rowsToImport[0].netSalary, 888);
-  assert.equal(uploadedFixedResult.validationTotals.grossSalary, 999);
-  assert.equal(uploadedFixedResult.validationTotals.netSalary, 888);
+  assert.equal(uploadedFixedResult.failedRows, 1);
+  assert.deepEqual(
+    uploadedFixedResult.validationErrors.map((error) => error.code).sort(),
+    ["gross_salary_formula_mismatch", "net_salary_formula_mismatch"],
+  );
 
   const governmentalMismatchWorkbook = new ExcelJS.Workbook();
   const governmentalMismatchSheet = governmentalMismatchWorkbook.addWorksheet("Payroll");
@@ -552,7 +552,7 @@ export async function runPayrollSheetMappingTests() {
     "Employment Income Tax",
     "Governmental Deductions",
   ]);
-  governmentalMismatchSheet.addRow(["B-59", "Government Deduction Mismatch", 16000, 16500, 1200, 800, 2500]);
+  governmentalMismatchSheet.addRow(["B-59", "Government Deduction Mismatch", 11000, 9000, 1200, 800, 2500]);
   const governmentalMismatchFile = new File([await governmentalMismatchWorkbook.xlsx.writeBuffer() as BlobPart], "gov-mismatch.xlsx");
   const governmentalMismatchResult = await validateSalaryWorkbook(governmentalMismatchFile);
 

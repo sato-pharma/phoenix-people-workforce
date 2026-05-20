@@ -37,6 +37,7 @@ import { runEmployeeImportSeatValidationTests } from "./employee-import-seat-val
 import { runEmployeeRecordHealthTests } from "./employee-record-health.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
 import { runEmployeePortalPayslipSalaryTests } from "./employee-portal-payslip-salary.test.ts";
+import { runAdminPayslipImageExportTests } from "./admin-payslip-image-export.test.ts";
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
 import { runVacancyReportSourceTests } from "./vacancy-report-source.test.ts";
@@ -114,6 +115,7 @@ await runTest("medical rep expenses", runMedicalRepExpensesTests);
 await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);
 await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("employee portal payslip salary", runEmployeePortalPayslipSalaryTests);
+await runTest("admin payslip image export", runAdminPayslipImageExportTests);
 await runTest("employee access provisioning", runEmployeeAccessProvisioningTests);
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report source", runVacancyReportSourceTests);

@@ -10,9 +10,9 @@ import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getApprovedExpenseTotalsForPayroll } from "@/lib/payroll/expenses";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
-import { calculateGrossSalary, calculateNetSalary, calculatePayrollParts, payrollPaymentModeLabel } from "@/lib/payroll/policy";
+import { calculatePayrollParts, payrollPaymentModeLabel, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 import { payrollSheetHeaders } from "@/lib/payroll/salary-sheet-fields";
-import { getLatestSalaryRecordsBefore } from "@/lib/payroll/service";
+import { getLatestSalaryExpenseTotalsBefore } from "@/lib/payroll/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -307,7 +307,6 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
   return directory.employees
     .filter((employee) => (employee.employmentStatus ?? "active") === "active")
     .map((employee) => {
-      const baseSalary = money(employee.netSalary);
       const standardAllowances = resolveStandardSalaryAllowances({
         departmentName: employee.departmentName,
         jobTitle: employee.jobTitle,
@@ -320,16 +319,19 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
       const fuelAllowance = money(standardAllowances.fuelAllowance);
       const socialInsurance = money(employee.socialInsurance);
       const employmentIncomeTax = money(employee.taxes);
-      const netSalary = calculateNetSalary({
-        baseSalary,
+      const fixedSalary = resolveFixedSalaryAmounts({
+        baseSalary: employee.baseSalary,
+        basicSalary: employee.basicSalary,
+        employmentIncomeTax,
         extraCostOfLiving,
         fuelAllowance,
-      });
-      const grossSalary = calculateGrossSalary({
-        baseSalary,
+        grossSalary: employee.grossSalary,
+        netSalary: employee.netSalary,
         socialInsurance,
-        taxes: employmentIncomeTax,
       });
+      const baseSalary = money(fixedSalary.baseSalary);
+      const netSalary = money(fixedSalary.netSalary);
+      const grossSalary = money(fixedSalary.grossSalary);
       const governmentalDeductions = money(socialInsurance + employmentIncomeTax);
       const parts = calculatePayrollParts({
         baseSalary,
@@ -960,14 +962,11 @@ async function buildReadyRows(
   year: number,
   accessContext: AccessContext,
 ): Promise<PayrollTemplateRow[]> {
-  const [directory, previousRecords, approvedExpenseTotals] = await Promise.all([
+  const [directory, previousExpensesByEmployee, approvedExpenseTotals] = await Promise.all([
     getEmployeeDirectory(),
-    getLatestSalaryRecordsBefore(month, year),
+    getLatestSalaryExpenseTotalsBefore(month, year),
     getApprovedExpenseTotalsForPayroll(month, year, accessContext),
   ]);
-  const previousExpensesByEmployee = new Map(
-    previousRecords.map((record) => [record.employeeCode, record.expenses]),
-  );
 
   return directory.employees
     .filter((employee) => (employee.employmentStatus ?? "active") === "active")
@@ -976,7 +975,6 @@ async function buildReadyRows(
         approvedExpenseTotals.get(employee.hrId) ??
           previousExpensesByEmployee.get(employee.hrId),
       );
-      const baseSalary = money(employee.netSalary);
       const standardAllowances = resolveStandardSalaryAllowances({
         departmentName: employee.departmentName,
         jobTitle: employee.jobTitle,
@@ -987,6 +985,19 @@ async function buildReadyRows(
       });
       const extraCostOfLiving = money(standardAllowances.extraCostOfLiving);
       const fuelAllowance = money(standardAllowances.fuelAllowance);
+      const socialInsurance = money(employee.socialInsurance);
+      const employmentIncomeTax = money(employee.taxes);
+      const fixedSalary = resolveFixedSalaryAmounts({
+        baseSalary: employee.baseSalary,
+        basicSalary: employee.basicSalary,
+        employmentIncomeTax,
+        extraCostOfLiving,
+        fuelAllowance,
+        grossSalary: employee.grossSalary,
+        netSalary: employee.netSalary,
+        socialInsurance,
+      });
+      const baseSalary = money(fixedSalary.baseSalary);
       const parts = calculatePayrollParts({
         additions: 0,
         baseSalary,
@@ -996,13 +1007,7 @@ async function buildReadyRows(
         paymentMode: employee.salaryPaymentMode,
         previousExpenses: expenses,
       });
-      const socialInsurance = money(employee.socialInsurance);
-      const employmentIncomeTax = money(employee.taxes);
-      const grossSalary = calculateGrossSalary({
-        baseSalary,
-        socialInsurance,
-        taxes: employmentIncomeTax,
-      });
+      const grossSalary = money(fixedSalary.grossSalary);
       const governmentalDeductions = money(socialInsurance + employmentIncomeTax);
       const medicalInsurance = money(employee.medicalInsurance);
       const incentive = 0;
@@ -1026,11 +1031,7 @@ async function buildReadyRows(
           otherDeductions,
       );
       const paymentMode = payrollPaymentModeLabel(parts.paymentMode);
-      const netSalary = calculateNetSalary({
-        baseSalary,
-        extraCostOfLiving,
-        fuelAllowance,
-      });
+      const netSalary = money(fixedSalary.netSalary);
 
       return {
         arabicName: employee.nameAr,
@@ -1171,7 +1172,9 @@ export async function GET(request: Request) {
     return new Response("Forbidden", { status: 403 });
   }
 
-  const workbook = await buildStyledTemplate(month, year, ready, access);
+  const workbook = ready
+    ? await createFallbackWorkbook(await buildReadyRows(month, year, access), month, year)
+    : await buildStyledTemplate(month, year, ready, access);
   const buffer = await workbook.xlsx.writeBuffer();
   const filename = ready
     ? `phoenix-ready-payroll-${year}-${String(month).padStart(2, "0")}.xlsx`

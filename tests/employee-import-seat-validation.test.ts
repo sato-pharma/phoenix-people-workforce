@@ -65,4 +65,33 @@ export function runEmployeeImportSeatValidationTests() {
     differentRegion.validationErrors.some((issue) => issue.code.startsWith("duplicate_employee_org_seat")),
     false,
   );
+
+  const salaryFormula = validateEmployeeImportRows([
+    employeeRow({
+      "Base Salary": 14000,
+      "Basic Salary": 1,
+      "Full Name": "Salary Formula Rep",
+      "Gross Salary": 999,
+      HR_ID: "T-006",
+      "Net Salary": 999,
+      "Social Insurance": 1200,
+      Taxes: 800,
+    }),
+  ]);
+  const compensation = salaryFormula.rowsToInsert[0].compensation;
+
+  assert.equal(compensation.baseSalary, 14000);
+  assert.equal(compensation.basicSalary, 9800);
+  assert.equal(compensation.extraCostOfLiving, 2000);
+  assert.equal(compensation.fuelAllowance, 500);
+  assert.equal(compensation.grossSalary, 16000);
+  assert.equal(compensation.netSalary, 16500);
+  assert.equal(
+    salaryFormula.validationWarnings.some((issue) => issue.code === "gross_salary_formula_mismatch"),
+    true,
+  );
+  assert.equal(
+    salaryFormula.validationWarnings.some((issue) => issue.code === "net_salary_formula_mismatch"),
+    true,
+  );
 }

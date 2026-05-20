@@ -2,10 +2,9 @@
 
 import { toDateOnlyString } from "../date-only.ts";
 import {
-  calculateGrossSalary,
-  calculateNetSalary,
   calculatePayrollParts,
   normalizePayrollPaymentMode,
+  resolveFixedSalaryAmounts,
   type PayrollPaymentMode,
 } from "./policy.ts";
 import {
@@ -570,30 +569,18 @@ export async function validateSalaryWorkbook(
     const hasUploadedBaseSalary = hasBaseSalaryColumn && uploadedBaseSalary > 0;
     const hasUploadedGrossSalary = rowHasValue(raw, columnAliases.grossSalary);
     const hasUploadedNetSalary = rowHasValue(raw, columnAliases.netSalary);
-    const baseSalary =
-      hasUploadedBaseSalary
-        ? uploadedBaseSalary
-        : Math.max(0, uploadedNetSalary - extraCostOfLiving - fuelAllowance);
-    const netSalary =
-      hasUploadedNetSalary
-        ? uploadedNetSalary
-        : hasUploadedBaseSalary
-          ? calculateNetSalary({
-              baseSalary,
-              extraCostOfLiving,
-              fuelAllowance,
-            })
-          : uploadedNetSalary;
-    const grossSalary =
-      hasUploadedGrossSalary
-        ? uploadedGrossSalary
-        : hasUploadedBaseSalary
-          ? calculateGrossSalary({
-              baseSalary,
-              socialInsurance,
-              taxes: employmentIncomeTax,
-            })
-          : uploadedGrossSalary;
+    const fixedSalary = resolveFixedSalaryAmounts({
+      baseSalary: hasUploadedBaseSalary ? uploadedBaseSalary : null,
+      employmentIncomeTax,
+      extraCostOfLiving,
+      fuelAllowance,
+      grossSalary: hasUploadedGrossSalary ? uploadedGrossSalary : null,
+      netSalary: hasUploadedNetSalary ? uploadedNetSalary : null,
+      socialInsurance,
+    });
+    const baseSalary = fixedSalary.baseSalary;
+    const netSalary = hasUploadedNetSalary ? uploadedNetSalary : fixedSalary.netSalary;
+    const grossSalary = hasUploadedGrossSalary ? uploadedGrossSalary : fixedSalary.grossSalary;
     const paymentMode = paymentModeText
       ? normalizePayrollPaymentMode(paymentModeText)
       : salarySource?.paymentMode ?? "two_parts";
@@ -794,6 +781,20 @@ export async function validateSalaryWorkbook(
       });
     }
 
+    if (
+      hasUploadedGrossSalary &&
+      fixedSalary.baseSalary > 0 &&
+      differs(uploadedGrossSalary, fixedSalary.grossSalary)
+    ) {
+      validationErrors.push({
+        code: "gross_salary_formula_mismatch",
+        column: "Gross Salary",
+        hrId,
+        message: `Gross salary must equal Base Salary + Social Insurance + Employment Income Tax (${moneyText(fixedSalary.grossSalary)}).`,
+        row: rowNumber,
+      });
+    }
+
     if (options.expectedPeriod && hasMonthColumn && uploadedMonth !== options.expectedPeriod.month) {
       validationErrors.push({
         code: "payroll_month_mismatch",
@@ -826,6 +827,20 @@ export async function validateSalaryWorkbook(
         column: "Net Salary",
         hrId,
         message: "Net salary must be uploaded from the monthly payroll sheet.",
+        row: rowNumber,
+      });
+    }
+
+    if (
+      hasUploadedNetSalary &&
+      fixedSalary.baseSalary > 0 &&
+      differs(uploadedNetSalary, fixedSalary.netSalary)
+    ) {
+      validationErrors.push({
+        code: "net_salary_formula_mismatch",
+        column: "Net Salary",
+        hrId,
+        message: `Net salary must equal Base Salary + Extra Cost of Living + Fuel Allowance (${moneyText(fixedSalary.netSalary)}).`,
         row: rowNumber,
       });
     }

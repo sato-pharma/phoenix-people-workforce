@@ -1,5 +1,6 @@
 import {
   normalizePayrollPaymentMode,
+  resolveFixedSalaryAmounts,
   type PayrollPaymentMode,
 } from "@/lib/payroll/policy";
 import { isDevelopment } from "@/lib/env";
@@ -1272,6 +1273,52 @@ async function ensureCrmIdIsUnique(crmId: string | null, employeeHrId: string) {
   }
 }
 
+function resolveEmployeeCompensationInput(input: EmployeeMutationInput) {
+  const baseSalary = numberOrNull(input.baseSalary);
+  const basicSalary = numberOrNull(input.basicSalary);
+  const grossSalary = numberOrNull(input.grossSalary);
+  const netSalary = numberOrNull(input.netSalary);
+  const socialInsurance = numberOrNull(input.socialInsurance);
+  const taxes = numberOrNull(input.taxes);
+  const explicitExtraCostOfLiving = numberOrNull(input.extraCostOfLiving);
+  const explicitFuelAllowance = numberOrNull(input.fuelAllowance);
+  const standardAllowances = resolveStandardSalaryAllowances({
+    jobTitle: input.jobTitle,
+  });
+  const extraCostOfLiving = explicitExtraCostOfLiving ?? standardAllowances.extraCostOfLiving;
+  const fuelAllowance = explicitFuelAllowance ?? standardAllowances.fuelAllowance;
+  const fixedSalary = resolveFixedSalaryAmounts({
+    baseSalary,
+    basicSalary,
+    employmentIncomeTax: taxes,
+    extraCostOfLiving,
+    fuelAllowance,
+    grossSalary,
+    netSalary,
+    socialInsurance,
+  });
+
+  if (fixedSalary.baseSalary <= 0) {
+    return {
+      baseSalary,
+      basicSalary,
+      extraCostOfLiving: explicitExtraCostOfLiving,
+      fuelAllowance: explicitFuelAllowance,
+      grossSalary,
+      netSalary,
+    };
+  }
+
+  return {
+    baseSalary: fixedSalary.baseSalary,
+    basicSalary: fixedSalary.basicSalary,
+    extraCostOfLiving,
+    fuelAllowance,
+    grossSalary: fixedSalary.grossSalary,
+    netSalary: fixedSalary.netSalary,
+  };
+}
+
 async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) {
   const fullName = compact(input.fullName);
   if (!fullName) {
@@ -1331,13 +1378,14 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
   await ensureCrmIdIsUnique(crmId, hrId);
 
   const lifecycleActive = isActiveLifecycleStatus(employmentStatus);
+  const compensation = resolveEmployeeCompensationInput(input);
 
   return {
     area_id: numberOrNull(input.areaId),
     bank_account: compact(input.bankAccount),
     bank_name: compact(input.bankName),
-    base_salary: numberOrNull(input.baseSalary),
-    basic_salary: numberOrNull(input.basicSalary),
+    base_salary: compensation.baseSalary,
+    basic_salary: compensation.basicSalary,
     birth_date: compact(input.birthDate),
     contract_type: compact(input.contractType),
     crm_id: crmId,
@@ -1345,11 +1393,11 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
     department_id: numberOrNull(input.departmentId),
     education: compact(input.education),
     employment_status: employmentStatus,
-    extra_cost_of_living: numberOrNull(input.extraCostOfLiving),
+    extra_cost_of_living: compensation.extraCostOfLiving,
     full_name: fullName,
     gender: compact(input.gender)?.toLowerCase(),
-    fuel_allowance: numberOrNull(input.fuelAllowance),
-    gross_salary: numberOrNull(input.grossSalary),
+    fuel_allowance: compensation.fuelAllowance,
+    gross_salary: compensation.grossSalary,
     has_bank_account: normalizeYesNo(input.hasBankAccount),
     hire_date: compact(input.hireDate),
     hr_id: hrId,
@@ -1359,7 +1407,7 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
     mobile_number: compact(input.mobileNumber),
     name_ar: compact(input.nameAr),
     national_id: compact(input.nationalId),
-    net_salary: numberOrNull(input.netSalary),
+    net_salary: compensation.netSalary,
     medical_insurance: numberOrNull(input.medicalInsurance),
     medical_insurance_status: normalizeEnrollmentStatus(input.medicalInsuranceStatus),
     medical_insurance_number: compact(input.medicalInsuranceNumber),

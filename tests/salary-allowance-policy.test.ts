@@ -6,7 +6,13 @@ import {
   resolveStandardSalaryAllowances,
   standardExtraCostOfLiving,
 } from "../src/lib/payroll/allowance-policy.ts";
-import { calculateNetSalary, calculatePayrollParts } from "../src/lib/payroll/policy.ts";
+import {
+  calculateGrossSalary,
+  calculateNetSalary,
+  calculatePayrollParts,
+  resolveFixedSalaryAmounts,
+} from "../src/lib/payroll/policy.ts";
+import { resolveEmployeeMasterExportSalary } from "../src/lib/employees/employee-master-export.ts";
 
 export function runSalaryAllowancePolicyTests() {
   assert.equal(STANDARD_FUEL_ALLOWANCE, 500);
@@ -47,6 +53,44 @@ export function runSalaryAllowancePolicyTests() {
   assert.equal(mrAllowances.fuelAllowance, 500);
   assert.equal(mrAllowances.extraCostOfLiving, 2000);
   assert.equal(calculateNetSalary({ baseSalary: 14000, ...mrAllowances }), 16500);
+  assert.equal(calculateGrossSalary({ baseSalary: 14000, socialInsurance: 1200, taxes: 800 }), 16000);
+  assert.deepEqual(
+    resolveFixedSalaryAmounts({
+      baseSalary: 14000,
+      basicSalary: 1,
+      extraCostOfLiving: 2000,
+      fuelAllowance: 500,
+      grossSalary: 999,
+      netSalary: 999,
+      socialInsurance: 1200,
+      taxes: 800,
+    }),
+    {
+      baseSalary: 14000,
+      basicSalary: 9800,
+      grossSalary: 16000,
+      netSalary: 16500,
+    },
+  );
+
+  assert.deepEqual(
+    resolveEmployeeMasterExportSalary({
+      baseSalary: 14000,
+      basicSalary: 1,
+      extraCostOfLiving: 2000,
+      fuelAllowance: 500,
+      grossSalary: 999,
+      netSalary: 999,
+      socialInsurance: 1200,
+      taxes: 800,
+    }),
+    {
+      baseSalary: 14000,
+      basicSalary: 9800,
+      grossSalary: 16000,
+      netSalary: 16500,
+    },
+  );
 
   const mrParts = calculatePayrollParts({
     baseSalary: 14000,

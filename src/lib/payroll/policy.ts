@@ -30,6 +30,13 @@ export type PayrollParts = {
   totalPayable: number;
 };
 
+export type FixedSalaryAmounts = {
+  baseSalary: number;
+  basicSalary: number;
+  grossSalary: number;
+  netSalary: number;
+};
+
 function amount(value: number | null | undefined) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
 }
@@ -106,11 +113,6 @@ export function calculateBaseSalary(input: PayrollPartsInput) {
 }
 
 export function calculateBasicSalary(input: PayrollPartsInput) {
-  const explicitBasicSalary = amount(input.basicSalary);
-  if (explicitBasicSalary > 0) {
-    return money(explicitBasicSalary);
-  }
-
   return money(calculateBaseSalary(input) * BASIC_SALARY_RATE);
 }
 
@@ -126,10 +128,22 @@ export function calculateNetSalary(input: PayrollPartsInput) {
   );
 }
 
+export function resolveFixedSalaryAmounts(input: PayrollPartsInput): FixedSalaryAmounts {
+  const baseSalary = calculateBaseSalary(input);
+
+  return {
+    baseSalary,
+    basicSalary: calculateBasicSalary({ ...input, baseSalary }),
+    grossSalary: calculateGrossSalary({ ...input, baseSalary }),
+    netSalary: calculateNetSalary({ ...input, baseSalary }),
+  };
+}
+
 export function calculatePayrollParts(input: PayrollPartsInput): PayrollParts {
   const paymentMode = normalizePayrollPaymentMode(input.paymentMode);
-  const netSalary = calculateNetSalary(input);
-  const basicSalary = calculateBasicSalary(input);
+  const fixedSalary = resolveFixedSalaryAmounts(input);
+  const netSalary = fixedSalary.netSalary;
+  const basicSalary = fixedSalary.basicSalary;
   const previousExpenses = amount(input.previousExpenses);
   const additions = amount(input.additions);
   const deductions = amount(input.deductions);

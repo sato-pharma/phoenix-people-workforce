@@ -16,6 +16,11 @@ import type { SalaryBatch, SalaryRecord } from "@/lib/payroll/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type PayslipRenderOptions = {
+  baseHref?: string;
+  mode?: "html" | "image";
+};
+
 function escapeHtml(value: unknown) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -60,7 +65,7 @@ function isLikelyUuidError(message: string) {
   return normalized.includes("invalid input syntax for type uuid") || normalized.includes("malformed uuid");
 }
 
-function periodLabel(month: number, year: number) {
+export function periodLabel(month: number, year: number) {
   return new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(
     new Date(Date.UTC(year, month - 1, 1)),
   );
@@ -70,7 +75,7 @@ function payslipStatusLabel(status: string) {
   return status.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function isPublishedPayslipStatus(status: string) {
+export function isPublishedPayslipStatus(status: string) {
   return status === "approved" || status === "locked";
 }
 
@@ -255,12 +260,36 @@ function payslip(record: SalaryRecord, month: number, year: number, batchStatus:
   `;
 }
 
-function page(records: SalaryRecord[], month: number, year: number, batchStatus: SalaryBatch["status"]) {
+export function filterPayslipRecords(records: SalaryRecord[], requestUrl: string) {
+  const url = new URL(requestUrl);
+  const employeeHrId = url.searchParams.get("employeeHrId")?.trim().toLowerCase() ?? "";
+  const employeeName = url.searchParams.get("employeeName")?.trim().toLowerCase() ?? "";
+
+  return records.filter((record) => {
+    const matchesHrId =
+      !employeeHrId ||
+      record.hrId.toLowerCase() === employeeHrId ||
+      record.employeeCode.toLowerCase() === employeeHrId;
+    const matchesName = !employeeName || record.fullName.toLowerCase().includes(employeeName);
+    return matchesHrId && matchesName;
+  });
+}
+
+export function renderPayslipsPage(
+  records: SalaryRecord[],
+  month: number,
+  year: number,
+  batchStatus: SalaryBatch["status"],
+  options: PayslipRenderOptions = {},
+) {
+  const bodyClass = options.mode === "image" ? "image-export" : "";
+
   return `<!doctype html>
   <html>
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
+      ${options.baseHref ? `<base href="${escapeHtml(options.baseHref)}" />` : ""}
       <title>Phoenix Payslips - ${escapeHtml(periodLabel(month, year))}</title>
       <style>
         :root {
@@ -504,6 +533,21 @@ function page(records: SalaryRecord[], month: number, year: number, batchStatus:
           background: #94a3b8;
           border: 2px solid #f1f5f9;
           border-radius: 999px;
+        }
+        .image-export {
+          background: transparent;
+          padding: 28px 0;
+        }
+        .image-export .payslip {
+          margin: 0 auto;
+          page-break-after: auto;
+        }
+        .image-export .sheet-scroll {
+          max-height: none;
+          overflow: visible;
+        }
+        .image-export th {
+          position: static;
         }
         table {
           border-collapse: collapse;
@@ -798,7 +842,7 @@ function page(records: SalaryRecord[], month: number, year: number, batchStatus:
         }
       </style>
     </head>
-    <body>
+    <body class="${bodyClass}">
       ${records.map((record, index) => payslip(record, month, year, batchStatus, index + 1)).join("")}
     </body>
   </html>`;
@@ -835,17 +879,7 @@ export async function GET(
       );
     }
 
-    const url = new URL(request.url);
-    const employeeHrId = url.searchParams.get("employeeHrId")?.trim().toLowerCase() ?? "";
-    const employeeName = url.searchParams.get("employeeName")?.trim().toLowerCase() ?? "";
-    const records = exportData?.records.filter((record) => {
-      const matchesHrId =
-        !employeeHrId ||
-        record.hrId.toLowerCase() === employeeHrId ||
-        record.employeeCode.toLowerCase() === employeeHrId;
-      const matchesName = !employeeName || record.fullName.toLowerCase().includes(employeeName);
-      return matchesHrId && matchesName;
-    }) ?? [];
+    const records = exportData ? filterPayslipRecords(exportData.records, request.url) : [];
 
     if (!exportData || records.length === 0) {
       if (isDevelopment) {
@@ -855,7 +889,7 @@ export async function GET(
     }
 
     return new Response(
-      page(records, exportData.batch.month, exportData.batch.year, exportData.batch.status),
+      renderPayslipsPage(records, exportData.batch.month, exportData.batch.year, exportData.batch.status),
       {
         headers: {
           "Content-Type": "text/html; charset=utf-8",

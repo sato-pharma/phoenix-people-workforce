@@ -32,7 +32,7 @@ import {
   type OrgMappingWarning,
 } from "@/lib/imports/org-rule-engine";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
-import { calculateGrossSalary } from "@/lib/payroll/policy";
+import { resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 
 type HeaderMapping = Map<EmployeeImportField, string>;
 const salaryFormulaTolerance = 1;
@@ -816,29 +816,70 @@ export function validateEmployeeImportRows(
       record.compensation.extraCostOfLiving = standardAllowances.extraCostOfLiving;
       record.compensation.fuelAllowance = standardAllowances.fuelAllowance;
 
-      const expectedGrossSalary = calculateGrossSalary({
-        baseSalary: record.compensation.netSalary,
+      const expectedSalary = resolveFixedSalaryAmounts({
+        baseSalary: record.compensation.baseSalary,
+        basicSalary: record.compensation.basicSalary,
         employmentIncomeTax: record.compensation.taxes,
         extraCostOfLiving: record.compensation.extraCostOfLiving,
         fuelAllowance: record.compensation.fuelAllowance,
         grossSalary: record.compensation.grossSalary,
+        netSalary: record.compensation.netSalary,
         socialInsurance: record.compensation.socialInsurance,
       });
 
-      if (expectedGrossSalary > 0) {
+      if (expectedSalary.baseSalary > 0) {
+        if (
+          record.compensation.baseSalary !== null &&
+          differs(record.compensation.baseSalary, expectedSalary.baseSalary)
+        ) {
+          validationWarnings.push({
+            rowNumber: record.rowNumber,
+            field: "baseSalary",
+            code: "base_salary_formula_mismatch",
+            message: `Base salary was normalized to ${moneyText(expectedSalary.baseSalary)} by fixed salary policy.`,
+          });
+        }
+
+        if (
+          record.compensation.basicSalary !== null &&
+          differs(record.compensation.basicSalary, expectedSalary.basicSalary)
+        ) {
+          validationWarnings.push({
+            rowNumber: record.rowNumber,
+            field: "basicSalary",
+            code: "basic_salary_formula_mismatch",
+            message: `Basic salary was normalized to ${moneyText(expectedSalary.basicSalary)} from Base Salary x 70%.`,
+          });
+        }
+
+        if (
+          record.compensation.netSalary !== null &&
+          differs(record.compensation.netSalary, expectedSalary.netSalary)
+        ) {
+          validationWarnings.push({
+            rowNumber: record.rowNumber,
+            field: "netSalary",
+            code: "net_salary_formula_mismatch",
+            message: `Net salary was normalized to ${moneyText(expectedSalary.netSalary)} from base salary plus cost of living and fuel allowance.`,
+          });
+        }
+
         if (
           record.compensation.grossSalary !== null &&
-          differs(record.compensation.grossSalary, expectedGrossSalary)
+          differs(record.compensation.grossSalary, expectedSalary.grossSalary)
         ) {
           validationWarnings.push({
             rowNumber: record.rowNumber,
             field: "grossSalary",
             code: "gross_salary_formula_mismatch",
-            message: `Gross salary was normalized to ${moneyText(expectedGrossSalary)} from base salary plus social insurance and income tax.`,
+            message: `Gross salary was normalized to ${moneyText(expectedSalary.grossSalary)} from base salary plus social insurance and income tax.`,
           });
         }
 
-        record.compensation.grossSalary = expectedGrossSalary;
+        record.compensation.baseSalary = expectedSalary.baseSalary;
+        record.compensation.basicSalary = expectedSalary.basicSalary;
+        record.compensation.grossSalary = expectedSalary.grossSalary;
+        record.compensation.netSalary = expectedSalary.netSalary;
       }
     }
   }

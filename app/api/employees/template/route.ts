@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, filterEmployeeDirectoryForAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { resolveEmployeeMasterExportSalary } from "@/lib/employees/employee-master-export";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -130,14 +131,16 @@ function yesNo(value: boolean) {
 }
 
 function employeeToExportRow(employee: EmployeeDirectoryRow): ExportRow {
+  const exportSalary = resolveEmployeeMasterExportSalary(employee);
+
   return {
     arabicName: employee.nameAr,
     area: employee.areaName,
     bankAccount: employee.bankAccount,
     bankName: employee.bankName,
     hasBankAccount: employee.hasBankAccount ?? (employee.bankAccount ? "yes" : null),
-    baseSalary: employee.baseSalary,
-    basicSalary: employee.basicSalary,
+    baseSalary: exportSalary.baseSalary,
+    basicSalary: exportSalary.basicSalary,
     birthDate: dateOnly(employee.birthDate),
     contractType: employee.contractType,
     crmId: employee.crmId,
@@ -152,7 +155,7 @@ function employeeToExportRow(employee: EmployeeDirectoryRow): ExportRow {
     fuelAllowance: employee.fuelAllowance,
     fullName: employee.fullName,
     gender: employee.gender,
-    grossSalary: employee.grossSalary,
+    grossSalary: exportSalary.grossSalary,
     hireDate: dateOnly(employee.hireDate),
     jobTitle: employee.jobTitle,
     lastUpdated: dateOnly(employee.updatedAt) ?? employee.updatedAt,
@@ -162,7 +165,7 @@ function employeeToExportRow(employee: EmployeeDirectoryRow): ExportRow {
     medicalInsuranceStatus: employee.medicalInsuranceStatus,
     mobileNumber: employee.mobileNumber,
     nationalId: employee.nationalId,
-    netSalary: employee.netSalary,
+    netSalary: exportSalary.netSalary,
     organogramVisible: yesNo(employee.organogramVisible),
     paymentMode: employee.salaryPaymentMode,
     payrollEligible: yesNo(employee.payrollEligible),
