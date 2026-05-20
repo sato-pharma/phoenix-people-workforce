@@ -457,6 +457,19 @@ export async function runPayrollSheetMappingTests() {
   assert.equal(noPeriodResult.payrollPeriod.month, 4);
   assert.equal(noPeriodResult.payrollPeriod.year, 2026);
 
+  const repeatedHeaderWorkbook = new ExcelJS.Workbook();
+  const repeatedHeaderSheet = repeatedHeaderWorkbook.addWorksheet("Payroll");
+  const repeatedHeaders = ["HR_ID", "Full Name", "Gross Salary", "Net Salary"];
+  repeatedHeaderSheet.addRow(repeatedHeaders);
+  repeatedHeaderSheet.addRow(["B-201", "Before Sort Header", 1000, 1000]);
+  repeatedHeaderSheet.addRow(repeatedHeaders);
+  repeatedHeaderSheet.addRow(["B-202", "After Sort Header", 2000, 2000]);
+  const repeatedHeaderFile = new File([await repeatedHeaderWorkbook.xlsx.writeBuffer() as BlobPart], "repeated-header.xlsx");
+  const repeatedHeaderResult = await validateSalaryWorkbook(repeatedHeaderFile);
+
+  assert.equal(repeatedHeaderResult.failedRows, 0);
+  assert.deepEqual(repeatedHeaderResult.rowsToImport.map((item) => item.hrId), ["B-201", "B-202"]);
+
   const baseSalaryWorkbook = new ExcelJS.Workbook();
   const baseSalarySheet = baseSalaryWorkbook.addWorksheet("Payroll");
   baseSalarySheet.addRow([

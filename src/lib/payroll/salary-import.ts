@@ -469,6 +469,16 @@ function isPayrollSummaryRow(row: Record<string, unknown>) {
   return populatedPayrollAmountColumns >= 3;
 }
 
+function isRepeatedPayrollHeaderRow(row: Record<string, unknown>) {
+  const matchingHeaderCells = Object.entries(row).filter(
+    ([key, value]) =>
+      key !== "__rowNumber" &&
+      normalizeHeader(key) === normalizeHeader(String(value ?? "")),
+  ).length;
+
+  return matchingHeaderCells >= 3;
+}
+
 function parseMonthCell(value: unknown) {
   if (!hasCellValue(value)) return null;
   const numeric = Number(value);
@@ -520,6 +530,7 @@ export async function validateSalaryWorkbook(
     );
     if (
       Object.values(row).some((value) => String(value ?? "").trim() !== "") &&
+      !isRepeatedPayrollHeaderRow(row) &&
       !isPayrollSummaryRow(row)
     ) {
       rows.push({ ...row, __rowNumber: rowNumber });
