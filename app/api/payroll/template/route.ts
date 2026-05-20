@@ -23,6 +23,11 @@ const templateDataEndRow = 126;
 const totalsLabel = "TOTALS";
 const headers = [...payrollSheetHeaders, "Bank", "Bank Account"];
 const bankDetailsSectionStart = payrollSheetHeaders.length + 1;
+const moneyColumnNumbers = new Set([
+  11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+  22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+  33, 34,
+]);
 
 const uploadTemplateSections = [
   { bodyFill: "FFEFF6FF", end: 10, headerFill: "FF1E3A8A", label: "Employee Data", start: 1 },
@@ -100,6 +105,36 @@ function money(value: number | null | undefined) {
   return Math.round((Number(value ?? 0) + Number.EPSILON) * 100) / 100;
 }
 
+function payrollMonthMatches(value: string | null, month: number, year: number) {
+  if (!value) return false;
+  const date = parseDateOnly(value);
+  return Boolean(
+    date &&
+      date.getFullYear() === year &&
+      date.getMonth() + 1 === month,
+  );
+}
+
+function payrollHireDay(value: string | null) {
+  const date = parseDateOnly(value);
+  return date ? date.getDate() : null;
+}
+
+function calculateBaseProrationDeduction(
+  baseSalary: number,
+  hireDate: string | null,
+  month: number,
+  year: number,
+) {
+  if (!payrollMonthMatches(hireDate, month, year)) return 0;
+
+  const hireDay = payrollHireDay(hireDate);
+  if (!hireDay) return 0;
+
+  const eligibleDays = Math.max(0, 30 - hireDay + 1);
+  return money(Math.max(0, baseSalary - (baseSalary / 30) * eligibleDays));
+}
+
 function monthName(month: number) {
   return new Intl.DateTimeFormat("en", { month: "long" }).format(
     new Date(Date.UTC(2026, month - 1, 1)),
@@ -165,6 +200,12 @@ function writeHeaderRow(sheet: ExcelJS.Worksheet, rowNumber: number) {
   const row = sheet.getRow(rowNumber);
   row.values = headers;
   row.commit();
+}
+
+function writeSortableTwoPartsHeaderRow(sheet: ExcelJS.Worksheet, rowNumber: number) {
+  writeHeaderRow(sheet, rowNumber);
+  stylePayrollHeaderRow(sheet.getRow(rowNumber));
+  sheet.getRow(rowNumber).height = 30;
 }
 
 function uploadSectionForColumn(columnNumber: number) {
@@ -250,7 +291,7 @@ function stylePayrollDataCell(cell: ExcelJS.Cell) {
   const section = uploadSectionForColumn(column);
   const isTotalColumn = column === 21 || column === 24 || column === 31;
 
-  if (typeof cell.value === "number") {
+  if (moneyColumnNumbers.has(column)) {
     cell.numFmt = "#,##0.00";
   }
 
@@ -290,11 +331,12 @@ function applyPayrollTemplateColumnWidths(sheet: ExcelJS.Worksheet) {
 function stylePayrollTotalsRow(row: ExcelJS.Row) {
   row.eachCell((cell) => {
     const section = uploadSectionForColumn(Number(cell.col));
+    const column = Number(cell.col);
     cell.fill = solidFill(section.headerFill);
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    cell.alignment = { horizontal: Number(cell.col) === 1 ? "left" : "right", vertical: "middle", wrapText: true };
-    cell.border = borderForColumn(Number(cell.col), "FFFFFFFF");
-    if (typeof cell.value === "number") {
+    cell.alignment = { horizontal: column === 1 ? "left" : "right", vertical: "middle", wrapText: true };
+    cell.border = borderForColumn(column, "FFFFFFFF");
+    if (moneyColumnNumbers.has(column)) {
       cell.numFmt = "#,##0.00";
     }
   });
@@ -390,6 +432,7 @@ async function createFallbackWorkbook(
   rows: PayrollTemplateRow[] = [],
   month = new Date().getMonth() + 1,
   year = new Date().getFullYear(),
+  options: { formulas?: boolean } = {},
 ) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Payroll Upload");
@@ -425,22 +468,43 @@ async function createFallbackWorkbook(
     key: header,
     width: Math.max(header.length + 4, 14),
   }));
+  const fixedBlockRows = options.formulas ? onePartFixedBlockSize(rows) : 0;
+  const hasTwoPartSortableRange = options.formulas && fixedBlockRows > 0 && fixedBlockRows < rows.length;
+  let twoPartHeaderRow: number | null = null;
+  let rowNumber = dataStartRow;
   rows.forEach((row, index) => {
-    const sheetRow = sheet.getRow(dataStartRow + index);
-    sheetRow.values = rowValues(row, index + 1);
+    if (hasTwoPartSortableRange && index === fixedBlockRows) {
+      twoPartHeaderRow = rowNumber;
+      writeSortableTwoPartsHeaderRow(sheet, rowNumber);
+      rowNumber += 1;
+    }
+
+    const sheetRow = sheet.getRow(rowNumber);
+    sheetRow.values = rowValues(row, index + 1, rowNumber, options);
     sheetRow.height = 24;
     for (let column = 1; column <= headers.length; column += 1) {
       stylePayrollDataCell(sheetRow.getCell(column));
     }
     sheetRow.commit();
+    rowNumber += 1;
   });
+  const lastDataRow = rows.length > 0 ? rowNumber - 1 : dataStartRow;
+  const totalsRow = rows.length > 0 ? rowNumber : null;
   if (rows.length > 0) {
-    writeTotals(sheet, dataStartRow + rows.length, rows, captureRowStyle(sheet, dataStartRow - 1));
+    writeTotals(sheet, rowNumber, rows, captureRowStyle(sheet, dataStartRow - 1));
   }
   sheet.autoFilter = {
-    from: { column: 1, row: dataStartRow - 1 },
-    to: { column: headers.length, row: Math.max(dataStartRow, dataStartRow + rows.length - 1) },
+    from: { column: 1, row: twoPartHeaderRow ?? dataStartRow - 1 },
+    to: { column: headers.length, row: Math.max(dataStartRow, lastDataRow) },
   };
+  if (options.formulas) {
+    await protectReadyPayrollSheet(sheet, {
+      fixedBlockRows,
+      lastDataRow,
+      totalsRow,
+      twoPartHeaderRow,
+    });
+  }
   upsertWorkingDaysCalcSheet(workbook, month, year);
   upsertSalaryPolicySheet(workbook);
 
@@ -538,7 +602,95 @@ function writeTitle(sheet: ExcelJS.Worksheet, month: number, year: number) {
   sheet.getCell("A2").value = `⚡  PhoenixX — Payroll Sheet  |  ${monthName(month)} ${year}`;
 }
 
-function rowValues(row: PayrollTemplateRow, index: number) {
+function rowValues(
+  row: PayrollTemplateRow,
+  index: number,
+  rowNumber = dataStartRow + index - 1,
+  options: { formulas?: boolean } = {},
+) {
+  if (options.formulas) {
+    const month = cellRef(rowNumber, 2);
+    const year = cellRef(rowNumber, 3);
+    const hireDate = cellRef(rowNumber, 10);
+    const baseSalary = cellRef(rowNumber, 11);
+    const netSalary = cellRef(rowNumber, 13);
+    const expenses = cellRef(rowNumber, 14);
+    const incentive = cellRef(rowNumber, 15);
+    const overtime = cellRef(rowNumber, 16);
+    const bonus = cellRef(rowNumber, 17);
+    const extraCostOfLiving = cellRef(rowNumber, 18);
+    const fuelAllowance = cellRef(rowNumber, 19);
+    const otherAdditions = cellRef(rowNumber, 20);
+    const socialInsurance = cellRef(rowNumber, 22);
+    const employmentIncomeTax = cellRef(rowNumber, 23);
+    const crm = cellRef(rowNumber, 25);
+    const fingerPrint = cellRef(rowNumber, 26);
+    const unpaidVacations = cellRef(rowNumber, 27);
+    const medicalInsurance = cellRef(rowNumber, 28);
+    const loans = cellRef(rowNumber, 29);
+    const otherDeductions = cellRef(rowNumber, 30);
+    const totalDeductions = cellRef(rowNumber, 31);
+    const monthSalary = cellRef(rowNumber, 32);
+    const firstPart = cellRef(rowNumber, 33);
+    const paymentMode = cellRef(rowNumber, 35);
+
+    return [
+      index,
+      row.month,
+      row.year,
+      row.employeeCode,
+      row.fullName,
+      row.arabicName ?? "",
+      row.jobTitle ?? "",
+      row.line ?? "",
+      row.area ?? "",
+      parseDateOnly(row.hireDate) ?? "",
+      row.baseSalary,
+      formulaValue(`ROUND(${baseSalary}+${socialInsurance}+${employmentIncomeTax},2)`, row.grossSalary),
+      formulaValue(`ROUND(${baseSalary}+${extraCostOfLiving}+${fuelAllowance},2)`, row.netSalary),
+      row.expenses,
+      row.incentive,
+      row.overtime,
+      row.bonus,
+      row.extraCostOfLiving,
+      row.fuelAllowance,
+      row.otherAdditions,
+      formulaValue(
+        `ROUND(${expenses}+${incentive}+${overtime}+${bonus}+${extraCostOfLiving}+${fuelAllowance}+${otherAdditions},2)`,
+        row.totalAdditions,
+      ),
+      row.socialInsurance,
+      row.employmentIncomeTax,
+      formulaValue(`ROUND(${socialInsurance}+${employmentIncomeTax},2)`, row.governmentalDeductions),
+      row.crm,
+      row.fingerPrint,
+      row.unpaidVacations,
+      row.medicalInsurance,
+      row.loans,
+      formulaValue(
+        `IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),ROUND(MAX(0,${baseSalary}-((${baseSalary}/30)*MAX(0,30-DAY(${hireDate})+1))),2),0)`,
+        row.otherDeductions,
+      ),
+      formulaValue(
+        `ROUND(${crm}+${fingerPrint}+${unpaidVacations}+${medicalInsurance}+${loans}+${otherDeductions},2)`,
+        row.totalDeductions,
+      ),
+      formulaValue(
+        `ROUND(${netSalary}+${expenses}+${incentive}+${overtime}+${bonus}+${otherAdditions}-${totalDeductions},2)`,
+        row.monthSalary,
+      ),
+      formulaValue(
+        `IF(${paymentMode}="One Part",${monthSalary},MIN(ROUND(${baseSalary}*0.7,2),MAX(0,${baseSalary}-${otherDeductions})))`,
+        row.firstPart,
+      ),
+      formulaValue(`IF(${paymentMode}="One Part",0,ROUND(${monthSalary}-${firstPart},2))`, row.secondPart),
+      row.paymentMode,
+      row.comment,
+      row.bankName ?? "",
+      row.bankAccount ?? "",
+    ];
+  }
+
   return [
     index,
     row.month,
@@ -608,32 +760,39 @@ function writeTotals(
   const row = sheet.getRow(totalsRow);
   const total = (selector: (item: PayrollTemplateRow) => number) =>
     money(rows.reduce((sum, item) => sum + selector(item), 0));
+  const totalFormula = (columnNumber: number, result: number) =>
+    rows.length > 0
+      ? formulaValue(
+          `SUM(${cellRef(dataStartRow, columnNumber)}:${cellRef(totalsRow - 1, columnNumber)})`,
+          result,
+        )
+      : result;
 
   row.getCell(1).value = totalsLabel;
-  row.getCell(11).value = total((item) => item.baseSalary);
-  row.getCell(12).value = total((item) => item.grossSalary);
-  row.getCell(13).value = total((item) => item.netSalary);
-  row.getCell(14).value = total((item) => item.expenses);
-  row.getCell(15).value = total((item) => item.incentive);
-  row.getCell(16).value = total((item) => item.overtime);
-  row.getCell(17).value = total((item) => item.bonus);
-  row.getCell(18).value = total((item) => item.extraCostOfLiving);
-  row.getCell(19).value = total((item) => item.fuelAllowance);
-  row.getCell(20).value = total((item) => item.otherAdditions);
-  row.getCell(21).value = total((item) => item.totalAdditions);
-  row.getCell(22).value = total((item) => item.socialInsurance);
-  row.getCell(23).value = total((item) => item.employmentIncomeTax);
-  row.getCell(24).value = total((item) => item.governmentalDeductions);
-  row.getCell(25).value = total((item) => item.crm);
-  row.getCell(26).value = total((item) => item.fingerPrint);
-  row.getCell(27).value = total((item) => item.unpaidVacations);
-  row.getCell(28).value = total((item) => item.medicalInsurance);
-  row.getCell(29).value = total((item) => item.loans);
-  row.getCell(30).value = total((item) => item.otherDeductions);
-  row.getCell(31).value = total((item) => item.totalDeductions);
-  row.getCell(32).value = total((item) => item.monthSalary);
-  row.getCell(33).value = total((item) => item.firstPart);
-  row.getCell(34).value = total((item) => item.secondPart);
+  row.getCell(11).value = totalFormula(11, total((item) => item.baseSalary));
+  row.getCell(12).value = totalFormula(12, total((item) => item.grossSalary));
+  row.getCell(13).value = totalFormula(13, total((item) => item.netSalary));
+  row.getCell(14).value = totalFormula(14, total((item) => item.expenses));
+  row.getCell(15).value = totalFormula(15, total((item) => item.incentive));
+  row.getCell(16).value = totalFormula(16, total((item) => item.overtime));
+  row.getCell(17).value = totalFormula(17, total((item) => item.bonus));
+  row.getCell(18).value = totalFormula(18, total((item) => item.extraCostOfLiving));
+  row.getCell(19).value = totalFormula(19, total((item) => item.fuelAllowance));
+  row.getCell(20).value = totalFormula(20, total((item) => item.otherAdditions));
+  row.getCell(21).value = totalFormula(21, total((item) => item.totalAdditions));
+  row.getCell(22).value = totalFormula(22, total((item) => item.socialInsurance));
+  row.getCell(23).value = totalFormula(23, total((item) => item.employmentIncomeTax));
+  row.getCell(24).value = totalFormula(24, total((item) => item.governmentalDeductions));
+  row.getCell(25).value = totalFormula(25, total((item) => item.crm));
+  row.getCell(26).value = totalFormula(26, total((item) => item.fingerPrint));
+  row.getCell(27).value = totalFormula(27, total((item) => item.unpaidVacations));
+  row.getCell(28).value = totalFormula(28, total((item) => item.medicalInsurance));
+  row.getCell(29).value = totalFormula(29, total((item) => item.loans));
+  row.getCell(30).value = totalFormula(30, total((item) => item.otherDeductions));
+  row.getCell(31).value = totalFormula(31, total((item) => item.totalDeductions));
+  row.getCell(32).value = totalFormula(32, total((item) => item.monthSalary));
+  row.getCell(33).value = totalFormula(33, total((item) => item.firstPart));
+  row.getCell(34).value = totalFormula(34, total((item) => item.secondPart));
   row.getCell(35).value = "";
   row.getCell(36).value = "";
   row.getCell(37).value = "";
@@ -682,6 +841,14 @@ function columnLetter(columnNumber: number) {
   }
 
   return letter;
+}
+
+function cellRef(rowNumber: number, columnNumber: number) {
+  return `${columnLetter(columnNumber)}${rowNumber}`;
+}
+
+function formulaValue(formula: string, result: number): ExcelJS.CellValue {
+  return { formula, result: money(result) } as ExcelJS.CellValue;
 }
 
 function writeMatrix(
@@ -755,9 +922,9 @@ function upsertWorkingDaysCalcSheet(workbook: ExcelJS.Workbook, month: number, y
     ["Fuel", exampleAllowances.fuelAllowance],
     ["Net Salary", { formula: "B5+B6+B7" }],
     ["Basic Salary", { formula: "B5*70%" }],
-    ["Days in Month", { formula: "DAY(EOMONTH(DATE(B3,B4,1),0))" }],
+    ["Payroll Standard Days", 30],
     ["Base Daily Rate", { formula: "B5/B10" }],
-    ["Net Daily Rate", { formula: "B8/B10" }],
+    ["Example Hire-Day-20 Deduction", { formula: "B5-((B5/B10)*(30-20+1))" }],
   ]);
 
   forCells(sheet, 3, 1, 12, 1, (cell) => {
@@ -793,9 +960,9 @@ function upsertWorkingDaysCalcSheet(workbook: ExcelJS.Workbook, month: number, y
 
   writeMatrix(sheet, 13, 1, [
     ["Scenario", "First Day", "Last Day", "Working Days", "Total"],
-    ["Full month", 1, { formula: "$B$10" }, { formula: "C14-B14+1" }, { formula: "$B$12*D14" }],
-    ["New employee", 15, { formula: "$B$10" }, { formula: "C15-B15+1" }, { formula: "$B$12*D15" }],
-    ["Resignation", 1, 20, { formula: "C16-B16+1" }, { formula: "$B$12*D16" }],
+    ["Full month", 1, { formula: "$B$10" }, { formula: "C14-B14+1" }, { formula: "$B$11*D14" }],
+    ["New employee", 15, { formula: "$B$10" }, { formula: "C15-B15+1" }, { formula: "$B$11*D15" }],
+    ["Resignation", 1, 20, { formula: "C16-B16+1" }, { formula: "$B$11*D16" }],
   ]);
   forCells(sheet, 13, 1, 13, 5, (cell) => {
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
@@ -882,7 +1049,7 @@ function upsertWorkingDaysCalcSheet(workbook: ExcelJS.Workbook, month: number, y
     ["Policy note", "", "", "", "", "", "", ""],
     ["Change Year/Month in B3:B4. Month days and weekday names recalculate automatically.", "", "", "", "", "", "", ""],
     ["Change First Day / Last Day in B14:C16. Working days and totals recalculate immediately.", "", "", "", "", "", "", ""],
-    ["Full month total equals net salary. Partial month total prorates base salary, CoL, and fuel across month days.", "", "", "", "", "", "", ""],
+    ["Ready payroll uses a fixed 30-day month. Partial-month hire deduction is calculated on Base Salary only and is written into Other Deductions.", "", "", "", "", "", "", ""],
   ]);
   sheet.mergeCells("A19:H19");
   sheet.mergeCells("A20:H20");
@@ -930,8 +1097,11 @@ function upsertSalaryPolicySheet(workbook: ExcelJS.Workbook) {
     ["Net Salary", "Base Salary + Extra Cost of Living + Fuel Allowance."],
     ["Basic Salary", "Base Salary x 70%."],
     ["Gross Salary", "Base Salary + Social Insurance + Employment Income Tax."],
-    ["First Part", "Two Parts: Basic Salary. One Part: Net Salary."],
-    ["Second Part", "Two Parts: Net Salary - First Part + Expenses + monthly additions - monthly deductions. One Part: Expenses + monthly additions - monthly deductions."],
+    ["Ready Sheet Formulas", "Ready payroll rows use Excel formulas for Gross Salary, Net Salary, Total Additions, Governmental Deductions, Other Deductions proration, Total Deductions, Month Salary, First Part, and Second Part."],
+    ["Partial Month Hires", "Payroll uses a fixed 30-day month. If Hire Date is inside the payroll month, Other Deductions auto-calculates Base Salary - ((Base Salary / 30) x eligible days). Hire day is included."],
+    ["First Part", "One Part: Month Salary. Two Parts: MIN(Base Salary x 70%, Base Salary - Other Deductions) so partial-month hires never receive more than their eligible base entitlement in First Part."],
+    ["Second Part", "One Part: 0. Two Parts: Month Salary - First Part."],
+    ["Ready Sheet Sorting", "Ready payroll rows are ordered with One Part employees first, then Two Parts employees. The # column is generated after this grouping. When both groups exist, the One Part block is locked above a separate sortable Two Parts range."],
     ["Upload Note", "The uploaded monthly sheet remains the payslip source of truth for month-specific additions, deductions, First Part, Second Part, and stored payroll totals."],
   ]);
 
@@ -943,10 +1113,10 @@ function upsertSalaryPolicySheet(workbook: ExcelJS.Workbook) {
       type: "pattern",
     };
   });
-  forCells(sheet, 4, 1, 13, 1, (cell) => {
+  forCells(sheet, 4, 1, 16, 1, (cell) => {
     cell.font = { bold: true, color: { argb: "FF374151" } };
   });
-  forCells(sheet, 3, 1, 13, 2, (cell) => {
+  forCells(sheet, 3, 1, 16, 2, (cell) => {
     cell.alignment = { vertical: "top", wrapText: true };
     cell.border = {
       bottom: { color: { argb: "FFE5E7EB" }, style: "thin" },
@@ -954,6 +1124,71 @@ function upsertSalaryPolicySheet(workbook: ExcelJS.Workbook) {
       right: { color: { argb: "FFE5E7EB" }, style: "thin" },
       top: { color: { argb: "FFE5E7EB" }, style: "thin" },
     };
+  });
+}
+
+function sortReadyPayrollRows(rows: PayrollTemplateRow[]) {
+  return rows.slice().sort((left, right) => {
+    const leftOnePart = left.paymentMode === "One Part";
+    const rightOnePart = right.paymentMode === "One Part";
+    if (leftOnePart !== rightOnePart) return leftOnePart ? -1 : 1;
+    return 0;
+  });
+}
+
+function onePartFixedBlockSize(rows: PayrollTemplateRow[]) {
+  let count = 0;
+  for (const row of rows) {
+    if (row.paymentMode !== "One Part") break;
+    count += 1;
+  }
+  return count;
+}
+
+function setRowProtection(
+  sheet: ExcelJS.Worksheet,
+  rowNumber: number,
+  locked: boolean,
+) {
+  const row = sheet.getRow(rowNumber);
+  for (let column = 1; column <= headers.length; column += 1) {
+    row.getCell(column).protection = { locked };
+  }
+}
+
+async function protectReadyPayrollSheet(
+  sheet: ExcelJS.Worksheet,
+  input: {
+    fixedBlockRows: number;
+    lastDataRow: number;
+    twoPartHeaderRow: number | null;
+    totalsRow: number | null;
+  },
+) {
+  if (input.fixedBlockRows <= 0) return;
+
+  for (let rowNumber = dataStartRow; rowNumber < dataStartRow + input.fixedBlockRows; rowNumber += 1) {
+    setRowProtection(sheet, rowNumber, true);
+  }
+
+  if (input.twoPartHeaderRow !== null) {
+    for (let rowNumber = input.twoPartHeaderRow; rowNumber <= input.lastDataRow; rowNumber += 1) {
+      setRowProtection(sheet, rowNumber, false);
+    }
+  }
+
+  if (input.totalsRow !== null) {
+    setRowProtection(sheet, input.totalsRow, true);
+  }
+
+  await sheet.protect("", {
+    autoFilter: true,
+    formatCells: true,
+    formatColumns: true,
+    formatRows: true,
+    selectLockedCells: true,
+    selectUnlockedCells: true,
+    sort: true,
   });
 }
 
@@ -968,7 +1203,7 @@ async function buildReadyRows(
     getApprovedExpenseTotalsForPayroll(month, year, accessContext),
   ]);
 
-  return directory.employees
+  const rows = directory.employees
     .filter((employee) => (employee.employmentStatus ?? "active") === "active")
     .map((employee) => {
       const expenses = money(
@@ -1018,7 +1253,12 @@ async function buildReadyRows(
       const fingerPrint = 0;
       const unpaidVacations = 0;
       const loans = 0;
-      const otherDeductions = 0;
+      const otherDeductions = calculateBaseProrationDeduction(
+        baseSalary,
+        employee.hireDate,
+        month,
+        year,
+      );
       const totalAdditions = money(
         expenses + incentive + overtime + bonus + extraCostOfLiving + fuelAllowance + otherAdditions,
       );
@@ -1032,6 +1272,21 @@ async function buildReadyRows(
       );
       const paymentMode = payrollPaymentModeLabel(parts.paymentMode);
       const netSalary = money(fixedSalary.netSalary);
+      const monthSalary = money(
+        netSalary +
+          expenses +
+          incentive +
+          overtime +
+          bonus +
+          otherAdditions -
+          totalDeductions,
+      );
+      const firstPart = parts.paymentMode === "one_part"
+        ? monthSalary
+        : money(Math.min(baseSalary * 0.7, Math.max(0, baseSalary - otherDeductions)));
+      const secondPart = parts.paymentMode === "one_part"
+        ? 0
+        : money(monthSalary - firstPart);
 
       return {
         arabicName: employee.nameAr,
@@ -1050,7 +1305,7 @@ async function buildReadyRows(
         expenses,
         extraCostOfLiving,
         fingerPrint,
-        firstPart: parts.firstPart,
+        firstPart,
         fuelAllowance,
         fullName: employee.fullName,
         governmentalDeductions,
@@ -1061,14 +1316,14 @@ async function buildReadyRows(
         line: employee.lineName,
         loans,
         medicalInsurance,
-        monthSalary: parts.totalPayable,
+        monthSalary,
         month,
         netSalary,
         otherAdditions,
         otherDeductions,
         overtime,
         paymentMode,
-        secondPart: parts.secondPart,
+        secondPart,
         socialInsurance,
         totalAdditions,
         totalDeductions,
@@ -1076,6 +1331,8 @@ async function buildReadyRows(
         year,
       };
     });
+
+  return sortReadyPayrollRows(rows);
 }
 
 async function buildStyledTemplate(
@@ -1173,7 +1430,7 @@ export async function GET(request: Request) {
   }
 
   const workbook = ready
-    ? await createFallbackWorkbook(await buildReadyRows(month, year, access), month, year)
+    ? await createFallbackWorkbook(await buildReadyRows(month, year, access), month, year, { formulas: true })
     : await buildStyledTemplate(month, year, ready, access);
   const buffer = await workbook.xlsx.writeBuffer();
   const filename = ready
