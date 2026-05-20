@@ -57,6 +57,7 @@ const nextConfig: NextConfig = {
     "192.168.1.45",
     "imagines-sixfold-corny.ngrok-free.dev",
     "*.ngrok-free.dev",
+    "*.trycloudflare.com",
   ],
   async headers() {
     return [

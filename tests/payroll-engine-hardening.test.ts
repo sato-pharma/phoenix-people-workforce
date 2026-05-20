@@ -549,8 +549,8 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     templateRouteSource,
-    /const headers = \[\.\.\.payrollSheetHeaders\]/,
-    "Payroll upload template must put Month and Year at the start of each row.",
+    /const headers = \[\.\.\.payrollSheetHeaders,\s*"Bank",\s*"Bank Account"\]/,
+    "Payroll upload template must keep canonical payroll headers first, then append bank reference columns.",
   );
   assert.match(
     salarySheetFieldsSource,

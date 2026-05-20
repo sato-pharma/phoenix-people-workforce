@@ -446,6 +446,46 @@ function normalizeCrmIdKey(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function normalizeSeatPart(value: string | null | undefined) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function employeeOrgSeatKey(record: Pick<
+  EmployeeImportRecord,
+  "areaName" | "codes" | "jobTitle" | "lineName" | "normalizedOrganizationNames" | "positionTitle" | "regionName"
+>) {
+  const line = record.codes.lineCode ?? record.normalizedOrganizationNames.line ?? normalizeSeatPart(record.lineName);
+  const area = record.codes.areaCode ?? record.normalizedOrganizationNames.area ?? normalizeSeatPart(record.areaName);
+  const position = record.codes.positionCode ?? record.normalizedOrganizationNames.position ?? normalizeSeatPart(record.positionTitle);
+  const title = normalizeSeatPart(record.jobTitle ?? record.positionTitle);
+  const region = normalizeSeatPart(record.regionName);
+
+  if (!line || !area || !position || !title) {
+    return null;
+  }
+
+  return [
+    `title:${title}`,
+    `position:${position}`,
+    `area:${area}`,
+    `region:${region}`,
+    `line:${line}`,
+  ].join("|");
+}
+
+function employeeOrgSeatLabel(record: Pick<
+  EmployeeImportRecord,
+  "areaName" | "jobTitle" | "lineName" | "positionTitle" | "regionName"
+>) {
+  return [
+    `Title: ${record.jobTitle ?? record.positionTitle ?? "-"}`,
+    `Position: ${record.positionTitle ?? record.jobTitle ?? "-"}`,
+    `Area: ${record.areaName ?? "-"}`,
+    `Region: ${record.regionName ?? "-"}`,
+    `Line: ${record.lineName ?? "-"}`,
+  ].join(", ");
+}
+
 function teamAreaKey(name: string, areaCode: string | null) {
   return `${normalizeDepartmentLookupKey(name)}::${areaCode ?? ""}`;
 }
@@ -825,6 +865,36 @@ export function validateEmployeeImportRows(
   const existingCrmIdToHrId = options.existingState?.crmIdToHrId ?? new Map<string, string>();
   const terminalEmployeeHrIds = options.existingState?.terminalEmployeeHrIds ?? new Set<string>();
   const protectedLifecycleHrIds = options.existingState?.protectedLifecycleHrIds ?? terminalEmployeeHrIds;
+  const uploadedSeatOwners = new Map<string, EmployeeImportRecord>();
+  const existingSeatOwners = new Map<string, string>();
+
+  for (const seat of options.existingState?.employeeOrgSeats ?? []) {
+    const seatKey = employeeOrgSeatKey({
+      areaName: null,
+      codes: {
+        areaCode: seat.areaCode,
+        departmentCode: null,
+        lineCode: seat.lineCode,
+        positionCode: seat.positionCode,
+        teamCode: null,
+      },
+      jobTitle: seat.jobTitle,
+      lineName: null,
+      normalizedOrganizationNames: {
+        area: null,
+        department: null,
+        line: null,
+        position: null,
+        team: null,
+      },
+      positionTitle: null,
+      regionName: seat.regionName,
+    });
+
+    if (seatKey) {
+      existingSeatOwners.set(seatKey, seat.hrId);
+    }
+  }
 
   for (const record of records) {
     if (record.hrId && duplicateHrIdSet.has(record.hrId)) {
@@ -863,6 +933,32 @@ export function validateEmployeeImportRows(
         code: "crm_id_already_assigned",
         message: `CRM ID ${record.crmId} is already assigned to HR_ID ${existingCrmOwner}.`,
       });
+    }
+
+    if (record.rowType === "employee") {
+      const seatKey = employeeOrgSeatKey(record);
+      const existingSeatOwner = seatKey ? existingSeatOwners.get(seatKey) : null;
+      const uploadedSeatOwner = seatKey ? uploadedSeatOwners.get(seatKey) : null;
+
+      if (seatKey && uploadedSeatOwner && uploadedSeatOwner.hrId !== record.hrId) {
+        validationErrors.push({
+          rowNumber: record.rowNumber,
+          field: "area",
+          code: "duplicate_employee_org_seat",
+          message: `Duplicate employee seat in upload. Row ${record.rowNumber} has the same title, position, area, region, and line as row ${uploadedSeatOwner.rowNumber} (${employeeOrgSeatLabel(record)}).`,
+        });
+      } else if (seatKey) {
+        uploadedSeatOwners.set(seatKey, record);
+      }
+
+      if (record.hrId && existingSeatOwner && existingSeatOwner !== record.hrId) {
+        validationErrors.push({
+          rowNumber: record.rowNumber,
+          field: "area",
+          code: "duplicate_employee_org_seat_existing",
+          message: `Duplicate employee seat already exists for HR_ID ${existingSeatOwner}. The uploaded row has the same title, position, area, region, and line (${employeeOrgSeatLabel(record)}).`,
+        });
+      }
     }
   }
 

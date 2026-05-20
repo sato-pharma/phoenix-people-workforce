@@ -22,6 +22,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { formatDateOnly } from "@/lib/date-only";
 import {
@@ -153,6 +154,41 @@ function normalizeNameKey(value: string | null | undefined) {
 
 function normalizeHrIdKey(value: string | null | undefined) {
   return value?.trim().toUpperCase() ?? "";
+}
+
+function normalizeSearchValue(value: string | null | undefined) {
+  return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
+}
+
+function organogramSearchText(row: OrganogramRow) {
+  return [
+    row.hrId,
+    row.fullName,
+    row.managerHrId,
+    row.managerName,
+    row.jobTitle,
+    row.positionTitle,
+    row.departmentName,
+    row.lineName,
+    row.areaName,
+    row.regionName,
+    row.teamName,
+  ]
+    .map((value) => normalizeSearchValue(value))
+    .filter(Boolean)
+    .join(" ");
+}
+
+function rowMatchesOrganogramSearch(row: OrganogramRow, query: string) {
+  if (!query) return true;
+  const compactQuery = query.replace(/[^a-z0-9]/g, "");
+  const compactHrId = normalizeSearchValue(row.hrId).replace(/[^a-z0-9]/g, "");
+  const compactManagerHrId = normalizeSearchValue(row.managerHrId).replace(/[^a-z0-9]/g, "");
+
+  return (
+    organogramSearchText(row).includes(query) ||
+    Boolean(compactQuery && (compactHrId.includes(compactQuery) || compactManagerHrId.includes(compactQuery)))
+  );
 }
 
 function rowKey(row: OrganogramRow) {
@@ -520,7 +556,15 @@ function ManagerLaneCard({
   groupKey: string;
   topConnector?: boolean;
 }) {
-  const groupVacancies = group.members.filter((member) => member.type === "vacancy").length;
+  const isVacantManagerSeat = group.dsm?.type === "vacancy";
+  const groupVacancies =
+    group.members.filter((member) => member.type === "vacancy").length +
+    (isVacantManagerSeat ? 1 : 0);
+  const managerSeatScope = isVacantManagerSeat
+    ? [group.dsm?.lineName, group.dsm?.areaName ?? group.dsm?.regionName]
+        .filter(Boolean)
+        .join(" / ")
+    : null;
 
   return (
     <div
@@ -543,10 +587,26 @@ function ManagerLaneCard({
             <p className="mt-1 break-words text-[9px] font-medium leading-3 opacity-80">
               {group.title}
             </p>
+            {managerSeatScope ? (
+              <p className="mt-1 break-words text-[9px] font-bold uppercase leading-3 tracking-[0.08em] text-orange-200">
+                {managerSeatScope}
+              </p>
+            ) : null}
           </div>
-          <div className="shrink-0 rounded-md bg-white/10 px-1.5 py-1 text-center text-[9px] font-bold uppercase tracking-[0.06em] ring-1 ring-white/20">
-            <p className="text-[10px] leading-none">{group.members.length}</p>
-            <p className="mt-0.5 opacity-70">rows</p>
+          <div
+            className={cn(
+              "shrink-0 rounded-md px-1.5 py-1 text-center text-[9px] font-bold uppercase tracking-[0.06em] ring-1",
+              isVacantManagerSeat
+                ? "bg-orange-500/20 text-orange-100 ring-orange-200/40"
+                : "bg-white/10 ring-white/20",
+            )}
+          >
+            <p className="text-[10px] leading-none">
+              {isVacantManagerSeat ? "Vacant" : group.members.length}
+            </p>
+            <p className="mt-0.5 opacity-70">
+              {isVacantManagerSeat ? "seat" : "rows"}
+            </p>
           </div>
         </div>
       </div>
@@ -659,9 +719,7 @@ function OrganogramView({
   });
   const dsmLaneKey = (lane: ManagerLane) =>
     lane.dsm ? managerIdentityKey(lane.dsm) : `${lane.name}:${lane.title}`;
-  const visibleDsmGroups = dsmGroups.filter(
-    (lane) => lane.members.length > 0 || lane.dsm?.type !== "vacancy",
-  );
+  const visibleDsmGroups = dsmGroups;
   const childDsmLaneKeys = new Set<string>();
   const rsmGroups: TopManagerLane[] = rsmRows.map((rsm) => {
     const childLanes = visibleDsmGroups.filter((lane) => {
@@ -984,7 +1042,22 @@ export function OrganogramReport({
   const [error, setError] = React.useState<string | null>(initialError);
   const [isLoading, setIsLoading] = React.useState(false);
   const [lineFilter, setLineFilter] = React.useState("");
+  const [organogramSearch, setOrganogramSearch] = React.useState("");
   const effectiveLineFilter = fixedLine ?? lineFilter;
+  const normalizedOrganogramSearch = normalizeSearchValue(organogramSearch);
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedLine = params.get("line")?.trim();
+    const requestedSearch = params.get("search")?.trim();
+
+    if (!fixedLine && requestedLine) {
+      setLineFilter(requestedLine);
+    }
+    if (requestedSearch) {
+      setOrganogramSearch(requestedSearch);
+    }
+  }, [fixedLine]);
 
   const loadReport = React.useCallback(async () => {
     setIsLoading(true);
@@ -1107,7 +1180,7 @@ export function OrganogramReport({
       }
     }
 
-    return rows.filter((row) => {
+    const lineScopedRows = rows.filter((row) => {
       const keepLeadershipChain =
         Boolean(effectiveLineFilter) &&
         (isChiefExecutive(row) ||
@@ -1126,12 +1199,59 @@ export function OrganogramReport({
 
       return matchesSelectedLine;
     });
-  }, [effectiveLineFilter, rows]);
-  const hasActiveFilters = Boolean(effectiveLineFilter) && !fixedLine;
-  const canShowChart = Boolean(effectiveLineFilter);
+
+    if (!normalizedOrganogramSearch) {
+      return lineScopedRows;
+    }
+
+    const scopedKeys = new Set(lineScopedRows.map(rowKey));
+    const matchedRows = lineScopedRows.filter((row) =>
+      rowMatchesOrganogramSearch(row, normalizedOrganogramSearch),
+    );
+    const keepHrIds = new Set<string>();
+    const keepKeys = new Set<string>();
+
+    for (const match of matchedRows) {
+      keepKeys.add(rowKey(match));
+      keepHrIds.add(normalizeHrIdKey(match.hrId));
+
+      let managerHrId = normalizeHrIdKey(match.managerHrId);
+      const visited = new Set<string>();
+
+      while (managerHrId && !visited.has(managerHrId)) {
+        visited.add(managerHrId);
+        keepHrIds.add(managerHrId);
+        const managerRow = rows.find((row) => normalizeHrIdKey(row.hrId) === managerHrId);
+        managerHrId = normalizeHrIdKey(managerRow?.managerHrId);
+      }
+    }
+
+    for (const row of lineScopedRows) {
+      let managerHrId = normalizeHrIdKey(row.managerHrId);
+      const visited = new Set<string>();
+
+      while (managerHrId && !visited.has(managerHrId)) {
+        if (keepHrIds.has(managerHrId)) {
+          keepKeys.add(rowKey(row));
+          break;
+        }
+
+        visited.add(managerHrId);
+        managerHrId = normalizeHrIdKey(rows.find((candidate) => normalizeHrIdKey(candidate.hrId) === managerHrId)?.managerHrId);
+      }
+    }
+
+    return rows.filter((row) =>
+      scopedKeys.has(rowKey(row)) &&
+      (keepKeys.has(rowKey(row)) || keepHrIds.has(normalizeHrIdKey(row.hrId))),
+    );
+  }, [effectiveLineFilter, normalizedOrganogramSearch, rows]);
+  const hasActiveFilters = (Boolean(effectiveLineFilter) && !fixedLine) || Boolean(normalizedOrganogramSearch);
+  const canShowChart = Boolean(effectiveLineFilter || normalizedOrganogramSearch);
 
   function clearFilters() {
     setLineFilter("");
+    setOrganogramSearch("");
   }
 
   return (
@@ -1203,17 +1323,32 @@ export function OrganogramReport({
             title="Hierarchy Scope"
           >
             <div className="grid gap-3 p-4 md:grid-cols-[minmax(240px,360px)_1fr]">
-              {!fixedLine ? (
-                <SelectFilter
-                  label="Line"
-                  onChange={setLineFilter}
-                  options={filterOptions.lines}
-                  value={lineFilter}
-                />
-              ) : null}
+              <div className="grid gap-3 sm:grid-cols-2">
+                {!fixedLine ? (
+                  <SelectFilter
+                    label="Line"
+                    onChange={setLineFilter}
+                    options={filterOptions.lines}
+                    value={lineFilter}
+                  />
+                ) : null}
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium text-text-secondary">
+                    Search
+                  </span>
+                  <Input
+                    className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+                    onChange={(event) => setOrganogramSearch(event.target.value)}
+                    placeholder="HR ID, employee, manager"
+                    value={organogramSearch}
+                  />
+                </label>
+              </div>
               <div className="flex items-end">
                 <div className="rounded-2xl border border-[#E2E8F0] bg-white/80 px-4 py-3 text-sm text-text-secondary shadow-[0_12px_36px_rgba(15,23,42,0.06)]">
-                  {effectiveLineFilter
+                  {normalizedOrganogramSearch
+                    ? `Showing ${filteredRows.length} matching rows.`
+                    : effectiveLineFilter
                     ? `Showing ${filteredRows.length} rows inside ${effectiveLineFilter}.`
                     : "Pick a line to render the hierarchy in one focused view."}
                 </div>
@@ -1223,7 +1358,7 @@ export function OrganogramReport({
 
           <OrganogramView
             rows={canShowChart ? filteredRows : []}
-            selectedLine={effectiveLineFilter || null}
+            selectedLine={effectiveLineFilter || (normalizedOrganogramSearch ? "Search results" : null)}
           />
         </>
       ) : null}

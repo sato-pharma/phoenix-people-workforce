@@ -36,9 +36,11 @@ type SyncResult = {
   failed?: number;
   filteredBeforeStart?: number;
   inserted?: number;
+  message?: string;
   runId?: string;
   sent?: number;
   skipped?: number;
+  syncInProgress?: boolean;
   totalRead?: number;
 };
 
@@ -263,7 +265,11 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
       }
 
       setSyncResult(payload);
-      setNotice(`Sync complete: ${payload.inserted ?? 0} inserted, ${payload.duplicate ?? 0} duplicates, ${payload.skipped ?? 0} skipped.`);
+      if (payload.syncInProgress) {
+        setNotice(payload.message ?? "Attendance sync is already running.");
+      } else {
+        setNotice(`Sync complete: ${payload.inserted ?? 0} inserted, ${payload.duplicate ?? 0} duplicates, ${payload.skipped ?? 0} skipped.`);
+      }
       await load();
       await loadAgentHealth();
     } catch (syncError) {
@@ -394,10 +400,16 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
       ) : null}
       {!canUpdate ? <AdminCallout tone="warning">You can review mappings, but this account cannot update employee mappings.</AdminCallout> : null}
       {syncResult ? (
-        <AdminCallout tone={(syncResult.failed ?? 0) > 0 ? "warning" : "success"}>
-          Sync summary: {syncResult.totalRead ?? 0} read, {syncResult.filteredBeforeStart ?? 0} before 2026-01-01 filtered,
-          {" "}{syncResult.sent ?? 0} sent, {syncResult.inserted ?? 0} inserted, {syncResult.duplicate ?? 0} duplicates,
-          {" "}{syncResult.skipped ?? 0} skipped, {syncResult.failed ?? 0} failed.
+        <AdminCallout tone={(syncResult.failed ?? 0) > 0 || syncResult.syncInProgress ? "warning" : "success"}>
+          {syncResult.syncInProgress ? (
+            syncResult.message ?? "Attendance sync is already running."
+          ) : (
+            <>
+              Sync summary: {syncResult.totalRead ?? 0} read, {syncResult.filteredBeforeStart ?? 0} before 2026-01-01 filtered,
+              {" "}{syncResult.sent ?? 0} sent, {syncResult.inserted ?? 0} inserted, {syncResult.duplicate ?? 0} duplicates,
+              {" "}{syncResult.skipped ?? 0} skipped, {syncResult.failed ?? 0} failed.
+            </>
+          )}
         </AdminCallout>
       ) : null}
       {uploadResult ? (

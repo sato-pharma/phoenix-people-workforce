@@ -106,6 +106,26 @@ export function runOrganogramHardeningTests() {
   ]);
   assert.deepEqual(exactFilledSlot.map((item) => item.type), ["employee"]);
 
+  const filledDsmSlotStillShowsManagerVacancy = applyOrganogramMirrorSafety([
+    row({
+      hrId: "DSM-FILLED",
+      jobTitle: "District Sales Manager",
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+    }),
+    vacancy({
+      hrId: "vacancy_dsm_filled",
+      jobTitle: "District Sales Manager",
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+      vacancyCode: "vacancy_dsm_filled",
+    }),
+  ]);
+  assert.deepEqual(
+    filledDsmSlotStillShowsManagerVacancy.map((item) => item.type),
+    ["employee", "vacancy"],
+  );
+
   const missingMetadata = applyOrganogramMirrorSafety([
     row({ hrId: "MR-2" }),
     vacancy({ areaId: null, areaName: null, vacancyCode: "vacancy_8" }),
@@ -200,8 +220,13 @@ export function runOrganogramHardeningTests() {
   );
   assert.match(
     componentSource,
-    /const visibleDsmGroups = dsmGroups\.filter\([\s\S]*lane\.members\.length > 0 \|\| lane\.dsm\?\.type !== "vacancy"/,
-    "Organogram must not render empty vacant DSM lanes after their vacancies are still counted in structure totals.",
+    /const visibleDsmGroups = dsmGroups;/,
+    "Organogram must render vacant DSM seats as visible manager lanes even when their reports are inferred later or temporarily missing.",
+  );
+  assert.match(
+    componentSource,
+    /isVacantManagerSeat \? "Vacant" : group\.members\.length/,
+    "Vacant manager seats must be visually labeled as vacant boxes, not only counted in totals.",
   );
   assert.match(
     componentSource,

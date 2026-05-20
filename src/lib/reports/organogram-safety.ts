@@ -197,6 +197,8 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
 
   for (const row of rows) {
     if (row.type !== "employee") continue;
+    if (classifyOrganogramStructureLevel(row) !== "medicalRep") continue;
+
     const slotKey = organogramPositionSlotKey(row);
     if (slotKey) filledSlots.add(slotKey);
   }
@@ -209,7 +211,7 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
 
     const slotKey = organogramPositionSlotKey(row);
     if (!slotKey) return true;
-    if (filledSlots.has(slotKey)) return false;
+    if (classifyOrganogramStructureLevel(row) === "medicalRep" && filledSlots.has(slotKey)) return false;
     if (seenOpenVacancySlots.has(slotKey)) return false;
 
     seenOpenVacancySlots.add(slotKey);

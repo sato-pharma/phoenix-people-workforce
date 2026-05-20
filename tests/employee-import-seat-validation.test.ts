@@ -1,0 +1,68 @@
+import { strict as assert } from "node:assert";
+
+import { validateEmployeeImportRows } from "../src/lib/imports/employee-validator.ts";
+import { createOrgCode } from "../src/lib/imports/org-rule-engine.ts";
+
+function employeeRow(overrides: Record<string, unknown> = {}) {
+  return {
+    Area: "Cairo",
+    "Full Name": "Test Employee",
+    HR_ID: "T-001",
+    "Job Title": "Medical Representative",
+    Line: "Pedia",
+    Position: "Medical Representative",
+    Region: "Cairo",
+    ...overrides,
+  };
+}
+
+export function runEmployeeImportSeatValidationTests() {
+  const duplicateUpload = validateEmployeeImportRows([
+    employeeRow({ HR_ID: "T-001", "Full Name": "First Rep" }),
+    employeeRow({ HR_ID: "T-002", "Full Name": "Second Rep" }),
+  ]);
+
+  assert.equal(duplicateUpload.failedRows, 1);
+  assert.equal(
+    duplicateUpload.validationErrors.some((issue) => issue.code === "duplicate_employee_org_seat"),
+    true,
+  );
+  assert.match(
+    duplicateUpload.validationErrors.find((issue) => issue.code === "duplicate_employee_org_seat")?.message ?? "",
+    /same title, position, area, region, and line/i,
+  );
+
+  const duplicateExisting = validateEmployeeImportRows(
+    [employeeRow({ HR_ID: "T-003", "Full Name": "Third Rep" })],
+    {
+      existingState: {
+        employeeOrgSeats: [
+          {
+            areaCode: createOrgCode("Cairo"),
+            hrId: "T-000",
+            jobTitle: "Medical Representative",
+            lineCode: createOrgCode("Pedia"),
+            positionCode: createOrgCode("Medical Representative"),
+            regionName: "Cairo",
+          },
+        ],
+      },
+    },
+  );
+
+  assert.equal(duplicateExisting.failedRows, 1);
+  assert.equal(
+    duplicateExisting.validationErrors.some((issue) => issue.code === "duplicate_employee_org_seat_existing"),
+    true,
+  );
+
+  const differentRegion = validateEmployeeImportRows([
+    employeeRow({ HR_ID: "T-004", Region: "Cairo" }),
+    employeeRow({ HR_ID: "T-005", Region: "Giza" }),
+  ]);
+
+  assert.equal(
+    differentRegion.validationErrors.some((issue) => issue.code.startsWith("duplicate_employee_org_seat")),
+    false,
+  );
+}

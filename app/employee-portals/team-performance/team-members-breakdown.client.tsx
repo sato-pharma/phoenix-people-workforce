@@ -55,7 +55,7 @@ function compactEgp(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
-function shortName(fullName: string) {
+function displayName(fullName: string) {
   return formatEmployeeDisplayName(fullName);
 }
 
@@ -128,7 +128,7 @@ export function TeamAchievementChart({
 }) {
   const [activeDatum, setActiveDatum] = useState<AchievementChartDatum | null>(null);
   const chartData = members.map((m) => ({
-    name: shortName(m.name),
+    name: displayName(m.name),
     achievementPercent: Math.round(m.achievementPercent * 10) / 10,
     totalSales: m.totalSales,
     totalTarget: m.totalTarget,
@@ -235,7 +235,7 @@ function SalesVsTargetTooltip({
 export function TeamSalesVsTargetChart({ members }: { members: DsmTeamMemberData[] }) {
   const [activeDatum, setActiveDatum] = useState<SalesVsTargetChartDatum | null>(null);
   const chartData = members.map((m) => ({
-    name: shortName(m.name),
+    name: displayName(m.name),
     Sales: Math.round(m.totalSales),
     Target: Math.round(m.totalTarget),
   }));
@@ -352,7 +352,7 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
 
           {/* Name + status */}
           <div className="min-w-0 sm:flex-1">
-            <p className="font-semibold text-slate-900 text-sm truncate">{formatEmployeeDisplayName(member.name)}</p>
+            <p className="break-words text-sm font-semibold leading-tight text-slate-900">{formatEmployeeDisplayName(member.name)}</p>
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               <span
                 className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
@@ -443,7 +443,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
                 {member.position}
               </span>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900">{formatEmployeeDisplayName(member.name)}</p>
+                <p className="break-words text-sm font-semibold leading-tight text-slate-900">{formatEmployeeDisplayName(member.name)}</p>
                 <p className="mt-0.5 text-[10px] text-slate-400">{member.products.length} products</p>
               </div>
               <div className="min-w-0 text-right">
@@ -484,7 +484,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
                   </span>
                 </td>
                 <td className="min-w-0 py-2.5 px-3">
-                  <p className="max-w-[120px] truncate font-medium text-slate-900 min-[420px]:max-w-[150px] sm:max-w-none">{formatEmployeeDisplayName(member.name)}</p>
+                  <p className="max-w-[220px] break-words font-medium leading-tight text-slate-900 sm:max-w-none">{formatEmployeeDisplayName(member.name)}</p>
                   <p className="text-[10px] text-slate-400">{member.products.length} products</p>
                 </td>
                 <td className="py-2.5 px-3 text-right">

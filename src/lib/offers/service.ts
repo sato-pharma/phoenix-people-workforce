@@ -202,6 +202,10 @@ function compact(value: string | null | undefined) {
   return text ? text : null;
 }
 
+function normalizeManagerName(value: string | null | undefined) {
+  return compact(value)?.toLowerCase().replace(/\s+/g, " ") ?? null;
+}
+
 function numberOrNull(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
@@ -320,6 +324,22 @@ function textInFilter(values: string[]) {
 
 function idInFilter(values: number[]) {
   return `in.(${values.join(",")})`;
+}
+
+async function loadEmployeeFullName(hrId: string | null) {
+  if (!hrId) {
+    return null;
+  }
+
+  const params = new URLSearchParams({
+    hr_id: `eq.${hrId}`,
+    select: "full_name",
+  });
+  const rows = await supabaseRest<Array<{ full_name: string | null }>>(
+    `employees?${params}`,
+  );
+
+  return compact(rows[0]?.full_name);
 }
 
 async function loadAllOptions(table: string, label = "name") {
@@ -441,6 +461,7 @@ export async function closeVacancyForOffer(input: {
   area_id?: number | null;
   filled_by_hr_id?: string | null;
   line_id?: number | null;
+  manager_name?: string | null;
   manager_hr_id?: string | null;
   position_id?: number | null;
 }) {
@@ -448,34 +469,70 @@ export async function closeVacancyForOffer(input: {
   if (
     input.area_id === null || input.area_id === undefined ||
     input.line_id === null || input.line_id === undefined ||
-    input.position_id === null || input.position_id === undefined ||
-    !compactManagerHrId
+    input.position_id === null || input.position_id === undefined
   ) {
     return null;
   }
 
-  const matchParams = (select: string) =>
+  type VacancyCloseMatch = {
+    id: number;
+    manager_hr_id?: string | null;
+    manager_name?: string | null;
+    replacement_for_hr_id?: string | null;
+  };
+
+  const baseMatchParams = (select: string) =>
     new URLSearchParams({
       area_id: `eq.${input.area_id}`,
       line_id: `eq.${input.line_id}`,
-      manager_hr_id: `eq.${compactManagerHrId}`,
       order: "created_at.asc",
       position_id: `eq.${input.position_id}`,
       select,
       status: "eq.open",
     });
 
-  let matches: Array<{ id: number; replacement_for_hr_id?: string | null }>;
-  try {
-    matches = await supabaseRest(
-      `position_vacancies?${matchParams("id,replacement_for_hr_id")}`,
-    );
-  } catch (error) {
-    const message = offerErrorMessage(error).toLowerCase();
-    if (!message.includes("replacement_for_hr_id") && !message.includes("schema cache")) {
-      throw error;
+  const findMatches = async (params: URLSearchParams) => {
+    try {
+      return await supabaseRest<VacancyCloseMatch[]>(
+        `position_vacancies?${params}`,
+      );
+    } catch (error) {
+      const message = offerErrorMessage(error).toLowerCase();
+      if (!message.includes("replacement_for_hr_id") && !message.includes("schema cache")) {
+        throw error;
+      }
+      params.set("select", params.get("select")?.replace(",replacement_for_hr_id", "") ?? "id");
+      return supabaseRest<VacancyCloseMatch[]>(`position_vacancies?${params}`);
     }
-    matches = await supabaseRest(`position_vacancies?${matchParams("id")}`);
+  };
+
+  let matches: VacancyCloseMatch[] = [];
+  if (compactManagerHrId) {
+    const params = baseMatchParams("id,replacement_for_hr_id");
+    params.set("manager_hr_id", `eq.${compactManagerHrId}`);
+    matches = await findMatches(params);
+  }
+
+  const resolvedManagerName =
+    normalizeManagerName(input.manager_name) ??
+    normalizeManagerName(await loadEmployeeFullName(compactManagerHrId));
+
+  if (matches.length === 0 && resolvedManagerName) {
+    const params = baseMatchParams("id,replacement_for_hr_id,manager_hr_id,manager_name");
+    params.set("manager_hr_id", "is.null");
+    const managerNameMatches = await findMatches(params);
+    matches = managerNameMatches.filter(
+      (vacancy) => normalizeManagerName(vacancy.manager_name) === resolvedManagerName,
+    );
+  }
+
+  if (matches.length === 0 && compactManagerHrId === null) {
+    const params = baseMatchParams("id,replacement_for_hr_id,manager_hr_id,manager_name");
+    params.set("manager_hr_id", "is.null");
+    const unmatchedSeatVacancies = await findMatches(params);
+    if (unmatchedSeatVacancies.length === 1 && !compact(unmatchedSeatVacancies[0]?.manager_name)) {
+      matches = unmatchedSeatVacancies;
+    }
   }
 
   const vacancy = matches[0];

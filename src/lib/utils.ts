@@ -8,9 +8,8 @@ export function cn(...inputs: ClassValue[]) {
 export function formatEmployeeDisplayName(
   value: string | null | undefined,
   fallback = "Employee",
-  maxParts = 2,
+  _maxParts = 2,
 ) {
-  const parts = String(value ?? "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return fallback;
-  return parts.slice(0, Math.max(1, maxParts)).join(" ");
+  const fullName = String(value ?? "").trim().replace(/\s+/g, " ");
+  return fullName || fallback;
 }
