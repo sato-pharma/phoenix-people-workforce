@@ -41,6 +41,7 @@ export type EmployeeDirectoryRow = {
   hireDate: string | null;
   hrId: string;
   jobTitle: string | null;
+  lastWorkingDate: string | null;
   lineId: number | null;
   lineName: string | null;
   managerHrId: string | null;
@@ -64,6 +65,7 @@ export type EmployeeDirectoryRow = {
   residenceLatitude: number | null;
   residenceLongitude: number | null;
   regionName: string | null;
+  resignationDate: string | null;
   socialInsurance: number | null;
   socialInsuranceStatus: string | null;
   socialInsuranceNumber: string | null;
@@ -185,6 +187,7 @@ type EmployeeDbRow = {
   hire_date: string | null;
   hr_id: string;
   job_title: string | null;
+  last_working_date?: string | null;
   line_id: number | null;
   manager_hr_id: string | null;
   mobile_number: string | null;
@@ -199,6 +202,7 @@ type EmployeeDbRow = {
   payment_mode?: string | null;
   position_id: number | null;
   region_name?: string | null;
+  resignation_date?: string | null;
   residence_address?: string | null;
   residence_area?: string | null;
   residence_city?: string | null;
@@ -275,12 +279,27 @@ function normalizeHrId(value: string | null | undefined) {
   return compact(value)?.toUpperCase() ?? null;
 }
 
+function normalizeIdentityText(value: string | null | undefined) {
+  return compact(value)?.toLowerCase() ?? "";
+}
+
 function normalizeLifecycleStatus(value: string | null | undefined) {
   return compact(value)?.toLowerCase() ?? "active";
 }
 
 function isActiveLifecycleStatus(value: string | null | undefined) {
   return activeLifecycleStatuses.has(normalizeLifecycleStatus(value));
+}
+
+function isSystemAdminDirectoryEmployee(employee: EmployeeDirectoryRow) {
+  const hrId = normalizeHrId(employee.hrId);
+
+  return (
+    hrId === "ADMIN-HR" ||
+    hrId === "RLS-ADMIN-HR" ||
+    (normalizeIdentityText(employee.fullName) === "phoenix system administrator" &&
+      normalizeIdentityText(employee.jobTitle) === "system administrator")
+  );
 }
 
 function normalizeYesNo(value: string | null | undefined) {
@@ -300,6 +319,7 @@ function isActiveDirectoryEmployee(employee: EmployeeDirectoryRow) {
     isActiveLifecycleStatus(employee.employmentStatus) &&
     employee.payrollEligible !== false &&
     employee.organogramVisible !== false &&
+    !isSystemAdminDirectoryEmployee(employee) &&
     isClassifiedActiveEmployee(employee)
   );
 }
@@ -668,7 +688,7 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
 async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const baseEmployeeSelect =
-    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
 
   // Try to join compensation and other lookups in a single query to reduce N+1 and massive IN filters
   const joinedSelect = `${baseEmployeeSelect},region_name,birth_date,
@@ -762,6 +782,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       const positionTitle = row.position_id ? positionTitles.get(row.position_id) ?? null : null;
       const standardAllowances = resolveStandardSalaryAllowances({
         departmentName,
+        employeeHrId: row.hr_id,
         jobTitle: row.job_title,
         lineName,
         positionTitle,
@@ -793,6 +814,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         hireDate: row.hire_date,
         hrId: row.hr_id,
         jobTitle: row.job_title,
+        lastWorkingDate: row.last_working_date ?? null,
         lineId: row.line_id,
         lineName,
         managerHrId: row.manager_hr_id,
@@ -816,6 +838,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         residenceLatitude: residence?.residence_latitude ?? null,
         residenceLongitude: residence?.residence_longitude ?? null,
         regionName: row.region_name ?? null,
+        resignationDate: row.resignation_date ?? null,
         socialInsurance: row.social_insurance ?? compensation?.social_insurance ?? null,
         socialInsuranceStatus: row.social_insurance_status ?? null,
         socialInsuranceNumber: row.social_insurance_number ?? null,
@@ -913,6 +936,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       const positionTitle = row.position_id ? positionTitles.get(row.position_id) ?? null : null;
       const standardAllowances = resolveStandardSalaryAllowances({
         departmentName,
+        employeeHrId: row.hr_id,
         jobTitle: row.job_title,
         lineName,
         positionTitle,
@@ -944,6 +968,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         hireDate: row.hire_date,
         hrId: row.hr_id,
         jobTitle: row.job_title,
+        lastWorkingDate: row.last_working_date ?? null,
         lineId: row.line_id,
         lineName,
         managerHrId: row.manager_hr_id,
@@ -967,6 +992,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         residenceLatitude: residence?.residence_latitude ?? null,
         residenceLongitude: residence?.residence_longitude ?? null,
         regionName: row.region_name ?? null,
+        resignationDate: row.resignation_date ?? null,
         socialInsurance: row.social_insurance ?? comp?.social_insurance ?? null,
         socialInsuranceStatus: row.social_insurance_status ?? null,
         socialInsuranceNumber: row.social_insurance_number ?? null,
@@ -1023,6 +1049,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       : null;
     const standardAllowances = resolveStandardSalaryAllowances({
       departmentName,
+      employeeHrId: row.hr_id,
       jobTitle: row.job_title,
       lineName,
       positionTitle,
@@ -1054,6 +1081,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       hireDate: row.hire_date,
       hrId: row.hr_id,
       jobTitle: row.job_title,
+      lastWorkingDate: row.last_working_date ?? null,
       lineId: row.line_id,
       lineName,
       managerHrId: row.manager_hr_id,
@@ -1079,6 +1107,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       residenceLatitude: residence?.residence_latitude ?? null,
       residenceLongitude: residence?.residence_longitude ?? null,
       regionName: row.region_name ?? null,
+      resignationDate: row.resignation_date ?? null,
       socialInsurance: row.social_insurance ?? compensation?.social_insurance ?? null,
       socialInsuranceStatus: row.social_insurance_status ?? null,
       socialInsuranceNumber: row.social_insurance_number ?? null,
@@ -1122,9 +1151,11 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   };
 }
 
-export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]> {
+export async function getEmployeeDirectoryRows(
+  options: { includeInactive?: boolean } = {},
+): Promise<EmployeeDirectoryRow[]> {
   const baseEmployeeSelect =
-    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
   const employeeParams = new URLSearchParams({
     select: `${baseEmployeeSelect},region_name,birth_date`,
     order: "full_name.asc",
@@ -1192,6 +1223,7 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       hireDate: row.hire_date,
       hrId: row.hr_id,
       jobTitle: row.job_title,
+      lastWorkingDate: row.last_working_date ?? null,
       lineId: row.line_id,
       lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
       managerHrId: row.manager_hr_id,
@@ -1219,6 +1251,7 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       residenceLatitude: residence?.residence_latitude ?? null,
       residenceLongitude: residence?.residence_longitude ?? null,
       regionName: row.region_name ?? null,
+      resignationDate: row.resignation_date ?? null,
       socialInsurance: row.social_insurance ?? null,
       socialInsuranceStatus: row.social_insurance_status ?? null,
       socialInsuranceNumber: row.social_insurance_number ?? null,
@@ -1228,7 +1261,7 @@ export async function getEmployeeDirectoryRows(): Promise<EmployeeDirectoryRow[]
       updatedAt: row.updated_at,
       workEmail: row.work_email,
     };
-  }).filter(isActiveDirectoryEmployee);
+  }).filter((employee) => options.includeInactive || isActiveDirectoryEmployee(employee));
 }
 
 async function ensureManagerIsValid(managerHrId: string | null, employeeHrId: string) {
@@ -1284,6 +1317,7 @@ function resolveEmployeeCompensationInput(input: EmployeeMutationInput) {
   const explicitExtraCostOfLiving = numberOrNull(input.extraCostOfLiving);
   const explicitFuelAllowance = numberOrNull(input.fuelAllowance);
   const standardAllowances = resolveStandardSalaryAllowances({
+    employeeHrId: input.hrId,
     jobTitle: input.jobTitle,
   });
   const extraCostOfLiving = explicitExtraCostOfLiving ?? standardAllowances.extraCostOfLiving;

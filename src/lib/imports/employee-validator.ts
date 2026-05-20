@@ -783,6 +783,7 @@ export function validateEmployeeImportRows(
     if (record.rowType === "employee") {
       const standardAllowances = resolveStandardSalaryAllowances({
         departmentName: record.departmentName,
+        employeeHrId: record.hrId,
         jobTitle: record.jobTitle,
         lineName: record.lineName,
         positionTitle: record.positionTitle,

@@ -13,6 +13,7 @@ import type {
   ResignationRecord,
   ResignationStatus,
   ResignationWorkflowAction,
+  UpdateResignationDatesInput,
 } from "./types";
 
 type SupabaseClient = ReturnType<typeof getSupabaseAdmin>;
@@ -1088,6 +1089,211 @@ export async function resignEmployeeAndOpenVacancy(
     usedFallback: result.used_fallback ?? false,
     vacancyCode: result.vacancy_code ?? vacancyCode,
   };
+}
+
+function normalizeResignationDateUpdate(
+  input: UpdateResignationDatesInput,
+  current: Pick<ResignationRecord, "effectiveDate" | "submittedDate">,
+) {
+  const submittedDate =
+    normalizeDate(input.submittedDate || input.submitted_date || input.resignationDate || current.submittedDate);
+  const effectiveDate =
+    normalizeDate(
+      input.effectiveDate ||
+        input.effective_date ||
+        input.lastWorkingDate ||
+        input.last_working_date ||
+        current.effectiveDate,
+    ) || submittedDate;
+
+  if (!submittedDate) throw new Error("Resignation date is required.");
+  if (!effectiveDate) throw new Error("Effective resignation date is required.");
+  if (effectiveDate < submittedDate) {
+    throw new Error("Effective resignation date cannot be before the submitted date.");
+  }
+
+  return { effectiveDate, submittedDate };
+}
+
+async function updateEmployeeResignationDatesFallback(
+  supabase: SupabaseClient,
+  employeeHrId: string,
+  dates: { effectiveDate: string; submittedDate: string },
+) {
+  const optionalColumns = ["last_working_date", "resignation_date"];
+  const payload: Record<string, unknown> = {
+    last_working_date: dates.effectiveDate,
+    resignation_date: dates.submittedDate,
+    updated_at: new Date().toISOString(),
+  };
+
+  for (let attempt = 0; attempt <= optionalColumns.length; attempt++) {
+    const { error } = await supabase
+      .from("employees")
+      .update(payload)
+      .eq("hr_id", employeeHrId);
+
+    if (!error) return;
+
+    const missingColumn = optionalColumns.find((column) => isMissingColumn(error, column));
+    if (missingColumn) {
+      delete payload[missingColumn];
+      continue;
+    }
+
+    throw schemaReadinessError("updating employee resignation date columns", error);
+  }
+
+  throw new Error("Unable to update employee resignation date columns after removing unsupported optional columns.");
+}
+
+async function loadHistoricalResignedEmployeeByHrId(supabase: SupabaseClient, hrId: string) {
+  const joinedResult = await supabase
+    .from("employees")
+    .select(
+      "hr_id,full_name,job_title,employment_status,resignation_date,last_working_date,exit_reason,exit_status,created_at,updated_at,lines(name),positions(title)",
+    )
+    .ilike("hr_id", hrId)
+    .maybeSingle();
+
+  let data: unknown | null = joinedResult.data;
+  let error = joinedResult.error;
+
+  if (error && (error.message.toLowerCase().includes("relationship") || isMissingSchemaMessage(error))) {
+    const fallbackResult = await supabase
+      .from("employees")
+      .select("hr_id,full_name,job_title,employment_status,created_at,updated_at,resignation_date,last_working_date")
+      .ilike("hr_id", hrId)
+      .maybeSingle();
+
+    data = fallbackResult.data;
+    error = fallbackResult.error;
+  }
+
+  if (error) {
+    throw schemaReadinessError("loading legacy resignation employee by HR ID", error);
+  }
+
+  return data as HistoricalResignedEmployeeRow | null;
+}
+
+async function updateModernResignationDates(
+  supabase: SupabaseClient,
+  row: ResignationRow,
+  dates: { effectiveDate: string; submittedDate: string },
+  actor: string,
+) {
+  const current = mapResignation(row);
+  const note = `Submitted ${current.submittedDate} -> ${dates.submittedDate}; effective ${current.effectiveDate} -> ${dates.effectiveDate}`;
+  const optionalColumns = [
+    "effective_date",
+    "last_working_date",
+    "resignation_date",
+    "submitted_date",
+    "workflow_notes",
+  ];
+  const payload: Record<string, unknown> = {
+    effective_date: dates.effectiveDate,
+    last_working_date: dates.effectiveDate,
+    resignation_date: dates.submittedDate,
+    submitted_date: dates.submittedDate,
+    updated_at: new Date().toISOString(),
+    workflow_notes: appendWorkflowNote(row.workflow_notes, actor, "updated resignation dates", note),
+  };
+
+  for (let attempt = 0; attempt <= optionalColumns.length; attempt++) {
+    const { data, error } = await supabase
+      .from("employee_resignations")
+      .update(payload)
+      .eq("id", row.id)
+      .select("*")
+      .single();
+
+    if (!error) {
+      return data as ResignationRow;
+    }
+
+    const missingColumn = missingColumnFromError(error, optionalColumns);
+    if (missingColumn) {
+      delete payload[missingColumn];
+      continue;
+    }
+
+    throw schemaReadinessError("updating employee_resignations date columns", error);
+  }
+
+  throw new Error("Unable to update resignation dates after removing unsupported optional columns.");
+}
+
+async function auditResignationDateUpdate(
+  actor: string,
+  record: Pick<ResignationRecord, "effectiveDate" | "employeeHrId" | "id" | "submittedDate">,
+  dates: { effectiveDate: string; submittedDate: string },
+) {
+  await writeRequiredAuditLog({
+    actorLoginId: actor,
+    entityId: record.employeeHrId,
+    entityType: "employee_resignation",
+    newValues: {
+      effectiveDate: dates.effectiveDate,
+      resignationId: record.id,
+      submittedDate: dates.submittedDate,
+    },
+    oldValues: {
+      effectiveDate: record.effectiveDate,
+      resignationId: record.id,
+      submittedDate: record.submittedDate,
+    },
+    summary: "Resignation dates updated.",
+  });
+}
+
+export async function updateResignationDates(
+  id: string,
+  input: UpdateResignationDatesInput,
+  actor: string,
+) {
+  const resignationId = String(id ?? "").trim();
+  if (!resignationId) throw new Error("Resignation record ID is required.");
+
+  const supabase = getSupabaseAdmin();
+  if (resignationId.startsWith("legacy:")) {
+    const employeeHrId = resignationId.slice("legacy:".length).trim();
+    if (!employeeHrId) throw new Error("Legacy resignation HR ID is required.");
+
+    const employee = await loadHistoricalResignedEmployeeByHrId(supabase, employeeHrId);
+    if (!employee) return null;
+
+    const current = mapLegacyResignationEmployee(employee);
+    const dates = normalizeResignationDateUpdate(input, current);
+    await updateEmployeeResignationDatesFallback(supabase, employee.hr_id, dates);
+    await auditResignationDateUpdate(actor, current, dates);
+    invalidateEmployeeDirectoryCache();
+
+    const updatedEmployee = await loadHistoricalResignedEmployeeByHrId(supabase, employeeHrId);
+    return updatedEmployee ? mapLegacyResignationEmployee(updatedEmployee) : current;
+  }
+
+  const { data, error } = await supabase
+    .from("employee_resignations")
+    .select("*")
+    .eq("id", resignationId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const row = data as ResignationRow;
+  const current = mapResignation(row);
+  const dates = normalizeResignationDateUpdate(input, current);
+  const updatedRow = await updateModernResignationDates(supabase, row, dates, actor);
+  const updatedRecord = mapResignation(updatedRow);
+
+  await updateEmployeeResignationDatesFallback(supabase, updatedRecord.employeeHrId, dates);
+  await auditResignationDateUpdate(actor, current, dates);
+  invalidateEmployeeDirectoryCache();
+
+  return updatedRecord;
 }
 
 export async function runResignationWorkflow(

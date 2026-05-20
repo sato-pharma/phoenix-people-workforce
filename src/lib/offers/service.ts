@@ -1016,6 +1016,7 @@ export async function approveAcceptedOffer(
   const template = getOfferTemplate(offer.template_key);
   const monthlyPackage = Number(offer.salary_amount ?? template?.monthlyPackage ?? 0);
   const standardAllowances = resolveStandardSalaryAllowances({
+    employeeHrId: manualHrId ?? offer.employee_hr_id,
     jobTitle: offer.job_title,
   });
   const extraCostOfLiving = standardAllowances.extraCostOfLiving;

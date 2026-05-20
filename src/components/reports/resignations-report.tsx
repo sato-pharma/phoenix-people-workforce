@@ -2,10 +2,13 @@
 
 import {
   AlertTriangle,
+  CalendarDays,
   CheckCircle2,
   Download,
+  Pencil,
   Plus,
   RefreshCw,
+  Save,
   Search,
   UserMinus,
   X,
@@ -213,6 +216,11 @@ export function ResignationsReport({ initialData, initialError }: Props) {
   const [isSaving, setIsSaving] = React.useState(false);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [busyAction, setBusyAction] = React.useState<string | null>(null);
+  const [editingDates, setEditingDates] = React.useState<{
+    effectiveDate: string;
+    recordId: string;
+    submittedDate: string;
+  } | null>(null);
 
   const records = React.useMemo(() => data?.records ?? [], [data]);
   const payrollCandidates = React.useMemo(() => data?.payrollCandidates ?? [], [data]);
@@ -396,6 +404,56 @@ export function ResignationsReport({ initialData, initialError }: Props) {
       setNotice(`Resignation moved to ${payload.data.status.replace(/_/g, " ")}.`);
     } catch {
       setError("Unable to update resignation workflow.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  function startDateEdit(record: ResignationRecord) {
+    setEditingDates({
+      effectiveDate: record.effectiveDate,
+      recordId: record.id,
+      submittedDate: record.submittedDate,
+    });
+    setError(null);
+    setNotice(null);
+  }
+
+  function updateEditingDate(key: "effectiveDate" | "submittedDate", value: string) {
+    setEditingDates((current) => current ? { ...current, [key]: value } : current);
+  }
+
+  async function saveDateEdit(record: ResignationRecord) {
+    if (!editingDates || editingDates.recordId !== record.id) return;
+    if (!editingDates.submittedDate || !editingDates.effectiveDate) {
+      setError("Both resignation dates are required.");
+      return;
+    }
+
+    setBusyAction(`${record.id}:dates`);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/resignations/${encodeURIComponent(record.id)}/dates`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dates: {
+            effectiveDate: editingDates.effectiveDate,
+            submittedDate: editingDates.submittedDate,
+          },
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setError(payload.message ?? payload.error ?? "resignation_dates_update_failed");
+        return;
+      }
+      setData(payload.dashboard);
+      setEditingDates(null);
+      setNotice("Resignation dates updated.");
+    } catch {
+      setError("Unable to update resignation dates.");
     } finally {
       setBusyAction(null);
     }
@@ -831,6 +889,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
                 filteredRecords.map((record) => {
                   const daysLeft = daysUntil(record.effectiveDate);
                   const isBusy = busyAction?.startsWith(`${record.id}:`);
+                  const isEditingDates = editingDates?.recordId === record.id;
 
                   return (
                     <tr className="align-top transition-colors hover:bg-[#FFF7ED]/55" key={record.id}>
@@ -874,7 +933,62 @@ export function ResignationsReport({ initialData, initialError }: Props) {
                         ) : null}
                       </td>
                       <td className="px-3 py-4">
+                        {isEditingDates ? (
+                          <div className="mb-3 min-w-[260px] rounded-2xl border border-[#FED7AA] bg-[#FFF7ED] p-3 shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <label className="block">
+                                <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+                                  Submitted
+                                </span>
+                                <Input
+                                  className="h-9 rounded-xl border-[#FDBA74] bg-white px-2 text-xs"
+                                  onChange={(event) => updateEditingDate("submittedDate", event.target.value)}
+                                  type="date"
+                                  value={editingDates.submittedDate}
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+                                  Effective
+                                </span>
+                                <Input
+                                  className="h-9 rounded-xl border-[#FDBA74] bg-white px-2 text-xs"
+                                  onChange={(event) => updateEditingDate("effectiveDate", event.target.value)}
+                                  type="date"
+                                  value={editingDates.effectiveDate}
+                                />
+                              </label>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button
+                                className="h-8 gap-1.5 px-3 text-xs"
+                                disabled={isBusy}
+                                onClick={() => void saveDateEdit(record)}
+                              >
+                                <Save className="h-3.5 w-3.5" />
+                                Save
+                              </Button>
+                              <Button
+                                className="h-8 px-3 text-xs"
+                                disabled={isBusy}
+                                onClick={() => setEditingDates(null)}
+                                variant="secondary"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
                         <div className="flex flex-wrap gap-2">
+                          <Button
+                            className="h-9 gap-1.5 px-3 text-xs"
+                            disabled={isBusy}
+                            onClick={() => startDateEdit(record)}
+                            variant="secondary"
+                          >
+                            {isEditingDates ? <CalendarDays className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                            Edit Dates
+                          </Button>
                           {record.status === "submitted" ? (
                             <Button
                               className="h-9 px-3 text-xs"

@@ -17,6 +17,7 @@ export type PayrollPartsInput = {
   netSalary?: number | null;
   paymentMode?: string | null;
   previousExpenses?: number | null;
+  secondPartAdditions?: number | null;
   socialInsurance?: number | null;
   taxes?: number | null;
 };
@@ -43,6 +44,10 @@ function amount(value: number | null | undefined) {
 
 function money(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function nonNegativeMoney(value: number) {
+  return money(Math.max(0, value));
 }
 
 function taxAmount(input: PayrollPartsInput) {
@@ -148,29 +153,37 @@ export function calculatePayrollParts(input: PayrollPartsInput): PayrollParts {
   const additions = amount(input.additions);
   const deductions = amount(input.deductions);
   const variableAdjustments = previousExpenses + additions - deductions;
+  const totalPayable = nonNegativeMoney(netSalary + variableAdjustments);
+  const forcedSecondPart = nonNegativeMoney(
+    Math.min(
+      totalPayable,
+      amount(input.secondPartAdditions ?? (paymentMode === "one_part" ? variableAdjustments : 0)),
+    ),
+  );
 
   if (paymentMode === "two_parts") {
-    const firstPart = basicSalary;
-    const secondPart = money(netSalary - firstPart + variableAdjustments);
+    const firstPart = money(Math.min(basicSalary, totalPayable - forcedSecondPart));
+    const secondPart = nonNegativeMoney(totalPayable - firstPart);
 
     return {
       basicSalary,
       firstPart,
       paymentMode,
       previousExpenses: money(previousExpenses),
-      secondPart: money(secondPart),
-      totalPayable: money(firstPart + secondPart),
+      secondPart,
+      totalPayable,
     };
   }
 
-  const secondPart = money(variableAdjustments);
+  const secondPart = forcedSecondPart;
+  const firstPart = nonNegativeMoney(totalPayable - secondPart);
 
   return {
     basicSalary,
-    firstPart: money(netSalary),
+    firstPart,
     paymentMode,
     previousExpenses: money(previousExpenses),
     secondPart,
-    totalPayable: money(netSalary + secondPart),
+    totalPayable,
   };
 }
