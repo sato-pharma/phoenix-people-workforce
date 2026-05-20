@@ -335,6 +335,11 @@ function positiveMoneyOrNull(value: number | null | undefined) {
   return Number.isFinite(num) && num > 0 ? num : null;
 }
 
+function finiteMoneyOrNull(value: number | null | undefined) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
 async function fetchEmployeeSalaryStructure(hrId: string) {
   const { data } = await getSupabaseAdmin()
     .from("employee_salary_structure")
@@ -350,6 +355,81 @@ async function fetchEmployeeSalaryStructure(hrId: string) {
     fuelAllowance: Number(data.fuel_allowance ?? 0),
     socialInsurance: Number(data.social_insurance ?? 0),
     incomeTaxes: Number(data.income_taxes ?? 0),
+  };
+}
+
+type FixedSalaryReference = {
+  baseSalary: number;
+  basicSalary: number;
+  extraCostOfLiving: number;
+  fuelAllowance: number;
+  grossSalary: number;
+  netSalary: number;
+  socialInsurance: number;
+  taxes: number;
+};
+
+function resolveFixedSalaryReference({
+  employee,
+  fallbackAllowances,
+  salaryStructure,
+}: {
+  employee: EmployeeDirectoryRow;
+  fallbackAllowances: { extraCostOfLiving: number; fuelAllowance: number };
+  salaryStructure: Awaited<ReturnType<typeof fetchEmployeeSalaryStructure>>;
+}): FixedSalaryReference {
+  const extraCostOfLiving =
+    finiteMoneyOrNull(salaryStructure?.costOfLiving) ??
+    finiteMoneyOrNull(employee.extraCostOfLiving) ??
+    fallbackAllowances.extraCostOfLiving;
+  const fuelAllowance =
+    finiteMoneyOrNull(salaryStructure?.fuelAllowance) ??
+    finiteMoneyOrNull(employee.fuelAllowance) ??
+    fallbackAllowances.fuelAllowance;
+
+  const baseSalary =
+    positiveMoneyOrNull(salaryStructure?.baseSalary) ??
+    positiveMoneyOrNull(employee.baseSalary) ??
+    (positiveMoneyOrNull(employee.basicSalary)
+      ? calculateBaseSalary({ basicSalary: employee.basicSalary })
+      : null) ??
+    (positiveMoneyOrNull(employee.netSalary)
+      ? calculateBaseSalary({
+          extraCostOfLiving,
+          fuelAllowance,
+          netSalary: employee.netSalary,
+        })
+      : null) ??
+    0;
+  const basicSalary = positiveMoneyOrNull(employee.basicSalary) ?? calculateBasicSalary({ baseSalary });
+  const socialInsurance =
+    finiteMoneyOrNull(salaryStructure?.socialInsurance) ??
+    finiteMoneyOrNull(employee.socialInsurance) ??
+    0;
+  const taxes =
+    finiteMoneyOrNull(salaryStructure?.incomeTaxes) ??
+    finiteMoneyOrNull(employee.taxes) ??
+    0;
+  const calculatedNetSalary = calculateNetSalary({
+    baseSalary,
+    extraCostOfLiving,
+    fuelAllowance,
+  });
+  const calculatedGrossSalary = calculateGrossSalary({
+    baseSalary,
+    socialInsurance,
+    taxes,
+  });
+
+  return {
+    baseSalary,
+    basicSalary,
+    extraCostOfLiving,
+    fuelAllowance,
+    grossSalary: positiveMoneyOrNull(employee.grossSalary) ?? calculatedGrossSalary,
+    netSalary: positiveMoneyOrNull(employee.netSalary) ?? calculatedNetSalary,
+    socialInsurance,
+    taxes,
   };
 }
 
@@ -1932,31 +2012,11 @@ export async function getEmployeePortalData(
     year: latestBatch?.year,
   });
   const salaryStructure = currentHrId ? await fetchEmployeeSalaryStructure(currentHrId) : null;
-  const sourceExtraCostOfLiving = salaryStructure?.costOfLiving ?? fallbackAllowances.extraCostOfLiving;
-  const sourceFuelAllowance = salaryStructure?.fuelAllowance ?? fallbackAllowances.fuelAllowance;
-  const sourceBaseSalary =
-    salaryStructure?.baseSalary ??
-    positiveMoneyOrNull(employee.netSalary) ??
-    (latestRecord
-      ? calculateBaseSalary({
-          extraCostOfLiving: sourceExtraCostOfLiving,
-          fuelAllowance: sourceFuelAllowance,
-          netSalary: latestRecord.netSalary,
-        })
-      : 0);
-  const sourceNetSalary = calculateNetSalary({
-    baseSalary: sourceBaseSalary,
-    extraCostOfLiving: sourceExtraCostOfLiving,
-    fuelAllowance: sourceFuelAllowance,
+  const fixedSalary = resolveFixedSalaryReference({
+    employee,
+    fallbackAllowances,
+    salaryStructure,
   });
-  const sourceSocialInsurance = salaryStructure?.socialInsurance ?? employee.socialInsurance;
-  const sourceTaxes = salaryStructure?.incomeTaxes ?? employee.taxes;
-  const calculatedSourceGrossSalary = calculateGrossSalary({
-    baseSalary: sourceBaseSalary,
-    socialInsurance: sourceSocialInsurance,
-    taxes: sourceTaxes,
-  });
-  const sourceGrossSalary = positiveMoneyOrNull(employee.grossSalary) ?? calculatedSourceGrossSalary;
 
   return {
     access: {
@@ -1985,10 +2045,10 @@ export async function getEmployeePortalData(
     payroll: {
       batchId: latestBatch?.id ?? null,
       batchLabel: formatBatchLabel(latestBatch?.month, latestBatch?.year),
-      grossSalary: sourceGrossSalary,
+      grossSalary: fixedSalary.grossSalary,
       latestHireDate: latestRecord?.hireDate ?? employee.hireDate ?? null,
       line: latestRecord?.line ?? employee.lineName ?? null,
-      netSalary: sourceNetSalary,
+      netSalary: fixedSalary.netSalary,
       totalAdditions: latestRecord?.totalAdditions ?? 0,
       totalDeductions: latestRecord?.totalDeductions ?? 0,
       salaryTrend: salaryTrend,
@@ -1999,10 +2059,10 @@ export async function getEmployeePortalData(
       incentive: latestRecord?.incentive ?? 0,
       loans: latestRecord?.loans ?? 0,
       otherDeductions: latestRecord?.otherDeductions ?? 0,
-      socialInsurance: latestRecord?.socialInsurance ?? 0,
-      incomeTax: latestRecord?.employmentIncomeTax ?? 0,
-      fuelAllowance: sourceFuelAllowance,
-      extraCostOfLiving: sourceExtraCostOfLiving,
+      socialInsurance: fixedSalary.socialInsurance,
+      incomeTax: fixedSalary.taxes,
+      fuelAllowance: fixedSalary.fuelAllowance,
+      extraCostOfLiving: fixedSalary.extraCostOfLiving,
     },
     payslips: {
       latestBatchId: latestBatch?.id ?? null,
@@ -2228,6 +2288,203 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
       payrollEligibility: employee.netSalary || employee.grossSalary ? "Eligible" : "Pending",
       probationStatus,
       serviceDurationText: serviceDurationText(employmentJourney.serviceDurationDays),
+    },
+  };
+}
+
+export async function getPayslipPortalData(access: AccessContext): Promise<MedicalRepPortalData> {
+  const currentUser = await resolvePortalCurrentUser(access);
+  const currentHrId = normalizeHrId(currentUser.hrId);
+  const directory = await getEmployeeDirectory();
+  const employee = currentHrId
+    ? findDirectoryEmployeeByHrId(directory, currentHrId) ?? fallbackEmployee(access)
+    : fallbackEmployee(access);
+  const profileLinked =
+    currentHrId !== null && toCanonicalPortalHrId(employee.hrId) === toCanonicalPortalHrId(currentHrId);
+  const payrollDashboard = currentHrId ? await getEmployeePortalPayrollDashboard(currentHrId) : null;
+  const latestRecord = payrollDashboard?.records[0] ?? null;
+  const previousRecord = payrollDashboard?.previousRecords[0] ?? null;
+  const latestBatch = payrollDashboard?.batch ?? payrollDashboard?.batches[0] ?? null;
+  const employmentJourney = computeEmploymentJourney(employee);
+  const daysUntilProbationEnd = employmentJourney.daysUntilProbationEnd;
+  const probationStatus: MedicalRepPortalData["hrContract"]["probationStatus"] =
+    daysUntilProbationEnd === null
+      ? "Not Started"
+      : daysUntilProbationEnd > 0
+        ? "On Probation"
+        : "Completed";
+  const fallbackAllowances = resolveStandardSalaryAllowances({
+    departmentName: employee.departmentName,
+    jobTitle: employee.jobTitle,
+    lineName: employee.lineName,
+    month: latestBatch?.month,
+    positionTitle: employee.positionTitle,
+    year: latestBatch?.year,
+  });
+  const salaryStructure = currentHrId ? await fetchEmployeeSalaryStructure(currentHrId) : null;
+  const fixedSalary = resolveFixedSalaryReference({
+    employee,
+    fallbackAllowances,
+    salaryStructure,
+  });
+  const payrollParts = calculatePayrollParts({
+    baseSalary: fixedSalary.baseSalary,
+    extraCostOfLiving: fixedSalary.extraCostOfLiving,
+    fuelAllowance: fixedSalary.fuelAllowance,
+  });
+  const latestPayslip = {
+    baseSalary: fixedSalary.baseSalary,
+    basicSalary: fixedSalary.basicSalary,
+    firstPart: latestRecord?.firstPart ?? fixedSalary.basicSalary,
+    grossSalary: fixedSalary.grossSalary,
+    netSalary: fixedSalary.netSalary,
+    secondPart: latestRecord?.secondPart ?? payrollParts.secondPart,
+    totalAdditions: latestRecord?.totalAdditions ?? 0,
+    totalDeductions: latestRecord?.totalDeductions ?? 0,
+  };
+  const salaryTrend = payrollDashboard?.records.length
+    ? buildSalaryTrendFromRecords(payrollDashboard.records)
+    : [];
+  const netVsLastMonth = latestRecord && previousRecord && previousRecord.netSalary > 0
+    ? ((latestRecord.netSalary - previousRecord.netSalary) / previousRecord.netSalary) * 100
+    : null;
+  const grossVsLastMonth = latestRecord && previousRecord && previousRecord.grossSalary > 0
+    ? ((latestRecord.grossSalary - previousRecord.grossSalary) / previousRecord.grossSalary) * 100
+    : null;
+  const deductionsVsLastMonth = latestRecord && previousRecord && previousRecord.totalDeductions > 0
+    ? ((latestRecord.totalDeductions - previousRecord.totalDeductions) / previousRecord.totalDeductions) * 100
+    : null;
+  const statutoryDeductions = latestRecord
+    ? latestRecord.governmentalDeductions || (latestRecord.socialInsurance || 0) + (latestRecord.employmentIncomeTax || 0)
+    : 0;
+  const payrollEligibility: "Eligible" | "Pending" = latestBatch?.status === "locked" || latestBatch?.status === "approved"
+    ? "Eligible"
+    : "Pending";
+  const fixedIncentiveSalary = {
+    baseSalary: fixedSalary.baseSalary,
+    basicSalary: fixedSalary.basicSalary,
+    extraCostOfLiving: fixedSalary.extraCostOfLiving,
+    fuelAllowance: fixedSalary.fuelAllowance,
+    grossSalary: fixedSalary.grossSalary,
+    netSalary: fixedSalary.netSalary,
+    socialInsurance: fixedSalary.socialInsurance,
+    taxes: fixedSalary.taxes,
+  };
+  const incentiveCalc = calculateIncentive2026({
+    ...fixedIncentiveSalary,
+    achievementPercent: 0,
+  });
+  const insights = computeInsights({
+    employmentJourney,
+    expenses: { approvedAmount: 0 },
+    latestRecord,
+    previousRecord,
+    salaryTrend,
+    sales: {
+      achievementRate: 0,
+      targetValue: 0,
+      totalValue: 0,
+    },
+  }).map((insight) => insight.message);
+
+  return {
+    employee: {
+      area: employee.areaName,
+      fullName: employee.fullName,
+      hrId: employee.hrId,
+      line: employee.lineName,
+      manager: employee.managerName,
+      roleLabel: employee.jobTitle || employee.positionTitle || currentUser.role || "Employee",
+      status: employee.employmentStatus ?? "active",
+      territory: employee.regionName ?? employee.areaName,
+    },
+    orgStructure: null,
+    workforce: {
+      activeHeadcount: 0,
+      contractRenewalsDue: 0,
+      dataCoveragePercent: 0,
+      missingEmployeeData: 0,
+      newHires: 0,
+      openVacancies: 0,
+      pendingApprovals: 0,
+      probationDue: 0,
+      scopeLabel: employee.fullName,
+    },
+    empty: {
+      payroll: (payrollDashboard?.records.length ?? 0) === 0,
+      profile: !profileLinked,
+      sales: true,
+    },
+    hrContract: {
+      contractRenewalDate: employmentJourney.contractRenewalDate,
+      contractSignedDate: employmentJourney.contractSignedDate,
+      daysUntilRenewal: employmentJourney.daysUntilRenewal,
+      employmentStatus: employee.employmentStatus ?? "active",
+      hireDate: employee.hireDate,
+      payrollEligibility,
+      probationStatus,
+      serviceDurationText: serviceDurationText(employmentJourney.serviceDurationDays),
+    },
+    insights,
+    payroll: {
+      batchId: latestBatch?.id ?? null,
+      baseSalary: fixedSalary.baseSalary,
+      firstPart: latestRecord?.firstPart ?? 0,
+      grossSalary: latestPayslip.grossSalary,
+      internalDeductions: latestRecord?.totalDeductions ?? 0,
+      latestPayslip,
+      latestBatchLabel: latestBatch ? formatBatchLabel(latestBatch.month, latestBatch.year) : "No payroll period",
+      latestBatchStatus: latestBatch?.status ?? null,
+      netSalary: latestPayslip.netSalary,
+      payslipRows: (payrollDashboard?.batches ?? []).map((batch) => ({
+        createdAt: batch.createdAt,
+        id: batch.id,
+        label: formatBatchLabel(batch.month, batch.year),
+        status: batch.status,
+      })),
+      secondPart: latestRecord?.secondPart ?? 0,
+      statutoryDeductions,
+      totalAdditions: latestRecord?.totalAdditions ?? 0,
+      totalDeductions: latestRecord?.totalDeductions ?? 0,
+      salaryTrend,
+      netVsLastMonth,
+      grossVsLastMonth,
+      deductionsVsLastMonth,
+      bonus: latestRecord?.bonus ?? 0,
+      incentive: incentiveCalc.payoutAmount,
+      basicSalary: incentiveCalc.basicSalary,
+      incentiveTarget: incentiveCalc.semesterTargetIncentive / 6,
+      allPeriodsIncentive: incentiveCalc.payoutAmount,
+      allPeriodsIncentiveTarget: incentiveCalc.semesterTargetIncentive / 6,
+      allPeriodsAchievementPercent: 0,
+      loans: latestRecord?.loans ?? 0,
+      otherDeductions: latestRecord?.otherDeductions ?? 0,
+      socialInsurance: fixedSalary.socialInsurance,
+      incomeTax: fixedSalary.taxes,
+      fuelAllowance: fixedSalary.fuelAllowance,
+      extraCostOfLiving: fixedSalary.extraCostOfLiving,
+    },
+    sales: {
+      achievementPercent: 0,
+      currentMonthLabel: "No period",
+      currentMonthSales: 0,
+      currentMonthTarget: 0,
+      overviewAchievementPercent: 0,
+      overviewSales: 0,
+      overviewTarget: 0,
+      growthVsLastMonthPercent: null,
+      familyContribution: [],
+      productContribution: [],
+      territories: [],
+      linePerformance: [],
+      teamComparisonPeriod: null,
+      rankInTeam: null,
+      teamComparison: [],
+      leadingMedicalRep: null,
+      topProduct: null,
+      topProductSalesValue: 0,
+      trend: [],
+      units: 0,
     },
   };
 }
@@ -3432,61 +3689,39 @@ export async function getMedicalRepPortalData(
     year: latestBatch?.year,
   });
   const salaryStructure = currentHrId ? await fetchEmployeeSalaryStructure(currentHrId) : null;
-  const fixedExtraCostOfLiving = salaryStructure?.costOfLiving ?? fallbackAllowances.extraCostOfLiving;
-  const fixedFuelAllowance = salaryStructure?.fuelAllowance ?? fallbackAllowances.fuelAllowance;
-  const fixedBaseSalary =
-    salaryStructure?.baseSalary ??
-    positiveMoneyOrNull(employee.netSalary) ??
-    (latestRecord
-      ? calculateBaseSalary({
-          extraCostOfLiving: fixedExtraCostOfLiving,
-          fuelAllowance: fixedFuelAllowance,
-          netSalary: latestRecord.netSalary,
-        })
-      : 0);
-  const fixedSocialInsurance = salaryStructure?.socialInsurance ?? employee.socialInsurance ?? latestRecord?.socialInsurance ?? 0;
-  const fixedTaxes = salaryStructure?.incomeTaxes ?? employee.taxes ?? latestRecord?.employmentIncomeTax ?? 0;
-  const fixedNetSalary = calculateNetSalary({
-    baseSalary: fixedBaseSalary,
-    extraCostOfLiving: fixedExtraCostOfLiving,
-    fuelAllowance: fixedFuelAllowance,
+  const fixedSalary = resolveFixedSalaryReference({
+    employee,
+    fallbackAllowances,
+    salaryStructure,
   });
-  const calculatedFixedGrossSalary = calculateGrossSalary({
-    baseSalary: fixedBaseSalary,
-    socialInsurance: fixedSocialInsurance,
-    taxes: fixedTaxes,
-  });
-  const fixedGrossSalary =
-    fixedSocialInsurance > 0 || fixedTaxes > 0
-      ? calculatedFixedGrossSalary
-      : positiveMoneyOrNull(employee.grossSalary) ?? latestRecord?.grossSalary ?? calculatedFixedGrossSalary;
-  const payslipBaseSalary = fixedBaseSalary;
-  const payslipBasicSalary = calculateBasicSalary({ baseSalary: payslipBaseSalary });
+  const payslipBaseSalary = fixedSalary.baseSalary;
+  const payslipBasicSalary = fixedSalary.basicSalary;
   const latestPayslip = {
     baseSalary: payslipBaseSalary,
     basicSalary: payslipBasicSalary,
     firstPart: latestRecord?.firstPart ?? payslipBasicSalary,
-    grossSalary: fixedGrossSalary,
-    netSalary: fixedNetSalary,
+    grossSalary: fixedSalary.grossSalary,
+    netSalary: fixedSalary.netSalary,
     secondPart:
       latestRecord?.secondPart ??
       calculatePayrollParts({
         baseSalary: payslipBaseSalary,
-        extraCostOfLiving: fixedExtraCostOfLiving,
-        fuelAllowance: fixedFuelAllowance,
+        extraCostOfLiving: fixedSalary.extraCostOfLiving,
+        fuelAllowance: fixedSalary.fuelAllowance,
       }).secondPart,
     totalAdditions: latestRecord?.totalAdditions ?? 0,
     totalDeductions: latestRecord?.totalDeductions ?? 0,
   };
 
   const fixedIncentiveSalary = {
-    baseSalary: fixedBaseSalary,
-    extraCostOfLiving: fixedExtraCostOfLiving,
-    fuelAllowance: fixedFuelAllowance,
-    grossSalary: fixedGrossSalary,
-    netSalary: fixedNetSalary,
-    socialInsurance: fixedSocialInsurance,
-    taxes: fixedTaxes,
+    baseSalary: fixedSalary.baseSalary,
+    basicSalary: fixedSalary.basicSalary,
+    extraCostOfLiving: fixedSalary.extraCostOfLiving,
+    fuelAllowance: fixedSalary.fuelAllowance,
+    grossSalary: fixedSalary.grossSalary,
+    netSalary: fixedSalary.netSalary,
+    socialInsurance: fixedSalary.socialInsurance,
+    taxes: fixedSalary.taxes,
   };
   const incentiveCalc = calculateIncentive2026({
     ...fixedIncentiveSalary,
@@ -3532,7 +3767,7 @@ export async function getMedicalRepPortalData(
     insights,
     payroll: {
       batchId: latestBatch?.id ?? null,
-      baseSalary: fixedBaseSalary,
+      baseSalary: fixedSalary.baseSalary,
       firstPart: latestRecord?.firstPart ?? 0,
       grossSalary: latestPayslip.grossSalary,
       internalDeductions,
@@ -3563,10 +3798,10 @@ export async function getMedicalRepPortalData(
       incentiveTarget: incentiveCalc.semesterTargetIncentive / 6,
       loans: latestRecord?.loans ?? 0,
       otherDeductions: latestRecord?.otherDeductions ?? 0,
-      socialInsurance: fixedSocialInsurance,
-      incomeTax: fixedTaxes,
-      fuelAllowance: fixedFuelAllowance,
-      extraCostOfLiving: fixedExtraCostOfLiving,
+      socialInsurance: fixedSalary.socialInsurance,
+      incomeTax: fixedSalary.taxes,
+      fuelAllowance: fixedSalary.fuelAllowance,
+      extraCostOfLiving: fixedSalary.extraCostOfLiving,
     },
     sales: {
       achievementPercent: Number.isFinite(achievementPercent) ? achievementPercent : 0,
