@@ -185,7 +185,7 @@ export function EmployeePortalTopNav({
           </div>
           <button
             aria-label="Alerts"
-            className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
             type="button"
           >
             <Bell className="h-4 w-4" />
@@ -223,7 +223,7 @@ export function EmployeePortalTopNav({
       )}
 
       {/* Mobile Sidebar Content */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-[286px] transform border-r border-slate-200 bg-white p-6 shadow-2xl transition-transform duration-300 ease-in-out lg:hidden ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <div className={`fixed inset-y-0 left-0 z-50 w-[286px] max-w-[calc(100vw-2.5rem)] transform border-r border-slate-200 bg-white p-6 shadow-2xl transition-transform duration-300 ease-in-out lg:hidden ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="flex items-center justify-between mb-8">
           <PhoenixLogo />
           <button
@@ -236,7 +236,7 @@ export function EmployeePortalTopNav({
           </button>
         </div>
 
-        <nav className="space-y-5">
+        <nav className="overflow-y-auto pb-28 space-y-5" style={{ maxHeight: "calc(100vh - 100px)" }}>
           {menuSections.map((section) => (
             <div key={section.title}>
               <p className="mb-2 px-2 text-[11px] font-bold uppercase tracking-[0.18em] text-orange-600">
