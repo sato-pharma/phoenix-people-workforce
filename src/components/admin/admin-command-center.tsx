@@ -1,18 +1,25 @@
 import Link from "next/link";
+import Image from "next/image";
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
   BarChart3,
   Briefcase,
+  CalendarCheck,
   CheckCircle2,
+  Fingerprint,
   FileSpreadsheet,
   HeartPulse,
+  Hourglass,
   IdCard,
   LockKeyhole,
+  Mail,
   Network,
   Receipt,
+  ScrollText,
   ShieldCheck,
+  Sparkles,
   Target,
   TrendingDown,
   TrendingUp,
@@ -22,6 +29,15 @@ import {
 } from "lucide-react";
 
 import type { AdminCommandCenterData } from "@/lib/admin/command-center";
+import { formatHrIdForDisplay } from "@/lib/hr-id";
+
+export type CommandCenterWelcomeProfile = {
+  fullName: string;
+  hrId: string | null;
+  managerName: string | null;
+  systemRoleLabel: string;
+  titleLabel: string;
+};
 
 function egp(value: number) {
   const safe = Number.isFinite(value) ? value : 0;
@@ -46,6 +62,31 @@ type IconType = typeof Users;
 type MiniMetric = { label: string; ok?: boolean; value: string };
 type AccentColor = "amber" | "blue" | "emerald" | "orange" | "rose" | "violet";
 type Health = "attention" | "healthy" | "warning";
+
+const commandCenterProfileImagesByHrId: Record<string, string> = {
+  "A-16": "/images/hr/youmna-kotb.jpg",
+  A16: "/images/hr/youmna-kotb.jpg",
+};
+
+function profileImageForHrId(hrId: string | null) {
+  const normalized = String(hrId ?? "").trim().toUpperCase();
+  const compact = normalized.replace(/[^A-Z0-9]/g, "");
+  return commandCenterProfileImagesByHrId[normalized] ?? commandCenterProfileImagesByHrId[compact] ?? null;
+}
+
+function firstNameFrom(fullName: string) {
+  return fullName.split(/\s+/).find(Boolean) ?? "there";
+}
+
+function initialsFrom(fullName: string) {
+  const initials = fullName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join("")
+    .toUpperCase();
+  return initials || "PH";
+}
 
 const accentStyles: Record<
   AccentColor,
@@ -373,67 +414,143 @@ function SecondaryLink({
   );
 }
 
-export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
+export function AdminCommandCenter({
+  data,
+  welcomeProfile = null,
+}: {
+  data: AdminCommandCenterData;
+  welcomeProfile?: CommandCenterWelcomeProfile | null;
+}) {
   const { overview: o, health, payrollEligibleCount, dataUnavailable } = data;
+  const { showAdminModules, showFinancialModules } = data.access;
+  const isHrSpecialistWorkspace = !showAdminModules && !showFinancialModules;
+  const showSalesModules = !isHrSpecialistWorkspace;
   const salesAchievement = o.sales.achievementRate * 100;
   const offerAcceptance = o.recruitment.acceptanceRate * 100;
   const pendingRisk = o.risk.expiringContracts + o.risk.probationEndings;
+  const heroDescription = isHrSpecialistWorkspace
+    ? "Focused people operations, hiring workflow, leave governance, coaching, and HR communication in one workspace."
+    : showFinancialModules
+    ? "Unified workforce, payroll, sales, and operational intelligence in one executive surface."
+    : "Unified workforce, people operations, sales, and operational intelligence in one executive surface.";
+  const profileImage = profileImageForHrId(welcomeProfile?.hrId ?? null);
+  const heroTitle = welcomeProfile
+    ? <>Hello, {firstNameFrom(welcomeProfile.fullName)} <span aria-hidden="true">👋🏻</span></>
+    : "Admin Command Center";
+  const heroCopy = welcomeProfile
+    ? "Your Phoenix command center is ready for a focused, confident day. Keep the employee journey moving, protect every detail, and turn today's HR work into progress people can feel."
+    : heroDescription;
+  const welcomeHrId = formatHrIdForDisplay(welcomeProfile?.hrId) ?? "-";
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#F8FAFC_0%,#F1F5F9_48%,#E8EEF5_100%)] px-3 py-5 sm:px-5 lg:px-6">
       <div className="mx-auto max-w-[1480px] space-y-7">
         <section className="relative overflow-hidden rounded-lg border border-slate-950 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] shadow-[0_22px_70px_rgba(15,23,42,0.32)]">
           <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:44px_44px]" />
-          <div className="relative grid gap-6 p-5 sm:p-6 lg:grid-cols-[1fr_360px] lg:p-8">
+          <div className="relative grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:p-8 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div>
               <div className="inline-flex items-center gap-2 rounded-lg border border-orange-400/25 bg-orange-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-orange-100">
-                <span className="h-1.5 w-1.5 rounded-full bg-orange-300" />
-                Phoenix Workforce
+                {welcomeProfile ? <Sparkles className="h-3.5 w-3.5" /> : <span className="h-1.5 w-1.5 rounded-full bg-orange-300" />}
+                {welcomeProfile ? "Your Phoenix day starts here" : "Phoenix Workforce"}
               </div>
               <h1 className="mt-4 max-w-3xl text-3xl font-black tracking-[-0.04em] text-white sm:text-4xl lg:text-5xl">
-                Admin Command Center
+                {heroTitle}
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-                Unified workforce, payroll, sales, and operational intelligence in one executive surface.
+                {heroCopy}
               </p>
+
+              {welcomeProfile ? (
+                <div className="mt-5 grid max-w-3xl grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div className="rounded-lg border border-white/10 bg-white/10 px-3 py-2 backdrop-blur">
+                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">HR ID</p>
+                    <p className="mt-1 truncate text-sm font-black text-white">{welcomeHrId}</p>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-white/10 px-3 py-2 backdrop-blur">
+                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Manager</p>
+                    <p className="mt-1 truncate text-sm font-black text-white">{welcomeProfile.managerName ?? "Unassigned"}</p>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-white/10 px-3 py-2 backdrop-blur">
+                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Title</p>
+                    <p className="mt-1 truncate text-sm font-black text-white">{welcomeProfile.titleLabel}</p>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-5 flex flex-wrap gap-2">
                 <QuickAction href="/employees" icon={Users} label="Employees" />
-                <QuickAction href="/payroll" icon={Wallet} label="Payroll" />
-                <QuickAction href="/sales" icon={TrendingUp} label="Sales" />
-                <QuickAction href="/admin/access" icon={ShieldCheck} label="Access" />
+                {showFinancialModules ? <QuickAction href="/payroll" icon={Wallet} label="Payroll" /> : null}
+                {showSalesModules ? <QuickAction href="/sales" icon={TrendingUp} label="Sales" /> : null}
+                {isHrSpecialistWorkspace ? <QuickAction href="/offers" icon={Briefcase} label="Offers" /> : null}
+                {isHrSpecialistWorkspace ? <QuickAction href="/leave-management/vacation-report" icon={CalendarCheck} label="Vacations" /> : null}
+                {isHrSpecialistWorkspace ? <QuickAction href="/coaching/analytics" icon={Activity} label="Coaching" /> : null}
+                {showAdminModules ? <QuickAction href="/admin/access" icon={ShieldCheck} label="Access" /> : null}
                 <QuickAction href="/organogram" icon={Network} label="Org Chart" />
               </div>
             </div>
 
-            <div className="rounded-lg border border-white/10 bg-black/20 p-4 backdrop-blur">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                    Operational status
-                  </p>
-                  <p className="mt-2 text-xl font-black text-white">Live data</p>
+            {welcomeProfile ? (
+              <div className="group relative mx-auto flex h-[260px] w-full max-w-[260px] items-center justify-center rounded-[28px] border border-orange-300/25 bg-gradient-to-tr from-orange-500/20 via-white/10 to-sky-500/20 p-2 shadow-[0_24px_54px_rgba(0,0,0,0.24)] sm:h-[310px] sm:max-w-[300px] lg:mx-0 lg:h-[330px]">
+                <div className="absolute -inset-1 rounded-[32px] bg-gradient-to-br from-orange-300/35 via-white/0 to-sky-300/30 opacity-80 blur-sm transition-opacity duration-300 group-hover:opacity-100" />
+                <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[22px] bg-white/95 shadow-inner">
+                  {profileImage ? (
+                    <Image
+                      alt={`${welcomeProfile.fullName} profile photo`}
+                      className="h-full w-full object-cover object-[center_18%] transition-transform duration-500 group-hover:scale-105"
+                      height={330}
+                      priority
+                      src={profileImage}
+                      width={300}
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-orange-500/10 text-orange-500 transition-transform duration-500 group-hover:scale-105">
+                      <span className="text-[50px] font-black tracking-normal">{initialsFrom(welcomeProfile.fullName)}</span>
+                    </div>
+                  )}
                 </div>
-                <span className="relative flex h-3 w-3">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" style={{ animationDuration: "1.5s" }} />
-                  <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-400" />
-                </span>
-              </div>
-              <div className="mt-5 grid gap-2">
-                <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
-                  <span className="font-semibold text-slate-300">Payroll synced</span>
-                  <CheckCircle2 className="h-4 w-4 text-emerald-300" />
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
-                  <span className="font-semibold text-slate-300">Governance active</span>
-                  <ShieldCheck className="h-4 w-4 text-sky-300" />
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
-                  <span className="font-semibold text-slate-300">Access protected</span>
-                  <LockKeyhole className="h-4 w-4 text-violet-300" />
+                <div className="absolute -bottom-3 left-4 right-4 flex items-center justify-center gap-2 rounded-lg border border-white/70 bg-white px-3 py-2 text-[11px] font-black uppercase tracking-normal text-emerald-700 shadow-[0_16px_34px_rgba(15,23,42,0.18)]">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Phoenix Verified
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-lg border border-white/10 bg-black/20 p-4 backdrop-blur">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Operational status
+                    </p>
+                    <p className="mt-2 text-xl font-black text-white">Live data</p>
+                  </div>
+                  <span className="relative flex h-3 w-3">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" style={{ animationDuration: "1.5s" }} />
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-400" />
+                  </span>
+                </div>
+                <div className="mt-5 grid gap-2">
+                  {showFinancialModules ? (
+                    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
+                      <span className="font-semibold text-slate-300">Payroll synced</span>
+                      <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
+                    <span className="font-semibold text-slate-300">Governance active</span>
+                    <ShieldCheck className="h-4 w-4 text-sky-300" />
+                  </div>
+                  {isHrSpecialistWorkspace ? (
+                    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
+                      <span className="font-semibold text-slate-300">HR modules scoped</span>
+                      <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
+                    <span className="font-semibold text-slate-300">Access protected</span>
+                    <LockKeyhole className="h-4 w-4 text-violet-300" />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
@@ -447,11 +564,13 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
               <span>{n(o.hr.activeEmployees)} active</span>
               <span>{n(o.hr.vacantPositions)} vacant</span>
               <span>{pendingRisk} pending risks</span>
-              <span>{n(o.payroll.flags)} payroll flags</span>
+              {showFinancialModules ? <span>{n(o.payroll.flags)} payroll flags</span> : null}
+              {isHrSpecialistWorkspace ? <span>{n(o.recruitment.pendingOffers)} pending offers</span> : null}
+              {isHrSpecialistWorkspace ? <span>{n(o.leave.pendingRequests)} pending vacations</span> : null}
             </div>
             <div className="flex flex-wrap gap-2">
-              <StatusPill tone="emerald">Payroll synced</StatusPill>
-              <StatusPill icon={ShieldCheck} tone="sky">Audit healthy</StatusPill>
+              {showFinancialModules ? <StatusPill tone="emerald">Payroll synced</StatusPill> : null}
+              <StatusPill icon={ShieldCheck} tone="sky">{isHrSpecialistWorkspace ? "HR scope active" : "Audit healthy"}</StatusPill>
               <StatusPill icon={LockKeyhole} tone="violet">Access protected</StatusPill>
             </div>
           </div>
@@ -469,31 +588,52 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
             title="Key operating signals"
           />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard icon={CheckCircle2} label="Active Employees" primary sub={`of ${n(o.hr.totalStructure)} structure`} trend="up" value={n(o.hr.activeEmployees)} />
-            <KpiCard accent icon={Wallet} label="Net Payroll" primary sub={`Gross ${egp(o.payroll.gross)}`} value={egp(o.payroll.net)} />
-            <KpiCard
-              accent={salesAchievement >= 90}
-              icon={Target}
-              label="Sales Achievement"
-              primary
-              sub={`${n(o.sales.activeProducts)} active products`}
-              trend={salesAchievement >= 90 ? "up" : salesAchievement < 70 ? "down" : "neutral"}
-              value={pct(salesAchievement)}
-              warn={salesAchievement < 70}
-            />
-            <KpiCard icon={Users} label="Total Structure" sub={`${n(o.hr.activeEmployees)} active / ${n(o.hr.vacantPositions)} vacant`} value={n(o.hr.totalStructure)} />
-            <KpiCard icon={IdCard} label="Payroll Eligible" sub={o.payroll.batchLabel || "Latest batch"} value={n(payrollEligibleCount)} />
-            <KpiCard icon={TrendingUp} label="Total Sales" sub={`vs ${egp(o.sales.targetValue)} target`} value={egp(o.sales.salesValue)} />
-            <KpiCard icon={Receipt} label="Expense Claims" sub={`${n(o.expenses.totalRows)} entries`} value={egp(o.expenses.approvedAmount)} />
-            <KpiCard
-              accent={health.employeeHealthRate >= 90}
-              icon={HeartPulse}
-              label="Data Health"
-              sub={`${n(health.healthyEmployees)} / ${n(health.totalEmployees || o.hr.activeEmployees)} healthy employees`}
-              trend={health.employeeHealthRate >= 90 ? "up" : health.employeeHealthRate < 70 ? "down" : "neutral"}
-              value={pct(health.employeeHealthRate)}
-              warn={health.employeeHealthRate < 70}
-            />
+            {isHrSpecialistWorkspace ? (
+              <>
+                <KpiCard icon={CheckCircle2} label="Active Employees" primary sub={`of ${n(o.hr.totalStructure)} structure`} trend="up" value={n(o.hr.activeEmployees)} />
+                <KpiCard accent icon={Briefcase} label="Hiring Pipeline" primary sub={`${n(o.recruitment.pendingOffers)} pending offers`} value={n(o.recruitment.totalOffers)} />
+                <KpiCard icon={Hourglass} label="Lifecycle Follow-up" sub={`${n(o.risk.probationEndings)} probation / ${n(o.risk.expiringContracts)} contracts`} value={n(pendingRisk)} warn={pendingRisk > 0} />
+                <KpiCard icon={CalendarCheck} label="Vacation Requests" sub={`${n(o.leave.pendingRequests)} pending`} value={n(o.leave.totalRequests)} />
+              </>
+            ) : (
+              <>
+                <KpiCard icon={CheckCircle2} label="Active Employees" primary sub={`of ${n(o.hr.totalStructure)} structure`} trend="up" value={n(o.hr.activeEmployees)} />
+                {showFinancialModules ? (
+                  <KpiCard accent icon={Wallet} label="Net Payroll" primary sub={`Gross ${egp(o.payroll.gross)}`} value={egp(o.payroll.net)} />
+                ) : null}
+                {showSalesModules ? (
+                  <KpiCard
+                    accent={salesAchievement >= 90}
+                    icon={Target}
+                    label="Sales Achievement"
+                    primary
+                    sub={`${n(o.sales.activeProducts)} active products`}
+                    trend={salesAchievement >= 90 ? "up" : salesAchievement < 70 ? "down" : "neutral"}
+                    value={pct(salesAchievement)}
+                    warn={salesAchievement < 70}
+                  />
+                ) : null}
+                <KpiCard icon={Users} label="Total Structure" sub={`${n(o.hr.activeEmployees)} active / ${n(o.hr.vacantPositions)} vacant`} value={n(o.hr.totalStructure)} />
+                {showFinancialModules ? (
+                  <KpiCard icon={IdCard} label="Payroll Eligible" sub={o.payroll.batchLabel || "Latest batch"} value={n(payrollEligibleCount)} />
+                ) : null}
+                {showSalesModules ? (
+                  <KpiCard icon={TrendingUp} label="Total Sales" sub={`vs ${egp(o.sales.targetValue)} target`} value={egp(o.sales.salesValue)} />
+                ) : null}
+                {showFinancialModules ? (
+                  <KpiCard icon={Receipt} label="Expense Claims" sub={`${n(o.expenses.totalRows)} entries`} value={egp(o.expenses.approvedAmount)} />
+                ) : null}
+                <KpiCard
+                  accent={health.employeeHealthRate >= 90}
+                  icon={HeartPulse}
+                  label="Data Health"
+                  sub={`${n(health.healthyEmployees)} / ${n(health.totalEmployees || o.hr.activeEmployees)} healthy employees`}
+                  trend={health.employeeHealthRate >= 90 ? "up" : health.employeeHealthRate < 70 ? "down" : "neutral"}
+                  value={pct(health.employeeHealthRate)}
+                  warn={health.employeeHealthRate < 70}
+                />
+              </>
+            )}
           </div>
         </section>
 
@@ -503,10 +643,107 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
             eyebrow="Workspace map"
             title="Core operating modules"
           />
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className={isHrSpecialistWorkspace ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-4" : "grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}>
+            {isHrSpecialistWorkspace ? (
+              <>
+                <ModuleCard
+                  accentColor="blue"
+                  description="Employees, organogram, structure, and reporting-line visibility."
+                  health={o.hr.employeesWithoutManagers > 0 ? "attention" : "healthy"}
+                  href="/employees"
+                  icon={Users}
+                  lastSync="Live"
+                  metrics={[
+                    { label: "Active", value: n(o.hr.activeEmployees) },
+                    { label: "Vacant", value: n(o.hr.vacantPositions) },
+                    { label: "No Mgr", ok: o.hr.employeesWithoutManagers === 0, value: n(o.hr.employeesWithoutManagers) },
+                  ]}
+                  title="People Management"
+                />
+                <ModuleCard
+                  accentColor="violet"
+                  description="Offers, vacancies, CV database, and hiring document workflow."
+                  health={offerAcceptance >= 70 ? "healthy" : "attention"}
+                  href="/offers"
+                  icon={Briefcase}
+                  lastSync="Live"
+                  metrics={[
+                    { label: "Offers", value: n(o.recruitment.totalOffers) },
+                    { label: "Pending", value: n(o.recruitment.pendingOffers) },
+                    { label: "Vacant", value: n(o.hr.vacantPositions) },
+                  ]}
+                  title="Hiring Pipeline"
+                />
+                <ModuleCard
+                  accentColor="amber"
+                  description="Probation endings and contract renewal follow-up."
+                  health={pendingRisk > 0 ? "attention" : "healthy"}
+                  href="/probation"
+                  icon={Hourglass}
+                  lastSync="Live"
+                  metrics={[
+                    { label: "Risk", ok: pendingRisk === 0, value: n(pendingRisk) },
+                    { label: "Probation", value: n(o.risk.probationEndings) },
+                    { label: "Contracts", value: n(o.risk.expiringContracts) },
+                  ]}
+                  title="Lifecycle Follow-up"
+                />
+                <ModuleCard
+                  accentColor="rose"
+                  description="Vacation request creation and HR leave report review."
+                  href="/leave-management/vacation-report"
+                  icon={CalendarCheck}
+                  lastSync="Live"
+                  metrics={[
+                    { label: "Total", value: n(o.leave.totalRequests) },
+                    { label: "Pending", value: n(o.leave.pendingRequests) },
+                    { label: "Approved", value: n(o.leave.approvedRequests) },
+                  ]}
+                  title="Vacation Management"
+                />
+                <ModuleCard
+                  accentColor="emerald"
+                  description="Fingerprint attendance report review and export."
+                  href="/attendance/fingerprint-report"
+                  icon={Fingerprint}
+                  lastSync="Live"
+                  metrics={[
+                    { label: "Days", value: n(o.attendance.currentMonthWorkingDays) },
+                    { label: "Policies", value: n(o.attendance.activePolicies) },
+                    { label: "Maps", value: n(o.attendance.activeMappings) },
+                  ]}
+                  title="Fingerprint Report"
+                />
+                <ModuleCard
+                  accentColor="orange"
+                  description="Field coaching report visibility and coaching analytics."
+                  href="/coaching/analytics"
+                  icon={BarChart3}
+                  lastSync="Live"
+                  title="Coaching Analytics"
+                />
+                <ModuleCard
+                  accentColor="violet"
+                  description="Email composer and HR reporting templates."
+                  href="/admin/email-reply-composer"
+                  icon={Mail}
+                  lastSync="Live"
+                  title="HR Communication"
+                />
+                <ModuleCard
+                  accentColor="emerald"
+                  description="Self-service payslip access for this HR account."
+                  href="/payslips"
+                  icon={ScrollText}
+                  lastSync="Self only"
+                  title="My Payslips"
+                />
+              </>
+            ) : (
+              <>
             <ModuleCard
               accentColor="blue"
-              description="Workforce directory, reporting lines, and org structure visualization."
+              description="Employee directory, HR records, profile governance, and people updates."
               health={o.hr.employeesWithoutManagers > 0 ? "attention" : "healthy"}
               href="/employees"
               icon={Users}
@@ -516,49 +753,55 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
                 { label: "Active", value: n(o.hr.activeEmployees) },
                 { label: "Vacant", value: n(o.hr.vacantPositions) },
               ]}
-              title="People and Organogram"
+              title="Employees"
             />
-            <ModuleCard
-              accentColor="emerald"
-              description="Salary batches, payslip distribution, deductions, and financial reconciliation."
-              health={o.payroll.flags > 0 ? "attention" : "healthy"}
-              href="/payroll"
-              icon={FileSpreadsheet}
-              lastSync={o.payroll.batchLabel || "Latest"}
-              metrics={[
-                { label: "Net", value: egp(o.payroll.net) },
-                { label: "Staff", value: n(o.payroll.employees) },
-                { label: "Flags", ok: o.payroll.flags === 0, value: n(o.payroll.flags) },
-              ]}
-              title="Payroll Operations"
-            />
-            <ModuleCard
-              accentColor="orange"
-              description="Rep achievement tracking, product analytics, and territory-level targets."
-              health={salesAchievement >= 90 ? "healthy" : salesAchievement < 70 ? "warning" : "attention"}
-              href="/sales"
-              icon={BarChart3}
-              lastSync="Live"
-              metrics={[
-                { label: "Sales", value: egp(o.sales.salesValue) },
-                { label: "Achieve", ok: salesAchievement >= 90, value: pct(salesAchievement) },
-                { label: "Products", value: n(o.sales.activeProducts) },
-              ]}
-              title="Sales Performance"
-            />
-            <ModuleCard
-              accentColor="amber"
-              description="Trip reports, fuel claims, and expense approval workflow."
-              href="/payroll/expenses/dashboard"
-              icon={Receipt}
-              lastSync="Live"
-              metrics={[
-                { label: "Approved", value: egp(o.expenses.approvedAmount) },
-                { label: "Reports", value: n(o.expenses.reportCount) },
-                { label: "Entries", value: n(o.expenses.totalRows) },
-              ]}
-              title="Field Expenses"
-            />
+            {showFinancialModules ? (
+              <ModuleCard
+                accentColor="emerald"
+                description="Salary batches, payslip distribution, deductions, and financial reconciliation."
+                health={o.payroll.flags > 0 ? "attention" : "healthy"}
+                href="/payroll"
+                icon={FileSpreadsheet}
+                lastSync={o.payroll.batchLabel || "Latest"}
+                metrics={[
+                  { label: "Net", value: egp(o.payroll.net) },
+                  { label: "Staff", value: n(o.payroll.employees) },
+                  { label: "Flags", ok: o.payroll.flags === 0, value: n(o.payroll.flags) },
+                ]}
+                title="Payroll Operations"
+              />
+            ) : null}
+            {showSalesModules ? (
+              <ModuleCard
+                accentColor="orange"
+                description="Rep achievement tracking, product analytics, and territory-level targets."
+                health={salesAchievement >= 90 ? "healthy" : salesAchievement < 70 ? "warning" : "attention"}
+                href="/sales"
+                icon={BarChart3}
+                lastSync="Live"
+                metrics={[
+                  { label: "Sales", value: egp(o.sales.salesValue) },
+                  { label: "Achieve", ok: salesAchievement >= 90, value: pct(salesAchievement) },
+                  { label: "Products", value: n(o.sales.activeProducts) },
+                ]}
+                title="Sales Performance"
+              />
+            ) : null}
+            {showFinancialModules ? (
+              <ModuleCard
+                accentColor="amber"
+                description="Trip reports, fuel claims, and expense approval workflow."
+                href="/payroll/expenses/dashboard"
+                icon={Receipt}
+                lastSync="Live"
+                metrics={[
+                  { label: "Approved", value: egp(o.expenses.approvedAmount) },
+                  { label: "Reports", value: n(o.expenses.reportCount) },
+                  { label: "Entries", value: n(o.expenses.totalRows) },
+                ]}
+                title="Field Expenses"
+              />
+            ) : null}
             <ModuleCard
               accentColor="violet"
               description="Offer lifecycle management, acceptance tracking, and pipeline overview."
@@ -573,61 +816,71 @@ export function AdminCommandCenter({ data }: { data: AdminCommandCenterData }) {
               ]}
               title="Job Offers"
             />
-            <ModuleCard
-              accentColor="rose"
-              description="Employee linkage integrity, HR ID orphan detection, and sales data quality."
-              health={health.employeeHealthRate >= 90 ? "healthy" : health.employeeHealthRate < 70 ? "warning" : "attention"}
-              href="/admin/data-health"
-              icon={HeartPulse}
-              lastSync="Live"
-              metrics={[
-                { label: "HR", ok: health.employeeHealthRate >= 90, value: pct(health.employeeHealthRate) },
-                { label: "Sales", ok: health.salesLinkageRate >= 90, value: pct(health.salesLinkageRate) },
-                { label: "No Mgr", ok: health.missingManager === 0, value: n(health.missingManager) },
-              ]}
-              title="Data Health"
-            />
-            <ModuleCard
-              accentColor="blue"
-              description="Interactive org chart with hierarchy visualization and role mapping."
-              health={o.hr.employeesWithoutManagers > 0 ? "attention" : "healthy"}
-              href="/organogram"
-              icon={Network}
-              lastSync="Live"
-              metrics={[
-                { label: "Lines", value: n(o.hr.uniqueLines) },
-                { label: "Areas", value: n(o.hr.uniqueAreas) },
-                { label: "No Mgr", ok: o.hr.employeesWithoutManagers === 0, value: n(o.hr.employeesWithoutManagers) },
-              ]}
-              title="Organogram"
-            />
-            <ModuleCard
-              accentColor="violet"
-              description="User accounts, role permissions, authentication, and audit trail."
-              href="/admin/access"
-              icon={ShieldCheck}
-              lastSync="Live"
-              title="Access Control"
-            />
+            {showAdminModules ? (
+              <ModuleCard
+                accentColor="rose"
+                description="Employee linkage integrity, HR ID orphan detection, and sales data quality."
+                health={health.employeeHealthRate >= 90 ? "healthy" : health.employeeHealthRate < 70 ? "warning" : "attention"}
+                href="/admin/data-health"
+                icon={HeartPulse}
+                lastSync="Live"
+                metrics={[
+                  { label: "HR", ok: health.employeeHealthRate >= 90, value: pct(health.employeeHealthRate) },
+                  { label: "Sales", ok: health.salesLinkageRate >= 90, value: pct(health.salesLinkageRate) },
+                  { label: "No Mgr", ok: health.missingManager === 0, value: n(health.missingManager) },
+                ]}
+                title="Data Health"
+              />
+            ) : null}
+            {!isHrSpecialistWorkspace ? (
+              <ModuleCard
+                accentColor="blue"
+                description="Interactive org chart with hierarchy visualization and role mapping."
+                health={o.hr.employeesWithoutManagers > 0 ? "attention" : "healthy"}
+                href="/organogram"
+                icon={Network}
+                lastSync="Live"
+                metrics={[
+                  { label: "Lines", value: n(o.hr.uniqueLines) },
+                  { label: "Areas", value: n(o.hr.uniqueAreas) },
+                  { label: "No Mgr", ok: o.hr.employeesWithoutManagers === 0, value: n(o.hr.employeesWithoutManagers) },
+                ]}
+                title="Organogram"
+              />
+            ) : null}
+            {showAdminModules ? (
+              <ModuleCard
+                accentColor="violet"
+                description="User accounts, role permissions, authentication, and audit trail."
+                href="/admin/access"
+                icon={ShieldCheck}
+                lastSync="Live"
+                title="Access Control"
+              />
+            ) : null}
+              </>
+            )}
           </div>
         </section>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SecondaryLink
-            href="/probation"
-            icon={Activity}
-            label="Probation Tracker"
-            sub={o.risk.probationEndings > 0 ? `${o.risk.probationEndings} ending soon` : "All on track"}
-            tone="amber"
-          />
-          <SecondaryLink
-            href="/contracts"
-            icon={IdCard}
-            label="Contract Renewal"
-            sub={o.risk.expiringContracts > 0 ? `${o.risk.expiringContracts} expiring soon` : "No urgent renewals"}
-            tone="blue"
-          />
-        </div>
+        {!isHrSpecialistWorkspace ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SecondaryLink
+              href="/probation"
+              icon={Activity}
+              label="Probation Tracker"
+              sub={o.risk.probationEndings > 0 ? `${o.risk.probationEndings} ending soon` : "All on track"}
+              tone="amber"
+            />
+            <SecondaryLink
+              href="/contracts"
+              icon={IdCard}
+              label="Contract Renewal"
+              sub={o.risk.expiringContracts > 0 ? `${o.risk.expiringContracts} expiring soon` : "No urgent renewals"}
+              tone="blue"
+            />
+          </div>
+        ) : null}
 
         <footer className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white/85 px-4 py-3 text-xs text-slate-500 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between">
           <p className="font-semibold">Phoenix Workforce / Admin Command Center</p>
