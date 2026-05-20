@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getAttendanceDeviceUserMappingDashboard, saveAttendanceDeviceUserMapping } from "@/lib/attendance/device-user-mapping";
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertAttendanceSetupPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, validationError } from "@/lib/http/api-errors";
 
@@ -58,7 +58,7 @@ function apiResponse(error: unknown, fallback: string) {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employees", "read");
+    await assertAttendanceSetupPermission(access, "read");
 
     return NextResponse.json(await getAttendanceDeviceUserMappingDashboard());
   } catch (error) {
@@ -69,7 +69,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employees", "update");
+    await assertAttendanceSetupPermission(access, "update");
 
     await saveAttendanceDeviceUserMapping(parsePayload(await request.json()));
     return NextResponse.json(await getAttendanceDeviceUserMappingDashboard());

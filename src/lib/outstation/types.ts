@@ -43,6 +43,14 @@ export type OutstationCarEvidenceMetadata = {
   source: OutstationCarEvidenceSource;
 };
 
+export type OutstationTicketAttachmentMetadata = {
+  contentType: string;
+  name: string;
+  path: string;
+  size: number;
+  uploadedAt: string;
+};
+
 export type OutstationTerritoryValidationStatus =
   | "matched"
   | "outside_expected_territory"
@@ -209,6 +217,7 @@ export type OutstationExpenseRequest = {
   expectedTotalAmount: number;
   fraudFlags: OutstationFraudFlag[];
   fuelAmount: number;
+  goTicketAmount: number;
   id: number;
   kilometerReading: number | null;
   medicalTripHrId: string | null;
@@ -233,6 +242,9 @@ export type OutstationExpenseRequest = {
   suspiciousLocationScore: number;
   territoryValidationReason: string;
   territoryValidationStatus: OutstationTerritoryValidationStatus;
+  returnTicketAmount: number;
+  ticketAttachmentMetadata: OutstationTicketAttachmentMetadata[];
+  ticketAttachmentPaths: string[];
   ticketAmount: number;
   toArea: string | null;
   toCity: string | null;

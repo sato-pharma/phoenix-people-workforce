@@ -53,6 +53,11 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: [
+    "192.168.1.45",
+    "imagines-sixfold-corny.ngrok-free.dev",
+    "*.ngrok-free.dev",
+  ],
   async headers() {
     return [
       {

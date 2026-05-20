@@ -10,6 +10,7 @@ import {
   writeAuthAudit,
 } from "@/lib/auth/audit";
 import { authenticateLoginId, normalizeLoginId } from "@/lib/auth/credentials";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import {
   createSessionToken,
   phoenixSessionCookieName,
@@ -25,13 +26,79 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type LoginPayload = {
+  loginId?: string;
+  password?: string;
+  remember?: boolean;
+};
+
+type LoginRequestPayload = LoginPayload & {
+  responseMode: "json" | "redirect";
+};
+
+async function readLoginPayload(request: Request): Promise<LoginRequestPayload> {
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+
+  if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+
+    return {
+      loginId: String(formData.get("loginId") ?? ""),
+      password: String(formData.get("password") ?? ""),
+      remember: formData.has("remember"),
+      responseMode: "redirect",
+    };
+  }
+
+  const payload = (await request.json()) as LoginPayload;
+
+  return {
+    ...payload,
+    responseMode: "json",
+  };
+}
+
+function getRedirectUrl(request: Request, pathname: string) {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.trim();
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.trim();
+
+  if (forwardedHost) {
+    return new URL(pathname, `${forwardedProto || "https"}://${forwardedHost}`);
+  }
+
+  const origin = request.headers.get("origin");
+
+  if (origin) {
+    try {
+      return new URL(pathname, origin);
+    } catch {
+      // Fall back to the request URL below.
+    }
+  }
+
+  return new URL(pathname, request.url);
+}
+
+function loginFailureResponse(
+  request: Request,
+  payload: LoginRequestPayload,
+  error: string,
+  message: string,
+  status: number,
+) {
+  if (payload.responseMode === "redirect") {
+    const url = getRedirectUrl(request, "/login");
+    url.searchParams.set("error", error);
+
+    return NextResponse.redirect(url, 303);
+  }
+
+  return NextResponse.json({ error, message }, { status });
+}
+
 export async function POST(request: Request) {
   try {
-    const payload = (await request.json()) as {
-      loginId?: string;
-      password?: string;
-      remember?: boolean;
-    };
+    const payload = await readLoginPayload(request);
     const loginId = normalizeLoginId(payload.loginId ?? "");
     const ip = getRequestIp(request);
 
@@ -43,9 +110,12 @@ export async function POST(request: Request) {
         summary: "Login rate limited",
       }).catch(() => undefined);
 
-      return NextResponse.json(
-        { error: "rate_limited", message: "Too many failed login attempts. Please try again later." },
-        { status: 429 },
+      return loginFailureResponse(
+        request,
+        payload,
+        "rate_limited",
+        "Too many failed login attempts. Please try again later.",
+        429,
       );
     }
 
@@ -62,9 +132,12 @@ export async function POST(request: Request) {
         summary: "Login failed",
       }).catch(() => undefined);
 
-      return NextResponse.json(
-        { error: "invalid_credentials", message: "Invalid login ID or password." },
-        { status: 401 },
+      return loginFailureResponse(
+        request,
+        payload,
+        "invalid_credentials",
+        "Invalid login ID or password.",
+        401,
       );
     }
 
@@ -76,12 +149,12 @@ export async function POST(request: Request) {
         summary: "Login blocked: password setup required",
       }).catch(() => undefined);
 
-      return NextResponse.json(
-        {
-          error: "password_setup_required",
-          message: "Your password must be set or reset from the admin link before you can sign in.",
-        },
-        { status: 403 },
+      return loginFailureResponse(
+        request,
+        payload,
+        "password_setup_required",
+        "Your password must be set or reset from the admin link before you can sign in.",
+        403,
       );
     }
 
@@ -171,14 +244,16 @@ export async function POST(request: Request) {
       summary: "Login succeeded",
     }).catch(() => undefined);
 
-    const response = NextResponse.json({
-      user: {
-        hrId: user.hrId,
-        loginId: user.loginId,
-        role: user.role,
-      },
-      warning: supabaseBridgeWarning,
-    });
+    const response = payload.responseMode === "redirect"
+      ? NextResponse.redirect(getRedirectUrl(request, resolveLandingPathForRole(user.role)), 303)
+      : NextResponse.json({
+          user: {
+            hrId: user.hrId,
+            loginId: user.loginId,
+            role: user.role,
+          },
+          warning: supabaseBridgeWarning,
+        });
 
     if (supabaseSession) {
       response.cookies.set({

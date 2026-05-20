@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { redirect } from "next/navigation";
 
 import { adminShellBackgroundClassName } from "@/components/admin/admin-design-tokens";
 import {
@@ -9,6 +10,7 @@ import {
   type NavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
+import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -29,10 +31,14 @@ export async function AppShell({
     resolveAccessContextFromPage(),
     getPermissionMatrix(),
   ]);
+  if (!access.loginId && !access.hrId) {
+    redirect("/login");
+  }
+
   const viewer = showTopbar
     ? await resolveViewerIdentityFromPage(access)
     : {
-        displayName: access.loginId || access.hrId || "User",
+        displayName: access.loginId || formatHrIdForDisplay(access.hrId) || "User",
         initials: "US",
         roleLabel: access.role,
       };

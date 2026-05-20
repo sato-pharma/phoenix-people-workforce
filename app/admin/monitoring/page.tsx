@@ -32,7 +32,7 @@ export default async function AdminMonitoringPage({
 }) {
   const access = await resolveAccessContextFromPage();
 
-  if (!await canAccess(access, "admin", "read") && !await canAccess(access, "overview", "read")) {
+  if (!await canAccess(access, "admin", "read")) {
     redirect("/employee-portals");
   }
   const query = await searchParams;

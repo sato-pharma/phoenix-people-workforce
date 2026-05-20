@@ -12,39 +12,68 @@ const dashboardSource = readFileSync(
 );
 
 export function runEmployeePortalPayslipSalaryTests() {
+  const helperStart = serviceSource.indexOf("function resolveFixedSalaryReference");
+  const helperEnd = serviceSource.indexOf("function pickText", helperStart);
+  const fixedSalaryReferenceSource = helperStart >= 0 && helperEnd > helperStart
+    ? serviceSource.slice(helperStart, helperEnd)
+    : "";
+
+  assert.ok(
+    fixedSalaryReferenceSource,
+    "Employee portal service must define a fixed salary reference resolver.",
+  );
+
   assert.match(
     serviceSource,
-    /const payslipBaseSalary = fixedBaseSalary;/,
+    /const payslipBaseSalary = fixedSalary\.baseSalary;/,
     "Payslip Base Salary keycard must use the fixed employee salary source.",
   );
 
   assert.match(
     serviceSource,
-    /positiveMoneyOrNull\(employee\.netSalary\) \?\?/,
-    "Employee portal salary fallback must not treat a zero employee base salary as valid.",
+    /positiveMoneyOrNull\(employee\.baseSalary\) \?\?/,
+    "Employee portal fixed salary must prefer the employee master Base Salary.",
   );
 
   assert.match(
     serviceSource,
-    /const payslipBasicSalary = calculateBasicSalary\(\{ baseSalary: payslipBaseSalary \}\);/,
-    "Payslip Basic Salary keycard must be calculated from fixed base salary.",
-  );
-
-  assert.match(
-    serviceSource,
-    /netSalary: sourceNetSalary,/,
-    "Employee portal summary net salary must use fixed base + standard allowances.",
-  );
-
-  assert.match(
-    serviceSource,
-    /netSalary: fixedNetSalary,/,
-    "Employee portal latest payslip net salary must use fixed base + standard allowances.",
+    /positiveMoneyOrNull\(employee\.basicSalary\)/,
+    "Employee portal fixed salary must use the employee master Basic Salary when it exists.",
   );
 
   assert.doesNotMatch(
     serviceSource,
-    /netSalary:\s*latestRecord\?\.netSalary\s*\?\?\s*(sourceNetSalary|fixedNetSalary)/,
+    /salaryStructure\?\.baseSalary\s*\?\?\s*positiveMoneyOrNull\(employee\.netSalary\)/,
+    "Employee portal fixed Base Salary must not treat employee Net Salary as the first salary fallback.",
+  );
+
+  assert.doesNotMatch(
+    fixedSalaryReferenceSource,
+    /latestRecord/,
+    "Employee portal fixed salary reference must not derive fixed salary cards from monthly payslip records.",
+  );
+
+  assert.match(
+    serviceSource,
+    /const payslipBasicSalary = fixedSalary\.basicSalary;/,
+    "Payslip Basic Salary keycard must use the fixed employee salary source.",
+  );
+
+  assert.match(
+    serviceSource,
+    /netSalary: fixedSalary\.netSalary,/,
+    "Employee portal summary net salary must use the fixed employee salary source.",
+  );
+
+  assert.match(
+    serviceSource,
+    /latestPayslip[\s\S]*netSalary: fixedSalary\.netSalary,/,
+    "Employee portal latest payslip net salary must use the fixed employee salary source.",
+  );
+
+  assert.doesNotMatch(
+    serviceSource,
+    /netSalary:\s*latestRecord\?\.netSalary\s*\?\?\s*fixedSalary\.netSalary/,
     "Employee portal fixed net salary must not be overridden by uploaded monthly net salary.",
   );
 

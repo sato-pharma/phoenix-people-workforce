@@ -1,14 +1,32 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import type { OutstationCarEvidenceMetadata } from "@/lib/outstation/types";
+import type {
+  OutstationCarEvidenceMetadata,
+  OutstationTicketAttachmentMetadata,
+} from "@/lib/outstation/types";
 
 export const OUTSTATION_EVIDENCE_BUCKET = "outstation-evidence";
 
 const CAR_EVIDENCE_MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+const TICKET_ATTACHMENT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const CAR_EVIDENCE_SIGNED_URL_TTL_SECONDS = 60 * 60;
+const TICKET_ATTACHMENT_ALLOWED_CONTENT_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+]);
 
 export type ParsedCarEvidenceImage = {
   bytes: Buffer;
   contentType: "image/jpeg";
+};
+
+export type OutstationTicketAttachmentUpload = {
+  bytes: Buffer;
+  contentType: string;
+  employeeHrId: string;
+  fileName: string;
+  requestDraftId: string;
+  size: number;
 };
 
 function sanitizeStorageSegment(value: string | null | undefined, fallback: string) {
@@ -28,6 +46,20 @@ export function buildOutstationCarEvidenceImagePath(metadata: OutstationCarEvide
   );
 
   return `car/${employeeHrId}/${draftOrRequestId}.jpg`;
+}
+
+export function buildOutstationTicketAttachmentPath(input: {
+  employeeHrId: string;
+  fileName: string;
+  index: number;
+  requestDraftId: string;
+}) {
+  const employeeHrId = sanitizeStorageSegment(input.employeeHrId, "unknown-employee");
+  const draftId = sanitizeStorageSegment(input.requestDraftId, "unknown-request");
+  const index = Math.max(1, input.index);
+  const fileName = sanitizeStorageSegment(input.fileName, `attachment-${index}`);
+
+  return `tickets/${employeeHrId}/${draftId}/${index}-${fileName}`;
 }
 
 export function parseOutstationCarEvidenceImageDataUrl(dataUrl: string): ParsedCarEvidenceImage {
@@ -74,11 +106,75 @@ export async function uploadOutstationCarEvidenceImage(params: {
   return path;
 }
 
+export async function uploadOutstationTicketAttachments(
+  attachments: OutstationTicketAttachmentUpload[],
+): Promise<OutstationTicketAttachmentMetadata[]> {
+  const supabase = getSupabaseAdmin();
+  const uploaded: OutstationTicketAttachmentMetadata[] = [];
+
+  try {
+    for (const [index, attachment] of attachments.entries()) {
+      if (attachment.bytes.length === 0) {
+        throw new Error("Ticket attachment is empty. Upload a valid ticket attachment.");
+      }
+
+      if (attachment.bytes.length > TICKET_ATTACHMENT_MAX_UPLOAD_BYTES) {
+        throw new Error("Ticket attachment is too large. Maximum size is 5MB.");
+      }
+
+      if (!TICKET_ATTACHMENT_ALLOWED_CONTENT_TYPES.has(attachment.contentType)) {
+        throw new Error("Ticket attachment must be a PDF, JPG, or PNG file.");
+      }
+
+      const path = buildOutstationTicketAttachmentPath({
+        employeeHrId: attachment.employeeHrId,
+        fileName: attachment.fileName,
+        index: index + 1,
+        requestDraftId: attachment.requestDraftId,
+      });
+
+      const { error } = await supabase.storage
+        .from(OUTSTATION_EVIDENCE_BUCKET)
+        .upload(path, attachment.bytes, {
+          cacheControl: "31536000",
+          contentType: attachment.contentType,
+          upsert: false,
+        });
+
+      if (error) {
+        throw new Error(`Unable to store ticket attachment: ${error.message}`);
+      }
+
+      uploaded.push({
+        contentType: attachment.contentType,
+        name: attachment.fileName,
+        path,
+        size: attachment.size,
+        uploadedAt: new Date().toISOString(),
+      });
+    }
+  } catch (error) {
+    await deleteOutstationTicketAttachments(
+      uploaded.map((attachment) => attachment.path),
+    );
+    throw error;
+  }
+
+  return uploaded;
+}
+
 export async function deleteOutstationCarEvidenceImage(path: string | null) {
   if (!path) return;
 
   const supabase = getSupabaseAdmin();
   await supabase.storage.from(OUTSTATION_EVIDENCE_BUCKET).remove([path]);
+}
+
+export async function deleteOutstationTicketAttachments(paths: string[]) {
+  if (paths.length === 0) return;
+
+  const supabase = getSupabaseAdmin();
+  await supabase.storage.from(OUTSTATION_EVIDENCE_BUCKET).remove(paths);
 }
 
 export async function createOutstationCarEvidenceSignedUrl(path: string | null) {

@@ -2,7 +2,7 @@ export const VACATION_TYPES = [
   { label: "Annual Vacation", value: "annual" },
   { label: "Emergency Vacation", value: "emergency" },
   { label: "Sick Vacation", value: "sick" },
-  { label: "Personal Vacation", value: "personal" },
+  { label: "Other", value: "other" },
 ] as const;
 
 export const VACATION_DAY_PARTS = [
@@ -70,6 +70,12 @@ export type VacationRequestRecord = VacationBalanceSnapshot & {
   employeeWorkEmail: string | null;
   endDate: string;
   id: string;
+  sickAttachmentBucket: string | null;
+  sickAttachmentContentType: string | null;
+  sickAttachmentObjectPath: string | null;
+  sickAttachmentOriginalName: string | null;
+  sickAttachmentSizeBytes: number;
+  sickAttachmentUploadedAt: string | null;
   lineName: string | null;
   managerDecision: "approved" | "rejected" | null;
   managerDecisionAt: string | null;

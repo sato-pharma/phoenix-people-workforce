@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getAttendanceDeviceUserMappingDashboard } from "@/lib/attendance/device-user-mapping";
 import { importDeviceMappingsFromWorkbook } from "@/lib/attendance/device-user-mapping-template";
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertAttendanceSetupPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import { validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
@@ -32,7 +32,7 @@ function apiResponse(error: unknown, fallback: string) {
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employees", "update");
+    await assertAttendanceSetupPermission(access, "update");
 
     const formData = await request.formData();
     const file = formData.get("file");

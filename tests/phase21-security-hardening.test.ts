@@ -17,7 +17,7 @@ export function runPhase21SecurityHardeningTests() {
 
   assert.match(notificationTestRoute, /assertPermission\(access, "admin", "update"\)/);
   assert.doesNotMatch(notificationTestRoute, /assertPermission\(access, "admin_access", "read"\)/);
-  assert.match(emailReplyRoute, /assertPermission\(access, "admin", "update"\)/);
+  assert.match(emailReplyRoute, /assertPermission\(access, "communication", "update"\)/);
   assert.doesNotMatch(emailReplyRoute, /assertPermission\(access, "admin", "read"\)/);
 
   assert.match(probationRoute, /assertPermission\(access, "probation", "update"\)/);

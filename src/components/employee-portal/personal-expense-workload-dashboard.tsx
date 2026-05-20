@@ -63,7 +63,7 @@ const premiumCardClass =
   "rounded-[28px] border border-orange-100/80 bg-white/94 shadow-[0_22px_58px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03] backdrop-blur";
 
 const premiumControlClass =
-  "h-11 w-full rounded-2xl border border-orange-100 bg-white/95 px-3 text-sm text-slate-800 shadow-[0_12px_30px_rgba(15,23,42,0.05)] outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100";
+  "h-11 w-full min-w-0 rounded-2xl border border-orange-100 bg-white/95 px-3 text-sm text-slate-800 shadow-[0_12px_30px_rgba(15,23,42,0.05)] outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100";
 
 const chartPanelClass =
   "rounded-[28px] border border-orange-100/80 bg-white/96 p-5 shadow-[0_22px_60px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03]";
@@ -615,86 +615,89 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
       </section>
 
       <Card className={`${premiumCardClass} p-4 md:p-5`}>
-        <div className="mb-1 flex flex-wrap items-end gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Filter by date</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <label className="min-w-0 flex-1">
-                <span className="mb-1 block text-[11px] font-bold text-slate-500">Date From</span>
-                <input
-                  className={premiumControlClass}
-                  onChange={(event) => setDateFrom(event.target.value)}
-                  type="date"
-                  value={dateFrom}
-                />
-              </label>
-              <label className="min-w-0 flex-1">
-                <span className="mb-1 block text-[11px] font-bold text-slate-500">Date To</span>
-                <input
-                  className={premiumControlClass}
-                  onChange={(event) => setDateTo(event.target.value)}
-                  type="date"
-                  value={dateTo}
-                />
-              </label>
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Filters</p>
             </div>
+            <button
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-orange-200 bg-orange-500 px-4 text-sm font-black text-white shadow-[0_14px_34px_rgba(249,115,22,0.25)] transition hover:-translate-y-0.5 hover:bg-orange-600 sm:w-auto"
+              onClick={resetFilters}
+              type="button"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Reset Filters
+            </button>
           </div>
-          <label className="min-w-0 flex-1">
-            <span className="mb-1 block text-[11px] font-bold text-slate-500">Status</span>
-            <select
-              className={premiumControlClass}
-              onChange={(event) => setStatusFilter(event.target.value as (typeof statusOptions)[number])}
-              value={statusFilter}
-            >
-              {statusFilterOptions.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </select>
-          </label>
-          <label className="min-w-0 flex-1">
-            <span className="mb-1 block text-[11px] font-bold text-slate-500">Request Type</span>
-            <select
-              className={premiumControlClass}
-              onChange={(event) => setRequestTypeFilter(event.target.value)}
-              value={requestTypeFilter}
-            >
-              {uniqueRequestTypes.map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </label>
-          <label className="min-w-0 flex-1">
-            <span className="mb-1 block text-[11px] font-bold text-slate-500">Transportation Type</span>
-            <select
-              className={premiumControlClass}
-              onChange={(event) => setTransportationFilter(event.target.value)}
-              value={transportationFilter}
-            >
-              {uniqueTransportationTypes.map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </label>
-          <label className="min-w-0 flex-1">
-            <span className="mb-1 block text-[11px] font-bold text-slate-500">Destination City</span>
-            <select
-              className={premiumControlClass}
-              onChange={(event) => setDestinationFilter(event.target.value)}
-              value={destinationFilter}
-            >
-              {uniqueDestinations.map((destination) => (
-                <option key={destination} value={destination}>{destination}</option>
-              ))}
-            </select>
-          </label>
-          <button
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-orange-200 bg-orange-500 px-4 text-sm font-black text-white shadow-[0_14px_34px_rgba(249,115,22,0.25)] transition hover:-translate-y-0.5 hover:bg-orange-600"
-            onClick={resetFilters}
-            type="button"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Reset Filters
-          </button>
+
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <label className="min-w-0">
+              <span className="mb-1 block text-[11px] font-bold text-slate-500">Date From</span>
+              <input
+                className={premiumControlClass}
+                onChange={(event) => setDateFrom(event.target.value)}
+                type="date"
+                value={dateFrom}
+              />
+            </label>
+            <label className="min-w-0">
+              <span className="mb-1 block text-[11px] font-bold text-slate-500">Date To</span>
+              <input
+                className={premiumControlClass}
+                onChange={(event) => setDateTo(event.target.value)}
+                type="date"
+                value={dateTo}
+              />
+            </label>
+            <label className="min-w-0">
+              <span className="mb-1 block text-[11px] font-bold text-slate-500">Status</span>
+              <select
+                className={premiumControlClass}
+                onChange={(event) => setStatusFilter(event.target.value as (typeof statusOptions)[number])}
+                value={statusFilter}
+              >
+                {statusFilterOptions.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </label>
+            <label className="min-w-0">
+              <span className="mb-1 block text-[11px] font-bold text-slate-500">Request Type</span>
+              <select
+                className={premiumControlClass}
+                onChange={(event) => setRequestTypeFilter(event.target.value)}
+                value={requestTypeFilter}
+              >
+                {uniqueRequestTypes.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </label>
+            <label className="min-w-0">
+              <span className="mb-1 block text-[11px] font-bold text-slate-500">Transportation Type</span>
+              <select
+                className={premiumControlClass}
+                onChange={(event) => setTransportationFilter(event.target.value)}
+                value={transportationFilter}
+              >
+                {uniqueTransportationTypes.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </label>
+            <label className="min-w-0">
+              <span className="mb-1 block text-[11px] font-bold text-slate-500">Destination City</span>
+              <select
+                className={premiumControlClass}
+                onChange={(event) => setDestinationFilter(event.target.value)}
+                value={destinationFilter}
+              >
+                {uniqueDestinations.map((destination) => (
+                  <option key={destination} value={destination}>{destination}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
       </Card>
 

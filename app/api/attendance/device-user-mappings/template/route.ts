@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { generateDeviceMappingTemplateWorkbook } from "@/lib/attendance/device-user-mapping-template";
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertAttendanceSetupPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 
@@ -27,7 +27,7 @@ function apiResponse(error: unknown, fallback: string) {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employees", "read");
+    await assertAttendanceSetupPermission(access, "read");
 
     const workbook = await generateDeviceMappingTemplateWorkbook();
     const buffer = await workbook.xlsx.writeBuffer();

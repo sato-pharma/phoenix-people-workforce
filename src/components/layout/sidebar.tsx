@@ -86,7 +86,7 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
     {
       id: "command-center",
       items: [
-        { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }] },
+        { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }] },
         { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }] },
         { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }] },
         { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }] },
@@ -112,8 +112,8 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       id: "attendance-management",
       items: [
         { href: "/attendance/fingerprint-report", icon: FileSpreadsheet, label: "Fingerprint Report", permissions: [{ resource: "employees" }] },
-        { href: "/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
-        { href: "/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
+        { href: "/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", excludedRoles: ["HR Specialist"], permissions: [{ resource: "employees", action: "update" }] },
+        { href: "/attendance/policies", icon: CalendarClock, label: "Attendance Policies", excludedRoles: ["HR Specialist"], permissions: [{ resource: "employees", action: "update" }] },
         { href: "/hr-calendar", icon: CalendarDays, label: "HR Calendar", permissions: [{ resource: "hr_calendar" }] },
       ],
       label: "Attendance Management",
@@ -132,7 +132,8 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       id: "payroll",
       items: [
         { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }] },
-        { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }] },
+        { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }], roles: ["Super Admin"] },
+        { href: "/payslips", icon: ScrollText, label: "My Payslips", permissions: [{ resource: "payslips" }], roles: ["HR Specialist"] },
       ],
       label: "Payroll Management",
     },
@@ -159,8 +160,8 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       id: "access-communication",
       items: [
         { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
-        { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "admin" }] },
-        { href: "/admin/email-templates", icon: BellRing, label: "Email Templates", permissions: [{ resource: "admin" }] },
+        { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "communication" }] },
+        { href: "/admin/email-templates", icon: BellRing, label: "Email Templates", permissions: [{ resource: "communication" }] },
       ],
       label: "Access & Communication",
     },
@@ -538,14 +539,16 @@ function SidebarLogo({
         href={homePath}
         onClick={onNavigate}
       >
-        <Image
-          alt="Phoenix Admin Intelligence"
-          className="h-[82px] w-full object-cover"
-          height={82}
-          priority
-          src="/brand/phoenix-admin-intelligence-badge.png"
-          width={260}
-        />
+        <span className="relative block h-[82px] w-full">
+          <Image
+            alt="Phoenix Admin Intelligence"
+            className="object-cover"
+            fill
+            priority
+            sizes="260px"
+            src="/brand/phoenix-admin-intelligence-badge.png"
+          />
+        </span>
       </Link>
     );
   }

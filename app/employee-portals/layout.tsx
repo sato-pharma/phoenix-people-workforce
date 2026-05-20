@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import {
   EmployeePortalTopNav,
   EmployeePortalSidebar,
@@ -16,6 +18,9 @@ export default async function EmployeePortalLayout({
   children: React.ReactNode;
 }) {
   const access = await resolveAccessContextFromPage();
+  if (!access.loginId && !access.hrId) {
+    redirect("/login");
+  }
   
   // All authenticated users can access the portal to see their own data
   await assertPermission(access, "employee_profile", "read");
@@ -39,7 +44,7 @@ export default async function EmployeePortalLayout({
   const visibility = resolveEmployeePortalNavVisibility(data.employee.roleLabel);
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f8_46%,#f8fafc_100%)]">
+    <div className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f8_46%,#f8fafc_100%)] pt-[64px] lg:pt-[72px]">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.035)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.78),transparent_64%)]" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,255,255,0)_70%)]" />

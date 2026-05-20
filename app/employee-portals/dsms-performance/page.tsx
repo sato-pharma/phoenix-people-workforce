@@ -65,13 +65,13 @@ export default async function DsmsPerformancePage({
   const eligibleCount = dsms.filter((d) => d.achievementPercent >= 90).length;
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-full min-w-0 overflow-x-hidden space-y-5 sm:space-y-6">
       {/* ── Page header + period filter ────────────────────────────────── */}
-      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-          <div>
+      <Card className="rounded-[24px] border border-slate-100 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.05)] sm:rounded-3xl sm:p-6">
+        <div className="mb-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div className="min-w-0">
             <p className="text-xs uppercase tracking-[0.14em] text-slate-500">District Managers View</p>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-900">DSMs Performance</h1>
+            <h1 className="mt-1 break-words text-2xl font-semibold text-slate-900 sm:text-3xl">DSMs Performance</h1>
             <p className="mt-1 text-sm text-slate-500">
               {validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"}
               {" · "}
@@ -81,9 +81,9 @@ export default async function DsmsPerformancePage({
 
           {/* Period filter buttons */}
           {periods.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-2 pb-1 lg:justify-end">
               <Link
-                className={`rounded-xl border px-3 py-2 text-xs font-medium transition hover:bg-slate-50 ${
+                className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-medium transition hover:bg-slate-50 ${
                   !validPeriod
                     ? "bg-slate-900 text-white border-slate-900"
                     : "text-slate-600 border-slate-200 hover:text-slate-900"
@@ -95,7 +95,7 @@ export default async function DsmsPerformancePage({
               {periods.slice(0, 5).map((p) => (
                 <Link
                   key={p}
-                  className={`rounded-xl border px-3 py-2 text-xs font-medium transition hover:bg-slate-50 ${
+                  className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-medium transition hover:bg-slate-50 ${
                     validPeriod === p
                       ? "bg-slate-900 text-white border-slate-900"
                       : "text-slate-600 border-slate-200 hover:text-slate-900"
@@ -111,23 +111,23 @@ export default async function DsmsPerformancePage({
 
         {/* ── Top stats ─────────────────────────────────────────────────── */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl bg-slate-50 p-4 border border-slate-100">
+          <div className="min-w-0 rounded-2xl bg-slate-50 p-4 border border-slate-100">
             <div className="flex items-center gap-2 text-slate-500 mb-1">
               <Target className="h-4 w-4" />
               <span className="text-xs font-medium uppercase tracking-wider">Line Target</span>
             </div>
-            <p className="text-xl font-bold text-slate-900">{egp(lineTotalTarget)}</p>
+            <p className="break-words text-xl font-bold text-slate-900">{egp(lineTotalTarget)}</p>
           </div>
 
-          <div className="rounded-2xl bg-slate-50 p-4 border border-slate-100">
+          <div className="min-w-0 rounded-2xl bg-slate-50 p-4 border border-slate-100">
             <div className="flex items-center gap-2 text-slate-500 mb-1">
               <TrendingUp className="h-4 w-4" />
               <span className="text-xs font-medium uppercase tracking-wider">Line Sales</span>
             </div>
-            <p className="text-xl font-bold text-slate-900">{egp(lineTotalSales)}</p>
+            <p className="break-words text-xl font-bold text-slate-900">{egp(lineTotalSales)}</p>
           </div>
 
-          <div className="rounded-2xl bg-slate-50 p-4 border border-slate-100">
+          <div className="min-w-0 rounded-2xl bg-slate-50 p-4 border border-slate-100">
             <div className="flex items-center gap-2 text-slate-500 mb-1">
               <Award className="h-4 w-4" />
               <span className="text-xs font-medium uppercase tracking-wider">Achievement</span>
@@ -135,7 +135,7 @@ export default async function DsmsPerformancePage({
             <p className="text-xl font-bold text-slate-900">{lineAchievementPercent.toFixed(1)}%</p>
           </div>
 
-          <div className="rounded-2xl bg-slate-50 p-4 border border-slate-100">
+          <div className="min-w-0 rounded-2xl bg-slate-50 p-4 border border-slate-100">
             <div className="flex items-center gap-2 text-slate-500 mb-1">
               <BarChart3 className="h-4 w-4" />
               <span className="text-xs font-medium uppercase tracking-wider">Eligible DSMs</span>
@@ -145,25 +145,25 @@ export default async function DsmsPerformancePage({
         </div>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
-          <h3 className="text-lg font-semibold text-slate-900 mb-6">DSM Achievement Ranking</h3>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card className="min-w-0 overflow-hidden rounded-[24px] border border-slate-100 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.05)] sm:rounded-3xl sm:p-6">
+          <h3 className="mb-4 break-words text-lg font-semibold text-slate-900 sm:mb-6">DSM Achievement Ranking</h3>
           <TeamAchievementChart members={dsms} teamAchievementPercent={lineAchievementPercent} />
         </Card>
 
-        <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
-          <h3 className="text-lg font-semibold text-slate-900 mb-6">DSM Sales vs Target</h3>
+        <Card className="min-w-0 overflow-hidden rounded-[24px] border border-slate-100 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.05)] sm:rounded-3xl sm:p-6">
+          <h3 className="mb-4 break-words text-lg font-semibold text-slate-900 sm:mb-6">DSM Sales vs Target</h3>
           <TeamSalesVsTargetChart members={dsms} />
         </Card>
       </div>
 
-      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
-        <h3 className="text-lg font-semibold text-slate-900 mb-6">DSMs Leaderboard</h3>
+      <Card className="min-w-0 overflow-hidden rounded-[24px] border border-slate-100 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.05)] sm:rounded-3xl sm:p-6">
+        <h3 className="mb-4 break-words text-lg font-semibold text-slate-900 sm:mb-6">DSMs Leaderboard</h3>
         <TeamLeaderboardTable members={dsms} />
       </Card>
 
-      <div className="mt-8">
-        <h3 className="text-xl font-bold text-slate-900 mb-6 px-2">DSMs Product Comparison</h3>
+      <div className="mt-6 min-w-0 sm:mt-8">
+        <h3 className="mb-4 break-words px-1 text-lg font-bold text-slate-900 sm:mb-6 sm:px-2 sm:text-xl">DSMs Product Comparison</h3>
         <TeamMembersBreakdown members={dsms} />
       </div>
     </div>

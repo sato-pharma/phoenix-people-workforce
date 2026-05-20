@@ -88,10 +88,10 @@ type ChartTooltipEntry<TPayload> = {
 };
 
 const chartPanelClassName =
-  "relative overflow-hidden rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_22px_58px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/5 sm:p-6";
+  "relative overflow-hidden rounded-[24px] border border-white/80 bg-white/95 p-4 shadow-[0_22px_58px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/5 sm:rounded-[28px] sm:p-6";
 
 const chartSurfaceClassName =
-  "rounded-[24px] border border-slate-200/80 bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.92)] sm:p-4";
+  "rounded-[20px] border border-slate-200/80 bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.92)] sm:rounded-[24px] sm:p-4";
 
 const mixColors = ["#f97316", "#0ea5e9", "#10b981", "#f59e0b", "#e11d48", "#64748b"];
 
@@ -887,11 +887,11 @@ const TrendChart = memo(function TrendChart({
       </div>
 
       <div className="relative mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_230px]">
-        <div className={`${chartSurfaceClassName} overflow-x-auto`}>
+        <div className={chartSurfaceClassName}>
           {hasData ? (
-            <div className="h-[360px] min-w-[650px]">
+            <div className="h-[300px] min-w-0 sm:h-[360px]">
               <ResponsiveContainer height="100%" width="100%">
-                <ComposedChart data={chartData} margin={{ bottom: 8, left: 0, right: 0, top: 16 }}>
+                <ComposedChart data={chartData} margin={{ bottom: 4, left: -12, right: -10, top: 16 }}>
                   <defs>
                     <linearGradient id="salesBarGradient" x1="0" x2="0" y1="0" y2="1">
                       <stop offset="0%" stopColor="#f97316" />
@@ -906,17 +906,18 @@ const TrendChart = memo(function TrendChart({
                   <XAxis
                     axisLine={false}
                     dataKey="label"
-                    minTickGap={18}
+                    interval="preserveStartEnd"
+                    minTickGap={12}
                     tick={{ fill: "#64748b", fontSize: 11, fontWeight: 700 }}
                     tickLine={false}
-                    tickMargin={12}
+                    tickMargin={10}
                   />
                   <YAxis
                     axisLine={false}
                     tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 700 }}
                     tickFormatter={(value) => formatCompactCurrency(Number(value)).replace("EGP ", "")}
                     tickLine={false}
-                    width={58}
+                    width={50}
                     yAxisId="money"
                   />
                   <YAxis
@@ -926,7 +927,7 @@ const TrendChart = memo(function TrendChart({
                     tick={{ fill: "#0ea5e9", fontSize: 11, fontWeight: 800 }}
                     tickFormatter={(value) => `${Number(value).toFixed(0)}%`}
                     tickLine={false}
-                    width={42}
+                    width={36}
                     yAxisId="achievement"
                   />
                   <Tooltip content={<TrendTooltip />} cursor={{ fill: "rgba(15,23,42,0.035)" }} />
@@ -948,7 +949,7 @@ const TrendChart = memo(function TrendChart({
                     yAxisId="money"
                   />
                   <Bar
-                    barSize={28}
+                    barSize={18}
                     dataKey="sales"
                     fill="url(#salesBarGradient)"
                     name="Sales"

@@ -17,6 +17,9 @@ export default async function EmployeePortalExpenseDashboardPage() {
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/payroll");
   }
+  if (access.role === "Medical Rep") {
+    redirect("/employee-portals/expenses");
+  }
   await assertPermission(access, "expenses", "read");
 
   let data = null;

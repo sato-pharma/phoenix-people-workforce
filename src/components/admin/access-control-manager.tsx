@@ -50,6 +50,7 @@ import {
   type PermissionResource,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 type EmployeeOption = {
   hrId: string;
@@ -132,6 +133,15 @@ const scopes: BusinessScope[] = [
 
 const panelClassName =
   "rounded-xl border border-slate-200 bg-white shadow-sm";
+
+const permissionHeaderCellClass =
+  "sticky top-0 z-20 border-b border-slate-200 bg-stone-50 px-4 py-3 shadow-sm";
+
+const permissionRoleHeaderCellClass =
+  "sticky left-0 top-0 z-30 border-b border-r border-slate-200 bg-stone-50 px-4 py-3 shadow-sm";
+
+const permissionRoleCellClass =
+  "sticky left-0 z-10 border-r border-slate-100/80 bg-white px-4 py-3 transition-colors group-hover:bg-stone-50";
 
 const roleFamilies: Record<PhoenixRole, "executive" | "finance" | "hr" | "manager" | "employee"> = {
   CEO: "executive",
@@ -1364,7 +1374,7 @@ export function AccessControlManager({
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm font-semibold text-slate-900 transition-colors duration-160 ease-out group-hover:text-orange-950">{user.name}</p>
                                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600">
-                                  <span className="font-mono text-slate-700">HR_ID {user.hrId ?? "-"}</span>
+                                  <span className="font-mono text-slate-700">HR_ID {formatHrIdForDisplay(user.hrId) ?? "-"}</span>
                                   <span className="text-slate-400">/</span>
                                   <span className="font-mono text-slate-700">{user.loginId}</span>
                                   {user.email && (
@@ -1381,7 +1391,7 @@ export function AccessControlManager({
                             <div className="flex flex-col gap-1.5">
                               <RoleBadge role={user.role} />
                               <span className="text-xs text-slate-700 font-medium">Line: {user.line}</span>
-                              <span className="text-xs text-slate-500">Manager: {user.managerHrId ?? "-"}</span>
+                              <span className="text-xs text-slate-500">Manager: {formatHrIdForDisplay(user.managerHrId) ?? "-"}</span>
                             </div>
                           </td>
                           <td className="px-4 py-3 align-top">
@@ -1424,7 +1434,7 @@ export function AccessControlManager({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-base font-semibold text-slate-900">{user.name}</p>
-                          <p className="mt-1 font-mono text-xs text-slate-600">HR_ID {user.hrId ?? "-"} / {user.loginId}</p>
+                          <p className="mt-1 font-mono text-xs text-slate-600">HR_ID {formatHrIdForDisplay(user.hrId) ?? "-"} / {user.loginId}</p>
                           {user.email && <p className="mt-1 truncate text-xs text-slate-500">{user.email}</p>}
                         </div>
                         <StatusBadge isActive={user.isActive} />
@@ -1441,7 +1451,7 @@ export function AccessControlManager({
                         </div>
                         <div className="flex justify-between gap-3">
                           <span>Manager HR_ID</span>
-                          <span className="font-mono text-slate-800">{user.managerHrId ?? "-"}</span>
+                          <span className="font-mono text-slate-800">{formatHrIdForDisplay(user.managerHrId) ?? "-"}</span>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <ScopeBadge label="Sales" scope={user.salesScope} />
@@ -1509,24 +1519,24 @@ export function AccessControlManager({
                   <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 font-semibold text-slate-500">Restricted</span>
                   {!canManagePermissions && <span className="font-medium text-slate-500">Permission changes are locked to Super Admin governance.</span>}
                 </div>
-                <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-xs">
-                  <thead className="bg-stone-50 text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">Role</th>
-                      <th className="px-4 py-3">Sales</th>
-                      <th className="px-4 py-3">Payroll</th>
-                      {permissionResources.map((resource) => (
-                        <th className="px-4 py-3" key={resource}>
-                          {resource}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
+                <div className="max-h-[70vh] overflow-auto">
+                  <table className="min-w-full text-left text-xs">
+                    <thead className="bg-stone-50 text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                      <tr>
+                        <th className={permissionRoleHeaderCellClass}>Role</th>
+                        <th className={permissionHeaderCellClass}>Sales</th>
+                        <th className={permissionHeaderCellClass}>Payroll</th>
+                        {permissionResources.map((resource) => (
+                          <th className={permissionHeaderCellClass} key={resource}>
+                            {resource}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
                     {phoenixRoles.map((role) => (
-                      <tr className="border-b border-slate-100/80 transition-colors hover:bg-stone-50/50" key={role}>
-                        <td className="px-4 py-3">
+                      <tr className="group border-b border-slate-100/80 transition-colors hover:bg-stone-50/50" key={role}>
+                        <td className={permissionRoleCellClass}>
                           <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium border ${
                             role === "Super Admin" || role === "CEO"
                               ? "bg-gradient-to-r from-rose-50 to-orange-50 text-rose-700 border-rose-200/60"

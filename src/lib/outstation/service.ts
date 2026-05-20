@@ -4,16 +4,23 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { randomUUID } from "node:crypto";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { validateLiveCarEvidence } from "@/lib/outstation/car-evidence";
 import {
   createOutstationCarEvidenceSignedUrl,
   deleteOutstationCarEvidenceImage,
+  deleteOutstationTicketAttachments,
   uploadOutstationCarEvidenceImage,
+  uploadOutstationTicketAttachments,
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { savePayrollExpenseApprovals } from "@/lib/payroll/expenses";
+import {
+  validateMedicalRepSimpleExpenseInput,
+  type MedicalRepSimpleExpenseInput,
+} from "@/lib/outstation/medical-rep-expenses";
 import {
   googleDirectionsRoute,
   googleDistanceMatrix,
@@ -29,6 +36,7 @@ import type {
   OutstationCalculationInput,
   OutstationCalculationResult,
   OutstationCaptureResult,
+  OutstationTicketAttachmentMetadata,
   OutstationEligibilityStatus,
   OutstationExpenseType,
   OutstationExpenseRequest,
@@ -337,6 +345,80 @@ export async function getOutstationEmployeeContext(access: AccessContext) {
     employeeName: identity.employeeName,
     employeeRole: identity.employeeRole,
     residence,
+  };
+}
+
+function residenceSummary(parts: {
+  residenceAddress: string | null;
+  residenceArea: string | null;
+  residenceCity: string | null;
+}) {
+  return [
+    parts.residenceAddress,
+    parts.residenceCity,
+    parts.residenceArea,
+  ]
+    .map((value) => text(value))
+    .filter(Boolean)
+    .join(" - ");
+}
+
+function fallbackResidenceFromEmployee(employee: EmployeeDirectoryRow): EmployeeResidenceLocation | null {
+  const hasResidenceText = Boolean(
+    text(employee.residenceAddress) ||
+      text(employee.residenceCity) ||
+      text(employee.residenceArea),
+  );
+  const hasCoordinates =
+    employee.residenceLatitude != null && employee.residenceLongitude != null;
+
+  if (!hasResidenceText && !hasCoordinates) {
+    return null;
+  }
+
+  return {
+    employeeHrId: employee.hrId,
+    geocodeStatus: employee.residenceGeocodeStatus,
+    residenceAddress: text(employee.residenceAddress) || null,
+    residenceArea: text(employee.residenceArea) || null,
+    residenceCity: text(employee.residenceCity) || null,
+    residenceLatitude: employee.residenceLatitude,
+    residenceLongitude: employee.residenceLongitude,
+  };
+}
+
+function assertMedicalRepRole(access: AccessContext) {
+  if (normalizeRole(access.role) !== "Medical Rep") {
+    throw new Error("Forbidden: only Medical Rep users can use simple expense submission.");
+  }
+}
+
+async function getMedicalRepExpenseIdentity(access: AccessContext) {
+  assertMedicalRepRole(access);
+  const identity = await getEmployeeIdentity(access);
+  const residence =
+    (await getResidenceLocationForEmployee(identity.employeeHrId)) ??
+    fallbackResidenceFromEmployee(identity.employee);
+  const fromLocation = residence ? residenceSummary(residence) : "";
+
+  return {
+    ...identity,
+    fromLocation,
+    residence,
+  };
+}
+
+export async function getMedicalRepExpenseContext(access: AccessContext) {
+  const identity = await getMedicalRepExpenseIdentity(access);
+
+  return {
+    employeeArea: identity.employeeArea,
+    employeeHrId: identity.employeeHrId,
+    employeeLine: identity.employeeLine,
+    employeeName: identity.employeeName,
+    employeeRole: identity.employeeRole,
+    fromLocation: identity.fromLocation,
+    residence: identity.residence,
   };
 }
 
@@ -1307,6 +1389,7 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     expectedTotalAmount: numberValue(row.expected_total_amount),
     fraudFlags: safeJsonParse<OutstationFraudFlag[]>(row.fraud_flags_json, []),
     fuelAmount: numberValue(row.fuel_amount),
+    goTicketAmount: numberValue(row.go_ticket_amount),
     id: Number(row.id),
     kilometerReading: nullableNumber(row.kilometer_reading),
     medicalTripHrId: text(row.medical_trip_hr_id) || null,
@@ -1329,6 +1412,12 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     territoryValidationReason: text(row.territory_validation_reason),
     territoryValidationStatus:
       text(row.territory_validation_status) as OutstationTerritoryValidationStatus,
+    returnTicketAmount: numberValue(row.return_ticket_amount),
+    ticketAttachmentMetadata: safeJsonParse<OutstationTicketAttachmentMetadata[]>(
+      row.ticket_attachment_metadata,
+      [],
+    ),
+    ticketAttachmentPaths: safeJsonParse<string[]>(row.ticket_attachment_paths, []),
     ticketAmount: numberValue(row.ticket_amount),
     toArea: text(row.to_area) || null,
     toCity: text(row.to_city) || null,
@@ -1400,6 +1489,133 @@ export async function getOutstationRequestById(
     ...request,
     carEvidenceImageUrl: await createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
   };
+}
+
+export async function listMedicalRepExpenseRequests(access: AccessContext) {
+  const identity = await getMedicalRepExpenseIdentity(access);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("outstation_expense_requests")
+    .select("*")
+    .ilike("employee_hr_id", identity.employeeHrId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as Array<Record<string, unknown>>).map(mapOutstationRequestRow);
+}
+
+export async function submitMedicalRepSimpleExpenseRequest(
+  access: AccessContext,
+  input: MedicalRepSimpleExpenseInput,
+) {
+  const identity = await getMedicalRepExpenseIdentity(access);
+  const normalized = validateMedicalRepSimpleExpenseInput(input);
+
+  if (!identity.fromLocation) {
+    throw new Error("Residence location is not configured for your employee profile. Please contact HR.");
+  }
+
+  const now = new Date().toISOString();
+  const requestDraftId = `medical-rep-${randomUUID()}`;
+  let uploadedAttachments: OutstationTicketAttachmentMetadata[] = [];
+
+  try {
+    uploadedAttachments = await uploadOutstationTicketAttachments(
+      normalized.attachments.map((attachment) => ({
+        ...attachment,
+        employeeHrId: identity.employeeHrId,
+        requestDraftId,
+      })),
+    );
+
+    const overnightDays = daysBetween(normalized.tripStartDate, normalized.tripEndDate);
+    const sameDayTrip = overnightDays === 0;
+    const residence = identity.residence;
+    const capturedLatitude = residence?.residenceLatitude ?? 0;
+    const capturedLongitude = residence?.residenceLongitude ?? 0;
+    const attachmentPaths = uploadedAttachments.map((attachment) => attachment.path);
+    const { data, error } = await getSupabaseAdmin()
+      .from("outstation_expense_requests")
+      .insert({
+        allowance_amount: 0,
+        allowance_breakdown_json: JSON.stringify({
+          overnightDays,
+          returnDayApplied: false,
+          rows: [],
+          sameDayTrip,
+        }),
+        approval_reason:
+          "Medical rep manual traveling expense submitted without manager outstation distance rules.",
+        approval_recommendation: "finance_review",
+        area: identity.employeeArea,
+        attachment_count: uploadedAttachments.length,
+        calculation_status: "submitted",
+        captured_accuracy_meters: 0,
+        captured_at: now,
+        captured_latitude: capturedLatitude,
+        captured_location_source: "medical_rep_manual",
+        captured_longitude: capturedLongitude,
+        claimed_total_amount: normalized.ticketAmount,
+        distance_from_residence_km: null,
+        distance_km: null,
+        duration_minutes: null,
+        eligibility_reason:
+          "Medical rep manual expense submission; no manager outstation rule was applied.",
+        eligibility_status: "needs_review",
+        employee_hr_id: identity.employeeHrId,
+        employee_name: identity.employeeName,
+        employee_role: "Medical Rep",
+        expected_total_amount: normalized.ticketAmount,
+        expense_type: "traveling",
+        fraud_flags_json: JSON.stringify([]),
+        fuel_amount: 0,
+        go_ticket_amount: normalized.goTicketAmount,
+        line: identity.employeeLine,
+        minimum_required_distance_km: 0,
+        notes: normalized.notes,
+        offline_captured: false,
+        overnight_days: overnightDays,
+        residence_address: residence?.residenceAddress ?? null,
+        residence_area: residence?.residenceArea ?? null,
+        residence_city: residence?.residenceCity ?? null,
+        residence_latitude: residence?.residenceLatitude ?? null,
+        residence_longitude: residence?.residenceLongitude ?? null,
+        return_ticket_amount: normalized.returnTicketAmount,
+        route_polyline: null,
+        same_day_trip: sameDayTrip,
+        status: "submitted",
+        submitted_at: now,
+        suspicious_location_score: 0,
+        ticket_amount: normalized.ticketAmount,
+        ticket_attachment_metadata: uploadedAttachments,
+        ticket_attachment_paths: attachmentPaths,
+        to_area: null,
+        to_city: null,
+        to_label: normalized.toLocation,
+        transportation_type: "other",
+        trip_end_date: normalized.tripEndDate,
+        trip_start_date: normalized.tripStartDate,
+        updated_at: now,
+        variance_amount: 0,
+        variance_percent: 0,
+      })
+      .select("*")
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return mapOutstationRequestRow(data as Record<string, unknown>);
+  } catch (error) {
+    await deleteOutstationTicketAttachments(
+      uploadedAttachments.map((attachment) => attachment.path),
+    );
+    throw error;
+  }
 }
 
 function outstationPayrollTripId(requestId: number) {

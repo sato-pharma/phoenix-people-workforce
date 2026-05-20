@@ -28,7 +28,7 @@ function toCsvCell(value: string | null | undefined) {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    if (!await canAccess(access, "admin", "read") && !await canAccess(access, "overview", "read")) {
+    if (!await canAccess(access, "admin", "read")) {
       return NextResponse.json({ message: "Forbidden: insufficient permissions." }, { status: 403 });
     }
 

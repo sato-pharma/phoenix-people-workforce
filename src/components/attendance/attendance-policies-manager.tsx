@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CalendarClock, Plus, RefreshCw, Save } from "lucide-react";
 
 import {
@@ -102,7 +102,7 @@ function formFromPolicy(policy: AttendancePolicyGroup): PolicyForm {
     scheduledEnd: policy.scheduledEnd,
     scheduledStart: policy.scheduledStart,
     targetType: policy.targetType,
-    targetValue: policy.targetValue,
+    targetValue: policy.targetType === "default" ? "" : policy.targetValue,
   };
 }
 
@@ -135,12 +135,6 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
     jobTitles: data?.jobTitles ?? [],
   }), [data?.employees, data?.jobTitles]);
 
-  useEffect(() => {
-    if (form.targetType === "default" && form.targetValue) {
-      setForm((current) => ({ ...current, targetValue: "" }));
-    }
-  }, [form.targetType, form.targetValue]);
-
   async function load() {
     setRefreshing(true);
     setError(null);
@@ -160,11 +154,14 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
     setSaving(true);
     setError(null);
     setNotice(null);
+    const policyPayload = form.targetType === "default" && form.targetValue
+      ? { ...form, targetValue: "" }
+      : form;
     try {
       const response = await fetch("/api/attendance/policies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(policyPayload),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? "Attendance policy failed to save.");

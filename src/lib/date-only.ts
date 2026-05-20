@@ -81,7 +81,9 @@ export function formatDateOnly(
     return typeof value === "string" ? value : fallback;
   }
 
-  return new Intl.DateTimeFormat(locale, options).format(date);
+  return new Intl.DateTimeFormat(locale, options)
+    .format(date)
+    .replace(/\bSept\b/g, "Sep");
 }
 
 export function addDaysToDateOnly(value: string | null | undefined, days: number) {

@@ -1,4 +1,4 @@
-import { addYearsToDateOnly, parseDateOnly, toDateOnlyString } from "../date-only.ts";
+import { addDaysToDateOnly, addYearsToDateOnly, parseDateOnly, toDateOnlyString } from "../date-only.ts";
 import { countHrWorkingDays, isHrWorkingDay } from "@/lib/hr-calendar/calendar-logic";
 import type {
   VacationBalanceSnapshot,
@@ -15,7 +15,10 @@ import {
 
 const firstYearAnnualEntitlementDays = 15;
 const standardAnnualEntitlementDays = 21;
+const emergencyAnnualEntitlementDays = 6;
 const monthsInYear = 12;
+const emergencyCutoffHour = 10;
+const vacationPolicyTimeZone = "Africa/Cairo";
 
 function roundDays(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -42,6 +45,7 @@ function compareDateOnly(left: string, right: string) {
 
 export function normalizeVacationType(value: unknown): VacationType | null {
   const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "personal") return "other";
   return VACATION_TYPES.some((option) => option.value === normalized)
     ? (normalized as VacationType)
     : null;
@@ -143,14 +147,87 @@ export function getVacationBalancePeriod(input: {
   };
 }
 
+export function getEmergencyVacationBalancePeriod(referenceDate: string) {
+  const date = dateOnlyOrNull(referenceDate);
+  if (!date) return null;
+  const year = date.getFullYear();
+  return {
+    entitlementDays: emergencyAnnualEntitlementDays,
+    periodEnd: `${year + 1}-01-01`,
+    periodStart: `${year}-01-01`,
+  };
+}
+
+function dateOnlyFromParts(parts: Record<string, string | undefined>) {
+  const year = parts.year;
+  const month = parts.month;
+  const day = parts.day;
+  return year && month && day ? `${year}-${month}-${day}` : toDateOnlyString(new Date()) ?? "";
+}
+
+function vacationPolicyClock(now = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "2-digit",
+    timeZone: vacationPolicyTimeZone,
+    year: "numeric",
+  });
+  const parts = Object.fromEntries(formatter.formatToParts(now).map((part) => [part.type, part.value]));
+  return {
+    dateOnly: dateOnlyFromParts(parts),
+    hour: Number(parts.hour ?? 0),
+    minute: Number(parts.minute ?? 0),
+  };
+}
+
+export function getVacationPolicyToday(now = new Date()) {
+  return vacationPolicyClock(now).dateOnly;
+}
+
+export function getAnnualVacationMinimumStartDate(now = new Date()) {
+  return addDaysToDateOnly(getVacationPolicyToday(now), 1) ?? getVacationPolicyToday(now);
+}
+
+export function validateVacationRequestPolicy(input: {
+  dayPart: VacationDayPart;
+  endDate: string;
+  now?: Date;
+  startDate: string;
+  vacationType: VacationType;
+}) {
+  const clock = vacationPolicyClock(input.now);
+
+  if (input.vacationType === "emergency") {
+    if (input.startDate !== clock.dateOnly || input.endDate !== clock.dateOnly) {
+      throw new Error("Emergency vacation must be requested for today only.");
+    }
+
+    if (input.dayPart !== "pm_only" && clock.hour >= emergencyCutoffHour) {
+      throw new Error("Emergency full-day and AM-only requests must be submitted before 10:00 AM.");
+    }
+  }
+
+  if (input.vacationType === "annual") {
+    const minimumStartDate = getAnnualVacationMinimumStartDate(input.now);
+    if (input.startDate < minimumStartDate) {
+      throw new Error("Annual vacation must start from tomorrow or later.");
+    }
+  }
+}
+
 export function calculateVacationPayment(input: {
   approvedPaidDaysInPeriod: number;
   durationDays: number;
   hireDate: string | null | undefined;
   startDate: string;
+  vacationType?: VacationType;
 }): VacationBalanceSnapshot {
   const hireDate = toDateOnlyString(input.hireDate);
   const durationDays = roundDays(input.durationDays);
+  const vacationType = input.vacationType ?? "annual";
   const defaultUnpaid = (
     reason: VacationUnpaidReason,
     period: ReturnType<typeof getVacationBalancePeriod> = null,
@@ -164,6 +241,39 @@ export function calculateVacationPayment(input: {
     unpaidReason: reason,
     usedPaidDays: roundDays(input.approvedPaidDaysInPeriod),
   });
+
+  if (vacationType === "emergency") {
+    const period = getEmergencyVacationBalancePeriod(input.startDate);
+    if (!period) {
+      return defaultUnpaid("missing_hire_date");
+    }
+
+    const usedPaidDays = roundDays(input.approvedPaidDaysInPeriod);
+    const balanceBeforeDays = roundDays(Math.max(0, period.entitlementDays - usedPaidDays));
+    if (durationDays > balanceBeforeDays) {
+      return {
+        balanceAfterDays: balanceBeforeDays,
+        balanceBeforeDays,
+        entitlementDays: roundDays(period.entitlementDays),
+        paymentStatus: "unpaid",
+        periodEnd: period.periodEnd,
+        periodStart: period.periodStart,
+        unpaidReason: "insufficient_balance",
+        usedPaidDays,
+      };
+    }
+
+    return {
+      balanceAfterDays: roundDays(balanceBeforeDays - durationDays),
+      balanceBeforeDays,
+      entitlementDays: roundDays(period.entitlementDays),
+      paymentStatus: "paid",
+      periodEnd: period.periodEnd,
+      periodStart: period.periodStart,
+      unpaidReason: null,
+      usedPaidDays,
+    };
+  }
 
   if (!hireDate) {
     return defaultUnpaid("missing_hire_date");

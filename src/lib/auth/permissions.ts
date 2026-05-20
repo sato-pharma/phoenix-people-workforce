@@ -49,6 +49,7 @@ export type PermissionResource =
   | "resignations"
   | "contracts"
   | "coaching"
+  | "communication"
   | "hr_calendar"
   | "outstation"
   | "leave"
@@ -71,6 +72,7 @@ export const permissionResources: PermissionResource[] = [
   "resignations",
   "contracts",
   "coaching",
+  "communication",
   "user_admin",
   "permission_admin",
   "employee_documents",
@@ -129,10 +131,12 @@ const portalNavigationRoles = new Set<PhoenixRole>([
   "CEO",
   "Manager",
 ]);
+export const designatedHrSpecialistHrId = "a16";
 
 const defaultPermissionMatrix: PermissionMap = {
   "Super Admin": {
     admin: allActions,
+    communication: allActions,
     overview: ["read"],
     admin_access: ["read"],
     imports: allActions,
@@ -180,28 +184,22 @@ const defaultPermissionMatrix: PermissionMap = {
     vacancies: ["read", "export"],
   },
   "HR Specialist": {
-    admin: allActions,
+    communication: ["read", "update"],
     overview: ["read"],
-    admin_access: ["read"],
     imports: ["read", "import"],
     contracts: allActions,
     coaching: ["read"],
     employee_documents: allActions,
     employee_profile: allActions,
     employees: allActions,
-    expenses: allActions,
     hr_calendar: allActions,
-    outstation: allActions,
     leave: allActions,
     organogram: ["read", "export"],
     offers: allActions,
-    payroll: allActions,
-    permission_admin: ["read"],
-    payslips: allActions,
+    payslips: ["read", "export"],
     probation: allActions,
     resignations: allActions,
     team: ["read", "export"],
-    user_admin: ["read", "update"],
     vacancies: allActions,
   },
   "Finance Manager": {
@@ -474,6 +472,14 @@ export function normalizeHrIdForAccess(value: string | null | undefined) {
   return normalized ? normalized.replace(/[^a-z0-9]/g, "") : null;
 }
 
+function isDesignatedHrSpecialistHrId(hrId: string | null | undefined) {
+  return normalizeHrIdForAccess(hrId) === designatedHrSpecialistHrId;
+}
+
+export function isDesignatedHrSpecialist(context: Pick<AccessContext, "hrId" | "role">) {
+  return context.role === "HR Specialist" && isDesignatedHrSpecialistHrId(context.hrId);
+}
+
 function hrIdsMatch(left: string | null | undefined, right: string | null | undefined) {
   const a = normalizeHrId(left);
   const b = normalizeHrId(right);
@@ -523,12 +529,13 @@ export function createAccessContext(input: {
   source?: AccessContext["source"];
 }): AccessContext {
   const role = normalizeRole(input.role);
+  const hrId = normalizeHrId(input.hrId);
 
   return {
-    hrId: normalizeHrId(input.hrId),
+    hrId,
     loginId: input.loginId ?? null,
     role,
-    scope: scopeForRole(role),
+    scope: role === "HR Specialist" && !isDesignatedHrSpecialistHrId(hrId) ? "self" : scopeForRole(role),
     source: input.source ?? "session",
   };
 }
@@ -646,6 +653,7 @@ export async function canAccess(
   action: PermissionAction = "read",
 ) {
   if (context.scope === "system") return true;
+  if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) return false;
   const matrix = await resolvePermissionMatrix();
   return matrix[context.role][resource]?.includes(action) ?? false;
 }
@@ -677,7 +685,6 @@ export function getSalesScope(context: Pick<AccessContext, "role"> & { salesScop
 export function getPayrollScope(context: Pick<AccessContext, "role">): BusinessScope {
   if (
     context.role === "CEO" ||
-    context.role === "HR Specialist" ||
     context.role === "Finance Manager" ||
     context.role === "Super Admin"
   ) {
@@ -705,7 +712,6 @@ export function getExpensesScope(
       return "LINE";
     case "SFE Manager":
     case "CEO":
-    case "HR Specialist":
     case "Finance Manager":
     case "Super Admin":
       return "COMPANY";
@@ -763,7 +769,7 @@ function canSeeDirectReportsByRole(role: PhoenixRole) {
 }
 
 export function canSeeEmployee(context: AccessContext, employee: Pick<EmployeeDirectoryRow, "hrId" | "managerHrId">) {
-  if (context.scope === "system" || context.role === "Super Admin" || context.role === "HR Specialist") return true;
+  if (context.scope === "system" || context.role === "Super Admin" || isDesignatedHrSpecialist(context)) return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(employee.hrId);
@@ -785,7 +791,7 @@ export function canSeeHrScopedRecord(
     managerHrId?: string | null;
   },
 ) {
-  if (context.scope === "system" || context.role === "Super Admin" || context.role === "HR Specialist") return true;
+  if (context.scope === "system" || context.role === "Super Admin" || isDesignatedHrSpecialist(context)) return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(record.employeeHrId ?? record.hrId);
@@ -810,7 +816,7 @@ export function filterEmployeeDirectoryForAccess(
   directory: EmployeeDirectoryData,
   context: AccessContext,
 ): EmployeeDirectoryData {
-  if (context.scope === "system" || context.role === "Super Admin" || context.role === "HR Specialist") return directory;
+  if (context.scope === "system" || context.role === "Super Admin" || isDesignatedHrSpecialist(context)) return directory;
 
   const employees = filterEmployeesForAccess(directory.employees, context);
   const visibleHrIds = new Set(employees.map((employee) => normalizeHrId(employee.hrId)).filter(Boolean));
@@ -841,5 +847,22 @@ export async function assertPermission(
 ) {
   if (!(await canAccess(context, resource, action))) {
     throw new Error(`Forbidden: ${context.role} cannot ${action} ${resource}.`);
+  }
+}
+
+export async function canAccessAttendanceSetup(
+  context: AccessContext,
+  action: Extract<PermissionAction, "read" | "update"> = "read",
+) {
+  if (context.role === "HR Specialist") return false;
+  return canAccess(context, "employees", action);
+}
+
+export async function assertAttendanceSetupPermission(
+  context: AccessContext,
+  action: Extract<PermissionAction, "read" | "update"> = "read",
+) {
+  if (!(await canAccessAttendanceSetup(context, action))) {
+    throw new Error(`Forbidden: ${context.role} cannot ${action} attendance setup.`);
   }
 }

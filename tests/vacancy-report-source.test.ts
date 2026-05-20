@@ -66,11 +66,48 @@ export function runVacancyReportSourceTests() {
       vacancyCode: "VAC-MR-002",
     }),
     vacancy({ id: 5, status: "closed", vacancyCode: "VAC-DSM-CLOSED" }),
+    vacancy({ id: 6, status: "filled", vacancyCode: "VAC-DSM-FILLED" }),
   ]);
 
   assert.deepEqual(
     rows.map((row) => row.vacancyCode),
-    ["VAC-DSM-001", "VAC-MR-001", "VAC-DSM-CLOSED"],
+    ["VAC-DSM-001", "VAC-MR-001"],
+  );
+
+  const importedDsmDuplicates = dedupeVacancyReportRows([
+    vacancy({
+      id: 21,
+      managerHrId: "PHASE15_MPBNGR14_FEACB21D",
+      managerName: "PHASE15_MPBNGR14_FEACB21D Manager",
+      status: "filled",
+      vacancyCode: "VAC-1DTERM",
+    }),
+    vacancy({
+      id: 22,
+      managerHrId: "PHASE15_MPBNGR14_FEACB21D",
+      managerName: "PHASE15_MPBNGR14_FEACB21D Manager",
+      status: "filled",
+      vacancyCode: "VAC-1DHIRE",
+    }),
+    vacancy({
+      id: 23,
+      managerHrId: "PHASE15_MPBNF8MG",
+      managerName: "PHASE15_MPBNF8MG Manager",
+      status: "open",
+      vacancyCode: "VAC-B9HIRE",
+    }),
+    vacancy({
+      id: 24,
+      managerHrId: "PHASE15_MPBNDXKQ",
+      managerName: "PHASE15_MPBNDXKQ Manager",
+      status: "closed",
+      vacancyCode: "VAC-58HIRE",
+    }),
+  ]);
+
+  assert.deepEqual(
+    importedDsmDuplicates.map((row) => row.vacancyCode),
+    ["VAC-1DTERM"],
   );
 
   const cairoDsmRows = dedupeVacancyReportRows([
