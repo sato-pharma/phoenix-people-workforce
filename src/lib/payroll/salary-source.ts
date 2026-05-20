@@ -1,9 +1,8 @@
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import {
-  calculateGrossSalary,
-  calculateNetSalary,
   normalizePayrollPaymentMode,
+  resolveFixedSalaryAmounts,
 } from "@/lib/payroll/policy";
 import {
   salarySourceLookupKeys,
@@ -28,7 +27,6 @@ export async function getPayrollSalarySourcesByHrId(expectedPeriod?: { month: nu
   const sources = new Map<string, PayrollSalarySource>();
 
   for (const employee of directory.employees) {
-    const baseSalary = moneyOrNull(numberOrNull(employee.netSalary) ?? 0);
     const standardAllowances = resolveStandardSalaryAllowances({
       departmentName: employee.departmentName,
       jobTitle: employee.jobTitle,
@@ -41,32 +39,27 @@ export async function getPayrollSalarySourcesByHrId(expectedPeriod?: { month: nu
     const fuelAllowance = standardAllowances.fuelAllowance;
     const socialInsurance = numberOrNull(employee.socialInsurance);
     const employmentIncomeTax = numberOrNull(employee.taxes);
+    const fixedSalary = resolveFixedSalaryAmounts({
+      baseSalary: numberOrNull(employee.baseSalary),
+      basicSalary: numberOrNull(employee.basicSalary),
+      employmentIncomeTax,
+      extraCostOfLiving,
+      fuelAllowance,
+      grossSalary: numberOrNull(employee.grossSalary),
+      netSalary: numberOrNull(employee.netSalary),
+      socialInsurance,
+    });
+    const baseSalary = moneyOrNull(fixedSalary.baseSalary);
     const source: PayrollSalarySource = {
       baseSalary,
       employmentIncomeTax,
       extraCostOfLiving,
       fuelAllowance,
-      grossSalary:
-        numberOrNull(employee.grossSalary) ??
-        (baseSalary === null
-          ? null
-          : moneyOrNull(
-              calculateGrossSalary({
-                baseSalary,
-                socialInsurance,
-                taxes: employmentIncomeTax,
-              }),
-            )),
+      grossSalary: baseSalary === null ? null : moneyOrNull(fixedSalary.grossSalary),
       netSalary:
         baseSalary === null
           ? null
-          : moneyOrNull(
-              calculateNetSalary({
-                baseSalary,
-                extraCostOfLiving,
-                fuelAllowance,
-              }),
-            ),
+          : moneyOrNull(fixedSalary.netSalary),
       paymentMode: normalizePayrollPaymentMode(employee.salaryPaymentMode),
       socialInsurance,
     };

@@ -2,7 +2,6 @@ import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import {
   buildPayrollExpenseBreakdown,
   buildPayrollExpenseTrend,
-  getApprovedExpenseTotalsByHrId,
   summarizePayrollExpenses,
   type PayrollExpenseBreakdownRow,
   type PayrollExpenseSummary,
@@ -541,8 +540,39 @@ export async function getApprovedExpenseTotalsForPayroll(
   year: number,
   accessContext: AccessContext,
 ) {
-  const expenses = await listPayrollExpenses(month, year, undefined, accessContext);
-  return getApprovedExpenseTotalsByHrId(expenses);
+  // Optimized narrow-query equivalent of getApprovedExpenseTotalsByHrId for payroll template generation.
+  const accessFilter = await resolveExpenseAccessFilter(accessContext);
+  const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
+  let query = supabase
+    .from("payroll_expenses")
+    .select("hr_id,total,hr_approved,payout_year,trip_id,source_file_name,specialist,description")
+    .eq("payout_month", month)
+    .eq("payout_year", year)
+    .eq("hr_approved", true);
+
+  const allowedHrIds = Array.from(accessFilter.allowedHrIds);
+  if (!accessFilter.all) {
+    if (allowedHrIds.length === 0) return new Map<string, number>();
+    query = applyHrIdInFilter(query, allowedHrIds);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    if (isPayrollExpensesSchemaMissing(error)) return new Map<string, number>();
+    throw error;
+  }
+
+  const totals = new Map<string, number>();
+  ((data ?? []) as Array<Record<string, unknown>>)
+    .filter((row) => !isDisposableExpenseRow(row))
+    .forEach((row) => {
+      const hrId = String(row.hr_id ?? "").trim();
+      if (!hrId) return;
+      totals.set(hrId, (totals.get(hrId) ?? 0) + Number(row.total ?? 0));
+    });
+
+  return totals;
 }
 
 export async function savePayrollExpenseApprovals(input: {

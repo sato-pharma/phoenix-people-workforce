@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileText } from "lucide-react";
+import { FileImage, FileText } from "lucide-react";
 
 import {
   AdminInsightChip,
@@ -60,6 +60,7 @@ export default async function AdminPayslipsCenterPage(
     searchPayslipCenter(searchParams.employee),
   ]);
   const latestNet = data.rows[0] ? formatMoney(data.rows[0].netSalary) : "-";
+  const canExportPayslipImage = access.role === "Super Admin";
   const employeeSummary = data.employees[0]
     ? `${formatEmployeeDisplayName(data.employees[0].fullName)} - ${data.employees[0].jobTitle} - ${data.employees[0].line}`
     : "Matching payslip history";
@@ -150,13 +151,24 @@ export default async function AdminPayslipsCenterPage(
                         <Badge variant={payslipStatusTone(row.status)}>{row.status}</Badge>
                       </td>
                       <td className="px-3 py-3">
-                        <Link
-                          className="inline-flex h-9 items-center justify-center rounded-xl border border-[#D8E0EA] px-4 text-sm font-semibold text-[#0F172A] transition hover:bg-[#F8FAFC]"
-                          href={`/api/payroll/${row.batchId}/payslips?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
-                          target="_blank"
-                        >
-                          Open Payslip
-                        </Link>
+                        <div className="flex flex-wrap gap-2">
+                          <Link
+                            className="inline-flex h-9 items-center justify-center rounded-xl border border-[#D8E0EA] px-4 text-sm font-semibold text-[#0F172A] transition hover:bg-[#F8FAFC]"
+                            href={`/api/payroll/${row.batchId}/payslips?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
+                            target="_blank"
+                          >
+                            Open Payslip
+                          </Link>
+                          {canExportPayslipImage ? (
+                            <Link
+                              className="inline-flex h-9 items-center justify-center rounded-xl border border-[#FDBA74] bg-[#FFF7ED] px-4 text-sm font-semibold text-[#9A3412] transition hover:bg-[#FFEDD5]"
+                              href={`/api/payroll/${row.batchId}/payslips/image?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
+                            >
+                              <FileImage className="mr-2 h-4 w-4" />
+                              Export Image
+                            </Link>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}

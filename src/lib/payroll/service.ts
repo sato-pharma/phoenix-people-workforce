@@ -12,7 +12,7 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
-import { calculatePayrollParts, normalizePayrollPaymentMode } from "@/lib/payroll/policy";
+import { calculatePayrollParts, normalizePayrollPaymentMode, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 import { PayrollConflictError } from "@/lib/payroll/errors";
 import { getPayrollWorkflowTransition } from "@/lib/payroll/workflow";
 import type { SalaryValidationIssue, SalaryValidationRow } from "@/lib/payroll/salary-import";
@@ -211,15 +211,25 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     medicalInsurance +
     loans +
     otherDeductions;
-  const netSalary = Number(row.net_salary ?? 0);
+  const storedNetSalary = Number(row.net_salary ?? 0);
   const uploadedFirstPart = Number(row.first_part ?? 0);
   const uploadedSecondPart = Number(row.second_part ?? 0);
   const paymentMode = row.payment_mode
     ? normalizePayrollPaymentMode(String(row.payment_mode))
-    : uploadedFirstPart > 0 && uploadedFirstPart >= netSalary - 1
+    : uploadedFirstPart > 0 && uploadedFirstPart >= storedNetSalary - 1
       ? "one_part"
       : "two_parts";
-  const resolvedBaseSalary = baseSalary > 0 ? baseSalary : Math.max(0, netSalary - extraCostOfLiving - fuelAllowance);
+  const fixedSalary = resolveFixedSalaryAmounts({
+    baseSalary: baseSalary > 0 ? baseSalary : null,
+    employmentIncomeTax,
+    extraCostOfLiving,
+    fuelAllowance,
+    grossSalary: Number(row.gross_salary ?? 0),
+    netSalary: storedNetSalary,
+    socialInsurance,
+  });
+  const resolvedBaseSalary = fixedSalary.baseSalary;
+  const netSalary = fixedSalary.netSalary;
   const parts = calculatePayrollParts({
     additions: expenses + incentive + overtime + bonus + otherAdditions,
     deductions: crm + fingerPrint + unpaidVacations + medicalInsurance + loans + otherDeductions,
@@ -230,7 +240,7 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     paymentMode,
     previousExpenses: 0,
   });
-  const grossSalary = Number(row.gross_salary ?? 0);
+  const grossSalary = fixedSalary.grossSalary;
   const totalAdditions = Number(row.total_additions ?? calculatedTotalAdditions);
   const totalDeductions = Number(row.total_deductions ?? calculatedTotalDeductions);
   const firstPart = row.first_part === null || row.first_part === undefined ? parts.firstPart : uploadedFirstPart;
@@ -665,6 +675,52 @@ export async function getLatestSalaryRecordsBefore(
   }
 
   return (data ?? []).map((row) => mapRecord(row as Record<string, unknown>));
+}
+
+export async function getLatestSalaryExpenseTotalsBefore(
+  month: number,
+  year: number,
+): Promise<Map<string, number>> {
+  const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
+  const { data: batches, error: batchError } = await supabase
+    .from("salary_batches")
+    .select("id,file_name,uploaded_by,approved_by,month,year")
+    .or(`year.lt.${year},and(year.eq.${year},month.lt.${month})`)
+    .order("year", { ascending: false })
+    .order("month", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  if (batchError) {
+    if (isPayrollSchemaMissing(batchError)) return new Map();
+    throw batchError;
+  }
+
+  const previousBatch = ((batches ?? []) as Array<Record<string, unknown>>)
+    .find((batch) => !isDisposablePayrollBatchRow(batch));
+
+  if (!previousBatch?.id) {
+    return new Map();
+  }
+
+  const { data, error } = await supabase
+    .from("salary_records")
+    .select("employee_code,hr_id,expenses")
+    .eq("batch_id", String(previousBatch.id));
+
+  if (error) {
+    if (isPayrollSchemaMissing(error)) return new Map();
+    throw error;
+  }
+
+  const totals = new Map<string, number>();
+  ((data ?? []) as Array<Record<string, unknown>>).forEach((row) => {
+    const hrId = String(row.employee_code ?? row.hr_id ?? "").trim();
+    if (!hrId) return;
+    totals.set(hrId, Number(row.expenses ?? 0));
+  });
+
+  return totals;
 }
 
 export async function getPayrollDashboard(

@@ -33,12 +33,9 @@ import {
 } from "@/lib/payroll/expense-metrics";
 import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
 import {
-  calculateBaseSalary,
-  calculateBasicSalary,
-  calculateGrossSalary,
-  calculateNetSalary,
   calculatePayrollParts,
   normalizePayrollPaymentMode,
+  resolveFixedSalaryAmounts,
 } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
@@ -390,18 +387,23 @@ function resolveFixedSalaryReference({
   const baseSalary =
     positiveMoneyOrNull(salaryStructure?.baseSalary) ??
     positiveMoneyOrNull(employee.baseSalary) ??
-    (positiveMoneyOrNull(employee.basicSalary)
-      ? calculateBaseSalary({ basicSalary: employee.basicSalary })
-      : null) ??
-    (positiveMoneyOrNull(employee.netSalary)
-      ? calculateBaseSalary({
-          extraCostOfLiving,
-          fuelAllowance,
-          netSalary: employee.netSalary,
-        })
-      : null) ??
-    0;
-  const basicSalary = positiveMoneyOrNull(employee.basicSalary) ?? calculateBasicSalary({ baseSalary });
+    null;
+  const fixedSalary = resolveFixedSalaryAmounts({
+    baseSalary,
+    basicSalary: positiveMoneyOrNull(employee.basicSalary),
+    extraCostOfLiving,
+    fuelAllowance,
+    grossSalary: positiveMoneyOrNull(employee.grossSalary),
+    netSalary: positiveMoneyOrNull(employee.netSalary),
+    socialInsurance:
+      finiteMoneyOrNull(salaryStructure?.socialInsurance) ??
+      finiteMoneyOrNull(employee.socialInsurance) ??
+      0,
+    taxes:
+      finiteMoneyOrNull(salaryStructure?.incomeTaxes) ??
+      finiteMoneyOrNull(employee.taxes) ??
+      0,
+  });
   const socialInsurance =
     finiteMoneyOrNull(salaryStructure?.socialInsurance) ??
     finiteMoneyOrNull(employee.socialInsurance) ??
@@ -410,24 +412,14 @@ function resolveFixedSalaryReference({
     finiteMoneyOrNull(salaryStructure?.incomeTaxes) ??
     finiteMoneyOrNull(employee.taxes) ??
     0;
-  const calculatedNetSalary = calculateNetSalary({
-    baseSalary,
-    extraCostOfLiving,
-    fuelAllowance,
-  });
-  const calculatedGrossSalary = calculateGrossSalary({
-    baseSalary,
-    socialInsurance,
-    taxes,
-  });
 
   return {
-    baseSalary,
-    basicSalary,
+    baseSalary: fixedSalary.baseSalary,
+    basicSalary: fixedSalary.basicSalary,
     extraCostOfLiving,
     fuelAllowance,
-    grossSalary: positiveMoneyOrNull(employee.grossSalary) ?? calculatedGrossSalary,
-    netSalary: positiveMoneyOrNull(employee.netSalary) ?? calculatedNetSalary,
+    grossSalary: fixedSalary.grossSalary,
+    netSalary: fixedSalary.netSalary,
     socialInsurance,
     taxes,
   };
@@ -562,6 +554,15 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
     : mapped.firstPart > 0 && mapped.firstPart >= mapped.netSalary - 1
       ? "one_part"
       : "two_parts";
+  const fixedSalary = resolveFixedSalaryAmounts({
+    baseSalary: mapped.baseSalary,
+    employmentIncomeTax: mapped.employmentIncomeTax,
+    extraCostOfLiving: mapped.extraCostOfLiving,
+    fuelAllowance: mapped.fuelAllowance,
+    grossSalary: mapped.grossSalary,
+    netSalary: mapped.netSalary,
+    socialInsurance: mapped.socialInsurance,
+  });
   const parts = calculatePayrollParts({
     additions: mapped.expenses + mapped.incentive + mapped.overtime + mapped.bonus + mapped.otherAdditions,
     deductions:
@@ -571,9 +572,9 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
       mapped.medicalInsurance +
       mapped.loans +
       mapped.otherDeductions,
+    baseSalary: fixedSalary.baseSalary,
     extraCostOfLiving: mapped.extraCostOfLiving,
     fuelAllowance: mapped.fuelAllowance,
-    netSalary: mapped.netSalary,
     paymentMode,
     previousExpenses: 0,
   });
@@ -582,17 +583,16 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
 
   return {
     ...mapped,
-    baseSalary: mapped.baseSalary > 0
-      ? mapped.baseSalary
-      : Math.max(0, mapped.netSalary - mapped.extraCostOfLiving - mapped.fuelAllowance),
+    baseSalary: fixedSalary.baseSalary,
     firstPart: hasFirstPart ? mapped.firstPart : parts.firstPart,
     governmentalDeductions: mapped.governmentalDeductions > 0
       ? mapped.governmentalDeductions
       : mapped.socialInsurance + mapped.employmentIncomeTax,
-    grossSalary: mapped.grossSalary,
+    grossSalary: fixedSalary.grossSalary,
     monthSalary: mapped.monthSalary > 0
       ? mapped.monthSalary
       : (hasFirstPart ? mapped.firstPart : parts.firstPart) + (hasSecondPart ? mapped.secondPart : parts.secondPart),
+    netSalary: fixedSalary.netSalary,
     paymentMode,
     secondPart: hasSecondPart ? mapped.secondPart : parts.secondPart,
     totalAdditions,
