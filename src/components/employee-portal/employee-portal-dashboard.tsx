@@ -456,13 +456,13 @@ export function SalesAchievementRing({
     <div className="flex h-full flex-col justify-center rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
       <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Sales Achievement</p>
       <div className="mt-4 flex flex-col items-center">
-        <div className="relative flex h-[220px] w-[220px] items-center justify-center rounded-full sm:h-[280px] sm:w-[280px]" style={circleStyle} title="Sales achievement">
-          <div className="flex h-[180px] w-[180px] flex-col items-center justify-center rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] sm:h-[236px] sm:w-[236px]">
-            <p className="text-[52px] font-semibold leading-none text-slate-950 sm:text-[68px]">{clamped}%</p>
-            <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.1em] text-slate-500 sm:text-[12px]">of target</p>
+        <div className="relative flex h-[280px] w-[280px] items-center justify-center rounded-full" style={circleStyle} title="Sales achievement">
+          <div className="flex h-[236px] w-[236px] flex-col items-center justify-center rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]">
+            <p className="text-[68px] font-semibold leading-none text-slate-950">{clamped}%</p>
+            <p className="mt-1 text-[12px] font-medium uppercase tracking-[0.1em] text-slate-500">of target</p>
           </div>
         </div>
-        <p className="mt-5 text-2xl font-semibold text-slate-900 sm:text-3xl">{egp(salesValue)}</p>
+        <p className="mt-5 text-3xl font-semibold text-slate-900">{egp(salesValue)}</p>
         <p className="mt-1 text-sm text-slate-500">of {egp(targetValue)} target</p>
         <p className={`mt-2 text-sm font-medium ${growthNegative ? "text-rose-600" : "text-emerald-600"}`}>
           {growthText}
@@ -509,51 +509,51 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
     <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_22px_48px_rgba(15,23,42,0.06)] lg:p-8">
       <div className="mb-6 rounded-[32px] border border-slate-200 bg-white px-6 py-6 shadow-[0_8px_26px_rgba(15,23,42,0.05)] lg:px-8 lg:py-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-          <div className="flex h-[96px] w-[96px] shrink-0 items-center justify-center rounded-full border-2 border-orange-100 bg-orange-50/30 sm:h-[124px] sm:w-[124px] lg:h-[152px] lg:w-[152px]">
-            <div className="flex h-[62px] w-[62px] items-center justify-center rounded-full bg-orange-500/10 text-[22px] font-semibold text-orange-500 sm:h-[80px] sm:w-[80px] sm:text-[28px] lg:h-[96px] lg:w-[96px] lg:text-[34px]">
+          <div className="flex h-[152px] w-[152px] shrink-0 items-center justify-center rounded-full border-2 border-orange-100 bg-orange-50/30">
+            <div className="flex h-[96px] w-[96px] items-center justify-center rounded-full bg-orange-500/10 text-[34px] font-semibold text-orange-500">
               {identityInitials}
             </div>
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <h3 className="text-[24px] font-semibold leading-tight tracking-[-0.02em] text-slate-950 sm:text-[32px] lg:text-[42px]">{employee.fullName}</h3>
-              <span className="h-2 w-2 rounded-full bg-orange-500" />
-              <p className="text-[15px] font-medium text-slate-500 sm:text-[20px] lg:text-[26px]">{employee.roleLabel}</p>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <h3 className="text-[42px] font-semibold leading-[1.04] tracking-[-0.02em] text-slate-950">{employee.fullName}</h3>
+              <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
+              <p className="text-[26px] font-medium text-slate-500">{employee.roleLabel}</p>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-slate-900 lg:mt-5 lg:gap-x-6">
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] font-medium sm:text-[16px] lg:text-[21px]">{employee.line ?? "Unassigned Line"} Line</span>
+            <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 text-slate-900">
+              <div className="flex items-center gap-2.5">
+                <span className="text-[21px] font-medium">{employee.line ?? "Unassigned Line"} Line</span>
               </div>
-              <span className="h-1.5 w-1.5 rounded-full bg-orange-500/90" />
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] font-medium sm:text-[16px] lg:text-[21px]">{employee.territory ?? "Unassigned Territory"} Territory</span>
+              <span className="h-2 w-2 rounded-full bg-orange-500/90" />
+              <div className="flex items-center gap-2.5">
+                <span className="text-[21px] font-medium">{employee.territory ?? "Unassigned Territory"} Territory</span>
               </div>
-              <span className="h-1.5 w-1.5 rounded-full bg-orange-500/90" />
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] font-medium sm:text-[16px] lg:text-[21px]">Reports to {employee.manager ?? "Unassigned Manager"}</span>
+              <span className="h-2 w-2 rounded-full bg-orange-500/90" />
+              <div className="flex items-center gap-2.5">
+                <span className="text-[21px] font-medium">Reports to {employee.manager ?? "Unassigned Manager"}</span>
               </div>
             </div>
 
-            <div className="mt-4 h-px w-full bg-slate-200 lg:mt-5" />
+            <div className="mt-5 h-px w-full bg-slate-200" />
 
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-slate-900 lg:mt-5 lg:gap-x-6">
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] sm:text-[16px] lg:text-[22px]">HR ID: {employee.hrId}</span>
+            <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 text-slate-900">
+              <div className="flex items-center gap-2.5">
+                <span className="text-[22px]">HR ID: {employee.hrId}</span>
               </div>
 
-              <span className="hidden h-6 w-px bg-slate-200 sm:block lg:h-7" />
+              <span className="h-7 w-px bg-slate-200" />
 
-              <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium lg:gap-2.5 lg:px-5 lg:py-1.5 lg:text-[22px] ${statusPillClass}`}>
+              <span className={`inline-flex items-center gap-2.5 rounded-full border px-5 py-1.5 text-[22px] font-medium ${statusPillClass}`}>
                 {employee.status}
-                <span className={`h-2.5 w-2.5 rounded-full lg:h-3.5 lg:w-3.5 ${statusDotClass}`} />
+                <span className={`h-3.5 w-3.5 rounded-full ${statusDotClass}`} />
               </span>
 
-              <span className="hidden h-6 w-px bg-slate-200 sm:block lg:h-7" />
+              <span className="h-7 w-px bg-slate-200" />
 
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] sm:text-[16px] lg:text-[22px]">Hired {hiredLabel}</span>
+              <div className="flex items-center gap-2.5">
+                <span className="text-[22px]">Hired {hiredLabel}</span>
               </div>
             </div>
           </div>
@@ -1419,7 +1419,7 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
     <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Incentive</h1>
+          <h1 className="text-3xl font-semibold text-slate-900">Incentive</h1>
           <p className="mt-1 text-sm text-slate-500">Calculate your incentive and review the 2026 scheme rules</p>
         </div>
       </div>
@@ -1862,7 +1862,7 @@ export function ContactHRSupportPage({ data }: { data: MedicalRepPortalData }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Request Support</h1>
+        <h1 className="text-3xl font-semibold text-slate-900">Request Support</h1>
         <p className="mt-1 text-sm text-slate-500">Submit a support request for {employeeName} or contact HR for assistance</p>
       </div>
 
@@ -1877,23 +1877,24 @@ export function ContactHRSupportPage({ data }: { data: MedicalRepPortalData }) {
           <div className="space-y-4">
             {hrTeam.length > 0 ? (
               hrTeam.map((member) => (
-                <div key={member.id} className="flex flex-col gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3 transition hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-orange-100 ring-2 ring-orange-100">
-                      <span className="text-sm font-semibold text-orange-700">
+                <div key={member.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3 transition hover:bg-slate-50">
+                  <div className="flex items-start gap-3">
+                    <div className="shrink-0 overflow-hidden rounded-lg ring-2 ring-orange-100"
+                      style={{ width: "2cm", height: "3cm" }}>
+                      <div className="flex h-full w-full items-center justify-center bg-orange-100 text-sm font-semibold text-orange-700">
                         {member.name.split(" ").map((n) => n[0]).join("")}
-                      </span>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-900">{member.name}</p>
-                      <p className="text-xs text-slate-500">{member.role}</p>
-                      <div className="mt-1 flex flex-col gap-0.5">
-                        <p className="text-[10px] text-slate-400">{member.summary}</p>
                       </div>
                     </div>
+                    <div>
+                    <p className="text-sm font-semibold text-slate-900">{member.name}</p>
+                    <p className="text-xs text-slate-500">{member.role}</p>
+                    <div className="mt-1 flex flex-col gap-0.5">
+                      <p className="text-[10px] text-slate-400">{member.summary}</p>
+                    </div>
+                  </div>
                   </div>
                   <Button
-                    className="h-8 w-full rounded-lg text-xs sm:w-auto"
+                    className="h-8 rounded-lg text-xs"
                     variant="secondary"
                     onClick={() => {
                       setCategory("HR Request");
@@ -2117,17 +2118,17 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Workload & Expense Dashboard</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold text-slate-900">Workload & Expense Dashboard</h1>
           <p className="mt-1 text-sm text-slate-500">Track workload, trips, and expense efficiency across AMs & PMs</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
-          <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-2 sm:px-3">
-            <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
-            <input className="w-[110px] text-sm text-slate-700 outline-none sm:w-32" placeholder="From" type="date" />
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <CalendarDays className="h-4 w-4 text-slate-400" />
+            <input className="w-32 text-sm text-slate-700 outline-none" placeholder="From" type="date" />
             <span className="text-slate-400">-</span>
-            <input className="w-[110px] text-sm text-slate-700 outline-none sm:w-32" placeholder="To" type="date" />
+            <input className="w-32 text-sm text-slate-700 outline-none" placeholder="To" type="date" />
           </div>
           <Button className="rounded-xl" disabled={isRefreshing} onClick={handleRefresh} variant="secondary">
             <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
