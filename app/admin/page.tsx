@@ -6,7 +6,9 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
 import { canAccess } from "@/lib/auth/permissions";
 import { getAdminCommandCenterData } from "@/lib/admin/command-center";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
+import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +21,8 @@ export default async function AdminCommandPage() {
 
   let data = null;
   let loadError: string | null = null;
+  const viewer = await resolveViewerIdentityFromPage(access);
+  let viewerEmployee: EmployeeDirectoryRow | null = null;
 
   try {
     data = await getAdminCommandCenterData(access);
@@ -27,10 +31,30 @@ export default async function AdminCommandPage() {
     loadError = error instanceof Error ? error.message : "Unknown error occurred";
   }
 
+  if (access.hrId) {
+    try {
+      const normalizedAccessHrId = access.hrId.replace(/[^a-z0-9]/gi, "").toLowerCase();
+      const directory = await getEmployeeDirectory();
+      viewerEmployee = directory.employees.find(
+        (employee) => employee.hrId.replace(/[^a-z0-9]/gi, "").toLowerCase() === normalizedAccessHrId,
+      ) ?? null;
+    } catch {
+      viewerEmployee = null;
+    }
+  }
+
+  const welcomeProfile = {
+    fullName: viewerEmployee?.fullName ?? viewer.displayName,
+    hrId: formatHrIdForDisplay(viewerEmployee?.hrId ?? access.hrId),
+    managerName: viewerEmployee?.managerName ?? null,
+    systemRoleLabel: viewer.roleLabel,
+    titleLabel: viewerEmployee?.jobTitle ?? viewerEmployee?.positionTitle ?? viewer.roleLabel,
+  };
+
   return (
     <AppShell navigationMode="admin">
       {data ? (
-        <AdminCommandCenter data={data} />
+        <AdminCommandCenter data={data} welcomeProfile={welcomeProfile} />
       ) : (
         <div className="p-8">
           <Card className="mx-auto max-w-2xl border-rose-100 bg-rose-50 p-6">
