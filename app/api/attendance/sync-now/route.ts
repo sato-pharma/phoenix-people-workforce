@@ -20,6 +20,20 @@ function apiResponse(error: unknown, fallback: string) {
   return NextResponse.json({ error: apiError.code, message: apiError.message }, { status: apiError.status });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isSyncAlreadyRunning(payload: unknown) {
+  if (!isRecord(payload)) return false;
+
+  const message = typeof payload.message === "string" ? payload.message : "";
+  const errors = Array.isArray(payload.errors) ? payload.errors : [];
+  return [message, ...errors].some(
+    (value) => typeof value === "string" && value.toLowerCase().includes("attendance sync is already running"),
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -60,6 +74,18 @@ export async function POST(request: Request) {
       payload = text ? JSON.parse(text) : {};
     } catch {
       payload = { message: text };
+    }
+
+    if (response.status === 409 && isSyncAlreadyRunning(payload)) {
+      return NextResponse.json(
+        {
+          ...(isRecord(payload) ? payload : {}),
+          failed: 0,
+          message: "Attendance sync is already running.",
+          syncInProgress: true,
+        },
+        { status: 202 },
+      );
     }
 
     return NextResponse.json(payload, { status: response.status });

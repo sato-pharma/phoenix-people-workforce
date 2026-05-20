@@ -21,7 +21,8 @@ const templateFileName = "Phoneix system template.xlsx";
 const dataStartRow = 6;
 const templateDataEndRow = 126;
 const totalsLabel = "TOTALS";
-const headers = [...payrollSheetHeaders];
+const headers = [...payrollSheetHeaders, "Bank", "Bank Account"];
+const bankDetailsSectionStart = payrollSheetHeaders.length + 1;
 
 const uploadTemplateSections = [
   { bodyFill: "FFEFF6FF", end: 10, headerFill: "FF1E3A8A", label: "Employee Data", start: 1 },
@@ -32,11 +33,14 @@ const uploadTemplateSections = [
   { bodyFill: "FFFEF2F2", end: 30, headerFill: "FFDC2626", label: "Internal Deductions", start: 25 },
   { bodyFill: "FFFEE2E2", end: 31, headerFill: "FF991B1B", label: "Total Deductions", start: 31 },
   { bodyFill: "FFFFF7ED", end: 36, headerFill: "FFF97316", label: "Payment Split", start: 32 },
+  { bodyFill: "FFF8FAFC", end: 38, headerFill: "FF475569", label: "Bank Details", start: 37 },
 ] as const;
 
 type PayrollTemplateRow = {
   arabicName: string | null;
   area: string | null;
+  bankAccount: string | null;
+  bankName: string | null;
   bonus: number;
   comment: string;
   crm: number;
@@ -187,25 +191,45 @@ function borderForColumn(columnNumber: number, color = "FFE5E7EB"): Partial<Exce
   };
 }
 
-function writeUploadSectionRow(sheet: ExcelJS.Worksheet, rowNumber: number) {
-  for (const section of uploadTemplateSections) {
-    if (section.start < section.end) {
-      sheet.mergeCells(rowNumber, section.start, rowNumber, section.end);
-    }
+function writeUploadSectionHeader(
+  sheet: ExcelJS.Worksheet,
+  rowNumber: number,
+  section: (typeof uploadTemplateSections)[number],
+) {
+  const row = sheet.getRow(rowNumber);
+  const leadCell = row.getCell(section.start);
 
-    const leadCell = sheet.getRow(rowNumber).getCell(section.start);
-    leadCell.value = section.label;
-    leadCell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
-    leadCell.fill = solidFill(section.headerFill);
-    leadCell.alignment = { horizontal: "center", vertical: "middle" };
-
-    for (let column = section.start; column <= section.end; column += 1) {
-      const cell = sheet.getRow(rowNumber).getCell(column);
-      cell.fill = solidFill(section.headerFill);
-      cell.border = borderForColumn(column, "FFFFFFFF");
-    }
+  if (section.start < section.end && !leadCell.isMerged) {
+    sheet.mergeCells(rowNumber, section.start, rowNumber, section.end);
   }
 
+  leadCell.value = section.label;
+  leadCell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+  leadCell.fill = solidFill(section.headerFill);
+  leadCell.alignment = { horizontal: "center", vertical: "middle" };
+
+  for (let column = section.start; column <= section.end; column += 1) {
+    const cell = row.getCell(column);
+    cell.fill = solidFill(section.headerFill);
+    cell.border = borderForColumn(column, "FFFFFFFF");
+  }
+}
+
+function writeUploadSectionRow(sheet: ExcelJS.Worksheet, rowNumber: number) {
+  for (const section of uploadTemplateSections) {
+    writeUploadSectionHeader(sheet, rowNumber, section);
+  }
+
+  sheet.getRow(rowNumber).height = 24;
+  sheet.getRow(rowNumber).commit();
+}
+
+function writeBankDetailsSectionRow(sheet: ExcelJS.Worksheet, rowNumber: number) {
+  writeUploadSectionHeader(
+    sheet,
+    rowNumber,
+    uploadTemplateSections[uploadTemplateSections.length - 1],
+  );
   sheet.getRow(rowNumber).height = 24;
   sheet.getRow(rowNumber).commit();
 }
@@ -236,6 +260,31 @@ function stylePayrollDataCell(cell: ExcelJS.Cell) {
   cell.font = isTotalColumn
     ? { bold: true, color: { argb: "FF0F172A" } }
     : { color: { argb: "FF0F172A" } };
+}
+
+function styleBankDetailsCells(
+  sheet: ExcelJS.Worksheet,
+  startRow: number,
+  endRow: number,
+) {
+  for (let rowNumber = startRow; rowNumber <= endRow; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+
+    for (let column = bankDetailsSectionStart; column <= headers.length; column += 1) {
+      stylePayrollDataCell(row.getCell(column));
+    }
+  }
+}
+
+function applyPayrollTemplateColumnWidths(sheet: ExcelJS.Worksheet) {
+  headers.forEach((header, index) => {
+    const column = sheet.getColumn(index + 1);
+    const defaultWidth = Math.max(header.length + 4, 14);
+
+    if (!column.width || index + 1 >= bankDetailsSectionStart) {
+      column.width = defaultWidth;
+    }
+  });
 }
 
 function stylePayrollTotalsRow(row: ExcelJS.Row) {
@@ -293,6 +342,8 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
       return {
         arabicName: employee.nameAr,
         area: employee.areaName,
+        bankAccount: employee.bankAccount,
+        bankName: employee.bankName,
         baseSalary,
         bonus: 0,
         comment:
@@ -376,9 +427,9 @@ async function createFallbackWorkbook(
     const sheetRow = sheet.getRow(dataStartRow + index);
     sheetRow.values = rowValues(row, index + 1);
     sheetRow.height = 24;
-    sheetRow.eachCell((cell) => {
-      stylePayrollDataCell(cell);
-    });
+    for (let column = 1; column <= headers.length; column += 1) {
+      stylePayrollDataCell(sheetRow.getCell(column));
+    }
     sheetRow.commit();
   });
   if (rows.length > 0) {
@@ -414,6 +465,17 @@ function payrollTemplatePath() {
 async function exactTemplateResponse() {
   const now = new Date();
   const workbook = await loadPayrollTemplateWorkbook();
+  const sheet = workbook.worksheets[0] ?? workbook.addWorksheet("Payroll Upload");
+
+  writeBankDetailsSectionRow(sheet, dataStartRow - 2);
+  writeHeaderRow(sheet, dataStartRow - 1);
+  stylePayrollHeaderRow(sheet.getRow(dataStartRow - 1));
+  applyPayrollTemplateColumnWidths(sheet);
+  styleBankDetailsCells(sheet, dataStartRow, Math.max(sheet.rowCount, templateDataEndRow));
+  sheet.autoFilter = {
+    from: { column: 1, row: dataStartRow - 1 },
+    to: { column: headers.length, row: Math.max(dataStartRow, sheet.rowCount) },
+  };
   upsertWorkingDaysCalcSheet(workbook, now.getMonth() + 1, now.getFullYear());
   upsertSalaryPolicySheet(workbook);
   const buffer = await workbook.xlsx.writeBuffer();
@@ -512,6 +574,8 @@ function rowValues(row: PayrollTemplateRow, index: number) {
     row.secondPart,
     row.paymentMode,
     row.comment,
+    row.bankName ?? "",
+    row.bankAccount ?? "",
   ];
 }
 
@@ -526,6 +590,9 @@ function writePayrollRows(
 
     sheetRow.values = rowValues(row, index + 1);
     applyRowStyle(sheet, rowNumber, bodyStyles[index % bodyStyles.length]);
+    for (let column = bankDetailsSectionStart; column <= headers.length; column += 1) {
+      stylePayrollDataCell(sheetRow.getCell(column));
+    }
     sheetRow.commit();
   });
 }
@@ -567,6 +634,8 @@ function writeTotals(
   row.getCell(34).value = total((item) => item.secondPart);
   row.getCell(35).value = "";
   row.getCell(36).value = "";
+  row.getCell(37).value = "";
+  row.getCell(38).value = "";
   applyRowStyle(sheet, totalsRow, totalsStyle);
   stylePayrollTotalsRow(row);
   row.commit();
@@ -966,6 +1035,8 @@ async function buildReadyRows(
       return {
         arabicName: employee.nameAr,
         area: employee.areaName,
+        bankAccount: employee.bankAccount,
+        bankName: employee.bankName,
         baseSalary,
         bonus,
         comment:
@@ -1022,8 +1093,12 @@ async function buildStyledTemplate(
   const totalsRow = prepareTemplateRows(sheet, rowsToKeep);
 
   writeTitle(sheet, month, year);
+  writeBankDetailsSectionRow(sheet, dataStartRow - 2);
   writeHeaderRow(sheet, dataStartRow - 1);
+  stylePayrollHeaderRow(sheet.getRow(dataStartRow - 1));
+  applyPayrollTemplateColumnWidths(sheet);
   writePayrollRows(sheet, displayRows, bodyStyles);
+  styleBankDetailsCells(sheet, dataStartRow, Math.max(totalsRow - 1, dataStartRow));
   writeTotals(sheet, totalsRow, displayRows, totalsStyle);
   upsertWorkingDaysCalcSheet(workbook, month, year);
   upsertSalaryPolicySheet(workbook);

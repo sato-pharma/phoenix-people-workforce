@@ -1672,10 +1672,14 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
 
   // Requirement: closeVacancyForOffer should only run after a NEW employee is created
   if (!isUpdate) {
+    const managerName = payload.manager_hr_id
+      ? (await loadManagerNames([payload.manager_hr_id])).get(payload.manager_hr_id) ?? null
+      : null;
     const closedVacancy = await closeVacancyForOffer({
       area_id: payload.area_id,
       filled_by_hr_id: payload.hr_id,
       line_id: payload.line_id,
+      manager_name: managerName,
       manager_hr_id: payload.manager_hr_id,
       position_id: payload.position_id,
     });

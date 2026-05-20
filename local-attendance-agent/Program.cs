@@ -236,12 +236,14 @@ sealed class AttendanceSyncRunner(AgentConfig config, ZktecoDeviceClient deviceC
 
   public async Task<AttendanceSyncResult> SyncAsync(string trigger) {
     if (!await syncLock.WaitAsync(0)) {
-      return new AttendanceSyncResult(StatusCodes.Status409Conflict, new {
+      return new AttendanceSyncResult(StatusCodes.Status202Accepted, new {
+        syncInProgress = true,
+        message = "Attendance sync is already running.",
         totalRead = 0,
         inserted = 0,
         duplicate = 0,
         skipped = 0,
-        failed = 1,
+        failed = 0,
         errors = new[] { "Attendance sync is already running." },
       });
     }

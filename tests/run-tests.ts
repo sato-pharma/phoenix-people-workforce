@@ -33,6 +33,7 @@ import { runOutstationPolicyClassificationTests } from "./outstation-policy-clas
 import { runMedicalRepExpensesTests } from "./medical-rep-expenses.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
 import { runEmployeeDisplayNameTests } from "./employee-display-name.test.ts";
+import { runEmployeeImportSeatValidationTests } from "./employee-import-seat-validation.test.ts";
 import { runEmployeeRecordHealthTests } from "./employee-record-health.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
 import { runEmployeePortalPayslipSalaryTests } from "./employee-portal-payslip-salary.test.ts";
@@ -120,6 +121,7 @@ await runTest("probation stabilization", runProbationStabilizationTests);
   await runTest("google routes fastest", runGoogleRoutesShortestTests);
 await runTest("auth session", runAuthSessionTests);
 await runTest("employee display name", runEmployeeDisplayNameTests);
+await runTest("employee import seat validation", runEmployeeImportSeatValidationTests);
 await runTest("employee record health", runEmployeeRecordHealthTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("vacation calculations", runVacationCalculationTests);

@@ -1,4 +1,5 @@
 import type {
+  ExistingEmployeeOrgSeat,
   ExistingImportState,
   ExistingTeamLookup,
 } from "@/lib/imports/employee-import-types";
@@ -7,19 +8,19 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type SupabaseClient = ReturnType<typeof getSupabaseAdmin>;
 
-const activeImportManagerStatuses = new Set(["active", "on_leave"]);
+const activeImportEmployeeStatuses = new Set(["active", "on_leave"]);
 
 function normalizeStatus(value: unknown) {
   return String(value ?? "active").trim().toLowerCase() || "active";
 }
 
-function isActiveManager(row: {
+function isActiveImportEmployee(row: {
   employment_status?: string | null;
   organogram_visible?: boolean | null;
   payroll_eligible?: boolean | null;
 }) {
   return (
-    activeImportManagerStatuses.has(normalizeStatus(row.employment_status)) &&
+    activeImportEmployeeStatuses.has(normalizeStatus(row.employment_status)) &&
     row.organogram_visible !== false &&
     row.payroll_eligible !== false
   );
@@ -36,6 +37,58 @@ async function loadCodeSet(supabase: SupabaseClient, table: string) {
       row.code ? [String(row.code)] : [],
     ),
   );
+}
+
+async function loadCodeLookup(supabase: SupabaseClient, table: string) {
+  const { data, error } = await supabase.from(table).select("id,code,name");
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const codes = new Set<string>();
+  const idToCode = new Map<number, string>();
+
+  for (const row of (data ?? []) as Array<{ code: string | null; id: number | null; name?: string | null }>) {
+    const code = String(row.code ?? createOrgCode(row.name ?? null) ?? "").trim();
+    const id = Number(row.id);
+
+    if (!code) {
+      continue;
+    }
+
+    codes.add(code);
+    if (Number.isFinite(id)) {
+      idToCode.set(id, code);
+    }
+  }
+
+  return { codes, idToCode };
+}
+
+async function loadPositionState(supabase: SupabaseClient) {
+  const { data, error } = await supabase.from("positions").select("id,code,title");
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const positionCodes = new Set<string>();
+  const positionIdToCode = new Map<number, string>();
+
+  for (const row of (data ?? []) as Array<{ code: string | null; id: number | null; title: string | null }>) {
+    const code = String(row.code ?? createOrgCode(row.title) ?? "").trim();
+    const id = Number(row.id);
+
+    if (!code) {
+      continue;
+    }
+
+    positionCodes.add(code);
+    if (Number.isFinite(id)) {
+      positionIdToCode.set(id, code);
+    }
+  }
+
+  return { positionCodes, positionIdToCode };
 }
 
 function normalizeDepartmentKey(value: string | null | undefined) {
@@ -80,21 +133,28 @@ async function loadActiveDepartments(supabase: SupabaseClient) {
   return { codeToName, nameToCode };
 }
 
-async function loadEmployeeState(supabase: SupabaseClient) {
+async function loadEmployeeState(
+  supabase: SupabaseClient,
+  lookups?: {
+    areaIdToCode: Map<number, string>;
+    lineIdToCode: Map<number, string>;
+    positionIdToCode: Map<number, string>;
+  },
+) {
   let result = await supabase
     .from("employees")
-    .select("hr_id,crm_id,employment_status,organogram_visible,payroll_eligible");
+    .select("hr_id,crm_id,employment_status,organogram_visible,payroll_eligible,job_title,region_name,line_id,area_id,position_id");
 
   if (
     result.error &&
     (result.error.message.toLowerCase().includes("organogram_visible") ||
       result.error.message.toLowerCase().includes("payroll_eligible"))
   ) {
-    result = await supabase.from("employees").select("hr_id,crm_id,employment_status");
+    result = await supabase.from("employees").select("hr_id,crm_id,employment_status,job_title,region_name,line_id,area_id,position_id");
   }
 
   if (result.error && result.error.message.toLowerCase().includes("crm_id")) {
-    result = await supabase.from("employees").select("hr_id,employment_status");
+    result = await supabase.from("employees").select("hr_id,employment_status,job_title,region_name,line_id,area_id,position_id");
   }
 
   if (result.error) {
@@ -103,12 +163,18 @@ async function loadEmployeeState(supabase: SupabaseClient) {
 
   const rows = (result.data ?? []) as Array<{
     crm_id?: string | null;
+    area_id?: number | null;
     employment_status?: string | null;
     hr_id: string | null;
+    job_title?: string | null;
+    line_id?: number | null;
     organogram_visible?: boolean | null;
     payroll_eligible?: boolean | null;
+    position_id?: number | null;
+    region_name?: string | null;
   }>;
   const crmIdToHrId = new Map<string, string>();
+  const employeeOrgSeats: ExistingEmployeeOrgSeat[] = [];
 
   for (const row of rows) {
     const crmId = String(row.crm_id ?? "").trim().toLowerCase();
@@ -117,26 +183,38 @@ async function loadEmployeeState(supabase: SupabaseClient) {
     if (crmId && hrId) {
       crmIdToHrId.set(crmId, hrId);
     }
+
+    if (hrId && isActiveImportEmployee(row)) {
+      employeeOrgSeats.push({
+        areaCode: typeof row.area_id === "number" ? lookups?.areaIdToCode.get(row.area_id) ?? null : null,
+        hrId,
+        jobTitle: row.job_title ?? null,
+        lineCode: typeof row.line_id === "number" ? lookups?.lineIdToCode.get(row.line_id) ?? null : null,
+        positionCode: typeof row.position_id === "number" ? lookups?.positionIdToCode.get(row.position_id) ?? null : null,
+        regionName: row.region_name ?? null,
+      });
+    }
   }
 
   return {
     crmIdToHrId,
+    employeeOrgSeats,
     employeeHrIds: new Set(
       rows.flatMap((row) => (row.hr_id ? [String(row.hr_id).trim().toUpperCase()] : [])),
     ),
     managerHrIds: new Set(
       rows.flatMap((row) =>
-        row.hr_id && isActiveManager(row) ? [String(row.hr_id).trim().toUpperCase()] : [],
+        row.hr_id && isActiveImportEmployee(row) ? [String(row.hr_id).trim().toUpperCase()] : [],
       ),
     ),
     terminalEmployeeHrIds: new Set(
       rows.flatMap((row) =>
-        row.hr_id && !isActiveManager(row) ? [String(row.hr_id).trim().toUpperCase()] : [],
+        row.hr_id && !isActiveImportEmployee(row) ? [String(row.hr_id).trim().toUpperCase()] : [],
       ),
     ),
     protectedLifecycleHrIds: new Set(
       rows.flatMap((row) =>
-        row.hr_id && !isActiveManager(row) ? [String(row.hr_id).trim().toUpperCase()] : [],
+        row.hr_id && !isActiveImportEmployee(row) ? [String(row.hr_id).trim().toUpperCase()] : [],
       ),
     ),
   };
@@ -238,20 +316,23 @@ export async function loadEmployeeImportExistingState(
   supabase: SupabaseClient = getSupabaseAdmin(),
 ): Promise<ExistingImportState> {
   const [
-    employees,
     departmentCodes,
-    lineCodes,
     areaState,
-    positionCodes,
+    lineState,
+    positionState,
     activeDepartments,
   ] = await Promise.all([
-    loadEmployeeState(supabase),
     loadCodeSet(supabase, "departments"),
-    loadCodeSet(supabase, "lines"),
     loadAreaState(supabase),
-    loadCodeSet(supabase, "positions"),
+    loadCodeLookup(supabase, "lines"),
+    loadPositionState(supabase),
     loadActiveDepartments(supabase),
   ]);
+  const employees = await loadEmployeeState(supabase, {
+    areaIdToCode: areaState.areaIdToCode,
+    lineIdToCode: lineState.idToCode,
+    positionIdToCode: positionState.positionIdToCode,
+  });
   const teamState = await loadTeamState(supabase, areaState.areaIdToCode);
 
   return {
@@ -261,8 +342,8 @@ export async function loadEmployeeImportExistingState(
     departmentCodes,
     departmentCodeToName: activeDepartments.codeToName,
     departmentNameToCode: activeDepartments.nameToCode,
-    lineCodes,
-    positionCodes,
+    lineCodes: lineState.codes,
+    positionCodes: positionState.positionCodes,
     ...teamState,
   };
 }

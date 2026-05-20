@@ -120,6 +120,8 @@ export function runWorkforceLifecycleSeatTests() {
   const offerSource = readFileSync("src/lib/offers/service.ts", "utf8");
   assert.match(offerSource, /phx_approve_accepted_offer/);
   assert.match(offerSource, /filled_by_hr_id: employeeHrId/);
+  assert.match(offerSource, /manager_name\?: string \| null/);
+  assert.match(offerSource, /normalizeManagerName\(vacancy\.manager_name\) === resolvedManagerName/);
 
   const resignationsSource = readFileSync("src/lib/resignations/service.ts", "utf8");
   assert.match(resignationsSource, /phx_resign_employee_and_open_vacancy/);

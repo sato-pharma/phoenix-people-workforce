@@ -200,6 +200,7 @@ export type VacantPositionImportRecord = EmployeeImportRecord & {
 export type ExistingImportState = {
   areaCodeToId?: Map<string, number>;
   crmIdToHrId?: Map<string, string>;
+  employeeOrgSeats?: ExistingEmployeeOrgSeat[];
   employeeHrIds?: Set<string>;
   managerHrIds?: Set<string>;
   terminalEmployeeHrIds?: Set<string>;
@@ -214,6 +215,15 @@ export type ExistingImportState = {
   teamNameAreaToTeam?: Map<string, ExistingTeamLookup>;
   teamNameToTeams?: Map<string, ExistingTeamLookup[]>;
   positionCodes?: Set<string>;
+};
+
+export type ExistingEmployeeOrgSeat = {
+  areaCode: string | null;
+  hrId: string;
+  jobTitle: string | null;
+  lineCode: string | null;
+  positionCode: string | null;
+  regionName: string | null;
 };
 
 export type ExistingTeamLookup = {
