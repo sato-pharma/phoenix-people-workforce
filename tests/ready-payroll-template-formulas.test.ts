@@ -69,6 +69,12 @@ export function runReadyPayrollTemplateFormulaTests() {
 
   assert.match(
     templateRouteSource,
+    /readyPayrollHireDateSortValue\(left\.hireDate\) -\s*readyPayrollHireDateSortValue\(right\.hireDate\)/,
+    "Ready payroll Two Parts rows must be sorted by hire date from oldest to newest.",
+  );
+
+  assert.match(
+    templateRouteSource,
     /writeSortableTwoPartsHeaderRow/,
     "Ready payroll must create a separate sortable header for the Two Parts range.",
   );

@@ -58,6 +58,15 @@ export function standardExtraCostOfLiving(input: SalaryAllowanceInput) {
     return 3000;
   }
   if (
+    /\brsms?\b/.test(title) ||
+    /\brsms?\b/.test(compactTitle) ||
+    title.includes("regional sales manager") ||
+    title.includes("regional manager") ||
+    title.includes("field manager")
+  ) {
+    return 3000;
+  }
+  if (
     /\bmarketing manager\b/.test(title) ||
     /\bproduct manager\b/.test(title) ||
     /\bgroup product manager\b/.test(title)

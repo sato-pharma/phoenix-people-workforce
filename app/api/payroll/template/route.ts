@@ -347,7 +347,7 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
   const directory = await getEmployeeDirectory();
 
   return directory.employees
-    .filter((employee) => (employee.employmentStatus ?? "active") === "active")
+    .filter((employee) => (employee.employmentStatus ?? "active") === "active" && employee.payrollEligible !== false)
     .map((employee) => {
       const standardAllowances = resolveStandardSalaryAllowances({
         departmentName: employee.departmentName,
@@ -1101,7 +1101,7 @@ function upsertSalaryPolicySheet(workbook: ExcelJS.Workbook) {
     ["Partial Month Hires", "Payroll uses a fixed 30-day month. If Hire Date is inside the payroll month, Other Deductions auto-calculates Base Salary - ((Base Salary / 30) x eligible days). Hire day is included."],
     ["First Part", "One Part: Month Salary. Two Parts: MIN(Base Salary x 70%, Base Salary - Other Deductions) so partial-month hires never receive more than their eligible base entitlement in First Part."],
     ["Second Part", "One Part: 0. Two Parts: Month Salary - First Part."],
-    ["Ready Sheet Sorting", "Ready payroll rows are ordered with One Part employees first, then Two Parts employees. The # column is generated after this grouping. When both groups exist, the One Part block is locked above a separate sortable Two Parts range."],
+    ["Ready Sheet Sorting", "Ready payroll rows are ordered with One Part employees first, then Two Parts employees sorted by Hire Date from oldest to newest. The # column is generated after this grouping. When both groups exist, the One Part block is locked above a separate sortable Two Parts range."],
     ["Upload Note", "The uploaded monthly sheet remains the payslip source of truth for month-specific additions, deductions, First Part, Second Part, and stored payroll totals."],
   ]);
 
@@ -1132,8 +1132,22 @@ function sortReadyPayrollRows(rows: PayrollTemplateRow[]) {
     const leftOnePart = left.paymentMode === "One Part";
     const rightOnePart = right.paymentMode === "One Part";
     if (leftOnePart !== rightOnePart) return leftOnePart ? -1 : 1;
+    if (!leftOnePart && !rightOnePart) {
+      const hireDateDifference =
+        readyPayrollHireDateSortValue(left.hireDate) -
+        readyPayrollHireDateSortValue(right.hireDate);
+      if (hireDateDifference !== 0) return hireDateDifference;
+      return (
+        left.fullName.localeCompare(right.fullName) ||
+        left.employeeCode.localeCompare(right.employeeCode)
+      );
+    }
     return 0;
   });
+}
+
+function readyPayrollHireDateSortValue(value: string | null) {
+  return parseDateOnly(value)?.getTime() ?? Number.POSITIVE_INFINITY;
 }
 
 function onePartFixedBlockSize(rows: PayrollTemplateRow[]) {
@@ -1204,7 +1218,7 @@ async function buildReadyRows(
   ]);
 
   const rows = directory.employees
-    .filter((employee) => (employee.employmentStatus ?? "active") === "active")
+    .filter((employee) => (employee.employmentStatus ?? "active") === "active" && employee.payrollEligible !== false)
     .map((employee) => {
       const expenses = money(
         approvedExpenseTotals.get(employee.hrId) ??

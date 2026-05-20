@@ -25,6 +25,11 @@ export function runSalaryAllowancePolicyTests() {
   assert.equal(standardExtraCostOfLiving({ jobTitle: "District Sales Manager" }), 3000);
   assert.equal(standardExtraCostOfLiving({ jobTitle: "DSM" }), 3000);
   assert.equal(standardExtraCostOfLiving({ jobTitle: "DSMs" }), 3000);
+  assert.equal(standardExtraCostOfLiving({ jobTitle: "Regional Sales Manager" }), 3000);
+  assert.equal(standardExtraCostOfLiving({ jobTitle: "Regional Manager" }), 3000);
+  assert.equal(standardExtraCostOfLiving({ jobTitle: "RSM" }), 3000);
+  assert.equal(standardExtraCostOfLiving({ positionTitle: "Original Field Manager" }), 3000);
+  assert.equal(standardExtraCostOfLiving({ positionTitle: "Regional Field Manager" }), 3000);
   assert.equal(standardExtraCostOfLiving({ jobTitle: "Medical Representative" }), 2000);
   assert.equal(standardExtraCostOfLiving({ jobTitle: "MR" }), 2000);
   assert.equal(standardExtraCostOfLiving({ jobTitle: "MRs" }), 2000);
