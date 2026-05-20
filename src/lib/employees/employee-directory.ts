@@ -146,6 +146,7 @@ export type EmployeeMutationInput = {
   medicalInsuranceStatus?: string | null;
   medicalInsuranceNumber?: string | null;
   originalHrId?: string | null;
+  payrollEligible?: boolean | null;
   positionId?: number | null;
   residenceAddress?: string | null;
   residenceArea?: string | null;
@@ -1378,6 +1379,7 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
   await ensureCrmIdIsUnique(crmId, hrId);
 
   const lifecycleActive = isActiveLifecycleStatus(employmentStatus);
+  const payrollEligible = lifecycleActive ? input.payrollEligible !== false : false;
   const compensation = resolveEmployeeCompensationInput(input);
 
   return {
@@ -1412,7 +1414,7 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
     medical_insurance_status: normalizeEnrollmentStatus(input.medicalInsuranceStatus),
     medical_insurance_number: compact(input.medicalInsuranceNumber),
     organogram_visible: lifecycleActive,
-    payroll_eligible: lifecycleActive,
+    payroll_eligible: payrollEligible,
     position_id: numberOrNull(input.positionId),
     payment_mode: normalizePayrollPaymentMode(input.salaryPaymentMode),
     residence_address: compact(input.residenceAddress),
@@ -1787,7 +1789,7 @@ export async function bulkUpdateEmployees(
       ? {
           employment_status: employmentStatus,
           organogram_visible: isActiveLifecycleStatus(employmentStatus),
-          payroll_eligible: isActiveLifecycleStatus(employmentStatus),
+          ...(!isActiveLifecycleStatus(employmentStatus) ? { payroll_eligible: false } : {}),
         }
       : {}),
     ...(values.lineId !== undefined ? { line_id: numberOrNull(values.lineId) } : {}),

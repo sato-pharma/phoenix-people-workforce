@@ -119,6 +119,7 @@ type EmployeeFormState = {
   nameAr: string;
   nationalId: string;
   netSalary: string;
+  payrollEligible: string;
   positionId: string;
   residenceAddress: string;
   residenceArea: string;
@@ -168,6 +169,7 @@ const emptyForm: EmployeeFormState = {
   nameAr: "",
   nationalId: "",
   netSalary: "",
+  payrollEligible: "yes",
   positionId: "",
   residenceAddress: "",
   residenceArea: "",
@@ -475,6 +477,7 @@ function employeeToForm(employee: EmployeeDirectoryRow): EmployeeFormState {
     nameAr: employee.nameAr ?? "",
     nationalId: employee.nationalId ?? "",
     netSalary: numberToText(employee.netSalary),
+    payrollEligible: employee.payrollEligible === false ? "no" : "yes",
     positionId: employee.positionId ? String(employee.positionId) : "",
     residenceAddress: employee.residenceAddress ?? "",
     residenceArea: employee.residenceArea ?? "",
@@ -536,6 +539,7 @@ function formToPayload(form: EmployeeFormState, originalHrId: string | null): Em
     nationalId: optionalText(form.nationalId),
     netSalary: optionalNumber(form.netSalary),
     originalHrId,
+    payrollEligible: form.payrollEligible !== "no",
     positionId: optionalNumber(form.positionId),
     residenceAddress: optionalText(form.residenceAddress),
     residenceArea: optionalText(form.residenceArea),
@@ -795,6 +799,8 @@ export function EmployeeManagement({
     salaryPaymentModeFilter,
     socialInsuranceStatusFilter,
   ].filter(Boolean).length;
+  const canSelectPayrollEligibility =
+    form.employmentStatus === "active" || form.employmentStatus === "on_leave";
 
   function updateForm(key: keyof EmployeeFormState, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -2211,11 +2217,12 @@ export function EmployeeManagement({
                   <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Lifecycle / System</h3>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <TextField
-                    disabled
+                  <SelectField
+                    disabled={!canSelectPayrollEligibility}
                     label="Payroll Eligible"
-                    onChange={() => undefined}
-                    value={form.employmentStatus === "active" || form.employmentStatus === "on_leave" ? "Yes" : "No"}
+                    onChange={(value) => updateForm("payrollEligible", value)}
+                    options={yesNoOptions}
+                    value={canSelectPayrollEligibility ? form.payrollEligible : "no"}
                   />
                   <TextField
                     disabled
