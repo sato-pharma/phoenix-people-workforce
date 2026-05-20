@@ -241,7 +241,7 @@ export async function runPayrollSheetMappingTests() {
     2298,
     2298,
     44444,
-    -123,
+    300,
     "One Part",
   ]);
 
@@ -270,7 +270,7 @@ export async function runPayrollSheetMappingTests() {
   assert.equal(sourceRow.employmentIncomeTax, 999);
   assert.equal(sourceRow.grossSalary, 18000);
   assert.equal(sourceRow.firstPart, 44444);
-  assert.equal(sourceRow.secondPart, -123);
+  assert.equal(sourceRow.secondPart, 300);
   assert.equal(sourceRow.totalAdditions, 2298);
   assert.equal(sourceRow.totalDeductions, 2298);
   assert.equal(
@@ -290,6 +290,38 @@ export async function runPayrollSheetMappingTests() {
   assert.equal(
     sourceResult.validationWarnings.some(
       (warning) => warning.code === "payment_mode_source_of_truth_mismatch",
+    ),
+    true,
+  );
+
+  const negativeSecondPartWorkbook = new ExcelJS.Workbook();
+  const negativeSecondPartSheet = negativeSecondPartWorkbook.addWorksheet("Payroll");
+  negativeSecondPartSheet.addRow([
+    "HR_ID",
+    "Full Name",
+    "Gross Salary",
+    "Net Salary",
+    "First Part",
+    "Second Part",
+  ]);
+  negativeSecondPartSheet.addRow([
+    "B-NEG",
+    "Negative Second Part",
+    10000,
+    10000,
+    10000,
+    -1,
+  ]);
+  const negativeSecondPartFile = new File([
+    await negativeSecondPartWorkbook.xlsx.writeBuffer() as BlobPart,
+  ], "negative-second-part.xlsx");
+  const negativeSecondPartResult = await validateSalaryWorkbook(negativeSecondPartFile);
+
+  assert.equal(negativeSecondPartResult.failedRows, 1);
+  assert.equal(negativeSecondPartResult.rowsToImport.length, 0);
+  assert.equal(
+    negativeSecondPartResult.validationErrors.some(
+      (error) => error.code === "negative_second_part",
     ),
     true,
   );

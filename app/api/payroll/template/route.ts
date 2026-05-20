@@ -6,7 +6,11 @@ import path from "node:path";
 import { assertPermission, getPayrollScope, type AccessContext } from "@/lib/auth/permissions";
 import { parseDateOnly } from "@/lib/date-only";
 import { resolveAccessContext } from "@/lib/auth/server";
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import {
+  getEmployeeDirectory,
+  getEmployeeDirectoryRows,
+  type EmployeeDirectoryRow,
+} from "@/lib/employees/employee-directory";
 import { getApprovedExpenseTotalsForPayroll } from "@/lib/payroll/expenses";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
@@ -27,6 +31,10 @@ const moneyColumnNumbers = new Set([
   11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
   22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
   33, 34,
+]);
+const readyPayrollEditableColumnNumbers = new Set([
+  14, 15, 16, 17, 20,
+  25, 26, 27, 28, 29, 30,
 ]);
 
 const uploadTemplateSections = [
@@ -62,6 +70,7 @@ type PayrollTemplateRow = {
   hireDate: string | null;
   incentive: number;
   jobTitle: string | null;
+  lastWorkingDate: string | null;
   line: string | null;
   loans: number;
   medicalInsurance: number;
@@ -80,6 +89,14 @@ type PayrollTemplateRow = {
   unpaidVacations: number;
   year: number;
 };
+
+type PayrollTemplateEmployee = {
+  employee: EmployeeDirectoryRow;
+  isTerminalPayroll: boolean;
+  lastWorkingDate: string | null;
+};
+
+const terminalPayrollStatuses = new Set(["resigned", "terminated", "inactive"]);
 
 type CellStyleSnapshot = {
   alignment: Partial<ExcelJS.Alignment>;
@@ -105,6 +122,37 @@ function money(value: number | null | undefined) {
   return Math.round((Number(value ?? 0) + Number.EPSILON) * 100) / 100;
 }
 
+function resolvePayrollSplit(input: {
+  baseSalary: number;
+  monthSalary: number;
+  otherDeductions: number;
+  paymentMode: "one_part" | "two_parts";
+  secondPartAdditions: number;
+}) {
+  const payable = money(Math.max(0, input.monthSalary));
+  const forcedSecondPart = money(
+    Math.min(payable, Math.max(0, input.secondPartAdditions)),
+  );
+  const firstPartPayable = money(Math.max(0, payable - forcedSecondPart));
+
+  if (input.paymentMode === "one_part") {
+    return { firstPart: firstPartPayable, secondPart: forcedSecondPart };
+  }
+
+  const firstPartCap = money(
+    Math.min(
+      input.baseSalary * 0.7,
+      Math.max(0, input.baseSalary - input.otherDeductions),
+    ),
+  );
+  const firstPart = money(Math.min(firstPartPayable, firstPartCap));
+
+  return {
+    firstPart,
+    secondPart: money(Math.max(0, payable - firstPart)),
+  };
+}
+
 function payrollMonthMatches(value: string | null, month: number, year: number) {
   if (!value) return false;
   const date = parseDateOnly(value);
@@ -115,9 +163,83 @@ function payrollMonthMatches(value: string | null, month: number, year: number) 
   );
 }
 
+function normalizePayrollHrId(value: string | null | undefined) {
+  const text = String(value ?? "").trim();
+  return text ? text.toUpperCase() : null;
+}
+
+function normalizePayrollStatus(value: string | null | undefined) {
+  return String(value ?? "active").trim().toLowerCase();
+}
+
+function terminalPayrollDate(employee: EmployeeDirectoryRow) {
+  return employee.lastWorkingDate ?? employee.resignationDate ?? null;
+}
+
+function isTerminalPayrollEmployeeForPeriod(
+  employee: EmployeeDirectoryRow,
+  month: number,
+  year: number,
+) {
+  return (
+    terminalPayrollStatuses.has(normalizePayrollStatus(employee.employmentStatus)) &&
+    payrollMonthMatches(terminalPayrollDate(employee), month, year)
+  );
+}
+
+async function getPayrollTemplateEmployees(
+  month: number,
+  year: number,
+): Promise<PayrollTemplateEmployee[]> {
+  const [directory, allEmployees] = await Promise.all([
+    getEmployeeDirectory(),
+    getEmployeeDirectoryRows({ includeInactive: true }),
+  ]);
+  const activeEmployees = directory.employees
+    .filter((employee) => (employee.employmentStatus ?? "active") === "active" && employee.payrollEligible !== false)
+    .map((employee) => ({
+      employee,
+      isTerminalPayroll: false,
+      lastWorkingDate: null,
+    }));
+  const activeHrIds = new Set(
+    activeEmployees
+      .map(({ employee }) => normalizePayrollHrId(employee.hrId))
+      .filter(Boolean),
+  );
+  const terminalEmployees = allEmployees
+    .filter((employee) => {
+      const hrId = normalizePayrollHrId(employee.hrId);
+      return (
+        Boolean(hrId) &&
+        !activeHrIds.has(hrId) &&
+        isTerminalPayrollEmployeeForPeriod(employee, month, year)
+      );
+    })
+    .map((employee) => ({
+      employee,
+      isTerminalPayroll: true,
+      lastWorkingDate: terminalPayrollDate(employee),
+    }));
+
+  return [...activeEmployees, ...terminalEmployees];
+}
+
 function payrollHireDay(value: string | null) {
   const date = parseDateOnly(value);
   return date ? date.getDate() : null;
+}
+
+function payrollExcelDateOnly(value: string | null) {
+  const date = parseDateOnly(value);
+  if (!date) return "";
+
+  return new Date(Date.UTC(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    12,
+  ));
 }
 
 function calculateBaseProrationDeduction(
@@ -133,6 +255,49 @@ function calculateBaseProrationDeduction(
 
   const eligibleDays = Math.max(0, 30 - hireDay + 1);
   return money(Math.max(0, baseSalary - (baseSalary / 30) * eligibleDays));
+}
+
+function prorationStartDay(hireDate: string | null, month: number, year: number) {
+  return payrollMonthMatches(hireDate, month, year) ? payrollHireDay(hireDate) ?? 1 : 1;
+}
+
+function prorationEndDay(lastWorkingDate: string | null, month: number, year: number) {
+  if (!payrollMonthMatches(lastWorkingDate, month, year)) return 30;
+  const lastWorkingDay = payrollHireDay(lastWorkingDate) ?? 30;
+  return Math.min(30, Math.max(1, lastWorkingDay));
+}
+
+function calculateBaseLifecycleProrationDeduction(
+  baseSalary: number,
+  hireDate: string | null,
+  lastWorkingDate: string | null,
+  month: number,
+  year: number,
+) {
+  const startDay = prorationStartDay(hireDate, month, year);
+  const endDay = prorationEndDay(lastWorkingDate, month, year);
+
+  if (startDay <= 1 && endDay >= 30) return 0;
+
+  const eligibleDays = Math.max(0, endDay - startDay + 1);
+  return money(Math.max(0, baseSalary - (baseSalary / 30) * eligibleDays));
+}
+
+function otherDeductionsFormula(
+  row: PayrollTemplateRow,
+  rowNumber: number,
+  month: number,
+  year: number,
+) {
+  const baseSalary = cellRef(rowNumber, 11);
+  const hireDate = cellRef(rowNumber, 10);
+
+  if (payrollMonthMatches(row.lastWorkingDate, month, year)) {
+    const endDay = prorationEndDay(row.lastWorkingDate, month, year);
+    return `ROUND(MAX(0,${baseSalary}-((${baseSalary}/30)*MAX(0,${endDay}-IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),DAY(${hireDate}),1)+1))),2)`;
+  }
+
+  return `IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),ROUND(MAX(0,${baseSalary}-((${baseSalary}/30)*MAX(0,30-DAY(${hireDate})+1))),2),0)`;
 }
 
 function monthName(month: number) {
@@ -202,10 +367,26 @@ function writeHeaderRow(sheet: ExcelJS.Worksheet, rowNumber: number) {
   row.commit();
 }
 
-function writeSortableTwoPartsHeaderRow(sheet: ExcelJS.Worksheet, rowNumber: number) {
-  writeHeaderRow(sheet, rowNumber);
-  stylePayrollHeaderRow(sheet.getRow(rowNumber));
-  sheet.getRow(rowNumber).height = 30;
+function writeReadyPayrollBlockHeaderRow(
+  sheet: ExcelJS.Worksheet,
+  rowNumber: number,
+  label: string,
+) {
+  sheet.mergeCells(rowNumber, 1, rowNumber, headers.length);
+  const row = sheet.getRow(rowNumber);
+  const cell = row.getCell(1);
+  cell.value = label;
+  cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 12 };
+  cell.fill = solidFill("FF0F172A");
+  cell.alignment = { horizontal: "left", vertical: "middle" };
+  cell.border = {
+    bottom: { color: { argb: "FFFFFFFF" }, style: "thin" },
+    left: { color: { argb: "FFFFFFFF" }, style: "thin" },
+    right: { color: { argb: "FFFFFFFF" }, style: "thin" },
+    top: { color: { argb: "FFFFFFFF" }, style: "thin" },
+  };
+  row.height = 24;
+  row.commit();
 }
 
 function uploadSectionForColumn(columnNumber: number) {
@@ -344,21 +525,22 @@ function stylePayrollTotalsRow(row: ExcelJS.Row) {
 }
 
 async function buildUploadRows(month: number, year: number): Promise<PayrollTemplateRow[]> {
-  const directory = await getEmployeeDirectory();
+  const payrollEmployees = await getPayrollTemplateEmployees(month, year);
 
-  return directory.employees
-    .filter((employee) => (employee.employmentStatus ?? "active") === "active" && employee.payrollEligible !== false)
-    .map((employee) => {
+  return payrollEmployees
+    .map((payrollEmployee) => {
+      const { employee } = payrollEmployee;
       const standardAllowances = resolveStandardSalaryAllowances({
         departmentName: employee.departmentName,
+        employeeHrId: employee.hrId,
         jobTitle: employee.jobTitle,
         lineName: employee.lineName,
         month,
         positionTitle: employee.positionTitle,
         year,
       });
-      const extraCostOfLiving = money(standardAllowances.extraCostOfLiving);
-      const fuelAllowance = money(standardAllowances.fuelAllowance);
+      const extraCostOfLiving = payrollEmployee.isTerminalPayroll ? 0 : money(standardAllowances.extraCostOfLiving);
+      const fuelAllowance = payrollEmployee.isTerminalPayroll ? 0 : money(standardAllowances.fuelAllowance);
       const socialInsurance = money(employee.socialInsurance);
       const employmentIncomeTax = money(employee.taxes);
       const fixedSalary = resolveFixedSalaryAmounts({
@@ -375,13 +557,29 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
       const netSalary = money(fixedSalary.netSalary);
       const grossSalary = money(fixedSalary.grossSalary);
       const governmentalDeductions = money(socialInsurance + employmentIncomeTax);
+      const otherDeductions = calculateBaseLifecycleProrationDeduction(
+        baseSalary,
+        employee.hireDate,
+        payrollEmployee.lastWorkingDate,
+        month,
+        year,
+      );
       const parts = calculatePayrollParts({
         baseSalary,
+        deductions: otherDeductions,
         extraCostOfLiving,
         fuelAllowance,
         paymentMode: employee.salaryPaymentMode,
       });
       const paymentMode = payrollPaymentModeLabel(parts.paymentMode);
+      const monthSalary = parts.totalPayable;
+      const { firstPart, secondPart } = resolvePayrollSplit({
+        baseSalary,
+        monthSalary,
+        otherDeductions,
+        paymentMode: parts.paymentMode,
+        secondPartAdditions: 0,
+      });
 
       return {
         arabicName: employee.nameAr,
@@ -391,7 +589,9 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
         baseSalary,
         bonus: 0,
         comment:
-          parts.paymentMode === "two_parts"
+          payrollEmployee.isTerminalPayroll
+            ? "Resignation payroll row. Cost of living and fuel are zero; base salary is prorated through last working date."
+            : parts.paymentMode === "two_parts"
             ? "Fixed starter row. Add monthly expenses, additions, and deductions before upload."
             : "Fixed starter row. Add monthly expenses, additions, and deductions before upload.",
         crm: 0,
@@ -400,7 +600,7 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
         expenses: 0,
         extraCostOfLiving,
         fingerPrint: 0,
-        firstPart: parts.firstPart,
+        firstPart,
         fuelAllowance,
         fullName: employee.fullName,
         governmentalDeductions,
@@ -408,20 +608,21 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
         hireDate: employee.hireDate,
         incentive: 0,
         jobTitle: employee.positionTitle ?? employee.jobTitle,
+        lastWorkingDate: payrollEmployee.lastWorkingDate,
         line: employee.lineName,
         loans: 0,
         medicalInsurance: 0,
-        monthSalary: parts.totalPayable,
+        monthSalary,
         month,
         netSalary,
         otherAdditions: 0,
-        otherDeductions: 0,
+        otherDeductions,
         overtime: 0,
         paymentMode,
-        secondPart: parts.secondPart,
+        secondPart,
         socialInsurance,
         totalAdditions: money(extraCostOfLiving + fuelAllowance),
-        totalDeductions: 0,
+        totalDeductions: otherDeductions,
         unpaidVacations: 0,
         year,
       };
@@ -468,15 +669,20 @@ async function createFallbackWorkbook(
     key: header,
     width: Math.max(header.length + 4, 14),
   }));
-  const fixedBlockRows = options.formulas ? onePartFixedBlockSize(rows) : 0;
-  const hasTwoPartSortableRange = options.formulas && fixedBlockRows > 0 && fixedBlockRows < rows.length;
-  let twoPartHeaderRow: number | null = null;
+  const blockHeaderRows = new Set<number>();
+  let previousBlockRank: number | null = null;
   let rowNumber = dataStartRow;
   rows.forEach((row, index) => {
-    if (hasTwoPartSortableRange && index === fixedBlockRows) {
-      twoPartHeaderRow = rowNumber;
-      writeSortableTwoPartsHeaderRow(sheet, rowNumber);
+    const blockRank = readyPayrollBlockRank(row);
+    if (options.formulas && blockRank !== previousBlockRank) {
+      blockHeaderRows.add(rowNumber);
+      writeReadyPayrollBlockHeaderRow(
+        sheet,
+        rowNumber,
+        readyPayrollBlockLabel(blockRank, month, year),
+      );
       rowNumber += 1;
+      previousBlockRank = blockRank;
     }
 
     const sheetRow = sheet.getRow(rowNumber);
@@ -494,15 +700,14 @@ async function createFallbackWorkbook(
     writeTotals(sheet, rowNumber, rows, captureRowStyle(sheet, dataStartRow - 1));
   }
   sheet.autoFilter = {
-    from: { column: 1, row: twoPartHeaderRow ?? dataStartRow - 1 },
+    from: { column: 1, row: dataStartRow - 1 },
     to: { column: headers.length, row: Math.max(dataStartRow, lastDataRow) },
   };
   if (options.formulas) {
     await protectReadyPayrollSheet(sheet, {
-      fixedBlockRows,
+      blockHeaderRows,
       lastDataRow,
       totalsRow,
-      twoPartHeaderRow,
     });
   }
   upsertWorkingDaysCalcSheet(workbook, month, year);
@@ -644,7 +849,7 @@ function rowValues(
       row.jobTitle ?? "",
       row.line ?? "",
       row.area ?? "",
-      parseDateOnly(row.hireDate) ?? "",
+      payrollExcelDateOnly(row.hireDate),
       row.baseSalary,
       formulaValue(`ROUND(${baseSalary}+${socialInsurance}+${employmentIncomeTax},2)`, row.grossSalary),
       formulaValue(`ROUND(${baseSalary}+${extraCostOfLiving}+${fuelAllowance},2)`, row.netSalary),
@@ -668,7 +873,7 @@ function rowValues(
       row.medicalInsurance,
       row.loans,
       formulaValue(
-        `IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),ROUND(MAX(0,${baseSalary}-((${baseSalary}/30)*MAX(0,30-DAY(${hireDate})+1))),2),0)`,
+        otherDeductionsFormula(row, rowNumber, row.month, row.year),
         row.otherDeductions,
       ),
       formulaValue(
@@ -680,10 +885,10 @@ function rowValues(
         row.monthSalary,
       ),
       formulaValue(
-        `IF(${paymentMode}="One Part",${monthSalary},MIN(ROUND(${baseSalary}*0.7,2),MAX(0,${baseSalary}-${otherDeductions})))`,
+        `IF(${paymentMode}="One Part",MAX(0,${monthSalary}-MIN(MAX(0,${monthSalary}),MAX(0,${expenses}+${incentive}))),MIN(MAX(0,${monthSalary}-MIN(MAX(0,${monthSalary}),MAX(0,${expenses}+${incentive}))),ROUND(${baseSalary}*0.7,2),MAX(0,${baseSalary}-${otherDeductions})))`,
         row.firstPart,
       ),
-      formulaValue(`IF(${paymentMode}="One Part",0,ROUND(${monthSalary}-${firstPart},2))`, row.secondPart),
+      formulaValue(`IF(${paymentMode}="One Part",MIN(MAX(0,${monthSalary}),MAX(0,${expenses}+${incentive})),MAX(0,ROUND(${monthSalary}-${firstPart},2)))`, row.secondPart),
       row.paymentMode,
       row.comment,
       row.bankName ?? "",
@@ -701,7 +906,7 @@ function rowValues(
     row.jobTitle ?? "",
     row.line ?? "",
     row.area ?? "",
-    parseDateOnly(row.hireDate) ?? "",
+    payrollExcelDateOnly(row.hireDate),
     row.baseSalary,
     row.grossSalary,
     row.netSalary,
@@ -1099,9 +1304,10 @@ function upsertSalaryPolicySheet(workbook: ExcelJS.Workbook) {
     ["Gross Salary", "Base Salary + Social Insurance + Employment Income Tax."],
     ["Ready Sheet Formulas", "Ready payroll rows use Excel formulas for Gross Salary, Net Salary, Total Additions, Governmental Deductions, Other Deductions proration, Total Deductions, Month Salary, First Part, and Second Part."],
     ["Partial Month Hires", "Payroll uses a fixed 30-day month. If Hire Date is inside the payroll month, Other Deductions auto-calculates Base Salary - ((Base Salary / 30) x eligible days). Hire day is included."],
-    ["First Part", "One Part: Month Salary. Two Parts: MIN(Base Salary x 70%, Base Salary - Other Deductions) so partial-month hires never receive more than their eligible base entitlement in First Part."],
-    ["Second Part", "One Part: 0. Two Parts: Month Salary - First Part."],
-    ["Ready Sheet Sorting", "Ready payroll rows are ordered with One Part employees first, then Two Parts employees sorted by Hire Date from oldest to newest. The # column is generated after this grouping. When both groups exist, the One Part block is locked above a separate sortable Two Parts range."],
+    ["First Part", "One Part: Month Salary minus Expenses and Incentive. Two Parts: MIN(Month Salary minus Expenses and Incentive, Base Salary x 70%, Base Salary - Other Deductions) so low final dues are paid fully in First Part."],
+    ["Second Part", "Expenses and Incentive always pay in Second Part. Two Parts also includes any remaining Month Salary after First Part. Never below 0."],
+    ["Ready Sheet Sorting", "Ready payroll rows are ordered in four blocks: One Part, already hired Two Parts, current-month Two Parts new hires, then current-month resignations. Rows inside each block are sorted from oldest to newest by the relevant date."],
+    ["Ready Sheet Editing", "Ready payroll locks fixed employee and salary fields. Monthly variable fields stay editable: Expenses, Incentive, Overtime, Bonus, Other Additions, CRM, Finger Print, Unpaid Vacations, Medical Insurance, Loans, and Other Deductions."],
     ["Upload Note", "The uploaded monthly sheet remains the payslip source of truth for month-specific additions, deductions, First Part, Second Part, and stored payroll totals."],
   ]);
 
@@ -1113,10 +1319,10 @@ function upsertSalaryPolicySheet(workbook: ExcelJS.Workbook) {
       type: "pattern",
     };
   });
-  forCells(sheet, 4, 1, 16, 1, (cell) => {
+  forCells(sheet, 4, 1, 17, 1, (cell) => {
     cell.font = { bold: true, color: { argb: "FF374151" } };
   });
-  forCells(sheet, 3, 1, 16, 2, (cell) => {
+  forCells(sheet, 3, 1, 17, 2, (cell) => {
     cell.alignment = { vertical: "top", wrapText: true };
     cell.border = {
       bottom: { color: { argb: "FFE5E7EB" }, style: "thin" },
@@ -1129,70 +1335,87 @@ function upsertSalaryPolicySheet(workbook: ExcelJS.Workbook) {
 
 function sortReadyPayrollRows(rows: PayrollTemplateRow[]) {
   return rows.slice().sort((left, right) => {
-    const leftOnePart = left.paymentMode === "One Part";
-    const rightOnePart = right.paymentMode === "One Part";
-    if (leftOnePart !== rightOnePart) return leftOnePart ? -1 : 1;
-    if (!leftOnePart && !rightOnePart) {
-      const hireDateDifference =
-        readyPayrollHireDateSortValue(left.hireDate) -
-        readyPayrollHireDateSortValue(right.hireDate);
-      if (hireDateDifference !== 0) return hireDateDifference;
-      return (
-        left.fullName.localeCompare(right.fullName) ||
-        left.employeeCode.localeCompare(right.employeeCode)
-      );
-    }
-    return 0;
+    const blockDifference = readyPayrollBlockRank(left) - readyPayrollBlockRank(right);
+    if (blockDifference !== 0) return blockDifference;
+
+    const dateDifference =
+      readyPayrollBlockDateSortValue(left) -
+      readyPayrollBlockDateSortValue(right);
+    if (dateDifference !== 0) return dateDifference;
+
+    return (
+      left.fullName.localeCompare(right.fullName) ||
+      left.employeeCode.localeCompare(right.employeeCode)
+    );
   });
+}
+
+function readyPayrollBlockRank(row: PayrollTemplateRow) {
+  if (payrollMonthMatches(row.lastWorkingDate, row.month, row.year)) return 4;
+  if (row.paymentMode === "One Part") return 1;
+  if (payrollMonthMatches(row.hireDate, row.month, row.year)) return 3;
+  return 2;
+}
+
+function readyPayrollBlockLabel(rank: number, month: number, year: number) {
+  if (rank === 1) return "BLOCK 1 - One Part";
+  if (rank === 2) return "BLOCK 2 - Two Parts Already Hired";
+  if (rank === 3) return `BLOCK 3 - New Hires in ${monthName(month)} ${year}`;
+  return `BLOCK 4 - Resignations in ${monthName(month)} ${year}`;
+}
+
+function readyPayrollBlockDateSortValue(row: PayrollTemplateRow) {
+  if (readyPayrollBlockRank(row) === 4) {
+    return readyPayrollHireDateSortValue(row.lastWorkingDate);
+  }
+
+  return readyPayrollHireDateSortValue(row.hireDate);
 }
 
 function readyPayrollHireDateSortValue(value: string | null) {
   return parseDateOnly(value)?.getTime() ?? Number.POSITIVE_INFINITY;
 }
 
-function onePartFixedBlockSize(rows: PayrollTemplateRow[]) {
-  let count = 0;
-  for (const row of rows) {
-    if (row.paymentMode !== "One Part") break;
-    count += 1;
-  }
-  return count;
-}
-
-function setRowProtection(
+function lockReadyPayrollRow(
   sheet: ExcelJS.Worksheet,
   rowNumber: number,
-  locked: boolean,
 ) {
   const row = sheet.getRow(rowNumber);
   for (let column = 1; column <= headers.length; column += 1) {
-    row.getCell(column).protection = { locked };
+    row.getCell(column).protection = { locked: true };
+  }
+}
+
+function setReadyPayrollDataRowProtection(
+  sheet: ExcelJS.Worksheet,
+  rowNumber: number,
+) {
+  const row = sheet.getRow(rowNumber);
+  for (let column = 1; column <= headers.length; column += 1) {
+    row.getCell(column).protection = {
+      locked: !readyPayrollEditableColumnNumbers.has(column),
+    };
   }
 }
 
 async function protectReadyPayrollSheet(
   sheet: ExcelJS.Worksheet,
   input: {
-    fixedBlockRows: number;
+    blockHeaderRows: ReadonlySet<number>;
     lastDataRow: number;
-    twoPartHeaderRow: number | null;
     totalsRow: number | null;
   },
 ) {
-  if (input.fixedBlockRows <= 0) return;
-
-  for (let rowNumber = dataStartRow; rowNumber < dataStartRow + input.fixedBlockRows; rowNumber += 1) {
-    setRowProtection(sheet, rowNumber, true);
-  }
-
-  if (input.twoPartHeaderRow !== null) {
-    for (let rowNumber = input.twoPartHeaderRow; rowNumber <= input.lastDataRow; rowNumber += 1) {
-      setRowProtection(sheet, rowNumber, false);
+  for (let rowNumber = dataStartRow; rowNumber <= input.lastDataRow; rowNumber += 1) {
+    if (input.blockHeaderRows.has(rowNumber)) {
+      lockReadyPayrollRow(sheet, rowNumber);
+    } else {
+      setReadyPayrollDataRowProtection(sheet, rowNumber);
     }
   }
 
   if (input.totalsRow !== null) {
-    setRowProtection(sheet, input.totalsRow, true);
+    lockReadyPayrollRow(sheet, input.totalsRow);
   }
 
   await sheet.protect("", {
@@ -1211,29 +1434,30 @@ async function buildReadyRows(
   year: number,
   accessContext: AccessContext,
 ): Promise<PayrollTemplateRow[]> {
-  const [directory, previousExpensesByEmployee, approvedExpenseTotals] = await Promise.all([
-    getEmployeeDirectory(),
+  const [payrollEmployees, previousExpensesByEmployee, approvedExpenseTotals] = await Promise.all([
+    getPayrollTemplateEmployees(month, year),
     getLatestSalaryExpenseTotalsBefore(month, year),
     getApprovedExpenseTotalsForPayroll(month, year, accessContext),
   ]);
 
-  const rows = directory.employees
-    .filter((employee) => (employee.employmentStatus ?? "active") === "active" && employee.payrollEligible !== false)
-    .map((employee) => {
+  const rows = payrollEmployees
+    .map((payrollEmployee) => {
+      const { employee } = payrollEmployee;
       const expenses = money(
         approvedExpenseTotals.get(employee.hrId) ??
           previousExpensesByEmployee.get(employee.hrId),
       );
       const standardAllowances = resolveStandardSalaryAllowances({
         departmentName: employee.departmentName,
+        employeeHrId: employee.hrId,
         jobTitle: employee.jobTitle,
         lineName: employee.lineName,
         month,
         positionTitle: employee.positionTitle,
         year,
       });
-      const extraCostOfLiving = money(standardAllowances.extraCostOfLiving);
-      const fuelAllowance = money(standardAllowances.fuelAllowance);
+      const extraCostOfLiving = payrollEmployee.isTerminalPayroll ? 0 : money(standardAllowances.extraCostOfLiving);
+      const fuelAllowance = payrollEmployee.isTerminalPayroll ? 0 : money(standardAllowances.fuelAllowance);
       const socialInsurance = money(employee.socialInsurance);
       const employmentIncomeTax = money(employee.taxes);
       const fixedSalary = resolveFixedSalaryAmounts({
@@ -1267,9 +1491,10 @@ async function buildReadyRows(
       const fingerPrint = 0;
       const unpaidVacations = 0;
       const loans = 0;
-      const otherDeductions = calculateBaseProrationDeduction(
+      const otherDeductions = calculateBaseLifecycleProrationDeduction(
         baseSalary,
         employee.hireDate,
+        payrollEmployee.lastWorkingDate,
         month,
         year,
       );
@@ -1295,12 +1520,13 @@ async function buildReadyRows(
           otherAdditions -
           totalDeductions,
       );
-      const firstPart = parts.paymentMode === "one_part"
-        ? monthSalary
-        : money(Math.min(baseSalary * 0.7, Math.max(0, baseSalary - otherDeductions)));
-      const secondPart = parts.paymentMode === "one_part"
-        ? 0
-        : money(monthSalary - firstPart);
+      const { firstPart, secondPart } = resolvePayrollSplit({
+        baseSalary,
+        monthSalary,
+        otherDeductions,
+        paymentMode: parts.paymentMode,
+        secondPartAdditions: expenses + incentive,
+      });
 
       return {
         arabicName: employee.nameAr,
@@ -1310,9 +1536,11 @@ async function buildReadyRows(
         baseSalary,
         bonus,
         comment:
-          parts.paymentMode === "two_parts"
-            ? "Day 1: 70% of base only. Day 10: 30% base + cost of living + fuel + approved previous-month expenses."
-            : "Day 1: net salary. Day 10: approved previous-month expenses.",
+          payrollEmployee.isTerminalPayroll
+            ? "Resignation payroll row. Cost of living and fuel are zero; base salary is prorated through last working date."
+            : parts.paymentMode === "two_parts"
+            ? "Day 1: 70% of base only. Day 10: remaining pay plus expenses and incentive."
+            : "Day 1: net salary. Day 10: expenses and incentive.",
         crm,
         employeeCode: employee.hrId,
         employmentIncomeTax,
@@ -1327,6 +1555,7 @@ async function buildReadyRows(
         hireDate: employee.hireDate,
         incentive,
         jobTitle: employee.positionTitle ?? employee.jobTitle,
+        lastWorkingDate: payrollEmployee.lastWorkingDate,
         line: employee.lineName,
         loans,
         medicalInsurance,

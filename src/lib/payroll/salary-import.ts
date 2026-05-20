@@ -479,6 +479,11 @@ function isRepeatedPayrollHeaderRow(row: Record<string, unknown>) {
   return matchingHeaderCells >= 3;
 }
 
+function isReadyPayrollBlockHeaderRow(row: Record<string, unknown>) {
+  const firstCell = String(rowValue(row, ["#"])).trim();
+  return /^block\s+\d+\s+-/i.test(firstCell);
+}
+
 function parseMonthCell(value: unknown) {
   if (!hasCellValue(value)) return null;
   const numeric = Number(value);
@@ -531,6 +536,7 @@ export async function validateSalaryWorkbook(
     if (
       Object.values(row).some((value) => String(value ?? "").trim() !== "") &&
       !isRepeatedPayrollHeaderRow(row) &&
+      !isReadyPayrollBlockHeaderRow(row) &&
       !isPayrollSummaryRow(row)
     ) {
       rows.push({ ...row, __rowNumber: rowNumber });
@@ -637,6 +643,7 @@ export async function validateSalaryWorkbook(
       netSalary,
       paymentMode,
       previousExpenses: 0,
+      secondPartAdditions: expenses + incentive,
     });
     const firstPart = hasFirstPartColumn ? uploadedFirstPart : parts.firstPart;
     const secondPart = hasSecondPartColumn ? uploadedSecondPart : parts.secondPart;
@@ -916,6 +923,38 @@ export async function validateSalaryWorkbook(
         column: "Second Part",
         hrId,
         message: "Second part is required when the uploaded sheet includes a Second Part column.",
+        row: rowNumber,
+      });
+    }
+
+    if (
+      hasSecondPartColumn &&
+      rowHasValue(raw, columnAliases.secondPart) &&
+      uploadedSecondPart < 0
+    ) {
+      validationErrors.push({
+        code: "negative_second_part",
+        column: "Second Part",
+        hrId,
+        message: "Second part cannot be negative.",
+        row: rowNumber,
+      });
+    }
+
+    const requiredSecondPartAdditions = money(
+      Math.min(Math.max(0, monthSalary), Math.max(0, expenses + incentive)),
+    );
+    if (
+      hasSecondPartColumn &&
+      rowHasValue(raw, columnAliases.secondPart) &&
+      uploadedSecondPart >= 0 &&
+      uploadedSecondPart + 0.01 < requiredSecondPartAdditions
+    ) {
+      validationErrors.push({
+        code: "second_part_variable_additions_underpaid",
+        column: "Second Part",
+        hrId,
+        message: `Second part must include Expenses + Incentive (${moneyText(requiredSecondPartAdditions)}).`,
         row: rowNumber,
       });
     }

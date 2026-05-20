@@ -213,7 +213,7 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     otherDeductions;
   const storedNetSalary = Number(row.net_salary ?? 0);
   const uploadedFirstPart = Number(row.first_part ?? 0);
-  const uploadedSecondPart = Number(row.second_part ?? 0);
+  const uploadedSecondPart = Math.max(0, Number(row.second_part ?? 0));
   const paymentMode = row.payment_mode
     ? normalizePayrollPaymentMode(String(row.payment_mode))
     : uploadedFirstPart > 0 && uploadedFirstPart >= storedNetSalary - 1
@@ -239,6 +239,7 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     netSalary,
     paymentMode,
     previousExpenses: 0,
+    secondPartAdditions: expenses + incentive,
   });
   const grossSalary = fixedSalary.grossSalary;
   const totalAdditions = Number(row.total_additions ?? calculatedTotalAdditions);
@@ -1058,7 +1059,7 @@ function salaryRecordPayload(batchId: string, row: SalaryValidationRow) {
     overtime: row.overtime,
     comment: row.payrollComment,
     payment_mode: row.paymentMode,
-    second_part: row.secondPart,
+    second_part: Math.max(0, row.secondPart),
     social_insurance: row.socialInsurance,
     total_additions: row.totalAdditions,
     total_deductions: row.totalDeductions,

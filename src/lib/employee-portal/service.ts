@@ -577,24 +577,27 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
     fuelAllowance: mapped.fuelAllowance,
     paymentMode,
     previousExpenses: 0,
+    secondPartAdditions: mapped.expenses + mapped.incentive,
   });
   const totalAdditions = hasTotalAdditions ? mapped.totalAdditions : calculatedTotalAdditions;
   const totalDeductions = hasTotalDeductions ? mapped.totalDeductions : calculatedTotalDeductions;
+  const firstPart = hasFirstPart ? mapped.firstPart : parts.firstPart;
+  const secondPart = hasSecondPart ? Math.max(0, mapped.secondPart) : parts.secondPart;
 
   return {
     ...mapped,
     baseSalary: fixedSalary.baseSalary,
-    firstPart: hasFirstPart ? mapped.firstPart : parts.firstPart,
+    firstPart,
     governmentalDeductions: mapped.governmentalDeductions > 0
       ? mapped.governmentalDeductions
       : mapped.socialInsurance + mapped.employmentIncomeTax,
     grossSalary: fixedSalary.grossSalary,
     monthSalary: mapped.monthSalary > 0
       ? mapped.monthSalary
-      : (hasFirstPart ? mapped.firstPart : parts.firstPart) + (hasSecondPart ? mapped.secondPart : parts.secondPart),
+      : firstPart + secondPart,
     netSalary: fixedSalary.netSalary,
     paymentMode,
-    secondPart: hasSecondPart ? mapped.secondPart : parts.secondPart,
+    secondPart,
     totalAdditions,
     totalDeductions,
   };
@@ -1799,6 +1802,7 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     hireDate: null,
     hrId,
     jobTitle: access.role,
+    lastWorkingDate: null,
     lineId: null,
     lineName: null,
     managerHrId: null,
@@ -1822,6 +1826,7 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     residenceLatitude: null,
     residenceLongitude: null,
     regionName: null,
+    resignationDate: null,
     socialInsurance: null,
     socialInsuranceStatus: null,
     socialInsuranceNumber: null,
@@ -2005,6 +2010,7 @@ export async function getEmployeePortalData(
   const insights = computeInsights(insightInput);
   const fallbackAllowances = resolveStandardSalaryAllowances({
     departmentName: employee.departmentName,
+    employeeHrId: currentHrId,
     jobTitle: employee.jobTitle,
     lineName: employee.lineName,
     month: latestBatch?.month,
@@ -2315,6 +2321,7 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
         : "Completed";
   const fallbackAllowances = resolveStandardSalaryAllowances({
     departmentName: employee.departmentName,
+    employeeHrId: currentHrId,
     jobTitle: employee.jobTitle,
     lineName: employee.lineName,
     month: latestBatch?.month,
@@ -3682,6 +3689,7 @@ export async function getMedicalRepPortalData(
   
   const fallbackAllowances = resolveStandardSalaryAllowances({
     departmentName: employee.departmentName,
+    employeeHrId: currentHrId,
     jobTitle: employee.jobTitle,
     lineName: employee.lineName,
     month: latestBatch?.month,

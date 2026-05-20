@@ -29,6 +29,7 @@ export async function getPayrollSalarySourcesByHrId(expectedPeriod?: { month: nu
   for (const employee of directory.employees) {
     const standardAllowances = resolveStandardSalaryAllowances({
       departmentName: employee.departmentName,
+      employeeHrId: employee.hrId,
       jobTitle: employee.jobTitle,
       lineName: employee.lineName,
       month: expectedPeriod?.month,

@@ -97,3 +97,17 @@ export type CreateResignationInput = {
 export type EmployeeResignationInput = CreateResignationInput & {
   employeeStatus?: string | null;
 };
+
+export type UpdateResignationDatesInput = Partial<
+  Pick<
+    CreateResignationInput,
+    | "effective_date"
+    | "effectiveDate"
+    | "last_working_date"
+    | "lastWorkingDate"
+    | "submitted_date"
+    | "submittedDate"
+  >
+> & {
+  resignationDate?: string | null;
+};

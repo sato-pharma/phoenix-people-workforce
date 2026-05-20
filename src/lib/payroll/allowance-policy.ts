@@ -5,6 +5,7 @@ export const SALARY_ALLOWANCE_EFFECTIVE_YEAR = 2026;
 
 type SalaryAllowanceInput = {
   departmentName?: string | null;
+  employeeHrId?: string | null;
   jobTitle?: string | null;
   lineName?: string | null;
   month?: number | null;
@@ -30,7 +31,16 @@ function titleText(input: SalaryAllowanceInput) {
   ].filter(Boolean).join(" "));
 }
 
+function normalizeHrId(value: string | null | undefined) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function isNoAllowanceEmployee(input: SalaryAllowanceInput) {
+  return normalizeHrId(input.employeeHrId) === "A-14";
+}
+
 function isAllowancePolicyActive(input: SalaryAllowanceInput) {
+  if (isNoAllowanceEmployee(input)) return false;
   if (!input.month || !input.year) return true;
   if (input.year > SALARY_ALLOWANCE_EFFECTIVE_YEAR) return true;
   if (input.year < SALARY_ALLOWANCE_EFFECTIVE_YEAR) return false;

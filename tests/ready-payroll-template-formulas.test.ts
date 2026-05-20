@@ -5,6 +5,10 @@ const templateRouteSource = readFileSync(
   new URL("../app/api/payroll/template/route.ts", import.meta.url),
   "utf8",
 );
+const salaryImportSource = readFileSync(
+  new URL("../src/lib/payroll/salary-import.ts", import.meta.url),
+  "utf8",
+);
 
 export function runReadyPayrollTemplateFormulaTests() {
   assert.match(
@@ -17,6 +21,48 @@ export function runReadyPayrollTemplateFormulaTests() {
     templateRouteSource,
     /function calculateBaseProrationDeduction/,
     "Ready payroll must calculate a cached base-salary proration deduction.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /getEmployeeDirectoryRows\(\{ includeInactive: true \}\)/,
+    "Ready payroll must include inactive directory rows so current-month resignations can be paid.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /terminalPayrollStatuses = new Set\(\["resigned", "terminated", "inactive"\]\)/,
+    "Ready payroll must identify terminal employees for final-month payroll inclusion.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /extraCostOfLiving = payrollEmployee\.isTerminalPayroll \? 0/,
+    "Ready payroll resignation rows must not include extra cost of living.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /fuelAllowance = payrollEmployee\.isTerminalPayroll \? 0/,
+    "Ready payroll resignation rows must not include fuel allowance.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /function calculateBaseLifecycleProrationDeduction/,
+    "Ready payroll must prorate final-month salary through the last working date.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /function payrollExcelDateOnly/,
+    "Ready payroll must normalize date-only values before writing them to Excel.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /Date\.UTC\([\s\S]*?date\.getFullYear\(\)[\s\S]*?date\.getMonth\(\)[\s\S]*?date\.getDate\(\)[\s\S]*?12[\s\S]*?\)/,
+    "Ready payroll must write Hire Date at UTC noon so Excel does not shift it one day earlier.",
   );
 
   assert.match(
@@ -45,44 +91,98 @@ export function runReadyPayrollTemplateFormulaTests() {
 
   assert.match(
     templateRouteSource,
-    /IF\(\$\{paymentMode\}="One Part",\$\{monthSalary\},MIN\(ROUND\(\$\{baseSalary\}\*0\.7,2\),MAX\(0,\$\{baseSalary\}-\$\{otherDeductions\}\)\)\)/,
-    "Ready payroll First Part must use One Part full-month-salary logic and prorated Two Parts logic.",
+    /IF\(\$\{paymentMode\}="One Part",MAX\(0,\$\{monthSalary\}-MIN\(MAX\(0,\$\{monthSalary\}\),MAX\(0,\$\{expenses\}\+\$\{incentive\}\)\)\),MIN\(MAX\(0,\$\{monthSalary\}-MIN\(MAX\(0,\$\{monthSalary\}\),MAX\(0,\$\{expenses\}\+\$\{incentive\}\)\)\),ROUND\(\$\{baseSalary\}\*0\.7,2\),MAX\(0,\$\{baseSalary\}-\$\{otherDeductions\}\)\)\)/,
+    "Ready payroll First Part must exclude expenses and incentive before applying One Part or Two Parts caps.",
   );
 
   assert.match(
     templateRouteSource,
-    /IF\(\$\{paymentMode\}="One Part",0,ROUND\(\$\{monthSalary\}-\$\{firstPart\},2\)\)/,
-    "Ready payroll Second Part must be zero for One Part and the remainder for Two Parts.",
+    /IF\(\$\{paymentMode\}="One Part",MIN\(MAX\(0,\$\{monthSalary\}\),MAX\(0,\$\{expenses\}\+\$\{incentive\}\)\),MAX\(0,ROUND\(\$\{monthSalary\}-\$\{firstPart\},2\)\)\)/,
+    "Ready payroll Second Part must include expenses and incentive for One Part rows and never be negative.",
   );
 
   assert.match(
     templateRouteSource,
     /function sortReadyPayrollRows/,
-    "Ready payroll must group One Part employees before Two Parts employees.",
+    "Ready payroll must group rows into deterministic payroll blocks.",
   );
 
   assert.match(
     templateRouteSource,
-    /left\.paymentMode === "One Part"/,
-    "Ready payroll grouping must identify One Part rows by payment mode.",
+    /function readyPayrollBlockRank/,
+    "Ready payroll must have an explicit block ranking function.",
   );
 
   assert.match(
     templateRouteSource,
-    /readyPayrollHireDateSortValue\(left\.hireDate\) -\s*readyPayrollHireDateSortValue\(right\.hireDate\)/,
-    "Ready payroll Two Parts rows must be sorted by hire date from oldest to newest.",
+    /row\.paymentMode === "One Part"[\s\S]*?return 1/,
+    "Ready payroll must keep One Part rows in the first block.",
   );
 
   assert.match(
     templateRouteSource,
-    /writeSortableTwoPartsHeaderRow/,
-    "Ready payroll must create a separate sortable header for the Two Parts range.",
+    /payrollMonthMatches\(row\.hireDate, row\.month, row\.year\)[\s\S]*?return 3/,
+    "Ready payroll must put current-month Two Parts new hires below already hired rows.",
   );
 
   assert.match(
     templateRouteSource,
-    /from: \{ column: 1, row: twoPartHeaderRow \?\? dataStartRow - 1 \}/,
-    "Ready payroll AutoFilter must target the Two Parts range when the One Part fixed block exists.",
+    /payrollMonthMatches\(row\.lastWorkingDate, row\.month, row\.year\)[\s\S]*?return 4/,
+    "Ready payroll must put current-month resignation rows in the final block.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /readyPayrollBlockDateSortValue\(left\) -\s*readyPayrollBlockDateSortValue\(right\)/,
+    "Ready payroll rows inside each block must be sorted from oldest to newest.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /readyPayrollEditableColumnNumbers = new Set\(\[[\s\S]*?14, 15, 16, 17, 20,[\s\S]*?25, 26, 27, 28, 29, 30,[\s\S]*?\]\)/,
+    "Ready payroll must leave monthly additions and deductions editable.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /locked: !readyPayrollEditableColumnNumbers\.has\(column\)/,
+    "Ready payroll protection must lock fixed fields while allowing edits to variable fields.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /function writeReadyPayrollBlockHeaderRow/,
+    "Ready payroll must write visible block header rows.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /BLOCK 1 - One Part[\s\S]*?BLOCK 2 - Two Parts Already Hired[\s\S]*?BLOCK 3 - New Hires[\s\S]*?BLOCK 4 - Resignations/,
+    "Ready payroll must label the four requested blocks.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /blockHeaderRows\.add\(rowNumber\)/,
+    "Ready payroll must track block header rows separately from employee data rows.",
+  );
+
+  assert.match(
+    templateRouteSource,
+    /from: \{ column: 1, row: dataStartRow - 1 \}/,
+    "Ready payroll AutoFilter must keep the main workbook header as the filter header.",
+  );
+
+  assert.match(
+    salaryImportSource,
+    /function isReadyPayrollBlockHeaderRow/,
+    "Payroll upload parsing must identify ready-payroll block separator rows.",
+  );
+
+  assert.match(
+    salaryImportSource,
+    /!isReadyPayrollBlockHeaderRow\(row\)/,
+    "Payroll upload parsing must skip ready-payroll block separator rows.",
   );
 
   assert.match(
