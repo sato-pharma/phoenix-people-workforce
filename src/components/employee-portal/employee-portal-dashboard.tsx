@@ -1649,16 +1649,18 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
 }
 
 function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
-  const trendData = Array.isArray(data.sales.trend) ? data.sales.trend : [];
   return (
-    <div className="flex h-full flex-col">
-      <OverviewPagePanel title="Performance Overview">
-        {trendData.length > 0 ? (
-          <StableChartFrame
-            className="h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
-            height={232}
-          >
-            <AreaChart data={trendData} margin={chartMargin}>
+    <div
+      className="flex h-full flex-col"
+    >
+      <OverviewPagePanel
+        title="Performance Overview"
+      >
+        <StableChartFrame
+          className="h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
+          height={232}
+        >
+            <AreaChart data={data.sales.trend} margin={chartMargin}>
               <defs>
                 <linearGradient id="overviewSalesFill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#f97316" stopOpacity={0.28} />
@@ -1677,12 +1679,7 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
               <Area activeDot={{ r: 5, stroke: "#ffffff", strokeWidth: 3 }} dataKey="sales" dot={false} fill="url(#overviewSalesFill)" name="Achievement" stroke="#f97316" strokeWidth={3} type="monotone" />
               <Area dataKey="target" dot={false} fillOpacity={0} name="Target" stroke="#64748b" strokeDasharray="5 5" strokeWidth={2.25} type="monotone" />
             </AreaChart>
-          </StableChartFrame>
-        ) : (
-          <div className="flex h-64 items-center justify-center rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
-            <p className="text-sm text-slate-400">No trend data available yet</p>
-          </div>
-        )}
+        </StableChartFrame>
       </OverviewPagePanel>
     </div>
   );
