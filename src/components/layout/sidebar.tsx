@@ -19,11 +19,13 @@ import {
   LayoutDashboard,
   Mail,
   MapPinned,
+  Megaphone,
   Network,
   Database,
   Radar,
   ScrollText,
   ShieldCheck,
+  Settings2,
   X,
   UsersRound,
 } from "lucide-react";
@@ -129,6 +131,16 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       label: "Sales & Performance",
     },
     {
+      id: "marketing-requests",
+      items: [
+        { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "HCP / PH Validation", roles: ["District Manager", "SFE Manager", "Super Admin"] },
+        { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["District Manager", "SFE Manager", "Super Admin"] },
+        { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", roles: ["District Manager", "SFE Manager", "Super Admin"] },
+        { href: "/admin/marketing-requests/customer-database", icon: Database, label: "SCP / PH Database", roles: ["Super Admin"] },
+      ],
+      label: "Marketing Requests",
+    },
+    {
       id: "payroll",
       items: [
         { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }] },
@@ -153,6 +165,7 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       items: [
         { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }] },
         { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }] },
+        { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }] },
       ],
       label: "Leave Management",
     },
@@ -193,10 +206,63 @@ function getEmployeePortalSections(permissionLookup: PermissionLookup, currentRo
       label: "Medical Rep Portal",
     },
     {
+      id: "employee-marketing-requests",
+      items: [
+        {
+          href: "/employee-portals/marketing-requests/validation",
+          icon: ShieldCheck,
+          label: "HCP / PH Validation",
+          roles: [
+            "Medical Rep",
+            "District Manager",
+            "Regional Manager",
+            "National Sales Manager",
+            "Product Manager",
+            "Group Product Manager",
+            "Marketing Manager",
+            "SFE Manager",
+            "CEO",
+            "Super Admin",
+          ],
+        },
+        {
+          href: "/employee-portals/marketing-requests",
+          icon: Megaphone,
+          label: "Marketing Requests",
+          roles: [
+            "Medical Rep",
+            "District Manager",
+            "Regional Manager",
+            "National Sales Manager",
+            "Product Manager",
+            "Group Product Manager",
+            "Marketing Manager",
+            "SFE Manager",
+            "CEO",
+            "Super Admin",
+          ],
+        },
+        {
+          href: "/employee-portals/marketing-requests/control",
+          icon: Settings2,
+          label: "Marketing Control",
+          roles: ["SFE Manager", "Super Admin"],
+        },
+        {
+          href: "/employee-portals/marketing-requests/customer-database",
+          icon: Database,
+          label: "SCP / PH Database",
+          roles: ["Super Admin"],
+        },
+      ],
+      label: "Marketing Requests",
+    },
+    {
       id: "leave-management",
       items: [
         { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }] },
         { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }] },
+        { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }] },
       ],
       label: "Leave Management",
     },
@@ -226,6 +292,8 @@ function isActivePath(pathname: string, href: string, activeTab: string | null) 
   if (href.includes("tab=governance")) return pathname === baseHref && activeTab === "governance";
   if (href.includes("tab=generate")) return pathname === baseHref && activeTab === "generate";
   if (baseHref === "/employee-portals") return pathname === "/employee-portals";
+  if (baseHref === "/employee-portals/marketing-requests") return pathname === "/employee-portals/marketing-requests";
+  if (baseHref === "/admin/marketing-requests") return pathname === "/admin/marketing-requests";
   if (baseHref === "/sales") return pathname === "/sales";
   if (baseHref === "/employee-portals/sales") return pathname === "/employee-portals/sales";
   if (baseHref === "/payroll") return pathname === "/payroll";

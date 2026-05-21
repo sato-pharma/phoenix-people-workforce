@@ -47,6 +47,8 @@ import { buildPortalSalesDashboardMetrics } from "@/lib/sales/metrics";
 import type { SalesDashboardData } from "@/lib/sales/types";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { canonicalSalesLine } from "@/lib/sales/others";
+import { getMarketingRequestDraftWorkspace } from "@/lib/marketing-requests/service";
+import { getVacationReportData } from "@/lib/vacation/service";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -2145,6 +2147,25 @@ export type MedicalRepPortalData = {
     serviceDurationText: string;
   };
   insights: string[];
+  overview: {
+    employeesOnLeaveToday: Array<{
+      departmentName: string | null;
+      employeeHrId: string;
+      employeeName: string;
+      endDate: string;
+      id: string;
+      lineName: string | null;
+      startDate: string;
+      vacationType: string;
+    }>;
+    myActions: Array<{
+      count: number;
+      href: string;
+      id: string;
+      label: string;
+    }>;
+    vacancyDetails: EmployeePortalVacanciesData | null;
+  };
   payroll: {
       batchId: string | null;
       baseSalary: number;
@@ -2298,6 +2319,74 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
   };
 }
 
+async function buildEmployeePortalOverviewData(input: {
+  access: AccessContext;
+  currentHrId: string | null;
+  pendingExpenseCount: number;
+}): Promise<MedicalRepPortalData["overview"]> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [vacationReport, marketingWorkspace, vacancyDetails] = await Promise.all([
+    getVacationReportData(input.access).catch(() => null),
+    getMarketingRequestDraftWorkspace(input.access).catch(() => null),
+    getEmployeePortalVacancies(input.access).catch(() => null),
+  ]);
+
+  const vacationRows = vacationReport?.rows ?? [];
+  const pendingVacationApprovals = vacationRows.filter((row) => row.status === "pending_manager" && row.canDecide).length;
+  const myPendingVacationRequests = vacationRows.filter((row) => {
+    return row.status === "pending_manager" && normalizeHrId(row.employeeHrId) === input.currentHrId;
+  }).length;
+  const activeLeaveToday = vacationRows
+    .filter((row) => row.status === "approved" && row.startDate <= today && row.endDate >= today)
+    .sort((left, right) => left.employeeName.localeCompare(right.employeeName))
+    .map((row) => ({
+      departmentName: row.departmentName,
+      employeeHrId: row.employeeHrId,
+      employeeName: row.employeeName,
+      endDate: row.endDate,
+      id: row.id,
+      lineName: row.lineName,
+      startDate: row.startDate,
+      vacationType: row.vacationType,
+    }));
+
+  const marketingDrafts = marketingWorkspace?.drafts.length ?? 0;
+
+  const myActions: MedicalRepPortalData["overview"]["myActions"] = [
+    {
+      count: pendingVacationApprovals,
+      href: "/leave-management/vacation-report?status=pending_manager",
+      id: "vacation-approvals",
+      label: "Vacation approvals waiting",
+    },
+    {
+      count: myPendingVacationRequests,
+      href: "/leave-management/vacation-report?status=pending_manager",
+      id: "my-vacation-requests",
+      label: "Vacation requests pending decision",
+    },
+    {
+      count: marketingDrafts,
+      href: "/employee-portals/marketing-requests",
+      id: "marketing-drafts",
+      label: "Marketing request drafts",
+    },
+    {
+      count: input.pendingExpenseCount,
+      href: "/employee-portals/expense-dashboard",
+      id: "expense-actions",
+      label: "Expense actions pending",
+    },
+  ].filter((item) => item.count > 0);
+
+  return {
+    employeesOnLeaveToday: activeLeaveToday,
+    myActions,
+    vacancyDetails,
+  };
+}
+
 export async function getPayslipPortalData(access: AccessContext): Promise<MedicalRepPortalData> {
   const currentUser = await resolvePortalCurrentUser(access);
   const currentHrId = normalizeHrId(currentUser.hrId);
@@ -2433,6 +2522,11 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
       serviceDurationText: serviceDurationText(employmentJourney.serviceDurationDays),
     },
     insights,
+    overview: {
+      employeesOnLeaveToday: [],
+      myActions: [],
+      vacancyDetails: null,
+    },
     payroll: {
       batchId: latestBatch?.id ?? null,
       baseSalary: fixedSalary.baseSalary,
@@ -3442,6 +3536,11 @@ export async function getMedicalRepPortalData(
     employee,
   });
   const pendingApprovalCount = expenses.filter((expense) => !expense.hrApproved).length;
+  const overview = await buildEmployeePortalOverviewData({
+    access,
+    currentHrId,
+    pendingExpenseCount: pendingApprovalCount,
+  });
   const workforce = buildPortalWorkforceSummary({
     pendingApprovals: pendingApprovalCount,
     rows: workforceRows,
@@ -3773,6 +3872,7 @@ export async function getMedicalRepPortalData(
       serviceDurationText: serviceDurationText(base.employmentJourney.serviceDurationDays),
     },
     insights,
+    overview,
     payroll: {
       batchId: latestBatch?.id ?? null,
       baseSalary: fixedSalary.baseSalary,

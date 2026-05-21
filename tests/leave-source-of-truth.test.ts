@@ -44,36 +44,48 @@ export function runLeaveSourceOfTruthTests() {
     {
       canDecide: false,
       durationDays: 3,
+      hrDecision: null,
       managerDecision: "approved" as const,
       paymentStatus: "paid" as const,
-      status: "approved" as const,
+      status: "pending_hr" as const,
     },
     {
       canDecide: false,
       durationDays: 1,
+      hrDecision: "rejected" as const,
       managerDecision: "rejected" as const,
       paymentStatus: "unpaid" as const,
       status: "rejected" as const,
     },
+    {
+      canDecide: false,
+      durationDays: 3,
+      hrDecision: null,
+      managerDecision: "approved" as const,
+      paidDurationDays: 1.5,
+      paymentStatus: "partial" as const,
+      status: "pending_hr" as const,
+      unpaidDurationDays: 1.5,
+    },
   ];
 
   assert.deepEqual(summarizeVacationRequests(rows), {
-    approved: 1,
-    managerDecisionActions: 3,
-    paidDays: 5,
-    pending: 1,
+    approved: 0,
+    managerDecisionActions: 4,
+    paidDays: 6.5,
+    pending: 3,
     rejected: 1,
-    total: 3,
-    unpaidDays: 1,
+    total: 4,
+    unpaidDays: 2.5,
   });
   assert.deepEqual(buildVacationPlatformMetrics(rows), {
-    approvedRequests: 1,
-    managerDecisionActions: 3,
-    paidDays: 5,
-    pendingRequests: 1,
+    approvedRequests: 0,
+    managerDecisionActions: 4,
+    paidDays: 6.5,
+    pendingRequests: 3,
     rejectedRequests: 1,
-    totalRequests: 3,
-    unpaidDays: 1,
+    totalRequests: 4,
+    unpaidDays: 2.5,
   });
 
   const calculationSource = readFileSync("src/lib/vacation/calculations.ts", "utf8");

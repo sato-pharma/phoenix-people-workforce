@@ -77,11 +77,14 @@ export type EmailTemplateContext = {
   ctaLabel?: string | null;
   ctaUrl?: string | null;
   date?: string | null;
+  approvalFlow?: string | null;
+  duration?: string | null;
   endDate?: string | null;
   employeeHrId?: string | null;
   employeeName?: string | null;
   expiryText?: string | null;
   feedback?: string | null;
+  hireDate?: string | null;
   interviewDate?: string | null;
   interviewLocation?: string | null;
   interviewerName?: string | null;
@@ -96,6 +99,7 @@ export type EmailTemplateContext = {
   status?: string | null;
   subject?: string | null;
   summary?: string | null;
+  vacationBalance?: string | null;
   vacationType?: string | null;
 };
 
@@ -217,10 +221,13 @@ const placeholderHints = [
   "managerName",
   "line",
   "area",
+  "approvalFlow",
   "status",
   "date",
+  "duration",
   "startDate",
   "endDate",
+  "hireDate",
   "expiryText",
   "interviewDate",
   "interviewTime",
@@ -232,18 +239,19 @@ const placeholderHints = [
   "ctaUrl",
   "ctaLabel",
   "recipientName",
+  "vacationBalance",
 ] as const;
 const allowedPlaceholderSet = new Set<string>(placeholderHints);
 
 const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
-  birthday: emptyRules(["direct_manager"]),
+  birthday: emptyRules(["employee"], ["district_manager"]),
   contract_renewal: emptyRules(["manager_chain"], ["hr"]),
   general: emptyRules(["admin"], ["hr"]),
   interview_feedback: emptyRules(["hr", "hiring_manager", "recruiter"]),
   interview_invitation: emptyRules(["candidate"]),
   leave_approval: emptyRules(["employee"], ["hr"]),
   leave_rejection: emptyRules(["employee"], ["hr"]),
-  leave_request: emptyRules(["direct_manager"], ["manager_of_manager"]),
+  leave_request: emptyRules(["direct_manager"], ["manager_of_manager", "hr"]),
   offer: emptyRules(["candidate"]),
   password_setup: emptyRules(["candidate"]),
   password_reset: emptyRules(["candidate"]),
@@ -255,16 +263,18 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
 
 const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
   birthday: {
-    bodyHtml: "<p>A birthday reminder was triggered for {{employeeName}}.</p>",
-    bodyText: "A birthday reminder was triggered for {{employeeName}}.",
-    closingText: "Please prepare a thoughtful follow-up.",
-    description: "Birthday reminders for people operations.",
-    greeting: "Dear Team,",
+    bodyHtml:
+      "<p>On behalf of Sato Pharma Family and Phoenix HR team we wish you a very happy birthday.</p><p>May this bring you more success, happiness, achievements that you have ever dreamt of.</p><p>We are proud to have you as part of our team and we wish you a wonderful year ahead.</p>",
+    bodyText:
+      "On behalf of Sato Pharma Family and Phoenix HR team we wish you a very happy birthday. May this bring you more success, happiness, achievements that you have ever dreamt of. We are proud to have you as part of our team and we wish you a wonderful year ahead.",
+    closingText: "Wishing you a wonderful birthday and a year ahead full of success.",
+    description: "Birthday wishes routed to the employee.",
+    greeting: "Dear {{recipientName}},",
     isActive: true,
-    previewText: "Phoenix Workforce birthday reminder.",
-    subject: "Birthday reminder: {{employeeName}}",
+    previewText: "happy birthday wishes from Sato Pharma Family and Phoenix HR team",
+    subject: "Happy Birthday, {{recipientName}}",
     templateKey: "birthday",
-    templateName: "Birthday",
+    templateName: "Birthday Wishes",
   },
   contract_renewal: {
     bodyHtml: "<p>{{summary}}</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>Renewal date: {{endDate}}.</p><p>{{status}}</p>",
@@ -827,6 +837,12 @@ function lineMatches(value: string | null | undefined, options: string[]) {
   return options.some((option) => normalized === option.toLowerCase());
 }
 
+const managerChainScopedRoles = new Set<EmailTemplateRecipientRole>([
+  "district_manager",
+  "national_sales_manager",
+  "regional_sales_manager",
+]);
+
 function roleMatches(contact: Contact, role: EmailTemplateRecipientRole, employee: Contact | null, rules: EmailTemplateRecipientRules) {
   const value = `${contact.role ?? ""} ${contact.title ?? ""}`.toLowerCase();
   switch (role) {
@@ -912,6 +928,11 @@ function resolveRoleRecipients(
     return manager ? [{ email: manager.email, name: manager.name }] : [];
   }
   if (role === "manager_chain") return managerChain(contacts, employee).map((manager) => ({ email: manager.email, name: manager.name }));
+  if (managerChainScopedRoles.has(role)) {
+    return managerChain(contacts, employee)
+      .filter((manager) => roleMatches(manager, role, employee, rules))
+      .map((manager) => ({ email: manager.email, name: manager.name }));
+  }
   return contacts.filter((contact) => roleMatches(contact, role, employee, rules)).map((contact) => ({ email: contact.email, name: contact.name }));
 }
 
@@ -947,15 +968,18 @@ export async function resolveTemplateRecipients(input: {
 function contextVariables(input: Partial<EmailTemplateContext>, recipientName: string) {
   return {
     area: text(input.area),
+    approvalFlow: text(input.approvalFlow),
     candidateName: text(input.candidateName),
     ctaLabel: text(input.ctaLabel || "Open in Phoenix Workforce"),
     ctaUrl: text(input.ctaUrl),
     date: text(input.date || new Date().toISOString().slice(0, 10)),
+    duration: text(input.duration),
     endDate: text(input.endDate),
     employeeHrId: text(input.employeeHrId),
     employeeName: text(input.employeeName),
     expiryText: text(input.expiryText),
     feedback: text(input.feedback),
+    hireDate: text(input.hireDate),
     interviewDate: text(input.interviewDate),
     interviewLocation: text(input.interviewLocation),
     interviewerName: text(input.interviewerName),
@@ -970,6 +994,7 @@ function contextVariables(input: Partial<EmailTemplateContext>, recipientName: s
     status: text(input.status),
     subject: text(input.subject),
     summary: text(input.summary),
+    vacationBalance: text(input.vacationBalance),
     vacationType: text(input.vacationType),
   };
 }
@@ -978,6 +1003,17 @@ function recipientNameForGreeting(recipients: Recipient[], context: Partial<Emai
   if (context.recipientName) return text(context.recipientName);
   if (recipients.length === 1 && recipients[0]?.name) return text(recipients[0].name);
   return "Team";
+}
+
+function templateSupportsAction(templateKey: EmailTemplateKey) {
+  return templateKey !== EMAIL_TEMPLATE_KEYS.BIRTHDAY && templateKey !== EMAIL_TEMPLATE_KEYS.CONTRACT_RENEWAL;
+}
+
+function templateSubtitle(templateKey: EmailTemplateKey) {
+  if (templateKey === EMAIL_TEMPLATE_KEYS.BIRTHDAY) {
+    return "Today we are celebrating you. Wishing you a joyful birthday and a year full of success.";
+  }
+  return undefined;
 }
 
 export function renderEmailTemplate(
@@ -992,9 +1028,10 @@ export function renderEmailTemplate(
   const bodyText = interpolate(template.bodyText, variables, false);
   const closingText = interpolate(template.closingText, variables, false);
   const previewText = interpolate(template.previewText, variables, false) || subject;
-  const action = variables.ctaUrl
+  const action = templateSupportsAction(template.templateKey) && variables.ctaUrl
     ? { href: variables.ctaUrl, label: variables.ctaLabel || "Open in Phoenix Workforce" }
     : undefined;
+  const subtitle = templateSubtitle(template.templateKey);
 
   return {
     html: renderPhoenixEmailHtml({
@@ -1004,7 +1041,7 @@ export function renderEmailTemplate(
       greeting,
       previewText,
       subject,
-      subtitle: "Official HR communication prepared through Phoenix Workforce.",
+      subtitle,
       title: subject,
     }),
     previewText,

@@ -2,11 +2,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowUpRight, CircleDashed } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 type EmployeePortalPageShellProps = {
   badge?: string;
   children: ReactNode;
   description: string;
+  descriptionClassName?: string;
   title: string;
 };
 
@@ -14,6 +16,7 @@ export function EmployeePortalPageShell({
   badge,
   children,
   description,
+  descriptionClassName,
   title,
 }: EmployeePortalPageShellProps) {
   return (
@@ -31,10 +34,17 @@ export function EmployeePortalPageShell({
               <span className="h-1.5 w-1.5 rounded-full bg-orange-500 shadow-[0_0_0_4px_rgba(249,115,22,0.15)]" />
               {badge ?? "Employee Portal"}
             </p>
-            <h1 className="mt-5 max-w-4xl text-3xl font-black leading-[1.02] tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">
+            <h1 className="mt-5 max-w-4xl text-[30px] font-semibold leading-[1.04] tracking-normal text-slate-950 sm:text-[38px] lg:text-[46px]">
               {title}
             </h1>
-            <p className="mt-4 max-w-2xl text-base font-semibold leading-7 text-slate-600">{description}</p>
+            <p
+              className={cn(
+                "mt-3.5 max-w-2xl text-[15px] font-medium leading-7 text-slate-600 lg:text-base",
+                descriptionClassName,
+              )}
+            >
+              {description}
+            </p>
           </div>
         </div>
       </section>
@@ -93,4 +103,3 @@ export function EmployeePortalEmptyState({
     </Card>
   );
 }
-

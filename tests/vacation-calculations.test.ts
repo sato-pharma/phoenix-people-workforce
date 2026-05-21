@@ -6,18 +6,25 @@ import {
   calculateVacationPayment,
   getEmergencyVacationBalancePeriod,
   getVacationBalancePeriod,
+  vacationRequestDisplayId,
   validateVacationRequestPolicy,
 } from "../src/lib/vacation/calculations.ts";
 
 export function runVacationCalculationTests() {
+  assert.match(
+    vacationRequestDisplayId("e9c4c1ce-8568-4a30-b14c-4365b876754e"),
+    /^VR-\d{3}$/,
+    "Vacation report should expose a compact spreadsheet-friendly request ID.",
+  );
+
   assert.equal(
     calculateVacationDurationDays({
       dayPart: "full_day",
       endDate: "2026-05-17",
       startDate: "2026-05-14",
     }),
-    2,
-    "Vacation duration should exclude Friday and Saturday",
+    3,
+    "Vacation duration should exclude Friday only and count Saturday as working from home",
   );
 
   assert.equal(
@@ -28,6 +35,29 @@ export function runVacationCalculationTests() {
     }),
     0.5,
     "AM only vacation should count as half a day",
+  );
+
+  assert.equal(
+    calculateVacationDurationDays({
+      dayPart: "full_day",
+      endDate: "2026-05-14",
+      startDate: "2026-05-14",
+      weeklyOffPolicy: { friday: "full_day", saturday: "working", thursday: "am_only" },
+    }),
+    0.5,
+    "A title-specific AM weekly off should leave only PM as vacation duration",
+  );
+
+  assert.throws(
+    () =>
+      calculateVacationDurationDays({
+        dayPart: "am_only",
+        endDate: "2026-05-14",
+        startDate: "2026-05-14",
+        weeklyOffPolicy: { friday: "full_day", saturday: "working", thursday: "am_only" },
+      }),
+    /working time/,
+    "Vacation should not be accepted for a day part already marked as weekly off",
   );
 
   assert.throws(
@@ -43,18 +73,18 @@ export function runVacationCalculationTests() {
 
   assert.equal(
     calculateFirstYearVacationEntitlement("2026-04-01"),
-    11.25,
-    "April hires should receive 9 prorated months from a 15-day first-year balance",
+    15,
+    "First employment year annual vacation should be capped at 15 annual days",
   );
 
   assert.deepEqual(
     getVacationBalancePeriod({ hireDate: "2026-04-01", referenceDate: "2026-10-01" }),
     {
-      entitlementDays: 11.25,
+      entitlementDays: 7.5,
       periodEnd: "2027-04-01",
       periodStart: "2026-04-01",
     },
-    "First-year balance period should end at first work anniversary",
+    "First-year annual balance should accrue monthly at 1.25 days per month",
   );
 
   assert.equal(
@@ -70,33 +100,38 @@ export function runVacationCalculationTests() {
 
   const firstPaidWindow = calculateVacationPayment({
     approvedPaidDaysInPeriod: 2,
-    durationDays: 3,
+    durationDays: 2,
     hireDate: "2026-04-01",
     startDate: "2026-10-01",
   });
   assert.equal(firstPaidWindow.paymentStatus, "paid");
-  assert.equal(firstPaidWindow.balanceBeforeDays, 9.25);
-  assert.equal(firstPaidWindow.balanceAfterDays, 6.25);
+  assert.equal(firstPaidWindow.balanceBeforeDays, 5.5);
+  assert.equal(firstPaidWindow.balanceAfterDays, 3.5);
 
+  const partialWindow = calculateVacationPayment({
+    approvedPaidDaysInPeriod: 6,
+    durationDays: 3,
+    hireDate: "2026-04-01",
+    startDate: "2026-10-01",
+  });
+  assert.equal(partialWindow.paymentStatus, "partial");
+  assert.equal(partialWindow.paidDurationDays, 1.5);
+  assert.equal(partialWindow.unpaidDurationDays, 1.5);
+  assert.equal(partialWindow.balanceAfterDays, 0);
   assert.equal(
-    calculateVacationPayment({
-      approvedPaidDaysInPeriod: 10,
-      durationDays: 2,
-      hireDate: "2026-04-01",
-      startDate: "2026-10-01",
-    }).unpaidReason,
+    partialWindow.unpaidReason,
     "insufficient_balance",
-    "Insufficient paid balance should make the request unpaid",
+    "Insufficient paid balance should split available paid days and remaining unpaid days",
   );
 
   const standardWindow = calculateVacationPayment({
     approvedPaidDaysInPeriod: 0,
-    durationDays: 5,
+    durationDays: 1,
     hireDate: "2026-04-01",
-    startDate: "2027-04-01",
+    startDate: "2027-05-01",
   });
-  assert.equal(standardWindow.entitlementDays, 21);
-  assert.equal(standardWindow.balanceAfterDays, 16);
+  assert.equal(standardWindow.entitlementDays, 1.75);
+  assert.equal(standardWindow.balanceAfterDays, 0.75);
 
   assert.deepEqual(
     getEmergencyVacationBalancePeriod("2026-05-19"),
@@ -111,13 +146,39 @@ export function runVacationCalculationTests() {
   const emergencyWindow = calculateVacationPayment({
     approvedPaidDaysInPeriod: 2,
     durationDays: 1,
-    hireDate: null,
+    hireDate: "2025-01-01",
     startDate: "2026-05-19",
     vacationType: "emergency",
   });
-  assert.equal(emergencyWindow.entitlementDays, 6);
-  assert.equal(emergencyWindow.balanceBeforeDays, 4);
-  assert.equal(emergencyWindow.balanceAfterDays, 3);
+  assert.equal(emergencyWindow.entitlementDays, 7);
+  assert.equal(emergencyWindow.balanceBeforeDays, 5);
+  assert.equal(emergencyWindow.balanceAfterDays, 4);
+
+  assert.equal(
+    calculateVacationPayment({
+      approvedPaidDaysInPeriod: 0,
+      durationDays: 1,
+      hireDate: "2026-01-01",
+      startDate: "2026-05-19",
+      vacationType: "emergency",
+    }).unpaidReason,
+    "first_six_months",
+    "Emergency vacation should still be unpaid before completing six months",
+  );
+
+  const compensatoryWindow = calculateVacationPayment({
+    approvedPaidDaysInPeriod: 99,
+    durationDays: 1,
+    hireDate: "2026-01-01",
+    startDate: "2026-05-19",
+    vacationType: "compensatory",
+  });
+  assert.equal(compensatoryWindow.paymentStatus, "paid");
+  assert.equal(compensatoryWindow.entitlementDays, 0);
+  assert.equal(compensatoryWindow.paidDurationDays, 1);
+  assert.equal(compensatoryWindow.unpaidDurationDays, 0);
+  assert.equal(compensatoryWindow.usedPaidDays, 0);
+  assert.equal(compensatoryWindow.balanceAfterDays, 0);
 
   assert.throws(
     () =>
@@ -128,7 +189,7 @@ export function runVacationCalculationTests() {
         startDate: "2026-05-20",
         vacationType: "emergency",
       }),
-    /today only/i,
+    /current day only/i,
     "Emergency vacation must be locked to the request day",
   );
 

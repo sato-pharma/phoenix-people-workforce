@@ -18,3 +18,11 @@ export type HrCalendarEvent = {
   eventType: HrCalendarEventType;
   tenureYears: number;
 };
+
+export type HrWeeklyOffMode = "working" | "am_only" | "pm_only" | "full_day";
+
+export type HrWeeklyOffPolicy = {
+  friday: HrWeeklyOffMode;
+  saturday: HrWeeklyOffMode;
+  thursday: HrWeeklyOffMode;
+};

@@ -20,10 +20,6 @@ export default async function EmployeePortalExpensesPage() {
     redirect("/payroll/expenses/dashboard");
   }
 
-  if (access.role !== "Medical Rep") {
-    redirect("/employee-portals/expense-dashboard");
-  }
-
   await assertPermission(access, "outstation", "create");
 
   let context: Awaited<ReturnType<typeof getMedicalRepExpenseContext>> | null = null;
@@ -42,6 +38,13 @@ export default async function EmployeePortalExpensesPage() {
   }
 
   if (!context) {
+    if (
+      loadError instanceof Error &&
+      loadError.message.toLowerCase().includes("only medical rep users can use simple expense submission")
+    ) {
+      redirect("/employee-portals/expense-dashboard");
+    }
+
     return (
       <EmployeePortalEmptyState
         message={

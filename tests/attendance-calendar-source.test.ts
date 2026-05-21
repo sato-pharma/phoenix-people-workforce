@@ -136,8 +136,13 @@ export function runAttendanceCalendarSourceTests() {
   assert.deepEqual(events.map((event) => event.eventType), ["anniversary", "birthday", "new_hire"]);
   assert.equal(isHrWorkingDay(new Date(2026, 4, 3)), true);
   assert.equal(isHrWorkingDay(new Date(2026, 4, 1)), false);
+  assert.equal(isHrWorkingDay(new Date(2026, 4, 2)), true);
   assert.equal(isHrWorkingDay(new Date(2026, 4, 3), ["2026-05-03"]), false);
   assert.equal(countHrWorkingDays("2026-05-03", "2026-05-07", ["2026-05-05"]), 4);
+  assert.equal(
+    countHrWorkingDays("2026-05-07", "2026-05-09", [], { friday: "full_day", saturday: "pm_only", thursday: "am_only" }),
+    1,
+  );
 
   const fingerprintSource = readFileSync("src/lib/attendance/fingerprint-report.ts", "utf8");
   assert.match(fingerprintSource, /resolveAttendanceStatus/);

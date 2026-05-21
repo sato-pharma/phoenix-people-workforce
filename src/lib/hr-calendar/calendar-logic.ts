@@ -1,7 +1,17 @@
 import { parseDateOnly } from "@/lib/date-only";
-import type { HrCalendarEmployee, HrCalendarEvent, HrCalendarEventType } from "@/lib/hr-calendar/types";
+import type {
+  HrCalendarEmployee,
+  HrCalendarEvent,
+  HrCalendarEventType,
+  HrWeeklyOffMode,
+  HrWeeklyOffPolicy,
+} from "@/lib/hr-calendar/types";
 
-const weekendDays = new Set([5, 6]);
+export const defaultHrWeeklyOffPolicy: HrWeeklyOffPolicy = {
+  friday: "full_day",
+  saturday: "working",
+  thursday: "working",
+};
 
 function pad(value: number) {
   return String(value).padStart(2, "0");
@@ -99,12 +109,57 @@ export function summarizeHrCalendarEvents(events: HrCalendarEvent[]) {
   };
 }
 
-export function isHrWorkingDay(date: Date, holidays: string[] = []) {
-  const dateKey = toHrCalendarDateInputValue(date);
-  return !weekendDays.has(date.getDay()) && !holidays.includes(dateKey);
+function normalizedWeeklyOffPolicy(policy?: Partial<HrWeeklyOffPolicy> | null): HrWeeklyOffPolicy {
+  return {
+    friday: policy?.friday ?? defaultHrWeeklyOffPolicy.friday,
+    saturday: policy?.saturday ?? defaultHrWeeklyOffPolicy.saturday,
+    thursday: policy?.thursday ?? defaultHrWeeklyOffPolicy.thursday,
+  };
 }
 
-export function countHrWorkingDays(dateFrom: string, dateTo: string, holidays: string[] = []) {
+export function getHrWeeklyOffMode(date: Date, policy?: Partial<HrWeeklyOffPolicy> | null): HrWeeklyOffMode {
+  const normalized = normalizedWeeklyOffPolicy(policy);
+  if (date.getDay() === 4) return normalized.thursday;
+  if (date.getDay() === 5) return normalized.friday;
+  if (date.getDay() === 6) return normalized.saturday;
+  return "working";
+}
+
+export function getHrWorkingDayFraction(date: Date, holidays: string[] = [], policy?: Partial<HrWeeklyOffPolicy> | null) {
+  const dateKey = toHrCalendarDateInputValue(date);
+  if (holidays.includes(dateKey)) return 0;
+
+  const weeklyOffMode = getHrWeeklyOffMode(date, policy);
+  if (weeklyOffMode === "full_day") return 0;
+  if (weeklyOffMode === "am_only" || weeklyOffMode === "pm_only") return 0.5;
+  return 1;
+}
+
+export function isHrWorkingDay(date: Date, holidays: string[] = [], policy?: Partial<HrWeeklyOffPolicy> | null) {
+  return getHrWorkingDayFraction(date, holidays, policy) > 0;
+}
+
+export function isHrWorkingDayPart(
+  date: Date,
+  dayPart: "am_only" | "pm_only",
+  holidays: string[] = [],
+  policy?: Partial<HrWeeklyOffPolicy> | null,
+) {
+  const dateKey = toHrCalendarDateInputValue(date);
+  if (holidays.includes(dateKey)) return false;
+
+  const weeklyOffMode = getHrWeeklyOffMode(date, policy);
+  if (weeklyOffMode === "full_day") return false;
+  if (weeklyOffMode === dayPart) return false;
+  return true;
+}
+
+export function countHrWorkingDays(
+  dateFrom: string,
+  dateTo: string,
+  holidays: string[] = [],
+  policy?: Partial<HrWeeklyOffPolicy> | null,
+) {
   const start = parseDateOnly(dateFrom);
   const end = parseDateOnly(dateTo);
   if (!start || !end || start > end) return 0;
@@ -112,7 +167,7 @@ export function countHrWorkingDays(dateFrom: string, dateTo: string, holidays: s
   let count = 0;
   const cursor = new Date(start);
   while (cursor <= end) {
-    if (isHrWorkingDay(cursor, holidays)) count += 1;
+    count += getHrWorkingDayFraction(cursor, holidays, policy);
     cursor.setDate(cursor.getDate() + 1);
   }
 

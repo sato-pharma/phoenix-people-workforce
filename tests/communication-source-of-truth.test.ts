@@ -119,6 +119,8 @@ export function runCommunicationSourceOfTruthTests() {
   const templateServiceSource = readFileSync("src/lib/email-templates/service.ts", "utf8");
   assert.match(templateServiceSource, /summarizeEmailTemplateReadiness/);
   assert.match(templateServiceSource, /getEmailTemplateReadinessMetrics/);
+  assert.match(templateServiceSource, /templateSupportsAction/);
+  assert.match(templateServiceSource, /EMAIL_TEMPLATE_KEYS\.BIRTHDAY/);
 
   const templatePageSource = readFileSync("app/admin/email-templates/page.tsx", "utf8");
   assert.match(templatePageSource, /getEmailTemplateReadinessMetrics/);
@@ -142,4 +144,6 @@ export function runCommunicationSourceOfTruthTests() {
 
   const birthdayRouteSource = readFileSync("app/api/notifications/birthdays/route.ts", "utf8");
   assert.match(birthdayRouteSource, /buildHrCalendarEvents/);
+  assert.doesNotMatch(birthdayRouteSource, /ctaHref/);
+  assert.doesNotMatch(birthdayRouteSource, /ctaLabel/);
 }

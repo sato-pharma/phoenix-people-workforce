@@ -19,6 +19,7 @@ import {
 } from "recharts";
 import {
   Activity,
+  ArrowUpRight,
   BadgeCheck,
   BriefcaseBusiness,
   Calculator,
@@ -31,6 +32,7 @@ import {
   HelpCircle,
   Info,
   MapPin,
+  Megaphone,
   MinusCircle,
   ReceiptText,
   RefreshCw,
@@ -49,20 +51,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  OverviewKpiCards,
-  type OverviewKeyCard,
-} from "@/components/employee-portal/dashboard/overview-kpi-cards";
+import { PremiumTooltip } from "@/components/ui/premium-tooltip";
 import {
   PayrollPayslipsSection,
 } from "@/components/employee-portal/dashboard/payroll-payslips-section";
 import { SalesPerformanceSection } from "@/components/employee-portal/dashboard/sales-performance-section";
-import { daysBetweenDateOnly, formatDateOnly } from "@/lib/date-only";
+import { formatDateOnly } from "@/lib/date-only";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
-import { formatEmployeeDisplayName } from "@/lib/utils";
 
 export { PayrollPayslipsSection } from "@/components/employee-portal/dashboard/payroll-payslips-section";
 export { SalesPerformanceSection } from "@/components/employee-portal/dashboard/sales-performance-section";
@@ -106,6 +104,16 @@ function periodLabel(value: string) {
   );
 }
 
+function periodMonthLabel(value: string) {
+  const [yearText, monthText] = value.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  if (!year || !month) return value;
+  return new Intl.DateTimeFormat("en", { month: "short" }).format(
+    new Date(Date.UTC(year, month - 1, 1)),
+  );
+}
+
 function tooltipCurrency(value: unknown) {
   if (Array.isArray(value)) return egp(Number(value[0] ?? 0));
   return egp(Number(value ?? 0));
@@ -113,34 +121,6 @@ function tooltipCurrency(value: unknown) {
 
 function formatUnits(value: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Number.isFinite(value) ? value : 0);
-}
-
-function serviceDurationTextFromHireDate(hireDate: string | null, fallback: string) {
-  const days = daysBetweenDateOnly(hireDate);
-  if (days === null) return fallback;
-  if (!Number.isFinite(days) || days <= 0) return "0 Months";
-
-  const years = Math.floor(days / 365);
-  const months = Math.floor((days % 365) / 30);
-  if (years > 0 && months > 0) return `${years} Yrs ${months} Mos`;
-  if (years > 0) return `${years} Yrs`;
-  return `${months} Mos`;
-}
-
-function useServiceDurationText(hireDate: string | null, fallback: string) {
-  const [durationText, setDurationText] = useState(fallback);
-
-  useEffect(() => {
-    const updateDuration = () => {
-      setDurationText(serviceDurationTextFromHireDate(hireDate, fallback));
-    };
-
-    updateDuration();
-    const interval = window.setInterval(updateDuration, 60 * 60 * 1000);
-    return () => window.clearInterval(interval);
-  }, [fallback, hireDate]);
-
-  return durationText;
 }
 
 function formatContributionValue(metric: ContributionMetric, value: number) {
@@ -613,9 +593,9 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
 
         <SalesAchievementRing
           growthVsLastMonthPercent={sales.growthVsLastMonthPercent}
-          percent={sales.overviewAchievementPercent}
-          salesValue={sales.overviewSales}
-          targetValue={sales.overviewTarget}
+          percent={sales.achievementPercent}
+          salesValue={sales.currentMonthSales}
+          targetValue={sales.currentMonthTarget}
         />
 
         <div className="space-y-3">
@@ -700,432 +680,14 @@ function isRole(data: MedicalRepPortalData, ...tokens: string[]) {
   return tokens.some((token) => role.includes(token));
 }
 
-function pct(value: number) {
-  return `${Number.isFinite(value) ? value.toFixed(1) : "0.0"}%`;
+function canSeeTeamLeaveAndStructurePanels(data: MedicalRepPortalData) {
+  return isRole(data, "district manager", "district sales manager", "dsm", "national sales manager", "nsm");
 }
 
-function achievementCards(data: MedicalRepPortalData, labelPrefix: string): OverviewKeyCard[] {
-  return [
-    {
-      accent: "green",
-      icon: TrendingUp,
-      label: `${labelPrefix} Sales`,
-      note: `${pct(data.sales.overviewAchievementPercent)} achievement`,
-      progress: data.sales.overviewAchievementPercent,
-      value: egp(data.sales.overviewSales),
-    },
-    {
-      accent: "orange",
-      icon: Target,
-      label: `${labelPrefix} Target`,
-      note: "Approved sales target",
-      value: egp(data.sales.overviewTarget),
-    },
-    {
-      accent: "blue",
-      icon: Activity,
-      label: `${labelPrefix} Achievement`,
-      note: "All-time sales versus target",
-      progress: data.sales.overviewAchievementPercent,
-      value: pct(data.sales.overviewAchievementPercent),
-    },
-  ];
-}
-
-function comparisonRows(data: MedicalRepPortalData) {
-  return [...(data.sales.teamComparison ?? [])].sort((left, right) => left.position - right.position);
-}
-
-function topComparisonName(data: MedicalRepPortalData, fallback = "Not available") {
-  return formatEmployeeDisplayName(comparisonRows(data)[0]?.name, fallback, 3);
-}
-
-function weakComparisonName(data: MedicalRepPortalData, fallback = "Not available") {
-  const rows = comparisonRows(data).filter((row) => Number.isFinite(row.achievementPercent));
-  return formatEmployeeDisplayName(rows.sort((left, right) => left.achievementPercent - right.achievementPercent)[0]?.name, fallback, 3);
-}
-
-function underperformingCount(data: MedicalRepPortalData) {
-  return comparisonRows(data).filter((row) => row.achievementPercent < 90).length;
-}
-
-function pendingExpenseCount(data: MedicalRepPortalData) {
-  return data.workload?.expenseRows.filter((row) => !row.hrApproved).length ?? data.workforce.pendingApprovals;
-}
-
-function topTerritory(data: MedicalRepPortalData) {
-  return [...data.sales.territories].sort((left, right) => right.sales - left.sales)[0] ?? null;
-}
-
-function weakTerritory(data: MedicalRepPortalData) {
-  return [...data.sales.territories]
-    .filter((row) => row.target > 0)
-    .sort((left, right) => left.achievementPercent - right.achievementPercent)[0] ?? null;
-}
-
-function topLine(data: MedicalRepPortalData) {
-  return [...data.sales.linePerformance].sort((left, right) => right.sales - left.sales)[0] ?? null;
-}
-
-function weakLine(data: MedicalRepPortalData) {
-  return [...data.sales.linePerformance]
-    .filter((row) => row.target > 0)
-    .sort((left, right) => left.achievementPercent - right.achievementPercent)[0] ?? null;
-}
-
-function topProductMixShare(data: MedicalRepPortalData) {
-  const topProduct = data.sales.productContribution[0];
-  const totalProductSales = data.sales.productContribution.reduce((sum, row) => sum + row.sales, 0);
-  return topProduct && totalProductSales > 0 ? (topProduct.sales / totalProductSales) * 100 : 0;
-}
-
-function buildOverviewKeyCards(data: MedicalRepPortalData, serviceDurationText: string): OverviewKeyCard[] {
-  const gapToTarget = Math.max(0, data.sales.overviewTarget - data.sales.overviewSales);
-  const org = data.orgStructure;
-  const productMixShare = topProductMixShare(data);
-  const territoryGaps = data.sales.territories.filter((row) => row.target > 0 && row.achievementPercent < 90).length;
-  const highestProductCard: OverviewKeyCard = {
-    accent: "purple",
-    icon: Trophy,
-    label: "Highest Product Sales",
-    note: data.sales.topProduct ?? "No product data",
-    value: egp(data.sales.topProductSalesValue),
-  };
-  const leadingMedicalRepCard: OverviewKeyCard = {
-    accent: "green",
-    label: "Leading Medical Representative",
-    note: data.sales.leadingMedicalRep
-      ? `${pct(data.sales.leadingMedicalRep.achievementPercent)} achievement`
-      : "No medical rep data",
-    value: formatEmployeeDisplayName(data.sales.leadingMedicalRep?.name, "Not available", 3),
-  };
-  const employmentCard: OverviewKeyCard = {
-    accent: "blue",
-    label: "Employment Duration",
-    note: `Hired ${prettyDate(data.hrContract.hireDate)}`,
-    value: serviceDurationText,
-  };
-
-  if (isRole(data, "district")) {
-    return [
-      ...achievementCards(data, "Team"),
-      {
-        accent: "blue",
-        label: "Team Structure",
-        note: `${formatUnits(org?.actualNow ?? data.workforce.activeHeadcount)} actual now - ${formatUnits(org?.vacancies ?? data.workforce.openVacancies)} vacant`,
-        value: formatUnits(org?.totalStructure ?? data.workforce.activeHeadcount + data.workforce.openVacancies),
-      },
-      {
-        accent: "orange",
-        label: "Reps Below 90%",
-        note: "All-period achievement",
-        value: formatUnits(underperformingCount(data)),
-      },
-      highestProductCard,
-      {
-        accent: "green",
-        label: "Top Rep",
-        note: "Best current comparison rank",
-        value: topComparisonName(data),
-      },
-      {
-        accent: "purple",
-        label: "Pending Team Expenses",
-        note: "Awaiting approval",
-        value: formatUnits(pendingExpenseCount(data)),
-      },
-    ];
-  }
-
-  if (isRole(data, "national sales manager")) {
-    return [
-      {
-        accent: "blue",
-        label: "Line Structure",
-        note: `${formatUnits(org?.actualNow ?? data.workforce.activeHeadcount)} actual now - ${formatUnits(org?.vacancies ?? data.workforce.openVacancies)} vacant`,
-        value: formatUnits(org?.totalStructure ?? data.workforce.activeHeadcount + data.workforce.openVacancies),
-      },
-      {
-        accent: "blue",
-        label: "Workforce",
-        note: data.workforce.scopeLabel,
-        value: formatUnits(data.workforce.activeHeadcount),
-      },
-      {
-        accent: "orange",
-        label: "District Manager Vacancies",
-        note: "Open district manager seats",
-        value: formatUnits(org?.districtManagerVacancies ?? 0),
-      },
-      {
-        accent: "orange",
-        label: "Open Vacancies",
-        note: "Open positions in scope",
-        value: formatUnits(data.workforce.openVacancies),
-      },
-      highestProductCard,
-      {
-        accent: "green",
-        label: "Leading District Manager",
-        note: "Best current comparison rank",
-        value: topComparisonName(data),
-      },
-      leadingMedicalRepCard,
-    ];
-  }
-
-  if (isRole(data, "regional", "manager") && !isRole(data, "product", "finance", "training", "marketing", "sfe", "national", "district")) {
-    return [
-      ...achievementCards(data, "Region"),
-      {
-        accent: "blue",
-        label: "Active Headcount",
-        note: data.workforce.scopeLabel,
-        value: formatUnits(data.workforce.activeHeadcount),
-      },
-      {
-        accent: "orange",
-        label: "Vacancies",
-        note: "Open positions",
-        value: formatUnits(data.workforce.openVacancies),
-      },
-      {
-        accent: "green",
-        label: "Top District",
-        note: "Best current comparison rank",
-        value: topComparisonName(data),
-      },
-      {
-        accent: "orange",
-        label: "Lowest District",
-        note: "Lowest achievement in scope",
-        value: weakComparisonName(data),
-      },
-      {
-        accent: "purple",
-        label: "Expense Load",
-        note: "Visible submitted expenses",
-        value: egp(data.workload?.totalExpenses ?? 0),
-      },
-    ];
-  }
-
-  if (isRole(data, "product manager", "group product manager")) {
-    const bestTerritory = topTerritory(data);
-    const weakestTerritory = weakTerritory(data);
-    return [
-      ...achievementCards(data, "Product"),
-      {
-        accent: "green",
-        label: "Top Territory",
-        note: bestTerritory ? egp(bestTerritory.sales) : "No territory data",
-        value: bestTerritory?.name ?? "Not available",
-      },
-      {
-        accent: "orange",
-        label: "Weak Territory",
-        note: weakestTerritory ? `${pct(weakestTerritory.achievementPercent)} achievement` : "No territory data",
-        value: weakestTerritory?.name ?? "Not available",
-      },
-      {
-        accent: "blue",
-        label: "Top DSM Contribution",
-        note: "Best current comparison rank",
-        value: topComparisonName(data),
-      },
-      {
-        accent: "purple",
-        label: "Product Mix Share",
-        note: data.sales.topProduct ?? "No product data",
-        value: pct(productMixShare),
-      },
-      highestProductCard,
-    ];
-  }
-
-  if (isRole(data, "sfe", "training")) {
-    return [
-      {
-        accent: "green",
-        label: "Field Coaching Completion",
-        note: "Coaching records in scope",
-        value: "Pending",
-      },
-      {
-        accent: "orange",
-        label: "Low Performers",
-        note: "Below 90% achievement",
-        value: formatUnits(underperformingCount(data)),
-      },
-      {
-        accent: "blue",
-        label: "Data Coverage",
-        note: data.workforce.scopeLabel,
-        value: pct(data.workforce.dataCoveragePercent),
-      },
-      {
-        accent: "blue",
-        label: "Active Reps",
-        note: "Visible active headcount",
-        value: formatUnits(data.workforce.activeHeadcount),
-      },
-      {
-        accent: "purple",
-        label: "Training Pending",
-        note: "Training workflow integration",
-        value: "Pending",
-      },
-      {
-        accent: "orange",
-        label: "Territory Coverage Gaps",
-        note: "Territories below 90%",
-        value: formatUnits(territoryGaps),
-      },
-    ];
-  }
-
-  if (isRole(data, "finance")) {
-    return [
-      {
-        accent: "orange",
-        label: "Expense Claims Pending",
-        note: "Awaiting approval",
-        value: formatUnits(pendingExpenseCount(data)),
-      },
-      {
-        accent: "purple",
-        label: "Expense Load",
-        note: "Visible submitted expenses",
-        value: egp(data.workload?.totalExpenses ?? 0),
-      },
-      {
-        accent: "blue",
-        label: "Active Headcount",
-        note: data.workforce.scopeLabel,
-        value: formatUnits(data.workforce.activeHeadcount),
-      },
-      {
-        accent: "orange",
-        label: "Open Vacancies",
-        note: "Visible open positions",
-        value: formatUnits(data.workforce.openVacancies),
-      },
-      {
-        accent: "green",
-        label: "Pending Approvals",
-        note: "Operational approval queue",
-        value: formatUnits(data.workforce.pendingApprovals),
-      },
-      {
-        accent: "blue",
-        label: "Data Coverage",
-        note: "Employee records completeness",
-        value: pct(data.workforce.dataCoveragePercent),
-      },
-    ];
-  }
-
-  if (isRole(data, "hr")) {
-    return [
-      {
-        accent: "blue",
-        label: "Active Headcount",
-        note: data.workforce.scopeLabel,
-        value: formatUnits(data.workforce.activeHeadcount),
-      },
-      {
-        accent: "orange",
-        label: "Open Vacancies",
-        note: "Visible open positions",
-        value: formatUnits(data.workforce.openVacancies),
-      },
-      {
-        accent: "green",
-        label: "New Hires",
-        note: "Last 30 days",
-        value: formatUnits(data.workforce.newHires),
-      },
-      {
-        accent: "orange",
-        label: "Probation Due",
-        note: "Next 30 days",
-        value: formatUnits(data.workforce.probationDue),
-      },
-      {
-        accent: "purple",
-        label: "Contract Renewals Due",
-        note: "Next 30 days",
-        value: formatUnits(data.workforce.contractRenewalsDue),
-      },
-      {
-        accent: "orange",
-        label: "Missing Employee Data",
-        note: "Needs HR cleanup",
-        value: formatUnits(data.workforce.missingEmployeeData),
-      },
-    ];
-  }
-
-  if (isRole(data, "ceo", "super admin")) {
-    const bestLine = topLine(data);
-    const weakestLine = weakLine(data);
-    return [
-      ...achievementCards(data, "Company"),
-      {
-        accent: "blue",
-        label: "Total Headcount",
-        note: "Visible active employees",
-        value: formatUnits(data.workforce.activeHeadcount),
-      },
-      {
-        accent: "orange",
-        label: "Vacancies",
-        note: "Visible open positions",
-        value: formatUnits(data.workforce.openVacancies),
-      },
-      {
-        accent: "green",
-        label: "Top Line",
-        note: bestLine ? egp(bestLine.sales) : "No line data",
-        value: bestLine?.name ?? "Not available",
-      },
-      {
-        accent: "orange",
-        label: "Weak Line",
-        note: weakestLine ? `${pct(weakestLine.achievementPercent)} achievement` : "No line data",
-        value: weakestLine?.name ?? "Not available",
-      },
-      {
-        accent: "purple",
-        label: "Pending Approvals",
-        note: "Operational approval queue",
-        value: formatUnits(data.workforce.pendingApprovals),
-      },
-    ];
-  }
-
-  return [
-    ...achievementCards(data, "All Time"),
-    {
-      accent: "orange",
-      label: "Gap to Target",
-      note: "Remaining all-time gap",
-      value: egp(Math.max(0, data.sales.overviewTarget - data.sales.overviewSales)),
-    },
-    {
-      accent: "purple",
-      label: "Expected Incentive",
-      note: `${pct(data.payroll.allPeriodsAchievementPercent)} all-time achievement`,
-      value: egp(data.payroll.allPeriodsIncentive),
-    },
-    {
-      accent: "blue",
-      label: "Rank in Team",
-      note: data.sales.rankInTeam ? "All-time comparison" : "Not available",
-      value: data.sales.rankInTeam ? `${data.sales.rankInTeam.position} / ${data.sales.rankInTeam.total}` : "N/A",
-    },
-    employmentCard,
-  ];
+function resolveExpenseActionHref(data: MedicalRepPortalData) {
+  return isRole(data, "medical rep", "medical representative")
+    ? "/employee-portals/expenses"
+    : "/employee-portals/submit-expense";
 }
 
 function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
@@ -1173,11 +735,11 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3 px-1">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-600">Command Metrics</p>
-          <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">Key operating signals</h2>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-orange-600">Command Metrics</p>
+          <h2 className="mt-1 text-[19px] font-semibold tracking-normal text-slate-950">Key operating signals</h2>
         </div>
         <div className="flex flex-wrap gap-2">
-          <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-700 shadow-sm backdrop-blur-sm">{data.workforce.scopeLabel}</span>
+          <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm backdrop-blur-sm">{data.workforce.scopeLabel}</span>
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -1185,21 +747,31 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
           const tone = metricTone(signal.accent);
           return (
             <Card
-              className="group relative flex min-h-[150px] min-w-0 flex-col overflow-hidden rounded-[22px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-300 hover:-translate-y-1 hover:ring-slate-300 hover:shadow-[0_22px_48px_rgba(15,23,42,0.10)]"
+              className="group relative flex min-h-[124px] min-w-0 flex-col overflow-hidden rounded-[22px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-4 py-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-300 hover:-translate-y-1 hover:ring-slate-300 hover:shadow-[0_22px_48px_rgba(15,23,42,0.10)]"
               key={signal.label}
             >
               <div className={`absolute inset-x-0 top-0 h-1 ${tone.line} opacity-90 transition-all duration-300 group-hover:h-1.5`} />
-              <div className="relative flex flex-1 flex-col justify-between gap-3">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.92),transparent_42%)] opacity-80" />
+              <div className="relative flex flex-1 flex-col justify-between gap-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className={`h-1.5 w-1.5 rounded-full ${tone.line} shadow-[0_0_0_3px_rgba(15,23,42,0.03)]`} />
-                      <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500">{signal.label}</p>
+                      <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{signal.label}</p>
                     </div>
-                    <p className="mt-2.5 max-w-full whitespace-nowrap text-2xl font-black leading-none tracking-tight text-slate-950 tabular-nums" title={signal.value}>
+                    <p className="mt-2 max-w-full whitespace-nowrap text-[25px] font-semibold leading-none tracking-normal text-slate-950 tabular-nums">
                       {signal.value}
                     </p>
-                    <p className="mt-2.5 line-clamp-2 text-[11px] font-semibold leading-snug text-slate-500" title={signal.note}>{signal.note}</p>
+                    <p className="mt-1.5 line-clamp-2 text-[11px] font-medium leading-snug text-slate-500">{signal.note}</p>
+                  </div>
+                  <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors duration-200 group-hover:text-slate-500" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div className={`${tone.line} h-full rounded-full transition-[width] duration-500`} style={{ width: `${Math.max(8, Math.min(100, achievement))}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] font-medium text-slate-400">
+                    <span>Live signal</span>
                   </div>
                 </div>
               </div>
@@ -1236,7 +808,7 @@ function IncentiveStatusCard({ data }: { data: MedicalRepPortalData }) {
           <p className="text-2xl leading-tight font-semibold tracking-tight text-slate-900">
             {isEligible ? egp(calculation.payoutAmount) : "Below Threshold"}
           </p>
-          <p className="mt-1.5 text-xs font-medium text-slate-500">2026 Incentive Scheme</p>
+          <p className="mt-1.5 text-xs font-medium text-slate-500">Incentive Policy</p>
           <p className="mt-1 text-xs text-slate-500">
             {isEligible 
               ? `Estimated payout (${calculation.payoutPercentage.toFixed(1)}%)`
@@ -1394,7 +966,7 @@ function IncentiveSchemeDescriptionCard() {
     <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
       <div className="mb-4 flex items-center gap-2">
         <span className="h-2 w-2 rounded-full bg-emerald-500/80" />
-        <p className="text-lg font-semibold text-slate-900">Incentive Scheme 2026</p>
+        <p className="text-lg font-semibold text-slate-900">Incentive Policy</p>
       </div>
       <div className="space-y-3 text-sm text-slate-600">
         <p>The 2026 incentive plan is paid per semester (2 payouts per year).</p>
@@ -1545,12 +1117,12 @@ function OverviewPagePanel({
   action?: ReactNode;
 }) {
   return (
-    <Card className="group relative flex h-full flex-col overflow-hidden rounded-[22px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:ring-slate-300 hover:shadow-[0_20px_44px_rgba(15,23,42,0.09)] lg:p-6">
+    <Card className="group relative flex h-full flex-col overflow-hidden rounded-[22px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:ring-slate-300 hover:shadow-[0_20px_44px_rgba(15,23,42,0.09)] lg:p-5">
       <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-400/80 via-sky-400/70 to-emerald-400/70 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
-      <div className="relative mb-4 flex flex-wrap items-center justify-between gap-3 lg:mb-5">
+      <div className="relative mb-3 flex flex-wrap items-center justify-between gap-3 lg:mb-4">
         <div className="flex items-center gap-2.5">
           <span className="h-2 w-2 rounded-full bg-orange-500 ep-pulse-orange" />
-          <p className="text-base font-black tracking-tight text-slate-900 lg:text-lg">{title}</p>
+          <p className="text-[17px] font-semibold tracking-normal text-slate-900 lg:text-[18px]">{title}</p>
         </div>
         {action}
       </div>
@@ -1789,20 +1361,20 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
                     ) : null}
                   </g>
                 ))}
-                {trendData.map((point, index) => {
-                  if (index !== 0 && index !== trendData.length - 1) return null;
-                  return (
-                    <text fill="#64748b" fontSize="11" fontWeight="700" key={`label-${point.period}`} textAnchor={index === 0 ? "start" : "end"} x={xFor(index)} y={chartHeight - 9}>
-                      {periodLabel(point.period)}
-                    </text>
-                  );
-                })}
+                {trendData.map((point, index) => (
+                  <text
+                    fill="#64748b"
+                    fontSize="11"
+                    fontWeight="700"
+                    key={`label-${point.period}`}
+                    textAnchor="middle"
+                    x={xFor(index)}
+                    y={chartHeight - 9}
+                  >
+                    {periodMonthLabel(point.period)}
+                  </text>
+                ))}
               </svg>
-              <div className="-mt-7 flex flex-wrap items-center justify-end gap-3 pr-2 text-[11px] font-bold text-slate-500">
-                <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-500" />Sales</span>
-                <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-4 rounded-full bg-slate-500" />Target</span>
-                {latestPoint ? <span className="text-slate-700">{egp(latestPoint.sales)}</span> : null}
-              </div>
               {activeTrendPoint ? (
                 <div
                   className="pointer-events-none absolute z-10 min-w-[160px] -translate-x-1/2 -translate-y-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-[0_16px_35px_rgba(15,23,42,0.16)]"
@@ -1826,6 +1398,208 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
         </div>
       </OverviewPagePanel>
     </div>
+  );
+}
+
+function vacationTypeChipLabel(value: string) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "annual") return "Annual";
+  if (normalized === "emergency") return "Emergency";
+  if (normalized === "sick") return "Sick";
+  if (normalized === "other") return "Other";
+  return value;
+}
+
+function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
+  const actions = data.overview.myActions;
+
+  return (
+    <OverviewPagePanel title="My Actions">
+      {actions.length === 0 ? (
+        <div className="flex h-full min-h-[200px] items-center justify-center rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 px-6 text-center">
+                <p className="text-sm font-medium text-slate-500">No pending actions right now.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {actions.map((item) => (
+            <PremiumTooltip
+              content={(
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-900">{item.label}</p>
+                  <p className="text-[11px] text-slate-500">Pending items in your visible queue.</p>
+                  <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11px]">
+                    <span className="text-slate-500">Visible count</span>
+                    <span className="font-semibold text-slate-900">{item.count}</span>
+                  </div>
+                </div>
+              )}
+              key={item.id}
+              triggerClassName="block"
+            >
+              <Link
+                className="group flex items-center gap-3 rounded-[18px] border border-slate-200 bg-white/80 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-orange-200 hover:bg-orange-50/60"
+                href={item.href}
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-orange-50 text-orange-600 ring-1 ring-orange-100 transition-transform duration-200 group-hover:scale-105">
+                  {item.id === "vacation-approvals" ? (
+                    <CalendarClock className="h-5 w-5" />
+                  ) : item.id === "my-vacation-requests" ? (
+                    <CalendarDays className="h-5 w-5" />
+                  ) : item.id === "marketing-drafts" ? (
+                    <Megaphone className="h-5 w-5" />
+                  ) : (
+                    <ReceiptText className="h-5 w-5" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-medium text-slate-800">{item.label}</p>
+                </div>
+                <span className="shrink-0 text-sm font-semibold text-orange-600">({item.count})</span>
+                <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors duration-200 group-hover:text-slate-500" />
+              </Link>
+            </PremiumTooltip>
+          ))}
+        </div>
+      )}
+    </OverviewPagePanel>
+  );
+}
+
+function QuickActionsPanel({ data }: { data: MedicalRepPortalData }) {
+  const actions = [
+    { href: resolveExpenseActionHref(data), icon: ReceiptText, label: "Submit Expense" },
+    { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Submit Vacation Request" },
+    { href: "/employee-portals/marketing-requests", icon: Megaphone, label: "Submit Marketing Request" },
+  ].filter((item) => {
+    if (item.href === "/employee-portals/marketing-requests") {
+      return !isRole(data, "training manager");
+    }
+    return true;
+  });
+
+  return (
+    <OverviewPagePanel title="Quick Actions">
+      <div className="grid grid-cols-1 auto-rows-fr gap-3 sm:grid-cols-3">
+        {actions.map((item) => (
+          <PremiumTooltip
+            content={(
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-900">{item.label}</p>
+                <p className="text-[11px] text-slate-500">Open the relevant workflow directly from your dashboard.</p>
+              </div>
+            )}
+            key={item.href}
+            triggerClassName="block"
+          >
+            <Link
+              className="group flex h-full min-h-[116px] flex-col items-center justify-between rounded-[18px] border border-slate-200 bg-white/80 px-3 py-3 text-center shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-orange-200 hover:bg-orange-50/60"
+              href={item.href}
+            >
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition-all duration-200 group-hover:scale-105 group-hover:bg-white">
+                <item.icon className="h-5 w-5" />
+              </span>
+              <span className="flex min-h-[40px] items-center text-[14px] font-medium leading-5 text-slate-800">
+                {item.label}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 transition-colors duration-200 group-hover:text-slate-500">
+                Open
+                <ArrowUpRight className="h-3 w-3" />
+              </span>
+            </Link>
+          </PremiumTooltip>
+        ))}
+      </div>
+    </OverviewPagePanel>
+  );
+}
+
+function EmployeesOnLeaveTodayPanel({ data }: { data: MedicalRepPortalData }) {
+  const rows = data.overview.employeesOnLeaveToday;
+
+  return (
+    <OverviewPagePanel title="Employees on Leave Today">
+      {rows.length === 0 ? (
+        <div className="flex h-full min-h-[200px] items-center justify-center rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 px-6 text-center">
+          <p className="text-sm font-medium text-slate-500">No employees are on leave today.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {rows.slice(0, 6).map((row) => (
+            <div
+              className="flex items-start justify-between gap-3 rounded-[18px] border border-slate-200 bg-white/80 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+              key={row.id}
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-slate-900">{row.employeeName}</p>
+                <p className="mt-1 text-xs font-normal text-slate-500">
+                  {row.lineName ?? row.departmentName ?? "Phoenix"} • Until {prettyDate(row.endDate)}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
+                {vacationTypeChipLabel(row.vacationType)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </OverviewPagePanel>
+  );
+}
+
+function TeamStructurePanel({ data }: { data: MedicalRepPortalData }) {
+  const vacancyDetails = data.overview.vacancyDetails;
+  const totalStructure = data.orgStructure?.totalStructure ?? data.workforce.activeHeadcount + data.workforce.openVacancies;
+  const actualNow = data.orgStructure?.actualNow ?? data.workforce.activeHeadcount;
+  const vacancies = data.orgStructure?.vacancies ?? data.workforce.openVacancies;
+  const visibleAreas = Array.from(
+    new Set(
+      (vacancyDetails?.vacancies ?? [])
+        .map((row) => row.areaName ?? row.regionName ?? row.positionTitle ?? row.jobTitle ?? row.vacancyCode)
+        .filter(Boolean),
+    ),
+  ).slice(0, 4);
+
+  return (
+    <OverviewPagePanel title="Team Structure">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-[18px] border border-slate-200 bg-white/80 p-3.5 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Total Structure</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{formatUnits(totalStructure)}</p>
+        </div>
+        <div className="rounded-[18px] border border-slate-200 bg-white/80 p-3.5 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Actual</p>
+          <p className="mt-2 text-2xl font-semibold text-emerald-600">{formatUnits(actualNow)}</p>
+        </div>
+        <div className="rounded-[18px] border border-slate-200 bg-white/80 p-3.5 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Vacant</p>
+          <p className="mt-2 text-2xl font-semibold text-orange-600">{formatUnits(vacancies)}</p>
+        </div>
+      </div>
+      <div className="mt-3 rounded-[18px] border border-slate-200 bg-slate-50/70 p-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium text-slate-900">
+            {data.orgStructure?.scopeLabel ?? data.workforce.scopeLabel}
+          </p>
+          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+            {formatUnits(vacancies)} vacant
+          </span>
+        </div>
+        {visibleAreas.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {visibleAreas.map((area) => (
+              <span
+                className="rounded-full border border-orange-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+                key={area}
+              >
+                {area}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-sm font-medium text-slate-500">No active vacancy areas are visible in your current scope.</p>
+        )}
+      </div>
+    </OverviewPagePanel>
   );
 }
 
@@ -2846,21 +2620,20 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
 }
 
 export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData }) {
-  const serviceDurationText = useServiceDurationText(
-    data.hrContract.hireDate,
-    data.hrContract.serviceDurationText,
-  );
-
   if (data.empty.profile) {
     return <EmptyStateCard message="Your employee profile is not linked yet. Please contact HR." title="Profile Not Linked" />;
   }
-
-  const overviewCards = buildOverviewKeyCards(data, serviceDurationText);
+  const showTeamLeaveAndStructurePanels = canSeeTeamLeaveAndStructurePanels(data);
 
   return (
     <div className="space-y-6 lg:space-y-7">
       <ExecutiveCommandStrip data={data} />
-      <OverviewKpiCards cards={overviewCards} />
+      <div className="grid gap-4 lg:gap-5 xl:grid-cols-2">
+        <MyActionsPanel data={data} />
+        <QuickActionsPanel data={data} />
+        {showTeamLeaveAndStructurePanels ? <EmployeesOnLeaveTodayPanel data={data} /> : null}
+        {showTeamLeaveAndStructurePanels ? <TeamStructurePanel data={data} /> : null}
+      </div>
       <div className="grid gap-4 lg:gap-5 xl:grid-cols-1">
         <OverviewPerformanceChart data={data} />
       </div>

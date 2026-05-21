@@ -56,7 +56,17 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
-  --font-sans: var(--font-dm-sans, "DM Sans", "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif);
+  --font-sans: var(
+    --font-dm-sans,
+    "Aptos",
+    "Segoe UI Variable Display",
+    "Segoe UI Variable Text",
+    "Segoe UI",
+    "Inter",
+    "Helvetica Neue",
+    Arial,
+    sans-serif
+  );
   --font-mono: var(
     --font-jetbrains-mono,
     "JetBrains Mono",
@@ -69,7 +79,7 @@
     "Courier New",
     monospace
   );
-  --font-display: var(--font-dm-serif, "DM Serif Display", "Georgia", "Times New Roman", "Times", serif);
+  --font-display: var(--font-dm-serif, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -142,6 +152,17 @@
 body {
   background: var(--background);
   color: var(--foreground);
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
+}
+
+.vacation-request-premium {
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "case" 1;
+}
+
+.vacation-request-premium .vacation-summary-kicker {
+  letter-spacing: 0.2em;
 }
 
 ::selection {

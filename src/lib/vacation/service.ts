@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import {
   assertPermission,
+  canAccess,
   isDesignatedHrSpecialist,
   normalizeHrIdForAccess,
   resolveEmployeeIdentityId,
@@ -11,17 +12,19 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { enqueueInAppNotification } from "@/lib/notifications/in-app";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { toDateOnlyString } from "@/lib/date-only";
+import { addDaysToDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
+import { getEgyptianNationalHolidays, type EgyptianNationalHoliday } from "@/lib/vacation/national-holidays";
 import {
   calculateVacationDurationDays,
   calculateVacationPayment,
   getAnnualVacationMinimumStartDate,
-  getEmergencyVacationBalancePeriod,
+  getVacationPolicyToday,
+  getVacationPolicyWarnings,
   getVacationBalancePeriod,
   normalizeVacationDayPart,
   normalizeVacationPaymentStatus,
   normalizeVacationType,
-  validateVacationRequestPolicy,
+  vacationRequestDisplayId,
   vacationTypeLabel,
 } from "@/lib/vacation/calculations";
 import { summarizeVacationRequests } from "@/lib/vacation/metrics";
@@ -32,6 +35,8 @@ import {
 } from "@/lib/vacation/email";
 import type {
   VacationBalanceSnapshot,
+  VacationControlData,
+  VacationDayPart,
   VacationDecision,
   VacationEmployeeSummary,
   VacationPaymentStatus,
@@ -41,12 +46,15 @@ import type {
   VacationRequestRecord,
   VacationRequestStatus,
   VacationType,
+  VacationWeeklyOffMode,
+  VacationWeeklyOffPolicyRecord,
 } from "@/lib/vacation/types";
-import { VACATION_DAY_PARTS, VACATION_TYPES } from "@/lib/vacation/types";
+import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES, VACATION_TYPES, VACATION_WEEKLY_OFF_MODES } from "@/lib/vacation/types";
 
 const vacationRequestsTable = "v2_vacation_requests";
 const vacationEventsTable = "v2_vacation_request_events";
 const vacationTokensTable = "v2_vacation_email_tokens";
+const vacationWeeklyOffPoliciesTable = "v2_vacation_weekly_off_policies";
 const vacationAttachmentBucket = "leave-attachments";
 const emailTokenTtlDays = 14;
 const sickAttachmentMaxUploadBytes = 10 * 1024 * 1024;
@@ -58,10 +66,26 @@ const sickAttachmentAllowedContentTypes = new Set([
   "image/png",
   "image/webp",
 ]);
+const compensatoryAttachmentAllowedContentTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 type VacationRequestDbRow = {
   balance_after_days: number | string | null;
   balance_before_days: number | string | null;
+  compensatory_attachment_bucket?: string | null;
+  compensatory_attachment_content_type?: string | null;
+  compensatory_attachment_object_path?: string | null;
+  compensatory_attachment_original_name?: string | null;
+  compensatory_attachment_size_bytes?: number | string | null;
+  compensatory_attachment_uploaded_at?: string | null;
+  compensatory_event_date?: string | null;
+  compensatory_event_location?: string | null;
+  compensatory_event_name?: string | null;
+  compensatory_manager_1?: string | null;
+  compensatory_manager_2?: string | null;
   created_at: string | null;
   day_part: string | null;
   department_name: string | null;
@@ -74,6 +98,10 @@ type VacationRequestDbRow = {
   entitlement_days: number | string | null;
   id: string;
   line_name: string | null;
+  hr_decision?: string | null;
+  hr_decision_at?: string | null;
+  hr_decision_by_hr_id?: string | null;
+  hr_decision_comment?: string | null;
   manager_decision: string | null;
   manager_decision_at: string | null;
   manager_decision_by_hr_id: string | null;
@@ -82,7 +110,9 @@ type VacationRequestDbRow = {
   manager_name: string | null;
   manager_of_manager_hr_id: string | null;
   manager_of_manager_name: string | null;
+  notes?: string | null;
   payment_status: string | null;
+  paid_duration_days?: number | string | null;
   period_end: string | null;
   period_start: string | null;
   sick_attachment_bucket?: string | null;
@@ -95,6 +125,7 @@ type VacationRequestDbRow = {
   status: string | null;
   submitted_by_hr_id: string | null;
   unpaid_reason: string | null;
+  unpaid_duration_days?: number | string | null;
   used_paid_days: number | string | null;
   vacation_type: string | null;
 };
@@ -113,6 +144,15 @@ type HrRecipient = {
   name: string;
 };
 
+type VacationWeeklyOffPolicyDbRow = {
+  friday_off: string | null;
+  id: string;
+  job_title: string | null;
+  saturday_off: string | null;
+  thursday_off: string | null;
+  updated_at: string | null;
+};
+
 export type VacationAttachmentUpload = {
   bytes: Buffer;
   contentType: string;
@@ -121,10 +161,27 @@ export type VacationAttachmentUpload = {
 };
 
 type CreateVacationRequestInput = Omit<VacationRequestInput, "dayPart" | "endDate" | "startDate" | "vacationType"> & {
+  compensatoryAttachment?: VacationAttachmentUpload | null;
+  compensatoryEventDate?: unknown;
+  compensatoryEventLocation?: unknown;
+  compensatoryEventName?: unknown;
+  compensatoryManager1?: unknown;
+  compensatoryManager2?: unknown;
   dayPart: unknown;
   endDate: unknown;
+  otherReason?: unknown;
   sickAttachment?: VacationAttachmentUpload | null;
   startDate: unknown;
+  vacationType: unknown;
+};
+
+type AdminVacationRequestInput = {
+  dayPart: unknown;
+  employeeHrId?: unknown;
+  endDate: unknown;
+  notes?: unknown;
+  startDate: unknown;
+  status?: unknown;
   vacationType: unknown;
 };
 
@@ -135,6 +192,17 @@ function text(value: unknown) {
 function nullableText(value: unknown) {
   const normalized = text(value);
   return normalized || null;
+}
+
+function normalizeWeeklyOffMode(value: unknown): VacationWeeklyOffMode {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return VACATION_WEEKLY_OFF_MODES.some((option) => option.value === normalized)
+    ? (normalized as VacationWeeklyOffMode)
+    : "working";
+}
+
+function employeeVacationPolicyTitle(employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">) {
+  return text(employee.positionTitle || employee.jobTitle || "Unassigned");
 }
 
 function numberValue(value: unknown) {
@@ -156,12 +224,29 @@ function isAllVacationVisibility(access: AccessContext) {
   return access.scope === "system" || access.role === "Super Admin" || isDesignatedHrSpecialist(access);
 }
 
+async function assertVacationAdminManagement(access: AccessContext, action: "create" | "update" | "delete") {
+  await assertPermission(access, "leave", action);
+  if (!isAllVacationVisibility(access)) {
+    throw new Error("Forbidden: only HR or Super Admin can manage company vacation records.");
+  }
+}
+
+async function canManageVacationRecords(access: AccessContext) {
+  return (
+    isAllVacationVisibility(access) &&
+    await canAccess(access, "leave", "create") &&
+    await canAccess(access, "leave", "update") &&
+    await canAccess(access, "leave", "delete")
+  );
+}
+
 function isVacationSchemaMissingError(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   return (
     message.includes(vacationRequestsTable) ||
     message.includes(vacationEventsTable) ||
     message.includes(vacationTokensTable) ||
+    message.includes(vacationWeeklyOffPoliciesTable) ||
     message.includes("could not find the table") ||
     message.includes("schema cache") ||
     (message.includes("relation") && message.includes("does not exist"))
@@ -216,11 +301,145 @@ function managerChain(directory: EmployeeDirectoryData, employee: EmployeeDirect
   return { manager, managerOfManager };
 }
 
+function mapWeeklyOffPolicy(row: VacationWeeklyOffPolicyDbRow): VacationWeeklyOffPolicyRecord {
+  return {
+    friday: normalizeWeeklyOffMode(row.friday_off),
+    id: row.id,
+    jobTitle: text(row.job_title),
+    saturday: normalizeWeeklyOffMode(row.saturday_off),
+    thursday: normalizeWeeklyOffMode(row.thursday_off),
+    updatedAt: row.updated_at,
+  };
+}
+
+function defaultWeeklyOffPolicy(jobTitle: string): VacationWeeklyOffPolicyRecord {
+  return {
+    friday: "full_day",
+    id: null,
+    jobTitle,
+    saturday: "working",
+    thursday: "working",
+    updatedAt: null,
+  };
+}
+
+function weeklyOffPolicyForDateCalculation(policy: VacationWeeklyOffPolicyRecord | null) {
+  return {
+    friday: policy?.friday ?? "full_day",
+    saturday: policy?.saturday ?? "working",
+    thursday: policy?.thursday ?? "working",
+  };
+}
+
+async function fetchWeeklyOffPolicyForTitle(jobTitle: string) {
+  const { data, error } = await getSupabaseAdmin()
+    .from(vacationWeeklyOffPoliciesTable)
+    .select("*")
+    .eq("job_title", jobTitle)
+    .maybeSingle();
+
+  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  return data ? mapWeeklyOffPolicy(data as VacationWeeklyOffPolicyDbRow) : defaultWeeklyOffPolicy(jobTitle);
+}
+
+function resolveSubmittedVacationType(input: {
+  endDate: string;
+  requestedVacationType: VacationType;
+  startDate: string;
+}) {
+  if (
+    input.requestedVacationType === "annual" &&
+    input.startDate === input.endDate &&
+    input.startDate === getVacationPolicyToday()
+  ) {
+    return "emergency" satisfies VacationType;
+  }
+
+  return input.requestedVacationType;
+}
+
+function validateVacationSubmissionDates(input: {
+  endDate: string;
+  resolvedVacationType: VacationType;
+  startDate: string;
+}) {
+  const today = getVacationPolicyToday();
+  if (input.startDate < today || input.endDate < today) {
+    throw new Error("Vacation requests cannot be submitted retroactively.");
+  }
+
+  if (input.resolvedVacationType === "annual" && input.startDate < getAnnualVacationMinimumStartDate()) {
+    throw new Error("Annual vacation requests must start from tomorrow or later.");
+  }
+
+  if (input.resolvedVacationType === "emergency" && (input.startDate !== today || input.endDate !== today)) {
+    throw new Error("Emergency vacation requests must be submitted for the current day only.");
+  }
+}
+
+function holidayMonthKeysForDates(dates: string[]) {
+  const keys = new Set<string>();
+  for (const value of dates) {
+    const date = parseDateOnly(value);
+    if (!date) continue;
+    keys.add(`${date.getFullYear()}-${date.getMonth() + 1}`);
+  }
+  return [...keys].map((key) => {
+    const [year, month] = key.split("-").map(Number);
+    return { month, year };
+  });
+}
+
+async function validateOfficialHolidayAdjacency(input: {
+  endDate: string;
+  startDate: string;
+}) {
+  const dayBeforeStart = addDaysToDateOnly(input.startDate, -1);
+  const dayAfterEnd = addDaysToDateOnly(input.endDate, 1);
+  if (!dayBeforeStart || !dayAfterEnd) return;
+
+  const holidays: EgyptianNationalHoliday[] = [];
+  for (const period of holidayMonthKeysForDates([dayBeforeStart, dayAfterEnd])) {
+    const result = await getEgyptianNationalHolidays(period);
+    if (result.connected) holidays.push(...result.holidays);
+  }
+
+  const isHolidayDate = (value: string) =>
+    holidays.some((holiday) => value >= holiday.startDate && value <= (holiday.endDate ?? holiday.startDate));
+
+  if (isHolidayDate(dayBeforeStart) || isHolidayDate(dayAfterEnd)) {
+    throw new Error("Vacation requests are not allowed directly before or directly after an official national holiday.");
+  }
+}
+
+function shouldForceUnpaidForPolicy(input: {
+  dayPart: VacationDayPart;
+  policyWarnings: string[];
+  vacationType: VacationType;
+}) {
+  return (
+    input.vacationType === "emergency" &&
+    input.dayPart !== "pm_only" &&
+    input.policyWarnings.some((warning) => warning.includes("before 10:00 AM"))
+  );
+}
+
 function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationRequestRecord {
   return {
     balanceAfterDays: numberValue(row.balance_after_days),
     balanceBeforeDays: numberValue(row.balance_before_days),
     canDecide,
+    compensatoryAttachmentBucket: row.compensatory_attachment_bucket ?? null,
+    compensatoryAttachmentContentType: row.compensatory_attachment_content_type ?? null,
+    compensatoryAttachmentObjectPath: row.compensatory_attachment_object_path ?? null,
+    compensatoryAttachmentOriginalName: row.compensatory_attachment_original_name ?? null,
+    compensatoryAttachmentSizeBytes: numberValue(row.compensatory_attachment_size_bytes),
+    compensatoryAttachmentUploadedAt: row.compensatory_attachment_uploaded_at ?? null,
+    compensatoryEventDate: row.compensatory_event_date ?? null,
+    compensatoryEventLocation: row.compensatory_event_location ?? null,
+    compensatoryEventName: row.compensatory_event_name ?? null,
+    compensatoryManager1: row.compensatory_manager_1 ?? null,
+    compensatoryManager2: row.compensatory_manager_2 ?? null,
     createdAt: row.created_at ?? "",
     dayPart: normalizeVacationDayPart(row.day_part) ?? "full_day",
     departmentName: row.department_name,
@@ -239,6 +458,13 @@ function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationR
     sickAttachmentSizeBytes: numberValue(row.sick_attachment_size_bytes),
     sickAttachmentUploadedAt: row.sick_attachment_uploaded_at ?? null,
     lineName: row.line_name,
+    hrDecision:
+      row.hr_decision === "approved" || row.hr_decision === "rejected"
+        ? row.hr_decision
+        : null,
+    hrDecisionAt: row.hr_decision_at ?? null,
+    hrDecisionByHrId: row.hr_decision_by_hr_id ?? null,
+    hrDecisionComment: row.hr_decision_comment ?? null,
     managerDecision:
       row.manager_decision === "approved" || row.manager_decision === "rejected"
         ? row.manager_decision
@@ -250,12 +476,18 @@ function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationR
     managerName: row.manager_name,
     managerOfManagerHrId: row.manager_of_manager_hr_id,
     managerOfManagerName: row.manager_of_manager_name,
+    notes: row.notes ?? null,
     paymentStatus: normalizeVacationPaymentStatus(row.payment_status) ?? "unpaid",
+    paidDurationDays: row.paid_duration_days == null
+      ? normalizeVacationPaymentStatus(row.payment_status) === "paid"
+        ? numberValue(row.duration_days)
+        : 0
+      : numberValue(row.paid_duration_days),
     periodEnd: row.period_end,
     periodStart: row.period_start,
     startDate: text(row.start_date),
     status:
-      row.status === "approved" || row.status === "rejected" || row.status === "pending_manager"
+      row.status === "approved" || row.status === "rejected" || row.status === "pending_manager" || row.status === "pending_hr"
         ? row.status
         : "pending_manager",
     submittedByHrId: row.submitted_by_hr_id,
@@ -265,15 +497,76 @@ function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationR
       row.unpaid_reason === "missing_hire_date"
         ? row.unpaid_reason
         : null,
+    unpaidDurationDays: row.unpaid_duration_days == null
+      ? normalizeVacationPaymentStatus(row.payment_status) === "unpaid"
+        ? numberValue(row.duration_days)
+        : 0
+      : numberValue(row.unpaid_duration_days),
     usedPaidDays: numberValue(row.used_paid_days),
     vacationType: normalizeVacationType(row.vacation_type) ?? "annual",
   };
 }
 
 function canDecideVacation(access: AccessContext, request: Pick<VacationRequestRecord, "managerHrId" | "status">) {
-  if (request.status !== "pending_manager") return false;
+  if (request.status !== "pending_manager" && request.status !== "pending_hr") return false;
   if (access.scope === "system") return true;
-  return hrIdsMatch(resolveEmployeeIdentityId(access), request.managerHrId);
+  if (request.status === "pending_manager") {
+    return hrIdsMatch(resolveEmployeeIdentityId(access), request.managerHrId);
+  }
+  if (request.status === "pending_hr") {
+    return isAllVacationVisibility(access);
+  }
+  return false;
+}
+
+function normalizeAdminVacationStatus(value: unknown): VacationRequestStatus {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "pending_manager" || normalized === "pending_hr" || normalized === "approved" || normalized === "rejected") {
+    return normalized;
+  }
+  return "approved";
+}
+
+function adminDecisionPayload(input: {
+  actorHrId: string | null;
+  actorLoginId?: string | null;
+  status: VacationRequestStatus;
+}) {
+  const now = new Date().toISOString();
+  const reset = {
+    hr_decision: null,
+    hr_decision_at: null,
+    hr_decision_by_hr_id: null,
+    hr_decision_comment: null,
+    manager_decision: null,
+    manager_decision_at: null,
+    manager_decision_by_hr_id: null,
+    manager_decision_comment: null,
+  };
+
+  if (input.status === "pending_manager") return reset;
+
+  if (input.status === "pending_hr") {
+    return {
+      ...reset,
+      manager_decision: "approved",
+      manager_decision_at: now,
+      manager_decision_by_hr_id: input.actorHrId,
+      manager_decision_comment: "Manual admin record update.",
+    };
+  }
+
+  return {
+    ...reset,
+    hr_decision: input.status,
+    hr_decision_at: now,
+    hr_decision_by_hr_id: input.actorHrId,
+    hr_decision_comment: "Manual admin record update.",
+    manager_decision: "approved",
+    manager_decision_at: now,
+    manager_decision_by_hr_id: input.actorHrId,
+    manager_decision_comment: "Manual admin record update.",
+  };
 }
 
 function canSeeVacation(access: AccessContext, request: VacationRequestRecord) {
@@ -381,14 +674,16 @@ async function notifyRecipients(input: {
 async function dispatchVacationSubmitted(input: {
   baseUrl: string;
   directory: EmployeeDirectoryData;
+  policyWarnings?: string[];
   request: VacationRequestRecord;
 }) {
   const hrRecipients = await getHrRecipients(input.directory);
   const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
+  const policyWarningText = (input.policyWarnings ?? []).join(" ");
   await notifyRecipients({
     href: reportHref,
-    message: `${input.request.employeeName} submitted ${vacationTypeLabel(input.request.vacationType)} for ${input.request.durationDays} day(s).`,
-    metadata: { requestId: input.request.id, status: input.request.status },
+    message: `${input.request.employeeName} submitted ${vacationTypeLabel(input.request.vacationType)} for ${input.request.durationDays} day(s).${policyWarningText ? ` Policy review: ${policyWarningText}` : ""}`,
+    metadata: { policyWarnings: input.policyWarnings ?? [], requestId: input.request.id, status: input.request.status },
     recipients: [
       input.request.managerHrId,
       input.request.managerOfManagerHrId,
@@ -413,6 +708,7 @@ async function dispatchVacationSubmitted(input: {
     }),
     managerEmail,
     managerName: input.request.managerName,
+    policyWarnings: input.policyWarnings ?? [],
     rejectUrl: buildVacationDecisionUrl({
       baseUrl: input.baseUrl,
       decision: "reject",
@@ -420,6 +716,28 @@ async function dispatchVacationSubmitted(input: {
       token,
     }),
     request: input.request,
+  });
+}
+
+async function dispatchVacationManagerReview(input: {
+  decision: VacationDecision;
+  directory: EmployeeDirectoryData;
+  request: VacationRequestRecord;
+}) {
+  const hrRecipients = await getHrRecipients(input.directory);
+  const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
+  await notifyRecipients({
+    href: reportHref,
+    message: `${input.request.managerName ?? "Direct manager"} ${input.decision === "approve" ? "approved" : "rejected"} ${input.request.employeeName}'s vacation request. HR final decision is required.`,
+    metadata: { managerDecision: input.request.managerDecision, requestId: input.request.id, status: input.request.status },
+    recipients: [
+      input.request.employeeHrId,
+      input.request.managerOfManagerHrId,
+      ...hrRecipients.map((recipient) => recipient.hrId),
+    ],
+    requestId: input.request.id,
+    title: "Vacation request pending HR final decision",
+    type: `manager_review:${input.decision}`,
   });
 }
 
@@ -432,7 +750,7 @@ async function dispatchVacationDecision(input: {
   const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
   await notifyRecipients({
     href: reportHref,
-    message: `${input.request.employeeName}'s vacation request was ${input.decision === "approve" ? "approved" : "rejected"}.`,
+    message: `${input.request.employeeName}'s vacation request was ${input.decision === "approve" ? "approved" : "rejected"} by HR final review.`,
     metadata: { requestId: input.request.id, status: input.request.status },
     recipients: [
       input.request.employeeHrId,
@@ -440,7 +758,7 @@ async function dispatchVacationDecision(input: {
       ...hrRecipients.map((recipient) => recipient.hrId),
     ],
     requestId: input.request.id,
-    title: `Vacation request ${input.decision === "approve" ? "approved" : "rejected"}`,
+    title: `Vacation request ${input.decision === "approve" ? "approved" : "rejected"} by HR`,
     type: `decision:${input.decision}`,
   });
 
@@ -472,17 +790,16 @@ async function approvedPaidDaysInPeriod(input: {
 
   let query = getSupabaseAdmin()
     .from(vacationRequestsTable)
-    .select("id,duration_days")
+    .select("id,duration_days,paid_duration_days,payment_status")
     .ilike("employee_hr_id", input.employeeHrId)
     .eq("status", "approved")
-    .eq("payment_status", "paid")
     .gte("start_date", input.periodStart)
     .lt("start_date", input.periodEnd);
 
-  if (input.vacationType === "emergency") {
-    query = query.eq("vacation_type", "emergency");
+  if (input.vacationType === "annual" || input.vacationType === "emergency") {
+    query = query.in("vacation_type", ["annual", "emergency"]);
   } else {
-    query = query.neq("vacation_type", "emergency");
+    query = query.eq("vacation_type", input.vacationType);
   }
 
   const { data, error } = await query;
@@ -491,7 +808,11 @@ async function approvedPaidDaysInPeriod(input: {
 
   return (data ?? [])
     .filter((row) => String((row as Record<string, unknown>).id) !== input.excludeRequestId)
-    .reduce((sum, row) => sum + numberValue((row as Record<string, unknown>).duration_days), 0);
+    .reduce((sum, row) => {
+      const record = row as Record<string, unknown>;
+      if (record.paid_duration_days != null) return sum + numberValue(record.paid_duration_days);
+      return record.payment_status === "paid" ? sum + numberValue(record.duration_days) : sum;
+    }, 0);
 }
 
 async function calculatePaymentForRequest(input: {
@@ -502,12 +823,20 @@ async function calculatePaymentForRequest(input: {
   startDate: string;
   vacationType: VacationType;
 }) {
-  const period = input.vacationType === "emergency"
-    ? getEmergencyVacationBalancePeriod(input.startDate)
-    : getVacationBalancePeriod({
-        hireDate: input.hireDate,
-        referenceDate: input.startDate,
-      });
+  if (input.vacationType === "compensatory") {
+    return calculateVacationPayment({
+      approvedPaidDaysInPeriod: 0,
+      durationDays: input.durationDays,
+      hireDate: input.hireDate,
+      startDate: input.startDate,
+      vacationType: input.vacationType,
+    });
+  }
+
+  const period = getVacationBalancePeriod({
+    hireDate: input.hireDate,
+    referenceDate: input.startDate,
+  });
   const usedPaidDays = await approvedPaidDaysInPeriod({
     employeeHrId: input.employeeHrId,
     excludeRequestId: input.excludeRequestId,
@@ -545,6 +874,17 @@ function buildSickAttachmentPath(input: {
   return `sick/${employeeHrId}/${requestId}/${fileName}`;
 }
 
+function buildCompensatoryAttachmentPath(input: {
+  employeeHrId: string;
+  fileName: string;
+  requestId: string;
+}) {
+  const employeeHrId = sanitizeStorageSegment(input.employeeHrId, "unknown-employee");
+  const requestId = sanitizeStorageSegment(input.requestId, "unknown-request");
+  const fileName = sanitizeStorageSegment(input.fileName, "compensatory-event-photo");
+  return `compensatory/${employeeHrId}/${requestId}/${fileName}`;
+}
+
 function validateSickAttachment(attachment: VacationAttachmentUpload | null | undefined) {
   if (!attachment) {
     throw new Error("Sick vacation requires an uploaded medical document.");
@@ -558,6 +898,53 @@ function validateSickAttachment(attachment: VacationAttachmentUpload | null | un
   if (!sickAttachmentAllowedContentTypes.has(attachment.contentType)) {
     throw new Error("Sick vacation document must be a PDF, Word document, JPG, PNG, or WEBP file.");
   }
+}
+
+function validateCompensatoryAttachment(attachment: VacationAttachmentUpload | null | undefined) {
+  if (!attachment) {
+    throw new Error("Compensatory Day requires an uploaded event photo.");
+  }
+  if (attachment.bytes.length === 0) {
+    throw new Error("Compensatory Day event photo is empty. Upload a valid image.");
+  }
+  if (attachment.bytes.length > sickAttachmentMaxUploadBytes) {
+    throw new Error("Compensatory Day event photo is too large. Maximum size is 10MB.");
+  }
+  if (!compensatoryAttachmentAllowedContentTypes.has(attachment.contentType)) {
+    throw new Error("Compensatory Day event photo must be a JPG, PNG, or WEBP image.");
+  }
+}
+
+function validateCompensatoryDetails(input: CreateVacationRequestInput) {
+  const eventName = text(input.compensatoryEventName);
+  const eventDate = toDateOnlyString(String(input.compensatoryEventDate ?? ""));
+  const requestStartDate = toDateOnlyString(String(input.startDate ?? ""));
+  const eventLocation = text(input.compensatoryEventLocation);
+  const manager1 = text(input.compensatoryManager1);
+  const manager2 = text(input.compensatoryManager2);
+
+  if (!eventName) throw new Error("Compensatory Day requires the event name.");
+  if (!eventDate) throw new Error("Compensatory Day requires the event date.");
+  if (!eventLocation) throw new Error("Compensatory Day requires the event location.");
+  if (!manager1) throw new Error("Compensatory Day requires the first manager name who attended or supervised the event.");
+  if (requestStartDate && requestStartDate < eventDate) {
+    throw new Error("Compensatory Day cannot be requested before the event date.");
+  }
+  const expiryDate = addDaysToDateOnly(eventDate, 14);
+  if (requestStartDate && expiryDate && requestStartDate > expiryDate) {
+    throw new Error("Compensatory Day has expired. It must be used within 14 days from the event date.");
+  }
+  validateCompensatoryAttachment(input.compensatoryAttachment);
+
+  return { eventDate, eventLocation, eventName, manager1, manager2 };
+}
+
+function validateOtherReason(input: CreateVacationRequestInput) {
+  const reason = text(input.otherReason);
+  if (!reason) {
+    throw new Error("Other vacation requires an explanation for HR review.");
+  }
+  return reason;
 }
 
 async function uploadSickAttachment(input: {
@@ -594,6 +981,40 @@ async function uploadSickAttachment(input: {
   };
 }
 
+async function uploadCompensatoryAttachment(input: {
+  attachment: VacationAttachmentUpload;
+  employeeHrId: string;
+  requestId: string;
+}) {
+  validateCompensatoryAttachment(input.attachment);
+  const objectPath = buildCompensatoryAttachmentPath({
+    employeeHrId: input.employeeHrId,
+    fileName: input.attachment.fileName,
+    requestId: input.requestId,
+  });
+
+  const { error } = await getSupabaseAdmin().storage
+    .from(vacationAttachmentBucket)
+    .upload(objectPath, input.attachment.bytes, {
+      cacheControl: "31536000",
+      contentType: input.attachment.contentType,
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`Unable to store compensatory day event photo: ${error.message}`);
+  }
+
+  return {
+    bucket: vacationAttachmentBucket,
+    contentType: input.attachment.contentType,
+    objectPath,
+    originalName: input.attachment.fileName,
+    sizeBytes: input.attachment.size,
+    uploadedAt: new Date().toISOString(),
+  };
+}
+
 async function deleteSickAttachment(objectPath: string | null | undefined) {
   if (!objectPath) return;
   await getSupabaseAdmin().storage.from(vacationAttachmentBucket).remove([objectPath]);
@@ -604,9 +1025,11 @@ export async function getVacationRequestPageData(access: AccessContext) {
   const { directory, employee } = await getCurrentEmployee(access);
   const today = toDateOnlyString(new Date()) ?? "";
   const { manager, managerOfManager } = managerChain(directory, employee);
+  const weeklyOffPolicy = await fetchWeeklyOffPolicyForTitle(employeeVacationPolicyTitle(employee));
 
   const balanceReferenceDates: Record<VacationType, string> = {
     annual: getAnnualVacationMinimumStartDate(),
+    compensatory: today,
     emergency: today,
     other: today,
     sick: today,
@@ -641,7 +1064,8 @@ export async function getVacationRequestPageData(access: AccessContext) {
     employee: summarizeEmployee(employee),
     manager: manager ? summarizeEmployee(manager) : null,
     managerOfManager: managerOfManager ? summarizeEmployee(managerOfManager) : null,
-    vacationTypeOptions: VACATION_TYPES,
+    vacationTypeOptions: VACATION_REQUEST_TYPES,
+    weeklyOffPolicy,
   };
 }
 
@@ -656,29 +1080,66 @@ export async function createVacationRequest(access: AccessContext, input: Create
   if (!dayPart) throw new Error("Vacation day part is invalid.");
   if (!startDate || !endDate) throw new Error("Vacation start and end dates are required.");
 
-  validateVacationRequestPolicy({ dayPart, endDate, startDate, vacationType });
+  const resolvedVacationType = resolveSubmittedVacationType({
+    endDate,
+    requestedVacationType: vacationType,
+    startDate,
+  });
+  validateVacationSubmissionDates({ endDate, resolvedVacationType, startDate });
+  await validateOfficialHolidayAdjacency({ endDate, startDate });
+  const policyWarnings = [...getVacationPolicyWarnings({ dayPart, endDate, startDate, vacationType: resolvedVacationType })];
   if (vacationType === "sick") {
     validateSickAttachment(input.sickAttachment);
   }
+  const otherReason = vacationType === "other" ? validateOtherReason(input) : null;
+  const compensatoryDetails = vacationType === "compensatory" ? validateCompensatoryDetails(input) : null;
 
-  const durationDays = calculateVacationDurationDays({ dayPart, endDate, startDate });
   const { directory, employee } = await getCurrentEmployee(access);
+  const weeklyOffPolicy = await fetchWeeklyOffPolicyForTitle(employeeVacationPolicyTitle(employee));
+  const durationDays = calculateVacationDurationDays({
+    dayPart,
+    endDate,
+    startDate,
+    weeklyOffPolicy: weeklyOffPolicyForDateCalculation(weeklyOffPolicy),
+  });
   const { manager, managerOfManager } = managerChain(directory, employee);
   if (!manager?.hrId) {
     throw new Error("Your direct manager is not assigned. Please contact HR before submitting a vacation request.");
   }
 
-  const balance = await calculatePaymentForRequest({
+  let balance = await calculatePaymentForRequest({
     durationDays,
     employeeHrId: employee.hrId,
     hireDate: employee.hireDate,
     startDate,
-    vacationType,
+    vacationType: resolvedVacationType,
   });
+  if (shouldForceUnpaidForPolicy({ dayPart, policyWarnings, vacationType: resolvedVacationType })) {
+    balance = {
+      ...balance,
+      balanceAfterDays: balance.balanceBeforeDays,
+      paidDurationDays: 0,
+      paymentStatus: "unpaid",
+      unpaidDurationDays: durationDays,
+      unpaidReason: null,
+    };
+  }
+  if (balance.unpaidReason === "first_six_months") {
+    policyWarnings.push("Payment policy: this request is calculated as unpaid because the employee has not completed the first 6 months.");
+  }
+  if (balance.unpaidReason === "insufficient_balance") {
+    policyWarnings.push("Payment policy: this request is calculated as unpaid because the available paid balance is insufficient.");
+  }
+  if (balance.unpaidReason === "missing_hire_date") {
+    policyWarnings.push("Payment policy: paid eligibility cannot be confirmed because the employee hire date is missing.");
+  }
 
   const requestId = randomUUID();
-  const sickAttachment = vacationType === "sick" && input.sickAttachment
+  const sickAttachment = resolvedVacationType === "sick" && input.sickAttachment
     ? await uploadSickAttachment({ attachment: input.sickAttachment, employeeHrId: employee.hrId, requestId })
+    : null;
+  const compensatoryAttachment = resolvedVacationType === "compensatory" && input.compensatoryAttachment
+    ? await uploadCompensatoryAttachment({ attachment: input.compensatoryAttachment, employeeHrId: employee.hrId, requestId })
     : null;
 
   const now = new Date().toISOString();
@@ -688,6 +1149,17 @@ export async function createVacationRequest(access: AccessContext, input: Create
       id: requestId,
       balance_after_days: balance.balanceAfterDays,
       balance_before_days: balance.balanceBeforeDays,
+      compensatory_attachment_bucket: compensatoryAttachment?.bucket ?? null,
+      compensatory_attachment_content_type: compensatoryAttachment?.contentType ?? null,
+      compensatory_attachment_object_path: compensatoryAttachment?.objectPath ?? null,
+      compensatory_attachment_original_name: compensatoryAttachment?.originalName ?? null,
+      compensatory_attachment_size_bytes: compensatoryAttachment?.sizeBytes ?? null,
+      compensatory_attachment_uploaded_at: compensatoryAttachment?.uploadedAt ?? null,
+      compensatory_event_date: compensatoryDetails?.eventDate ?? null,
+      compensatory_event_location: compensatoryDetails?.eventLocation ?? null,
+      compensatory_event_name: compensatoryDetails?.eventName ?? null,
+      compensatory_manager_1: compensatoryDetails?.manager1 ?? null,
+      compensatory_manager_2: compensatoryDetails?.manager2 ?? null,
       day_part: dayPart,
       department_name: employee.departmentName,
       duration_days: durationDays,
@@ -702,7 +1174,9 @@ export async function createVacationRequest(access: AccessContext, input: Create
       manager_name: manager.fullName,
       manager_of_manager_hr_id: managerOfManager?.hrId ?? null,
       manager_of_manager_name: managerOfManager?.fullName ?? null,
+      notes: otherReason,
       payment_status: balance.paymentStatus,
+      paid_duration_days: balance.paidDurationDays,
       period_end: balance.periodEnd,
       period_start: balance.periodStart,
       sick_attachment_bucket: sickAttachment?.bucket ?? null,
@@ -716,15 +1190,17 @@ export async function createVacationRequest(access: AccessContext, input: Create
       submitted_by_hr_id: employee.hrId,
       submitted_by_login_id: access.loginId ?? null,
       unpaid_reason: balance.unpaidReason,
+      unpaid_duration_days: balance.unpaidDurationDays,
       updated_at: now,
       used_paid_days: balance.usedPaidDays,
-      vacation_type: vacationType,
+      vacation_type: resolvedVacationType,
     })
     .select("*")
     .single();
 
   if (error) {
     await deleteSickAttachment(sickAttachment?.objectPath).catch(() => undefined);
+    await deleteSickAttachment(compensatoryAttachment?.objectPath).catch(() => undefined);
     throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
   }
 
@@ -736,13 +1212,16 @@ export async function createVacationRequest(access: AccessContext, input: Create
     message: "Vacation request submitted.",
     metadata: {
       hasSickAttachment: Boolean(request.sickAttachmentObjectPath),
+      hasCompensatoryAttachment: Boolean(request.compensatoryAttachmentObjectPath),
+      compensatoryEventName: request.compensatoryEventName,
       paymentStatus: request.paymentStatus,
+      policyWarnings,
       unpaidReason: request.unpaidReason,
     },
     requestId: request.id,
   });
 
-  await dispatchVacationSubmitted({ baseUrl: options.baseUrl, directory, request }).catch(async (error) => {
+  await dispatchVacationSubmitted({ baseUrl: options.baseUrl, directory, policyWarnings, request }).catch(async (error) => {
     await insertVacationEvent({
       actorHrId: employee.hrId,
       actorLoginId: access.loginId,
@@ -753,6 +1232,197 @@ export async function createVacationRequest(access: AccessContext, input: Create
   });
 
   return request;
+}
+
+async function buildAdminVacationMutationPayload(input: {
+  access: AccessContext;
+  directory: EmployeeDirectoryData;
+  existing?: VacationRequestRecord | null;
+  form: AdminVacationRequestInput;
+}) {
+  const employeeHrId = text(input.form.employeeHrId ?? input.existing?.employeeHrId);
+  const employee = findEmployeeByHrId(input.directory, employeeHrId);
+  if (!employee) throw new Error("Employee was not found in the employee directory.");
+
+  const vacationType = normalizeVacationType(input.form.vacationType);
+  const dayPart = normalizeVacationDayPart(input.form.dayPart);
+  const startDate = toDateOnlyString(String(input.form.startDate ?? ""));
+  const endDate = toDateOnlyString(String(input.form.endDate ?? ""));
+  const status = normalizeAdminVacationStatus(input.form.status);
+  const notes = nullableText(input.form.notes);
+
+  if (!vacationType) throw new Error("Vacation type is invalid.");
+  if (!dayPart) throw new Error("Vacation day part is invalid.");
+  if (!startDate || !endDate) throw new Error("Vacation start and end dates are required.");
+  if (endDate < startDate) throw new Error("Vacation end date cannot be before the start date.");
+  if (employee.hireDate && startDate < employee.hireDate) {
+    throw new Error("Vacation date cannot be before the employee hire date.");
+  }
+  if (vacationType === "other" && !notes) {
+    throw new Error("Other vacation requires an explanation for HR review.");
+  }
+  if (vacationType === "sick" && !input.existing?.sickAttachmentObjectPath) {
+    throw new Error("Manual sick vacation entries require an existing medical document. Ask the employee to submit the sick request with an attachment first.");
+  }
+  if (vacationType === "compensatory" && !input.existing?.compensatoryAttachmentObjectPath) {
+    throw new Error("Manual compensatory day entries require an existing event photo. Ask the employee to submit the compensatory day request with the photo first.");
+  }
+
+  const weeklyOffPolicy = await fetchWeeklyOffPolicyForTitle(employeeVacationPolicyTitle(employee));
+  const durationDays = calculateVacationDurationDays({
+    dayPart,
+    endDate,
+    startDate,
+    weeklyOffPolicy: weeklyOffPolicyForDateCalculation(weeklyOffPolicy),
+  });
+  const balance = await calculatePaymentForRequest({
+    durationDays,
+    employeeHrId: employee.hrId,
+    excludeRequestId: input.existing?.id,
+    hireDate: employee.hireDate,
+    startDate,
+    vacationType,
+  });
+  const { manager, managerOfManager } = managerChain(input.directory, employee);
+  const actorHrId = resolveEmployeeIdentityId(input.access);
+  const decisionPayload = adminDecisionPayload({ actorHrId, actorLoginId: input.access.loginId, status });
+
+  return {
+    payload: {
+      ...decisionPayload,
+      balance_after_days: balance.balanceAfterDays,
+      balance_before_days: balance.balanceBeforeDays,
+      day_part: dayPart,
+      department_name: employee.departmentName,
+      duration_days: durationDays,
+      employee_hire_date: employee.hireDate,
+      employee_hr_id: employee.hrId,
+      employee_name: employee.fullName,
+      employee_work_email: employee.workEmail,
+      end_date: endDate,
+      entitlement_days: balance.entitlementDays,
+      line_name: employee.lineName,
+      manager_hr_id: manager?.hrId ?? null,
+      manager_name: manager?.fullName ?? null,
+      manager_of_manager_hr_id: managerOfManager?.hrId ?? null,
+      manager_of_manager_name: managerOfManager?.fullName ?? null,
+      notes,
+      payment_status: balance.paymentStatus,
+      paid_duration_days: balance.paidDurationDays,
+      period_end: balance.periodEnd,
+      period_start: balance.periodStart,
+      start_date: startDate,
+      status,
+      submitted_by_hr_id: actorHrId ?? employee.hrId,
+      submitted_by_login_id: input.access.loginId ?? null,
+      unpaid_duration_days: balance.unpaidDurationDays,
+      unpaid_reason: balance.unpaidReason,
+      updated_at: new Date().toISOString(),
+      used_paid_days: balance.usedPaidDays,
+      vacation_type: vacationType,
+    },
+    status,
+  };
+}
+
+export async function createVacationRequestAsAdmin(access: AccessContext, input: AdminVacationRequestInput) {
+  await assertVacationAdminManagement(access, "create");
+  const directory = await getEmployeeDirectory();
+  const requestId = randomUUID();
+  const { payload, status } = await buildAdminVacationMutationPayload({ access, directory, form: input });
+
+  const { data, error } = await getSupabaseAdmin()
+    .from(vacationRequestsTable)
+    .insert({ id: requestId, ...payload })
+    .select("*")
+    .single();
+
+  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  const request = mapVacationRow(data as VacationRequestDbRow);
+
+  await insertVacationEvent({
+    actorHrId: resolveEmployeeIdentityId(access),
+    actorLoginId: access.loginId,
+    eventType: "admin_created",
+    message: "Vacation request created manually by admin.",
+    metadata: { status },
+    requestId: request.id,
+  });
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+    entityId: request.id,
+    entityType: "vacation_request",
+    newValues: { request },
+    oldValues: {},
+    summary: "Vacation request created manually by admin.",
+  });
+
+  return request;
+}
+
+export async function updateVacationRequestAsAdmin(access: AccessContext, input: AdminVacationRequestInput & { requestId: string }) {
+  await assertVacationAdminManagement(access, "update");
+  const existing = await fetchVacationRequestById(input.requestId);
+  if (!existing) throw new Error("Vacation request was not found.");
+
+  const directory = await getEmployeeDirectory();
+  const { payload, status } = await buildAdminVacationMutationPayload({ access, directory, existing, form: input });
+  const { data, error } = await getSupabaseAdmin()
+    .from(vacationRequestsTable)
+    .update(payload)
+    .eq("id", existing.id)
+    .select("*")
+    .single();
+
+  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  const request = mapVacationRow(data as VacationRequestDbRow);
+
+  await insertVacationEvent({
+    actorHrId: resolveEmployeeIdentityId(access),
+    actorLoginId: access.loginId,
+    eventType: "admin_updated",
+    message: "Vacation request updated manually by admin.",
+    metadata: { status },
+    requestId: request.id,
+  });
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+    entityId: request.id,
+    entityType: "vacation_request",
+    newValues: { request },
+    oldValues: { request: existing },
+    summary: "Vacation request updated manually by admin.",
+  });
+
+  return request;
+}
+
+export async function deleteVacationRequestAsAdmin(access: AccessContext, requestId: string) {
+  await assertVacationAdminManagement(access, "delete");
+  const existing = await fetchVacationRequestById(requestId);
+  if (!existing) throw new Error("Vacation request was not found.");
+
+  const { error } = await getSupabaseAdmin()
+    .from(vacationRequestsTable)
+    .delete()
+    .eq("id", existing.id);
+
+  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  await Promise.all([
+    deleteSickAttachment(existing.sickAttachmentObjectPath),
+    deleteSickAttachment(existing.compensatoryAttachmentObjectPath),
+  ]).catch(() => undefined);
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+    entityId: existing.id,
+    entityType: "vacation_request",
+    newValues: {},
+    oldValues: { request: existing },
+    summary: "Vacation request deleted manually by admin.",
+  });
+
+  return existing;
 }
 
 async function fetchVacationRequestById(id: string) {
@@ -774,13 +1444,13 @@ async function applyVacationDecision(input: {
   decisionComment?: string | null;
   request: VacationRequestRecord;
 }) {
-  if (input.request.status !== "pending_manager") {
-    throw new Error("This vacation request already has a manager decision.");
+  if (input.request.status !== "pending_manager" && input.request.status !== "pending_hr") {
+    throw new Error("This vacation request already has a final decision.");
   }
 
   const directory = await getEmployeeDirectory();
   let balance: VacationBalanceSnapshot = input.request;
-  if (input.decision === "approve") {
+  if (input.request.status === "pending_hr" && input.decision === "approve") {
     balance = await calculatePaymentForRequest({
       durationDays: input.request.durationDays,
       employeeHrId: input.request.employeeHrId,
@@ -791,28 +1461,42 @@ async function applyVacationDecision(input: {
     });
   }
 
-  const managerDecision = input.decision === "approve" ? "approved" : "rejected";
+  const decisionValue = input.decision === "approve" ? "approved" : "rejected";
+  const isHrFinalDecision = input.request.status === "pending_hr";
   const now = new Date().toISOString();
+  const updatePayload = isHrFinalDecision
+    ? {
+        balance_after_days: balance.balanceAfterDays,
+        balance_before_days: balance.balanceBeforeDays,
+        entitlement_days: balance.entitlementDays,
+        hr_decision: decisionValue,
+        hr_decision_at: now,
+        hr_decision_by_hr_id: input.actorHrId,
+        hr_decision_comment: nullableText(input.decisionComment),
+        payment_status: balance.paymentStatus,
+        paid_duration_days: balance.paidDurationDays,
+        period_end: balance.periodEnd,
+        period_start: balance.periodStart,
+        status: decisionValue,
+        unpaid_reason: balance.unpaidReason,
+        unpaid_duration_days: balance.unpaidDurationDays,
+        updated_at: now,
+        used_paid_days: balance.usedPaidDays,
+      }
+    : {
+        manager_decision: decisionValue,
+        manager_decision_at: now,
+        manager_decision_by_hr_id: input.actorHrId,
+        manager_decision_comment: nullableText(input.decisionComment),
+        status: "pending_hr",
+        updated_at: now,
+      };
+
   const { data, error } = await getSupabaseAdmin()
     .from(vacationRequestsTable)
-    .update({
-      balance_after_days: balance.balanceAfterDays,
-      balance_before_days: balance.balanceBeforeDays,
-      entitlement_days: balance.entitlementDays,
-      manager_decision: managerDecision,
-      manager_decision_at: now,
-      manager_decision_by_hr_id: input.actorHrId,
-      manager_decision_comment: nullableText(input.decisionComment),
-      payment_status: balance.paymentStatus,
-      period_end: balance.periodEnd,
-      period_start: balance.periodStart,
-      status: managerDecision,
-      unpaid_reason: balance.unpaidReason,
-      updated_at: now,
-      used_paid_days: balance.usedPaidDays,
-    })
+    .update(updatePayload)
     .eq("id", input.request.id)
-    .eq("status", "pending_manager")
+    .eq("status", input.request.status)
     .select("*")
     .single();
 
@@ -822,8 +1506,10 @@ async function applyVacationDecision(input: {
   await insertVacationEvent({
     actorHrId: input.actorHrId,
     actorLoginId: input.actorLoginId,
-    eventType: managerDecision,
-    message: `Vacation request ${managerDecision}.`,
+    eventType: isHrFinalDecision ? `hr_${decisionValue}` : `manager_${decisionValue}`,
+    message: isHrFinalDecision
+      ? `Vacation request ${decisionValue} by HR final review.`
+      : `Vacation request ${decisionValue} by direct manager and sent to HR final review.`,
     metadata: {
       decisionComment: input.decisionComment ?? null,
       paymentStatus: updated.paymentStatus,
@@ -838,7 +1524,8 @@ async function applyVacationDecision(input: {
     newValues: {
       balanceAfterDays: updated.balanceAfterDays,
       decisionComment: input.decisionComment ?? null,
-      managerDecision,
+      hrDecision: isHrFinalDecision ? decisionValue : input.request.hrDecision,
+      managerDecision: isHrFinalDecision ? input.request.managerDecision : decisionValue,
       paymentStatus: updated.paymentStatus,
       status: updated.status,
       unpaidReason: updated.unpaidReason,
@@ -851,10 +1538,13 @@ async function applyVacationDecision(input: {
       unpaidReason: input.request.unpaidReason,
       usedPaidDays: input.request.usedPaidDays,
     },
-    summary: `Vacation request ${managerDecision}.`,
+    summary: isHrFinalDecision
+      ? `Vacation request ${decisionValue} by HR final review.`
+      : `Vacation request ${decisionValue} by direct manager and sent to HR final review.`,
   });
 
-  await dispatchVacationDecision({ decision: input.decision, directory, request: updated }).catch(async (error) => {
+  const dispatch = isHrFinalDecision ? dispatchVacationDecision : dispatchVacationManagerReview;
+  await dispatch({ decision: input.decision, directory, request: updated }).catch(async (error) => {
     await insertVacationEvent({
       actorHrId: input.actorHrId,
       actorLoginId: input.actorLoginId,
@@ -876,7 +1566,7 @@ export async function decideVacationRequest(access: AccessContext, input: {
   const request = await fetchVacationRequestById(input.requestId);
   if (!request) throw new Error("Vacation request was not found.");
   if (!canDecideVacation(access, request)) {
-    throw new Error("Forbidden: only the assigned direct manager can decide this vacation request.");
+    throw new Error("Forbidden: only the assigned direct manager can complete manager review, and only HR can make the final decision.");
   }
 
   return applyVacationDecision({
@@ -931,6 +1621,74 @@ export async function decideVacationRequestByToken(input: {
   return updated;
 }
 
+export async function getVacationControlData(access: AccessContext): Promise<VacationControlData> {
+  await assertPermission(access, "leave", "update");
+  const [directory, policiesResult] = await Promise.all([
+    getEmployeeDirectory(),
+    getSupabaseAdmin().from(vacationWeeklyOffPoliciesTable).select("*").order("job_title"),
+  ]);
+
+  if (policiesResult.error) {
+    throw new Error(typeof (policiesResult.error as { message?: unknown }).message === "string"
+      ? (policiesResult.error as { message: string }).message
+      : String(policiesResult.error));
+  }
+
+  const titles = Array.from(
+    new Set(directory.employees.map((employee) => employeeVacationPolicyTitle(employee)).filter(Boolean)),
+  ).sort((left, right) => left.localeCompare(right));
+  const policyMap = new Map(
+    ((policiesResult.data ?? []) as VacationWeeklyOffPolicyDbRow[])
+      .map(mapWeeklyOffPolicy)
+      .map((policy) => [policy.jobTitle, policy] as const),
+  );
+
+  return {
+    policies: titles.map((title) => policyMap.get(title) ?? defaultWeeklyOffPolicy(title)),
+    titles,
+  };
+}
+
+export async function updateVacationWeeklyOffPolicy(access: AccessContext, input: {
+  friday: unknown;
+  jobTitle: unknown;
+  saturday: unknown;
+  thursday: unknown;
+}) {
+  await assertPermission(access, "leave", "update");
+  const jobTitle = text(input.jobTitle);
+  if (!jobTitle) throw new Error("Job title is required.");
+
+  const payload = {
+    friday_off: normalizeWeeklyOffMode(input.friday),
+    job_title: jobTitle,
+    saturday_off: normalizeWeeklyOffMode(input.saturday),
+    thursday_off: normalizeWeeklyOffMode(input.thursday),
+    updated_at: new Date().toISOString(),
+    updated_by_login_id: access.loginId ?? null,
+  };
+
+  const { data, error } = await getSupabaseAdmin()
+    .from(vacationWeeklyOffPoliciesTable)
+    .upsert(payload, { onConflict: "job_title" })
+    .select("*")
+    .single();
+
+  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  const policy = mapWeeklyOffPolicy(data as VacationWeeklyOffPolicyDbRow);
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+    entityId: policy.jobTitle,
+    entityType: "vacation_request",
+    newValues: { policy, policyEntity: "vacation_weekly_off_policy" },
+    oldValues: {},
+    summary: `Vacation weekly-off policy updated for ${policy.jobTitle}.`,
+  });
+
+  return policy;
+}
+
 function normalizeDecision(value: unknown): VacationDecision | null {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "approve" || normalized === "approved") return "approve";
@@ -954,7 +1712,7 @@ function cleanFilters(filters: VacationReportFilters): VacationReportFilters {
     requestId: nullableText(filters.requestId) ?? undefined,
     search: nullableText(filters.search) ?? undefined,
     status:
-      filters.status === "approved" || filters.status === "rejected" || filters.status === "pending_manager"
+      filters.status === "approved" || filters.status === "rejected" || filters.status === "pending_manager" || filters.status === "pending_hr"
         ? filters.status
         : "all",
     vacationType: normalizeVacationType(filters.vacationType) ?? "all",
@@ -969,7 +1727,10 @@ function rowMatchesFilters(row: VacationRequestRecord, filters: VacationReportFi
   if (filters.manager && !hrIdsMatch(row.managerHrId, filters.manager)) return false;
   if (filters.department && row.departmentName !== filters.department) return false;
   if (filters.line && row.lineName !== filters.line) return false;
-  if (filters.requestId && row.id !== filters.requestId) return false;
+  if (filters.requestId) {
+    const requestFilter = filters.requestId.toLowerCase();
+    if (row.id.toLowerCase() !== requestFilter && vacationRequestDisplayId(row.id).toLowerCase() !== requestFilter) return false;
+  }
   if (filters.dateFrom && row.startDate < filters.dateFrom) return false;
   if (filters.dateTo && row.startDate > filters.dateTo) return false;
 
@@ -985,6 +1746,8 @@ function rowMatchesFilters(row: VacationRequestRecord, filters: VacationReportFi
       vacationTypeLabel(row.vacationType),
       row.status,
       row.paymentStatus,
+      vacationRequestDisplayId(row.id),
+      row.id,
     ].join(" ").toLowerCase();
     if (!haystack.includes(search)) return false;
   }
@@ -992,13 +1755,18 @@ function rowMatchesFilters(row: VacationRequestRecord, filters: VacationReportFi
   return true;
 }
 
-function buildReportOptions(rows: VacationRequestRecord[]): VacationReportData["options"] {
+function buildReportOptions(rows: VacationRequestRecord[], directory?: EmployeeDirectoryData | null): VacationReportData["options"] {
   const unique = (values: Array<string | null | undefined>) =>
     Array.from(new Set(values.map((value) => text(value)).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
-  const employees = Array.from(
-    new Map(rows.map((row) => [row.employeeHrId, { label: `${row.employeeName} (${row.employeeHrId})`, value: row.employeeHrId }])).values(),
-  ).sort((left, right) => left.label.localeCompare(right.label));
+  const employees = directory
+    ? directory.employees
+        .filter((employee) => employee.hrId)
+        .map((employee) => ({ label: `${employee.fullName} (${employee.hrId})`, value: employee.hrId }))
+        .sort((left, right) => left.label.localeCompare(right.label))
+    : Array.from(
+        new Map(rows.map((row) => [row.employeeHrId, { label: `${row.employeeName} (${row.employeeHrId})`, value: row.employeeHrId }])).values(),
+      ).sort((left, right) => left.label.localeCompare(right.label));
 
   const managers = Array.from(
     new Map(
@@ -1023,6 +1791,8 @@ function buildReportSummary(rows: VacationRequestRecord[]): VacationReportData["
 export async function getVacationReportData(access: AccessContext, filters: VacationReportFilters = {}): Promise<VacationReportData> {
   await assertPermission(access, "leave", "read");
   const clean = cleanFilters(filters);
+  const canAdminManage = isAllVacationVisibility(access) && await canManageVacationRecords(access);
+  const directory = canAdminManage ? await getEmployeeDirectory() : null;
   const { data, error } = await getSupabaseAdmin()
     .from(vacationRequestsTable)
     .select("*")
@@ -1038,8 +1808,9 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
   const filteredRows = visibleRows.filter((row) => rowMatchesFilters(row, clean));
 
   return {
+    canAdminManage,
     filters: clean,
-    options: buildReportOptions(visibleRows),
+    options: buildReportOptions(visibleRows, directory),
     rows: filteredRows,
     summary: buildReportSummary(filteredRows),
   };

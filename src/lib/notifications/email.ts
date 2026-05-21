@@ -184,21 +184,21 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     type: "contract_renewal",
   },
   {
-    description: "Birthday reminders for employee care and people operations.",
+    description: "Birthday wishes routed to the employee.",
     enabled: true,
     includeHrInbox: false,
     label: "Birthdays",
-    recipientModes: ["direct_manager"],
-    recipientMode: "direct_manager",
+    recipientModes: ["employee"],
+    recipientMode: "employee",
     targetLines: [],
     targetTitles: [],
     template: {
-      bodyText: "{summary}",
-      closingText: "Please prepare a timely people-care follow-up.",
-      greeting: "Dear Phoenix Team,",
-      previewText: "Birthday reminder from Phoenix Workforce.",
+      bodyText: "On behalf of Sato Pharma Family and Phoenix HR team, we wish you a very happy birthday.",
+      closingText: "Wishing you a wonderful birthday and a year ahead full of success.",
+      greeting: "Dear {employee},",
+      previewText: "Happy birthday wishes from Phoenix HR.",
       subject: "{subject}",
-      title: "{title}",
+      title: "Happy Birthday",
     },
     type: "birthday",
   },
@@ -599,10 +599,12 @@ export async function resolveNotificationDelivery(input: NotificationEmailInput)
     return { reason: "Email skipped: unsupported notification type.", skipped: true };
   }
 
+  const requestedRecipientMode = input.recipientMode ?? (input.notificationType === "birthday" ? "employee" : undefined);
   const policy = {
     ...storedPolicy,
     includeHrInbox: input.includeHrInbox ?? storedPolicy.includeHrInbox,
-    recipientMode: input.recipientMode ?? storedPolicy.recipientMode,
+    recipientMode: requestedRecipientMode ?? storedPolicy.recipientMode,
+    recipientModes: requestedRecipientMode ? [requestedRecipientMode] : storedPolicy.recipientModes,
   };
 
   if (!policy.enabled) {
@@ -728,33 +730,30 @@ export async function getEmailRoutingOptions() {
 export function buildEmailNotificationPreview(type: EmailNotificationType, policy?: EmailNotificationPolicy) {
   const samples: Record<EmailNotificationType, NotificationEmailInput> = {
     birthday: {
-      ctaHref: "/hr-calendar",
-      ctaLabel: "Open HR calendar",
       employeeHrId: "B-001",
       metrics: [
         { label: "Employee", value: "Mariam Nabil" },
         { label: "Birthday", value: "Today" },
-        { label: "Routing", value: "Direct manager" },
+        { label: "Routing", value: "Employee" },
       ],
       notificationType: "birthday",
-      subject: "Phoenix Birthday Reminder - Mariam Nabil",
-      summary: "Birthday reminder for Mariam Nabil. Prepare a timely people-care follow-up.",
-      title: "Birthday Reminder",
+      recipientMode: "employee",
+      subject: "Happy Birthday, Mariam Nabil",
+      summary: "Happy birthday wishes for Mariam Nabil.",
+      title: "Happy Birthday",
       tone: "neutral",
     },
     contract_renewal: {
-      ctaHref: "/contracts",
-      ctaLabel: "Open contract renewals",
       employeeHrId: "B-001",
       metrics: [
         { label: "Employee", value: "Mariam Nabil (B-001)" },
-        { label: "Status", value: "manager review" },
+        { label: "Status", value: "Pending Manager Recommendation" },
         { label: "Renewal date", value: "2026-06-15" },
       ],
       notificationType: "contract_renewal",
-      subject: "Phoenix Contract Renewal Updated - Mariam Nabil",
-      summary: "Contract renewal workflow for Mariam Nabil is now manager review.",
-      title: "Contract Renewal Updated",
+      subject: "Contract Renewal Reminder - Mariam Nabil",
+      summary: "Contract renewal for Mariam Nabil is pending manager recommendation.",
+      title: "Contract Renewal Reminder - Pending Manager Recommendation",
       tone: "warning",
     },
     offer: {
@@ -997,6 +996,41 @@ function isAuthTemplateKey(templateKey: string) {
   );
 }
 
+function isDistrictManagerContact(contact: EmailContactRow | null | undefined) {
+  const value = normalizeCompare(`${contact?.job_title ?? ""}`);
+  return value.includes("district manager") || value.includes("district sales manager");
+}
+
+async function migratedTemplateRecipientOverrides(
+  templateKey: string,
+  input: NotificationEmailInput,
+  deliveryRecipients: string[],
+) {
+  if (templateKey !== EMAIL_TEMPLATE_KEYS.BIRTHDAY) {
+    return {
+      replaceRecipients: true,
+      to: deliveryRecipients,
+    };
+  }
+
+  const [employee, managers] = await Promise.all([
+    loadEmployeeContact(input.employeeHrId),
+    loadManagerChain(input.employeeHrId),
+  ]);
+  const to = cleanEmailList([employee?.work_email, ...deliveryRecipients]);
+  const cc = cleanEmailList(
+    managers
+      .filter(isDistrictManagerContact)
+      .map((manager) => manager.work_email),
+  );
+
+  return {
+    cc,
+    replaceRecipients: true,
+    to,
+  };
+}
+
 function retryDelayMinutes(attemptNumber: number) {
   const delays = [5, 15, 60, 240];
   return delays[Math.min(Math.max(attemptNumber - 1, 0), delays.length - 1)];
@@ -1023,6 +1057,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   const migratedTemplateKey = migratedTemplateKeyForNotification(input);
 
   if (migratedTemplateKey) {
+    const overrides = await migratedTemplateRecipientOverrides(migratedTemplateKey, input, delivery.recipients);
     return sendTemplatedEmail({
       candidateEmail: input.candidateEmail,
       context: {
@@ -1042,10 +1077,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
       employeeHrId: input.employeeHrId,
       fallbackTo: delivery.recipients,
       from,
-      overrides: {
-        replaceRecipients: true,
-        to: delivery.recipients,
-      },
+      overrides,
       templateKey: migratedTemplateKey,
     });
   }

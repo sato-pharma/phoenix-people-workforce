@@ -124,7 +124,6 @@ const portalNavigationRoles = new Set<PhoenixRole>([
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
-  "SFE Manager",
   "Training Manager",
   "Marketing Manager",
   "Finance Manager",
@@ -310,7 +309,7 @@ const defaultPermissionMatrix: PermissionMap = {
     sales: ["read", "export"],
   },
   "SFE Manager": {
-    overview: [],
+    overview: ["read"],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],

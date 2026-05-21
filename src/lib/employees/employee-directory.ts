@@ -14,6 +14,30 @@ const hrIdPattern = /^[A-Z0-9][A-Z0-9_-]*$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const activeLifecycleStatuses = new Set(["active", "on_leave"]);
 const statusOptions = ["active", "inactive", "on_leave", "terminated", "resigned"];
+const employeeSalaryDetailCategories = new Set([
+  "earning",
+  "deduction",
+  "reference",
+  "other",
+]);
+const employeeSalaryDetailValueTypes = new Set(["amount", "text"]);
+
+export type EmployeeSalaryDetailCategory =
+  | "earning"
+  | "deduction"
+  | "reference"
+  | "other";
+
+export type EmployeeSalaryDetailValueType = "amount" | "text";
+
+export type EmployeeSalaryDetail = {
+  category: EmployeeSalaryDetailCategory;
+  id: string;
+  label: string;
+  notes: string | null;
+  value: string;
+  valueType: EmployeeSalaryDetailValueType;
+};
 
 export type EmployeeDirectoryRow = {
   areaId: number | null;
@@ -66,6 +90,7 @@ export type EmployeeDirectoryRow = {
   residenceLongitude: number | null;
   regionName: string | null;
   resignationDate: string | null;
+  salaryDetails?: EmployeeSalaryDetail[] | null;
   socialInsurance: number | null;
   socialInsuranceStatus: string | null;
   socialInsuranceNumber: string | null;
@@ -154,6 +179,7 @@ export type EmployeeMutationInput = {
   residenceArea?: string | null;
   residenceCity?: string | null;
   regionName?: string | null;
+  salaryDetails?: EmployeeSalaryDetail[] | null;
   salaryPaymentMode?: string | null;
   socialInsurance?: number | null;
   socialInsuranceStatus?: string | null;
@@ -233,6 +259,7 @@ type EmployeeCompensationDbRow = {
   medical_insurance: number | null;
   net_salary: number | null;
   payment_mode?: string | null;
+  salary_details?: unknown;
   social_insurance: number | null;
   taxes: number | null;
 };
@@ -393,6 +420,67 @@ function numberOrNull(value: unknown) {
 
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+export function normalizeEmployeeSalaryDetails(value: unknown): EmployeeSalaryDetail[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item, index) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const row = item as Record<string, unknown>;
+      const label =
+        compact(typeof row.label === "string" ? row.label : null) ??
+        compact(typeof row.name === "string" ? row.name : null);
+      const notes = compact(typeof row.notes === "string" ? row.notes : null);
+      const rawValue =
+        row.value === null || row.value === undefined ? "" : String(row.value).trim();
+      const category = employeeSalaryDetailCategories.has(String(row.category))
+        ? (String(row.category) as EmployeeSalaryDetailCategory)
+        : "other";
+      const valueType = employeeSalaryDetailValueTypes.has(String(row.valueType))
+        ? (String(row.valueType) as EmployeeSalaryDetailValueType)
+        : (numberOrNull(rawValue) !== null ? "amount" : "text");
+
+      if (!label && !rawValue && !notes) {
+        return null;
+      }
+
+      return {
+        category,
+        id: compact(typeof row.id === "string" ? row.id : null) ?? `salary-detail-${index + 1}`,
+        label: label ?? (valueType === "amount" ? "Salary item" : "Salary note"),
+        notes,
+        value: rawValue,
+        valueType,
+      };
+    })
+    .filter((item): item is EmployeeSalaryDetail => item !== null);
+}
+
+function compensationSelect(includeSalaryDetails = true) {
+  const fields = [
+    "employee_hr_id",
+    "net_salary",
+    "social_insurance",
+    "taxes",
+    "medical_insurance",
+    "fuel_allowance",
+    "extra_cost_of_living",
+    "gross_salary",
+    "payment_mode",
+  ];
+
+  if (includeSalaryDetails) {
+    fields.push("salary_details");
+  }
+
+  return fields.join(",");
 }
 
 function textInFilter(values: string[]) {
@@ -604,8 +692,7 @@ async function loadCompensationByHrId(hrIds: string[]) {
   }
 
   const params = new URLSearchParams({
-    select:
-      "employee_hr_id,net_salary,social_insurance,taxes,medical_insurance,fuel_allowance,extra_cost_of_living,gross_salary,payment_mode",
+    select: compensationSelect(),
     employee_hr_id: textInFilter(hrIds),
   });
 
@@ -618,10 +705,13 @@ async function loadCompensationByHrId(hrIds: string[]) {
   } catch (error) {
     const message = employeeDirectoryErrorMessage(error).toLowerCase();
 
-    if (message.includes("payment_mode") || message.includes("schema cache")) {
+    if (
+      message.includes("payment_mode") ||
+      message.includes("salary_details") ||
+      message.includes("schema cache")
+    ) {
       const fallbackParams = new URLSearchParams({
-        select:
-          "employee_hr_id,net_salary,social_insurance,taxes,medical_insurance,fuel_allowance,extra_cost_of_living,gross_salary",
+        select: compensationSelect(false).replace(",payment_mode", ""),
         employee_hr_id: textInFilter(hrIds),
       });
       const rows = await supabaseRest<EmployeeCompensationDbRow[]>(
@@ -692,7 +782,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
   // Try to join compensation and other lookups in a single query to reduce N+1 and massive IN filters
   const joinedSelect = `${baseEmployeeSelect},region_name,birth_date,
-    employee_compensation(net_salary,social_insurance,taxes,medical_insurance,fuel_allowance,extra_cost_of_living,gross_salary,payment_mode),
+    employee_compensation(${compensationSelect()}),
     departments(name),
     lines(name),
     areas(name),
@@ -828,6 +918,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         netSalary: row.net_salary ?? compensation?.net_salary ?? null,
         organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
         payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
+        salaryDetails: normalizeEmployeeSalaryDetails(compensation?.salary_details),
         salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? compensation?.payment_mode),
         positionId: row.position_id,
         positionTitle,
@@ -982,6 +1073,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         netSalary: row.net_salary ?? comp?.net_salary ?? null,
         organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
         payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
+        salaryDetails: normalizeEmployeeSalaryDetails(comp?.salary_details),
         salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? comp?.payment_mode),
         positionId: row.position_id,
         positionTitle,
@@ -1097,6 +1189,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       netSalary: row.net_salary ?? compensation?.net_salary ?? null,
       organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
       payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
+      salaryDetails: normalizeEmployeeSalaryDetails(compensation?.salary_details),
       salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? compensation?.payment_mode),
       positionId: row.position_id,
       positionTitle,
@@ -1180,7 +1273,7 @@ export async function getEmployeeDirectoryRows(
     );
   }
 
-  const [departmentNames, lineNames, areaNames, positionTitles, teamNames, managerNames] =
+  const [departmentNames, lineNames, areaNames, positionTitles, teamNames, managerNames, compensationByHrId] =
     await Promise.all([
       loadLookup("departments", uniqueNumberValues(employeeRows, "department_id")),
       loadLookup("lines", uniqueNumberValues(employeeRows, "line_id")),
@@ -1188,12 +1281,14 @@ export async function getEmployeeDirectoryRows(
       loadLookup("positions", uniqueNumberValues(employeeRows, "position_id"), "title"),
       loadLookup("teams", uniqueNumberValues(employeeRows, "team_id")),
       loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
+      loadCompensationByHrId(uniqueTextValues(employeeRows, "hr_id")),
     ]);
 
   const residenceByHrId = await loadResidenceByHrId(uniqueTextValues(employeeRows, "hr_id"));
 
   return employeeRows.map((row) => {
     const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
+    const compensation = compensationByHrId.get(row.hr_id);
 
     return {
       areaId: row.area_id,
@@ -1239,7 +1334,8 @@ export async function getEmployeeDirectoryRows(
       netSalary: row.net_salary ?? null,
       organogramVisible: row.organogram_visible ?? isActiveLifecycleStatus(row.employment_status),
       payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
-      salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode),
+      salaryDetails: normalizeEmployeeSalaryDetails(compensation?.salary_details),
+      salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? compensation?.payment_mode),
       positionId: row.position_id,
       positionTitle: row.position_id
         ? positionTitles.get(row.position_id) ?? null
@@ -1465,18 +1561,23 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
   };
 }
 
-async function upsertEmployeePaymentMode(
+async function upsertEmployeeCompensation(
   hrId: string,
-  paymentMode: string | null | undefined,
+  input: Pick<EmployeeMutationInput, "salaryDetails" | "salaryPaymentMode">,
 ) {
-  if (paymentMode === undefined) {
+  if (input.salaryPaymentMode === undefined && input.salaryDetails === undefined) {
     return;
   }
 
   const payload = {
     employee_hr_id: hrId,
-    payment_mode: normalizePayrollPaymentMode(paymentMode),
     updated_at: new Date().toISOString(),
+    ...(input.salaryPaymentMode !== undefined
+      ? { payment_mode: normalizePayrollPaymentMode(input.salaryPaymentMode) }
+      : {}),
+    ...(input.salaryDetails !== undefined
+      ? { salary_details: normalizeEmployeeSalaryDetails(input.salaryDetails) }
+      : {}),
   };
 
   try {
@@ -1495,9 +1596,43 @@ async function upsertEmployeePaymentMode(
 
     if (
       isMissingRelationMessage(error) ||
+      message.includes("salary_details") ||
       message.includes("payment_mode") ||
       message.includes("schema cache")
     ) {
+      if (input.salaryPaymentMode === undefined) {
+        return;
+      }
+
+      try {
+        await supabaseRest<EmployeeCompensationDbRow[]>(
+          "employee_compensation?on_conflict=employee_hr_id",
+          {
+            body: JSON.stringify({
+              employee_hr_id: hrId,
+              payment_mode: normalizePayrollPaymentMode(input.salaryPaymentMode),
+              updated_at: new Date().toISOString(),
+            }),
+            headers: {
+              Prefer: "resolution=merge-duplicates",
+            },
+            method: "POST",
+          },
+        );
+      } catch (fallbackError) {
+        const fallbackMessage = employeeDirectoryErrorMessage(fallbackError).toLowerCase();
+
+        if (
+          isMissingRelationMessage(fallbackError) ||
+          fallbackMessage.includes("payment_mode") ||
+          fallbackMessage.includes("schema cache")
+        ) {
+          return;
+        }
+
+        throw fallbackError;
+      }
+
       return;
     }
 
@@ -1750,7 +1885,7 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
   });
 
   await Promise.all([
-    upsertEmployeePaymentMode(payload.hr_id, input.salaryPaymentMode),
+    upsertEmployeeCompensation(payload.hr_id, input),
     upsertEmployeeResidenceLocation(input, payload.hr_id),
   ]);
 
