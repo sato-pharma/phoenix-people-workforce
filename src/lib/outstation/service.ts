@@ -330,7 +330,7 @@ async function getEmployeeIdentity(access: AccessContext) {
     employeeHrId: employee.hrId,
     employeeLine: employee?.lineName ?? null,
     employeeName: employee?.fullName ?? employee.hrId,
-    employeeRole: normalizeRole(access.role),
+    employeeRole: normalizeRole(employee?.jobTitle ?? access.role),
   };
 }
 
@@ -387,15 +387,15 @@ function fallbackResidenceFromEmployee(employee: EmployeeDirectoryRow): Employee
   };
 }
 
-function assertMedicalRepRole(access: AccessContext) {
-  if (normalizeRole(access.role) !== "Medical Rep") {
+function assertMedicalRepRole(role: string | null | undefined) {
+  if (normalizeRole(role) !== "Medical Rep") {
     throw new Error("Forbidden: only Medical Rep users can use simple expense submission.");
   }
 }
 
 async function getMedicalRepExpenseIdentity(access: AccessContext) {
-  assertMedicalRepRole(access);
   const identity = await getEmployeeIdentity(access);
+  assertMedicalRepRole(identity.employeeRole);
   const residence =
     (await getResidenceLocationForEmployee(identity.employeeHrId)) ??
     fallbackResidenceFromEmployee(identity.employee);

@@ -13,6 +13,7 @@ import {
   Layers,
   MapPin,
   Pencil,
+  Plus,
   ShieldCheck,
   Users,
   RefreshCw,
@@ -45,6 +46,9 @@ import type {
   EmployeeDirectoryRow,
   EmployeeLookupOption,
   EmployeeMutationInput,
+  EmployeeSalaryDetail,
+  EmployeeSalaryDetailCategory,
+  EmployeeSalaryDetailValueType,
 } from "@/lib/employees/employee-directory";
 import {
   getMissingEmployeeRecordFields,
@@ -88,6 +92,15 @@ type EmployeeImportPreview = {
   vacantPositionsToCreate?: unknown[];
 };
 
+type EmployeeSalaryDetailFormRow = {
+  category: EmployeeSalaryDetailCategory;
+  id: string;
+  label: string;
+  notes: string;
+  value: string;
+  valueType: EmployeeSalaryDetailValueType;
+};
+
 type EmployeeFormState = {
   areaId: string;
   bankAccount: string;
@@ -125,6 +138,7 @@ type EmployeeFormState = {
   residenceArea: string;
   residenceCity: string;
   regionName: string;
+  salaryDetails: EmployeeSalaryDetailFormRow[];
   salaryPaymentMode: string;
   socialInsurance: string;
   socialInsuranceNumber: string;
@@ -175,6 +189,7 @@ const emptyForm: EmployeeFormState = {
   residenceArea: "",
   residenceCity: "",
   regionName: "",
+  salaryDetails: [],
   salaryPaymentMode: "two_parts",
   socialInsurance: "",
   socialInsuranceNumber: "",
@@ -193,6 +208,24 @@ const salaryPaymentModeOptions = [
     label: "Two Parts",
     value: "two_parts",
   },
+];
+
+const salaryDetailCategoryOptions: Array<{
+  label: string;
+  value: EmployeeSalaryDetailCategory;
+}> = [
+  { label: "Earning", value: "earning" },
+  { label: "Deduction", value: "deduction" },
+  { label: "Reference", value: "reference" },
+  { label: "Other", value: "other" },
+];
+
+const salaryDetailValueTypeOptions: Array<{
+  label: string;
+  value: EmployeeSalaryDetailValueType;
+}> = [
+  { label: "Amount", value: "amount" },
+  { label: "Text", value: "text" },
 ];
 
 const genderOptions = [
@@ -483,6 +516,7 @@ function employeeToForm(employee: EmployeeDirectoryRow): EmployeeFormState {
     residenceArea: employee.residenceArea ?? "",
     residenceCity: employee.residenceCity ?? "",
     regionName: employee.regionName ?? "",
+    salaryDetails: salaryDetailsToFormRows(employee.salaryDetails),
     salaryPaymentMode: employee.salaryPaymentMode,
     socialInsurance: numberToText(employee.socialInsurance),
     socialInsuranceNumber: employee.socialInsuranceNumber ?? "",
@@ -545,6 +579,16 @@ function formToPayload(form: EmployeeFormState, originalHrId: string | null): Em
     residenceArea: optionalText(form.residenceArea),
     residenceCity: optionalText(form.residenceCity),
     regionName: optionalText(form.regionName),
+    salaryDetails: form.salaryDetails
+      .map((detail) => ({
+        category: detail.category,
+        id: detail.id,
+        label: detail.label.trim(),
+        notes: detail.notes.trim() || null,
+        value: detail.value.trim(),
+        valueType: detail.valueType,
+      }))
+      .filter((detail) => detail.label || detail.value || detail.notes),
     salaryPaymentMode: optionalText(form.salaryPaymentMode),
     socialInsurance: optionalNumber(form.socialInsurance),
     socialInsuranceNumber: optionalText(form.socialInsuranceNumber),
@@ -553,6 +597,38 @@ function formToPayload(form: EmployeeFormState, originalHrId: string | null): Em
     teamId: optionalNumber(form.teamId),
     workEmail: optionalText(form.workEmail),
   };
+}
+
+function createSalaryDetailFormRow(
+  overrides: Partial<EmployeeSalaryDetailFormRow> = {},
+): EmployeeSalaryDetailFormRow {
+  return {
+    category: overrides.category ?? "earning",
+    id:
+      overrides.id ??
+      (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `salary-detail-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+    label: overrides.label ?? "",
+    notes: overrides.notes ?? "",
+    value: overrides.value ?? "",
+    valueType: overrides.valueType ?? "amount",
+  };
+}
+
+function salaryDetailsToFormRows(
+  salaryDetails: EmployeeSalaryDetail[] | null | undefined,
+) {
+  return (salaryDetails ?? []).map((detail) =>
+    createSalaryDetailFormRow({
+      category: detail.category,
+      id: detail.id,
+      label: detail.label,
+      notes: detail.notes ?? "",
+      value: detail.value,
+      valueType: detail.valueType,
+    }),
+  );
 }
 
 function organogramHrefForEmployee(
@@ -804,6 +880,45 @@ export function EmployeeManagement({
 
   function updateForm(key: keyof EmployeeFormState, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function addSalaryDetailRow() {
+    setForm((current) => ({
+      ...current,
+      salaryDetails: [...current.salaryDetails, createSalaryDetailFormRow()],
+    }));
+  }
+
+  function removeSalaryDetailRow(id: string) {
+    setForm((current) => ({
+      ...current,
+      salaryDetails: current.salaryDetails.filter((detail) => detail.id !== id),
+    }));
+  }
+
+  function updateSalaryDetailRow(
+    id: string,
+    key: keyof EmployeeSalaryDetailFormRow,
+    value: string,
+  ) {
+    const nextValue =
+      key === "category"
+        ? (value as EmployeeSalaryDetailCategory)
+        : key === "valueType"
+          ? (value as EmployeeSalaryDetailValueType)
+          : value;
+
+    setForm((current) => ({
+      ...current,
+      salaryDetails: current.salaryDetails.map((detail) =>
+        detail.id === id
+          ? {
+              ...detail,
+              [key]: nextValue,
+            }
+          : detail,
+      ),
+    }));
   }
 
   async function generateEmployeeId(lineId: string, forceCreate = false) {
@@ -1777,6 +1892,37 @@ export function EmployeeManagement({
                   </dl>
                 </section>
               ))}
+              {masterDetailsEmployee?.salaryDetails?.length ? (
+                <section className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm transition-all hover:shadow-md hover:border-[#E2E8F0]/80">
+                  <div className="mb-3 flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-[#0EA5E9]" />
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">
+                      Flexible Salary Details
+                    </h3>
+                  </div>
+                  <div className="space-y-3">
+                    {masterDetailsEmployee.salaryDetails.map((detail) => (
+                      <div
+                        className="rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-3"
+                        key={detail.id}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-[#0F172A]">{detail.label}</p>
+                            <p className="text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
+                              {detail.category.replace(/_/g, " ")} · {detail.valueType}
+                            </p>
+                          </div>
+                          <p className="text-sm font-semibold text-[#0F172A]">{detail.value || "-"}</p>
+                        </div>
+                        {detail.notes ? (
+                          <p className="mt-2 text-xs leading-relaxed text-[#475569]">{detail.notes}</p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
             </div>
             <div className="border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4 flex justify-end">
               <Button
@@ -2207,6 +2353,93 @@ export function EmployeeManagement({
                     placeholder="Reference number"
                     value={form.socialInsuranceNumber}
                   />
+                </div>
+                <div className="rounded-2xl border border-[#D7EAF8] bg-[#F8FCFF] p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-[#0F172A]">Flexible Salary Details</h4>
+                      <p className="mt-1 text-xs leading-relaxed text-[#64748B]">
+                        Add any extra salary line you need without changing the code again. These rows are stored with the employee compensation record.
+                      </p>
+                    </div>
+                    <Button
+                      className="h-10 rounded-2xl border border-[#BFDBFE] bg-white px-4 text-xs font-bold text-[#1D4ED8] hover:bg-[#EFF6FF]"
+                      onClick={addSalaryDetailRow}
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Salary Detail
+                    </Button>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {form.salaryDetails.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-[#BFDBFE] bg-white/70 px-4 py-5 text-xs text-[#64748B]">
+                        No flexible salary details added yet.
+                      </div>
+                    ) : null}
+                    {form.salaryDetails.map((detail, index) => (
+                      <div
+                        className="rounded-2xl border border-[#D7EAF8] bg-white p-4 shadow-sm"
+                        key={detail.id}
+                      >
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-[#0F172A]">
+                              Salary Detail {index + 1}
+                            </p>
+                            <p className="text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
+                              Flexible compensation row
+                            </p>
+                          </div>
+                          <Button
+                            className="h-9 rounded-xl border border-[#FECACA] bg-white px-3 text-xs font-bold text-[#DC2626] hover:bg-[#FEF2F2]"
+                            onClick={() => removeSalaryDetailRow(detail.id)}
+                            type="button"
+                            variant="ghost"
+                          >
+                            <X className="mr-1.5 h-4 w-4" />
+                            Remove
+                          </Button>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <SelectField
+                            label="Category"
+                            onChange={(value) => updateSalaryDetailRow(detail.id, "category", value)}
+                            options={salaryDetailCategoryOptions}
+                            value={detail.category}
+                          />
+                          <SelectField
+                            label="Value Type"
+                            onChange={(value) => updateSalaryDetailRow(detail.id, "valueType", value)}
+                            options={salaryDetailValueTypeOptions}
+                            value={detail.valueType}
+                          />
+                          <TextField
+                            label="Detail Label"
+                            onChange={(value) => updateSalaryDetailRow(detail.id, "label", value)}
+                            placeholder="e.g. Mobile allowance"
+                            value={detail.label}
+                          />
+                          <TextField
+                            label={detail.valueType === "amount" ? "Amount" : "Value"}
+                            onChange={(value) => updateSalaryDetailRow(detail.id, "value", value)}
+                            placeholder={detail.valueType === "amount" ? "0.00" : "Enter value"}
+                            type={detail.valueType === "amount" ? "number" : "text"}
+                            value={detail.value}
+                          />
+                          <div className="sm:col-span-2">
+                            <TextField
+                              label="Notes"
+                              onChange={(value) => updateSalaryDetailRow(detail.id, "notes", value)}
+                              placeholder="Optional note or explanation"
+                              value={detail.notes}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 

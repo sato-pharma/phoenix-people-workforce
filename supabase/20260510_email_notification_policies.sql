@@ -35,7 +35,7 @@ insert into public.email_notification_policies (
 values
   ('probation', 'Probation', 'Probation review alerts routed through the reporting hierarchy.', true, 'direct_manager', true),
   ('contract_renewal', 'Contract renewal', 'Contract renewal workflow alerts routed to the manager chain.', true, 'manager_chain', true),
-  ('birthday', 'Birthdays', 'Birthday reminders for employee care and people operations.', true, 'direct_manager', false),
+  ('birthday', 'Birthdays', 'Birthday wishes routed to the employee.', true, 'employee', false),
   ('offer', 'Offers', 'Offer lifecycle communication for candidates and HR follow-up.', true, 'candidate', false),
   ('resignation', 'Resignations', 'Resignation workflow alerts routed to the reporting chain.', true, 'manager_chain', true)
 on conflict (notification_type) do update

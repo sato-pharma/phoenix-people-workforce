@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 
 import type { AdminCommandCenterData } from "@/lib/admin/command-center";
+import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 export type CommandCenterWelcomeProfile = {
@@ -62,17 +63,6 @@ type IconType = typeof Users;
 type MiniMetric = { label: string; ok?: boolean; value: string };
 type AccentColor = "amber" | "blue" | "emerald" | "orange" | "rose" | "violet";
 type Health = "attention" | "healthy" | "warning";
-
-const commandCenterProfileImagesByHrId: Record<string, string> = {
-  "A-16": "/images/hr/youmna-kotb.jpg",
-  A16: "/images/hr/youmna-kotb.jpg",
-};
-
-function profileImageForHrId(hrId: string | null) {
-  const normalized = String(hrId ?? "").trim().toUpperCase();
-  const compact = normalized.replace(/[^A-Z0-9]/g, "");
-  return commandCenterProfileImagesByHrId[normalized] ?? commandCenterProfileImagesByHrId[compact] ?? null;
-}
 
 function firstNameFrom(fullName: string) {
   return fullName.split(/\s+/).find(Boolean) ?? "there";
@@ -433,7 +423,7 @@ export function AdminCommandCenter({
     : showFinancialModules
     ? "Unified workforce, payroll, sales, and operational intelligence in one executive surface."
     : "Unified workforce, people operations, sales, and operational intelligence in one executive surface.";
-  const profileImage = profileImageForHrId(welcomeProfile?.hrId ?? null);
+  const profileImage = employeeProfileImageForHrId(welcomeProfile?.hrId ?? null);
   const heroTitle = welcomeProfile
     ? <>Hello, {firstNameFrom(welcomeProfile.fullName)} <span aria-hidden="true">👋🏻</span></>
     : "Admin Command Center";

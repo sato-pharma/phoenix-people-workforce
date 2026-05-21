@@ -12,9 +12,10 @@ type PremiumTooltipProps = {
   children: ReactNode;
   content: ReactNode;
   className?: string;
+  triggerClassName?: string;
 };
 
-export function PremiumTooltip({ children, content, className }: PremiumTooltipProps) {
+export function PremiumTooltip({ children, content, className, triggerClassName }: PremiumTooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<TooltipPosition>({ x: 0, y: 0 });
 
@@ -24,7 +25,7 @@ export function PremiumTooltip({ children, content, className }: PremiumTooltipP
 
   return (
     <div
-      className="relative inline-block"
+      className={cn("relative inline-block", triggerClassName)}
       onMouseEnter={() => setIsVisible(true)}
       onMouseLeave={() => setIsVisible(false)}
       onMouseMove={handleMouseMove}

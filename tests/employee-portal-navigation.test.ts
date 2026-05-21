@@ -8,9 +8,22 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(medicalRep.showDashboardTab, true, "Medical Rep should see Dashboard");
   assert.equal(medicalRep.showMyPerformanceTab, true, "Medical Rep should see My Performance");
   assert.equal(medicalRep.showExpenseActionTab, false, "Medical Rep should not see the manager expense action");
+  assert.equal(medicalRep.showMedicalRepExpensesTab, true, "Medical Rep should see their own expenses tab");
   assert.equal(medicalRep.showMyCoachingTab, true, "Medical Rep should see My Coaching Reports");
   assert.equal(medicalRep.showTeamCoachingTab, false, "Medical Rep should not see Team Coaching Reports");
   assert.equal(medicalRep.showTrainingManagerCreateCoachingTab, false, "Medical Rep should not see Create Coaching Report");
+
+  const medicalRepWithManagerAccess = resolveEmployeePortalNavVisibility("Medical Rep", "National Sales Manager");
+  assert.equal(
+    medicalRepWithManagerAccess.showExpenseActionTab,
+    false,
+    "Medical Rep navigation should not inherit manager expense actions from access role fallback",
+  );
+  assert.equal(
+    medicalRepWithManagerAccess.showMedicalRepExpensesTab,
+    true,
+    "Medical Rep navigation should keep the rep expenses tab even when access role fallback differs",
+  );
 
   const districtManager = resolveEmployeePortalNavVisibility("District Manager");
   assert.equal(districtManager.showMyCoachingTab, false, "DSM should not see My Coaching Reports");
@@ -37,5 +50,10 @@ export function runEmployeePortalNavigationTests() {
     resolveLandingPathForRole("Training Manager"),
     "/employee-portals/training-manager",
     "Training Manager should land on the dedicated coaching dashboard",
+  );
+  assert.equal(
+    resolveLandingPathForRole("SFE Manager"),
+    "/admin/marketing-requests",
+    "SFE Manager should land in the admin marketing request shell",
   );
 }

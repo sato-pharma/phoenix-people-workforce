@@ -78,8 +78,6 @@ async function runBirthdayNotifications(request: Request) {
   for (const event of birthdayEvents) {
     const employee = event.employee;
     const result = await safeSendNotificationEmail({
-      ctaHref: "/hr-calendar",
-      ctaLabel: "Open HR calendar",
       employeeHrId: employee.hrId,
       metrics: [
         { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
@@ -87,9 +85,10 @@ async function runBirthdayNotifications(request: Request) {
         { label: "Year", value: year },
       ],
       notificationType: "birthday",
-      subject: `Phoenix Birthday Reminder - ${employee.fullName} - ${year}`,
-      summary: `Birthday reminder for ${employee.fullName}. Prepare a timely people-care follow-up.`,
-      title: "Birthday Reminder",
+      recipientMode: "employee",
+      subject: `Happy Birthday, ${employee.fullName}`,
+      summary: `Happy birthday wishes for ${employee.fullName}.`,
+      title: "Happy Birthday",
       tone: "neutral",
     });
     results.push({ employeeHrId: employee.hrId, result });

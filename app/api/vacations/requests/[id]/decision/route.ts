@@ -91,9 +91,9 @@ export async function GET(
 
     return new Response(
       resultHtml({
-        message: `Vacation request ${decision === "approve" ? "approved" : "rejected"} successfully.`,
+        message: `Manager review was recorded as ${decision === "approve" ? "approved" : "rejected"}. The request is now pending HR final decision.`,
         success: true,
-        title: "Vacation Decision Completed",
+        title: "Vacation Review Recorded",
       }),
       { headers: { "Content-Type": "text/html; charset=utf-8" } },
     );

@@ -1,6 +1,7 @@
 import { phoenixEmailSignatureHostedUrl } from "@/emails/phoenix-email-layout";
 
 const resendEndpoint = "https://api.resend.com/emails";
+const testingRecipientFallback = ["omar.anwar@satopharma.com", "phoenix@satopharma.com"];
 
 export type SendPhoenixEmailInput = {
   bcc?: string[];
@@ -19,6 +20,20 @@ export type SendPhoenixEmailResult =
 
 function emailNotificationsEnabled() {
   return ["1", "true", "yes", "on"].includes(String(process.env.EMAIL_NOTIFICATIONS_ENABLED ?? "").toLowerCase());
+}
+
+function splitEmailList(value: string | null | undefined) {
+  return String(value ?? "")
+    .split(/[,\n;]/)
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function resolveTestingRecipients() {
+  const deliveryMode = String(process.env.PHOENIX_EMAIL_DELIVERY_MODE ?? "").trim().toLowerCase();
+  const testRecipients = splitEmailList(process.env.PHOENIX_EMAIL_TEST_RECIPIENTS);
+  if (deliveryMode !== "testing") return null;
+  return testRecipients.length > 0 ? Array.from(new Set(testRecipients)) : testingRecipientFallback;
 }
 
 export async function assertReachablePhoenixEmailImage(url = phoenixEmailSignatureHostedUrl) {
@@ -73,17 +88,21 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   if (!from) return { reason: "Email sender is missing.", skipped: true };
 
   await assertReachablePhoenixEmailImage();
+  const testingRecipients = resolveTestingRecipients();
+  const to = testingRecipients ?? input.to;
+  const cc = testingRecipients ? undefined : input.cc && input.cc.length > 0 ? input.cc : undefined;
+  const bcc = testingRecipients ? undefined : input.bcc && input.bcc.length > 0 ? input.bcc : undefined;
 
   const response = await fetch(resendEndpoint, {
     body: JSON.stringify({
-      bcc: input.bcc && input.bcc.length > 0 ? input.bcc : undefined,
-      cc: input.cc && input.cc.length > 0 ? input.cc : undefined,
+      bcc,
+      cc,
       from,
       html: input.html,
       replyTo: process.env.NOTIFICATION_REPLY_TO || "phoenix@satopharma.com",
       subject: input.subject,
       text: input.text,
-      to: input.to,
+      to,
     }),
     headers: {
       Authorization: `Bearer ${apiKey}`,

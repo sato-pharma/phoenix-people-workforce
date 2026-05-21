@@ -2,7 +2,6 @@ import {
   PhoenixEmailLayout,
   type PhoenixEmailAction,
   type PhoenixEmailMetadataRow,
-  escapeEmailHtml,
   renderEmailParagraphs,
   renderPhoenixEmailHtml,
   renderPhoenixEmailText,
@@ -26,10 +25,7 @@ function bodyHtml(props: GeneralNotificationEmailProps) {
   return `
     ${props.greeting ? renderEmailParagraphs(props.greeting) : ""}
     ${renderEmailParagraphs(content)}
-    ${props.closingText ? renderEmailParagraphs(props.closingText) : ""}
-    <p class="phoenix-muted" style="margin:8px 0 0;color:#475569!important;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;line-height:1.6">
-      ${escapeEmailHtml("Automated notification from Phoenix Workforce.")}
-    </p>`;
+    ${props.closingText ? renderEmailParagraphs(props.closingText) : ""}`;
 }
 
 export function GeneralNotificationEmail(props: GeneralNotificationEmailProps) {

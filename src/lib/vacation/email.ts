@@ -10,6 +10,7 @@ type VacationManagerEmailInput = {
   approveUrl: string;
   managerEmail: string;
   managerName: string;
+  policyWarnings?: string[];
   rejectUrl: string;
   request: VacationRequestRecord;
 };
@@ -34,6 +35,13 @@ function formatDate(value: string) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
+function formatPaymentStatus(request: VacationRequestRecord) {
+  if (request.paymentStatus === "partial") {
+    return `Payment status: partially paid (${formatDays(request.paidDurationDays)} paid, ${formatDays(request.unpaidDurationDays)} unpaid)`;
+  }
+  return `Payment status: ${request.paymentStatus}${request.unpaidReason ? ` (${vacationUnpaidReasonLabel(request.unpaidReason)})` : ""}`;
+}
+
 export function buildVacationDecisionUrl(input: {
   baseUrl: string;
   decision: VacationDecision;
@@ -47,18 +55,28 @@ export function buildVacationDecisionUrl(input: {
 }
 
 export async function sendVacationManagerDecisionEmail(input: VacationManagerEmailInput): Promise<SendPhoenixEmailResult> {
+  const policyWarningText = input.policyWarnings?.length
+    ? ` Policy review required: ${input.policyWarnings.join(" ")} HR owns the final decision.`
+    : " HR owns the final decision after manager review.";
+
   return sendTemplatedEmail({
     context: {
+      approvalFlow: input.request.vacationType === "annual"
+        ? "Annual vacation requests require Manager Review followed by HR Final Review."
+        : "This vacation request requires manager review and HR final review.",
       ctaLabel: "Review Leave Request",
       ctaUrl: input.approveUrl,
+      duration: formatDays(input.request.durationDays),
       employeeHrId: input.request.employeeHrId,
       employeeName: input.request.employeeName,
       endDate: formatDate(input.request.endDate),
+      hireDate: input.request.employeeHireDate ? formatDate(input.request.employeeHireDate) : "Not available",
       recipientName: input.managerName || "Manager",
       startDate: formatDate(input.request.startDate),
-      status: `Duration: ${formatDays(input.request.durationDays)}. Payment status: ${input.request.paymentStatus}${input.request.unpaidReason ? ` (${vacationUnpaidReasonLabel(input.request.unpaidReason)})` : ""}.`,
+      status: `Duration: ${formatDays(input.request.durationDays)}. ${formatPaymentStatus(input.request)}.${policyWarningText}`,
       subject: `Vacation request from ${input.request.employeeName}`,
       summary: `${input.request.employeeName} submitted a ${vacationTypeLabel(input.request.vacationType)} request.`,
+      vacationBalance: formatDays(input.request.balanceBeforeDays),
       vacationType: vacationTypeLabel(input.request.vacationType),
     },
     employeeHrId: input.request.employeeHrId,
@@ -78,8 +96,8 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
       recipientName: input.request.employeeName,
       startDate: formatDate(input.request.startDate),
       status: approved
-        ? "Your vacation request has been approved by your direct manager."
-        : `Your vacation request has been rejected by your direct manager.${input.request.managerDecisionComment ? ` Reason: ${input.request.managerDecisionComment}` : ""}`,
+        ? "Your vacation request has been approved by HR final review."
+        : `Your vacation request has been rejected by HR final review.${input.request.hrDecisionComment ? ` Reason: ${input.request.hrDecisionComment}` : ""}`,
       subject: `Vacation request ${approved ? "approved" : "rejected"}`,
       vacationType: vacationTypeLabel(input.request.vacationType),
     },

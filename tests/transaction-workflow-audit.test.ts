@@ -69,8 +69,8 @@ export function runTransactionWorkflowAuditTests() {
     vacationService.indexOf("async function applyVacationDecision"),
     vacationService.indexOf("export async function decideVacationRequest"),
   );
-  assert.match(vacationDecision, /\.eq\("status", "pending_manager"\)/);
-  assert.match(vacationDecision, /insertVacationEvent\(\{[\s\S]*eventType: managerDecision/);
+  assert.match(vacationDecision, /\.eq\("status", input\.request\.status\)/);
+  assert.match(vacationDecision, /eventType: isHrFinalDecision \? `hr_\$\{decisionValue\}` : `manager_\$\{decisionValue\}`/);
   assert.match(vacationDecision, /writeRequiredAuditLog\(\{[\s\S]*entityType: "vacation_request"/);
 
   const offersService = source("src/lib/offers/service.ts");

@@ -3,7 +3,15 @@ export const VACATION_TYPES = [
   { label: "Emergency Vacation", value: "emergency" },
   { label: "Sick Vacation", value: "sick" },
   { label: "Other", value: "other" },
+  { label: "Compensatory Day", value: "compensatory" },
 ] as const;
+
+export const VACATION_REQUEST_TYPES = [
+  { label: "Annual", value: "annual" },
+  { label: "Sick", value: "sick" },
+  { label: "Other", value: "other" },
+  { label: "Compensatory Day", value: "compensatory" },
+] as const satisfies ReadonlyArray<{ label: string; value: VacationType }>;
 
 export const VACATION_DAY_PARTS = [
   { label: "Full day", value: "full_day" },
@@ -13,13 +21,22 @@ export const VACATION_DAY_PARTS = [
 
 export const VACATION_STATUSES = [
   { label: "Pending Manager", value: "pending_manager" },
+  { label: "Pending HR", value: "pending_hr" },
   { label: "Approved", value: "approved" },
   { label: "Rejected", value: "rejected" },
 ] as const;
 
 export const VACATION_PAYMENT_STATUSES = [
   { label: "Paid", value: "paid" },
+  { label: "Partially Paid", value: "partial" },
   { label: "Unpaid", value: "unpaid" },
+] as const;
+
+export const VACATION_WEEKLY_OFF_MODES = [
+  { label: "Working", value: "working" },
+  { label: "AM off", value: "am_only" },
+  { label: "PM off", value: "pm_only" },
+  { label: "Full day off", value: "full_day" },
 ] as const;
 
 export type VacationType = (typeof VACATION_TYPES)[number]["value"];
@@ -28,6 +45,7 @@ export type VacationRequestStatus = (typeof VACATION_STATUSES)[number]["value"];
 export type VacationPaymentStatus = (typeof VACATION_PAYMENT_STATUSES)[number]["value"];
 export type VacationDecision = "approve" | "reject";
 export type VacationUnpaidReason = "first_six_months" | "insufficient_balance" | "missing_hire_date";
+export type VacationWeeklyOffMode = (typeof VACATION_WEEKLY_OFF_MODES)[number]["value"];
 
 export type VacationRequestInput = {
   dayPart: VacationDayPart;
@@ -41,9 +59,11 @@ export type VacationBalanceSnapshot = {
   balanceBeforeDays: number;
   entitlementDays: number;
   paymentStatus: VacationPaymentStatus;
+  paidDurationDays: number;
   periodEnd: string | null;
   periodStart: string | null;
   unpaidReason: VacationUnpaidReason | null;
+  unpaidDurationDays: number;
   usedPaidDays: number;
 };
 
@@ -58,6 +78,20 @@ export type VacationEmployeeSummary = {
   workEmail: string | null;
 };
 
+export type VacationWeeklyOffPolicyRecord = {
+  friday: VacationWeeklyOffMode;
+  id: string | null;
+  jobTitle: string;
+  saturday: VacationWeeklyOffMode;
+  thursday: VacationWeeklyOffMode;
+  updatedAt: string | null;
+};
+
+export type VacationControlData = {
+  policies: VacationWeeklyOffPolicyRecord[];
+  titles: string[];
+};
+
 export type VacationRequestRecord = VacationBalanceSnapshot & {
   canDecide: boolean;
   createdAt: string;
@@ -70,6 +104,17 @@ export type VacationRequestRecord = VacationBalanceSnapshot & {
   employeeWorkEmail: string | null;
   endDate: string;
   id: string;
+  compensatoryAttachmentBucket: string | null;
+  compensatoryAttachmentContentType: string | null;
+  compensatoryAttachmentObjectPath: string | null;
+  compensatoryAttachmentOriginalName: string | null;
+  compensatoryAttachmentSizeBytes: number;
+  compensatoryAttachmentUploadedAt: string | null;
+  compensatoryEventDate: string | null;
+  compensatoryEventLocation: string | null;
+  compensatoryEventName: string | null;
+  compensatoryManager1: string | null;
+  compensatoryManager2: string | null;
   sickAttachmentBucket: string | null;
   sickAttachmentContentType: string | null;
   sickAttachmentObjectPath: string | null;
@@ -77,6 +122,10 @@ export type VacationRequestRecord = VacationBalanceSnapshot & {
   sickAttachmentSizeBytes: number;
   sickAttachmentUploadedAt: string | null;
   lineName: string | null;
+  hrDecision: "approved" | "rejected" | null;
+  hrDecisionAt: string | null;
+  hrDecisionByHrId: string | null;
+  hrDecisionComment: string | null;
   managerDecision: "approved" | "rejected" | null;
   managerDecisionAt: string | null;
   managerDecisionByHrId: string | null;
@@ -85,6 +134,7 @@ export type VacationRequestRecord = VacationBalanceSnapshot & {
   managerName: string | null;
   managerOfManagerHrId: string | null;
   managerOfManagerName: string | null;
+  notes: string | null;
   startDate: string;
   status: VacationRequestStatus;
   submittedByHrId: string | null;
@@ -106,6 +156,7 @@ export type VacationReportFilters = {
 };
 
 export type VacationReportData = {
+  canAdminManage: boolean;
   filters: VacationReportFilters;
   options: {
     departments: string[];

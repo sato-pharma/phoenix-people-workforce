@@ -111,17 +111,17 @@ values
   (
     'birthday',
     'Birthdays',
-    'Birthday reminders for employee care and people operations.',
+    'Birthday wishes routed to the employee.',
     true,
-    'direct_manager',
-    array['direct_manager'],
+    'employee',
+    array['employee'],
     false,
     '{subject}',
-    '{title}',
-    'Dear Phoenix Team,',
-    '{summary}',
-    'Please prepare a timely people-care follow-up.',
-    'Birthday reminder from Phoenix Workforce.'
+    'Happy Birthday',
+    'Dear {employee},',
+    'On behalf of Sato Pharma Family and Phoenix HR team, we wish you a very happy birthday.',
+    'Wishing you a wonderful birthday and a year ahead full of success.',
+    'Happy birthday wishes from Phoenix HR.'
   ),
   (
     'offer',

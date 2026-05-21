@@ -106,4 +106,28 @@ export function runEmployeePortalPayslipSalaryTests() {
     /This breakdown is read from the latest uploaded payroll sheet/,
     "Payslip salary breakdown copy must not say the fixed breakdown is read from the uploaded sheet.",
   );
+
+  assert.match(
+    dashboardSource,
+    /function canSeeTeamLeaveAndStructurePanels/,
+    "Employee portal dashboard must gate team leave and team structure panels by role.",
+  );
+
+  assert.match(
+    dashboardSource,
+    /district manager", "district sales manager", "dsm", "national sales manager", "nsm"/,
+    "Team leave and structure panels must be visible only to DSM and NSM role labels.",
+  );
+
+  assert.match(
+    dashboardSource,
+    /showTeamLeaveAndStructurePanels \? <EmployeesOnLeaveTodayPanel data=\{data\} \/> : null/,
+    "Employees on Leave Today panel must be hidden for Medical Rep overview.",
+  );
+
+  assert.match(
+    dashboardSource,
+    /showTeamLeaveAndStructurePanels \? <TeamStructurePanel data=\{data\} \/> : null/,
+    "Team Structure panel must be hidden for Medical Rep overview.",
+  );
 }

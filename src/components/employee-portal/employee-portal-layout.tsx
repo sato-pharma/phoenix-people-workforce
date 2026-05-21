@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2 } from "lucide-react";
+import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, Megaphone, ShieldCheck, Database, Settings2 } from "lucide-react";
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
@@ -19,6 +19,7 @@ function isEmployeePortalNavItemActive(pathname: string, href: string) {
   const hrefPath = href.split("#")[0];
   if (hrefPath === "/employee-portals") return pathname === hrefPath;
   if (hrefPath === "/employee-portals/training-manager") return pathname === hrefPath;
+  if (hrefPath === "/employee-portals/marketing-requests") return pathname === hrefPath;
   return pathname === hrefPath || pathname.startsWith(`${hrefPath}/`);
 }
 
@@ -45,9 +46,13 @@ function buildEmployeePortalSections({
   showExpenseActionTab = false,
   showIncentiveTab = true,
   showManagementTab = false,
+  showMarketingRequestsTab = false,
+  showMarketingCustomerDatabaseTab = false,
+  showMarketingControlTab = false,
   showMyPerformanceTab = true,
   showTeamPerformanceTab = false,
   showMedRepsPerformanceTab = false,
+  showMedicalRepExpensesTab = false,
   showDsmsPerformanceTab = false,
   showTeamExpensesTab = false,
   showVacanciesTab = false,
@@ -76,8 +81,15 @@ function buildEmployeePortalSections({
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Calculator }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         { href: "/payslips", label: "Payslips", icon: CircleDollarSign },
-        { href: "/employee-portals/expenses", label: "Expenses", icon: ReceiptText },
-        ...(showManagementTab ? [{ href: "/employee-portals/expense-dashboard", label: "Workload & Expense", icon: ReceiptText }] : []),
+      ],
+    },
+    {
+      title: "Marketing Requests",
+      items: [
+        ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "HCP / PH Validation", icon: ShieldCheck }] : []),
+        ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests", label: "Marketing Requests", icon: Megaphone }] : []),
+        ...(showMarketingControlTab ? [{ href: "/employee-portals/marketing-requests/control", label: "Marketing Control", icon: Settings2 }] : []),
+        ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "SCP / PH Database", icon: Database }] : []),
       ],
     },
     {
@@ -88,7 +100,7 @@ function buildEmployeePortalSections({
       ],
     },
     {
-      title: "Line Performance",
+      title: "Team Performance",
       items: [
         ...(showTeamPerformanceTab ? [{ href: "/employee-portals/team-performance", label: "Team Performance", icon: Trophy }] : []),
         ...(showTeamCoachingTab ? [{ href: "/employee-portals/coaching", label: "Team Coaching Reports", icon: ClipboardCheck }] : []),
@@ -98,7 +110,7 @@ function buildEmployeePortalSections({
       ],
     },
     {
-      title: "Line Operations",
+      title: "Team Operations",
       items: [
         ...(showVacanciesTab ? [{ href: "/employee-portals/vacancies", label: "Vacancies", icon: BriefcaseBusiness }] : []),
         ...(showProbationTab ? [{ href: "/employee-portals/probation", label: "Probation Tracker", icon: ClipboardCheck }] : []),
@@ -106,9 +118,11 @@ function buildEmployeePortalSections({
       ],
     },
     {
-      title: "Actions",
+      title: "Expenses",
       items: [
-        ...(showExpenseActionTab ? [{ href: "/employee/outstation/new", label: "Expense", icon: ReceiptText }] : []),
+        ...(showMedicalRepExpensesTab ? [{ href: "/employee-portals/expenses", label: "My Expenses", icon: ReceiptText }] : []),
+        ...(showManagementTab ? [{ href: "/employee-portals/expense-dashboard", label: "Workload & Expense", icon: ReceiptText }] : []),
+        ...(showExpenseActionTab ? [{ href: "/employee-portals/submit-expense", label: "Submit Expense", icon: ReceiptText }] : []),
       ],
     },
     {

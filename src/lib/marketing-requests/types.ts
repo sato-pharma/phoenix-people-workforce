@@ -1,0 +1,558 @@
+export type MarketingCustomerType =
+  | "doctor"
+  | "hospital"
+  | "clinic"
+  | "account"
+  | "other";
+
+export type MarketingEvidenceStatus = "missing" | "pending" | "complete";
+
+export type MarketingValidationStatus =
+  | "pending"
+  | "system_validated"
+  | "sfe_validated"
+  | "rejected";
+
+export type MarketingPharmacyCodeReferenceStatus =
+  | "pending"
+  | "matched"
+  | "ambiguous"
+  | "not_found"
+  | "manual_approved"
+  | "rejected";
+
+export type MarketingRequestStatus =
+  | "draft"
+  | "pending_validation"
+  | "pending_approval"
+  | "returned"
+  | "rejected"
+  | "approved"
+  | "active"
+  | "roi_tracking"
+  | "closed"
+  | "finance_hold";
+
+export type MarketingRoiStatus =
+  | "not_calculated"
+  | "covers_required"
+  | "under_target";
+
+export type MarketingWorkflowApprovalScope =
+  | "direct_manager"
+  | "role"
+  | "finance"
+  | "final";
+
+export type MarketingApprovalStepStatus =
+  | "pending"
+  | "current"
+  | "approved"
+  | "rejected"
+  | "returned"
+  | "skipped";
+
+export type MarketingRequestPharmacyTrackingStatus =
+  | "pending_validation"
+  | "active"
+  | "inactive";
+
+export type MarketingInvoiceStatus =
+  | "not_required"
+  | "pending"
+  | "submitted"
+  | "cleared"
+  | "overdue"
+  | "hold";
+
+export type MarketingEvidenceEntityType = "customer" | "pharmacy";
+export type MarketingEvidenceType = "location_photo" | "sign_photo" | "other";
+
+export type MarketingRequestType = {
+  active: boolean;
+  code: string;
+  createdAt: string;
+  description: string | null;
+  id: number;
+  name: string;
+  requiresDescription: boolean;
+  sortOrder: number;
+  updatedAt: string;
+};
+
+export type MarketingWorkflowStep = {
+  active: boolean;
+  approvalScope: MarketingWorkflowApprovalScope;
+  assignedRole: string;
+  createdAt: string;
+  defaultSlaDays: number | null;
+  id: number;
+  required: boolean;
+  sequence: number;
+  stepCode: string;
+  stepName: string;
+  updatedAt: string;
+};
+
+export type MarketingControlSettingGroup = "roi" | "finance" | "validation";
+
+export type MarketingControlSetting = {
+  adminOnly: boolean;
+  createdAt: string;
+  key: string;
+  label: string;
+  group: MarketingControlSettingGroup;
+  updatedAt: string;
+  updatedByHrId: string | null;
+  value: Record<string, unknown>;
+};
+
+export type MarketingControlWorkspace = {
+  canManageValidationRules: boolean;
+  requestTypes: MarketingRequestType[];
+  settings: MarketingControlSetting[];
+  workflowSteps: MarketingWorkflowStep[];
+};
+
+export type MarketingDistributor = {
+  active: boolean;
+  createdAt: string;
+  displayName: string;
+  distributorCode: string;
+  id: number;
+  normalizedName: string;
+  sourceName: string | null;
+  updatedAt: string;
+};
+
+export type MarketingProduct = {
+  active: boolean;
+  createdAt: string;
+  factoryPrice: number;
+  family: string | null;
+  id: number;
+  line: string | null;
+  lineId: number | null;
+  normalizedName: string;
+  productCode: string;
+  productName: string;
+  sourceCompany: string | null;
+  sourceFile: string | null;
+  updatedAt: string;
+};
+
+export type MarketingPharmacyCodeReference = {
+  createdAt: string;
+  distributorId: number | null;
+  id: number;
+  importBatchId: string | null;
+  normalizedDistributorName: string;
+  rawArea: string | null;
+  rawDistributorName: string;
+  rawPharmacyAddress: string | null;
+  rawPharmacyCode: string;
+  rawRegion: string | null;
+  sourceFile: string;
+  sourceRow: number;
+};
+
+export type MarketingCapturedLocation = {
+  capturedAccuracyMeters: number | null;
+  capturedAddress: string | null;
+  capturedAt: string | null;
+  capturedLatitude: number | null;
+  capturedLongitude: number | null;
+};
+
+export type MarketingEvidenceCapture = {
+  evidenceHasTimestamp: boolean;
+  evidencePhotoCapturedAt: string | null;
+  evidencePhotoName: string | null;
+};
+
+export type MarketingCustomer = MarketingCapturedLocation & MarketingEvidenceCapture & {
+  active: boolean;
+  areaId: number | null;
+  createdAt: string;
+  createdByHrId: string | null;
+  customerCode: string;
+  customerType: MarketingCustomerType;
+  displayName: string;
+  evidenceStatus: MarketingEvidenceStatus;
+  extractedAreaName: string | null;
+  extractedGovernorateName: string | null;
+  id: string;
+  lineId: number | null;
+  managerHrId: string | null;
+  normalizedName: string;
+  otherTypeDescription: string | null;
+  ownerHrId: string | null;
+  regionName: string | null;
+  updatedAt: string;
+  updatedByHrId: string | null;
+  validatedAt: string | null;
+  validatedByHrId: string | null;
+  validationNotes: string | null;
+  validationStatus: MarketingValidationStatus;
+};
+
+export type MarketingCustomerContact = {
+  active: boolean;
+  contactCode: string;
+  contactName: string;
+  createdAt: string;
+  createdByHrId: string | null;
+  crmCode: string | null;
+  customerId: string;
+  id: string;
+  mobileNumber: string | null;
+  notes: string | null;
+  specialty: string | null;
+  updatedAt: string;
+};
+
+export type MarketingPharmacy = MarketingCapturedLocation & MarketingEvidenceCapture & {
+  active: boolean;
+  areaId: number | null;
+  createdAt: string;
+  createdByHrId: string | null;
+  displayName: string;
+  evidenceStatus: MarketingEvidenceStatus;
+  extractedAreaName: string | null;
+  extractedGovernorateName: string | null;
+  id: string;
+  lineId: number | null;
+  managerHrId: string | null;
+  normalizedName: string;
+  ownerHrId: string | null;
+  pharmacyCode: string;
+  regionName: string | null;
+  updatedAt: string;
+  updatedByHrId: string | null;
+  validatedAt: string | null;
+  validatedByHrId: string | null;
+  validationNotes: string | null;
+  validationStatus: MarketingValidationStatus;
+};
+
+export type MarketingPharmacyDistributorCode = {
+  active: boolean;
+  createdAt: string;
+  createdByHrId: string | null;
+  distributorId: number;
+  distributorPharmacyCode: string;
+  id: string;
+  normalizedPharmacyCode: string;
+  pharmacyId: string;
+  referenceId: number | null;
+  referenceMatchCount: number;
+  referenceStatus: MarketingPharmacyCodeReferenceStatus;
+  updatedAt: string;
+  validatedAt: string | null;
+  validatedByHrId: string | null;
+  validationNotes: string | null;
+};
+
+export type MarketingCustomerPharmacy = {
+  active: boolean;
+  createdAt: string;
+  createdByHrId: string | null;
+  customerId: string;
+  distributorCodeId: string;
+  id: string;
+  pharmacyId: string;
+  updatedAt: string;
+  updatedByHrId: string | null;
+  validationNotes: string | null;
+  validationStatus: MarketingValidationStatus;
+};
+
+export type MarketingValidationInput = {
+  customer: {
+    capturedAccuracyMeters?: number | null;
+    capturedAddress?: string | null;
+    capturedAt?: string | null;
+    capturedLatitude?: number | null;
+    capturedLongitude?: number | null;
+    customerType: MarketingCustomerType;
+    displayName: string;
+    evidenceHasTimestamp?: boolean;
+    evidencePhotoCapturedAt?: string | null;
+    evidencePhotoName?: string | null;
+    extractedAreaName?: string | null;
+    extractedGovernorateName?: string | null;
+    mobileNumber?: string | null;
+    otherTypeDescription?: string | null;
+    regionName?: string | null;
+  };
+  distributorCode?: {
+    distributorId: number | string;
+    distributorPharmacyCode: string;
+  };
+  pharmacies?: MarketingValidationPharmacyInput[];
+  pharmacy?: Omit<MarketingValidationPharmacyInput, "vendorCodes">;
+};
+
+export type MarketingValidationPharmacyInput = {
+  capturedAccuracyMeters?: number | null;
+  capturedAddress?: string | null;
+  capturedAt?: string | null;
+  capturedLatitude?: number | null;
+  capturedLongitude?: number | null;
+  displayName: string;
+  evidenceHasTimestamp?: boolean;
+  evidencePhotoCapturedAt?: string | null;
+  evidencePhotoName?: string | null;
+  extractedAreaName?: string | null;
+  extractedGovernorateName?: string | null;
+  regionName?: string | null;
+  vendorCodes: Array<{
+    distributorId: number | string;
+    distributorPharmacyCode: string;
+  }>;
+};
+
+export type MarketingValidationLegacyPharmacyInput = {
+    capturedAccuracyMeters?: number | null;
+    capturedAddress?: string | null;
+    capturedAt?: string | null;
+    capturedLatitude?: number | null;
+    capturedLongitude?: number | null;
+    displayName: string;
+    evidenceHasTimestamp?: boolean;
+  evidencePhotoCapturedAt?: string | null;
+  evidencePhotoName?: string | null;
+  extractedAreaName?: string | null;
+  extractedGovernorateName?: string | null;
+  regionName?: string | null;
+};
+
+export type MarketingValidationReportRow = {
+  customer: MarketingCustomer;
+  distributorCode: MarketingPharmacyDistributorCode;
+  distributorName: string;
+  id: string;
+  pharmacy: MarketingPharmacy;
+  validationNotes: string | null;
+  validationStatus: MarketingValidationStatus;
+};
+
+export type MarketingValidationWorkspace = {
+  distributors: MarketingDistributor[];
+  rows: MarketingValidationReportRow[];
+  summary: Record<MarketingValidationStatus, number>;
+};
+
+export type MarketingCustomerDatabaseRow = {
+  createdAt: string;
+  customerAddress: string | null;
+  customerArea: string | null;
+  customerCode: string;
+  customerGovernorate: string | null;
+  customerId: string;
+  customerName: string;
+  customerPhone: string | null;
+  customerType: MarketingCustomerType;
+  customerValidationPhoto: string | null;
+  distributorCode: string;
+  distributorId: number;
+  distributorName: string;
+  pharmacyAddress: string | null;
+  pharmacyArea: string | null;
+  pharmacyCode: string;
+  pharmacyDistributorCodeId: string;
+  pharmacyGovernorate: string | null;
+  pharmacyId: string;
+  pharmacyName: string;
+  rowId: string;
+  validationStatus: MarketingValidationStatus;
+  vendorPharmacyCode: string;
+};
+
+export type MarketingCustomerDatabaseWorkspace = {
+  rows: MarketingCustomerDatabaseRow[];
+  summary: {
+    customers: number;
+    pharmacies: number;
+    rows: number;
+    vendors: number;
+  };
+};
+
+export type MarketingApprovedRequestRow = {
+  contactForMoneyTransfer: string;
+  customerName: string;
+  financeProofFileName: string | null;
+  financeProofStoragePath: string | null;
+  id: string;
+  invoiceFileName: string | null;
+  invoiceStoragePath: string | null;
+  line: string | null;
+  moneyTransferDate: string | null;
+  notes: string | null;
+  requestCode: string;
+  requesterHrId: string;
+  status: MarketingRequestStatus;
+  sumOfAmount: number;
+};
+
+export type MarketingRequest = {
+  approvedAt: string | null;
+  areaId: number | null;
+  closedAt: string | null;
+  createdAt: string;
+  createdByHrId: string | null;
+  customerContactId: string | null;
+  customerId: string;
+  estimatedCost: number;
+  expectedRoiValue: number;
+  id: string;
+  lineId: number | null;
+  managerHrId: string | null;
+  notes: string | null;
+  otherRequestType: string | null;
+  payDate: string | null;
+  rejectedAt: string | null;
+  requestCode: string;
+  requestDate: string;
+  requestTypeId: number;
+  requesterHrId: string;
+  requiredRoiValue: number;
+  roiCoverageRatio: number;
+  roiDurationMonths: number;
+  roiStatus: MarketingRoiStatus;
+  status: MarketingRequestStatus;
+  submittedAt: string | null;
+  updatedAt: string;
+  updatedByHrId: string | null;
+};
+
+export type MarketingRequestProduct = {
+  createdAt: string;
+  expectedValue: number;
+  factoryPriceSnapshot: number;
+  forecastQuantity: number;
+  id: string;
+  lineSnapshot: string | null;
+  productId: number;
+  productNameSnapshot: string;
+  requestId: string;
+  updatedAt: string;
+  valueShare: number;
+};
+
+export type MarketingRequestPharmacy = {
+  createdAt: string;
+  distributorCodeId: string;
+  id: string;
+  notes: string | null;
+  pharmacyId: string;
+  requestId: string;
+  trackingStatus: MarketingRequestPharmacyTrackingStatus;
+  updatedAt: string;
+};
+
+export type MarketingRequestApprovalStep = {
+  assignedHrId: string | null;
+  assignedRole: string;
+  createdAt: string;
+  decisionAt: string | null;
+  decisionByHrId: string | null;
+  decisionNote: string | null;
+  id: string;
+  requestId: string;
+  sequence: number;
+  status: MarketingApprovalStepStatus;
+  stepCode: string;
+  stepName: string;
+  updatedAt: string;
+  workflowStepId: number | null;
+};
+
+export type MarketingRequestFinanceRequirement = {
+  createdAt: string;
+  financeReviewerHrId: string | null;
+  invoiceDeadlineDate: string | null;
+  invoiceOriginalFileName: string | null;
+  invoiceRequired: boolean;
+  invoiceStatus: MarketingInvoiceStatus;
+  invoiceStoragePath: string | null;
+  invoiceUploadedAt: string | null;
+  invoiceUploadedByHrId: string | null;
+  moneyTransferProofOriginalFileName: string | null;
+  moneyTransferProofStoragePath: string | null;
+  moneyTransferProofUploadedAt: string | null;
+  moneyTransferProofUploadedByHrId: string | null;
+  notes: string | null;
+  requestId: string;
+  reviewedAt: string | null;
+  updatedAt: string;
+};
+
+export type MarketingEvidenceFile = {
+  capturedAccuracyMeters: number | null;
+  capturedAddress: string | null;
+  capturedAt: string | null;
+  capturedLatitude: number | null;
+  capturedLongitude: number | null;
+  contentType: string | null;
+  createdAt: string;
+  entityId: string;
+  entityType: MarketingEvidenceEntityType;
+  evidenceType: MarketingEvidenceType;
+  hasTimestamp: boolean;
+  id: string;
+  originalFileName: string | null;
+  storageBucket: string;
+  storagePath: string;
+  uploadedByHrId: string | null;
+};
+
+export type MarketingRoiInputProduct = {
+  factoryPrice: number;
+  productId?: number | string | null;
+  productName?: string | null;
+  quantity: number;
+};
+
+export type MarketingRoiPreview = {
+  expectedRoiValue: number;
+  products: Array<MarketingRoiInputProduct & {
+    expectedValue: number;
+    valueShare: number;
+  }>;
+  requiredRoiValue: number;
+  roiCoverageRatio: number;
+  roiStatus: MarketingRoiStatus;
+};
+
+export type MarketingRequestCreateDraft = {
+  areaId?: number | null;
+  customerContactId?: string | null;
+  customerId: string;
+  estimatedCost: number;
+  lineId?: number | null;
+  notes?: string | null;
+  otherRequestType?: string | null;
+  payDate?: string | null;
+  pharmacies?: MarketingRequestDraftPharmacyInput[];
+  products: MarketingRequestDraftProductInput[];
+  requestDate: string;
+  requestTypeId: number;
+  roiDurationMonths: number;
+};
+
+export type MarketingRequestDraftProductInput = {
+  productId: number | string;
+  quantity: number;
+};
+
+export type MarketingRequestDraftPharmacyInput = {
+  distributorCodeId: string;
+  notes?: string | null;
+};
+
+export type MarketingRequestDraftDetail = MarketingRequest & {
+  pharmacies: MarketingRequestPharmacy[];
+  products: MarketingRequestProduct[];
+};

@@ -396,8 +396,6 @@ async function notifyContractWorkflow(
   tone: "success" | "warning" | "danger" | "neutral",
 ) {
   await safeSendNotificationEmail({
-    ctaHref: "/contracts",
-    ctaLabel: "Open contract renewals",
     employeeHrId: record.employeeHrId,
     metrics: [
       { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },

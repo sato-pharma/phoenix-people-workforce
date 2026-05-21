@@ -4,7 +4,6 @@ import {
   EmployeePortalTopNav,
   EmployeePortalSidebar,
 } from "@/components/employee-portal/employee-portal-layout";
-import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
@@ -41,7 +40,7 @@ export default async function EmployeePortalLayout({
     );
   }
 
-  const visibility = resolveEmployeePortalNavVisibility(data.employee.roleLabel);
+  const visibility = resolveEmployeePortalNavVisibility(data.employee.roleLabel, access.role);
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f8_46%,#f8fafc_100%)] pt-[64px] lg:pt-[72px]">
@@ -52,7 +51,6 @@ export default async function EmployeePortalLayout({
       <div className="relative mx-auto flex w-full max-w-[1560px] gap-6 px-4 py-6 lg:gap-8 lg:px-8 lg:py-8">
         <EmployeePortalSidebar visibility={visibility} />
         <main className="min-w-0 flex-1 space-y-6 lg:space-y-8">
-          <IdentityCard data={data} />
           <PageTransition>{children}</PageTransition>
         </main>
       </div>

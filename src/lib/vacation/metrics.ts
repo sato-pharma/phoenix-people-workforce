@@ -6,9 +6,12 @@ import type {
 export type VacationMetricRow = {
   canDecide?: boolean;
   durationDays: number;
+  hrDecision?: "approved" | "rejected" | null;
   managerDecision?: "approved" | "rejected" | null;
   paymentStatus: VacationPaymentStatus;
+  paidDurationDays?: number;
   status: VacationRequestStatus;
+  unpaidDurationDays?: number;
 };
 
 export function summarizeVacationRequests(rows: VacationMetricRow[]) {
@@ -24,11 +27,17 @@ export function summarizeVacationRequests(rows: VacationMetricRow[]) {
 
   for (const row of rows) {
     if (row.status === "approved") summary.approved += 1;
-    if (row.status === "pending_manager") summary.pending += 1;
+    if (row.status === "pending_manager" || row.status === "pending_hr") summary.pending += 1;
     if (row.status === "rejected") summary.rejected += 1;
-    if (row.paymentStatus === "paid") summary.paidDays += row.durationDays;
-    if (row.paymentStatus === "unpaid") summary.unpaidDays += row.durationDays;
-    if (row.managerDecision || row.canDecide) summary.managerDecisionActions += 1;
+    if (typeof row.paidDurationDays === "number" || typeof row.unpaidDurationDays === "number") {
+      summary.paidDays += row.paidDurationDays ?? 0;
+      summary.unpaidDays += row.unpaidDurationDays ?? 0;
+    } else {
+      if (row.paymentStatus === "paid") summary.paidDays += row.durationDays;
+      if (row.paymentStatus === "unpaid") summary.unpaidDays += row.durationDays;
+      if (row.paymentStatus === "partial") summary.unpaidDays += row.durationDays;
+    }
+    if (row.managerDecision || row.hrDecision || row.canDecide) summary.managerDecisionActions += 1;
   }
 
   return summary;

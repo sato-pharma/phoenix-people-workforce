@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { MedicalRepOverviewPage } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
+import { IdentityCard } from "@/components/employee-portal/identity-card";
 import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
@@ -50,12 +51,15 @@ export default async function EmployeePortalsHomePage({
   }
 
   return (
-    <EmployeePortalPageShell
-      badge="Employee Portal"
-      description="Performance, structure, and team comparison in one command surface."
-      title="Dashboard Overview"
-    >
-      <MedicalRepOverviewPage data={data} />
-    </EmployeePortalPageShell>
+    <div className="mx-auto w-full space-y-5">
+      <IdentityCard data={data} />
+      <EmployeePortalPageShell
+        badge="Employee Portal"
+        description="Performance, structure, and team comparison in one command surface."
+        title="Dashboard Overview"
+      >
+        <MedicalRepOverviewPage data={data} />
+      </EmployeePortalPageShell>
+    </div>
   );
 }

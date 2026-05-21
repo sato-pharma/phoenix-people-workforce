@@ -12,13 +12,8 @@ import Image from "next/image";
 
 import { formatDateOnly } from "@/lib/date-only";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
+import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
-
-const profileImagesByHrId: Record<string, string> = {
-  "A-16": "/images/hr/youmna-kotb.jpg",
-  A16: "/images/hr/youmna-kotb.jpg",
-  "B-52": "/images/hr/fiby-wagdy-luka.jpg",
-};
 
 function prettyDate(value: string | null) {
   return formatDateOnly(value, "en-GB", { day: "2-digit", month: "short", year: "numeric" }, "Not available");
@@ -34,17 +29,11 @@ function asStatus(value: string): "success" | "warning" | "danger" | "neutral" {
   return "neutral";
 }
 
-function profileImageForHrId(hrId: string) {
-  const normalized = hrId.trim().toUpperCase();
-  const compact = normalized.replace(/[^A-Z0-9]/g, "");
-  return profileImagesByHrId[normalized] ?? profileImagesByHrId[compact] ?? null;
-}
-
 export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
   const employee = data.employee;
   const hiredLabel = prettyDate(data.hrContract.hireDate);
   const statusVariant = asStatus(employee.status);
-  const profileImage = profileImageForHrId(employee.hrId);
+  const profileImage = employeeProfileImageForHrId(employee.hrId);
   const firstName = employee.fullName.split(/\s+/).find(Boolean) ?? "there";
   const displayHrId = formatHrIdForDisplay(employee.hrId) ?? employee.hrId;
 
@@ -81,42 +70,50 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
 
       <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_250px] lg:items-center xl:grid-cols-[minmax(0,1fr)_292px]">
         <div className="min-w-0">
-          <div className="mb-4 inline-flex w-fit items-center gap-2 rounded-full border border-orange-200 bg-white/85 px-3 py-1.5 text-[10px] font-black uppercase tracking-normal text-orange-600 shadow-[0_8px_20px_rgba(249,115,22,0.08)]">
+          <div className="mb-4 inline-flex w-fit items-center gap-2 rounded-full border border-orange-200 bg-white/85 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-orange-600 shadow-[0_8px_20px_rgba(249,115,22,0.08)]">
             <Sparkles className="h-3.5 w-3.5" />
             Your Phoenix day starts here
           </div>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <h1 className="text-[30px] font-black leading-[1.05] tracking-normal text-slate-950 sm:text-[38px] lg:text-[46px]">
+            <h1 className="text-[30px] font-semibold leading-[1.08] tracking-normal text-slate-950 sm:text-[36px] lg:text-[42px]">
               Hello, {firstName} <span aria-hidden="true">👋🏻</span>
             </h1>
-            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-normal lg:px-4 lg:text-[13px] ${statusPillClass}`}>
+            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] lg:px-4 lg:text-[13px] ${statusPillClass}`}>
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full lg:h-2 lg:w-2 ${statusDotClass} ${statusVariant === "success" ? "animate-pulse" : ""}`} />
               {employee.status}
             </span>
           </div>
 
-          <p className="mt-3 max-w-3xl text-[16px] font-semibold leading-7 text-slate-700 lg:text-[18px]">
+          <p className="mt-3 max-w-3xl text-[15px] font-medium leading-7 text-slate-700 lg:text-[17px]">
             Your Phoenix workspace is ready for a focused, confident day. Keep your priorities clear, follow up with energy, and turn today's work into visible progress.
           </p>
 
           <div className="mt-5 flex flex-wrap items-center gap-2 text-slate-500">
-            <span className="rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm font-bold shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+            <span className="rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm font-semibold text-slate-800 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
               {employee.fullName}
             </span>
-            <span className="rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm font-semibold shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+            <span className="rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm font-medium text-slate-800 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
               {employee.roleLabel}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm font-medium text-slate-800 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+              <CalendarDays className="h-4 w-4 text-slate-400" />
+              <span>Hired {hiredLabel}</span>
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm font-medium text-slate-800 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+              <ShieldCheck className="h-4 w-4 text-orange-400" />
+              <span>HR ID {displayHrId}</span>
             </span>
           </div>
 
           <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="group/item flex items-center gap-2.5 rounded-2xl border border-white/80 bg-white/80 px-3 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 text-orange-500 shadow-sm ring-1 ring-orange-100 transition-colors group-hover/item:bg-orange-100">
-                <ShieldCheck className="h-4 w-4" />
+                <MapPin className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-normal text-slate-400">HR ID</p>
-                <p className="truncate text-sm font-black text-slate-800">{displayHrId}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Area</p>
+                <p className="truncate text-sm font-semibold text-slate-800">{employee.area ?? "Unassigned"}</p>
               </div>
             </div>
 
@@ -125,8 +122,8 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
                 <Users className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-normal text-slate-400">Manager</p>
-                <p className="truncate text-sm font-black text-slate-800">{employee.manager ?? "Unassigned"}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Manager</p>
+                <p className="truncate text-sm font-semibold text-slate-800">{employee.manager ?? "Unassigned"}</p>
               </div>
             </div>
 
@@ -135,23 +132,12 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
                 <BriefcaseBusiness className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-normal text-slate-400">Mission</p>
-                <p className="truncate text-sm font-black text-slate-800">{employee.line ?? "Phoenix"} focus</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Business Line</p>
+                <p className="truncate text-sm font-semibold text-slate-800">{employee.line ?? "Phoenix"}</p>
               </div>
             </div>
           </div>
 
-          <div className="mt-6 flex flex-wrap items-center gap-4 border-t border-white/80 pt-5">
-            <div className="flex items-center gap-2 text-slate-500">
-              <CalendarDays className="h-4 w-4 text-slate-300" />
-              <span className="text-[13px] font-medium">Hired <span className="font-bold text-slate-900">{hiredLabel}</span></span>
-            </div>
-            <div className="hidden h-4 w-px bg-slate-200 sm:block" />
-            <div className="flex items-center gap-2 text-slate-500">
-              <MapPin className="h-4 w-4 text-sky-400" />
-              <span className="text-[13px] font-medium">{employee.territory ?? "Unassigned Territory"}</span>
-            </div>
-          </div>
         </div>
 
         <div className="group relative mx-auto flex h-[236px] w-full max-w-[250px] shrink-0 items-center justify-center rounded-[30px] border border-orange-100 bg-gradient-to-tr from-orange-100/80 via-white to-sky-50 p-2 shadow-[0_24px_54px_rgba(249,115,22,0.20)] sm:h-[286px] sm:max-w-[292px] lg:mx-0 lg:h-[316px]">
@@ -168,11 +154,11 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center bg-orange-500/10 text-orange-500 transition-transform duration-500 group-hover:scale-105">
-                <span className="text-[44px] font-black tracking-normal lg:text-[56px]">{initials || "EM"}</span>
+                <span className="text-[44px] font-semibold tracking-normal lg:text-[56px]">{initials || "EM"}</span>
               </div>
             )}
           </div>
-          <div className="absolute -bottom-3 left-4 right-4 flex items-center justify-center gap-2 rounded-2xl border border-white/80 bg-white/95 px-3 py-2 text-[11px] font-black uppercase tracking-normal text-emerald-600 shadow-[0_16px_34px_rgba(15,23,42,0.14)]">
+          <div className="absolute -bottom-3 left-4 right-4 flex items-center justify-center gap-2 rounded-2xl border border-white/80 bg-white/95 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-600 shadow-[0_16px_34px_rgba(15,23,42,0.14)]">
             <ShieldCheck className="h-3.5 w-3.5" />
             Phoenix Verified
           </div>
