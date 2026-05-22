@@ -1,18 +1,22 @@
 "use client";
 
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useState, useTransition, useSyncExternalStore, type MouseEvent, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Menu, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards, UserCog } from "lucide-react";
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
+import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
+import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import { PageTransition } from "@/components/ui/page-transition";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
+import { isEmployeePortalOwnedRoute } from "@/lib/employee-portal/routes";
 
 const EMPLOYEE_SIDEBAR_COLLAPSED_KEY = "phoenix-employee-sidebar-collapsed";
 const EMPLOYEE_SIDEBAR_COLLAPSED_EVENT = "phoenix-employee-sidebar-collapsed-change";
+const EMPLOYEE_ROUTE_PENDING_EVENT = "phoenix-employee-route-pending";
 
 function subscribeToEmployeeSidebarCollapsed(callback: () => void) {
   window.addEventListener("storage", callback);
@@ -181,6 +185,61 @@ function buildEmployeePortalSections({
   ].filter((section) => section.items.length > 0);
 }
 
+function dispatchEmployeePortalRoutePending(href: string) {
+  window.dispatchEvent(new CustomEvent(EMPLOYEE_ROUTE_PENDING_EVENT, { detail: { href } }));
+}
+
+function shouldUseClientNavigation(event: MouseEvent<HTMLAnchorElement>, href: string) {
+  return (
+    event.button === 0 &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey &&
+    !event.currentTarget.target &&
+    isEmployeePortalOwnedRoute(href)
+  );
+}
+
+function EmployeePortalRouteProgress() {
+  const pathname = usePathname();
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    let fallbackTimeout: number | null = null;
+    const handlePending = () => {
+      setVisible(true);
+      if (fallbackTimeout) {
+        window.clearTimeout(fallbackTimeout);
+      }
+      fallbackTimeout = window.setTimeout(() => setVisible(false), 6000);
+    };
+
+    window.addEventListener(EMPLOYEE_ROUTE_PENDING_EVENT, handlePending);
+
+    return () => {
+      window.removeEventListener(EMPLOYEE_ROUTE_PENDING_EVENT, handlePending);
+      if (fallbackTimeout) {
+        window.clearTimeout(fallbackTimeout);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setVisible(false), 180);
+    return () => window.clearTimeout(timeout);
+  }, [pathname]);
+
+  return (
+    <div
+      aria-hidden="true"
+      className={`fixed inset-x-0 top-0 z-[70] h-[3px] origin-left bg-gradient-to-r from-orange-500 via-amber-400 to-sky-500 shadow-[0_0_18px_rgba(249,115,22,0.45)] transition duration-300 ${
+        visible ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0"
+      }`}
+    />
+  );
+}
+
 function EmployeePortalMenu({
   mode,
   onNavigate,
@@ -193,6 +252,33 @@ function EmployeePortalMenu({
   sections: EmployeePortalNavSection[];
 }) {
   const isMobile = mode === "mobile";
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setPendingHref(null), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [pathname]);
+
+  const handleNavigate = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (!shouldUseClientNavigation(event, href)) {
+      onNavigate?.();
+      return;
+    }
+
+    const hrefPath = href.split("#")[0];
+    if (hrefPath === pathname) {
+      onNavigate?.();
+      return;
+    }
+
+    event.preventDefault();
+    setPendingHref(href);
+    dispatchEmployeePortalRoutePending(href);
+    onNavigate?.();
+    startTransition(() => router.push(href));
+  };
 
   return (
     <>
@@ -224,21 +310,26 @@ function EmployeePortalMenu({
           <div className={isMobile ? "space-y-1" : "space-y-0.5"}>
             {section.items.map((item) => {
               const active = isEmployeePortalNavItemActive(pathname, item.href);
+              const pending = isPending && pendingHref === item.href;
               return (
                 <Link
+                  aria-busy={pending || undefined}
+                  aria-current={active ? "page" : undefined}
                   key={item.label}
                   className={`group flex items-center gap-3 rounded-[16px] px-4 py-2.5 ${
                     isMobile ? "text-[13px] font-semibold duration-200" : "text-[12px] font-bold duration-150"
-                  } transition ${navItemClass(active)}`}
+                  } transition ${pending ? "bg-[#FFF7ED] text-[#EA580C] ring-1 ring-orange-200/80" : navItemClass(active)}`}
                   href={item.href}
-                  onClick={onNavigate}
+                  onClick={(event) => handleNavigate(event, item.href)}
+                  prefetch
                 >
                   <item.icon
                     className={`${
                       isMobile ? "h-4 w-4" : "h-[15px] w-[15px] stroke-[2.1]"
-                    } shrink-0 transition ${navIconClass(active)}`}
+                    } shrink-0 transition ${pending ? "text-[#EA580C]" : navIconClass(active)}`}
                   />
                   <span>{item.label}</span>
+                  {pending ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-orange-500 employee-portal-nav-pending-dot" /> : null}
                 </Link>
               );
             })}
@@ -258,6 +349,7 @@ export function EmployeePortalTopNav({
   const currentPathname = usePathname();
   const pathname = activePathOverride ?? currentPathname;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
   const firstName = data.employee.fullName.split(/\s+/)[0] ?? "Employee";
@@ -269,6 +361,17 @@ export function EmployeePortalTopNav({
     .toUpperCase();
 
   const menuSections = buildEmployeePortalSections(visibility);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileMenuOpen]);
 
   const handleLogout = async () => {
     try {
@@ -310,13 +413,8 @@ export function EmployeePortalTopNav({
               type="text"
             />
           </div>
-          <button
-            aria-label="Alerts"
-            className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex"
-            type="button"
-          >
-            <Bell className="h-4 w-4" />
-          </button>
+          <InAppNotificationsBell isAdminMode={false} />
+          <InternalMessagesMenu isAdminMode={false} />
           <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 shadow-sm lg:flex">
             <CalendarClock className="h-3.5 w-3.5 text-slate-400" />
             <span>
@@ -330,13 +428,59 @@ export function EmployeePortalTopNav({
               <span>Live Performance</span>
             </div>
           )}
-          <div className="flex min-w-0 shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-sm sm:px-2 lg:ml-0">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-xs font-bold text-white shadow-[0_2px_6px_rgba(249,115,22,0.35)]">
-              {initials || "EM"}
-            </div>
-            <div className="hidden min-w-0 pr-1 sm:block">
-              <p className="truncate text-xs font-semibold text-slate-800">{firstName}</p>
-            </div>
+          <div className="relative flex min-w-0 shrink-0">
+            <button
+              aria-expanded={userMenuOpen}
+              aria-haspopup="menu"
+              className="flex min-w-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-sm transition hover:border-orange-200 hover:bg-orange-50/70 sm:px-2 lg:ml-0"
+              onClick={() => setUserMenuOpen((open) => !open)}
+              type="button"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-xs font-bold text-white shadow-[0_2px_6px_rgba(249,115,22,0.35)]">
+                {initials || "EM"}
+              </div>
+              <div className="hidden min-w-0 pr-1 text-left sm:block">
+                <p className="truncate text-xs font-semibold text-slate-800">{firstName}</p>
+              </div>
+              <ChevronDown className="hidden h-3.5 w-3.5 text-slate-400 sm:block" />
+            </button>
+
+            {userMenuOpen ? (
+              <div
+                className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.16)]"
+                role="menu"
+              >
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <p className="truncate text-sm font-black text-slate-900">{data.employee.fullName}</p>
+                  <p className="mt-1 truncate text-xs font-semibold text-slate-500">{data.employee.roleLabel}</p>
+                  <p className="mt-1 font-mono text-[10px] font-bold uppercase tracking-[0.10em] text-orange-600">
+                    {data.employee.hrId}
+                  </p>
+                </div>
+                <Link
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-orange-50 hover:text-orange-700"
+                  href="/employee-portals/profile"
+                  onClick={() => setUserMenuOpen(false)}
+                  role="menuitem"
+                >
+                  <UserCog className="h-4 w-4" />
+                  My Profile
+                </Link>
+                <div className="mx-3 h-px bg-slate-100" />
+                <button
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-orange-50 hover:text-orange-700"
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    void handleLogout();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Log Out
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       </header>
@@ -415,6 +559,8 @@ export function EmployeePortalSidebar({
 }) {
   const currentPathname = usePathname();
   const pathname = activePathOverride ?? currentPathname;
+  const router = useRouter();
+  const [, startTransition] = useTransition();
   const persistedCollapsed = useSyncExternalStore(
     subscribeToEmployeeSidebarCollapsed,
     getEmployeeSidebarCollapsedSnapshot,
@@ -449,6 +595,17 @@ export function EmployeePortalSidebar({
     }
   };
 
+  const handleRailNavigate = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (!shouldUseClientNavigation(event, href)) return;
+
+    const hrefPath = href.split("#")[0];
+    if (hrefPath === pathname) return;
+
+    event.preventDefault();
+    dispatchEmployeePortalRoutePending(href);
+    startTransition(() => router.push(href));
+  };
+
   return (
     <aside className={`hidden shrink-0 self-start transition-[width] duration-200 lg:block ${collapsed ? "w-[78px]" : "w-[302px]"}`}>
       <div className="sticky top-[86px] flex max-h-[calc(100vh-112px)] w-full overflow-hidden rounded-[20px] border border-slate-100/90 bg-white shadow-[0_26px_70px_rgba(15,23,42,0.13)]">
@@ -476,6 +633,8 @@ export function EmployeePortalSidebar({
                     }`}
                     href={firstItem.href}
                     key={section.title}
+                    onClick={(event) => handleRailNavigate(event, firstItem.href)}
+                    prefetch
                     title={section.title}
                   >
                     {active ? <span className="absolute left-[-8px] h-7 w-[3px] rounded-r-full bg-[#F05A1A]" /> : null}
@@ -563,6 +722,7 @@ export function EmployeePortalChrome({
 }) {
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[64px] lg:pt-[72px]">
+      <EmployeePortalRouteProgress />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.028)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.028)_1px,transparent_1px)] bg-[size:52px_52px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.65),transparent_56%)]" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[480px] bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(255,255,255,0)_70%)]" />

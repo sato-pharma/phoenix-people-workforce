@@ -7,7 +7,7 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
+import { getEmployeePortalIncentiveData } from "@/lib/employee-portal/service";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ export default async function EmployeePortalIncentivePageRoute() {
 
   let data = null;
   try {
-    data = await getMedicalRepPortalData(access);
+    data = await getEmployeePortalIncentiveData(access);
   } catch {
     data = null;
   }

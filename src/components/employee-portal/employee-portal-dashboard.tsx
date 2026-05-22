@@ -20,15 +20,12 @@ import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-con
 import {
   Activity,
   ArrowUpRight,
-  BadgeCheck,
   BriefcaseBusiness,
   Calculator,
   CalendarClock,
   CalendarDays,
   Car,
-  CircleDashed,
   CircleDollarSign,
-  FileText,
   HelpCircle,
   Info,
   MapPin,
@@ -38,7 +35,6 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
-  Sparkles,
   Target,
   TrendingUp,
   Trophy,
@@ -113,11 +109,6 @@ function periodMonthLabel(value: string) {
   return new Intl.DateTimeFormat("en", { month: "short" }).format(
     new Date(Date.UTC(year, month - 1, 1)),
   );
-}
-
-function tooltipCurrency(value: unknown) {
-  if (Array.isArray(value)) return egp(Number(value[0] ?? 0));
-  return egp(Number(value ?? 0));
 }
 
 function formatUnits(value: number) {
@@ -1245,7 +1236,6 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
   const yFor = (value: number) => padding.top + (1 - Math.max(0, Math.min(1, value / roundedMax))) * innerHeight;
   const salesPoints = trendData.map((point, index) => `${xFor(index)},${yFor(point.sales)}`).join(" ");
   const targetPoints = trendData.map((point, index) => `${xFor(index)},${yFor(point.target)}`).join(" ");
-  const latestPoint = trendData.at(-1);
   const activeTrendPoint = activeTrendIndex === null ? null : trendData[activeTrendIndex] ?? null;
   const activeTrendX = activeTrendIndex === null ? 0 : xFor(activeTrendIndex);
   const activeTrendY = activeTrendPoint ? yFor(activeTrendPoint.sales) : 0;
@@ -1608,118 +1598,6 @@ function TeamStructurePanel({ data }: { data: MedicalRepPortalData }) {
         )}
       </div>
     </OverviewPagePanel>
-  );
-}
-
-function IncentiveBlock({
-  achievementPercent,
-  currentIncentive,
-  salesGap,
-}: {
-  achievementPercent: number;
-  currentIncentive: number;
-  salesGap: number;
-}) {
-  const clamped = Math.max(0, Math.min(100, Math.round(achievementPercent)));
-  const needsUnlockPercent = Math.max(0, 90 - achievementPercent);
-  const circleStyle = {
-    background: `conic-gradient(#f97316 ${clamped * 3.6}deg, #edf0f4 0deg)`,
-  };
-  const isEligible = achievementPercent >= 90;
-
-  return (
-    <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-      <div className="mb-4 flex items-center gap-2">
-        <span className="h-2 w-2 rounded-full bg-orange-500/80" />
-        <p className="text-lg font-semibold text-slate-900">Incentive Achievement</p>
-      </div>
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="flex flex-col items-center">
-          <div className="relative flex h-[200px] w-[200px] items-center justify-center rounded-full" style={circleStyle}>
-            <div className="flex h-[160px] w-[160px] flex-col items-center justify-center rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]">
-              <p className="text-[48px] font-semibold leading-none text-slate-950">{clamped}%</p>
-              <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.1em] text-slate-500">Achievement</p>
-            </div>
-          </div>
-           <p className="mt-4 text-2xl font-semibold text-slate-900">{egp(currentIncentive)}</p>
-        </div>
-        <div className="flex flex-col justify-center space-y-4">
-          <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">To increase your incentive</p>
-            {!isEligible ? (
-              <p className="mt-2 text-sm text-slate-700">
-                You are <span className="font-semibold text-orange-600">{needsUnlockPercent.toFixed(1)}%</span> away from the 90% unlock threshold.
-              </p>
-            ) : salesGap > 0 ? (
-              <>
-                <p className="mt-2 text-sm text-slate-600">
-                  You are <span className="font-semibold text-orange-600">{egp(salesGap)}</span> away from reaching your target.
-                </p>
-                <p className="mt-2 text-sm text-slate-700">
-                  Focus on top performing products to increase incentive
-                </p>
-              </>
-            ) : (
-              <p className="mt-2 text-sm text-slate-600">
-                Great job! You have reached your target and are now in over-achievement.
-              </p>
-            )}
-          </div>
-          <Button className="w-full rounded-xl" variant="secondary">
-            View Incentive Plan
-          </Button>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function NotificationsSection() {
-  const notifications = [
-    {
-      icon: BadgeCheck,
-      title: "Incentive approved",
-      description: "Your incentive for this month has been approved",
-      date: "2 days ago",
-    },
-    {
-      icon: FileText,
-      title: "Payslip available",
-      description: "Your payslip for this month is now available",
-      date: "3 days ago",
-    },
-    {
-      icon: MinusCircle,
-      title: "Loan deduction applied",
-      description: "Loan deduction of EGP 500 applied this month",
-      date: "5 days ago",
-    },
-  ];
-
-  return (
-    <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-      <div className="mb-4 flex items-center gap-2">
-        <span className="h-2 w-2 rounded-full bg-orange-500/80" />
-        <p className="text-lg font-semibold text-slate-900">Notifications</p>
-      </div>
-      <div className="space-y-3">
-        {notifications.map((notification) => {
-          const Icon = notification.icon;
-          return (
-            <div key={notification.title} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3 transition hover:bg-slate-50">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                <Icon className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-slate-900">{notification.title}</p>
-                <p className="mt-0.5 text-xs text-slate-600">{notification.description}</p>
-                <p className="mt-1 text-[11px] text-slate-400">{notification.date}</p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </Card>
   );
 }
 
