@@ -51,6 +51,7 @@ const salaryTrend = [
 export const employeePortalDevPreviewData = {
   employee: {
     area: "Greater Cairo",
+    department: "Sales",
     fullName: "Mariam Soliman",
     hrId: "DEV-NSM-001",
     line: "Cardio Metabolic",

@@ -62,6 +62,7 @@ function sectionRailIcon(title: string): typeof Activity {
 
 function buildEmployeePortalSections({
   showDashboardTab = true,
+  showExcusesTab = false,
   showExpenseActionTab = false,
   showIncentiveTab = true,
   showManagementTab = false,
@@ -116,6 +117,7 @@ function buildEmployeePortalSections({
       items: [
         { href: "/leave-management/vacation-request", label: "Vacation Request", icon: CalendarDays },
         { href: "/leave-management/vacation-report", label: "Vacation Report", icon: FileText },
+        ...(showExcusesTab ? [{ href: "/employee-portals/excuses", label: "Excuses", icon: CalendarClock }] : []),
       ],
     },
     {

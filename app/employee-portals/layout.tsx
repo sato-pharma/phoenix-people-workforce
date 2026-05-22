@@ -40,7 +40,12 @@ export default async function EmployeePortalLayout({
     );
   }
 
-  const visibility = resolveEmployeePortalNavVisibility(data.employee.roleLabel, access.role);
+  const visibility = resolveEmployeePortalNavVisibility(
+    data.employee.roleLabel,
+    access.role,
+    data.employee.line,
+    data.employee.department,
+  );
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[64px] lg:pt-[72px]">
