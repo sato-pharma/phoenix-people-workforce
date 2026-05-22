@@ -1,7 +1,7 @@
 "use client";
 
 import { Camera, Car, CheckCircle2, MapPin, ReceiptText, Route, TrainFront } from "lucide-react";
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { ApprovalRecommendationBadge } from "@/components/outstation/approval-recommendation-badge";
 import { EligibilityResultCard } from "@/components/outstation/eligibility-result-card";
@@ -13,6 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import {
+  isRestorableOutstationLocalDraft,
+  outstationDraftStorageKey,
+  parseOutstationLocalDraft,
+  type OutstationLocalDraft,
+} from "@/lib/outstation/local-draft";
 import type {
   OutstationCalculationResult,
   OutstationCaptureResult,
@@ -25,27 +31,6 @@ import { formatEmployeeDisplayName } from "@/lib/utils";
 type MedicalTripOption = {
   hrId: string;
   name: string;
-};
-
-type LocalDraft = {
-  captured: OutstationCaptureResult | null;
-  carEvidenceCapturedAt: string | null;
-  carEvidenceImageDataUrl: string | null;
-  carEvidenceLatitude: number | null;
-  carEvidenceLocationLabel: string | null;
-  carEvidenceLongitude: number | null;
-  carEvidenceRequestId: string | null;
-  expenseType: OutstationExpenseType;
-  goTicketAmount: string;
-  hasTicketAttachments: boolean;
-  kilometerReading: string;
-  medicalTripHrId: string;
-  notes: string;
-  returnTicketAmount: string;
-  syncPending: boolean;
-  transportationType: OutstationTransportationType;
-  tripEndDate: string;
-  tripStartDate: string;
 };
 
 type CarEvidenceState = {
@@ -65,7 +50,7 @@ type CarEvidenceCaptureDetails = {
   capturedLongitude: number;
 };
 
-const draftKey = "phoenix-outstation-draft";
+const draftKey = outstationDraftStorageKey;
 const carEvidenceLogoSrc = "/brand/phoenix-camera-watermark.png";
 
 function buildDraftId() {
@@ -80,15 +65,6 @@ function egp(value: number) {
     maximumFractionDigits: 0,
     style: "currency",
   }).format(Number.isFinite(value) ? value : 0);
-}
-
-function parseDraft(raw: string | null): LocalDraft | null {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as LocalDraft;
-  } catch {
-    return null;
-  }
 }
 
 function getDurationSummary(start: string, end: string) {
@@ -298,6 +274,8 @@ export function MobileOutstationWizard({
   const [isOffline, setIsOffline] = useState(false);
   const [ticketFiles, setTicketFiles] = useState<File[]>([]);
   const carEvidenceStreamRef = useRef<MediaStream | null>(null);
+  const pendingOfflineDraftRef = useRef(false);
+  const skipInitialDraftPersistRef = useRef(true);
   const syncAttemptedRef = useRef(false);
   const lastCalculationKeyRef = useRef("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -312,11 +290,51 @@ export function MobileOutstationWizard({
       : `Overnight stay - ${calculation.overnightDays} ${calculation.overnightDays === 1 ? "night" : "nights"}`
     : getDurationSummary(tripStartDate, tripEndDate);
 
+  const stopCarEvidenceCamera = useCallback(() => {
+    if (carEvidenceStreamRef.current) {
+      carEvidenceStreamRef.current.getTracks().forEach((track) => track.stop());
+      carEvidenceStreamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsCarEvidenceCameraOpen(false);
+    setIsCapturingCarEvidence(false);
+  }, []);
+
+  const resetFormState = useCallback(() => {
+    pendingOfflineDraftRef.current = false;
+    syncAttemptedRef.current = false;
+    lastCalculationKeyRef.current = "";
+    window.localStorage.removeItem(draftKey);
+    stopCarEvidenceCamera();
+    setCalculation(null);
+    setCaptured(null);
+    setCarEvidence(null);
+    setCarEvidenceDraftId(buildDraftId());
+    setExpenseType("traveling");
+    setGoTicketAmount("");
+    setKilometerReading("");
+    setMedicalTripHrId("");
+    setNotes("");
+    setReturnTicketAmount("");
+    setTripStartDate("");
+    setTripEndDate("");
+    setTicketFiles([]);
+    setTransportationType("car");
+    setStep(1);
+  }, [stopCarEvidenceCamera]);
+
   useEffect(() => {
-    const restore = parseDraft(window.localStorage.getItem(draftKey));
-    if (!restore) return;
+    const restore = parseOutstationLocalDraft(window.localStorage.getItem(draftKey));
+    if (!isRestorableOutstationLocalDraft(restore)) {
+      window.localStorage.removeItem(draftKey);
+      return;
+    }
+
+    pendingOfflineDraftRef.current = true;
     const draftId = restore.carEvidenceRequestId?.trim() || buildDraftId();
-    // Restore the offline draft once after hydration; this intentionally syncs React state with localStorage.
+    // Restore only offline sync drafts. Submitted or stale online drafts must not repopulate a new request.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCaptured(restore.captured);
     setCarEvidenceDraftId(draftId);
@@ -358,7 +376,20 @@ export function MobileOutstationWizard({
   }, []);
 
   useEffect(() => {
-    const draft: LocalDraft = {
+    if (skipInitialDraftPersistRef.current) {
+      skipInitialDraftPersistRef.current = false;
+      return;
+    }
+
+    if (!isOffline || !captured) {
+      if (!pendingOfflineDraftRef.current) {
+        window.localStorage.removeItem(draftKey);
+      }
+      return;
+    }
+
+    pendingOfflineDraftRef.current = true;
+    const draft: OutstationLocalDraft = {
       captured,
       carEvidenceCapturedAt: carEvidence?.capturedAt ?? null,
       carEvidenceImageDataUrl: carEvidence?.imageDataUrl ?? null,
@@ -373,7 +404,7 @@ export function MobileOutstationWizard({
       medicalTripHrId,
       notes,
       returnTicketAmount,
-      syncPending: isOffline && Boolean(captured),
+      syncPending: true,
       transportationType,
       tripEndDate,
       tripStartDate,
@@ -403,7 +434,7 @@ export function MobileOutstationWizard({
   useEffect(() => {
     if (!isOffline) {
       const syncPending = async () => {
-        const draft = parseDraft(window.localStorage.getItem(draftKey));
+        const draft = parseOutstationLocalDraft(window.localStorage.getItem(draftKey));
         if (
           !draft?.syncPending ||
           !draft.captured ||
@@ -464,7 +495,7 @@ export function MobileOutstationWizard({
             method: "POST",
           });
           if (response.ok) {
-            window.localStorage.removeItem(draftKey);
+            resetFormState();
             setMessage("Offline outstation draft synced successfully after reconnecting.");
           } else {
             syncAttemptedRef.current = false;
@@ -477,7 +508,7 @@ export function MobileOutstationWizard({
     } else {
       syncAttemptedRef.current = false;
     }
-  }, [employeeHrId, isOffline, medicalTripOptions]);
+  }, [employeeHrId, isOffline, medicalTripOptions, resetFormState]);
 
   const hasTicketAttachments = ticketFiles.length > 0;
   const hasCarEvidence = Boolean(carEvidence?.imageDataUrl);
@@ -725,18 +756,6 @@ export function MobileOutstationWizard({
     }
   }
 
-  function stopCarEvidenceCamera() {
-    if (carEvidenceStreamRef.current) {
-      carEvidenceStreamRef.current.getTracks().forEach((track) => track.stop());
-      carEvidenceStreamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setIsCarEvidenceCameraOpen(false);
-    setIsCapturingCarEvidence(false);
-  }
-
   useEffect(() => {
     if (!isCarEvidenceCameraOpen || !videoRef.current || !carEvidenceStreamRef.current) {
       return;
@@ -892,22 +911,7 @@ export function MobileOutstationWizard({
         return;
       }
 
-      window.localStorage.removeItem(draftKey);
-      setCalculation(null);
-      setCaptured(null);
-      setCarEvidence(null);
-      setCarEvidenceDraftId(buildDraftId());
-      setExpenseType("traveling");
-      setGoTicketAmount("");
-      setKilometerReading("");
-      setMedicalTripHrId("");
-      setNotes("");
-      setReturnTicketAmount("");
-      setTripStartDate("");
-      setTripEndDate("");
-      setTicketFiles([]);
-      setTransportationType("car");
-      setStep(1);
+      resetFormState();
       setMessage(
         isOffline
           ? "Offline request synced successfully."
