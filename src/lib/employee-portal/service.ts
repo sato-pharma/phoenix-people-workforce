@@ -48,6 +48,7 @@ import type { SalesDashboardData } from "@/lib/sales/types";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { canonicalSalesLine } from "@/lib/sales/others";
 import { getMarketingRequestDraftWorkspace } from "@/lib/marketing-requests/service";
+import { listPendingApprovals } from "@/lib/pending-approvals/service";
 import { getVacationReportData } from "@/lib/vacation/service";
 
 // ---------------------------------------------------------------------------
@@ -2347,7 +2348,8 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
 async function buildEmployeePortalOverviewData(input: {
   access: AccessContext;
   currentHrId: string | null;
-  pendingExpenseCount: number;
+  pendingApprovalCount: number;
+  pendingExpenseApprovalCount: number;
 }): Promise<MedicalRepPortalData["overview"]> {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -2358,7 +2360,6 @@ async function buildEmployeePortalOverviewData(input: {
   ]);
 
   const vacationRows = vacationReport?.rows ?? [];
-  const pendingVacationApprovals = vacationRows.filter((row) => row.status === "pending_manager" && row.canDecide).length;
   const myPendingVacationRequests = vacationRows.filter((row) => {
     return row.status === "pending_manager" && normalizeHrId(row.employeeHrId) === input.currentHrId;
   }).length;
@@ -2380,10 +2381,10 @@ async function buildEmployeePortalOverviewData(input: {
 
   const myActions: MedicalRepPortalData["overview"]["myActions"] = [
     {
-      count: pendingVacationApprovals,
-      href: "/leave-management/vacation-report?status=pending_manager",
-      id: "vacation-approvals",
-      label: "Vacation approvals waiting",
+      count: input.pendingApprovalCount,
+      href: "/pending-approvals",
+      id: "pending-approvals",
+      label: "Pending approvals waiting",
     },
     {
       count: myPendingVacationRequests,
@@ -2398,10 +2399,10 @@ async function buildEmployeePortalOverviewData(input: {
       label: "Marketing request drafts",
     },
     {
-      count: input.pendingExpenseCount,
-      href: "/employee-portals/expense-dashboard",
+      count: input.pendingExpenseApprovalCount,
+      href: "/pending-approvals?type=expense",
       id: "expense-actions",
-      label: "Expense actions pending",
+      label: "Expense approvals waiting",
     },
   ].filter((item) => item.count > 0);
 
@@ -3544,7 +3545,7 @@ export async function getMedicalRepPortalData(
     }
 
     // Prefetch dashboards to avoid double fetching inside getEmployeePortalData
-    const [salesDashboard, payrollDashboard, historicalExpenses, liveOutstationExpenses, expenseReports] = await Promise.all([
+    const [salesDashboard, payrollDashboard, historicalExpenses, liveOutstationExpenses, expenseReports, pendingApprovalItems] = await Promise.all([
       getScopedEmployeePortalSalesDashboard({
         line: salesLineFilter,
         salesScope,
@@ -3554,6 +3555,7 @@ export async function getMedicalRepPortalData(
       listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
       includeLiveOutstationExpenses ? listOutstationExpensesForPortal(currentHrId ? [currentHrId] : []) : Promise.resolve([]),
       listPayrollExpenseReports({ ...access, hrId: currentHrId }),
+      listPendingApprovals(access).catch(() => []),
     ]);
     const expenses = [...historicalExpenses, ...liveOutstationExpenses];
 
@@ -3583,12 +3585,14 @@ export async function getMedicalRepPortalData(
         employee,
       })
     : emptyPortalVacancySummary();
-  const pendingApprovalCount = expenses.filter((expense) => !expense.hrApproved).length;
+  const pendingApprovalCount = pendingApprovalItems.length;
+  const pendingExpenseApprovalCount = pendingApprovalItems.filter((item) => item.workflow === "expense").length;
   const overview = includePortalOverview
     ? await buildEmployeePortalOverviewData({
         access,
         currentHrId,
-        pendingExpenseCount: pendingApprovalCount,
+        pendingApprovalCount,
+        pendingExpenseApprovalCount,
       })
     : {
         employeesOnLeaveToday: [],

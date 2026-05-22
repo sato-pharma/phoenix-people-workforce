@@ -50,6 +50,7 @@ import { runAdminPayslipImageExportTests } from "./admin-payslip-image-export.te
 import { runEmployeePayrollEligibilityTests } from "./employee-payroll-eligibility.test.ts";
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
+import { runPendingApprovalsPortalTests } from "./pending-approvals-portal.test.ts";
 import { runVacancyReportSourceTests } from "./vacancy-report-source.test.ts";
 import { runProbationStabilizationTests } from "./probation-stabilization.test.ts";
 import { runGoogleRoutesShortestTests } from "./google-routes-shortest.test.ts";
@@ -135,6 +136,7 @@ await runTest("employee portal payslip salary", runEmployeePortalPayslipSalaryTe
 await runTest("admin payslip image export", runAdminPayslipImageExportTests);
 await runTest("employee payroll eligibility", runEmployeePayrollEligibilityTests);
 await runTest("employee access provisioning", runEmployeeAccessProvisioningTests);
+await runTest("pending approvals portal", runPendingApprovalsPortalTests);
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report source", runVacancyReportSourceTests);
 await runTest("probation stabilization", runProbationStabilizationTests);

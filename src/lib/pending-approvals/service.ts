@@ -2,7 +2,6 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import {
   assertPermission,
   canAccess,
-  isDesignatedHrSpecialist,
   normalizeHrIdForAccess,
   resolveEmployeeIdentityId,
   type AccessContext,
@@ -46,6 +45,7 @@ export type PendingApprovalWorkflow =
   | "vacation";
 
 export type PendingApprovalItem = {
+  canDecide?: boolean;
   currentStep: string;
   detailHref: string;
   id: string;
@@ -72,7 +72,7 @@ const rejectCommentRequired = new Set<PendingApprovalWorkflow>([
 ]);
 
 const financeApprovalRoles = new Set<PhoenixRole>(["CEO", "Finance Manager", "Super Admin"]);
-const hrApprovalRoles = new Set<PhoenixRole>(["CEO", "HR Specialist", "Super Admin"]);
+const hrApprovalRoles = new Set<PhoenixRole>(["CEO", "Super Admin"]);
 
 function actorId(access: AccessContext) {
   return resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
@@ -145,9 +145,7 @@ function canApproveHierarchyItem(input: {
 }) {
   if (!input.requesterHrId || actorMatchesHrId(input.access, input.requesterHrId)) return false;
   if (input.access.scope === "system") return true;
-  if (input.companyRoles?.has(input.access.role)) {
-    if (input.access.role !== "HR Specialist" || isDesignatedHrSpecialist(input.access)) return true;
-  }
+  if (input.companyRoles?.has(input.access.role)) return true;
   if (!input.directory) return false;
   return isRequesterInActorHierarchy(input.access, input.directory, input.requesterHrId);
 }
@@ -155,7 +153,7 @@ function canApproveHierarchyItem(input: {
 function canApproveHrItem(access: AccessContext, requesterHrId: string | null | undefined) {
   if (requesterHrId && actorMatchesHrId(access, requesterHrId)) return false;
   if (access.scope === "system" || access.role === "Super Admin" || access.role === "CEO") return true;
-  return isDesignatedHrSpecialist(access);
+  return false;
 }
 
 function isSelfApproval(access: AccessContext, requesterHrId: string | null | undefined) {
@@ -168,7 +166,7 @@ async function assertAssignedPendingApproval(
   id: string,
 ) {
   const visibleItems = await listPendingApprovals(access);
-  const isAssigned = visibleItems.some((item) => item.workflow === workflow && item.id === id);
+  const isAssigned = visibleItems.some((item) => item.workflow === workflow && item.id === id && item.canDecide !== false);
   if (!isAssigned) {
     throw new Error("Forbidden: this approval is not assigned to your hierarchy or current workflow step.");
   }
@@ -206,13 +204,24 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
 
   const lists = await Promise.all([
     safeApprovalList(async () => {
-      if (!await canApprove(access, "leave")) return [];
+      const canApproveLeave = await canApprove(access, "leave");
+      const canViewOwnLeaveStatus = canApproveLeave || await canAccess(access, "leave", "read");
+      if (!canViewOwnLeaveStatus) return [];
       const data = await getVacationReportData(access, { status: "all" });
       return data.rows
-        .filter((request) => request.canDecide && (request.status === "pending_manager" || request.status === "pending_hr"))
-        .filter((request) => !isSelfApproval(access, request.employeeHrId))
+        .filter((request) => {
+          if (request.status !== "pending_manager" && request.status !== "pending_hr") return false;
+          return request.canDecide || isSelfApproval(access, request.employeeHrId);
+        })
         .map((request) => ({
-          currentStep: request.status === "pending_hr" ? "HR final approval" : "Manager approval",
+          canDecide: !isSelfApproval(access, request.employeeHrId),
+          currentStep: isSelfApproval(access, request.employeeHrId)
+            ? request.status === "pending_hr"
+              ? "Waiting for HR final approval"
+              : "Waiting for manager approval"
+            : request.status === "pending_hr"
+              ? "HR final approval"
+              : "Manager approval",
           detailHref: `/leave-management/vacation-report?tab=requests&requestId=${encodeURIComponent(request.id)}`,
           id: request.id,
           requester: request.employeeName,
@@ -266,20 +275,32 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
         }));
     }),
     safeApprovalList(async () => {
-      if (!await canApprove(access, "outstation")) return [];
+      const canApproveOutstation = await canApprove(access, "outstation");
+      const canViewOwnOutstationStatus =
+        canApproveOutstation ||
+        await canAccess(access, "outstation", "read") ||
+        await canAccess(access, "outstation", "create");
+      if (!canViewOwnOutstationStatus) return [];
       const directory = await directoryPromise;
       const requests = await listOutstationRequests();
       return requests
         .filter((request) => request.status === "submitted")
-        .filter((request) => canApproveHierarchyItem({
-          access,
-          companyRoles: financeApprovalRoles,
-          directory,
-          requesterHrId: request.employeeHrId,
-        }))
-        .map((request) => ({
-          currentStep: "Outstation approval",
-          detailHref: `/admin/outstation/requests?requestId=${request.id}`,
+        .map((request) => {
+          const isOwnRequest = actorMatchesHrId(access, request.employeeHrId);
+          const canDecideRequest = canApproveOutstation && !isOwnRequest && canApproveHierarchyItem({
+            access,
+            companyRoles: financeApprovalRoles,
+            directory,
+            requesterHrId: request.employeeHrId,
+          });
+
+          return { request, canDecideRequest, isOwnRequest };
+        })
+        .filter(({ canDecideRequest, isOwnRequest }) => canDecideRequest || (canViewOwnOutstationStatus && isOwnRequest))
+        .map(({ canDecideRequest, isOwnRequest, request }) => ({
+          canDecide: canDecideRequest,
+          currentStep: isOwnRequest ? "Waiting for outstation approval" : "Outstation approval",
+          detailHref: isOwnRequest ? "/employee-portals/expense-dashboard" : `/admin/outstation/requests?requestId=${request.id}`,
           id: String(request.id),
           requester: request.employeeName,
           requesterHrId: request.employeeHrId,

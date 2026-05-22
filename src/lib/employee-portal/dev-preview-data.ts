@@ -139,9 +139,9 @@ export const employeePortalDevPreviewData = {
       },
       {
         count: 5,
-        href: "/employee-portals/expense-dashboard",
+        href: "/pending-approvals?type=expense",
         id: "expense-actions",
-        label: "Expense actions pending",
+        label: "Expense approvals waiting",
       },
     ],
     vacancyDetails: {

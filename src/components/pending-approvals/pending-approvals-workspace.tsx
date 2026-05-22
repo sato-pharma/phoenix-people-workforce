@@ -24,6 +24,13 @@ const workflowFilterOptions: Array<{ label: string; value: PendingApprovalItem["
   { label: "Payroll Batch", value: "payroll-batch" },
 ];
 
+function workflowFromQuery(value: string | null): PendingApprovalItem["workflow"] | "all" {
+  if (!value) return "all";
+  return workflowFilterOptions.some((option) => option.value === value)
+    ? value as PendingApprovalItem["workflow"]
+    : "all";
+}
+
 function formatDateTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value || "-";
@@ -60,14 +67,20 @@ function submittedDateKey(value: string) {
   return date.toISOString().slice(0, 10);
 }
 
-export function PendingApprovalsWorkspace({ initialItems }: { initialItems: PendingApprovalItem[] }) {
+export function PendingApprovalsWorkspace({
+  initialItems,
+  initialTypeFilter = "all",
+}: {
+  initialItems: PendingApprovalItem[];
+  initialTypeFilter?: PendingApprovalItem["workflow"] | "all" | string | null;
+}) {
   const [items, setItems] = useState(initialItems);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<PendingApprovalItem | null>(null);
   const [rejectComment, setRejectComment] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState<PendingApprovalItem["workflow"] | "all">(workflowFromQuery(initialTypeFilter));
   const [personFilter, setPersonFilter] = useState("");
   const [dateFromFilter, setDateFromFilter] = useState("");
   const [dateToFilter, setDateToFilter] = useState("");
@@ -94,6 +107,11 @@ export function PendingApprovalsWorkspace({ initialItems }: { initialItems: Pend
     });
   }, [dateFromFilter, dateToFilter, items, personFilter, typeFilter]);
 
+  const decisionItemCount = useMemo(() => items.filter((item) => item.canDecide !== false).length, [items]);
+  const filteredDecisionItemCount = useMemo(
+    () => filteredItems.filter((item) => item.canDecide !== false).length,
+    [filteredItems],
+  );
   const hasActiveFilters = typeFilter !== "all" || Boolean(personFilter.trim()) || Boolean(dateFromFilter) || Boolean(dateToFilter);
 
   const grouped = useMemo(() => {
@@ -168,8 +186,8 @@ export function PendingApprovalsWorkspace({ initialItems }: { initialItems: Pend
               <h1 className="text-2xl font-black tracking-tight text-slate-950">Pending Approvals</h1>
               <p className="mt-1 text-sm leading-6 text-slate-600">
                 {filteredItems.length === items.length
-                  ? `${items.length} items require your decision.`
-                  : `${filteredItems.length} of ${items.length} items match your filters.`}
+                  ? `${items.length} pending items, ${decisionItemCount} require your decision.`
+                  : `${filteredItems.length} of ${items.length} pending items match your filters; ${filteredDecisionItemCount} require your decision.`}
               </p>
             </div>
           </div>
@@ -205,7 +223,7 @@ export function PendingApprovalsWorkspace({ initialItems }: { initialItems: Pend
             <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <select
               className="h-11 w-full appearance-none rounded-[14px] border border-slate-200 bg-white pl-9 pr-8 text-sm font-black text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
-              onChange={(event) => setTypeFilter(event.target.value)}
+              onChange={(event) => setTypeFilter(workflowFromQuery(event.target.value))}
               value={typeFilter}
             >
               <option value="all">All approval types</option>
@@ -248,7 +266,7 @@ export function PendingApprovalsWorkspace({ initialItems }: { initialItems: Pend
       {items.length === 0 ? (
         <div className="rounded-[22px] border border-dashed border-slate-300 bg-white/80 px-5 py-12 text-center shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
           <p className="text-base font-black text-slate-900">No pending approvals</p>
-          <p className="mt-2 text-sm text-slate-500">New items assigned to you will appear here.</p>
+          <p className="mt-2 text-sm text-slate-500">New items assigned to you or submitted by you will appear here.</p>
         </div>
       ) : filteredItems.length === 0 ? (
         <div className="rounded-[22px] border border-dashed border-slate-300 bg-white/80 px-5 py-12 text-center shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
@@ -266,6 +284,7 @@ export function PendingApprovalsWorkspace({ initialItems }: { initialItems: Pend
               {groupItems.map((item) => {
                 const key = `${item.workflow}:${item.id}`;
                 const busy = busyKey === key;
+                const canDecide = item.canDecide !== false;
                 return (
                   <article className="grid gap-4 px-5 py-4 transition hover:bg-orange-50/40 lg:grid-cols-[1fr_auto]" key={key}>
                     <div className="min-w-0">
@@ -286,24 +305,32 @@ export function PendingApprovalsWorkspace({ initialItems }: { initialItems: Pend
                       >
                         See Details
                       </Link>
-                      <button
-                        className="inline-flex items-center justify-center gap-1.5 rounded-full bg-emerald-600 px-3 py-2 text-xs font-black text-white shadow-[0_8px_18px_rgba(5,150,105,0.18)] transition hover:bg-emerald-700 disabled:opacity-60"
-                        disabled={busy}
-                        onClick={() => void decide(item, "approve")}
-                        type="button"
-                      >
-                        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                        Approve
-                      </button>
-                      <button
-                        className="inline-flex items-center justify-center gap-1.5 rounded-full bg-rose-600 px-3 py-2 text-xs font-black text-white shadow-[0_8px_18px_rgba(225,29,72,0.18)] transition hover:bg-rose-700 disabled:opacity-60"
-                        disabled={busy}
-                        onClick={() => startReject(item)}
-                        type="button"
-                      >
-                        <XCircle className="h-3.5 w-3.5" />
-                        Reject
-                      </button>
+                      {canDecide ? (
+                        <>
+                          <button
+                            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-emerald-600 px-3 py-2 text-xs font-black text-white shadow-[0_8px_18px_rgba(5,150,105,0.18)] transition hover:bg-emerald-700 disabled:opacity-60"
+                            disabled={busy}
+                            onClick={() => void decide(item, "approve")}
+                            type="button"
+                          >
+                            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                            Approve
+                          </button>
+                          <button
+                            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-rose-600 px-3 py-2 text-xs font-black text-white shadow-[0_8px_18px_rgba(225,29,72,0.18)] transition hover:bg-rose-700 disabled:opacity-60"
+                            disabled={busy}
+                            onClick={() => startReject(item)}
+                            type="button"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                            Reject
+                          </button>
+                        </>
+                      ) : (
+                        <span className="inline-flex items-center justify-center rounded-full bg-amber-50 px-3 py-2 text-xs font-black text-amber-700 ring-1 ring-amber-100">
+                          Waiting
+                        </span>
+                      )}
                     </div>
                   </article>
                 );

@@ -8,6 +8,8 @@ import { NotificationsHistory } from "@/components/notifications/notifications-h
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listInAppNotificationsForViewer } from "@/lib/notifications/in-app";
+import { mergePendingApprovalNotifications } from "@/lib/pending-approvals/notifications";
+import { listPendingApprovals } from "@/lib/pending-approvals/service";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +19,11 @@ export default async function NotificationsPage() {
     redirect("/login");
   }
 
-  const notifications = await listInAppNotificationsForViewer(access, 100);
+  const [storedNotifications, pendingApprovalItems] = await Promise.all([
+    listInAppNotificationsForViewer(access, 100),
+    listPendingApprovals(access).catch(() => []),
+  ]);
+  const notifications = mergePendingApprovalNotifications(storedNotifications, pendingApprovalItems, 100);
 
   if (resolveNavigationMode(access) === "employee-portal") {
     return (

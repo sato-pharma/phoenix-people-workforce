@@ -11,7 +11,17 @@ import { listPendingApprovals } from "@/lib/pending-approvals/service";
 
 export const dynamic = "force-dynamic";
 
-export default async function PendingApprovalsPage() {
+function firstSearchParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function PendingApprovalsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ type?: string | string[] }>;
+}) {
+  const resolvedSearchParams = await searchParams;
+  const initialTypeFilter = firstSearchParam(resolvedSearchParams?.type);
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) {
     redirect("/login");
@@ -24,10 +34,10 @@ export default async function PendingApprovalsPage() {
       <EmployeePortalServerShell access={access}>
         <EmployeePortalPageShell
           badge="Workflow"
-          description="Review the approval decisions assigned to your hierarchy and current workflow step."
+          description="Review approval decisions assigned to you and pending requests submitted by you."
           title="Pending Approvals"
         >
-          <PendingApprovalsWorkspace initialItems={items} />
+          <PendingApprovalsWorkspace initialItems={items} initialTypeFilter={initialTypeFilter} />
         </EmployeePortalPageShell>
       </EmployeePortalServerShell>
     );
@@ -36,7 +46,7 @@ export default async function PendingApprovalsPage() {
   return (
     <AppShell navigationMode="admin">
       <PageContainer className="max-w-none">
-        <PendingApprovalsWorkspace initialItems={items} />
+        <PendingApprovalsWorkspace initialItems={items} initialTypeFilter={initialTypeFilter} />
       </PageContainer>
     </AppShell>
   );

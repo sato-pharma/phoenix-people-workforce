@@ -28,6 +28,7 @@ export function runEmployeePortalNavigationTests() {
   const districtManager = resolveEmployeePortalNavVisibility("District Manager");
   assert.equal(districtManager.showMyCoachingTab, false, "DSM should not see My Coaching Reports");
   assert.equal(districtManager.showTeamCoachingTab, true, "DSM should see Team Coaching Reports");
+  assert.equal(districtManager.showPendingApprovalsTab, true, "DSM should see Pending Approvals");
   assert.equal(districtManager.showTrainingManagerCreateCoachingTab, false, "DSM should not see Create Coaching Report");
 
   const nationalSalesManager = resolveEmployeePortalNavVisibility("National Sales Manager");
@@ -36,6 +37,7 @@ export function runEmployeePortalNavigationTests() {
 
   const nsmAlias = resolveEmployeePortalNavVisibility("NSM");
   assert.equal(nsmAlias.showTeamCoachingTab, true, "NSM alias should see Team Coaching Reports");
+  assert.equal(nsmAlias.showPendingApprovalsTab, true, "NSM alias should see Pending Approvals");
 
   const trainingManager = resolveEmployeePortalNavVisibility("Training Manager");
   assert.equal(trainingManager.showDashboardTab, false, "Training Manager should not see Dashboard");

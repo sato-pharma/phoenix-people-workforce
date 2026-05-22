@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { listInAppNotificationsForViewer } from "@/lib/notifications/in-app";
+import { mergePendingApprovalNotifications } from "@/lib/pending-approvals/notifications";
+import { listPendingApprovals } from "@/lib/pending-approvals/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +17,12 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url);
     const limit = Number(url.searchParams.get("limit") ?? 8);
-    const notifications = await listInAppNotificationsForViewer(access, Number.isFinite(limit) ? limit : 8);
+    const requestedLimit = Number.isFinite(limit) ? limit : 8;
+    const [storedNotifications, pendingApprovalItems] = await Promise.all([
+      listInAppNotificationsForViewer(access, requestedLimit),
+      listPendingApprovals(access).catch(() => []),
+    ]);
+    const notifications = mergePendingApprovalNotifications(storedNotifications, pendingApprovalItems, requestedLimit);
     return NextResponse.json({
       data: notifications,
       readCount: notifications.filter((notification) => notification.isRead).length,

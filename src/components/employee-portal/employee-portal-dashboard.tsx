@@ -689,15 +689,22 @@ function resolveExpenseActionHref(data: MedicalRepPortalData) {
 }
 
 function canUsePendingApprovals(data: MedicalRepPortalData) {
+  if (data.workforce.pendingApprovals > 0) return true;
+
   const role = normalizedRoleLabel(data);
   return [
     "district manager",
+    "district sales manager",
+    "dsm",
     "regional manager",
+    "regional sales manager",
+    "rsm",
     "national sales manager",
-    "manager",
+    "nsm",
     "finance manager",
     "ceo",
-  ].includes(role);
+    "super admin",
+  ].some((token) => role.includes(token)) || role === "manager";
 }
 
 function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
@@ -1499,7 +1506,9 @@ function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
                 href={item.href}
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-orange-50 text-orange-600 ring-1 ring-orange-100 transition-transform duration-200 group-hover:scale-105">
-                  {item.id === "vacation-approvals" ? (
+                  {item.id === "pending-approvals" ? (
+                    <ClipboardCheck className="h-5 w-5" />
+                  ) : item.id === "vacation-approvals" ? (
                     <CalendarClock className="h-5 w-5" />
                   ) : item.id === "my-vacation-requests" ? (
                     <CalendarDays className="h-5 w-5" />
