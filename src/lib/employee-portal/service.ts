@@ -2295,6 +2295,12 @@ export type MedicalRepPortalData = {
   };
 };
 
+/**
+ * Lightweight shell-only data for the Employee Portal chrome.
+ * Keep this limited to profile, role, nav visibility inputs, and basic contract
+ * context. Do not add dashboard, chart, payroll history, request lists, or other
+ * page-heavy data here; those belong in route-specific loaders.
+ */
 export type EmployeePortalShellData = Pick<MedicalRepPortalData, "employee" | "hrContract">;
 
 export async function getEmployeePortalShellData(access: AccessContext): Promise<EmployeePortalShellData> {
@@ -2949,6 +2955,17 @@ type PortalVacancySummary = {
   openVacancies: number;
 };
 
+function emptyPortalVacancySummary(): PortalVacancySummary {
+  return {
+    districtManagerVacancies: 0,
+    groupProductManagerVacancies: 0,
+    lineStructureVacancies: 0,
+    medicalRepVacancies: 0,
+    nationalSalesManagerVacancies: 0,
+    openVacancies: 0,
+  };
+}
+
 async function fetchOpenVacancySummaryForScope({
   currentUser,
   employee,
@@ -3488,6 +3505,10 @@ async function resolveSalesRankInTeam(params: {
 }
 
 type TeamComparisonOptions = {
+  includeLiveOutstationExpenses?: boolean;
+  includePortalOverview?: boolean;
+  includeTeamRank?: boolean;
+  includeWorkforceSummary?: boolean;
   teamComparisonPeriod?: string | null;
 };
 
@@ -3503,6 +3524,10 @@ export async function getMedicalRepPortalData(
       role: currentUser.role as PhoenixRole,
       salesScopeOverride: currentUser.salesScopeOverride as BusinessScope,
     });
+    const includeLiveOutstationExpenses = options.includeLiveOutstationExpenses ?? true;
+    const includePortalOverview = options.includePortalOverview ?? true;
+    const includeTeamRank = options.includeTeamRank ?? true;
+    const includeWorkforceSummary = options.includeWorkforceSummary ?? true;
 
     const directory = await getEmployeeDirectory();
     const currentEmployee = currentHrId ? findDirectoryEmployeeByHrId(directory, currentHrId) : null;
@@ -3527,7 +3552,7 @@ export async function getMedicalRepPortalData(
       }),
       currentHrId ? getEmployeePortalPayrollDashboard(currentHrId) : Promise.resolve(null),
       listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
-      listOutstationExpensesForPortal(currentHrId ? [currentHrId] : []),
+      includeLiveOutstationExpenses ? listOutstationExpensesForPortal(currentHrId ? [currentHrId] : []) : Promise.resolve([]),
       listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     ]);
     const expenses = [...historicalExpenses, ...liveOutstationExpenses];
@@ -3551,22 +3576,44 @@ export async function getMedicalRepPortalData(
     directory,
     employee,
   });
-  const vacancySummary = await fetchOpenVacancySummaryForScope({
-    currentUser,
-    employee,
-  });
+  const shouldBuildScopeSummaries = includePortalOverview || includeWorkforceSummary;
+  const vacancySummary = shouldBuildScopeSummaries
+    ? await fetchOpenVacancySummaryForScope({
+        currentUser,
+        employee,
+      })
+    : emptyPortalVacancySummary();
   const pendingApprovalCount = expenses.filter((expense) => !expense.hrApproved).length;
-  const overview = await buildEmployeePortalOverviewData({
-    access,
-    currentHrId,
-    pendingExpenseCount: pendingApprovalCount,
-  });
-  const workforce = buildPortalWorkforceSummary({
-    pendingApprovals: pendingApprovalCount,
-    rows: workforceRows,
-    scopeLabel: resolvePortalWorkforceScopeLabel({ currentUser, employee }),
-    vacancySummary,
-  });
+  const overview = includePortalOverview
+    ? await buildEmployeePortalOverviewData({
+        access,
+        currentHrId,
+        pendingExpenseCount: pendingApprovalCount,
+      })
+    : {
+        employeesOnLeaveToday: [],
+        myActions: [],
+        vacancyDetails: null,
+      };
+  const workforceScopeLabel = resolvePortalWorkforceScopeLabel({ currentUser, employee });
+  const workforce = includeWorkforceSummary
+    ? buildPortalWorkforceSummary({
+        pendingApprovals: pendingApprovalCount,
+        rows: workforceRows,
+        scopeLabel: workforceScopeLabel,
+        vacancySummary,
+      })
+    : {
+        activeHeadcount: 0,
+        contractRenewalsDue: 0,
+        dataCoveragePercent: 0,
+        missingEmployeeData: 0,
+        newHires: 0,
+        openVacancies: 0,
+        pendingApprovals: 0,
+        probationDue: 0,
+        scopeLabel: workforceScopeLabel,
+      };
 
   const allTimeTrend = (salesDashboard && Array.isArray(salesDashboard.trend))
     ? salesDashboard.trend
@@ -3671,13 +3718,15 @@ export async function getMedicalRepPortalData(
 
   const topProduct = productContribution[0]?.name ?? null;
   const topProductSalesValue = productContribution[0]?.sales ?? 0;
-  const orgStructure = await resolvePortalStructureSummary({
-    access,
-    currentUser,
-    directory,
-    employee,
-    vacancySummary,
-  });
+  const orgStructure = includeWorkforceSummary
+    ? await resolvePortalStructureSummary({
+        access,
+        currentUser,
+        directory,
+        employee,
+        vacancySummary,
+      })
+    : null;
   
   let teamRankResult: { 
     comparison: Array<{ position: number; name: string; achievementPercent: number; sales: number; target: number }>; 
@@ -3692,7 +3741,7 @@ export async function getMedicalRepPortalData(
     rank: { position: number; total: number } | null
   } | null = null;
   try {
-    if (currentHrId) {
+    if (includeTeamRank && currentHrId) {
       const currentRole = normalizeRole(currentUser.role);
       const isDistrictManager = currentRole === "District Manager";
       const isNationalSalesManager = currentRole === "National Sales Manager";
@@ -4043,6 +4092,15 @@ export async function getMedicalRepPortalData(
 } catch (error) {
   throw error;
 }
+}
+
+export async function getEmployeePortalIncentiveData(access: AccessContext): Promise<MedicalRepPortalData> {
+  return getMedicalRepPortalData(access, {
+    includeLiveOutstationExpenses: false,
+    includePortalOverview: false,
+    includeTeamRank: false,
+    includeWorkforceSummary: false,
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -483,6 +483,30 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes employee-portal-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.994);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes employee-portal-loading-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Dot pulse animations */
 .ep-pulse-orange { animation: ep-breathe-orange 2.4s ease-in-out infinite; }
 .ep-pulse-green  { animation: ep-breathe-green  2.4s ease-in-out infinite; }
@@ -517,6 +541,26 @@ body {
   animation: ep-fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.employee-portal-page-transition {
+  animation: employee-portal-page-enter 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: top center;
+}
+
+.employee-portal-route-loading {
+  animation: employee-portal-loading-enter 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.employee-portal-skeleton {
+  background:
+    linear-gradient(90deg, rgba(226, 232, 240, 0.55), rgba(255, 247, 237, 0.92), rgba(226, 232, 240, 0.55));
+  background-size: 220% 100%;
+  animation: ep-shimmer 1.7s ease-in-out infinite;
+}
+
+.employee-portal-nav-pending-dot {
+  animation: ep-breathe-orange 1.2s ease-in-out infinite;
+}
+
 /* Glass surface helper — use alongside bg-* for layered glass */
 .ep-glass {
   backdrop-filter: blur(14px);
@@ -534,7 +578,11 @@ body {
   .ep-pulse-amber,
   .ep-progress-shimmer::after,
   .ep-count-reveal,
-  .ep-fade-in-up {
+  .ep-fade-in-up,
+  .employee-portal-page-transition,
+  .employee-portal-route-loading,
+  .employee-portal-skeleton,
+  .employee-portal-nav-pending-dot {
     animation: none;
   }
 }
