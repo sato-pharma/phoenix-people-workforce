@@ -26,6 +26,8 @@ import {
   CalendarDays,
   Car,
   CircleDollarSign,
+  Eye,
+  EyeOff,
   HelpCircle,
   Info,
   MapPin,
@@ -86,6 +88,8 @@ function egp(value: number) {
     style: "currency",
   }).format(Number.isFinite(value) ? value : 0);
 }
+
+const maskedMoneyValue = "******";
 
 function prettyDate(value: string | null) {
   return formatDateOnly(value, "en-GB", { day: "2-digit", month: "short", year: "numeric" }, "Not available");
@@ -789,7 +793,13 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
   );
 }
 
-function IncentiveStatusCard({ data }: { data: MedicalRepPortalData }) {
+function IncentiveStatusCard({
+  data,
+  isSalaryVisible,
+}: {
+  data: MedicalRepPortalData;
+  isSalaryVisible: boolean;
+}) {
   const achievementPercent = data.sales.overviewAchievementPercent;
   const shortfallPercent = Math.max(0, 90 - achievementPercent);
   const calculation = calculateIncentive2026({
@@ -812,7 +822,7 @@ function IncentiveStatusCard({ data }: { data: MedicalRepPortalData }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-2xl leading-tight font-semibold tracking-tight text-slate-900">
-            {isEligible ? egp(calculation.payoutAmount) : "Below Threshold"}
+            {isEligible ? (isSalaryVisible ? egp(calculation.payoutAmount) : maskedMoneyValue) : "Below Threshold"}
           </p>
           <p className="mt-1.5 text-xs font-medium text-slate-500">Incentive Policy</p>
           <p className="mt-1 text-xs text-slate-500">
@@ -840,7 +850,38 @@ function IncentiveStatusCard({ data }: { data: MedicalRepPortalData }) {
   );
 }
 
-function IncentiveCalculatorWidget({ data }: { data: MedicalRepPortalData }) {
+function IncentiveSalaryVisibilityToggle({
+  isSalaryVisible,
+  onToggleSalaryVisibility,
+}: {
+  isSalaryVisible: boolean;
+  onToggleSalaryVisibility: () => void;
+}) {
+  const label = isSalaryVisible ? "Hide incentive salary values" : "Show incentive salary values";
+
+  return (
+    <button
+      aria-label={label}
+      aria-pressed={isSalaryVisible}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-2 focus-visible:outline-orange-500 focus-visible:outline-offset-1"
+      onClick={onToggleSalaryVisibility}
+      title={label}
+      type="button"
+    >
+      {isSalaryVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+    </button>
+  );
+}
+
+function IncentiveCalculatorWidget({
+  data,
+  isSalaryVisible,
+  onToggleSalaryVisibility,
+}: {
+  data: MedicalRepPortalData;
+  isSalaryVisible: boolean;
+  onToggleSalaryVisibility: () => void;
+}) {
   const salaryReference = calculateIncentive2026({
     achievementPercent: 100,
     basicSalary: data.payroll.basicSalary,
@@ -874,23 +915,23 @@ function IncentiveCalculatorWidget({ data }: { data: MedicalRepPortalData }) {
     <OverviewPagePanel 
       title="Incentive Calculator (2026 Scheme)" 
       action={
-        <div className="flex items-center gap-1 text-[10px] text-slate-400">
-          <Info className="h-3 w-3" />
-          <span>Simulation only</span>
-        </div>
+        <IncentiveSalaryVisibilityToggle
+          isSalaryVisible={isSalaryVisible}
+          onToggleSalaryVisibility={onToggleSalaryVisibility}
+        />
       }
     >
       <div className="space-y-6">
         <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-600">Base Salary</span>
-            <span className="font-medium text-slate-900">{egp(calculatedBaseSalary)}</span>
+            <span className="font-medium text-slate-900">{isSalaryVisible ? egp(calculatedBaseSalary) : maskedMoneyValue}</span>
           </div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-600">Basic Salary</span>
-            <span className="font-medium text-slate-900">{egp(calculatedBasicSalary)}</span>
+            <span className="font-medium text-slate-900">{isSalaryVisible ? egp(calculatedBasicSalary) : maskedMoneyValue}</span>
           </div>
         </div>
 
@@ -915,7 +956,7 @@ function IncentiveCalculatorWidget({ data }: { data: MedicalRepPortalData }) {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Estimated Semester Payout</p>
-              <p className="text-2xl font-bold text-emerald-400">{egp(calc.payoutAmount)}</p>
+              <p className="text-2xl font-bold text-emerald-400">{isSalaryVisible ? egp(calc.payoutAmount) : maskedMoneyValue}</p>
             </div>
             <div className="text-right space-y-1">
               <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Payout %</p>
@@ -991,6 +1032,8 @@ function IncentiveSchemeDescriptionCard() {
 }
 
 export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalData }) {
+  const [isIncentiveSalaryVisible, setIsIncentiveSalaryVisible] = useState(false);
+
   if (data.empty.profile) {
     return <EmptyStateCard message="Your employee profile is not linked yet. Please contact HR." title="Profile Not Linked" />;
   }
@@ -999,9 +1042,13 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
     <div className="space-y-6">
       <div className="grid gap-5 xl:grid-cols-[1.2fr_1fr]">
         <IncentiveSchemeDescriptionCard />
-        <IncentiveStatusCard data={data} />
+        <IncentiveStatusCard data={data} isSalaryVisible={isIncentiveSalaryVisible} />
       </div>
-      <IncentiveCalculatorWidget data={data} />
+      <IncentiveCalculatorWidget
+        data={data}
+        isSalaryVisible={isIncentiveSalaryVisible}
+        onToggleSalaryVisibility={() => setIsIncentiveSalaryVisible((current) => !current)}
+      />
     </div>
   );
 }

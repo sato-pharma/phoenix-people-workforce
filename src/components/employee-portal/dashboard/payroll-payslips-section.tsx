@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Calculator, Eye, EyeOff, MinusCircle } from "lucide-react";
+import { Eye, EyeOff, MinusCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -130,11 +130,13 @@ export function PayrollSummaryPanel({ data }: { data: MedicalRepPortalData }) {
 }
 
 export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData }) {
+  const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
   const payrollMissing = data.empty.payroll;
   const latestStatus = data.payroll.latestBatchStatus?.replace(/_/g, " ") ?? "Unknown";
   const historyRows = [...data.payroll.payslipRows];
   const hasRows = historyRows.length > 0;
   const payslip = data.payroll.latestPayslip;
+  const breakdownToggleLabel = isBreakdownVisible ? "Hide salary breakdown" : "Show salary breakdown";
   const breakdownRows = [
     {
       formula: "Net Salary - Extra Cost of Living - Fuel Allowance",
@@ -222,7 +224,16 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
                     Fixed breakdown using the standard payroll salary policy.
                   </p>
                 </div>
-                <Calculator className="h-4 w-4 text-slate-400" />
+                <button
+                  aria-label={breakdownToggleLabel}
+                  aria-pressed={isBreakdownVisible}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-2 focus-visible:outline-orange-500 focus-visible:outline-offset-1"
+                  onClick={() => setIsBreakdownVisible((current) => !current)}
+                  title={breakdownToggleLabel}
+                  type="button"
+                >
+                  {isBreakdownVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
 
               <div className="mt-4 divide-y divide-slate-100 rounded-2xl border border-slate-100">
@@ -233,7 +244,7 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
                       <p className="mt-0.5 text-xs text-slate-500">{row.formula}</p>
                     </div>
                     <p className="font-mono text-sm font-semibold text-slate-900 tabular-nums">
-                      {egp(row.value)}
+                      {isBreakdownVisible ? egp(row.value) : "******"}
                     </p>
                   </div>
                 ))}
