@@ -117,6 +117,7 @@ type PermissionDbOverrideRow = {
 };
 
 const allActions: PermissionAction[] = ["read", "create", "update", "delete", "approve", "export", "import"];
+const reviewActions: PermissionAction[] = allActions.filter((action) => action !== "approve");
 const portalNavigationRoles = new Set<PhoenixRole>([
   "Employee",
   "Medical Rep",
@@ -132,6 +133,7 @@ const portalNavigationRoles = new Set<PhoenixRole>([
   "Manager",
 ]);
 export const designatedHrSpecialistHrId = "a16";
+export const designatedHrManagerHrId = "b10";
 
 const defaultPermissionMatrix: PermissionMap = {
   "Super Admin": {
@@ -187,20 +189,20 @@ const defaultPermissionMatrix: PermissionMap = {
     communication: ["read", "update"],
     overview: ["read"],
     imports: ["read", "import"],
-    contracts: allActions,
+    contracts: reviewActions,
     coaching: ["read"],
-    employee_documents: allActions,
-    employee_profile: allActions,
-    employees: allActions,
-    hr_calendar: allActions,
-    leave: allActions,
+    employee_documents: reviewActions,
+    employee_profile: reviewActions,
+    employees: reviewActions,
+    hr_calendar: reviewActions,
+    leave: reviewActions,
     organogram: ["read", "export"],
-    offers: allActions,
+    offers: reviewActions,
     payslips: ["read", "export"],
-    probation: allActions,
-    resignations: allActions,
+    probation: reviewActions,
+    resignations: reviewActions,
     team: ["read", "export"],
-    vacancies: allActions,
+    vacancies: reviewActions,
   },
   "Finance Manager": {
     employee_documents: ["read", "export"],
@@ -475,8 +477,18 @@ function isDesignatedHrSpecialistHrId(hrId: string | null | undefined) {
   return normalizeHrIdForAccess(hrId) === designatedHrSpecialistHrId;
 }
 
+function isDesignatedHrManagerHrId(value: string | null | undefined) {
+  return normalizeHrIdForAccess(value) === designatedHrManagerHrId;
+}
+
 export function isDesignatedHrSpecialist(context: Pick<AccessContext, "hrId" | "role">) {
   return context.role === "HR Specialist" && isDesignatedHrSpecialistHrId(context.hrId);
+}
+
+export function isDesignatedHrManagerIdentity(
+  context: Partial<Pick<AccessContext, "hrId" | "loginId">>,
+) {
+  return isDesignatedHrManagerHrId(context.hrId) || isDesignatedHrManagerHrId(context.loginId);
 }
 
 function hrIdsMatch(left: string | null | undefined, right: string | null | undefined) {
@@ -527,12 +539,16 @@ export function createAccessContext(input: {
   role?: string | null;
   source?: AccessContext["source"];
 }): AccessContext {
-  const role = normalizeRole(input.role);
+  const parsedRole = normalizeRole(input.role);
   const hrId = normalizeHrId(input.hrId);
+  const loginId = input.loginId ?? null;
+  const role: PhoenixRole = isDesignatedHrManagerIdentity({ hrId, loginId })
+    ? "Super Admin"
+    : parsedRole;
 
   return {
     hrId,
-    loginId: input.loginId ?? null,
+    loginId,
     role,
     scope: role === "HR Specialist" && !isDesignatedHrSpecialistHrId(hrId) ? "self" : scopeForRole(role),
     source: input.source ?? "session",
@@ -652,6 +668,8 @@ export async function canAccess(
   action: PermissionAction = "read",
 ) {
   if (context.scope === "system") return true;
+  if (isDesignatedHrManagerIdentity(context)) return true;
+  if (context.role === "HR Specialist" && action === "approve") return false;
   if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) return false;
   const matrix = await resolvePermissionMatrix();
   return matrix[context.role][resource]?.includes(action) ?? false;

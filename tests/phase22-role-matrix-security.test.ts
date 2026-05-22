@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  canAccess,
   canSeeEmployee,
   createAccessContext,
   getExpensesScope,
@@ -9,7 +10,7 @@ import {
   getSalesScope,
 } from "../src/lib/auth/permissions.ts";
 
-export function runPhase22RoleMatrixSecurityTests() {
+export async function runPhase22RoleMatrixSecurityTests() {
   const phase22Smoke = readFileSync("scripts/phase22-role-matrix-security-smoke.ts", "utf8");
   const permissionsSource = readFileSync("src/lib/auth/permissions.ts", "utf8");
 
@@ -51,5 +52,15 @@ export function runPhase22RoleMatrixSecurityTests() {
   assert.equal(getSalesScope(districtManager), "TEAM");
   assert.equal(getExpensesScope(employee), "SELF");
   assert.equal(getExpensesScope(districtManager), "TEAM");
-}
 
+  const hrSpecialist = createAccessContext({ hrId: "A-16", loginId: "A-16", role: "HR Specialist" });
+  assert.equal(hrSpecialist.role, "HR Specialist");
+  assert.equal(hrSpecialist.scope, "company");
+  assert.equal(await canAccess(hrSpecialist, "leave", "read"), true);
+  assert.equal(await canAccess(hrSpecialist, "leave", "approve"), false);
+
+  const hrManager = createAccessContext({ hrId: "B-10", loginId: "B-10", role: "HR Specialist" });
+  assert.equal(hrManager.role, "Super Admin");
+  assert.equal(await canAccess(hrManager, "leave", "approve"), true);
+  assert.equal(await canAccess(hrManager, "permission_admin", "update"), true);
+}

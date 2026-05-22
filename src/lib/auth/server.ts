@@ -285,7 +285,7 @@ export async function resolveViewerIdentityFromPage(accessContext?: AccessContex
   }
 
   const displayName = row?.name?.trim() || fallbackName;
-  const roleLabel = row?.role?.trim() || fallbackRole;
+  const roleLabel = access.role === "Super Admin" ? access.role : row?.role?.trim() || fallbackRole;
 
   return {
     displayName,

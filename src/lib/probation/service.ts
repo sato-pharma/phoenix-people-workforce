@@ -337,6 +337,7 @@ function allowedWorkflowActions(
 ): ProbationWorkflowAction[] {
   const allowed = new Set<ProbationWorkflowAction>();
   const isHr = isProbationAdministrator(access);
+  const canHrApprove = access.scope === "system" || access.role === "Super Admin";
   const canManagerAct = canSubmitManagerFeedback(access, employee, viewer, directory);
   if (!row) return Array.from(allowed);
   if (isFinalWorkflow(row)) return [];
@@ -345,7 +346,7 @@ function allowedWorkflowActions(
     allowed.add("manager_feedback");
   }
 
-  if (!isHr) return Array.from(allowed);
+  if (!isHr || !canHrApprove) return Array.from(allowed);
 
   allowed.add("pass");
   allowed.add("terminate");

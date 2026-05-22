@@ -17,7 +17,7 @@ import {
 } from "recharts";
 
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
-import { ChevronLeft, ChevronRight, CreditCard, Filter, Receipt, RefreshCw, Search, TrendingUp } from "lucide-react";
+import { Activity, ChevronLeft, ChevronRight, CreditCard, Filter, Moon, Receipt, RefreshCw, Route, Search, Sun, TrendingUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { normalizeHrId, normalizeHrIdForAccess } from "@/lib/auth/permissions";
@@ -47,15 +47,6 @@ type ExpenseRow = {
   hrNotes: string;
 };
 
-export type WorkloadAdminKeyCards = {
-  expenseClaimsAmount: number;
-  expenseClaimsEntries: number;
-  payrollBatchLabel: string;
-  payrollEligibleCount: number;
-  totalSalesTarget: number;
-  totalSalesValue: number;
-};
-
 const BRAND = {
   bg: "#FFF7ED",
   card: "#FFFFFF",
@@ -69,13 +60,13 @@ const BRAND = {
 };
 
 const premiumCardClass =
-  "rounded-[28px] border border-orange-100/80 bg-white/94 shadow-[0_22px_58px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03] backdrop-blur";
+  "rounded-2xl border border-orange-100/80 bg-white/95 shadow-[0_18px_48px_rgba(15,23,42,0.07)] ring-1 ring-slate-950/[0.03] backdrop-blur";
 
 const premiumControlClass =
-  "h-11 w-full min-w-0 rounded-2xl border border-orange-100 bg-white/95 px-3 text-sm text-slate-800 shadow-[0_12px_30px_rgba(15,23,42,0.05)] outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100";
+  "h-11 w-full min-w-0 rounded-xl border border-orange-100 bg-white/95 px-3 text-sm text-slate-800 shadow-[0_10px_26px_rgba(15,23,42,0.05)] outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100";
 
 const chartPanelClass =
-  "rounded-[28px] border border-orange-100/80 bg-white/96 p-5 shadow-[0_22px_60px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03]";
+  "rounded-2xl border border-orange-100/80 bg-white/96 p-5 shadow-[0_18px_52px_rgba(15,23,42,0.07)] ring-1 ring-slate-950/[0.03]";
 
 const statusOptions = ["All", "System Approval", "Pending", "Declined", "Confirmed by HR", "Other"] as const;
 type SortField =
@@ -297,61 +288,45 @@ function EmptyState({ title, message }: { title: string; message: string }) {
 function DashboardCard({
   delta,
   helper,
+  icon: Icon,
   label,
+  tone = "orange",
   value,
 }: {
   delta?: number;
   helper?: string;
+  icon: typeof Receipt;
   label: string;
+  tone?: "amber" | "emerald" | "orange" | "sky" | "slate";
   value: string;
 }) {
   const showDelta = delta === undefined ? "" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`;
   const isPositive = delta === undefined ? false : delta >= 0;
-  return (
-    <Card className="group relative overflow-hidden rounded-[26px] border border-orange-100/80 bg-white/95 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.07)] ring-1 ring-slate-950/[0.03] transition hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(249,115,22,0.13)]">
-      <div className="absolute -right-8 -top-10 h-24 w-24 rounded-full bg-orange-100/70 blur-2xl transition group-hover:bg-orange-200/80" />
-      <p className="relative text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="relative mt-3 text-2xl font-black text-slate-950" style={{ color: BRAND.textPrimary }}>
-        {value}
-      </p>
-      {helper ? <p className="relative mt-1 text-xs font-medium text-slate-500">{helper}</p> : null}
-      {delta === undefined ? null : (
-        <span className={`relative mt-3 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${isPositive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
-          {showDelta}
-        </span>
-      )}
-    </Card>
-  );
-}
-
-function AdminKeyCard({
-  helper,
-  icon: Icon,
-  label,
-  tone,
-  value,
-}: {
-  helper: string;
-  icon: typeof CreditCard;
-  label: string;
-  tone: "amber" | "blue" | "orange";
-  value: string;
-}) {
   const toneClassName = {
     amber: {
       card: "border-amber-200 from-amber-50 to-white ring-1 ring-amber-200/70",
       icon: "bg-amber-50 text-amber-700 ring-amber-200",
       value: "text-amber-700",
     },
-    blue: {
-      card: "border-slate-200 from-white to-slate-50",
-      icon: "bg-sky-50 text-sky-700 ring-sky-200",
-      value: "text-sky-700",
+    emerald: {
+      card: "border-emerald-200 from-emerald-50 to-white ring-1 ring-emerald-200/70",
+      icon: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+      value: "text-emerald-700",
     },
     orange: {
       card: "border-orange-200 from-orange-50 to-white ring-1 ring-orange-200/70",
       icon: "bg-orange-50 text-orange-700 ring-orange-200",
       value: "text-orange-700",
+    },
+    sky: {
+      card: "border-sky-200 from-sky-50 to-white ring-1 ring-sky-200/70",
+      icon: "bg-sky-50 text-sky-700 ring-sky-200",
+      value: "text-sky-700",
+    },
+    slate: {
+      card: "border-slate-200 from-white to-slate-50",
+      icon: "bg-sky-50 text-sky-700 ring-sky-200",
+      value: "text-sky-700",
     },
   }[tone];
 
@@ -360,8 +335,13 @@ function AdminKeyCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-          <p className={`mt-2 text-2xl font-black tracking-[-0.03em] ${toneClassName.value}`}>{value}</p>
+          <p className={`mt-2 text-2xl font-black ${toneClassName.value}`}>{value}</p>
           <p className="mt-1.5 text-xs leading-5 text-slate-500">{helper}</p>
+          {delta === undefined ? null : (
+            <span className={`mt-3 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${isPositive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+              {showDelta}
+            </span>
+          )}
         </div>
         <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ${toneClassName.icon}`}>
           <Icon className="h-5 w-5" />
@@ -372,11 +352,9 @@ function AdminKeyCard({
 }
 
 export function PersonalExpenseWorkloadDashboard({
-  adminKeyCards,
   data,
   showHero = true,
 }: {
-  adminKeyCards?: WorkloadAdminKeyCards | null;
   data: MedicalRepPortalData;
   showHero?: boolean;
 }) {
@@ -767,62 +745,46 @@ export function PersonalExpenseWorkloadDashboard({
         </div>
       </Card>
 
-      {adminKeyCards ? (
-        <section className="grid gap-4 md:grid-cols-3">
-          <AdminKeyCard
-            helper={adminKeyCards.payrollBatchLabel || "Latest batch"}
-            icon={CreditCard}
-            label="Payroll Eligible"
-            tone="orange"
-            value={adminKeyCards.payrollEligibleCount.toLocaleString("en-US")}
-          />
-          <AdminKeyCard
-            helper={`vs ${formatMoney(adminKeyCards.totalSalesTarget)} target`}
-            icon={TrendingUp}
-            label="Total Sales"
-            tone="blue"
-            value={formatMoney(adminKeyCards.totalSalesValue)}
-          />
-          <AdminKeyCard
-            helper={`${adminKeyCards.expenseClaimsEntries.toLocaleString("en-US")} entries`}
-            icon={Receipt}
-            label="Expense Claims"
-            tone="amber"
-            value={formatMoney(adminKeyCards.expenseClaimsAmount)}
-          />
-        </section>
-      ) : null}
-
       <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <DashboardCard
           delta={undefined}
           helper="Sum of Total for this period"
+          icon={Receipt}
           label="Total Expenses"
+          tone="orange"
           value={formatMoney(totalExpenses)}
         />
         <DashboardCard
           delta={undefined}
           helper={`Filtered records: ${filteredTrips.length}`}
+          icon={Filter}
           label="Total Trips"
+          tone="sky"
           value={totalTrips.toLocaleString()}
         />
         <DashboardCard
           delta={undefined}
           helper="Total Expenses / Total Trips"
+          icon={CreditCard}
           label="Average Cost per Trip"
+          tone="slate"
           value={formatMoney(averageCostPerTrip)}
         />
         <DashboardCard
           delta={undefined}
           helper="Sum of KM (where available)"
+          icon={Route}
           label="Total KM Travelled"
+          tone="emerald"
           value={formatKm(totalKm)}
         />
         <DashboardCard
           delta={tripsDeltaPercent ?? undefined}
           helper={`${tripsThisMonth.toLocaleString()} this month vs ${tripsLastMonth.toLocaleString()} last month`}
-          label="Trips This Month vs Last Month"
-          value={totalTrips.toLocaleString()}
+          icon={TrendingUp}
+          label="Trips This Month"
+          tone="amber"
+          value={tripsThisMonth.toLocaleString()}
         />
       </section>
 
@@ -1027,14 +989,18 @@ export function PersonalExpenseWorkloadDashboard({
             <p className="text-sm text-slate-600">Workload data is not available for this period.</p>
           ) : (
             <div className="grid gap-3 md:grid-cols-2">
-              <DashboardCard label="Total AM workload visits" value={Math.round(totalAmWorkload).toLocaleString()} />
-              <DashboardCard label="Total PM workload visits" value={Math.round(totalPmWorkload).toLocaleString()} />
+              <DashboardCard icon={Sun} label="Total AM workload visits" tone="amber" value={Math.round(totalAmWorkload).toLocaleString()} />
+              <DashboardCard icon={Moon} label="Total PM workload visits" tone="sky" value={Math.round(totalPmWorkload).toLocaleString()} />
               <DashboardCard
+                icon={Activity}
                 label="Total workload visits per trip"
+                tone="emerald"
                 value={`${(totalAmWorkload + totalPmWorkload).toLocaleString()}`}
               />
               <DashboardCard
+                icon={CreditCard}
                 label="Average workload per trip"
+                tone="slate"
                 value={averageWorkloadPerTrip.toLocaleString(undefined, { maximumFractionDigits: 1 })}
               />
 

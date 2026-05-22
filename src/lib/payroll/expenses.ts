@@ -691,7 +691,7 @@ export async function savePayrollExpenseApprovals(input: {
       hr_approved: approved,
       hr_comment: record.hrComment ?? "",
       hr_notes: record.hrNotes,
-      hr_status: record.hr,
+      hr_status: approved ? "Approved" : (record.hr?.trim() || "Pending HR review"),
       km: record.km,
       location: record.location,
       meeting_amount: record.meetingAmount,
@@ -724,6 +724,55 @@ export async function savePayrollExpenseApprovals(input: {
   if (error) throw error;
 
   return (data ?? []).map((row) => mapExpense(row as Record<string, unknown>));
+}
+
+export async function setPayrollExpenseApproval(
+  tripId: string,
+  accessContext: AccessContext,
+  input: { comment?: string | null; hrApproved: boolean },
+) {
+  await assertPayrollExpenseApprovalAuthority(accessContext);
+
+  const cleanTripId = String(tripId ?? "").trim();
+  if (!cleanTripId) throw new Error("Expense trip ID is required.");
+
+  const supabase = getSupabaseAdmin();
+  const { data: existingData, error: existingError } = await supabase
+    .from("payroll_expenses")
+    .select("*")
+    .eq("trip_id", cleanTripId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (!existingData) throw new Error("Expense row was not found.");
+
+  const existing = mapExpense(existingData as Record<string, unknown>);
+  const now = new Date().toISOString();
+  const approvedBy = resolveEmployeeIdentityId(accessContext) ?? accessContext.loginId ?? "system";
+  const approved = Boolean(input.hrApproved);
+  const comment = String(input.comment ?? existing.hrComment ?? "").trim();
+  const { data: updatedData, error: updateError } = await supabase
+    .from("payroll_expenses")
+    .update({
+      approved_at: approved ? now : null,
+      approved_by: approved ? approvedBy : null,
+      hr_approved: approved,
+      hr_comment: comment,
+      hr_status: approved ? "Approved" : "Pending HR review",
+      updated_at: now,
+    })
+    .eq("trip_id", cleanTripId)
+    .select("*")
+    .single();
+
+  if (updateError) throw updateError;
+
+  const reportId = String((existingData as Record<string, unknown>).report_id ?? "");
+  if (reportId) {
+    await recomputePayrollExpenseReportTotals(reportId, supabase);
+  }
+
+  return mapExpense(updatedData as Record<string, unknown>);
 }
 
 export async function decidePayrollExpenseApproval(

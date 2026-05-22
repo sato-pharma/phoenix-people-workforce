@@ -58,6 +58,7 @@ import type {
   ExpenseAnalysisResult,
   ExpenseTripRecord,
   PayrollExpenseReport,
+  PayrollExpenseApproval,
   PayrollDashboardData,
   PayrollPeriodConflict,
   PayrollWorkflowAction,
@@ -3790,6 +3791,61 @@ export function PayrollDashboard({
     }
   }
 
+  async function handleSaveExpenseApprovalChange(
+    record: ExpenseTripRecord & { hrApproved?: boolean; hrComment?: string },
+    hrApproved: boolean,
+    hrComment: string,
+  ) {
+    setExpenseAnalysisError(null);
+    setExpenseApprovalMessage(null);
+
+    try {
+      const response = await fetch(`/api/payroll/expenses/${encodeURIComponent(record.tripId)}/approval`, {
+        body: JSON.stringify({
+          comment: hrComment,
+          hrApproved,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await readPayrollApiPayload(response);
+
+      if (!response.ok) {
+        const message = payload.error === "payroll_expenses_schema_not_ready"
+          ? "Payroll expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
+          : payrollPayloadMessage(payload, "Unable to save expense approval.");
+        setExpenseAnalysisError(message);
+        throw new Error(message);
+      }
+
+      const updatedExpense = payload.expense as PayrollExpenseApproval | undefined;
+      if (!updatedExpense?.tripId) {
+        const message = "Expense approval was saved, but the server did not return the updated row.";
+        setExpenseAnalysisError(message);
+        throw new Error(message);
+      }
+
+      setExpenseAnalysis((current) => {
+        if (!current) return current;
+
+        return buildExpenseAnalysis(
+          current.fileName,
+          current.records.map((item) =>
+            item.tripId === updatedExpense.tripId ? { ...item, ...updatedExpense } : item,
+          ),
+        );
+      });
+      setExpenseApprovalMessage(
+        `${updatedExpense.tripId} ${updatedExpense.hrApproved ? "HR approved" : "returned to pending HR review"} and saved.`,
+      );
+
+      return updatedExpense;
+    } catch (error) {
+      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to save expense approval."));
+      throw error;
+    }
+  }
+
   async function handleSaveExpenseApprovals(
     recordsToSave: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>,
   ) {
@@ -3803,6 +3859,7 @@ export function PayrollDashboard({
       const response = await fetch("/api/payroll/expenses", {
         body: JSON.stringify({
           fileName: expenseAnalysis.fileName,
+          reportId: selectedExpenseReportId,
           records: recordsToSave,
         }),
         headers: { "Content-Type": "application/json" },
@@ -3822,6 +3879,16 @@ export function PayrollDashboard({
       const approvedTotal = recordsToSave
         .filter((record) => record.hrApproved)
         .reduce((sum, record) => sum + record.total, 0);
+      const savedRecords = Array.isArray(payload.expenses)
+        ? (payload.expenses as PayrollExpenseApproval[])
+        : [];
+
+      if (savedRecords.length > 0) {
+        setExpenseAnalysis(buildExpenseAnalysis(expenseAnalysis.fileName, savedRecords));
+        setSelectedExpenseReportId(
+          savedRecords.find((record) => record.reportId)?.reportId ?? selectedExpenseReportId,
+        );
+      }
 
       setExpenseApprovalMessage(
         `${payload.saved ?? recordsToSave.length} expense rows saved. Approved total ${formatEGP(approvedTotal)} will appear in the next payroll month.`,
@@ -4364,6 +4431,9 @@ export function PayrollDashboard({
                   void handleImportExpensesToPayroll(recordsToImport, month, year)
                 }
                 onReplaceReport={(reportId, file) => void handleReplaceExpenseReport(reportId, file)}
+                onSaveApprovalChange={(record, hrApproved, hrComment) =>
+                  handleSaveExpenseApprovalChange(record, hrApproved, hrComment)
+                }
                 onSelectReport={(reportId) => {
                   void loadSavedExpenseReport(reportId);
                 }}

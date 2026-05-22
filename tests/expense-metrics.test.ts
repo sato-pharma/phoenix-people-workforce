@@ -151,4 +151,16 @@ export function runExpenseMetricsTests() {
   const importRouteSource = readFileSync("app/api/payroll/expenses/import/route.ts", "utf8");
   assert.match(importRouteSource, /importApprovedExpensesToPayroll/);
   assert.doesNotMatch(importRouteSource, /listPayrollExpenses/);
+
+  const expensesDashboardSource = readFileSync("src/components/payroll/payroll-dashboard.tsx", "utf8");
+  assert.match(expensesDashboardSource, /handleSaveExpenseApprovalChange/);
+  assert.match(expensesDashboardSource, /\/api\/payroll\/expenses\/\$\{encodeURIComponent\(record\.tripId\)\}\/approval/);
+
+  const expenseReportSource = readFileSync("src/components/payroll/dashboard/expense-report.tsx", "utf8");
+  assert.match(expenseReportSource, /approvalSaveStatus/);
+  assert.match(expenseReportSource, /Saved/);
+
+  const tableHeaderSource = readFileSync("src/components/payroll/dashboard/table-header-menu.tsx", "utf8");
+  assert.match(tableHeaderSource, /ChevronsUpDown/);
+  assert.doesNotMatch(tableHeaderSource, />v<\/span>/);
 }

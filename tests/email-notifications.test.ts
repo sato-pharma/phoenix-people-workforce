@@ -18,4 +18,11 @@ export function runEmailNotificationTests() {
   assert.match(sendPhoenixEmailSource, /omar\.anwar@satopharma\.com/);
   assert.match(sendPhoenixEmailSource, /phoenix@satopharma\.com/);
   assert.match(sendPhoenixEmailSource, /testingRecipients \? undefined : input\.cc/);
+
+  const centerSource = readFileSync("src/components/admin/email-notification-center.tsx", "utf8");
+  assert.match(centerSource, /<select/);
+  assert.match(centerSource, /buildLiveEmailPreview/);
+  assert.match(centerSource, /Preview updates live/);
+  assert.match(centerSource, /Advanced targeting/);
+  assert.doesNotMatch(centerSource, /policies\.map\(\(policy\) => \(\s*<div/);
 }

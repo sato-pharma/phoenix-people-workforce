@@ -1,10 +1,12 @@
 import {
+  assertPermission,
   normalizeHrIdForAccess,
   normalizeRole,
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { randomUUID } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { validateLiveCarEvidence } from "@/lib/outstation/car-evidence";
 import {
@@ -1768,6 +1770,173 @@ export async function rejectOutstationRequestForPayroll(
   });
 
   return request;
+}
+
+async function recomputeOutstationPayrollReportAfterDelete(
+  reportId: string,
+  supabase: SupabaseClient,
+) {
+  const { data, error } = await supabase
+    .from("payroll_expenses")
+    .select("expense_date,total,hr_approved")
+    .eq("report_id", reportId);
+
+  if (error) {
+    if (isMissingSupabaseRelation(error)) return;
+    throw new Error(error.message);
+  }
+
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  if (rows.length === 0) {
+    const { error: reportDeleteError } = await supabase
+      .from("payroll_expense_reports")
+      .delete()
+      .eq("id", reportId);
+
+    if (reportDeleteError && !isMissingSupabaseRelation(reportDeleteError)) {
+      throw new Error(reportDeleteError.message);
+    }
+    return;
+  }
+
+  const totals = rows.reduce<{
+    approvedRows: number;
+    rowCount: number;
+    totalExpenses: number;
+    tripDateFrom: string | null;
+    tripDateTo: string | null;
+  }>(
+    (summary, row) => {
+      const date = row.expense_date ? new Date(String(row.expense_date)) : null;
+      summary.approvedRows += row.hr_approved ? 1 : 0;
+      summary.rowCount += 1;
+      summary.totalExpenses += Number(row.total ?? 0);
+
+      if (date && !Number.isNaN(date.getTime())) {
+        const isoDate = date.toISOString().slice(0, 10);
+        summary.tripDateFrom =
+          summary.tripDateFrom && summary.tripDateFrom < isoDate
+            ? summary.tripDateFrom
+            : isoDate;
+        summary.tripDateTo =
+          summary.tripDateTo && summary.tripDateTo > isoDate
+            ? summary.tripDateTo
+            : isoDate;
+      }
+
+      return summary;
+    },
+    {
+      approvedRows: 0,
+      rowCount: 0,
+      totalExpenses: 0,
+      tripDateFrom: null as string | null,
+      tripDateTo: null as string | null,
+    },
+  );
+
+  const { error: updateError } = await supabase
+    .from("payroll_expense_reports")
+    .update({
+      approved_rows: totals.approvedRows,
+      row_count: totals.rowCount,
+      total_expenses: totals.totalExpenses,
+      trip_date_from: totals.tripDateFrom,
+      trip_date_to: totals.tripDateTo,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", reportId);
+
+  if (updateError && !isMissingSupabaseRelation(updateError)) {
+    throw new Error(updateError.message);
+  }
+}
+
+async function deleteLinkedOutstationPayrollExpense(requestId: number) {
+  const supabase = getSupabaseAdmin();
+  const expenseTripId = outstationPayrollTripId(requestId);
+  const { data: existingRows, error: lookupError } = await supabase
+    .from("payroll_expenses")
+    .select("trip_id,report_id")
+    .eq("trip_id", expenseTripId);
+
+  if (lookupError) {
+    if (isMissingSupabaseRelation(lookupError)) {
+      return { deletedRows: 0, expenseTripId, reportIds: [] as string[] };
+    }
+    throw new Error(lookupError.message);
+  }
+
+  const rows = (existingRows ?? []) as Array<Record<string, unknown>>;
+  const reportIds = Array.from(
+    new Set(rows.map((row) => text(row.report_id)).filter(Boolean)),
+  );
+
+  if (rows.length === 0) {
+    return { deletedRows: 0, expenseTripId, reportIds };
+  }
+
+  const { error: deleteError } = await supabase
+    .from("payroll_expenses")
+    .delete()
+    .eq("trip_id", expenseTripId);
+
+  if (deleteError) {
+    throw new Error(deleteError.message);
+  }
+
+  for (const reportId of reportIds) {
+    await recomputeOutstationPayrollReportAfterDelete(reportId, supabase);
+  }
+
+  return { deletedRows: rows.length, expenseTripId, reportIds };
+}
+
+export async function deleteOutstationRequestAsAdmin(
+  requestId: number,
+  access: AccessContext,
+) {
+  await assertPermission(access, "outstation", "delete");
+
+  if (!Number.isFinite(requestId)) {
+    throw new Error("Outstation request ID is invalid.");
+  }
+
+  const existing = await getOutstationRequestById(requestId);
+  if (!existing) throw new Error("Outstation request was not found.");
+
+  const linkedPayroll = await deleteLinkedOutstationPayrollExpense(existing.id);
+  const { error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .delete()
+    .eq("id", existing.id);
+
+  if (error) throw new Error(error.message);
+
+  await Promise.all([
+    deleteOutstationCarEvidenceImage(existing.carEvidenceImagePath),
+    deleteOutstationTicketAttachments(existing.ticketAttachmentPaths),
+  ]).catch(() => undefined);
+
+  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? actor,
+    entityId: String(existing.id),
+    entityType: "outstation_request",
+    newValues: {
+      deleted: true,
+      linkedPayroll,
+    },
+    oldValues: {
+      request: existing,
+    },
+    summary: `Outstation request ${existing.id} deleted from admin review.`,
+  });
+
+  return {
+    linkedPayroll,
+    request: existing,
+  };
 }
 
 function uniqueValues(values: Array<string | null | undefined>) {

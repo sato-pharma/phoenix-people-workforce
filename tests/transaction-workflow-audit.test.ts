@@ -63,6 +63,10 @@ export function runTransactionWorkflowAuditTests() {
 
   const payrollExpenses = source("src/lib/payroll/expenses.ts");
   assert.match(payrollExpenses, /rpc\(\s*"phx_import_approved_expenses_to_payroll"/);
+  assert.match(payrollExpenses, /export async function setPayrollExpenseApproval/);
+  assert.match(payrollExpenses, /hr_status: approved \? "Approved" : "Pending HR review"/);
+  const payrollExpenseApprovalRoute = source("app/api/payroll/expenses/[tripId]/approval/route.ts");
+  assert.match(payrollExpenseApprovalRoute, /setPayrollExpenseApproval/);
 
   const vacationService = source("src/lib/vacation/service.ts");
   const vacationDecision = vacationService.slice(

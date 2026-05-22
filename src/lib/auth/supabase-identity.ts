@@ -1,4 +1,8 @@
-import type { PhoenixRole } from "@/lib/auth/permissions";
+import {
+  designatedHrManagerHrId,
+  normalizeHrIdForAccess,
+  type PhoenixRole,
+} from "@/lib/auth/permissions";
 import { getSupabaseAdmin, getSupabaseUserClient } from "@/lib/supabase/server";
 
 export const phoenixSupabaseAccessTokenCookieName = "phoenix_supabase_access_token";
@@ -92,27 +96,36 @@ export function mapPhoenixRoleToAccessScopeType(role: PhoenixRole): AccessScopeT
   }
 }
 
+function effectiveProvisionRole(input: Pick<SupabaseAuthProvisionInput, "hrId" | "loginId" | "role">): PhoenixRole {
+  const isHrManager =
+    normalizeHrIdForAccess(input.hrId) === designatedHrManagerHrId ||
+    normalizeHrIdForAccess(input.loginId) === designatedHrManagerHrId;
+  return isHrManager ? "Super Admin" : input.role;
+}
+
 function userMetadata(input: SupabaseAuthProvisionInput) {
+  const role = effectiveProvisionRole(input);
   return {
-    access_scope: mapPhoenixRoleToAccessScopeType(input.role),
+    access_scope: mapPhoenixRoleToAccessScopeType(role),
     hr_id: input.hrId,
     line: input.line ?? null,
     login_id: input.loginId,
     manager_hr_id: input.managerHrId ?? null,
     name: input.name ?? input.loginId,
-    phoenix_role: input.role,
+    phoenix_role: role,
   };
 }
 
 function appMetadata(input: SupabaseAuthProvisionInput) {
+  const role = effectiveProvisionRole(input);
   return {
-    access_scope: mapPhoenixRoleToAccessScopeType(input.role),
-    coarse_access_role: mapPhoenixRoleToCoarseAccessRole(input.role),
+    access_scope: mapPhoenixRoleToAccessScopeType(role),
+    coarse_access_role: mapPhoenixRoleToCoarseAccessRole(role),
     hr_id: input.hrId,
     is_active: input.isActive,
     line: input.line ?? null,
     login_id: input.loginId,
-    phoenix_role: input.role,
+    phoenix_role: role,
   };
 }
 

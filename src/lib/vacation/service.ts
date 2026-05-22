@@ -3,6 +3,8 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   assertPermission,
   canAccess,
+  designatedHrManagerHrId,
+  designatedHrSpecialistHrId,
   isDesignatedHrSpecialist,
   normalizeHrIdForAccess,
   normalizeLineName,
@@ -302,6 +304,10 @@ function employeeFromMap(
 
 function isAllVacationVisibility(access: AccessContext) {
   return access.scope === "system" || access.role === "Super Admin" || isDesignatedHrSpecialist(access);
+}
+
+function canApproveVacationHrFinalDecision(access: AccessContext) {
+  return access.scope === "system" || access.role === "Super Admin" || access.role === "CEO";
 }
 
 type VacationVisibilityScope = "SELF" | "TEAM" | "HIERARCHY" | "LINE" | "COMPANY";
@@ -1010,7 +1016,7 @@ function canDecideVacation(access: AccessContext, request: Pick<VacationRequestR
     return accessMatchesHrId(access, request.managerHrId);
   }
   if (request.status === "pending_hr") {
-    return isAllVacationVisibility(access);
+    return canApproveVacationHrFinalDecision(access);
   }
   return false;
 }
@@ -1116,18 +1122,19 @@ async function createVacationEmailToken(request: VacationRequestRecord) {
 
 async function getHrRecipients(directory: EmployeeDirectoryData): Promise<HrRecipient[]> {
   try {
+    const hrRecipientIds = new Set([designatedHrSpecialistHrId, designatedHrManagerHrId]);
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
       .select("login_id,hr_id,role,is_active")
       .eq("is_active", true)
-      .eq("role", "HR Specialist")
-      .ilike("hr_id", "A-16");
+      .in("role", ["HR Specialist", "HR Manager", "Super Admin"]);
 
     if (error) return [];
 
     return (data ?? [])
       .map((row) => {
         const hrId = text((row as Record<string, unknown>).hr_id);
+        if (!hrRecipientIds.has(normalizeHrIdForAccess(hrId) ?? "")) return null;
         if (!hrId) return null;
         const employee = findEmployeeByHrId(directory, hrId);
         return {

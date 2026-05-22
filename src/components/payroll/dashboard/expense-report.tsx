@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  CheckCircle2,
   Download,
   FileCheck2,
   FileSpreadsheet,
@@ -30,6 +31,11 @@ import { cn } from "@/lib/utils";
 
 import { panelClassName, payrollMonths } from "./shared";
 import { TableHeaderMenu } from "./table-header-menu";
+
+type ExpenseApprovalDraft = ExpenseTripRecord & {
+  hrApproved: boolean;
+  hrComment: string;
+};
 
 function formatEGP(value: number) {
   return formatCurrencyValue(value);
@@ -128,6 +134,7 @@ export function ExpenseReport({
   onImportToPayroll,
   onDeleteReport,
   onReplaceReport,
+  onSaveApprovalChange,
   onSaveApprovals,
   onSelectReport,
   onUpload,
@@ -152,6 +159,11 @@ export function ExpenseReport({
   onDeleteReport: (reportId: string) => void;
   onReplaceReport: (reportId: string, file: File | null) => void;
   onSaveApprovals: (records: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>) => void;
+  onSaveApprovalChange: (
+    record: ExpenseTripRecord & { hrApproved?: boolean; hrComment?: string },
+    hrApproved: boolean,
+    hrComment: string,
+  ) => Promise<(ExpenseTripRecord & { hrApproved?: boolean; hrComment?: string }) | void>;
   onSelectReport: (reportId: string) => void;
   onUpload: (file: File | null) => void;
   payrollMonthsForImport: typeof payrollMonths;
@@ -166,6 +178,7 @@ export function ExpenseReport({
   const [search, setSearch] = useState("");
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [approvals, setApprovals] = useState<Record<string, { hrApproved: boolean; hrComment: string }>>({});
+  const [approvalSaveStatus, setApprovalSaveStatus] = useState<Record<string, "saving" | "saved" | "error">>({});
   const [tripDateFrom, setTripDateFrom] = useState("");
   const [tripDateTo, setTripDateTo] = useState("");
   const [importMonth, setImportMonth] = useState(String(new Date().getMonth() + 1));
@@ -197,6 +210,10 @@ export function ExpenseReport({
     { asc: "total-asc", desc: "total-desc", key: "total", label: "Total" },
     { asc: "status-asc", desc: "status-desc", key: "status", label: "Status" },
   ];
+  const stickySpecialistHeaderClassName =
+    "sticky left-0 top-0 z-30 min-w-[230px] max-w-[260px] bg-[#F8FAFC] px-4 py-3 font-semibold shadow-[10px_0_18px_rgba(15,23,42,0.08)]";
+  const stickySpecialistCellClassName =
+    "sticky left-0 z-20 min-w-[230px] max-w-[260px] bg-white px-4 py-3 font-semibold text-text shadow-[10px_0_18px_rgba(15,23,42,0.08)] transition-colors group-hover:bg-[#FFF7ED]";
   const records = useMemo(() => {
     const query = search.trim().toLowerCase();
     const fromDate = tripDateFrom ? new Date(`${tripDateFrom}T00:00:00`) : null;
@@ -267,12 +284,53 @@ export function ExpenseReport({
     if (!analysis) return;
 
     onSaveApprovals(
-      analysis.records.map((record) => ({
+      analysis.records.map((record): ExpenseApprovalDraft => ({
         ...record,
         hrApproved: approvalFor(record).hrApproved,
         hrComment: approvalFor(record).hrComment,
       })),
     );
+  }
+
+  async function saveApprovalChange(record: ExpenseTripRecord, checked: boolean) {
+    const previous = approvalFor(record);
+    const next = {
+      hrApproved: checked,
+      hrComment: previous.hrComment,
+    };
+
+    setApprovals((current) => ({
+      ...current,
+      [record.tripId]: next,
+    }));
+    setApprovalSaveStatus((current) => ({
+      ...current,
+      [record.tripId]: "saving",
+    }));
+
+    try {
+      const updated = await onSaveApprovalChange(record, checked, next.hrComment);
+      setApprovals((current) => ({
+        ...current,
+        [record.tripId]: {
+          hrApproved: Boolean(updated?.hrApproved ?? checked),
+          hrComment: String(updated?.hrComment ?? next.hrComment ?? ""),
+        },
+      }));
+      setApprovalSaveStatus((current) => ({
+        ...current,
+        [record.tripId]: "saved",
+      }));
+    } catch {
+      setApprovals((current) => ({
+        ...current,
+        [record.tripId]: previous,
+      }));
+      setApprovalSaveStatus((current) => ({
+        ...current,
+        [record.tripId]: "error",
+      }));
+    }
   }
 
   function importToPayroll() {
@@ -580,7 +638,12 @@ export function ExpenseReport({
                   <thead>
                     <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs uppercase tracking-[0.12em] text-[#64748B]">
                       {columns.map((column) => (
-                        <th className="sticky top-0 z-10 px-3 py-3 font-semibold" key={column.key}>
+                        <th
+                          className={column.key === "specialist"
+                            ? stickySpecialistHeaderClassName
+                            : "sticky top-0 z-10 px-3 py-3 font-semibold"}
+                          key={column.key}
+                        >
                           <TableHeaderMenu
                             filterValue={columnFilters[column.key] ?? ""}
                             label={column.label}
@@ -612,8 +675,12 @@ export function ExpenseReport({
                       </tr>
                     ) : (
                       records.slice(0, 250).map((record) => (
-                        <tr className="transition-colors hover:bg-[#FFF7ED]/65" key={`${record.tripId}-${record.row}`}>
-                          <td className="px-3 py-3 font-medium text-text">{record.specialist}</td>
+                        <tr className="group transition-colors hover:bg-[#FFF7ED]/65" key={`${record.tripId}-${record.row}`}>
+                          <td className={stickySpecialistCellClassName}>
+                            <div className="truncate" title={record.specialist}>
+                              {record.specialist}
+                            </div>
+                          </td>
                           <td className="px-3 py-3 font-mono text-xs text-text-secondary">
                             {record.hrId ? record.hrId : (
                               <Badge variant="warning">Not mapped</Badge>
@@ -630,32 +697,50 @@ export function ExpenseReport({
                           <td className="px-3 py-3 font-mono font-semibold text-text">{formatEGP(record.total)}</td>
                           <td className="px-3 py-3 text-text-secondary">{record.status || "-"}</td>
                           <td className="px-3 py-3">
-                            <Switch
-                              checked={approvalFor(record).hrApproved}
-                              label="Approved by HR"
-                              onChange={(checked) =>
-                                setApprovals((current) => ({
-                                  ...current,
-                                  [record.tripId]: {
-                                    hrApproved: checked,
-                                    hrComment: approvalFor(record).hrComment,
-                                  },
-                                }))
-                              }
-                            />
+                            <div className="flex min-w-[118px] flex-col gap-1.5">
+                              <Switch
+                                checked={approvalFor(record).hrApproved}
+                                disabled={approvalSaveStatus[record.tripId] === "saving"}
+                                label="Approved by HR"
+                                onChange={(checked) => void saveApprovalChange(record, checked)}
+                              />
+                              {approvalSaveStatus[record.tripId] === "saving" ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#64748B]">
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                  Saving
+                                </span>
+                              ) : null}
+                              {approvalSaveStatus[record.tripId] === "saved" ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#15803D]">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Saved
+                                </span>
+                              ) : null}
+                              {approvalSaveStatus[record.tripId] === "error" ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#B91C1C]">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  Save failed
+                                </span>
+                              ) : null}
+                            </div>
                           </td>
                           <td className="px-3 py-3">
                             <Input
                               className="h-9 min-w-[220px] text-xs"
-                              onChange={(event) =>
+                              onChange={(event) => {
                                 setApprovals((current) => ({
                                   ...current,
                                   [record.tripId]: {
                                     hrApproved: approvalFor(record).hrApproved,
                                     hrComment: event.target.value,
                                   },
-                                }))
-                              }
+                                }));
+                                setApprovalSaveStatus((current) => {
+                                  const next = { ...current };
+                                  delete next[record.tripId];
+                                  return next;
+                                });
+                              }}
                               placeholder="HR comment"
                               value={approvalFor(record).hrComment}
                             />
