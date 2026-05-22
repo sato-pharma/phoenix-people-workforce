@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
-import { Calculator, MinusCircle } from "lucide-react";
+import { useState } from "react";
+import { Calculator, Eye, EyeOff, MinusCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,10 +42,27 @@ function PayrollStat({
   label: string;
   value: string;
 }) {
+  const [isValueVisible, setIsValueVisible] = useState(false);
+  const toggleLabel = isValueVisible ? `Hide ${label}` : `Show ${label}`;
+
   return (
     <div className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
-      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
-      <p className="mt-1.5 text-xl font-semibold text-slate-900">{value}</p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="min-w-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+        <button
+          aria-label={toggleLabel}
+          aria-pressed={isValueVisible}
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-2 focus-visible:outline-orange-500 focus-visible:outline-offset-1"
+          onClick={() => setIsValueVisible((current) => !current)}
+          title={toggleLabel}
+          type="button"
+        >
+          {isValueVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+        </button>
+      </div>
+      <p className="mt-1.5 font-mono text-xl font-semibold text-slate-900 tabular-nums">
+        {isValueVisible ? value : "******"}
+      </p>
     </div>
   );
 }
