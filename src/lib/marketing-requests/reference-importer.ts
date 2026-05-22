@@ -96,7 +96,7 @@ function stableCode(prefix: string, value: string) {
     .replace(/^_|_$/g, "")
     .toUpperCase();
   const hash = createHash("sha1").update(value).digest("hex").slice(0, 8).toUpperCase();
-  const codeBody = slug ? `${slug}_${hash}` : `REF_${hash}`;
+  const codeBody = slug || `REF_${hash}`;
 
   return `${prefix}_${codeBody}`.slice(0, 64);
 }

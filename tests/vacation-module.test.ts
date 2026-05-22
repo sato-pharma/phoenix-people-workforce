@@ -69,7 +69,7 @@ const vacationReportSource = readFileSync(
 export function runVacationModuleTests() {
   assert.match(serviceSource, /const vacationRequestsTable = "v2_vacation_requests"/);
   assert.match(serviceSource, /request\.status !== "pending_manager" && request\.status !== "pending_hr"/);
-  assert.match(serviceSource, /hrIdsMatch\(resolveEmployeeIdentityId\(access\), request\.managerHrId\)/);
+  assert.match(serviceSource, /accessMatchesHrId\(access, request\.managerHrId\)/);
   assert.match(serviceSource, /access\.role === "Super Admin" \|\| isDesignatedHrSpecialist\(access\)/);
   assert.match(serviceSource, /\.ilike\("hr_id", "A-16"\)/);
   assert.match(serviceSource, /managerOfManagerHrId/);

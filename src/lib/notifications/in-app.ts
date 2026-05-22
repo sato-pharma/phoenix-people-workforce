@@ -148,7 +148,7 @@ export async function listInAppNotificationsForViewer(
     const recipientResult = await supabase
       .from("notification_events")
       .select(selectColumns)
-      .contains("recipients", [employeeHrId])
+      .overlaps("recipients", [employeeHrId])
       .order("created_at", { ascending: false })
       .limit(boundedLimit);
 
