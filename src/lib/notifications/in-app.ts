@@ -127,29 +127,19 @@ export async function listInAppNotificationsForViewer(
   try {
     const supabase = getSupabaseAdmin();
     const boundedLimit = Math.max(1, Math.min(limit, 20));
-    const recipientVariants = Array.from(new Set([employeeHrId, employeeHrId.toUpperCase()]));
     const selectColumns = "id,category,subject,scheduled_for,sent_at,status,metadata,recipients,created_at";
 
-    const [employeeResult, recipientResult] = await Promise.all([
-      supabase
-        .from("notification_events")
-        .select(selectColumns)
-        .ilike("employee_hr_id", employeeHrId)
-        .order("created_at", { ascending: false })
-        .limit(boundedLimit),
-      supabase
-        .from("notification_events")
-        .select(selectColumns)
-        .overlaps("recipients", recipientVariants)
-        .order("created_at", { ascending: false })
-        .limit(boundedLimit),
-    ]);
+    const employeeResult = await supabase
+      .from("notification_events")
+      .select(selectColumns)
+      .ilike("employee_hr_id", employeeHrId)
+      .order("created_at", { ascending: false })
+      .limit(boundedLimit);
 
     if (employeeResult.error) throw employeeResult.error;
-    if (recipientResult.error) throw recipientResult.error;
 
     const rowsById = new Map<string, InAppNotificationEventRow>();
-    for (const row of [...(employeeResult.data ?? []), ...(recipientResult.data ?? [])] as InAppNotificationEventRow[]) {
+    for (const row of (employeeResult.data ?? []) as InAppNotificationEventRow[]) {
       const id = String(row.id ?? "");
       if (id) rowsById.set(id, row);
     }

@@ -1723,7 +1723,7 @@ function NotificationsSection() {
   );
 }
 
-export function ContactHRSupportPage({ data }: { data: MedicalRepPortalData }) {
+export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }) {
   const employeeName = data.employee.fullName || data.employee.hrId || "your profile";
   const [category, setCategory] = useState("");
   const [subject, setSubject] = useState("");

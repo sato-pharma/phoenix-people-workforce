@@ -1,14 +1,40 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, HelpCircle, ReceiptText, Calculator, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, Megaphone, ShieldCheck, Database, Settings2, Home, Send, FileText, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronDown, WalletCards } from "lucide-react";
+import { Menu, Bell, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards } from "lucide-react";
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
+import { PageTransition } from "@/components/ui/page-transition";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
+
+const EMPLOYEE_SIDEBAR_COLLAPSED_KEY = "phoenix-employee-sidebar-collapsed";
+const EMPLOYEE_SIDEBAR_COLLAPSED_EVENT = "phoenix-employee-sidebar-collapsed-change";
+
+function subscribeToEmployeeSidebarCollapsed(callback: () => void) {
+  window.addEventListener("storage", callback);
+  window.addEventListener(EMPLOYEE_SIDEBAR_COLLAPSED_EVENT, callback);
+
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(EMPLOYEE_SIDEBAR_COLLAPSED_EVENT, callback);
+  };
+}
+
+function getEmployeeSidebarCollapsedSnapshot() {
+  try {
+    return window.localStorage.getItem(EMPLOYEE_SIDEBAR_COLLAPSED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function getEmployeeSidebarCollapsedServerSnapshot() {
+  return false;
+}
 
 function navItemClass(active: boolean) {
   return active
@@ -155,6 +181,74 @@ function buildEmployeePortalSections({
   ].filter((section) => section.items.length > 0);
 }
 
+function EmployeePortalMenu({
+  mode,
+  onNavigate,
+  pathname,
+  sections,
+}: {
+  mode: "desktop" | "mobile";
+  onNavigate?: () => void;
+  pathname: string;
+  sections: EmployeePortalNavSection[];
+}) {
+  const isMobile = mode === "mobile";
+
+  return (
+    <>
+      {sections.map((section, sectionIndex) => (
+        <div
+          key={section.title}
+          className={
+            sectionIndex < sections.length - 1
+              ? isMobile
+                ? "border-b border-orange-100/70 pb-4"
+                : "border-b border-[#E9EDF5] pb-3"
+              : undefined
+          }
+        >
+          {section.hideTitle ? null : (
+            <div className={`${isMobile ? "mb-2" : "mb-1.5"} flex items-center justify-between px-3 pt-1`}>
+              <p
+                className={
+                  isMobile
+                    ? "text-[10px] font-black uppercase tracking-[0.16em] text-[#1D2B42]"
+                    : "text-[9px] font-black uppercase tracking-[0.18em] text-[#344073]"
+                }
+              >
+                {section.title}
+              </p>
+              <ChevronDown className={`${isMobile ? "h-3.5 w-3.5" : "h-3 w-3"} text-[#F05A1A]`} />
+            </div>
+          )}
+          <div className={isMobile ? "space-y-1" : "space-y-0.5"}>
+            {section.items.map((item) => {
+              const active = isEmployeePortalNavItemActive(pathname, item.href);
+              return (
+                <Link
+                  key={item.label}
+                  className={`group flex items-center gap-3 rounded-[16px] px-4 py-2.5 ${
+                    isMobile ? "text-[13px] font-semibold duration-200" : "text-[12px] font-bold duration-150"
+                  } transition ${navItemClass(active)}`}
+                  href={item.href}
+                  onClick={onNavigate}
+                >
+                  <item.icon
+                    className={`${
+                      isMobile ? "h-4 w-4" : "h-[15px] w-[15px] stroke-[2.1]"
+                    } shrink-0 transition ${navIconClass(active)}`}
+                  />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 export function EmployeePortalTopNav({
   activePathOverride,
   data,
@@ -163,16 +257,8 @@ export function EmployeePortalTopNav({
 }: EmployeePortalNavProps) {
   const currentPathname = usePathname();
   const pathname = activePathOverride ?? currentPathname;
-  const closeMobileMenu = () => {
-    const menuToggle = document.getElementById("employee-portal-mobile-menu");
-    if (menuToggle instanceof HTMLInputElement) {
-      menuToggle.checked = false;
-    }
-  };
-
-  useEffect(() => {
-    closeMobileMenu();
-  }, [pathname]);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const closeMobileMenu = () => setMobileMenuOpen(false);
 
   const firstName = data.employee.fullName.split(/\s+/)[0] ?? "Employee";
   const initials = data.employee.fullName
@@ -195,23 +281,18 @@ export function EmployeePortalTopNav({
   return (
     <>
       {disableSessionGuard ? null : <SessionSecurityGuard />}
-      <input
-        aria-hidden="true"
-        className="peer/mobile-menu sr-only"
-        id="employee-portal-mobile-menu"
-        type="checkbox"
-      />
       <header className="fixed inset-x-0 top-0 z-30 w-full border-b border-slate-200/60 bg-white/97 shadow-[0_8px_24px_rgba(15,23,42,0.07),0_1px_4px_rgba(15,23,42,0.04)] backdrop-blur-2xl">
         <div className="mx-auto flex h-[64px] w-full max-w-[1560px] items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:h-[72px] lg:px-8">
-          <label
+          <button
             aria-label="Menu"
+            aria-controls="employee-portal-mobile-sidebar"
+            aria-expanded={mobileMenuOpen}
             className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-orange-200 bg-orange-50 text-orange-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-100 focus:outline-none focus:ring-2 focus:ring-orange-500/25 lg:hidden"
-            htmlFor="employee-portal-mobile-menu"
-            role="button"
-            tabIndex={0}
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            type="button"
           >
             <Menu className="h-5 w-5" />
-          </label>
+          </button>
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3 lg:flex-none">
             <PhoenixLogo />
             <div className="min-w-0 border-l border-slate-200 pl-2 sm:pl-3">
@@ -261,59 +342,36 @@ export function EmployeePortalTopNav({
       </header>
 
       {/* Mobile Sidebar Overlay */}
-      <label
+      <button
         aria-label="Close menu"
-        className="pointer-events-none fixed inset-0 z-40 bg-slate-900/40 opacity-0 backdrop-blur-sm transition-opacity duration-200 peer-checked/mobile-menu:pointer-events-auto peer-checked/mobile-menu:opacity-100 lg:hidden"
-        htmlFor="employee-portal-mobile-menu"
+        className={`fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-200 lg:hidden ${
+          mobileMenuOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        onClick={closeMobileMenu}
+        type="button"
       />
 
       {/* Mobile Sidebar Content */}
-      <div className="fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh w-[min(88vw,306px)] -translate-x-full transform flex-col border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 ease-in-out peer-checked/mobile-menu:translate-x-0 lg:hidden">
+      <div
+        aria-hidden={!mobileMenuOpen}
+        className="fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh w-[min(88vw,306px)] flex-col border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 ease-in-out will-change-transform lg:hidden"
+        id="employee-portal-mobile-sidebar"
+        style={{ transform: mobileMenuOpen ? "translate3d(0, 0, 0)" : "translate3d(-100%, 0, 0)" }}
+      >
         <div className="flex shrink-0 items-center justify-between px-5 pb-4 pt-5">
           <PhoenixLogo />
-          <label
+          <button
             aria-label="Close menu"
             className="h-10 w-10 flex items-center justify-center rounded-xl border border-slate-100 text-slate-400 hover:text-slate-600"
-            htmlFor="employee-portal-mobile-menu"
-            role="button"
-            tabIndex={0}
+            onClick={closeMobileMenu}
+            type="button"
           >
             <X className="h-5 w-5" />
-          </label>
+          </button>
         </div>
 
         <nav className="phoenix-employee-sidebar-scroll flex-1 space-y-4 overflow-y-auto px-5 pb-5 pt-1">
-          {menuSections.map((section, sectionIndex) => (
-            <div
-              key={section.title}
-              className={sectionIndex < menuSections.length - 1 ? "border-b border-orange-100/70 pb-4" : undefined}
-            >
-              {section.hideTitle ? null : (
-                <div className="mb-2 flex items-center justify-between px-3 pt-1">
-                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#1D2B42]">
-                    {section.title}
-                  </p>
-                  <ChevronDown className="h-3.5 w-3.5 text-[#F05A1A]" />
-                </div>
-              )}
-              <div className="space-y-1">
-                {section.items.map((item) => {
-                  const active = isEmployeePortalNavItemActive(pathname, item.href);
-                  return (
-                    <Link
-                      key={item.label}
-                      className={`group flex items-center gap-3 rounded-[16px] px-4 py-2.5 text-[13px] font-semibold transition duration-200 ${navItemClass(active)}`}
-                      href={item.href}
-                      onClick={closeMobileMenu}
-                    >
-                      <item.icon className={`h-4 w-4 shrink-0 transition ${navIconClass(active)}`} />
-                      <span>{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+          <EmployeePortalMenu mode="mobile" onNavigate={closeMobileMenu} pathname={pathname} sections={menuSections} />
 
           <div className="pt-4 mt-4 border-t border-slate-100">
             <button
@@ -357,11 +415,31 @@ export function EmployeePortalSidebar({
 }) {
   const currentPathname = usePathname();
   const pathname = activePathOverride ?? currentPathname;
+  const persistedCollapsed = useSyncExternalStore(
+    subscribeToEmployeeSidebarCollapsed,
+    getEmployeeSidebarCollapsedSnapshot,
+    getEmployeeSidebarCollapsedServerSnapshot,
+  );
+  const [fallbackCollapsed, setFallbackCollapsed] = useState<boolean | null>(null);
+  const collapsed = fallbackCollapsed ?? persistedCollapsed;
 
   const sections = buildEmployeePortalSections(visibility);
   const activeSectionTitle = sections.find((section) =>
     section.items.some((item) => isEmployeePortalNavItemActive(pathname, item.href)),
   )?.title;
+
+  const toggleCollapsed = () => {
+    const nextCollapsed = !collapsed;
+    setFallbackCollapsed(nextCollapsed);
+
+    try {
+      window.localStorage.setItem(EMPLOYEE_SIDEBAR_COLLAPSED_KEY, String(nextCollapsed));
+    } catch {
+      return;
+    }
+
+    window.dispatchEvent(new Event(EMPLOYEE_SIDEBAR_COLLAPSED_EVENT));
+  };
 
   const handleLogout = async () => {
     try {
@@ -372,102 +450,134 @@ export function EmployeePortalSidebar({
   };
 
   return (
-    <aside className="hidden w-[302px] shrink-0 lg:block">
-      <div className="sticky top-[86px] min-h-[calc(100vh-112px)] overflow-hidden rounded-[20px] border border-slate-100/90 bg-[linear-gradient(90deg,#17233E_0_54px,#FFFFFF_54px,#FFFFFF_100%)] shadow-[0_26px_70px_rgba(15,23,42,0.13)]">
-        <div className="absolute bottom-0 left-0 top-0 w-[54px]">
-          <div className="flex h-full flex-col items-center py-5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl text-white/82">
-              <ChartColumnBig className="h-[17px] w-[17px]" />
-            </div>
-            <div className="mt-7 flex flex-1 flex-col items-center justify-between pb-16">
+    <aside className={`hidden shrink-0 self-start transition-[width] duration-200 lg:block ${collapsed ? "w-[78px]" : "w-[302px]"}`}>
+      <div className="sticky top-[86px] flex max-h-[calc(100vh-112px)] w-full overflow-hidden rounded-[20px] border border-slate-100/90 bg-white shadow-[0_26px_70px_rgba(15,23,42,0.13)]">
+        <div className={`${collapsed ? "w-full" : "w-[54px]"} shrink-0 bg-[#17233E]`}>
+          <div className="flex h-full min-h-0 flex-col items-center py-4">
+            <button
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-white/82 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35"
+              onClick={toggleCollapsed}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              type="button"
+            >
+              {collapsed ? <ChevronsRight className="h-[17px] w-[17px]" /> : <ChartColumnBig className="h-[17px] w-[17px]" />}
+            </button>
+            <nav className="phoenix-employee-sidebar-scroll mt-5 flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto px-2 pb-3">
               {sections.map((section) => {
                 const Icon = sectionRailIcon(section.title);
                 const active = section.title === activeSectionTitle;
+                const firstItem = section.items[0];
                 return (
-                  <div className="relative flex h-10 w-[52px] items-center justify-center" key={section.title}>
-                    {active ? <span className="absolute left-0 h-7 w-[3px] rounded-r-full bg-[#F05A1A]" /> : null}
-                    <Icon className={`h-[16px] w-[16px] ${active ? "text-white" : "text-white/58"}`} />
-                  </div>
+                  <Link
+                    aria-label={section.title}
+                    className={`relative flex h-10 w-[52px] items-center justify-center rounded-xl transition ${
+                      active ? "bg-white/10 text-white" : "text-white/58 hover:bg-white/8 hover:text-white"
+                    }`}
+                    href={firstItem.href}
+                    key={section.title}
+                    title={section.title}
+                  >
+                    {active ? <span className="absolute left-[-8px] h-7 w-[3px] rounded-r-full bg-[#F05A1A]" /> : null}
+                    <Icon className="h-[16px] w-[16px]" />
+                  </Link>
                 );
               })}
-            </div>
+            </nav>
+            {collapsed ? (
+              <button
+                aria-label="Log out"
+                className="mt-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white/64 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35"
+                onClick={handleLogout}
+                title="Log out"
+                type="button"
+              >
+                <LogOut className="h-[16px] w-[16px]" />
+              </button>
+            ) : null}
           </div>
         </div>
 
-        <div className="relative ml-[54px] min-h-[calc(100vh-112px)] px-4 py-5">
-        <div className="mb-4 flex items-start justify-between pl-1 pr-0">
-          <div className="flex items-center gap-2.5">
-            <Image
-              alt="Phoenix Workforce logo"
-              className="h-8 w-8 object-contain"
-              height={32}
-              priority
-              src="/brand/phoenix-bird-icon.png"
-              width={32}
-            />
-            <div>
-              <div className="text-[11px] font-black leading-none tracking-[0.30em] text-[#25314A]">
-                PHOENIX
-              </div>
-              <div className="mt-1 text-[8px] font-black leading-none tracking-[0.34em] text-[#F05A1A]">
-                WORKFORCE
-              </div>
-            </div>
-          </div>
-          <button
-            aria-label="Collapse sidebar"
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F2F0FF] text-[#293268] transition hover:bg-[#E7E5FF]"
-            type="button"
-          >
-            <ChevronsLeft className="h-3 w-3" />
-          </button>
-        </div>
-
-        <nav className="space-y-3">
-          {sections.map((section, sectionIndex) => (
-            <div
-              key={section.title}
-              className={sectionIndex < sections.length - 1 ? "border-b border-[#E9EDF5] pb-3" : undefined}
-            >
-              {section.hideTitle ? null : (
-                <div className="mb-1.5 flex items-center justify-between px-3 pt-1">
-                  <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#344073]">
-                    {section.title}
-                  </p>
-                  <ChevronDown className="h-3 w-3 text-[#F05A1A]" />
+        <div className={`${collapsed ? "hidden" : "flex"} min-h-0 flex-1 flex-col px-4 py-5`}>
+          <div className="mb-4 flex items-start justify-between pl-1 pr-0">
+            <div className="flex items-center gap-2.5">
+              <Image
+                alt="Phoenix Workforce logo"
+                className="h-8 w-8 object-contain"
+                height={32}
+                priority
+                src="/brand/phoenix-bird-icon.png"
+                width={32}
+              />
+              <div>
+                <div className="text-[11px] font-black leading-none tracking-[0.30em] text-[#25314A]">
+                  PHOENIX
                 </div>
-              )}
-              <div className="space-y-0.5">
-                {section.items.map((item) => {
-                  const active = isEmployeePortalNavItemActive(pathname, item.href);
-                  return (
-                    <Link
-                      key={item.label}
-                      className={`group flex items-center gap-3 rounded-[16px] px-4 py-2.5 text-[12px] font-bold transition duration-150 ${navItemClass(active)}`}
-                      href={item.href}
-                    >
-                      <item.icon className={`h-[15px] w-[15px] shrink-0 stroke-[2.1] transition ${navIconClass(active)}`} />
-                      <span>{item.label}</span>
-                    </Link>
-                  );
-                })}
+                <div className="mt-1 text-[8px] font-black leading-none tracking-[0.34em] text-[#F05A1A]">
+                  WORKFORCE
+                </div>
               </div>
             </div>
-          ))}
-        </nav>
+            <button
+              aria-label="Collapse sidebar"
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F2F0FF] text-[#293268] transition hover:bg-[#E7E5FF]"
+              onClick={toggleCollapsed}
+              type="button"
+            >
+              <ChevronsLeft className="h-3 w-3" />
+            </button>
+          </div>
 
-        <div className="mt-4 border-t border-[#E9EDF5] pt-3">
-          <button
-            className="flex w-full items-center gap-3 rounded-[14px] bg-[#FFF2EE] px-4 py-2.5 text-[12px] font-black text-[#F05A1A] transition hover:bg-[#FFE8DD]"
-            onClick={handleLogout}
-            type="button"
-          >
-            <LogOut className="h-[15px] w-[15px] shrink-0" />
-            <span>Log Out</span>
-          </button>
-        </div>
+          <nav className="phoenix-employee-sidebar-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+            <EmployeePortalMenu mode="desktop" pathname={pathname} sections={sections} />
+          </nav>
+
+          <div className="mt-4 shrink-0 border-t border-[#E9EDF5] pt-3">
+            <button
+              className="flex w-full items-center gap-3 rounded-[14px] bg-[#FFF2EE] px-4 py-2.5 text-[12px] font-black text-[#F05A1A] transition hover:bg-[#FFE8DD]"
+              onClick={handleLogout}
+              type="button"
+            >
+              <LogOut className="h-[15px] w-[15px] shrink-0" />
+              <span>Log Out</span>
+            </button>
+          </div>
         </div>
       </div>
     </aside>
+  );
+}
+
+export function EmployeePortalChrome({
+  activePathOverride,
+  children,
+  data,
+  disableSessionGuard = false,
+  visibility,
+}: {
+  activePathOverride?: string;
+  children: ReactNode;
+  data: EmployeePortalShellData;
+  disableSessionGuard?: boolean;
+  visibility: EmployeePortalNavVisibility;
+}) {
+  return (
+    <div className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[64px] lg:pt-[72px]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.028)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.028)_1px,transparent_1px)] bg-[size:52px_52px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.65),transparent_56%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[480px] bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(255,255,255,0)_70%)]" />
+      <EmployeePortalTopNav
+        activePathOverride={activePathOverride}
+        data={data}
+        disableSessionGuard={disableSessionGuard}
+        visibility={visibility}
+      />
+      <div className="relative mx-auto flex w-full max-w-[1560px] items-start gap-4 px-3 py-5 sm:px-4 lg:gap-8 lg:px-8 lg:py-8">
+        <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
+        <main className="min-w-0 flex-1 space-y-6 lg:space-y-8">
+          <PageTransition>{children}</PageTransition>
+        </main>
+      </div>
+    </div>
   );
 }

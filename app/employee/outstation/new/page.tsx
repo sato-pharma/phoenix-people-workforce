@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 
-import { EmployeePortalSidebar, EmployeePortalTopNav } from "@/components/employee-portal/employee-portal-layout";
+import { EmployeePortalChrome } from "@/components/employee-portal/employee-portal-layout";
 import { MobileOutstationWizard } from "@/components/outstation/mobile-outstation-wizard";
 import { Card } from "@/components/ui/card";
-import { PageTransition } from "@/components/ui/page-transition";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getDsmTeamPerformance, getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -57,7 +56,12 @@ export default async function EmployeeOutstationNewPage() {
 
   const portalData = portalDataResult.value;
   const outstationContext = outstationContextResult.status === "fulfilled" ? outstationContextResult.value : null;
-  const visibility = resolveEmployeePortalNavVisibility(portalData.employee.roleLabel, access.role);
+  const visibility = resolveEmployeePortalNavVisibility(
+    portalData.employee.roleLabel,
+    access.role,
+    portalData.employee.line,
+    portalData.employee.department,
+  );
 
   const employeeName = outstationContext?.employeeName ?? portalData.employee.fullName;
   const employeeRole = outstationContext?.employeeRole ?? portalData.employee.roleLabel;
@@ -76,25 +80,15 @@ export default async function EmployeeOutstationNewPage() {
     })) ?? [];
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#f6f7fb]">
-      <EmployeePortalTopNav data={portalData} visibility={visibility} />
-
-      <div className="mx-auto flex w-full max-w-[1600px] gap-6 px-4 py-6 lg:gap-8 lg:px-8 lg:py-8">
-        <EmployeePortalSidebar visibility={visibility} />
-
-        <main className="min-w-0 flex-1 space-y-6 lg:space-y-8">
-          <PageTransition>
-            <MobileOutstationWizard
-              employeeHrId={access.hrId ?? portalData.employee.hrId}
-              employeeName={employeeName}
-              employeeRole={employeeRole}
-              hasResidenceCoordinates={hasResidenceCoordinates}
-              medicalTripOptions={medicalTripOptions}
-              residenceSummary={residenceSummary}
-            />
-          </PageTransition>
-        </main>
-      </div>
-    </div>
+    <EmployeePortalChrome data={portalData} visibility={visibility}>
+      <MobileOutstationWizard
+        employeeHrId={access.hrId ?? portalData.employee.hrId}
+        employeeName={employeeName}
+        employeeRole={employeeRole}
+        hasResidenceCoordinates={hasResidenceCoordinates}
+        medicalTripOptions={medicalTripOptions}
+        residenceSummary={residenceSummary}
+      />
+    </EmployeePortalChrome>
   );
 }

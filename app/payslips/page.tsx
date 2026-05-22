@@ -2,10 +2,7 @@ import { WalletCards } from "lucide-react";
 
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { MedicalRepPayrollPage } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
-import {
-  EmployeePortalSidebar,
-  EmployeePortalTopNav,
-} from "@/components/employee-portal/employee-portal-layout";
+import { EmployeePortalChrome } from "@/components/employee-portal/employee-portal-layout";
 import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
@@ -56,7 +53,12 @@ export default async function PayslipsPage() {
     );
   }
 
-  const visibility = resolveEmployeePortalNavVisibility(data.employee.roleLabel, access.role);
+  const visibility = resolveEmployeePortalNavVisibility(
+    data.employee.roleLabel,
+    access.role,
+    data.employee.line,
+    data.employee.department,
+  );
 
   if (navigationMode === "admin") {
     return (
@@ -83,24 +85,13 @@ export default async function PayslipsPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[64px] lg:pt-[72px]">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.028)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.028)_1px,transparent_1px)] bg-[size:52px_52px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.65),transparent_56%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[480px] bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(255,255,255,0)_70%)]" />
-      <EmployeePortalTopNav data={data} visibility={visibility} />
-      <div className="relative mx-auto flex w-full max-w-[1560px] gap-6 px-4 py-6 lg:gap-8 lg:px-8 lg:py-8">
-        <EmployeePortalSidebar visibility={visibility} />
-        <main className="min-w-0 flex-1 space-y-6 lg:space-y-8">
-          <PageTransition>
-            <EmployeePortalPageShell
-              description="Review your monthly compensation with clarity and confidence."
-              title="My Earnings"
-            >
-              <MedicalRepPayrollPage data={data} />
-            </EmployeePortalPageShell>
-          </PageTransition>
-        </main>
-      </div>
-    </div>
+    <EmployeePortalChrome data={data} visibility={visibility}>
+      <EmployeePortalPageShell
+        description="Review your monthly compensation with clarity and confidence."
+        title="My Earnings"
+      >
+        <MedicalRepPayrollPage data={data} />
+      </EmployeePortalPageShell>
+    </EmployeePortalChrome>
   );
 }

@@ -6,10 +6,10 @@ export const metadata: Metadata = {
   title: "Phoenix Workforce",
   description: "A premium workforce intelligence foundation for Phoenix.",
   icons: {
-    apple: "/apple-icon.png",
+    apple: [{ type: "image/png", sizes: "180x180", url: "/apple-icon.png" }],
     icon: [
-      { url: "/favicon.ico" },
-      { type: "image/png", url: "/icon.png" },
+      { sizes: "16x16 32x32 48x48 64x64", url: "/favicon.ico" },
+      { type: "image/png", sizes: "512x512", url: "/icon.png" },
     ],
   },
 };
