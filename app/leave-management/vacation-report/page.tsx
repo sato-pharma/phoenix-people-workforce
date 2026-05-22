@@ -1,5 +1,7 @@
 import { VacationReport } from "@/components/vacation/vacation-report";
+import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { isForbiddenError, resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveNavigationMode } from "@/lib/auth/permissions";
 import {
   getVacationReportData,
   isVacationSchemaMissing,
@@ -55,5 +57,17 @@ export default async function VacationReportPage({
     initialError = vacationReportPageError(error);
   }
 
-  return <VacationReport initialData={initialData} initialError={initialError} />;
+  if (resolveNavigationMode(access) === "admin") {
+    return <VacationReport initialData={initialData} initialError={initialError} />;
+  }
+
+  return (
+    <EmployeePortalPageShell
+      badge="Leave Management"
+      description="Review leave entitlements and vacation requests within your visible employee portal scope."
+      title="Vacation Report"
+    >
+      <VacationReport initialData={initialData} initialError={initialError} showHero={false} />
+    </EmployeePortalPageShell>
+  );
 }

@@ -6,8 +6,9 @@ import {
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { getAdminCommandCenterData } from "@/lib/admin/command-center";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
-import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +24,15 @@ export default async function EmployeePortalExpenseDashboardPage() {
   await assertPermission(access, "expenses", "read");
 
   let data = null;
+  let adminCommandData = null;
   try {
-    data = await getMedicalRepPortalData(access);
+    [data, adminCommandData] = await Promise.all([
+      getMedicalRepPortalData(access),
+      getAdminCommandCenterData(access).catch(() => null),
+    ]);
   } catch {
     data = null;
+    adminCommandData = null;
   }
 
   if (!data || data.empty.profile) {
@@ -47,5 +53,24 @@ export default async function EmployeePortalExpenseDashboardPage() {
     );
   }
 
-  return <PersonalExpenseWorkloadDashboard data={data} />;
+  return (
+    <EmployeePortalPageShell
+      badge="Expenses"
+      description="Review workload, trip volume, and expense movement using the same employee portal workspace design."
+      title="Workload & Expense"
+    >
+      <PersonalExpenseWorkloadDashboard
+        adminKeyCards={adminCommandData ? {
+          expenseClaimsAmount: adminCommandData.overview.expenses.approvedAmount,
+          expenseClaimsEntries: adminCommandData.overview.expenses.totalRows,
+          payrollBatchLabel: adminCommandData.overview.payroll.batchLabel,
+          payrollEligibleCount: adminCommandData.payrollEligibleCount,
+          totalSalesTarget: adminCommandData.overview.sales.targetValue,
+          totalSalesValue: adminCommandData.overview.sales.salesValue,
+        } : null}
+        data={data}
+        showHero={false}
+      />
+    </EmployeePortalPageShell>
+  );
 }

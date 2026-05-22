@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { AdminCommandCenter } from "@/components/admin/admin-command-center";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { getAdminCommandCenterData } from "@/lib/admin/command-center";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -14,6 +14,10 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminCommandPage() {
   const access = await resolveAccessContextFromPage();
+
+  if (resolveNavigationMode(access) === "employee-portal") {
+    redirect("/employee-portals");
+  }
 
   if (!await canAccess(access, "admin", "read") && !await canAccess(access, "overview", "read")) {
     redirect("/employee-portals");

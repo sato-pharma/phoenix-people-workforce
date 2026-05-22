@@ -3,6 +3,7 @@ import { ProbationTracker } from "@/components/probation/probation-tracker";
 import { redirect } from "next/navigation";
 
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveNavigationMode } from "@/lib/auth/permissions";
 import {
   employeeDirectoryErrorMessage,
   isEmployeeDirectoryEnvMissing,
@@ -41,6 +42,10 @@ function probationPageError(error: unknown) {
 
 export default async function ProbationPage() {
   const access = await resolveAccessContextFromPage();
+  if (resolveNavigationMode(access) === "employee-portal") {
+    redirect("/employee-portals/probation");
+  }
+
   if (!isProbationAdministrator(access)) {
     redirect("/employee-portals");
   }

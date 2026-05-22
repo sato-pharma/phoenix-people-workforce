@@ -264,6 +264,7 @@ export function MobileOutstationWizard({
   hasResidenceCoordinates,
   medicalTripOptions,
   residenceSummary,
+  showIntro = true,
 }: {
   employeeHrId: string;
   employeeName: string;
@@ -271,6 +272,7 @@ export function MobileOutstationWizard({
   hasResidenceCoordinates: boolean;
   medicalTripOptions: MedicalTripOption[];
   residenceSummary: string;
+  showIntro?: boolean;
 }) {
   const [step, setStep] = useState(1);
   const [expenseType, setExpenseType] = useState<OutstationExpenseType>("traveling");
@@ -922,6 +924,7 @@ export function MobileOutstationWizard({
     <div className="space-y-5">
       <OfflineSyncBanner visible={isOffline} />
 
+      {showIntro ? (
       <section className="overflow-hidden rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_46%,#f8fafc_100%)] p-6 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
         <p className="text-xs font-black uppercase tracking-[0.2em] text-orange-500">
           Outstation Expense
@@ -941,6 +944,7 @@ export function MobileOutstationWizard({
           <Stat label="Residence Coordinates" value={hasResidenceCoordinates ? "Ready" : "Missing"} />
         </div>
       </section>
+      ) : null}
 
       <div className="grid gap-3 md:grid-cols-3">
         <WizardStep active={step === 1} icon={ReceiptText} label="1. Trip details" />

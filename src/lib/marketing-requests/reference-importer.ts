@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -94,8 +95,10 @@ function stableCode(prefix: string, value: string) {
     .replace(/[^a-zA-Z0-9_]/g, "")
     .replace(/^_|_$/g, "")
     .toUpperCase();
+  const hash = createHash("sha1").update(value).digest("hex").slice(0, 8).toUpperCase();
+  const codeBody = slug ? `${slug}_${hash}` : `REF_${hash}`;
 
-  return `${prefix}_${slug || "UNSPECIFIED"}`.slice(0, 64);
+  return `${prefix}_${codeBody}`.slice(0, 64);
 }
 
 function buildHeaderMap(sheet: ExcelJS.Worksheet) {

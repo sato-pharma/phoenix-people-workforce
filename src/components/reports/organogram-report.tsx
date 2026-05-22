@@ -55,6 +55,7 @@ type OrganogramReportProps = {
   fixedLine?: string | null;
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
+  showHero?: boolean;
 };
 
 function emptyText(value: string | number | null | undefined) {
@@ -1035,6 +1036,7 @@ export function OrganogramReport({
   fixedLine = null,
   initialError = null,
   initialReport = null,
+  showHero = true,
 }: OrganogramReportProps) {
   const [report, setReport] = React.useState<VacancyReportData | null>(
     initialReport,
@@ -1256,8 +1258,44 @@ export function OrganogramReport({
 
   return (
     <OrganogramPageShell>
-      <AdminPageHero
-        actions={
+      {showHero ? (
+        <AdminPageHero
+          actions={
+            <Button
+              className="h-11 rounded-2xl px-4 text-xs"
+              disabled={isLoading}
+              onClick={() => void loadReport()}
+              variant="secondary"
+            >
+              {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Refresh
+            </Button>
+          }
+          badges={
+            <div className="flex flex-wrap gap-2 text-xs text-[#475569]">
+              <AdminInsightChip>
+                {effectiveLineFilter ? `${effectiveLineFilter} selected` : "Select line"}
+              </AdminInsightChip>
+              <AdminInsightChip tone="orange">
+                {rows.length} total rows cached
+              </AdminInsightChip>
+            </div>
+          }
+          description="Sales lines show Sales and Marketing leadership. Office shows the full office structure."
+          eyebrow="People"
+          icon={<Building2 className="h-3.5 w-3.5" />}
+          title="Organogram"
+        />
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-white/75 bg-white/90 px-4 py-3 shadow-[0_18px_48px_rgba(15,23,42,0.07)]">
+          <div className="flex flex-wrap gap-2 text-xs text-[#475569]">
+            <AdminInsightChip>
+              {effectiveLineFilter ? `${effectiveLineFilter} selected` : "Select line"}
+            </AdminInsightChip>
+            <AdminInsightChip tone="orange">
+              {rows.length} total rows cached
+            </AdminInsightChip>
+          </div>
           <Button
             className="h-11 rounded-2xl px-4 text-xs"
             disabled={isLoading}
@@ -1267,22 +1305,8 @@ export function OrganogramReport({
             {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-3.5 w-3.5" />}
             Refresh
           </Button>
-        }
-        badges={
-          <div className="flex flex-wrap gap-2 text-xs text-[#475569]">
-            <AdminInsightChip>
-              {effectiveLineFilter ? `${effectiveLineFilter} selected` : "Select line"}
-            </AdminInsightChip>
-            <AdminInsightChip tone="orange">
-              {rows.length} total rows cached
-            </AdminInsightChip>
-          </div>
-        }
-        description="Sales lines show Sales and Marketing leadership. Office shows the full office structure."
-        eyebrow="People"
-        icon={<Building2 className="h-3.5 w-3.5" />}
-        title="Organogram"
-      />
+        </div>
+      )}
 
       {error ? (
         <AdminCallout tone="danger">

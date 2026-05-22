@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useMemo, useState, type ReactElement } from "react";
 import {
   Area,
   AreaChart,
@@ -8,13 +8,13 @@ import {
   Cell,
   Pie,
   PieChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { ChartLine as LineChartIcon } from "lucide-react";
 
+import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import { Card } from "@/components/ui/card";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 
@@ -193,23 +193,14 @@ function StableChartFrame({
   className: string;
   height: number;
 }) {
-  const [isReady, setIsReady] = useState(false);
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => setIsReady(true));
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
-
   return (
-    <div className={`${className} min-w-0 overflow-hidden`}>
-      {isReady ? (
-        <ResponsiveContainer height={height} minHeight={height} minWidth={0} width="100%">
-          {children}
-        </ResponsiveContainer>
-      ) : (
-        <div style={{ height }} />
-      )}
-    </div>
+    <SafeResponsiveContainer
+      className={`${className} min-w-0 overflow-hidden`}
+      minHeight={height}
+      style={{ height }}
+    >
+      {children}
+    </SafeResponsiveContainer>
   );
 }
 

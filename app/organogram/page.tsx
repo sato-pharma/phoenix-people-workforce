@@ -2,7 +2,7 @@
 import { OrganogramReport } from "@/components/reports/organogram-report";
 import { redirect } from "next/navigation";
 
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   errorMessage,
@@ -32,6 +32,10 @@ function organogramPageError(error: unknown) {
 
 export default async function OrganogramPage() {
   const access = await resolveAccessContextFromPage();
+  if (resolveNavigationMode(access) === "employee-portal") {
+    redirect("/employee-portals/organogram");
+  }
+
   if (!await canAccess(access, "organogram", "read")) {
     redirect("/employee-portals");
   }

@@ -92,6 +92,7 @@ export default async function EmployeePortalSubmitExpensePage() {
         hasResidenceCoordinates={hasResidenceCoordinates}
         medicalTripOptions={medicalTripOptions}
         residenceSummary={residenceSummary}
+        showIntro={false}
       />
     </EmployeePortalPageShell>
   );

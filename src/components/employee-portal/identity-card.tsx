@@ -39,12 +39,12 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
 
   const statusPillClass =
     statusVariant === "success"
-      ? "border-emerald-200/50 bg-emerald-50/50 text-emerald-600 shadow-sm"
+      ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100 shadow-sm"
       : statusVariant === "warning"
-        ? "border-amber-200/50 bg-amber-50/50 text-amber-700 shadow-sm"
+        ? "border-amber-300/25 bg-amber-400/10 text-amber-100 shadow-sm"
         : statusVariant === "danger"
-          ? "border-rose-200/50 bg-rose-50/50 text-rose-700 shadow-sm"
-          : "border-slate-200/50 bg-slate-50/50 text-slate-600 shadow-sm";
+          ? "border-rose-300/25 bg-rose-400/10 text-rose-100 shadow-sm"
+          : "border-white/15 bg-white/10 text-slate-100 shadow-sm";
 
   const statusDotClass =
     statusVariant === "success"
@@ -63,20 +63,20 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
     .toUpperCase();
 
   return (
-    <div className="relative overflow-hidden rounded-[30px] border border-white/80 bg-[linear-gradient(135deg,#ffffff_0%,#fff7ed_48%,#eef7fb_100%)] px-5 py-5 shadow-[0_24px_64px_rgba(15,23,42,0.12)] ring-1 ring-slate-200/70 lg:px-8 lg:py-7">
-      <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.025)_1px,transparent_1px)] bg-[size:34px_34px] opacity-80 [mask-image:linear-gradient(110deg,rgba(0,0,0,0.86),transparent_78%)]" />
-      <div className="absolute inset-x-0 bottom-0 h-20 bg-[linear-gradient(0deg,rgba(255,247,237,0.72),rgba(255,247,237,0))]" />
+    <div className="relative overflow-hidden rounded-lg border border-slate-950 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] px-5 py-5 shadow-[0_22px_70px_rgba(15,23,42,0.32)] lg:px-8 lg:py-7">
+      <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:44px_44px]" />
+      <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-orange-500/20 blur-3xl" />
+      <div className="absolute -bottom-28 left-8 h-56 w-56 rounded-full bg-sky-500/10 blur-3xl" />
 
       <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_250px] lg:items-center xl:grid-cols-[minmax(0,1fr)_292px]">
         <div className="min-w-0">
-          <div className="mb-4 inline-flex w-fit items-center gap-2 rounded-full border border-orange-200 bg-white/85 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-orange-600 shadow-[0_8px_20px_rgba(249,115,22,0.08)]">
-            <Sparkles className="h-3.5 w-3.5" />
+          <div className="mb-4 inline-flex w-fit items-center gap-2 rounded-lg border border-orange-400/25 bg-orange-500/10 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.20em] text-orange-100">
+            <Sparkles className="h-3 w-3" />
             Your Phoenix day starts here
           </div>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <h1 className="text-[30px] font-semibold leading-[1.08] tracking-normal text-slate-950 sm:text-[36px] lg:text-[42px]">
+            <h1 className="text-[30px] font-black leading-[1.05] tracking-[-0.04em] text-white sm:text-[38px] lg:text-[44px]">
               Hello, {firstName} <span aria-hidden="true">👋🏻</span>
             </h1>
             <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] lg:px-4 lg:text-[13px] ${statusPillClass}`}>
@@ -85,64 +85,64 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
             </span>
           </div>
 
-          <p className="mt-3 max-w-3xl text-[15px] font-medium leading-7 text-slate-700 lg:text-[17px]">
+          <p className="mt-3 max-w-3xl text-[15px] leading-[1.80] text-slate-300 lg:text-[15.5px]">
             Your Phoenix workspace is ready for a focused, confident day. Keep your priorities clear, follow up with energy, and turn today's work into visible progress.
           </p>
 
-          <div className="mt-5 flex flex-wrap items-center gap-2 text-slate-500">
-            <span className="rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm font-semibold text-slate-800 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+          <div className="mt-5 flex flex-wrap items-center gap-2 text-slate-300">
+            <span className="rounded-lg border border-white/10 bg-white/10 px-3.5 py-1.5 text-[13px] font-bold text-white shadow-sm backdrop-blur">
               {employee.fullName}
             </span>
-            <span className="rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm font-medium text-slate-800 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+            <span className="rounded-lg border border-white/10 bg-white/10 px-3.5 py-1.5 text-[13px] font-medium text-slate-200 shadow-sm backdrop-blur">
               {employee.roleLabel}
             </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm font-medium text-slate-800 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
-              <CalendarDays className="h-4 w-4 text-slate-400" />
+            <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3.5 py-1.5 text-[13px] font-medium text-slate-200 shadow-sm backdrop-blur">
+              <CalendarDays className="h-3.5 w-3.5 text-orange-200" />
               <span>Hired {hiredLabel}</span>
             </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm font-medium text-slate-800 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
-              <ShieldCheck className="h-4 w-4 text-orange-400" />
+            <span className="inline-flex items-center gap-2 rounded-lg border border-orange-300/25 bg-orange-500/10 px-3.5 py-1.5 text-[13px] font-medium text-orange-100 shadow-sm backdrop-blur">
+              <ShieldCheck className="h-3.5 w-3.5 text-orange-200" />
               <span>HR ID {displayHrId}</span>
             </span>
           </div>
 
           <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="group/item flex items-center gap-2.5 rounded-2xl border border-white/80 bg-white/80 px-3 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 text-orange-500 shadow-sm ring-1 ring-orange-100 transition-colors group-hover/item:bg-orange-100">
+            <div className="group/item flex items-center gap-2.5 rounded-lg border border-white/10 bg-white/10 px-3.5 py-3 shadow-sm backdrop-blur">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/15 text-orange-200 shadow-sm ring-1 ring-orange-300/20 transition-colors group-hover/item:bg-orange-500/25">
                 <MapPin className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Area</p>
-                <p className="truncate text-sm font-semibold text-slate-800">{employee.area ?? "Unassigned"}</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Area</p>
+                <p className="truncate text-sm font-bold text-white">{employee.area ?? "Unassigned"}</p>
               </div>
             </div>
 
-            <div className="group/item flex items-center gap-2.5 rounded-2xl border border-white/80 bg-white/80 px-3 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-50 text-sky-600 shadow-sm ring-1 ring-sky-100 transition-colors group-hover/item:bg-sky-100">
+            <div className="group/item flex items-center gap-2.5 rounded-lg border border-white/10 bg-white/10 px-3.5 py-3 shadow-sm backdrop-blur">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/15 text-sky-200 shadow-sm ring-1 ring-sky-300/20 transition-colors group-hover/item:bg-sky-500/25">
                 <Users className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Manager</p>
-                <p className="truncate text-sm font-semibold text-slate-800">{employee.manager ?? "Unassigned"}</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Manager</p>
+                <p className="truncate text-sm font-bold text-white">{employee.manager ?? "Unassigned"}</p>
               </div>
             </div>
 
-            <div className="group/item flex items-center gap-2.5 rounded-2xl border border-white/80 bg-white/80 px-3 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)] sm:col-span-2 lg:col-span-1">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 shadow-sm ring-1 ring-emerald-100 transition-colors group-hover/item:bg-emerald-100">
+            <div className="group/item flex items-center gap-2.5 rounded-lg border border-white/10 bg-white/10 px-3 py-3 shadow-sm backdrop-blur sm:col-span-2 lg:col-span-1">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-200 shadow-sm ring-1 ring-emerald-300/20 transition-colors group-hover/item:bg-emerald-500/25">
                 <BriefcaseBusiness className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Business Line</p>
-                <p className="truncate text-sm font-semibold text-slate-800">{employee.line ?? "Phoenix"}</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Business Line</p>
+                <p className="truncate text-sm font-bold text-white">{employee.line ?? "Phoenix"}</p>
               </div>
             </div>
           </div>
 
         </div>
 
-        <div className="group relative mx-auto flex h-[236px] w-full max-w-[250px] shrink-0 items-center justify-center rounded-[30px] border border-orange-100 bg-gradient-to-tr from-orange-100/80 via-white to-sky-50 p-2 shadow-[0_24px_54px_rgba(249,115,22,0.20)] sm:h-[286px] sm:max-w-[292px] lg:mx-0 lg:h-[316px]">
-          <div className="absolute -inset-1 rounded-[32px] bg-gradient-to-br from-orange-300/45 via-white/0 to-sky-300/35 opacity-80 blur-sm transition-opacity duration-300 group-hover:opacity-100" />
-          <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-inner">
+        <div className="group relative mx-auto flex h-[236px] w-full max-w-[250px] shrink-0 items-center justify-center rounded-[28px] border border-orange-300/25 bg-gradient-to-tr from-orange-500/20 via-white/10 to-sky-500/20 p-2 shadow-[0_24px_54px_rgba(0,0,0,0.24)] sm:h-[286px] sm:max-w-[292px] lg:mx-0 lg:h-[316px]">
+          <div className="absolute -inset-1 rounded-[32px] bg-gradient-to-br from-orange-300/35 via-white/0 to-sky-300/30 opacity-80 blur-sm transition-opacity duration-300 group-hover:opacity-100" />
+          <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[22px] bg-white/95 shadow-inner">
             {profileImage ? (
               <Image
                 alt={`${employee.fullName} profile photo`}
@@ -154,11 +154,11 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center bg-orange-500/10 text-orange-500 transition-transform duration-500 group-hover:scale-105">
-                <span className="text-[44px] font-semibold tracking-normal lg:text-[56px]">{initials || "EM"}</span>
+                <span className="text-[44px] font-black tracking-normal lg:text-[56px]">{initials || "EM"}</span>
               </div>
             )}
           </div>
-          <div className="absolute -bottom-3 left-4 right-4 flex items-center justify-center gap-2 rounded-2xl border border-white/80 bg-white/95 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-600 shadow-[0_16px_34px_rgba(15,23,42,0.14)]">
+          <div className="absolute -bottom-3 left-4 right-4 flex items-center justify-center gap-2 rounded-lg border border-white/70 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-700 shadow-[0_16px_34px_rgba(15,23,42,0.18)]">
             <ShieldCheck className="h-3.5 w-3.5" />
             Phoenix Verified
           </div>

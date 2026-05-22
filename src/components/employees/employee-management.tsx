@@ -1010,7 +1010,7 @@ export function EmployeeManagement({
     }
 
     for (const [key, label] of numericFields) {
-      const value = form[key].trim();
+      const value = (form[key] as string).trim();
       if (value && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
         return `${label} must be a valid positive number.`;
       }

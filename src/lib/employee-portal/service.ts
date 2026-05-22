@@ -1019,6 +1019,23 @@ async function resolvePortalCurrentUser(access: AccessContext): Promise<PortalCu
       : null) as BusinessScope | null,
   };
 
+  try {
+    const directory = await getEmployeeDirectory();
+    const employee =
+      findDirectoryEmployeeByHrId(directory, currentUser.hrId) ??
+      findDirectoryEmployeeByHrId(directory, access.hrId) ??
+      findDirectoryEmployeeByHrId(directory, access.loginId);
+
+    if (employee) {
+      currentUser.hrId = employee.hrId;
+      currentUser.line = currentUser.line ?? employee.lineName;
+      currentUser.managerHrId = currentUser.managerHrId ?? employee.managerHrId;
+      currentUser.name = currentUser.name ?? employee.fullName;
+    }
+  } catch {
+    // Keep the auth-derived identity if the directory is temporarily unavailable.
+  }
+
   return currentUser;
 }
 

@@ -22,24 +22,24 @@ export function EmployeePortalPageShell({
   return (
     <div className="mx-auto w-full space-y-5">
       <section
-        className="relative box-border w-full overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.09)] ring-1 ring-slate-200/70"
+        className="relative box-border w-full overflow-hidden rounded-lg border border-slate-950 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] shadow-[0_22px_70px_rgba(15,23,42,0.32)]"
         style={{ boxSizing: "border-box" }}
       >
-        <div className="absolute inset-0 bg-[linear-gradient(135deg,#ffffff_0%,#ffffff_44%,#f8fafc_100%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.03)_1px,transparent_1px)] bg-[size:36px_36px] opacity-70 [mask-image:linear-gradient(120deg,rgba(0,0,0,0.95),transparent_72%)]" />
-        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
+        <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:44px_44px]" />
+        <div className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-orange-500/20 blur-3xl" />
+        <div className="absolute -bottom-28 left-8 h-56 w-56 rounded-full bg-sky-500/10 blur-3xl" />
         <div className="relative box-border grid w-full min-w-0 gap-5 p-5 sm:p-6 lg:grid-cols-12 lg:p-8">
           <div className="min-w-0 lg:col-span-12">
-            <p className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50/80 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-700 shadow-sm">
-              <span className="h-1.5 w-1.5 rounded-full bg-orange-500 shadow-[0_0_0_4px_rgba(249,115,22,0.15)]" />
+            <p className="inline-flex items-center gap-2 rounded-lg border border-orange-400/25 bg-orange-500/10 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-orange-100">
+              <span className="h-1.5 w-1.5 rounded-full bg-orange-300" />
               {badge ?? "Employee Portal"}
             </p>
-            <h1 className="mt-5 max-w-4xl text-[30px] font-semibold leading-[1.04] tracking-normal text-slate-950 sm:text-[38px] lg:text-[46px]">
+            <h1 className="mt-5 max-w-4xl text-[30px] font-black leading-[1.02] tracking-[-0.04em] text-white sm:text-[40px] lg:text-[48px]">
               {title}
             </h1>
             <p
               className={cn(
-                "mt-3.5 max-w-2xl text-[15px] font-medium leading-7 text-slate-600 lg:text-base",
+                "mt-3 max-w-2xl text-[15px] leading-[1.78] text-slate-300 lg:text-[15.5px]",
                 descriptionClassName,
               )}
             >
@@ -74,7 +74,7 @@ export function EmployeePortalActionLink({
 }) {
   return (
     <Link
-      className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition hover:-translate-y-px hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+      className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full border border-slate-200/80 bg-white px-4 py-1.5 text-[11px] font-bold tracking-wide text-slate-600 shadow-[0_4px_12px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-px hover:border-orange-300/80 hover:bg-gradient-to-r hover:from-orange-50 hover:to-amber-50/60 hover:text-orange-700 hover:shadow-[0_8px_20px_rgba(249,115,22,0.12)]"
       href={href}
     >
       <span className="min-w-0 truncate">{label}</span>

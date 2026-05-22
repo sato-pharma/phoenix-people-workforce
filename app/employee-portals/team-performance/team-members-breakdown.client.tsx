@@ -10,9 +10,9 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
+import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import type { DsmTeamMemberData, DsmTeamMemberProductData } from "@/lib/employee-portal/service";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 
@@ -137,8 +137,7 @@ export function TeamAchievementChart({
 
   return (
     <div className="min-w-0 overflow-hidden pb-2">
-      <div className="w-full min-w-0" style={{ height: chartHeight }}>
-        <ResponsiveContainer height="100%" minWidth={0} width="100%">
+      <SafeResponsiveContainer className="w-full min-w-0" minHeight={chartHeight} style={{ height: chartHeight }}>
           <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 6, top: 8, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
           <XAxis
@@ -186,8 +185,7 @@ export function TeamAchievementChart({
             ))}
           </Bar>
           </BarChart>
-        </ResponsiveContainer>
-      </div>
+      </SafeResponsiveContainer>
       {activeDatum ? (
         <div className="mt-3 rounded-2xl border border-slate-100 bg-white px-3 py-2 text-xs shadow-sm">
           <div className="flex items-center justify-between gap-3">
@@ -241,8 +239,7 @@ export function TeamSalesVsTargetChart({ members }: { members: DsmTeamMemberData
   }));
   return (
     <div className="min-w-0 overflow-hidden pb-2">
-      <div className="h-80 min-h-80 w-full min-w-0">
-        <ResponsiveContainer height="100%" minWidth={0} width="100%">
+      <SafeResponsiveContainer className="h-80 min-h-80 w-full min-w-0" minHeight={320}>
           <BarChart data={chartData} margin={{ left: 0, right: 0, top: 8, bottom: 36 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             <XAxis
@@ -283,8 +280,7 @@ export function TeamSalesVsTargetChart({ members }: { members: DsmTeamMemberData
               radius={[4, 4, 0, 0]}
             />
           </BarChart>
-        </ResponsiveContainer>
-      </div>
+      </SafeResponsiveContainer>
       {activeDatum ? (
         <div className="mt-3 rounded-2xl border border-slate-100 bg-white px-3 py-2 text-xs shadow-sm">
           <p className="min-w-0 break-words font-bold text-slate-900">{activeDatum.name}</p>

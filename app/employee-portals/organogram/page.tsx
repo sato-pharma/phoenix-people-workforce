@@ -64,7 +64,7 @@ export default async function EmployeePortalOrganogramPage() {
       description="Understand reporting structure and role relationships for your territory."
       title="Organogram"
     >
-      <OrganogramReport fixedLine={fixedLine} initialError={initialError} initialReport={initialReport} />
+      <OrganogramReport fixedLine={fixedLine} initialError={initialError} initialReport={initialReport} showHero={false} />
     </EmployeePortalPageShell>
   );
 }

@@ -1,4 +1,5 @@
 import type { EmployeeDirectoryData, EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -462,8 +463,7 @@ export function getRolePrivilegeRank(role: PhoenixRole) {
 }
 
 export function normalizeHrId(value: string | null | undefined) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  return normalized || null;
+  return canonicalHrIdKey(value);
 }
 
 export function normalizeHrIdForAccess(value: string | null | undefined) {

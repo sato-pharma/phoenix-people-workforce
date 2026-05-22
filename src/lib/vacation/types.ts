@@ -155,8 +155,38 @@ export type VacationReportFilters = {
   vacationType?: VacationType | "all";
 };
 
+export type VacationEligibilityStatus = "eligible" | "first_six_months" | "missing_hire_date";
+
+export type VacationEmployeeEligibilityRow = {
+  annualBalanceDays: number;
+  annualEntitlementDays: number;
+  annualUsedDays: number;
+  daysSinceHire: number | null;
+  daysUntilEligibility: number | null;
+  departmentName: string | null;
+  eligibilityStatus: VacationEligibilityStatus;
+  eligibleForAnnualPaidLeave: boolean;
+  employmentStatus: string | null;
+  fullName: string;
+  hireDate: string | null;
+  hrId: string;
+  lineName: string | null;
+  managerHrId: string | null;
+  managerName: string | null;
+  reviewFlags: string[];
+  sixMonthAnniversary: string | null;
+};
+
 export type VacationReportData = {
   canAdminManage: boolean;
+  employeeEligibility: VacationEmployeeEligibilityRow[];
+  employeeEligibilitySummary: {
+    activeEmployees: number;
+    eligibleNow: number;
+    inFirstSixMonths: number;
+    missingHireDate: number;
+    zeroBalance: number;
+  };
   filters: VacationReportFilters;
   options: {
     departments: string[];

@@ -1,4 +1,4 @@
-import { normalizeRole } from "@/lib/auth/permissions";
+import { normalizeRole, parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
 
 export type EmployeePortalNavVisibility = {
   showDashboardTab?: boolean;
@@ -24,11 +24,26 @@ export type EmployeePortalNavVisibility = {
   showTrainingManagerFieldCoachingTab?: boolean;
 };
 
+function resolvePortalRole(
+  roleLabel: string | null | undefined,
+  accessRole?: string | null | undefined,
+): PhoenixRole {
+  try {
+    return parseRoleStrict(roleLabel);
+  } catch {}
+
+  try {
+    return parseRoleStrict(accessRole);
+  } catch {}
+
+  return normalizeRole(accessRole ?? roleLabel);
+}
+
 export function resolveEmployeePortalNavVisibility(
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
 ): EmployeePortalNavVisibility {
-  const resolvedRole = normalizeRole(roleLabel ?? accessRole);
+  const resolvedRole = resolvePortalRole(roleLabel, accessRole);
   const isMedicalRep = resolvedRole === "Medical Rep";
   const isDistrictManager = resolvedRole === "District Manager" || resolvedRole === "Manager";
   const isNationalSalesManager = resolvedRole === "National Sales Manager";

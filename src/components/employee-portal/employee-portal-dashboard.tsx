@@ -11,12 +11,12 @@ import {
   Cell,
   Pie,
   PieChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
   Legend,
 } from "recharts";
+import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import {
   Activity,
   ArrowUpRight,
@@ -74,6 +74,7 @@ void retainedEmployeePortalPayslipGuardText;
 
 type ContributionMetric = "sales" | "units";
 type MetricAccent = "amber" | "blue" | "green" | "orange" | "purple";
+type MetricIcon = typeof Activity;
 type ContributionRow = {
   name: string;
   sales: number;
@@ -175,33 +176,43 @@ function metricTone(accent: MetricAccent = "orange") {
   const tones = {
     amber: {
       border: "border-amber-200 border-t-amber-500 hover:border-amber-300",
+      card: "border-amber-200 from-amber-50 to-white ring-1 ring-amber-200/70",
       icon: "bg-amber-50 text-amber-600 ring-amber-100",
       line: "bg-amber-500",
       soft: "bg-amber-100/70 text-amber-800",
+      value: "text-amber-700",
     },
     blue: {
       border: "border-sky-200 border-t-sky-500 hover:border-sky-300",
+      card: "border-slate-200 from-white to-slate-50",
       icon: "bg-sky-50 text-sky-600 ring-sky-100",
       line: "bg-sky-500",
       soft: "bg-sky-100/70 text-sky-800",
+      value: "text-sky-700",
     },
     green: {
       border: "border-emerald-200 border-t-emerald-500 hover:border-emerald-300",
+      card: "border-emerald-200 from-emerald-50 to-white ring-1 ring-emerald-200/70",
       icon: "bg-emerald-50 text-emerald-600 ring-emerald-100",
       line: "bg-emerald-500",
       soft: "bg-emerald-100/70 text-emerald-800",
+      value: "text-emerald-700",
     },
     orange: {
       border: "border-orange-200 border-t-orange-500 hover:border-orange-300",
+      card: "border-orange-200 from-orange-50 to-white ring-1 ring-orange-200/70",
       icon: "bg-orange-50 text-orange-600 ring-orange-100",
       line: "bg-orange-500",
       soft: "bg-orange-100/70 text-orange-800",
+      value: "text-orange-700",
     },
     purple: {
       border: "border-violet-200 border-t-violet-500 hover:border-violet-300",
+      card: "border-violet-200 from-violet-50 to-white ring-1 ring-violet-200/70",
       icon: "bg-violet-50 text-violet-600 ring-violet-100",
       line: "bg-violet-500",
       soft: "bg-violet-100/70 text-violet-800",
+      value: "text-violet-700",
     },
   } satisfies Record<MetricAccent, Record<string, string>>;
 
@@ -258,23 +269,14 @@ function StableChartFrame({
   className: string;
   height: number;
 }) {
-  const [isReady, setIsReady] = useState(false);
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => setIsReady(true));
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
-
   return (
-    <div className={`${className} min-w-0 overflow-hidden`}>
-      {isReady ? (
-        <ResponsiveContainer height={height} minHeight={height} minWidth={0} width="100%">
-          {children}
-        </ResponsiveContainer>
-      ) : (
-        <div style={{ height }} />
-      )}
-    </div>
+    <SafeResponsiveContainer
+      className={`${className} min-w-0 overflow-hidden`}
+      minHeight={height}
+      style={{ height }}
+    >
+      {children}
+    </SafeResponsiveContainer>
   );
 }
 
@@ -703,6 +705,7 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
   const signals = [
     {
       accent: "green" as const,
+      icon: CircleDollarSign,
       label: "Sales",
       note: `Target ${egp(data.sales.overviewTarget)}`,
       progress: achievement,
@@ -710,6 +713,7 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
     },
     {
       accent: "orange" as const,
+      icon: Target,
       label: "Target",
       progress: achievement,
       note: "Approved sales target",
@@ -717,6 +721,7 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
     },
     {
       accent: "blue" as const,
+      icon: Trophy,
       label: "Achievement Rate",
       note: "All-time sales versus target",
       progress: achievement,
@@ -724,19 +729,27 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
     },
     {
       accent: "amber" as const,
+      icon: MinusCircle,
       label: "Gap to Target",
       note: performanceState,
       progress: achievement,
       value: egp(gap),
     },
-  ];
+  ] satisfies Array<{
+    accent: MetricAccent;
+    icon: MetricIcon;
+    label: string;
+    note: string;
+    progress: number;
+    value: string;
+  }>;
 
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3 px-1">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-orange-600">Command Metrics</p>
-          <h2 className="mt-1 text-[19px] font-semibold tracking-normal text-slate-950">Key operating signals</h2>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-700">Command Metrics</p>
+          <h2 className="mt-1 text-lg font-black tracking-[-0.02em] text-slate-950">Key operating signals</h2>
         </div>
         <div className="flex flex-wrap gap-2">
           <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm backdrop-blur-sm">{data.workforce.scopeLabel}</span>
@@ -745,9 +758,10 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {signals.map((signal) => {
           const tone = metricTone(signal.accent);
+          const Icon = signal.icon;
           return (
             <Card
-              className="group relative flex min-h-[124px] min-w-0 flex-col overflow-hidden rounded-[22px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-4 py-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-300 hover:-translate-y-1 hover:ring-slate-300 hover:shadow-[0_22px_48px_rgba(15,23,42,0.10)]"
+              className={`group relative flex min-h-[124px] min-w-0 flex-col overflow-hidden rounded-lg border bg-gradient-to-br px-4 py-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${tone.card}`}
               key={signal.label}
             >
               <div className={`absolute inset-x-0 top-0 h-1 ${tone.line} opacity-90 transition-all duration-300 group-hover:h-1.5`} />
@@ -756,15 +770,16 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={`h-1.5 w-1.5 rounded-full ${tone.line} shadow-[0_0_0_3px_rgba(15,23,42,0.03)]`} />
-                      <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{signal.label}</p>
+                      <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{signal.label}</p>
                     </div>
-                    <p className="mt-2 max-w-full whitespace-nowrap text-[25px] font-semibold leading-none tracking-normal text-slate-950 tabular-nums">
+                    <p className={`mt-2 max-w-full whitespace-nowrap text-2xl font-black leading-none tracking-[-0.03em] tabular-nums ${tone.value}`}>
                       {signal.value}
                     </p>
                     <p className="mt-1.5 line-clamp-2 text-[11px] font-medium leading-snug text-slate-500">{signal.note}</p>
                   </div>
-                  <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors duration-200 group-hover:text-slate-500" />
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ${tone.icon}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
@@ -991,13 +1006,6 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold text-slate-900">Incentive</h1>
-          <p className="mt-1 text-sm text-slate-500">Calculate your incentive and review the 2026 scheme rules</p>
-        </div>
-      </div>
-
       <div className="grid gap-5 xl:grid-cols-[1.2fr_1fr]">
         <IncentiveSchemeDescriptionCard />
         <IncentiveStatusCard data={data} />

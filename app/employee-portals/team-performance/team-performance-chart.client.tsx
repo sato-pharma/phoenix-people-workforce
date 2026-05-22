@@ -10,9 +10,9 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
+import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 
 export default function TeamPerformanceChart({
   teamRows,
@@ -25,8 +25,7 @@ export default function TeamPerformanceChart({
   teamAchievement: number;
 }) {
   return (
-    <div className="h-72">
-      <ResponsiveContainer width="100%" height="100%">
+    <SafeResponsiveContainer className="h-72" minHeight={288}>
         <BarChart data={teamRows} layout="vertical">
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis type="number" />
@@ -51,7 +50,6 @@ export default function TeamPerformanceChart({
             ))}
           </Bar>
         </BarChart>
-      </ResponsiveContainer>
-    </div>
+    </SafeResponsiveContainer>
   );
 }
