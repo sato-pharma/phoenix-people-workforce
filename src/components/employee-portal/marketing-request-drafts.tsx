@@ -192,14 +192,18 @@ export function MarketingRequestDraftWorkspace() {
   );
 
   useEffect(() => {
-    const productIds = new Set(lineScopedProductIdKey.split("|").filter(Boolean));
-    setProductLines((current) =>
-      current.map((line) =>
-        line.productId && !productIds.has(line.productId)
-          ? { ...line, productId: "" }
-          : line,
-      ),
-    );
+    const timeoutId = window.setTimeout(() => {
+      const productIds = new Set(lineScopedProductIdKey.split("|").filter(Boolean));
+      setProductLines((current) =>
+        current.map((line) =>
+          line.productId && !productIds.has(line.productId)
+            ? { ...line, productId: "" }
+            : line,
+        ),
+      );
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [lineScopedProductIdKey]);
 
   const roiPreview = useMemo(() => {
