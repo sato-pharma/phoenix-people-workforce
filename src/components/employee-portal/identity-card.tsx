@@ -86,7 +86,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
           </div>
 
           <p className="mt-3 max-w-3xl text-[15px] leading-[1.80] text-slate-300 lg:text-[15.5px]">
-            Your Phoenix workspace is ready for a focused, confident day. Keep your priorities clear, follow up with energy, and turn today's work into visible progress.
+            Your Phoenix workspace is ready for a focused, confident day. Keep your priorities clear, follow up with energy, and turn today&apos;s work into visible progress.
           </p>
 
           <div className="mt-5 flex flex-wrap items-center gap-2 text-slate-300">

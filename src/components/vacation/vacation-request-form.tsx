@@ -531,29 +531,34 @@ function NationalEgyptianVacationPanel() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setError(null);
+    const timeoutId = window.setTimeout(() => {
+      setLoading(true);
+      setError(null);
 
-    fetch(`/api/vacations/national-holidays?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`, {
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(typeof payload.message === "string" ? payload.message : "Unable to load Egyptian national holidays.");
-        }
-        setData(payload as NationalHolidayPayload);
+      fetch(`/api/vacations/national-holidays?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`, {
+        signal: controller.signal,
       })
-      .catch((loadError) => {
-        if (controller.signal.aborted) return;
-        setError(loadError instanceof Error ? loadError.message : "Unable to load Egyptian national holidays.");
-        setData(null);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
+        .then(async (response) => {
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(typeof payload.message === "string" ? payload.message : "Unable to load Egyptian national holidays.");
+          }
+          setData(payload as NationalHolidayPayload);
+        })
+        .catch((loadError) => {
+          if (controller.signal.aborted) return;
+          setError(loadError instanceof Error ? loadError.message : "Unable to load Egyptian national holidays.");
+          setData(null);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 0);
 
-    return () => controller.abort();
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [month, year]);
 
   const yearOptions = useMemo(() => {

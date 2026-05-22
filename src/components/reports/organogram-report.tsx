@@ -1049,16 +1049,20 @@ export function OrganogramReport({
   const normalizedOrganogramSearch = normalizeSearchValue(organogramSearch);
 
   React.useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const requestedLine = params.get("line")?.trim();
-    const requestedSearch = params.get("search")?.trim();
+    const timeoutId = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const requestedLine = params.get("line")?.trim();
+      const requestedSearch = params.get("search")?.trim();
 
-    if (!fixedLine && requestedLine) {
-      setLineFilter(requestedLine);
-    }
-    if (requestedSearch) {
-      setOrganogramSearch(requestedSearch);
-    }
+      if (!fixedLine && requestedLine) {
+        setLineFilter(requestedLine);
+      }
+      if (requestedSearch) {
+        setOrganogramSearch(requestedSearch);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [fixedLine]);
 
   const loadReport = React.useCallback(async () => {

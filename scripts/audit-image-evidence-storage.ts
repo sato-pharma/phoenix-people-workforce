@@ -1,5 +1,5 @@
-const fs = require("node:fs") as typeof import("node:fs");
-const postgres = require("postgres") as typeof import("postgres");
+import fs from "node:fs";
+import postgres from "postgres";
 
 type ReportSection = {
   error?: string;
