@@ -468,6 +468,7 @@ export function AdminCommandCenter({
               ) : null}
 
               <div className="mt-5 flex flex-wrap gap-2">
+                <QuickAction href="/pending-approvals" icon={CheckCircle2} label="Pending Approvals" />
                 <QuickAction href="/employees" icon={Users} label="Employees" />
                 {showFinancialModules ? <QuickAction href="/payroll" icon={Wallet} label="Payroll" /> : null}
                 {showSalesModules ? <QuickAction href="/sales" icon={TrendingUp} label="Sales" /> : null}

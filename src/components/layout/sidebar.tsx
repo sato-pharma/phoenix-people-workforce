@@ -62,6 +62,16 @@ type SidebarSectionItem = {
 const SIDEBAR_COLLAPSED_STORAGE_PREFIX = "phoenix-sidebar-collapsed";
 const SIDEBAR_COLLAPSED_STORAGE_EVENT = "phoenix-sidebar-collapsed-change";
 const EMPTY_PERMISSION_LOOKUP: PermissionLookup = {};
+const APPROVAL_PERMISSIONS: SidebarPermission[] = [
+  { resource: "contracts", action: "approve" },
+  { resource: "expenses", action: "approve" },
+  { resource: "leave", action: "approve" },
+  { resource: "offers", action: "approve" },
+  { resource: "outstation", action: "approve" },
+  { resource: "payroll", action: "approve" },
+  { resource: "resignations", action: "approve" },
+  { resource: "sales", action: "approve" },
+];
 
 function permissionAllowed(permissionLookup: PermissionLookup | undefined, permission?: SidebarPermission | SidebarPermission[]) {
   if (!permission) return true;
@@ -90,6 +100,7 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
       id: "command-center",
       items: [
         { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }] },
+        { href: "/pending-approvals", icon: ClipboardCheck, label: "Pending Approvals", permissions: APPROVAL_PERMISSIONS },
         { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }] },
         { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }] },
         { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }] },
@@ -195,6 +206,7 @@ function getEmployeePortalSections(permissionLookup: PermissionLookup, currentRo
       id: "employee-portal",
       items: [
         { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }] },
+        { href: "/pending-approvals", icon: ClipboardCheck, label: "Pending Approvals", permissions: APPROVAL_PERMISSIONS },
         { href: "/employee-portals/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales", excludedRoles: ["Training Manager"], permissions: [{ resource: "sales" }] },
         { href: "/employee-portals/training-manager", icon: ChartColumnBig, label: "Coaching Dashboard", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
         { href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, label: "Create Coaching Report", permissions: [{ resource: "coaching", action: "create" }], roles: ["Training Manager"] },

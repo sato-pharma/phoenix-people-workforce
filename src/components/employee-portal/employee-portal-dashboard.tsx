@@ -25,6 +25,7 @@ import {
   CalendarClock,
   CalendarDays,
   Car,
+  ClipboardCheck,
   CircleDollarSign,
   Eye,
   EyeOff,
@@ -685,6 +686,18 @@ function resolveExpenseActionHref(data: MedicalRepPortalData) {
   return isRole(data, "medical rep", "medical representative")
     ? "/employee-portals/expenses"
     : "/employee-portals/submit-expense";
+}
+
+function canUsePendingApprovals(data: MedicalRepPortalData) {
+  const role = normalizedRoleLabel(data);
+  return [
+    "district manager",
+    "regional manager",
+    "national sales manager",
+    "manager",
+    "finance manager",
+    "ceo",
+  ].includes(role);
 }
 
 function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
@@ -1512,6 +1525,7 @@ function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
 
 function QuickActionsPanel({ data }: { data: MedicalRepPortalData }) {
   const actions = [
+    ...(canUsePendingApprovals(data) ? [{ href: "/pending-approvals", icon: ClipboardCheck, label: "Pending Approvals" }] : []),
     { href: resolveExpenseActionHref(data), icon: ReceiptText, label: "Submit Expense" },
     { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Submit Vacation Request" },
     { href: "/employee-portals/marketing-requests", icon: Megaphone, label: "Submit Marketing Request" },

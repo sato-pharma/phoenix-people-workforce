@@ -108,6 +108,7 @@ function buildEmployeePortalSections({
   showVacanciesTab = false,
   showProbationTab = false,
   showOrganogramTab = false,
+  showPendingApprovalsTab = false,
   showMyCoachingTab = false,
   showTeamCoachingTab = false,
   showTrainingManagerCreateCoachingTab = false,
@@ -127,6 +128,7 @@ function buildEmployeePortalSections({
       title: "My Workspace",
       items: [
         ...(showDashboardTab ? [{ href: "/employee-portals", label: "Dashboard", icon: Home }] : []),
+        ...(showPendingApprovalsTab ? [{ href: "/pending-approvals", label: "Pending Approvals", icon: ClipboardCheck }] : []),
         ...(showMyPerformanceTab ? [{ href: "/employee-portals/sales", label: "My Performance", icon: LineChartIcon }] : []),
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),

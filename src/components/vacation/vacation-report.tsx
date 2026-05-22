@@ -32,7 +32,6 @@ import type {
   VacationReportData,
   VacationRequestRecord,
   VacationRequestStatus,
-  VacationType,
 } from "@/lib/vacation/types";
 import { VACATION_DAY_PARTS, VACATION_PAYMENT_STATUSES, VACATION_STATUSES, VACATION_TYPES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";
@@ -120,6 +119,24 @@ function statusLabel(status: VacationRequestStatus) {
   if (status === "pending_hr") return "Pending HR";
   if (status === "approved") return "Approved";
   return "Rejected";
+}
+
+function decisionSummary(row: VacationRequestRecord): { label: string; timestamp: string | null; variant: "danger" | "success" } | null {
+  if (row.hrDecision) {
+    return {
+      label: `HR ${row.hrDecision === "approved" ? "Approved" : "Rejected"}`,
+      timestamp: row.hrDecisionAt,
+      variant: row.hrDecision === "approved" ? "success" : "danger",
+    };
+  }
+  if (row.managerDecision) {
+    return {
+      label: `Manager ${row.managerDecision === "approved" ? "Approved" : "Rejected"}`,
+      timestamp: row.managerDecisionAt,
+      variant: row.managerDecision === "approved" ? "success" : "danger",
+    };
+  }
+  return null;
 }
 
 function paymentBadgeVariant(status: VacationPaymentStatus) {
@@ -748,8 +765,19 @@ export function VacationReport({ initialData, initialError, showHero = true }: V
                             </Button>
                           </div>
                         ) : (
-                          <div>
-                            <p className="font-semibold text-slate-700">{row.hrDecisionAt ? formatDateTime(row.hrDecisionAt) : row.managerDecisionAt ? formatDateTime(row.managerDecisionAt) : "-"}</p>
+                          <div className="space-y-1.5">
+                            {(() => {
+                              const decision = decisionSummary(row);
+                              if (!decision) {
+                                return <p className="font-semibold text-slate-700">-</p>;
+                              }
+                              return (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant={decision.variant}>{decision.label}</Badge>
+                                  <span className="text-xs font-semibold text-slate-500">{decision.timestamp ? formatDateTime(decision.timestamp) : "-"}</span>
+                                </div>
+                              );
+                            })()}
                             {row.managerDecisionComment ? <p className="mt-1 max-w-[220px] text-xs leading-5 text-slate-500">{row.managerDecisionComment}</p> : null}
                             {row.hrDecisionComment ? <p className="mt-1 max-w-[220px] text-xs leading-5 text-slate-500">{row.hrDecisionComment}</p> : null}
                           </div>

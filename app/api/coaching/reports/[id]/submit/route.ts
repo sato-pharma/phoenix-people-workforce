@@ -33,6 +33,8 @@ export async function POST(request: Request, context: RouteContext) {
       metadata: {
         coachHrId: report.report.coach_hr_id,
         coachName,
+        requestDate: new Date().toISOString(),
+        requestType: "Coaching report",
         reportId: report.report.id,
         reportNumber: report.report.report_number,
       },

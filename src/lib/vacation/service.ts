@@ -63,6 +63,7 @@ const vacationRequestsTable = "v2_vacation_requests";
 const vacationEventsTable = "v2_vacation_request_events";
 const vacationTokensTable = "v2_vacation_email_tokens";
 const vacationWeeklyOffPoliciesTable = "v2_vacation_weekly_off_policies";
+const legacyLeaveRequestsTable = "leave_requests";
 const vacationAttachmentBucket = "leave-attachments";
 const emailTokenTtlDays = 14;
 const sickAttachmentMaxUploadBytes = 10 * 1024 * 1024;
@@ -138,6 +139,45 @@ type VacationRequestDbRow = {
   vacation_type: string | null;
 };
 
+type LegacyLeaveRequestDbRow = {
+  approved_or_rejected_by?: string | null;
+  created_at: string | null;
+  day_type?: string | null;
+  direct_manager?: string | null;
+  direct_manager_hr_id?: string | null;
+  duration_days?: number | string | null;
+  duration_unit?: string | null;
+  employee_email?: string | null;
+  employee_hire_date?: string | null;
+  employee_hr_id: string | null;
+  employee_line?: string | null;
+  employee_name?: string | null;
+  end_date: string | null;
+  first_year_entitlement_at_submission?: number | string | null;
+  hr_comment?: string | null;
+  hr_decision_at?: string | null;
+  hr_status?: string | null;
+  id: string;
+  manager_comment?: string | null;
+  manager_decision_at?: string | null;
+  manager_of_manager_hr_id?: string | null;
+  manager_status?: string | null;
+  payment_reason?: string | null;
+  payment_status?: string | null;
+  reason?: string | null;
+  remaining_paid_balance_at_submission?: number | string | null;
+  requested_at?: string | null;
+  request_type?: string | null;
+  start_date: string | null;
+  status: string | null;
+  total_calendar_days?: number | string | null;
+  total_entitled_balance_at_submission?: number | string | null;
+  total_working_days?: number | string | null;
+  unpaid_leave_days_at_submission?: number | string | null;
+  used_paid_leave_at_submission?: number | string | null;
+  vacation_type?: string | null;
+};
+
 type VacationEmailTokenDbRow = {
   expires_at: string | null;
   id: string;
@@ -202,6 +242,21 @@ function nullableText(value: unknown) {
   return normalized || null;
 }
 
+function missingRelationMessage(error: unknown, relationName: string) {
+  const message = (typeof (error as { message?: unknown })?.message === "string"
+    ? (error as { message: string }).message
+    : error instanceof Error
+      ? error.message
+      : String(error)).toLowerCase();
+  return (
+    message.includes(relationName.toLowerCase()) &&
+    (message.includes("could not find the table") ||
+      message.includes("schema cache") ||
+      message.includes("relation") ||
+      message.includes("does not exist"))
+  );
+}
+
 function normalizeWeeklyOffMode(value: unknown): VacationWeeklyOffMode {
   const normalized = String(value ?? "").trim().toLowerCase();
   return VACATION_WEEKLY_OFF_MODES.some((option) => option.value === normalized)
@@ -226,6 +281,23 @@ function hrIdsMatch(left: string | null | undefined, right: string | null | unde
   const leftCanonical = canonicalHrId(left);
   const rightCanonical = canonicalHrId(right);
   return Boolean(leftCanonical && rightCanonical && leftCanonical === rightCanonical);
+}
+
+function buildEmployeeMapByHrId(employees: EmployeeDirectoryRow[]) {
+  const map = new Map<string, EmployeeDirectoryRow>();
+  for (const employee of employees) {
+    const canonical = canonicalHrId(employee.hrId);
+    if (canonical) map.set(canonical, employee);
+  }
+  return map;
+}
+
+function employeeFromMap(
+  employeesByHrId: Map<string, EmployeeDirectoryRow>,
+  hrId: string | null | undefined,
+) {
+  const canonical = canonicalHrId(hrId);
+  return canonical ? employeesByHrId.get(canonical) ?? null : null;
 }
 
 function isAllVacationVisibility(access: AccessContext) {
@@ -789,6 +861,147 @@ function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationR
   };
 }
 
+function legacyVacationStatus(row: LegacyLeaveRequestDbRow): VacationRequestStatus {
+  const status = text(row.status).toLowerCase();
+  const managerStatus = text(row.manager_status).toLowerCase();
+  const hrStatus = text(row.hr_status).toLowerCase();
+
+  if (status === "hr_approved" || status === "approved" || hrStatus === "approved") return "approved";
+  if (
+    status === "hr_rejected" ||
+    status === "manager_rejected" ||
+    status === "cancelled" ||
+    status === "rejected" ||
+    managerStatus === "rejected" ||
+    hrStatus === "rejected"
+  ) {
+    return "rejected";
+  }
+  if (status === "pending_hr" || status === "manager_approved" || managerStatus === "approved") return "pending_hr";
+  return "pending_manager";
+}
+
+function legacyVacationDecision(value: unknown): "approved" | "rejected" | null {
+  const normalized = text(value).toLowerCase();
+  if (normalized === "approved") return "approved";
+  if (normalized === "rejected") return "rejected";
+  return null;
+}
+
+function legacyVacationType(row: LegacyLeaveRequestDbRow): VacationType {
+  const normalized = [row.vacation_type, row.request_type]
+    .map((value) => text(value).toLowerCase().replace(/[_-]/g, " "))
+    .join(" ");
+  const direct = normalizeVacationType(normalized);
+  if (direct) return direct;
+  if (normalized.includes("sick")) return "sick";
+  if (normalized.includes("compensatory")) return "compensatory";
+  if (normalized.includes("emergency")) return "emergency";
+  if (normalized.includes("other") || normalized.includes("personal")) return "other";
+  return "annual";
+}
+
+function legacyDayPart(row: LegacyLeaveRequestDbRow): VacationDayPart {
+  const normalized = [row.day_type, row.duration_unit]
+    .map((value) => text(value).toLowerCase().replace(/[_-]/g, " "))
+    .join(" ");
+  if (normalized.includes("am")) return "am_only";
+  if (normalized.includes("pm")) return "pm_only";
+  if (normalized.includes("half")) return "am_only";
+  return normalizeVacationDayPart(row.day_type ?? row.duration_unit) ?? "full_day";
+}
+
+function legacyPaymentStatus(value: unknown): VacationPaymentStatus {
+  const normalized = text(value).toLowerCase();
+  const direct = normalizeVacationPaymentStatus(normalized);
+  if (direct) return direct;
+  if (normalized.includes("partial")) return "partial";
+  if (normalized.includes("unpaid")) return "unpaid";
+  return "paid";
+}
+
+function mapLegacyLeaveRequestRow(
+  row: LegacyLeaveRequestDbRow,
+  employeesByHrId: Map<string, EmployeeDirectoryRow>,
+  canDecide = false,
+): VacationRequestRecord {
+  const employee = employeeFromMap(employeesByHrId, row.employee_hr_id);
+  const managerHrId = nullableText(row.direct_manager_hr_id) ?? employee?.managerHrId ?? null;
+  const manager = employeeFromMap(employeesByHrId, managerHrId);
+  const managerOfManagerHrId = nullableText(row.manager_of_manager_hr_id) ?? manager?.managerHrId ?? null;
+  const managerOfManager = employeeFromMap(employeesByHrId, managerOfManagerHrId);
+  const durationDays = numberValue(row.duration_days ?? row.total_working_days ?? row.total_calendar_days);
+  const paymentStatus = legacyPaymentStatus(row.payment_status);
+  const unpaidDurationDays = numberValue(row.unpaid_leave_days_at_submission);
+  const paidDurationDays = paymentStatus === "unpaid"
+    ? 0
+    : paymentStatus === "partial"
+      ? Math.max(0, durationDays - unpaidDurationDays)
+      : durationDays;
+  const status = legacyVacationStatus(row);
+  const managerDecision = legacyVacationDecision(row.manager_status);
+  const hrDecision = legacyVacationDecision(row.hr_status);
+
+  return {
+    balanceAfterDays: numberValue(row.remaining_paid_balance_at_submission),
+    balanceBeforeDays: numberValue(row.total_entitled_balance_at_submission),
+    canDecide,
+    compensatoryAttachmentBucket: null,
+    compensatoryAttachmentContentType: null,
+    compensatoryAttachmentObjectPath: null,
+    compensatoryAttachmentOriginalName: null,
+    compensatoryAttachmentSizeBytes: 0,
+    compensatoryAttachmentUploadedAt: null,
+    compensatoryEventDate: null,
+    compensatoryEventLocation: null,
+    compensatoryEventName: null,
+    compensatoryManager1: null,
+    compensatoryManager2: null,
+    createdAt: row.created_at ?? row.requested_at ?? "",
+    dayPart: legacyDayPart(row),
+    departmentName: employee?.departmentName ?? null,
+    durationDays,
+    employeeHireDate: row.employee_hire_date ?? employee?.hireDate ?? null,
+    employeeHrId: text(row.employee_hr_id),
+    employeeName: text(row.employee_name) || employee?.fullName || text(row.employee_hr_id),
+    employeeWorkEmail: row.employee_email ?? employee?.workEmail ?? null,
+    endDate: text(row.end_date),
+    entitlementDays: numberValue(row.first_year_entitlement_at_submission ?? row.total_entitled_balance_at_submission),
+    hrDecision,
+    hrDecisionAt: row.hr_decision_at ?? null,
+    hrDecisionByHrId: hrDecision ? nullableText(row.approved_or_rejected_by) : null,
+    hrDecisionComment: row.hr_comment ?? null,
+    id: row.id,
+    lineName: row.employee_line ?? employee?.lineName ?? null,
+    managerDecision,
+    managerDecisionAt: row.manager_decision_at ?? null,
+    managerDecisionByHrId: managerDecision ? managerHrId : null,
+    managerDecisionComment: row.manager_comment ?? null,
+    managerHrId,
+    managerName: nullableText(row.direct_manager) ?? manager?.fullName ?? null,
+    managerOfManagerHrId,
+    managerOfManagerName: managerOfManager?.fullName ?? null,
+    notes: nullableText(row.reason) ?? nullableText(row.payment_reason),
+    paidDurationDays,
+    paymentStatus,
+    periodEnd: null,
+    periodStart: null,
+    sickAttachmentBucket: null,
+    sickAttachmentContentType: null,
+    sickAttachmentObjectPath: null,
+    sickAttachmentOriginalName: null,
+    sickAttachmentSizeBytes: 0,
+    sickAttachmentUploadedAt: null,
+    startDate: text(row.start_date),
+    status,
+    submittedByHrId: row.employee_hr_id,
+    unpaidDurationDays: unpaidDurationDays || (paymentStatus === "unpaid" ? durationDays : 0),
+    unpaidReason: paymentStatus === "unpaid" ? "insufficient_balance" : null,
+    usedPaidDays: numberValue(row.used_paid_leave_at_submission),
+    vacationType: legacyVacationType(row),
+  };
+}
+
 function canDecideVacation(access: AccessContext, request: Pick<VacationRequestRecord, "managerHrId" | "status">) {
   if (request.status !== "pending_manager" && request.status !== "pending_hr") return false;
   if (access.scope === "system") return true;
@@ -815,6 +1028,7 @@ function adminDecisionPayload(input: {
   status: VacationRequestStatus;
 }) {
   const now = new Date().toISOString();
+  const actorId = input.actorHrId ?? input.actorLoginId ?? "system";
   const reset = {
     hr_decision: null,
     hr_decision_at: null,
@@ -833,7 +1047,7 @@ function adminDecisionPayload(input: {
       ...reset,
       manager_decision: "approved",
       manager_decision_at: now,
-      manager_decision_by_hr_id: input.actorHrId,
+      manager_decision_by_hr_id: actorId,
       manager_decision_comment: "Manual admin record update.",
     };
   }
@@ -842,11 +1056,11 @@ function adminDecisionPayload(input: {
     ...reset,
     hr_decision: input.status,
     hr_decision_at: now,
-    hr_decision_by_hr_id: input.actorHrId,
+    hr_decision_by_hr_id: actorId,
     hr_decision_comment: "Manual admin record update.",
     manager_decision: "approved",
     manager_decision_at: now,
-    manager_decision_by_hr_id: input.actorHrId,
+    manager_decision_by_hr_id: actorId,
     manager_decision_comment: "Manual admin record update.",
   };
 }
@@ -955,6 +1169,26 @@ async function notifyRecipients(input: {
   );
 }
 
+function vacationNotificationMetadata(
+  request: VacationRequestRecord,
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    employeeHrId: request.employeeHrId,
+    employeeName: request.employeeName,
+    endDate: request.endDate,
+    managerHrId: request.managerHrId,
+    managerName: request.managerName,
+    requestDate: request.startDate === request.endDate ? request.startDate : `${request.startDate} to ${request.endDate}`,
+    requestId: request.id,
+    requestType: vacationTypeLabel(request.vacationType),
+    startDate: request.startDate,
+    status: request.status,
+    vacationType: request.vacationType,
+    ...extra,
+  };
+}
+
 async function dispatchVacationSubmitted(input: {
   baseUrl: string;
   directory: EmployeeDirectoryData;
@@ -962,12 +1196,15 @@ async function dispatchVacationSubmitted(input: {
   request: VacationRequestRecord;
 }) {
   const hrRecipients = await getHrRecipients(input.directory);
-  const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
+  const reportHref = `/leave-management/vacation-report?tab=requests&requestId=${encodeURIComponent(input.request.id)}`;
   const policyWarningText = (input.policyWarnings ?? []).join(" ");
   await notifyRecipients({
     href: reportHref,
     message: `${input.request.employeeName} submitted ${vacationTypeLabel(input.request.vacationType)} for ${input.request.durationDays} day(s).${policyWarningText ? ` Policy review: ${policyWarningText}` : ""}`,
-    metadata: { policyWarnings: input.policyWarnings ?? [], requestId: input.request.id, status: input.request.status },
+    metadata: vacationNotificationMetadata(input.request, {
+      durationDays: input.request.durationDays,
+      policyWarnings: input.policyWarnings ?? [],
+    }),
     recipients: [
       input.request.managerHrId,
       input.request.managerOfManagerHrId,
@@ -1009,11 +1246,13 @@ async function dispatchVacationManagerReview(input: {
   request: VacationRequestRecord;
 }) {
   const hrRecipients = await getHrRecipients(input.directory);
-  const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
+  const reportHref = `/leave-management/vacation-report?tab=requests&requestId=${encodeURIComponent(input.request.id)}`;
   await notifyRecipients({
     href: reportHref,
     message: `${input.request.managerName ?? "Direct manager"} ${input.decision === "approve" ? "approved" : "rejected"} ${input.request.employeeName}'s vacation request. HR final decision is required.`,
-    metadata: { managerDecision: input.request.managerDecision, requestId: input.request.id, status: input.request.status },
+    metadata: vacationNotificationMetadata(input.request, {
+      managerDecision: input.request.managerDecision,
+    }),
     recipients: [
       input.request.employeeHrId,
       input.request.managerOfManagerHrId,
@@ -1031,11 +1270,13 @@ async function dispatchVacationDecision(input: {
   request: VacationRequestRecord;
 }) {
   const hrRecipients = await getHrRecipients(input.directory);
-  const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
+  const reportHref = `/leave-management/vacation-report?tab=requests&requestId=${encodeURIComponent(input.request.id)}`;
   await notifyRecipients({
     href: reportHref,
     message: `${input.request.employeeName}'s vacation request was ${input.decision === "approve" ? "approved" : "rejected"} by HR final review.`,
-    metadata: { requestId: input.request.id, status: input.request.status },
+    metadata: vacationNotificationMetadata(input.request, {
+      hrDecision: input.request.hrDecision,
+    }),
     recipients: [
       input.request.employeeHrId,
       input.request.managerOfManagerHrId,
@@ -1720,6 +1961,40 @@ async function fetchVacationRequestById(id: string) {
   return data ? mapVacationRow(data as VacationRequestDbRow) : null;
 }
 
+async function fetchLegacyLeaveRequestRows(employeesByHrId: Map<string, EmployeeDirectoryRow>) {
+  const { data, error } = await getSupabaseAdmin()
+    .from(legacyLeaveRequestsTable)
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(1000);
+
+  if (error) {
+    if (missingRelationMessage(error, legacyLeaveRequestsTable)) return [];
+    throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  }
+
+  return (data ?? []).map((row) => mapLegacyLeaveRequestRow(row as LegacyLeaveRequestDbRow, employeesByHrId));
+}
+
+async function fetchLegacyLeaveRequestById(
+  id: string,
+  employeesByHrId?: Map<string, EmployeeDirectoryRow>,
+) {
+  const employeeMap = employeesByHrId ?? buildEmployeeMapByHrId(await getEmployeeDirectoryRows());
+  const { data, error } = await getSupabaseAdmin()
+    .from(legacyLeaveRequestsTable)
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    if (missingRelationMessage(error, legacyLeaveRequestsTable)) return null;
+    throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  }
+
+  return data ? mapLegacyLeaveRequestRow(data as LegacyLeaveRequestDbRow, employeeMap) : null;
+}
+
 async function applyVacationDecision(input: {
   access?: AccessContext;
   actorHrId: string | null;
@@ -1747,6 +2022,7 @@ async function applyVacationDecision(input: {
 
   const decisionValue = input.decision === "approve" ? "approved" : "rejected";
   const isHrFinalDecision = input.request.status === "pending_hr";
+  const actorId = input.actorHrId ?? input.actorLoginId ?? "system";
   const now = new Date().toISOString();
   const updatePayload = isHrFinalDecision
     ? {
@@ -1755,7 +2031,7 @@ async function applyVacationDecision(input: {
         entitlement_days: balance.entitlementDays,
         hr_decision: decisionValue,
         hr_decision_at: now,
-        hr_decision_by_hr_id: input.actorHrId,
+        hr_decision_by_hr_id: actorId,
         hr_decision_comment: nullableText(input.decisionComment),
         payment_status: balance.paymentStatus,
         paid_duration_days: balance.paidDurationDays,
@@ -1770,7 +2046,7 @@ async function applyVacationDecision(input: {
     : {
         manager_decision: decisionValue,
         manager_decision_at: now,
-        manager_decision_by_hr_id: input.actorHrId,
+        manager_decision_by_hr_id: actorId,
         manager_decision_comment: nullableText(input.decisionComment),
         status: "pending_hr",
         updated_at: now,
@@ -1841,6 +2117,85 @@ async function applyVacationDecision(input: {
   return updated;
 }
 
+async function applyLegacyVacationDecision(input: {
+  access?: AccessContext;
+  actorHrId: string | null;
+  actorLoginId?: string | null;
+  decision: VacationDecision;
+  decisionComment?: string | null;
+  request: VacationRequestRecord;
+}) {
+  if (input.request.status !== "pending_manager" && input.request.status !== "pending_hr") {
+    throw new Error("This vacation request already has a final decision.");
+  }
+
+  const decisionValue = input.decision === "approve" ? "approved" : "rejected";
+  const isHrFinalDecision = input.request.status === "pending_hr";
+  const rpcName = isHrFinalDecision ? "phx_leave_hr_decision_atomic" : "phx_leave_manager_decision_atomic";
+  const actorRole = input.access?.role ?? (isHrFinalDecision ? "HR Specialist" : "Manager");
+  const actorId = input.actorHrId ?? input.actorLoginId ?? "system";
+  const balanceDecision = input.request.vacationType === "other" && input.decision === "approve"
+    ? input.request.paymentStatus === "paid"
+      ? "deduct"
+      : "no_deduct"
+    : null;
+  const payload = isHrFinalDecision
+    ? {
+        p_actor_hr_id: actorId,
+        p_actor_role: actorRole,
+        p_balance_decision: balanceDecision,
+        p_comment: nullableText(input.decisionComment),
+        p_decision: decisionValue,
+        p_request_id: input.request.id,
+      }
+    : {
+        p_actor_hr_id: actorId,
+        p_actor_role: actorRole,
+        p_comment: nullableText(input.decisionComment),
+        p_decision: decisionValue,
+        p_request_id: input.request.id,
+      };
+
+  const { data, error } = await getSupabaseAdmin().rpc(rpcName, payload);
+
+  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+
+  const employees = await getEmployeeDirectoryRows();
+  const updated = mapLegacyLeaveRequestRow(data as LegacyLeaveRequestDbRow, buildEmployeeMapByHrId(employees));
+
+  await writeRequiredAuditLog({
+    actorLoginId: input.actorLoginId ?? input.actorHrId ?? "system",
+    entityId: updated.id,
+    entityType: "vacation_request",
+    newValues: {
+      decisionComment: input.decisionComment ?? null,
+      hrDecision: isHrFinalDecision ? decisionValue : input.request.hrDecision,
+      managerDecision: isHrFinalDecision ? input.request.managerDecision : decisionValue,
+      paymentStatus: updated.paymentStatus,
+      status: updated.status,
+    },
+    oldValues: {
+      paymentStatus: input.request.paymentStatus,
+      status: input.request.status,
+    },
+    summary: isHrFinalDecision
+      ? `Legacy vacation request ${decisionValue} by HR final review.`
+      : `Legacy vacation request ${decisionValue} by direct manager.`,
+  });
+
+  const directory = await getEmployeeDirectory();
+  const dispatch = isHrFinalDecision
+    ? dispatchVacationDecision
+    : updated.status === "pending_hr"
+      ? dispatchVacationManagerReview
+      : null;
+  if (dispatch) {
+    await dispatch({ decision: input.decision, directory, request: updated }).catch(() => undefined);
+  }
+
+  return updated;
+}
+
 export async function decideVacationRequest(access: AccessContext, input: {
   decision: VacationDecision;
   decisionComment?: string | null;
@@ -1848,18 +2203,34 @@ export async function decideVacationRequest(access: AccessContext, input: {
 }) {
   await assertPermission(access, "leave", "approve");
   const request = await fetchVacationRequestById(input.requestId);
-  if (!request) throw new Error("Vacation request was not found.");
-  if (!canDecideVacation(access, request)) {
+  if (request) {
+    if (!canDecideVacation(access, request)) {
+      throw new Error("Forbidden: only the assigned direct manager can complete manager review, and only HR can make the final decision.");
+    }
+
+    return applyVacationDecision({
+      access,
+      actorHrId: resolveEmployeeIdentityId(access),
+      actorLoginId: access.loginId,
+      decision: input.decision,
+      decisionComment: input.decisionComment,
+      request,
+    });
+  }
+
+  const legacyRequest = await fetchLegacyLeaveRequestById(input.requestId);
+  if (!legacyRequest) throw new Error("Vacation request was not found.");
+  if (!canDecideVacation(access, legacyRequest)) {
     throw new Error("Forbidden: only the assigned direct manager can complete manager review, and only HR can make the final decision.");
   }
 
-  return applyVacationDecision({
+  return applyLegacyVacationDecision({
     access,
     actorHrId: resolveEmployeeIdentityId(access),
     actorLoginId: access.loginId,
     decision: input.decision,
     decisionComment: input.decisionComment,
-    request,
+    request: legacyRequest,
   });
 }
 
@@ -2085,6 +2456,7 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
   const clean = cleanFilters(filters);
   const canAdminManage = isAllVacationVisibility(access) && await canManageVacationRecords(access);
   const activeEmployees = await getEmployeeDirectoryRows();
+  const employeesByHrId = buildEmployeeMapByHrId(activeEmployees);
   const visibleEmployees = filterVacationEmployeesForAccess(access, activeEmployees);
   const visibleEmployeeHrIds = new Set(visibleEmployees.map((employee) => canonicalHrId(employee.hrId)).filter((value): value is string => Boolean(value)));
   const { data, error } = await getSupabaseAdmin()
@@ -2095,8 +2467,14 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
 
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
 
-  const visibleRows = (data ?? [])
-    .map((row) => mapVacationRow(row as VacationRequestDbRow))
+  const v2Rows = (data ?? []).map((row) => mapVacationRow(row as VacationRequestDbRow));
+  const v2Ids = new Set(v2Rows.map((row) => row.id));
+  const legacyRows = (await fetchLegacyLeaveRequestRows(employeesByHrId))
+    .filter((row) => !v2Ids.has(row.id));
+  const reportRows = [...v2Rows, ...legacyRows]
+    .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+
+  const visibleRows = reportRows
     .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds))
     .map((row) => ({ ...row, canDecide: canDecideVacation(access, row) }));
   const filteredRows = visibleRows.filter((row) => rowMatchesFilters(row, clean));

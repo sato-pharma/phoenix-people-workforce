@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import {
   assertPermission,
+  canAccess,
   normalizeHrId,
   normalizeLineName,
   normalizeRole,
@@ -206,6 +207,22 @@ function computeMonthlySummary(requests: EmployeeExcuseRequest[], yearMonth = cu
     remaining: Math.max(0, monthlyAllowance - used),
     used,
     yearMonth,
+  };
+}
+
+function excuseNotificationMetadata(request: EmployeeExcuseRequest, extra: Record<string, unknown> = {}) {
+  return {
+    durationHours: request.durationHours,
+    employeeHrId: request.employeeHrId,
+    employeeName: request.employeeName,
+    excuseType: request.excuseType,
+    managerHrId: request.managerHrId,
+    managerName: request.managerName,
+    requestDate: request.excuseDate,
+    requestId: request.id,
+    requestType: `${request.excuseType === "morning" ? "Morning" : "Afternoon"} excuse`,
+    status: request.status,
+    ...extra,
   };
 }
 
@@ -431,7 +448,7 @@ export async function createExcuseRequest(
       dedupeKey: `excuse-manager-${request.id}`,
       href: "/employee-portals/excuses",
       message: `${request.employeeName} submitted a ${request.excuseType} excuse for ${request.excuseDate}.`,
-      metadata: { requestId: request.id, status: request.status },
+      metadata: excuseNotificationMetadata(request),
       recipientHrId: request.managerHrId ?? "",
       title: "Excuse approval required",
     }),
@@ -520,7 +537,91 @@ export async function decideExcuseRequestByToken(input: {
       dedupeKey: `excuse-employee-${request.id}-${status}`,
       href: "/employee-portals/excuses",
       message: `Your ${request.excuseType} excuse for ${request.excuseDate} was ${status}.`,
-      metadata: { requestId: request.id, status },
+      metadata: excuseNotificationMetadata(request, { status }),
+      recipientHrId: request.employeeHrId,
+      title: `Excuse ${status}`,
+    }),
+  ]);
+
+  return request;
+}
+
+export async function listPendingExcuseApprovals(access: AccessContext) {
+  await assertPermission(access, "leave", "approve");
+  const managerHrId = normalizeHrId(resolveEmployeeIdentityId(access));
+  const canOverride = await canAccess(access, "admin", "approve");
+  if (!managerHrId && !canOverride) return [];
+
+  let query = getSupabaseAdmin()
+    .from("v2_excuse_requests")
+    .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision_at,manager_decision_comment,created_at")
+    .eq("status", "pending_manager")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (!canOverride && managerHrId) {
+    query = query.ilike("manager_hr_id", managerHrId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return ((data ?? []) as ExcuseRequestRow[]).map(mapExcuseRequestRow);
+}
+
+export async function decideExcuseRequest(
+  access: AccessContext,
+  input: {
+    decision: EmployeeExcuseDecision;
+    decisionComment?: string | null;
+    requestId: string;
+  },
+) {
+  await assertPermission(access, "leave", "approve");
+  const requestRow = await fetchRequestById(input.requestId);
+  if (!requestRow) throw new Error("Excuse request was not found.");
+  if (requestRow.status !== "pending_manager") {
+    throw new Error("This excuse request has already been decided.");
+  }
+
+  const actorHrId = normalizeHrId(resolveEmployeeIdentityId(access));
+  const managerHrId = normalizeHrId(requestRow.manager_hr_id);
+  const canOverride = await canAccess(access, "admin", "approve");
+  if (!canOverride && (!actorHrId || actorHrId !== managerHrId)) {
+    throw new Error("Forbidden: only the assigned manager can decide this excuse request.");
+  }
+
+  const status: EmployeeExcuseStatus = input.decision === "approve" ? "approved" : "rejected";
+  const now = new Date().toISOString();
+  const { data: updated, error: updateError } = await getSupabaseAdmin()
+    .from("v2_excuse_requests")
+    .update({
+      manager_decision: status,
+      manager_decision_at: now,
+      manager_decision_by_hr_id: actorHrId ?? managerHrId,
+      manager_decision_comment: cleanText(input.decisionComment),
+      status,
+      updated_at: now,
+    })
+    .eq("id", input.requestId)
+    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision_at,manager_decision_comment,created_at")
+    .single();
+
+  if (updateError) throw updateError;
+
+  const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
+  await Promise.all([
+    sendEmployeeDecisionEmail({
+      request: {
+        ...request,
+        employeeWorkEmail: (updated as { employee_work_email?: string | null }).employee_work_email,
+      },
+    }),
+    enqueueInAppNotification({
+      category: "excuse_request",
+      dedupeKey: `excuse-employee-${request.id}-${status}`,
+      href: "/employee-portals/excuses",
+      message: `Your ${request.excuseType} excuse for ${request.excuseDate} was ${status}.`,
+      metadata: excuseNotificationMetadata(request, { status }),
       recipientHrId: request.employeeHrId,
       title: `Excuse ${status}`,
     }),

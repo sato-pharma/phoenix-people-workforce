@@ -4,6 +4,8 @@ export const employeePortalOwnedRoutePatterns = [
   "/leave-management/vacation-request",
   "/leave-management/vacation-report",
   "/leave-management/vacation-control",
+  "/notifications",
+  "/pending-approvals",
   "/payslips",
   "/employee/outstation/new",
 ] as const;
@@ -13,6 +15,8 @@ const exactEmployeePortalOwnedRoutes = new Set<string>([
   "/leave-management/vacation-request",
   "/leave-management/vacation-report",
   "/leave-management/vacation-control",
+  "/notifications",
+  "/pending-approvals",
   "/payslips",
   "/employee/outstation/new",
 ]);

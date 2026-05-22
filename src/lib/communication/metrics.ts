@@ -238,9 +238,10 @@ function notificationDetails(metadata: Record<string, unknown>): InAppNotificati
     ["Order", ["orderId", "order_id", "orderNo", "order_no", "orderNumber", "order_number"]],
     ["Request", ["requestId", "request_id", "requestNo", "request_no"]],
     ["Employee", ["employee", "employeeName", "employee_name", "employeeHrId", "employee_hr_id"]],
+    ["Type", ["requestType", "request_type", "workflowType", "workflow_type", "vacationType", "vacation_type", "excuseType", "excuse_type"]],
     ["Status", ["status", "workflowStatus", "workflow_status"]],
     ["Amount", ["amount", "total", "value"]],
-    ["Date", ["date", "createdAt", "created_at", "submittedAt", "submitted_at"]],
+    ["Date", ["requestDate", "request_date", "date", "createdAt", "created_at", "submittedAt", "submitted_at", "startDate", "start_date"]],
   ];
   const details: InAppNotificationDetail[] = [];
   const used = new Set<string>();

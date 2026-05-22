@@ -1720,6 +1720,56 @@ export async function approveOutstationRequestForPayroll(
   };
 }
 
+export async function rejectOutstationRequestForPayroll(
+  requestId: number,
+  access: AccessContext,
+  options: { comment?: string | null } = {},
+) {
+  const existing = await getOutstationRequestById(requestId);
+  if (!existing) throw new Error("Outstation request was not found.");
+  if (existing.status === "approved") {
+    throw new Error("Approved outstation requests cannot be rejected.");
+  }
+  const comment = cleanText(options.comment);
+  if (!comment) throw new Error("A rejection comment is required.");
+
+  const now = new Date().toISOString();
+  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .update({
+      approval_reason: comment,
+      status: "rejected",
+      updated_at: now,
+    })
+    .eq("id", requestId)
+    .in("status", ["submitted", "rejected"])
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) {
+    throw new Error("Outstation request state changed. Refresh and retry.");
+  }
+
+  const request = mapOutstationRequestRow(data as Record<string, unknown>);
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? actor,
+    entityId: String(request.id),
+    entityType: "outstation_request",
+    newValues: {
+      approvalReason: comment,
+      status: request.status,
+    },
+    oldValues: {
+      status: existing.status,
+    },
+    summary: `Outstation request ${request.id} rejected.`,
+  });
+
+  return request;
+}
+
 function uniqueValues(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((value) => text(value)).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b),

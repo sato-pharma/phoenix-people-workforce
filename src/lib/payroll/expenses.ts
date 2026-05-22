@@ -709,6 +709,120 @@ export async function savePayrollExpenseApprovals(input: {
   return (data ?? []).map((row) => mapExpense(row as Record<string, unknown>));
 }
 
+export async function decidePayrollExpenseApproval(
+  tripId: string,
+  accessContext: AccessContext,
+  input: { comment?: string | null; decision: "approve" | "reject" },
+) {
+  if (!await canAccess(accessContext, "expenses", "approve")) {
+    throw new Error("Forbidden: expenses approval permission is required.");
+  }
+
+  const cleanTripId = String(tripId ?? "").trim();
+  if (!cleanTripId) throw new Error("Expense trip ID is required.");
+  if (input.decision === "reject" && !String(input.comment ?? "").trim()) {
+    throw new Error("A rejection comment is required.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: existingData, error: existingError } = await supabase
+    .from("payroll_expenses")
+    .select("*")
+    .eq("trip_id", cleanTripId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (!existingData) throw new Error("Expense row was not found.");
+
+  const existing = mapExpense(existingData as Record<string, unknown>);
+  const now = new Date().toISOString();
+  const approvedBy = resolveEmployeeIdentityId(accessContext) ?? accessContext.loginId ?? "system";
+  const approved = input.decision === "approve";
+  const { data: updatedData, error: updateError } = await supabase
+    .from("payroll_expenses")
+    .update({
+      approved_at: approved ? now : null,
+      approved_by: approved ? approvedBy : null,
+      hr_approved: approved,
+      hr_comment: String(input.comment ?? "").trim(),
+      hr_status: approved ? "Approved" : "Rejected",
+      status: approved ? "approved" : "rejected",
+      updated_at: now,
+    })
+    .eq("trip_id", cleanTripId)
+    .select("*")
+    .single();
+
+  if (updateError) throw updateError;
+
+  const reportId = String((existingData as Record<string, unknown>).report_id ?? "");
+  if (reportId) {
+    await recomputePayrollExpenseReportTotals(reportId, supabase);
+  }
+
+  return {
+    previous: existing,
+    updated: mapExpense(updatedData as Record<string, unknown>),
+  };
+}
+
+async function recomputePayrollExpenseReportTotals(reportId: string, supabase: SupabaseClient) {
+  const { data, error } = await supabase
+    .from("payroll_expenses")
+    .select("expense_date,total,hr_approved")
+    .eq("report_id", reportId);
+
+  if (error) throw error;
+
+  const totals = ((data ?? []) as Array<Record<string, unknown>>).reduce<{
+    approvedRows: number;
+    rowCount: number;
+    totalExpenses: number;
+    tripDateFrom: string | null;
+    tripDateTo: string | null;
+  }>(
+    (summary, row) => {
+      const date = row.expense_date ? new Date(String(row.expense_date)) : null;
+      summary.approvedRows += row.hr_approved ? 1 : 0;
+      summary.rowCount += 1;
+      summary.totalExpenses += Number(row.total ?? 0);
+
+      if (date && !Number.isNaN(date.getTime())) {
+        const isoDate = date.toISOString().slice(0, 10);
+        summary.tripDateFrom = summary.tripDateFrom && summary.tripDateFrom < isoDate
+          ? summary.tripDateFrom
+          : isoDate;
+        summary.tripDateTo = summary.tripDateTo && summary.tripDateTo > isoDate
+          ? summary.tripDateTo
+          : isoDate;
+      }
+
+      return summary;
+    },
+    {
+      approvedRows: 0,
+      rowCount: 0,
+      totalExpenses: 0,
+      tripDateFrom: null as string | null,
+      tripDateTo: null as string | null,
+    },
+  );
+
+  const updateResult = await supabase
+    .from("payroll_expense_reports")
+    .update({
+      approved_rows: totals.approvedRows,
+      row_count: totals.rowCount,
+      total_expenses: totals.totalExpenses,
+      trip_date_from: totals.tripDateFrom,
+      trip_date_to: totals.tripDateTo,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", reportId);
+
+  if (updateResult.error) throw updateResult.error;
+}
+
 export async function importApprovedExpensesToPayroll(input: {
   fileName: string;
   month: number;

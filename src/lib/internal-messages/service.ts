@@ -453,9 +453,12 @@ export async function sendInternalMessage(access: AccessContext, input: SendInte
       dedupeKey: `internal-message:${row.id}`,
       message: `${sender.name}: ${body.slice(0, 180)}`,
       metadata: {
+        requestDate: row.created_at,
+        requestType: "Internal message",
         message: `${sender.name}: ${body.slice(0, 180)}`,
         messageId: row.id,
         sender: sender.name,
+        senderName: sender.name,
         title: subject,
       },
       recipientHrId: recipient.hrId,
