@@ -8,7 +8,10 @@ import {
 export function proxy(request: NextRequest) {
   if (
     request.method.toUpperCase() === "POST" &&
-    request.nextUrl.pathname === "/api/attendance/raw-punches"
+    (
+      request.nextUrl.pathname === "/api/attendance/raw-punches" ||
+      request.nextUrl.pathname === "/api/webhooks/resend"
+    )
   ) {
     return NextResponse.next();
   }
