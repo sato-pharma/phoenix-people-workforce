@@ -1,11 +1,12 @@
 "use client";
 
-import { ChevronDown, LogOut, Mail, Menu, Search, UserCog } from "lucide-react";
+import { ChevronDown, LogOut, Menu, Search, UserCog } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
+import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import { MobileSidebar } from "@/components/layout/sidebar";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import type { PermissionLookup } from "@/components/layout/sidebar";
@@ -26,6 +27,7 @@ export function Topbar({
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const isAdminMode = navigationMode === "admin";
+  const profileHref = isAdminMode ? "/admin/profile" : "/employee-portals/profile";
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
@@ -87,13 +89,11 @@ export function Topbar({
             <Search className="h-5 w-5" />
           </button>
           <InAppNotificationsBell isAdminMode={isAdminMode} />
-          <button aria-label="Messages" className={`hidden h-10 w-10 items-center justify-center rounded-lg xl:inline-flex ${
-            isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
-          }`} type="button">
-            <Mail className="h-5 w-5" />
-          </button>
+          <InternalMessagesMenu isAdminMode={isAdminMode} />
           <div className="relative">
             <button
+              aria-expanded={userMenuOpen}
+              aria-haspopup="menu"
               className={`flex max-w-[calc(100vw-7rem)] items-center gap-2 rounded-full border py-1 pl-1 pr-2 sm:max-w-none sm:gap-3 sm:pr-3 ${
                 isAdminMode
                   ? "border-[#333333] bg-[#0B0B0B] shadow-[0_10px_30px_rgba(0,0,0,0.24)] hover:bg-[#111111]"
@@ -113,25 +113,31 @@ export function Topbar({
             </button>
 
             {userMenuOpen && (
-              <div className={`absolute right-0 top-full mt-2 w-48 rounded-lg border shadow-lg ${
+              <div className={`absolute right-0 top-full z-30 mt-2 w-56 overflow-hidden rounded-lg border shadow-lg ${
                 isAdminMode ? "border-[#333333] bg-[#050505]" : "border-[#E2E8F0] bg-white"
-              }`}>
+              }`} role="menu">
                 <Link
                   className={`flex w-full items-center gap-2 px-4 py-2 text-sm ${
                     isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#0F172A] hover:bg-[#F8FAFC]"
                   }`}
-                  href="/admin/profile"
+                  href={profileHref}
                   onClick={() => setUserMenuOpen(false)}
+                  role="menuitem"
                 >
                   <UserCog className="h-4 w-4" />
                   My Profile
                 </Link>
+                <div className={`px-4 py-2 text-xs ${isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]"}`}>
+                  <p className="font-semibold">{viewer.roleLabel}</p>
+                  <p className="mt-0.5 truncate">{viewer.displayName}</p>
+                </div>
                 <div className={`mx-3 h-px ${isAdminMode ? "bg-[#333333]" : "bg-[#E2E8F0]"}`} />
                 <button
                   className={`flex w-full items-center gap-2 px-4 py-2 text-sm ${
                     isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#0F172A] hover:bg-[#F8FAFC]"
                   }`}
                   onClick={handleLogout}
+                  role="menuitem"
                   type="button"
                 >
                   <LogOut className="h-4 w-4" />

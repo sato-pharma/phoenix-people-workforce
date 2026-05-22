@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell } from "lucide-react";
+import { Bell, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 import { cn } from "@/lib/utils";
 
 type InAppNotificationView = {
   category: string;
+  details?: Array<{ label: string; value: string }>;
   href: string | null;
   id: string;
   message: string;
@@ -36,26 +37,40 @@ function formatNotificationTime(value: string | null) {
 export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }) {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<InAppNotificationView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
     async function loadNotifications() {
       try {
+        if (mounted) setLoading(true);
         const response = await fetch("/api/notifications/in-app", {
           headers: { Accept: "application/json" },
         });
         const payload = await response.json().catch(() => ({})) as NotificationsResponse;
-        if (mounted) setNotifications(payload.data ?? []);
+        if (!response.ok) throw new Error("Notifications failed to load.");
+        if (mounted) {
+          setError(null);
+          setNotifications(payload.data ?? []);
+        }
       } catch {
-        if (mounted) setNotifications([]);
+        if (mounted) {
+          setError("Unable to load notifications.");
+          setNotifications([]);
+        }
+      } finally {
+        if (mounted) setLoading(false);
       }
     }
 
     void loadNotifications();
+    const interval = window.setInterval(() => void loadNotifications(), 60_000);
 
     return () => {
       mounted = false;
+      window.clearInterval(interval);
     };
   }, []);
 
@@ -83,16 +98,29 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
           isAdminMode ? "border-[#333333] bg-[#050505]" : "border-[#E2E8F0] bg-white",
         )}>
           <div className={cn("border-b px-4 py-3", isAdminMode ? "border-[#333333]" : "border-[#E2E8F0]")}>
-            <p className={cn("text-sm font-black", isAdminMode ? "text-white" : "text-[#0F172A]")}>Notifications</p>
-            <p className={cn("mt-1 text-xs", isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]")}>
-              Latest Phoenix Workforce updates.
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className={cn("text-sm font-black", isAdminMode ? "text-white" : "text-[#0F172A]")}>Notifications</p>
+                <p className={cn("mt-1 text-xs", isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]")}>
+                  Latest Phoenix Workforce updates.
+                </p>
+              </div>
+              {loading ? (
+                <Loader2 className={cn("h-4 w-4 animate-spin", isAdminMode ? "text-[#F8B56B]" : "text-[#F97316]")} />
+              ) : (
+                <RefreshCw className={cn("h-4 w-4", isAdminMode ? "text-[#64748B]" : "text-[#94A3B8]")} />
+              )}
+            </div>
           </div>
 
           <div className="max-h-[340px] overflow-auto p-2">
-            {notifications.length === 0 ? (
+            {error ? (
+              <div className={cn("rounded-xl px-4 py-5 text-sm", isAdminMode ? "text-[#FCA5A5]" : "text-[#B91C1C]")}>
+                {error}
+              </div>
+            ) : notifications.length === 0 ? (
               <div className={cn("rounded-xl px-4 py-5 text-sm", isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]")}>
-                No notifications yet.
+                {loading ? "Loading notifications..." : "No notifications yet."}
               </div>
             ) : (
               notifications.map((notification) => {
@@ -110,6 +138,22 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                         <p className={cn("mt-1 line-clamp-2 text-xs leading-5", isAdminMode ? "text-[#CBD5E1]" : "text-[#475569]")}>
                           {notification.message}
                         </p>
+                        {notification.details?.length ? (
+                          <div className="mt-2 grid gap-1.5">
+                            {notification.details.slice(0, 4).map((detail) => (
+                              <div
+                                className={cn(
+                                  "flex items-center justify-between gap-3 rounded-lg px-2 py-1 text-[11px]",
+                                  isAdminMode ? "bg-[#111111] text-[#CBD5E1]" : "bg-[#F8FAFC] text-[#475569]",
+                                )}
+                                key={`${notification.id}-${detail.label}`}
+                              >
+                                <span className="shrink-0 font-black uppercase tracking-[0.10em] text-[#F97316]">{detail.label}</span>
+                                <span className="min-w-0 truncate font-semibold">{detail.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <span className="rounded-full bg-[#FFF7ED] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#C2410C]">
                             {notification.category.replace(/_/g, " ")}
