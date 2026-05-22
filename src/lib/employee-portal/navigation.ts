@@ -2,6 +2,7 @@ import { normalizeRole, parseRoleStrict, type PhoenixRole } from "@/lib/auth/per
 
 export type EmployeePortalNavVisibility = {
   showDashboardTab?: boolean;
+  showExcusesTab?: boolean;
   showExpenseActionTab?: boolean;
   showIncentiveTab?: boolean;
   showManagementTab?: boolean;
@@ -42,11 +43,18 @@ function resolvePortalRole(
 export function resolveEmployeePortalNavVisibility(
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
+  employeeLineName?: string | null | undefined,
+  employeeDepartmentName?: string | null | undefined,
 ): EmployeePortalNavVisibility {
   const resolvedRole = resolvePortalRole(roleLabel, accessRole);
+  const normalizedLine = String(employeeLineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normalizedDepartment = String(employeeDepartmentName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
   const isMedicalRep = resolvedRole === "Medical Rep";
   const isDistrictManager = resolvedRole === "District Manager" || resolvedRole === "Manager";
   const isNationalSalesManager = resolvedRole === "National Sales Manager";
+  const isHeadOffice =
+    ["office", "headoffice", "hq"].includes(normalizedLine) ||
+    ["office", "headoffice", "hq"].includes(normalizedDepartment);
   const isTrainingManager = resolvedRole === "Training Manager";
   const showManagementTab = [
     "District Manager",
@@ -77,6 +85,7 @@ export function resolveEmployeePortalNavVisibility(
   return {
     showDashboardTab: !isTrainingManager,
     showDsmsPerformanceTab: isNationalSalesManager,
+    showExcusesTab: isHeadOffice || isNationalSalesManager,
     showExpenseActionTab,
     showIncentiveTab: !isTrainingManager,
     showManagementTab,

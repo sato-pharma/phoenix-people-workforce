@@ -2120,6 +2120,7 @@ export async function getEmployeePortalProfile(access: AccessContext) {
 export type MedicalRepPortalData = {
   employee: {
     area: string | null;
+    department: string | null;
     fullName: string;
     hrId: string;
     line: string | null;
@@ -2315,6 +2316,7 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
   return {
     employee: {
       area: employee.areaName,
+      department: employee.departmentName,
       fullName: employee.fullName,
       hrId: employee.hrId,
       line: employee.lineName,
@@ -2503,6 +2505,7 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
   return {
     employee: {
       area: employee.areaName,
+      department: employee.departmentName,
       fullName: employee.fullName,
       hrId: employee.hrId,
       line: employee.lineName,
@@ -3863,6 +3866,7 @@ export async function getMedicalRepPortalData(
   return {
     employee: {
       area: employee.areaName,
+      department: employee.departmentName,
       fullName: employee.fullName,
       hrId: employee.hrId,
       line: employee.lineName,
