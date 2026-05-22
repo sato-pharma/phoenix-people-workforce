@@ -8,6 +8,7 @@ coverage/
 .playwright-mcp/
 tsconfig.tsbuildinfo
 _junk/
+.claude/worktrees/
 
 PHOENIX old/
 Phoenix Workforce/
