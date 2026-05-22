@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalSidebar, EmployeePortalTopNav } from "@/components/employee-portal/employee-portal-layout";
-import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { MobileOutstationWizard } from "@/components/outstation/mobile-outstation-wizard";
 import { Card } from "@/components/ui/card";
 import { PageTransition } from "@/components/ui/page-transition";
@@ -58,7 +57,7 @@ export default async function EmployeeOutstationNewPage() {
 
   const portalData = portalDataResult.value;
   const outstationContext = outstationContextResult.status === "fulfilled" ? outstationContextResult.value : null;
-  const visibility = resolveEmployeePortalNavVisibility(portalData.employee.roleLabel);
+  const visibility = resolveEmployeePortalNavVisibility(portalData.employee.roleLabel, access.role);
 
   const employeeName = outstationContext?.employeeName ?? portalData.employee.fullName;
   const employeeRole = outstationContext?.employeeRole ?? portalData.employee.roleLabel;
@@ -84,7 +83,6 @@ export default async function EmployeeOutstationNewPage() {
         <EmployeePortalSidebar visibility={visibility} />
 
         <main className="min-w-0 flex-1 space-y-6 lg:space-y-8">
-          <IdentityCard data={portalData} />
           <PageTransition>
             <MobileOutstationWizard
               employeeHrId={access.hrId ?? portalData.employee.hrId}

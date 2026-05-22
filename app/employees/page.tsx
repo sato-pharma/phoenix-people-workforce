@@ -8,7 +8,7 @@ import {
   isEmployeeDirectorySchemaMissing,
   isEmployeeDirectoryTimeout,
 } from "@/lib/employees/employee-directory";
-import { canAccess, filterEmployeeDirectoryForAccess } from "@/lib/auth/permissions";
+import { canAccess, filterEmployeeDirectoryForAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +31,10 @@ function employeePageError(error: unknown) {
 
 export default async function EmployeesPage() {
   const access = await resolveAccessContextFromPage();
+  if (resolveNavigationMode(access) === "employee-portal") {
+    redirect("/employee-portals");
+  }
+
   if (!await canAccess(access, "employees", "read")) {
     redirect("/employee-portals");
   }

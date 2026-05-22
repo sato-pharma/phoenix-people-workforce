@@ -9,7 +9,6 @@ import {
   Line,
   Pie,
   PieChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -17,7 +16,8 @@ import {
   ReferenceLine,
 } from "recharts";
 
-import { ChevronLeft, ChevronRight, Filter, Search, RefreshCw } from "lucide-react";
+import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
+import { ChevronLeft, ChevronRight, CreditCard, Filter, Receipt, RefreshCw, Search, TrendingUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { normalizeHrId, normalizeHrIdForAccess } from "@/lib/auth/permissions";
@@ -45,6 +45,15 @@ type ExpenseRow = {
   pmWorkload: number;
   description: string;
   hrNotes: string;
+};
+
+export type WorkloadAdminKeyCards = {
+  expenseClaimsAmount: number;
+  expenseClaimsEntries: number;
+  payrollBatchLabel: string;
+  payrollEligibleCount: number;
+  totalSalesTarget: number;
+  totalSalesValue: number;
 };
 
 const BRAND = {
@@ -315,7 +324,62 @@ function DashboardCard({
   );
 }
 
-export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPortalData }) {
+function AdminKeyCard({
+  helper,
+  icon: Icon,
+  label,
+  tone,
+  value,
+}: {
+  helper: string;
+  icon: typeof CreditCard;
+  label: string;
+  tone: "amber" | "blue" | "orange";
+  value: string;
+}) {
+  const toneClassName = {
+    amber: {
+      card: "border-amber-200 from-amber-50 to-white ring-1 ring-amber-200/70",
+      icon: "bg-amber-50 text-amber-700 ring-amber-200",
+      value: "text-amber-700",
+    },
+    blue: {
+      card: "border-slate-200 from-white to-slate-50",
+      icon: "bg-sky-50 text-sky-700 ring-sky-200",
+      value: "text-sky-700",
+    },
+    orange: {
+      card: "border-orange-200 from-orange-50 to-white ring-1 ring-orange-200/70",
+      icon: "bg-orange-50 text-orange-700 ring-orange-200",
+      value: "text-orange-700",
+    },
+  }[tone];
+
+  return (
+    <Card className={`group relative overflow-hidden rounded-lg border bg-gradient-to-br px-4 py-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${toneClassName.card}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+          <p className={`mt-2 text-2xl font-black tracking-[-0.03em] ${toneClassName.value}`}>{value}</p>
+          <p className="mt-1.5 text-xs leading-5 text-slate-500">{helper}</p>
+        </div>
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ${toneClassName.icon}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export function PersonalExpenseWorkloadDashboard({
+  adminKeyCards,
+  data,
+  showHero = true,
+}: {
+  adminKeyCards?: WorkloadAdminKeyCards | null;
+  data: MedicalRepPortalData;
+  showHero?: boolean;
+}) {
   const currentEmployeeHrId = normalizeHrId(data.employee?.hrId);
   const currentEmployeeCanonicalHrId = currentEmployeeHrId ? normalizeHrIdForAccess(currentEmployeeHrId) : null;
 
@@ -594,6 +658,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
 
   return (
     <div className="space-y-6 text-slate-950">
+      {showHero ? (
       <section className="relative overflow-hidden rounded-[30px] border border-orange-100 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_46%,#fff1e6_100%)] p-6 shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
         <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full bg-orange-200/45 blur-3xl" />
         <div className="absolute -bottom-20 left-10 h-40 w-40 rounded-full bg-amber-100/60 blur-3xl" />
@@ -613,6 +678,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
           </div>
         </div>
       </section>
+      ) : null}
 
       <Card className={`${premiumCardClass} p-4 md:p-5`}>
         <div className="space-y-4">
@@ -701,6 +767,32 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
         </div>
       </Card>
 
+      {adminKeyCards ? (
+        <section className="grid gap-4 md:grid-cols-3">
+          <AdminKeyCard
+            helper={adminKeyCards.payrollBatchLabel || "Latest batch"}
+            icon={CreditCard}
+            label="Payroll Eligible"
+            tone="orange"
+            value={adminKeyCards.payrollEligibleCount.toLocaleString("en-US")}
+          />
+          <AdminKeyCard
+            helper={`vs ${formatMoney(adminKeyCards.totalSalesTarget)} target`}
+            icon={TrendingUp}
+            label="Total Sales"
+            tone="blue"
+            value={formatMoney(adminKeyCards.totalSalesValue)}
+          />
+          <AdminKeyCard
+            helper={`${adminKeyCards.expenseClaimsEntries.toLocaleString("en-US")} entries`}
+            icon={Receipt}
+            label="Expense Claims"
+            tone="amber"
+            value={formatMoney(adminKeyCards.expenseClaimsAmount)}
+          />
+        </section>
+      ) : null}
+
       <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <DashboardCard
           delta={undefined}
@@ -749,7 +841,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
             {monthlyTrend.length === 0 ? (
               <EmptyState title="No trend data" message="No monthly data available for selected filters." />
             ) : (
-              <ResponsiveContainer height="100%" width="100%">
+              <SafeResponsiveContainer className="h-full">
                 <ComposedChart data={monthlyTrend}>
                   <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
                   <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: 12 }} />
@@ -768,7 +860,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                   <Bar dataKey="expense" fill={BRAND.primary} yAxisId="expense" />
                   <Line dataKey="trips" name="Trips" stroke={BRAND.primary} dot={{ fill: BRAND.primary }} yAxisId="trips" />
                 </ComposedChart>
-              </ResponsiveContainer>
+              </SafeResponsiveContainer>
             )}
           </div>
         </Card>
@@ -783,7 +875,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
               <EmptyState title="No category data" message="No expense category amounts available for this period." />
             ) : (
               <div className="relative h-full">
-                <ResponsiveContainer height="100%" width="100%">
+                <SafeResponsiveContainer className="h-full">
                   <PieChart>
                     <Pie
                       cx="50%"
@@ -800,7 +892,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                     </Pie>
                     <Tooltip formatter={(value: unknown) => formatMoney(Number(value))} contentStyle={chartTooltipStyle()} />
                   </PieChart>
-                </ResponsiveContainer>
+                </SafeResponsiveContainer>
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                   <div className="rounded-full border border-orange-100 bg-white/95 px-4 py-2 text-center shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
                     <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Total</p>
@@ -823,7 +915,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
             {statusDistribution.length === 0 ? (
               <EmptyState title="No trips" message="No trip status records available." />
             ) : (
-              <ResponsiveContainer height="100%" width="100%">
+              <SafeResponsiveContainer className="h-full">
                 <PieChart>
                   <Pie
                     data={statusDistribution}
@@ -838,7 +930,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                   </Pie>
                   <Tooltip formatter={(value: unknown) => `${value}`} contentStyle={chartTooltipStyle()} />
                 </PieChart>
-              </ResponsiveContainer>
+              </SafeResponsiveContainer>
             )}
           </div>
           <div className="mt-2 space-y-1 text-xs font-semibold text-slate-600">
@@ -874,7 +966,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
             {transportationSummary.length === 0 ? (
               <EmptyState title="No transport data" message="No transportation records available." />
             ) : (
-              <ResponsiveContainer height="100%" width="100%">
+              <SafeResponsiveContainer className="h-full">
                 <BarChart data={transportationSummary} layout="vertical">
                   <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
                   <XAxis type="number" />
@@ -888,7 +980,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                   />
                   <Bar dataKey={showCostByTransportation ? "total" : "trips"} fill={BRAND.primary} radius={[0, 6, 6, 0]} />
                 </BarChart>
-              </ResponsiveContainer>
+              </SafeResponsiveContainer>
             )}
           </div>
         </Card>
@@ -904,7 +996,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                 {destinationSummary.length === 0 ? (
                   <EmptyState title="No destination data" message="No destination records available." />
                 ) : (
-                  <ResponsiveContainer height="100%" width="100%">
+                  <SafeResponsiveContainer className="h-full">
                 <BarChart data={destinationSummary} layout="vertical" margin={{ top: 8, right: 12, left: 4, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
                   <XAxis type="number" tickFormatter={(value) => new Intl.NumberFormat("en-US").format(Number(value))} />
@@ -922,7 +1014,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                   />
                   <Bar dataKey="trips" fill={BRAND.warning} radius={[0, 6, 6, 0]} />
                 </BarChart>
-              </ResponsiveContainer>
+              </SafeResponsiveContainer>
             )}
           </div>
         </Card>
@@ -948,7 +1040,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
 
               <div className="md:col-span-2">
                 <div className="h-52">
-                  <ResponsiveContainer height="100%" width="100%">
+                  <SafeResponsiveContainer className="h-full">
                     <BarChart data={workloadChartData}>
                       <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
                       <XAxis dataKey="name" />
@@ -956,7 +1048,7 @@ export function PersonalExpenseWorkloadDashboard({ data }: { data: MedicalRepPor
                       <Tooltip formatter={(value) => Number(value).toLocaleString()} contentStyle={chartTooltipStyle()} />
                       <Bar dataKey="value" fill={BRAND.success} radius={[6, 6, 0, 0]} />
                     </BarChart>
-                  </ResponsiveContainer>
+                  </SafeResponsiveContainer>
                 </div>
               </div>
             </div>

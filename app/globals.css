@@ -205,6 +205,37 @@ body {
   border: 2px solid transparent;
 }
 
+.phoenix-employee-sidebar-scroll {
+  scrollbar-color: rgba(240, 90, 26, 0.72) rgba(255, 241, 230, 0.42);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.phoenix-employee-sidebar-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.phoenix-employee-sidebar-scroll::-webkit-scrollbar-track {
+  background: linear-gradient(180deg, rgba(255, 247, 237, 0.72), rgba(255, 255, 255, 0.25));
+  border-radius: 999px;
+  margin-block: 14px;
+}
+
+.phoenix-employee-sidebar-scroll::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(180deg, rgba(255, 192, 128, 0.95), rgba(240, 90, 26, 0.82));
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  min-height: 48px;
+}
+
+.phoenix-employee-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(180deg, #ffd1a3, #f97316);
+  background-clip: padding-box;
+}
+
 .phoenix-horizontal-scroll {
   scrollbar-color: rgba(251, 146, 60, 0.88) transparent;
   scrollbar-width: thin;

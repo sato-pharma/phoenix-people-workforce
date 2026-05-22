@@ -5,7 +5,11 @@ import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import {
+  assertPermission,
+  canAccess,
+  resolveNavigationMode,
+} from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   getMedicalRepExpenseContext,
@@ -20,7 +24,8 @@ export default async function EmployeePortalExpensesPage() {
     redirect("/payroll/expenses/dashboard");
   }
 
-  await assertPermission(access, "outstation", "create");
+  await assertPermission(access, "expenses", "read");
+  const canSubmitExpense = await canAccess(access, "outstation", "create");
 
   let context: Awaited<ReturnType<typeof getMedicalRepExpenseContext>> | null = null;
   let requests: Awaited<ReturnType<typeof listMedicalRepExpenseRequests>> = [];
@@ -63,7 +68,7 @@ export default async function EmployeePortalExpensesPage() {
       title="Expenses"
     >
       <MedicalRepExpensesWorkspace
-        canSubmit={Boolean(context.fromLocation)}
+        canSubmit={Boolean(context.fromLocation) && canSubmitExpense}
         employeeName={context.employeeName}
         initialRequests={requests}
         residenceSummary={context.fromLocation}

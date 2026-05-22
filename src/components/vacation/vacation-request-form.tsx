@@ -41,6 +41,7 @@ type VacationRequestFormProps = {
     weeklyOffPolicy: VacationWeeklyOffPolicyRecord | null;
   } | null;
   initialError: string | null;
+  showHero?: boolean;
 };
 
 type VacationRequestPageTab = "request" | "policy" | "national";
@@ -70,9 +71,16 @@ function VacationBalanceCard({
 }: {
   balance: VacationBalanceSnapshot | null | undefined;
 }) {
-  const description = balance?.unpaidReason
-    ? vacationUnpaidReasonLabel(balance.unpaidReason)
-    : "Available based on current approved paid vacations.";
+  const isFirstSixMonthsLock = balance?.unpaidReason === "first_six_months";
+  const headlineLabel = isFirstSixMonthsLock ? "Accrued balance" : "Available balance";
+  const headlineValue = balance
+    ? formatDays(isFirstSixMonthsLock ? balance.entitlementDays : balance.balanceBeforeDays)
+    : "-";
+  const description = isFirstSixMonthsLock
+    ? "Your accrued balance is tracked from the hire date, but it becomes available for use after completing the first 6 months."
+    : balance?.unpaidReason
+      ? vacationUnpaidReasonLabel(balance.unpaidReason)
+      : "Available based on current approved paid vacations.";
 
   return (
     <Card className="relative overflow-hidden rounded-[28px] border border-slate-200/90 bg-[linear-gradient(160deg,rgba(255,255,255,0.98),rgba(255,247,237,0.96))] p-6 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
@@ -80,10 +88,10 @@ function VacationBalanceCard({
       <div className="relative flex items-start justify-between gap-4">
         <div className="space-y-3">
           <p className="vacation-summary-kicker text-[11px] font-semibold uppercase text-slate-400">
-            Available balance
+            {headlineLabel}
           </p>
           <p className="font-display text-[2.35rem] leading-none tracking-[-0.055em] text-slate-950">
-            {balance ? formatDays(balance.balanceBeforeDays) : "-"}
+            {headlineValue}
           </p>
         </div>
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/90 text-orange-500 shadow-[0_10px_26px_rgba(249,115,22,0.16)] ring-1 ring-orange-200/80">
@@ -91,6 +99,11 @@ function VacationBalanceCard({
         </div>
       </div>
       <p className="relative mt-4 max-w-[24ch] text-sm leading-6 text-slate-500">{description}</p>
+      {isFirstSixMonthsLock && balance ? (
+        <p className="relative mt-3 text-sm font-semibold leading-6 text-amber-700">
+          Available now: {formatDays(balance.balanceBeforeDays)}. This accrued balance is not available for use yet.
+        </p>
+      ) : null}
     </Card>
   );
 }
@@ -659,7 +672,7 @@ function NationalEgyptianVacationPanel() {
   );
 }
 
-export function VacationRequestForm({ initialData, initialError }: VacationRequestFormProps) {
+export function VacationRequestForm({ initialData, initialError, showHero = true }: VacationRequestFormProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<VacationRequestPageTab>("request");
   const [vacationType, setVacationType] = useState<VacationType>("annual");
@@ -805,12 +818,14 @@ export function VacationRequestForm({ initialData, initialError }: VacationReque
 
   return (
     <PageContainer className="vacation-request-premium">
-      <AdminPageHero
-        description="Submit a vacation request for direct manager approval and HR review."
-        eyebrow="Leave Management"
-        icon={<CalendarDays className="h-3.5 w-3.5" />}
-        title="Vacation Request"
-      />
+      {showHero ? (
+        <AdminPageHero
+          description="Submit a vacation request for direct manager approval and HR review."
+          eyebrow="Leave Management"
+          icon={<CalendarDays className="h-3.5 w-3.5" />}
+          title="Vacation Request"
+        />
+      ) : null}
 
       {error ? (
         <AdminCallout tone="danger">
@@ -1109,7 +1124,7 @@ export function VacationRequestForm({ initialData, initialError }: VacationReque
               <VacationSummaryPerson
                 hrId={initialData?.managerOfManager?.hrId}
                 label="Manager of manager"
-                name={initialData?.managerOfManager?.fullName ?? "Not assigned"}
+                name={initialData?.managerOfManager?.fullName ?? (initialData?.manager ? "Top of hierarchy" : "Not assigned")}
               />
               <Badge className="w-fit px-4 py-2 text-[10px] font-semibold tracking-[0.18em] md:justify-self-end" variant={balance?.paymentStatus === "paid" ? "success" : "warning"}>
                 {balance?.paymentStatus === "paid"

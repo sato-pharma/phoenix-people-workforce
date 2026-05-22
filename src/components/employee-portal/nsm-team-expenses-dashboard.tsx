@@ -6,12 +6,12 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 
+import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import type { NsmTeamExpensesData } from "@/lib/employee-portal/service";
@@ -132,8 +132,7 @@ export function NsmTeamExpensesDashboard({
             </h2>
           </div>
 
-          <div className="h-80">
-            <ResponsiveContainer height="100%" width="100%">
+          <SafeResponsiveContainer className="h-80" minHeight={320}>
               <ComposedChart data={data.monthlyTrend}>
                 <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" />
                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
@@ -169,8 +168,7 @@ export function NsmTeamExpensesDashboard({
                   yAxisId="trips"
                 />
               </ComposedChart>
-            </ResponsiveContainer>
-          </div>
+          </SafeResponsiveContainer>
         </Card>
 
         <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
@@ -183,8 +181,7 @@ export function NsmTeamExpensesDashboard({
             </h2>
           </div>
 
-          <div className="h-80">
-            <ResponsiveContainer height="100%" width="100%">
+          <SafeResponsiveContainer className="h-80" minHeight={320}>
               <BarChart
                 data={dsmRankingData}
                 layout="vertical"
@@ -217,8 +214,7 @@ export function NsmTeamExpensesDashboard({
                   radius={[0, 8, 8, 0]}
                 />
               </BarChart>
-            </ResponsiveContainer>
-          </div>
+          </SafeResponsiveContainer>
         </Card>
       </section>
 

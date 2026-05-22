@@ -5,14 +5,20 @@ import {
   canAccess,
   isDesignatedHrSpecialist,
   normalizeHrIdForAccess,
+  normalizeLineName,
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import {
+  getEmployeeDirectory,
+  getEmployeeDirectoryRows,
+  type EmployeeDirectoryData,
+  type EmployeeDirectoryRow,
+} from "@/lib/employees/employee-directory";
 import { enqueueInAppNotification } from "@/lib/notifications/in-app";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { addDaysToDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
+import { addDaysToDateOnly, daysBetweenDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
 import { getEgyptianNationalHolidays, type EgyptianNationalHoliday } from "@/lib/vacation/national-holidays";
 import {
   calculateVacationDurationDays,
@@ -39,6 +45,8 @@ import type {
   VacationDayPart,
   VacationDecision,
   VacationEmployeeSummary,
+  VacationEligibilityStatus,
+  VacationEmployeeEligibilityRow,
   VacationPaymentStatus,
   VacationReportData,
   VacationReportFilters,
@@ -224,6 +232,31 @@ function isAllVacationVisibility(access: AccessContext) {
   return access.scope === "system" || access.role === "Super Admin" || isDesignatedHrSpecialist(access);
 }
 
+type VacationVisibilityScope = "SELF" | "TEAM" | "HIERARCHY" | "LINE" | "COMPANY";
+
+function getVacationVisibilityScope(access: AccessContext): VacationVisibilityScope {
+  if (isAllVacationVisibility(access)) return "COMPANY";
+
+  switch (access.role) {
+    case "CEO":
+    case "Finance Manager":
+    case "SFE Manager":
+      return "COMPANY";
+    case "National Sales Manager":
+    case "Product Manager":
+    case "Group Product Manager":
+    case "Training Manager":
+      return "LINE";
+    case "Regional Manager":
+      return "HIERARCHY";
+    case "District Manager":
+    case "Manager":
+      return "TEAM";
+    default:
+      return "SELF";
+  }
+}
+
 async function assertVacationAdminManagement(access: AccessContext, action: "create" | "update" | "delete") {
   await assertPermission(access, "leave", action);
   if (!isAllVacationVisibility(access)) {
@@ -267,6 +300,110 @@ function findEmployeeByHrId(directory: EmployeeDirectoryData, hrId: string | nul
   return directory.employees.find((employee) => canonicalHrId(employee.hrId) === canonical) ?? null;
 }
 
+function accessIdentityCandidates(access: AccessContext) {
+  const candidates = [
+    access.hrId,
+    access.loginId,
+    resolveEmployeeIdentityId(access),
+  ];
+  const seen = new Set<string>();
+  return candidates
+    .map((value) => normalizeHrIdForAccess(value))
+    .filter((value): value is string => {
+      if (!value || seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    });
+}
+
+function findCurrentEmployee(directory: EmployeeDirectoryData, access: AccessContext) {
+  const candidates = accessIdentityCandidates(access);
+  for (const candidate of candidates) {
+    const employee = findEmployeeByHrId(directory, candidate);
+    if (employee) return employee;
+  }
+  return null;
+}
+
+function findCurrentEmployeeRow(rows: EmployeeDirectoryRow[], access: AccessContext) {
+  const candidates = accessIdentityCandidates(access);
+  for (const candidate of candidates) {
+    const employee = rows.find((row) => canonicalHrId(row.hrId) === candidate);
+    if (employee) return employee;
+  }
+  return null;
+}
+
+function accessMatchesHrId(access: AccessContext, hrId: string | null | undefined) {
+  const target = canonicalHrId(hrId);
+  if (!target) return false;
+  return accessIdentityCandidates(access).some((candidate) => candidate === target);
+}
+
+function employeeLineMatches(left: EmployeeDirectoryRow, right: EmployeeDirectoryRow) {
+  if (left.lineId !== null && right.lineId !== null) return left.lineId === right.lineId;
+  const leftLine = normalizeLineName(left.lineName);
+  const rightLine = normalizeLineName(right.lineName);
+  return Boolean(leftLine && rightLine && leftLine === rightLine);
+}
+
+function isEmployeeInManagerHierarchy(input: {
+  employee: EmployeeDirectoryRow;
+  employeeByHrId: Map<string, EmployeeDirectoryRow>;
+  viewerHrId: string;
+}) {
+  let managerHrId = canonicalHrId(input.employee.managerHrId);
+  const visited = new Set<string>();
+
+  while (managerHrId && !visited.has(managerHrId)) {
+    if (managerHrId === input.viewerHrId) return true;
+    visited.add(managerHrId);
+    managerHrId = canonicalHrId(input.employeeByHrId.get(managerHrId)?.managerHrId);
+  }
+
+  return false;
+}
+
+function filterVacationEmployeesForAccess(access: AccessContext, employees: EmployeeDirectoryRow[]) {
+  const scope = getVacationVisibilityScope(access);
+  if (scope === "COMPANY") return employees;
+
+  const currentEmployee = findCurrentEmployeeRow(employees, access);
+  if (!currentEmployee) {
+    throw new Error("Your employee profile is not available in the employee directory. Please contact HR.");
+  }
+
+  const viewerHrId = canonicalHrId(currentEmployee.hrId);
+  if (!viewerHrId) {
+    throw new Error("Your employee profile is not linked yet. Please contact HR.");
+  }
+
+  const employeeByHrId = new Map(
+    employees
+      .map((employee) => [canonicalHrId(employee.hrId), employee] as const)
+      .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
+  );
+
+  return employees.filter((employee) => {
+    const employeeHrId = canonicalHrId(employee.hrId);
+    if (employeeHrId === viewerHrId) return true;
+
+    if (scope === "TEAM") {
+      return hrIdsMatch(currentEmployee.hrId, employee.managerHrId);
+    }
+
+    if (scope === "HIERARCHY") {
+      return isEmployeeInManagerHierarchy({ employee, employeeByHrId, viewerHrId });
+    }
+
+    if (scope === "LINE") {
+      return employeeLineMatches(employee, currentEmployee);
+    }
+
+    return false;
+  });
+}
+
 function summarizeEmployee(employee: EmployeeDirectoryRow): VacationEmployeeSummary {
   return {
     departmentName: employee.departmentName,
@@ -280,14 +417,159 @@ function summarizeEmployee(employee: EmployeeDirectoryRow): VacationEmployeeSumm
   };
 }
 
+function addMonthsToDateOnly(value: string | null | undefined, months: number) {
+  const date = parseDateOnly(value);
+  if (!date) return null;
+  date.setMonth(date.getMonth() + months);
+  return toDateOnlyString(date);
+}
+
+function employeeEligibilityFilterMatches(
+  employee: EmployeeDirectoryRow,
+  filters: VacationReportFilters,
+) {
+  if (filters.employee && !hrIdsMatch(employee.hrId, filters.employee)) return false;
+  if (filters.manager && !hrIdsMatch(employee.managerHrId, filters.manager)) return false;
+  if (filters.department && (employee.departmentName ?? "") !== filters.department) return false;
+  if (filters.line && (employee.lineName ?? "") !== filters.line) return false;
+
+  const search = text(filters.search).toLowerCase();
+  if (!search) return true;
+
+  return [
+    employee.hrId,
+    employee.fullName,
+    employee.departmentName,
+    employee.lineName,
+    employee.managerName,
+    employee.managerHrId,
+  ]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(search));
+}
+
+function approvedPaidDaysFromRows(input: {
+  employeeHrId: string;
+  periodEnd: string | null;
+  periodStart: string | null;
+  rows: VacationRequestRecord[];
+  vacationType: VacationType;
+}) {
+  const periodStart = input.periodStart;
+  const periodEnd = input.periodEnd;
+  if (!periodStart || !periodEnd) return 0;
+
+  return input.rows.reduce((sum, row) => {
+    if (!hrIdsMatch(row.employeeHrId, input.employeeHrId)) return sum;
+    if (row.status !== "approved") return sum;
+    if (row.startDate < periodStart || row.startDate >= periodEnd) return sum;
+
+    const matchesType = input.vacationType === "annual" || input.vacationType === "emergency"
+      ? row.vacationType === "annual" || row.vacationType === "emergency"
+      : row.vacationType === input.vacationType;
+    if (!matchesType) return sum;
+
+    return sum + (row.paidDurationDays ? row.paidDurationDays : row.paymentStatus === "paid" ? row.durationDays : 0);
+  }, 0);
+}
+
+function buildEmployeeEligibilityRows(input: {
+  employees: EmployeeDirectoryRow[];
+  filters: VacationReportFilters;
+  rows: VacationRequestRecord[];
+  today: string;
+}): VacationEmployeeEligibilityRow[] {
+  return input.employees
+    .filter((employee) => employeeEligibilityFilterMatches(employee, input.filters))
+    .map((employee) => {
+      const period = getVacationBalancePeriod({
+        hireDate: employee.hireDate,
+        referenceDate: input.today,
+      });
+      const usedPaidDays = approvedPaidDaysFromRows({
+        employeeHrId: employee.hrId,
+        periodEnd: period?.periodEnd ?? null,
+        periodStart: period?.periodStart ?? null,
+        rows: input.rows,
+        vacationType: "annual",
+      });
+      const annualBalance = calculateVacationPayment({
+        approvedPaidDaysInPeriod: usedPaidDays,
+        durationDays: 0,
+        hireDate: employee.hireDate,
+        startDate: input.today,
+        vacationType: "annual",
+      });
+      const sixMonthAnniversary = addMonthsToDateOnly(employee.hireDate, 6);
+      const daysSinceHire = daysBetweenDateOnly(employee.hireDate);
+      const eligibilityDate = parseDateOnly(sixMonthAnniversary);
+      const daysUntilEligibility = sixMonthAnniversary && eligibilityDate && input.today < sixMonthAnniversary
+        ? daysBetweenDateOnly(input.today, eligibilityDate)
+        : 0;
+      const eligibilityStatus: VacationEligibilityStatus = annualBalance.unpaidReason === "missing_hire_date"
+        ? "missing_hire_date"
+        : annualBalance.unpaidReason === "first_six_months"
+          ? "first_six_months"
+          : "eligible";
+      const reviewFlags = [
+        eligibilityStatus === "missing_hire_date" ? "Missing hire date" : null,
+        eligibilityStatus === "first_six_months" && daysUntilEligibility && daysUntilEligibility > 0
+          ? `${daysUntilEligibility} days until paid eligibility`
+          : null,
+        employee.managerHrId ? null : "Missing direct manager",
+        annualBalance.paymentStatus === "paid" && annualBalance.balanceBeforeDays <= 0
+          ? "No paid annual balance remaining"
+          : null,
+      ].filter((value): value is string => Boolean(value));
+
+      return {
+        annualBalanceDays: annualBalance.balanceBeforeDays,
+        annualEntitlementDays: annualBalance.entitlementDays,
+        annualUsedDays: annualBalance.usedPaidDays,
+        daysSinceHire,
+        daysUntilEligibility: eligibilityStatus === "first_six_months" ? daysUntilEligibility : 0,
+        departmentName: employee.departmentName,
+        eligibilityStatus,
+        eligibleForAnnualPaidLeave: eligibilityStatus === "eligible",
+        employmentStatus: employee.employmentStatus,
+        fullName: employee.fullName,
+        hireDate: employee.hireDate,
+        hrId: employee.hrId,
+        lineName: employee.lineName,
+        managerHrId: employee.managerHrId,
+        managerName: employee.managerName,
+        reviewFlags,
+        sixMonthAnniversary,
+      };
+    })
+    .sort((left, right) => {
+      const priority: Record<VacationEligibilityStatus, number> = { missing_hire_date: 0, first_six_months: 1, eligible: 2 };
+      const priorityDiff = priority[left.eligibilityStatus] - priority[right.eligibilityStatus];
+      if (priorityDiff !== 0) return priorityDiff;
+      return left.fullName.localeCompare(right.fullName);
+    });
+}
+
+function buildEmployeeEligibilitySummary(
+  rows: VacationEmployeeEligibilityRow[],
+): VacationReportData["employeeEligibilitySummary"] {
+  return {
+    activeEmployees: rows.length,
+    eligibleNow: rows.filter((row) => row.eligibilityStatus === "eligible").length,
+    inFirstSixMonths: rows.filter((row) => row.eligibilityStatus === "first_six_months").length,
+    missingHireDate: rows.filter((row) => row.eligibilityStatus === "missing_hire_date").length,
+    zeroBalance: rows.filter((row) => row.eligibilityStatus === "eligible" && row.annualBalanceDays <= 0).length,
+  };
+}
+
 async function getCurrentEmployee(access: AccessContext, directory?: EmployeeDirectoryData) {
-  const identityHrId = resolveEmployeeIdentityId(access);
-  if (!identityHrId) {
+  const identityCandidates = accessIdentityCandidates(access);
+  if (identityCandidates.length === 0) {
     throw new Error("Your employee profile is not linked yet. Please contact HR.");
   }
 
   const employeeDirectory = directory ?? await getEmployeeDirectory();
-  const employee = findEmployeeByHrId(employeeDirectory, identityHrId);
+  const employee = findCurrentEmployee(employeeDirectory, access);
   if (!employee) {
     throw new Error("Your employee profile is not available in the employee directory. Please contact HR.");
   }
@@ -511,7 +793,7 @@ function canDecideVacation(access: AccessContext, request: Pick<VacationRequestR
   if (request.status !== "pending_manager" && request.status !== "pending_hr") return false;
   if (access.scope === "system") return true;
   if (request.status === "pending_manager") {
-    return hrIdsMatch(resolveEmployeeIdentityId(access), request.managerHrId);
+    return accessMatchesHrId(access, request.managerHrId);
   }
   if (request.status === "pending_hr") {
     return isAllVacationVisibility(access);
@@ -569,13 +851,15 @@ function adminDecisionPayload(input: {
   };
 }
 
-function canSeeVacation(access: AccessContext, request: VacationRequestRecord) {
+function canSeeVacation(access: AccessContext, request: VacationRequestRecord, visibleEmployeeHrIds?: Set<string>) {
   if (isAllVacationVisibility(access)) return true;
-  const viewerHrId = resolveEmployeeIdentityId(access);
+  const employeeHrId = canonicalHrId(request.employeeHrId);
+  if (employeeHrId && visibleEmployeeHrIds?.has(employeeHrId)) return true;
+
   return (
-    hrIdsMatch(viewerHrId, request.employeeHrId) ||
-    hrIdsMatch(viewerHrId, request.managerHrId) ||
-    hrIdsMatch(viewerHrId, request.managerOfManagerHrId)
+    accessMatchesHrId(access, request.employeeHrId) ||
+    accessMatchesHrId(access, request.managerHrId) ||
+    accessMatchesHrId(access, request.managerOfManagerHrId)
   );
 }
 
@@ -1755,12 +2039,12 @@ function rowMatchesFilters(row: VacationRequestRecord, filters: VacationReportFi
   return true;
 }
 
-function buildReportOptions(rows: VacationRequestRecord[], directory?: EmployeeDirectoryData | null): VacationReportData["options"] {
+function buildReportOptions(rows: VacationRequestRecord[], employees?: EmployeeDirectoryRow[] | null): VacationReportData["options"] {
   const unique = (values: Array<string | null | undefined>) =>
     Array.from(new Set(values.map((value) => text(value)).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
-  const employees = directory
-    ? directory.employees
+  const employeeOptions = employees
+    ? employees
         .filter((employee) => employee.hrId)
         .map((employee) => ({ label: `${employee.fullName} (${employee.hrId})`, value: employee.hrId }))
         .sort((left, right) => left.label.localeCompare(right.label))
@@ -1768,18 +2052,26 @@ function buildReportOptions(rows: VacationRequestRecord[], directory?: EmployeeD
         new Map(rows.map((row) => [row.employeeHrId, { label: `${row.employeeName} (${row.employeeHrId})`, value: row.employeeHrId }])).values(),
       ).sort((left, right) => left.label.localeCompare(right.label));
 
-  const managers = Array.from(
-    new Map(
-      rows
+  const managerSource = employees
+    ? employees
+        .filter((employee) => employee.managerHrId)
+        .map((employee) => ({
+          label: `${employee.managerName ?? employee.managerHrId} (${employee.managerHrId})`,
+          value: employee.managerHrId ?? "",
+        }))
+    : rows
         .filter((row) => row.managerHrId)
-        .map((row) => [row.managerHrId ?? "", { label: `${row.managerName ?? row.managerHrId} (${row.managerHrId})`, value: row.managerHrId ?? "" }]),
-    ).values(),
-  ).sort((left, right) => left.label.localeCompare(right.label));
+        .map((row) => ({
+          label: `${row.managerName ?? row.managerHrId} (${row.managerHrId})`,
+          value: row.managerHrId ?? "",
+        }));
+  const managers = Array.from(new Map(managerSource.map((manager) => [manager.value, manager])).values())
+    .sort((left, right) => left.label.localeCompare(right.label));
 
   return {
-    departments: unique(rows.map((row) => row.departmentName)),
-    employees,
-    lines: unique(rows.map((row) => row.lineName)),
+    departments: unique(employees ? employees.map((employee) => employee.departmentName) : rows.map((row) => row.departmentName)),
+    employees: employeeOptions,
+    lines: unique(employees ? employees.map((employee) => employee.lineName) : rows.map((row) => row.lineName)),
     managers,
   };
 }
@@ -1792,7 +2084,9 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
   await assertPermission(access, "leave", "read");
   const clean = cleanFilters(filters);
   const canAdminManage = isAllVacationVisibility(access) && await canManageVacationRecords(access);
-  const directory = canAdminManage ? await getEmployeeDirectory() : null;
+  const activeEmployees = await getEmployeeDirectoryRows();
+  const visibleEmployees = filterVacationEmployeesForAccess(access, activeEmployees);
+  const visibleEmployeeHrIds = new Set(visibleEmployees.map((employee) => canonicalHrId(employee.hrId)).filter((value): value is string => Boolean(value)));
   const { data, error } = await getSupabaseAdmin()
     .from(vacationRequestsTable)
     .select("*")
@@ -1803,14 +2097,22 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
 
   const visibleRows = (data ?? [])
     .map((row) => mapVacationRow(row as VacationRequestDbRow))
-    .filter((row) => canSeeVacation(access, row))
+    .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds))
     .map((row) => ({ ...row, canDecide: canDecideVacation(access, row) }));
   const filteredRows = visibleRows.filter((row) => rowMatchesFilters(row, clean));
+  const employeeEligibility = buildEmployeeEligibilityRows({
+    employees: visibleEmployees,
+    filters: clean,
+    rows: visibleRows,
+    today: toDateOnlyString(new Date()) ?? "",
+  });
 
   return {
     canAdminManage,
+    employeeEligibility,
+    employeeEligibilitySummary: buildEmployeeEligibilitySummary(employeeEligibility),
     filters: clean,
-    options: buildReportOptions(visibleRows, directory),
+    options: buildReportOptions(visibleRows, visibleEmployees),
     rows: filteredRows,
     summary: buildReportSummary(filteredRows),
   };

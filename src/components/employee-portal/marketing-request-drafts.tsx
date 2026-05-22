@@ -34,6 +34,8 @@ type DraftWorkspacePayload = {
   drafts: MarketingRequest[];
   products: MarketingProduct[];
   requestTypes: MarketingRequestType[];
+  requesterLineId: number | null;
+  requesterLineName: string | null;
 };
 
 type ProductLine = {
@@ -110,6 +112,8 @@ function emptyPayload(): DraftWorkspacePayload {
     drafts: [],
     products: [],
     requestTypes: [],
+    requesterLineId: null,
+    requesterLineName: null,
   };
 }
 
@@ -128,7 +132,6 @@ export function MarketingRequestDraftWorkspace() {
   const [roiDurationMonths, setRoiDurationMonths] = useState("3");
   const [otherRequestType, setOtherRequestType] = useState("");
   const [notes, setNotes] = useState("");
-  const [selectedLine, setSelectedLine] = useState("all");
   const [productLines, setProductLines] = useState<ProductLine[]>([
     { key: "line-1", productId: "", quantity: "" },
   ]);
@@ -151,6 +154,8 @@ export function MarketingRequestDraftWorkspace() {
         drafts: payload.drafts ?? [],
         products: payload.products ?? [],
         requestTypes: payload.requestTypes ?? [],
+        requesterLineId: payload.requesterLineId ?? null,
+        requesterLineName: payload.requesterLineName ?? null,
       });
       setCustomerId((current) => current || payload.customers?.[0]?.id || "");
       setRequestTypeId((current) => current || String(payload.requestTypes?.[0]?.id ?? ""));
@@ -179,22 +184,23 @@ export function MarketingRequestDraftWorkspace() {
     [workspace.products],
   );
 
-  const productLineOptions = useMemo(() => {
-    const values = new Set(
-      workspace.products
-        .map((product) => product.line?.trim())
-        .filter((line): line is string => Boolean(line)),
-    );
-    return ["all", ...Array.from(values).sort((left, right) => left.localeCompare(right))];
-  }, [workspace.products]);
+  const visibleProducts = workspace.products;
 
-  const visibleProducts = useMemo(
-    () =>
-      selectedLine === "all"
-        ? workspace.products
-        : workspace.products.filter((product) => product.line === selectedLine),
-    [selectedLine, workspace.products],
+  const lineScopedProductIdKey = useMemo(
+    () => visibleProducts.map((product) => product.id).sort((left, right) => left - right).join("|"),
+    [visibleProducts],
   );
+
+  useEffect(() => {
+    const productIds = new Set(lineScopedProductIdKey.split("|").filter(Boolean));
+    setProductLines((current) =>
+      current.map((line) =>
+        line.productId && !productIds.has(line.productId)
+          ? { ...line, productId: "" }
+          : line,
+      ),
+    );
+  }, [lineScopedProductIdKey]);
 
   const roiPreview = useMemo(() => {
     const products = productLines
@@ -286,6 +292,7 @@ export function MarketingRequestDraftWorkspace() {
         body: JSON.stringify({
           customerId,
           estimatedCost: fieldNumber(estimatedCost),
+          lineId: workspace.requesterLineId,
           notes,
           otherRequestType,
           payDate: payDate || null,
@@ -540,24 +547,19 @@ export function MarketingRequestDraftWorkspace() {
                 </Field>
               </div>
 
-              <div className="lg:col-span-3">
-                <Field label="Product Line Filter">
-                  <SelectField onChange={setSelectedLine} value={selectedLine}>
-                    {productLineOptions.map((line) => (
-                      <option key={line} value={line}>
-                        {line === "all" ? "All product lines" : line}
-                      </option>
-                    ))}
-                  </SelectField>
-                </Field>
-              </div>
-
               <div className="lg:col-span-6">
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                      Products
-                    </p>
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                        Products
+                      </p>
+                      <p className="mt-1 text-xs font-bold text-slate-500">
+                        {workspace.requesterLineId === null
+                          ? "Showing available products."
+                          : `Showing your assigned line products${workspace.requesterLineName ? `: ${workspace.requesterLineName}` : ""}.`}
+                      </p>
+                    </div>
                     <Button
                       className="gap-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                       onClick={addProductLine}
@@ -578,7 +580,9 @@ export function MarketingRequestDraftWorkspace() {
                             onChange={(value) => updateProductLine(line.key, { productId: value })}
                             value={line.productId}
                           >
-                            <option value="">Select product</option>
+                            <option value="">
+                              {visibleProducts.length === 0 ? "No products for your assigned line" : "Select product"}
+                            </option>
                             {visibleProducts.map((item) => (
                               <option key={item.id} value={item.id}>
                                 {item.productName} - {egp(item.factoryPrice)}

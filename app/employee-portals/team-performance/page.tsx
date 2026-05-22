@@ -6,7 +6,7 @@ import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import {
   TeamAchievementChart,
   TeamSalesVsTargetChart,
@@ -73,13 +73,20 @@ export default async function EmployeePortalTeamPerformancePage({
       : 0;
 
   return (
-    <div className="space-y-6">
+    <EmployeePortalPageShell
+      badge="Team Performance"
+      description={`${validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"} across ${
+        teamMemberCount > 0 ? `${teamMemberCount} medical reps` : "no available team data"
+      }.`}
+      title="Team Performance"
+    >
+      <div className="space-y-6">
       {/* ── Page header + period filter ────────────────────────────────── */}
       <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">District Performance</p>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-900">Team Performance</h1>
+            <p className="text-xs uppercase tracking-[0.14em] text-orange-600">District Performance</p>
+            <h2 className="mt-1 text-2xl font-semibold text-slate-900">Team Snapshot</h2>
             <p className="mt-1 text-sm text-slate-500">
               {validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"}
               {" · "}
@@ -214,6 +221,7 @@ export default async function EmployeePortalTeamPerformancePage({
           </div>
         </>
       )}
-    </div>
+      </div>
+    </EmployeePortalPageShell>
   );
 }

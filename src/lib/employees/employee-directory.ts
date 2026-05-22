@@ -5,6 +5,7 @@ import {
 } from "@/lib/payroll/policy";
 import { isDevelopment } from "@/lib/env";
 import { googleGeocodeAddress } from "@/lib/google-maps/server";
+import { canonicalHrIdForDisplay, hrIdLookupKeys } from "@/lib/hr-id";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { generateNextHrIdForLine } from "./hr-id-helper";
@@ -303,7 +304,7 @@ export function invalidateEmployeeDirectoryCache() {
 }
 
 function normalizeHrId(value: string | null | undefined) {
-  return compact(value)?.toUpperCase() ?? null;
+  return canonicalHrIdForDisplay(value);
 }
 
 function normalizeIdentityText(value: string | null | undefined) {
@@ -344,7 +345,6 @@ function normalizeEnrollmentStatus(value: string | null | undefined) {
 function isActiveDirectoryEmployee(employee: EmployeeDirectoryRow) {
   return (
     isActiveLifecycleStatus(employee.employmentStatus) &&
-    employee.payrollEligible !== false &&
     employee.organogramVisible !== false &&
     !isSystemAdminDirectoryEmployee(employee) &&
     isClassifiedActiveEmployee(employee)
@@ -671,19 +671,53 @@ async function loadAllOptions(table: string, label = "name") {
 }
 
 async function loadManagerNames(hrIds: string[]) {
-  if (hrIds.length === 0) {
+  const lookupHrIds = Array.from(
+    new Set(
+      hrIds
+        .flatMap((hrId) => {
+          const trimmed = compact(hrId);
+          const normalized = normalizeHrId(hrId);
+          return [
+            ...hrIdLookupKeys(hrId),
+            trimmed,
+            normalized,
+            trimmed?.toLowerCase(),
+          ].filter(Boolean) as string[];
+        })
+        .filter(Boolean),
+    ),
+  );
+
+  if (lookupHrIds.length === 0) {
     return new Map<string, string>();
   }
 
   const params = new URLSearchParams({
     select: "hr_id,full_name",
-    hr_id: textInFilter(hrIds),
+    hr_id: textInFilter(lookupHrIds),
   });
   const rows = await supabaseRest<LookupRow[]>(`employees?${params}`);
 
-  return new Map(
-    rows.map((row) => [String(row.hr_id), String(row.full_name ?? "")]),
-  );
+  const names = new Map<string, string>();
+  rows.forEach((row) => {
+    const hrId = String(row.hr_id);
+    const name = String(row.full_name ?? "");
+    names.set(hrId, name);
+    const normalizedHrId = normalizeHrId(hrId);
+    if (normalizedHrId) names.set(normalizedHrId, name);
+    hrIdLookupKeys(hrId).forEach((key) => names.set(key, name));
+  });
+
+  return names;
+}
+
+function managerNameFromLookup(managerNames: Map<string, string>, managerHrId: string | null | undefined) {
+  if (!managerHrId) return null;
+  for (const key of hrIdLookupKeys(managerHrId)) {
+    const name = managerNames.get(key);
+    if (name) return name;
+  }
+  return managerNames.get(managerHrId) ?? managerNames.get(normalizeHrId(managerHrId) ?? "") ?? null;
 }
 
 async function loadCompensationByHrId(hrIds: string[]) {
@@ -908,7 +942,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         lineId: row.line_id,
         lineName,
         managerHrId: row.manager_hr_id,
-        managerName: row.manager_hr_id ? managerNames.get(row.manager_hr_id) ?? null : null,
+        managerName: managerNameFromLookup(managerNames, row.manager_hr_id),
         medicalInsurance: row.medical_insurance ?? compensation?.medical_insurance ?? null,
         medicalInsuranceStatus: row.medical_insurance_status ?? null,
         medicalInsuranceNumber: row.medical_insurance_number ?? null,
@@ -1063,7 +1097,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         lineId: row.line_id,
         lineName,
         managerHrId: row.manager_hr_id,
-        managerName: row.manager_hr_id ? managerNames.get(row.manager_hr_id) ?? null : null,
+        managerName: managerNameFromLookup(managerNames, row.manager_hr_id),
         medicalInsurance: row.medical_insurance ?? comp?.medical_insurance ?? null,
         medicalInsuranceStatus: row.medical_insurance_status ?? null,
         medicalInsuranceNumber: row.medical_insurance_number ?? null,
@@ -1177,9 +1211,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       lineId: row.line_id,
       lineName,
       managerHrId: row.manager_hr_id,
-      managerName: row.manager_hr_id
-        ? managerNames.get(row.manager_hr_id) ?? null
-        : null,
+      managerName: managerNameFromLookup(managerNames, row.manager_hr_id),
       medicalInsurance: row.medical_insurance ?? compensation?.medical_insurance ?? null,
       medicalInsuranceStatus: row.medical_insurance_status ?? null,
       medicalInsuranceNumber: row.medical_insurance_number ?? null,
@@ -1322,9 +1354,7 @@ export async function getEmployeeDirectoryRows(
       lineId: row.line_id,
       lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
       managerHrId: row.manager_hr_id,
-      managerName: row.manager_hr_id
-        ? managerNames.get(row.manager_hr_id) ?? null
-        : null,
+      managerName: managerNameFromLookup(managerNames, row.manager_hr_id),
       medicalInsurance: row.medical_insurance ?? null,
       medicalInsuranceStatus: row.medical_insurance_status ?? null,
       medicalInsuranceNumber: row.medical_insurance_number ?? null,

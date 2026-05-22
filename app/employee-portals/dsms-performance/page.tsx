@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { TrendingUp, Target, Award, BarChart3 } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { getNsmDsmPerformance } from "@/lib/employee-portal/service";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
@@ -65,13 +65,20 @@ export default async function DsmsPerformancePage({
   const eligibleCount = dsms.filter((d) => d.achievementPercent >= 90).length;
 
   return (
-    <div className="max-w-full min-w-0 overflow-x-hidden space-y-5 sm:space-y-6">
+    <EmployeePortalPageShell
+      badge="Team Performance"
+      description={`${validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"} across ${
+        dsmCount > 0 ? `${dsmCount} district managers in line` : "no available district data"
+      }.`}
+      title="DSMs Performance"
+    >
+      <div className="max-w-full min-w-0 overflow-x-hidden space-y-5 sm:space-y-6">
       {/* ── Page header + period filter ────────────────────────────────── */}
       <Card className="rounded-[24px] border border-slate-100 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.05)] sm:rounded-3xl sm:p-6">
         <div className="mb-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">District Managers View</p>
-            <h1 className="mt-1 break-words text-2xl font-semibold text-slate-900 sm:text-3xl">DSMs Performance</h1>
+            <p className="text-xs uppercase tracking-[0.14em] text-orange-600">District Managers View</p>
+            <h2 className="mt-1 break-words text-2xl font-semibold text-slate-900 sm:text-3xl">Line Snapshot</h2>
             <p className="mt-1 text-sm text-slate-500">
               {validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"}
               {" · "}
@@ -166,6 +173,7 @@ export default async function DsmsPerformancePage({
         <h3 className="mb-4 break-words px-1 text-lg font-bold text-slate-900 sm:mb-6 sm:px-2 sm:text-xl">DSMs Product Comparison</h3>
         <TeamMembersBreakdown members={dsms} />
       </div>
-    </div>
+      </div>
+    </EmployeePortalPageShell>
   );
 }

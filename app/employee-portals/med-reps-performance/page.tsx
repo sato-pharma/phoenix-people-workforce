@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Award, BarChart3, ShieldCheck, Target, TrendingUp, Users } from "lucide-react";
 
-import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { Card } from "@/components/ui/card";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -83,7 +83,14 @@ export default async function MedRepsPerformancePage({
   ];
 
   return (
-    <div className="max-w-full min-w-0 overflow-x-hidden space-y-5 text-slate-950 sm:space-y-8">
+    <EmployeePortalPageShell
+      badge="Team Performance"
+      description={`${validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"} across ${
+        teamMemberCount > 0 ? `${teamMemberCount} medical reps in line` : "no available medical reps data"
+      }.`}
+      title="Medical Reps Performance"
+    >
+      <div className="max-w-full min-w-0 overflow-x-hidden space-y-5 text-slate-950 sm:space-y-8">
       <Card className={`${shellCardClass} relative overflow-hidden p-4 sm:p-6 md:p-7`}>
         <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-orange-200/45 blur-3xl" />
         <div className="absolute -bottom-24 left-12 h-56 w-56 rounded-full bg-amber-100/70 blur-3xl" />
@@ -92,7 +99,7 @@ export default async function MedRepsPerformancePage({
             <span className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">
               Line-wide performance
             </span>
-            <h1 className="mt-4 break-words text-2xl font-black tracking-tight text-slate-950 sm:text-3xl md:text-4xl">Medical Reps Performance</h1>
+            <h2 className="mt-4 break-words text-2xl font-black tracking-tight text-slate-950 sm:text-3xl md:text-4xl">Line Snapshot</h2>
             <p className="mt-2 max-w-2xl text-sm font-medium text-slate-600">
               {validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"}
               {" | "}
@@ -216,6 +223,7 @@ export default async function MedRepsPerformancePage({
             </Card>
           </section>
       ))}
-    </div>
+      </div>
+    </EmployeePortalPageShell>
   );
 }

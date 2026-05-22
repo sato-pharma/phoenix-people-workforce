@@ -2,7 +2,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { VacanciesReport } from "@/components/reports/vacancies-report";
 import { redirect } from "next/navigation";
 
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   errorMessage,
@@ -32,6 +32,10 @@ function vacanciesPageError(error: unknown) {
 
 export default async function VacanciesPage() {
   const access = await resolveAccessContextFromPage();
+  if (resolveNavigationMode(access) === "employee-portal") {
+    redirect("/employee-portals/vacancies");
+  }
+
   if (!await canAccess(access, "vacancies", "read")) {
     redirect("/employee-portals");
   }

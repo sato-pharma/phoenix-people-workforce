@@ -37,7 +37,7 @@ export default async function EmployeePortalsHomePage({
     data = await getMedicalRepPortalData(access, {
       teamComparisonPeriod,
     });
-  } catch (err) {
+  } catch {
     data = null;
   }
 

@@ -293,6 +293,10 @@ type MarketingRequestFinanceRequirementDbRow = {
   updated_at?: string | null;
 };
 
+type MarketingRequesterLine = Pick<EmployeeDirectoryRow, "lineId"> & {
+  lineName?: string | null;
+};
+
 export type MarketingRequestDraftWorkspace = {
   approvedRequests: MarketingApprovedRequestRow[];
   customers: MarketingCustomer[];
@@ -300,6 +304,8 @@ export type MarketingRequestDraftWorkspace = {
   drafts: MarketingRequest[];
   products: MarketingProduct[];
   requestTypes: MarketingRequestType[];
+  requesterLineId: number | null;
+  requesterLineName: string | null;
 };
 
 export type PreparedMarketingRequestDraft = {
@@ -511,6 +517,88 @@ function normalizeHrId(value: unknown) {
   return normalized;
 }
 
+function normalizeScopeText(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function employeeRowByHrId(rows: EmployeeDirectoryRow[]) {
+  return new Map(
+    rows
+      .map((row) => [normalizeHrId(row.hrId), row] as const)
+      .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
+  );
+}
+
+function sameEmployeeDepartment(viewer: EmployeeDirectoryRow | undefined, target: EmployeeDirectoryRow | undefined) {
+  if (!viewer || !target) return true;
+
+  if (viewer.departmentId !== null && target.departmentId !== null) {
+    return viewer.departmentId === target.departmentId;
+  }
+
+  const viewerDepartment = normalizeScopeText(viewer.departmentName);
+  const targetDepartment = normalizeScopeText(target.departmentName);
+  if (viewerDepartment && targetDepartment) {
+    return viewerDepartment === targetDepartment;
+  }
+
+  return true;
+}
+
+function reportsUpToViewer(input: {
+  employeesByHrId: Map<string, EmployeeDirectoryRow>;
+  targetHrId: string | null;
+  viewerHrId: string | null;
+}) {
+  if (!input.targetHrId || !input.viewerHrId) return false;
+  if (input.targetHrId === input.viewerHrId) return true;
+
+  const visited = new Set<string>();
+  let managerHrId = normalizeHrId(input.employeesByHrId.get(input.targetHrId)?.managerHrId);
+
+  while (managerHrId) {
+    if (managerHrId === input.viewerHrId) return true;
+    if (visited.has(managerHrId)) return false;
+    visited.add(managerHrId);
+    managerHrId = normalizeHrId(input.employeesByHrId.get(managerHrId)?.managerHrId);
+  }
+
+  return false;
+}
+
+function canSeeMarketingHierarchyRecord(
+  access: AccessContext,
+  record: {
+    employeeHrId?: string | null;
+    hrId?: string | null;
+    managerHrId?: string | null;
+  },
+  employeeRows: EmployeeDirectoryRow[],
+) {
+  if (access.scope === "system" || access.role === "Super Admin" || access.role === "CEO" || access.role === "Finance Manager" || access.role === "SFE Manager") {
+    return true;
+  }
+
+  const viewerHrId = normalizeHrId(access.hrId);
+  const targetHrId = normalizeHrId(record.employeeHrId ?? record.hrId);
+  if (!viewerHrId) return false;
+  if (targetHrId === viewerHrId) return true;
+
+  const employeesByHrId = employeeRowByHrId(employeeRows);
+  const viewer = employeesByHrId.get(viewerHrId);
+  const target = targetHrId ? employeesByHrId.get(targetHrId) : undefined;
+
+  if (viewer && target && !sameEmployeeDepartment(viewer, target)) {
+    return false;
+  }
+
+  if (targetHrId && reportsUpToViewer({ employeesByHrId, targetHrId, viewerHrId })) {
+    return true;
+  }
+
+  return canSeeHrScopedRecord(access, record);
+}
+
 function nowIsoFallback(value: string | null | undefined) {
   return value ? new Date(value).toISOString() : new Date(0).toISOString();
 }
@@ -561,6 +649,20 @@ function assertMarketingValidationRuleControlAccess(access: AccessContext) {
 
 function canManageMarketingValidationRules(access: AccessContext) {
   return access.scope === "system" || access.role === "Super Admin";
+}
+
+function canUseAnyMarketingProductLine(access: AccessContext) {
+  return access.scope === "system" || access.role === "Super Admin" || access.role === "SFE Manager";
+}
+
+function marketingProductMatchesRequesterLine(product: MarketingProductDbRow, requester: MarketingRequesterLine) {
+  const requesterLineId = requester.lineId ?? null;
+  const productLineId = product.line_id === null || product.line_id === undefined ? null : Number(product.line_id);
+  if (requesterLineId !== null && productLineId === requesterLineId) return true;
+
+  const requesterLineName = normalizeScopeText(requester.lineName);
+  const productLineName = normalizeScopeText(product.line);
+  return Boolean(requesterLineName && productLineName && requesterLineName === productLineName);
 }
 
 function assertMarketingActor(access: AccessContext) {
@@ -812,7 +914,8 @@ export function prepareMarketingRequestDraft(params: {
   products: MarketingProductDbRow[];
   requestCode?: string;
   requestType: MarketingRequestTypeDbRow;
-  requester: Pick<EmployeeDirectoryRow, "areaId" | "hrId" | "lineId" | "managerHrId">;
+  requester: Pick<EmployeeDirectoryRow, "areaId" | "hrId" | "lineId" | "managerHrId"> & { lineName?: string | null };
+  unrestrictedProductLines?: boolean;
 }): PreparedMarketingRequestDraft {
   const normalized = normalizeMarketingRequestDraftInput(params.input);
   if (!normalized.customerId) throw validationError("Customer is required.");
@@ -829,6 +932,18 @@ export function prepareMarketingRequestDraft(params: {
   const missingProduct = normalized.products.find((product) => !productRowsById.has(product.productId));
   if (missingProduct) {
     throw notFoundError(`Product ${missingProduct.productId} was not found or is inactive.`, "product_not_found");
+  }
+  const requesterLineId = params.requester.lineId ?? null;
+  const requesterLineName = normalizeScopeText(params.requester.lineName);
+  if (requesterLineId === null && !requesterLineName && !params.unrestrictedProductLines) {
+    throw validationError("Requester product line is not assigned. Please contact HR.", "requester_line_not_assigned");
+  }
+  const outsideRequesterLine = normalized.products.find((product) => {
+    const row = productRowsById.get(product.productId);
+    return !params.unrestrictedProductLines && row && !marketingProductMatchesRequesterLine(row, params.requester);
+  });
+  if (outsideRequesterLine) {
+    throw validationError("Marketing requests can only include products from your assigned line.", "product_line_not_allowed");
   }
 
   const roiProducts = normalized.products.map((product) => {
@@ -848,7 +963,9 @@ export function prepareMarketingRequestDraft(params: {
   });
   const requesterHrId = String(params.requester.hrId);
   const areaId = (normalized.areaId ?? Number(params.customer.area_id ?? params.requester.areaId ?? 0)) || null;
-  const lineId = (normalized.lineId ?? Number(params.customer.line_id ?? params.requester.lineId ?? 0)) || null;
+  const lineId = params.unrestrictedProductLines
+    ? (normalized.lineId ?? Number(params.customer.line_id ?? requesterLineId ?? 0)) || null
+    : requesterLineId;
   const managerHrId = cleanText(params.customer.manager_hr_id) ?? cleanText(params.requester.managerHrId);
   const pharmacyCodesById = new Map((params.pharmacyCodes ?? []).map((code) => [code.id, code]));
 
@@ -1220,12 +1337,11 @@ export function buildMarketingApprovedRequestRows(params: {
   });
 }
 
-function canSeeMarketingRequest(access: AccessContext, row: MarketingRequestDbRow) {
-  if (access.scope === "system" || companyMarketingRoles.has(access.role)) return true;
-  return canSeeHrScopedRecord(access, {
+function canSeeMarketingRequest(access: AccessContext, row: MarketingRequestDbRow, employeeRows: EmployeeDirectoryRow[]) {
+  return canSeeMarketingHierarchyRecord(access, {
     employeeHrId: row.requester_hr_id,
     managerHrId: row.manager_hr_id,
-  });
+  }, employeeRows);
 }
 
 async function fetchActiveProducts(supabase: SupabaseClient, productIds: number[]) {
@@ -1233,7 +1349,7 @@ async function fetchActiveProducts(supabase: SupabaseClient, productIds: number[
     .from("marketing_products")
     .select("id, product_code, product_name, factory_price, line, line_id, active")
     .in("id", productIds)
-    .eq("active", true);
+    .or("active.is.null,active.eq.true");
 
   if (error) throw error;
   return (data ?? []) as MarketingProductDbRow[];
@@ -1246,7 +1362,7 @@ async function fetchPharmacyCodes(supabase: SupabaseClient, distributorCodeIds: 
     .from("marketing_pharmacy_distributor_codes")
     .select("id, pharmacy_id, active")
     .in("id", distributorCodeIds)
-    .eq("active", true);
+    .or("active.is.null,active.eq.true");
 
   if (error) throw error;
   return (data ?? []) as MarketingPharmacyDistributorCodeDbRow[];
@@ -1261,12 +1377,11 @@ function emptyValidationSummary(): Record<MarketingValidationStatus, number> {
   };
 }
 
-function canSeeMarketingCustomer(access: AccessContext, row: MarketingCustomerDbRow) {
-  if (access.scope === "system" || companyMarketingRoles.has(access.role)) return true;
-  return canSeeHrScopedRecord(access, {
+function canSeeMarketingCustomer(access: AccessContext, row: MarketingCustomerDbRow, employeeRows: EmployeeDirectoryRow[]) {
+  return canSeeMarketingHierarchyRecord(access, {
     employeeHrId: row.owner_hr_id,
     managerHrId: row.manager_hr_id,
-  });
+  }, employeeRows);
 }
 
 async function fetchRowsByIds<T extends { id: string | number }>(
@@ -1369,7 +1484,7 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
     };
   }
 
-  const [customerRows, pharmacyRows, codeRows] = await Promise.all([
+  const [customerRows, pharmacyRows, codeRows, employeeRows] = await Promise.all([
     fetchRowsByIds<MarketingCustomerDbRow>(
       supabase,
       "marketing_customers",
@@ -1385,9 +1500,10 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
       "marketing_pharmacy_distributor_codes",
       links.map((row) => row.distributor_code_id),
     ),
+    loadEmployeeDirectoryRows(),
   ]);
 
-  const visibleCustomers = customerRows.filter((row) => canSeeMarketingCustomer(access, row));
+  const visibleCustomers = customerRows.filter((row) => canSeeMarketingCustomer(access, row, employeeRows));
   const visibleCustomerIds = new Set(visibleCustomers.map((row) => row.id));
   const visibleLinks = links.filter((row) => visibleCustomerIds.has(row.customer_id));
   const report = mapValidationReportRows({
@@ -1900,14 +2016,14 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
 
   const supabase = getSupabaseAdmin();
   const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, draftsResult, approvedRequestsResult] = await Promise.all([
-    supabase.from("marketing_request_types").select("*").eq("active", true).order("sort_order"),
-    supabase.from("marketing_products").select("*").eq("active", true).order("product_name"),
-    supabase.from("marketing_distributors").select("*").eq("active", true).order("display_name"),
-    supabase.from("marketing_customers").select("*").eq("active", true).order("display_name"),
+    supabase.from("marketing_request_types").select("*").or("active.is.null,active.eq.true").order("sort_order"),
+    supabase.from("marketing_products").select("*").or("active.is.null,active.eq.true").order("product_name"),
+    supabase.from("marketing_distributors").select("*").or("active.is.null,active.eq.true").order("display_name"),
+    supabase.from("marketing_customers").select("*").or("active.is.null,active.eq.true").order("display_name"),
     supabase
       .from("marketing_customer_pharmacies")
       .select("customer_id")
-      .eq("active", true)
+      .or("active.is.null,active.eq.true")
       .in("validation_status", ["system_validated", "sfe_validated"]),
     supabase.from("marketing_requests").select("*").eq("status", "draft").order("created_at", { ascending: false }).limit(100),
     supabase
@@ -1926,11 +2042,15 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   if (draftsResult.error) throw draftsResult.error;
   if (approvedRequestsResult.error) throw approvedRequestsResult.error;
 
+  const employeeRows = await loadEmployeeDirectoryRows();
+  const requester = findRequester(access, employeeRows);
+  const requesterLineId = requester.lineId ?? null;
+  const unrestrictedProductLines = canUseAnyMarketingProductLine(access);
   const drafts = ((draftsResult.data ?? []) as MarketingRequestDbRow[])
-    .filter((row) => canSeeMarketingRequest(access, row))
+    .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
     .map(mapRequest);
   const approvedRequests = ((approvedRequestsResult.data ?? []) as MarketingRequestDbRow[])
-    .filter((row) => canSeeMarketingRequest(access, row))
+    .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
     .map(mapRequest);
   const approvedRequestIds = approvedRequests.map((request) => request.id);
   const financeRequirementsResult = approvedRequestIds.length > 0
@@ -1948,9 +2068,11 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   const allCustomers = allCustomerRows.map(mapCustomer);
   const customers = allCustomerRows
     .filter((row) => validatedCustomerIds.has(row.id))
-    .filter((row) => canSeeMarketingCustomer(access, row))
+    .filter((row) => canSeeMarketingCustomer(access, row, employeeRows))
     .map(mapCustomer);
-  const employeeRows = approvedRequests.length > 0 ? await loadEmployeeDirectoryRows() : [];
+  const products = ((productsResult.data ?? []) as MarketingProductDbRow[])
+    .filter((product) => unrestrictedProductLines || marketingProductMatchesRequesterLine(product, requester))
+    .map(mapMarketingProduct);
 
   return {
     approvedRequests: buildMarketingApprovedRequestRows({
@@ -1962,8 +2084,10 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     customers,
     distributors: ((distributorsResult.data ?? []) as MarketingDistributorDbRow[]).map(mapDistributor),
     drafts,
-    products: ((productsResult.data ?? []) as MarketingProductDbRow[]).map(mapMarketingProduct),
+    products,
     requestTypes: ((typesResult.data ?? []) as MarketingRequestTypeDbRow[]).map(mapRequestType),
+    requesterLineId,
+    requesterLineName: unrestrictedProductLines ? "All product lines" : requester.lineName,
   };
 }
 
@@ -2031,6 +2155,7 @@ export async function createMarketingRequestDraft(
     products: productRows,
     requestType: requestTypeResult.data as MarketingRequestTypeDbRow,
     requester,
+    unrestrictedProductLines: canUseAnyMarketingProductLine(access),
   });
 
   const requestInsert = await supabase
@@ -2091,6 +2216,7 @@ function sanitizeStorageSegment(value: string | null | undefined, fallback: stri
 function assertMarketingFinanceEvidenceAccess(params: {
   access: AccessContext;
   evidenceType: MarketingFinanceEvidenceType;
+  employeeRows: EmployeeDirectoryRow[];
   request: MarketingRequestDbRow;
 }) {
   if (params.access.scope === "system") return;
@@ -2100,7 +2226,7 @@ function assertMarketingFinanceEvidenceAccess(params: {
     throw forbiddenError("Forbidden: only Finance and Super Admin can upload money transfer proof.");
   }
 
-  if (canSeeMarketingRequest(params.access, params.request)) return;
+  if (canSeeMarketingRequest(params.access, params.request, params.employeeRows)) return;
   throw forbiddenError("Forbidden: this invoice can only be uploaded by the responsible request owner or manager.");
 }
 
@@ -2141,9 +2267,11 @@ export async function uploadMarketingFinanceEvidence(params: {
   if (!requestResult.data) throw notFoundError("Marketing request was not found.", "request_not_found");
 
   const requestRow = requestResult.data as MarketingRequestDbRow;
+  const employeeRows = await loadEmployeeDirectoryRows();
   assertMarketingFinanceEvidenceAccess({
     access: params.access,
     evidenceType: params.evidenceType,
+    employeeRows,
     request: requestRow,
   });
 
@@ -2194,13 +2322,10 @@ export async function uploadMarketingFinanceEvidence(params: {
     .single();
   if (financeUpsert.error) throw financeUpsert.error;
 
-  const [customerResult, employeeRows] = await Promise.all([
-    supabase
-      .from("marketing_customers")
-      .select("*")
-      .eq("id", requestRow.customer_id),
-    loadEmployeeDirectoryRows(),
-  ]);
+  const customerResult = await supabase
+    .from("marketing_customers")
+    .select("*")
+    .eq("id", requestRow.customer_id);
   if (customerResult.error) throw customerResult.error;
 
   const rows = buildMarketingApprovedRequestRows({

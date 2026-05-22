@@ -24,7 +24,6 @@ import {
   LineChart,
   Pie,
   PieChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -35,6 +34,7 @@ import {
   adminInsetPanelClassName,
   adminPanelClassName,
 } from "@/components/admin/admin-design-system";
+import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import { Card } from "@/components/ui/card";
 import type {
   CoachingCategoryAverageScore,
@@ -523,20 +523,20 @@ export function CoachingAnalyticsDashboard({
       <div className="grid gap-5 xl:grid-cols-2">
         <ChartPanel description="Distribution of completed reports by performance zone." title="Reports by Performance Zone">
           {zoneData.length ? (
-            <ResponsiveContainer height="100%" minWidth={0} width="100%">
+            <SafeResponsiveContainer className="h-full">
               <PieChart>
                 <Pie data={zoneData} dataKey="value" innerRadius={65} outerRadius={105} paddingAngle={3}>
                   {zoneData.map((entry) => <Cell fill={zoneColors[entry.key]} key={entry.key} />)}
                 </Pie>
                 <Tooltip formatter={(value) => [value, "Reports"]} />
               </PieChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           ) : <EmptyChart message="No scored reports available for this view." />}
         </ChartPanel>
 
         <ChartPanel description="Quarterly average coaching score by employee summary rows." title="Average Score by Quarter">
           {quarterTrend.length ? (
-            <ResponsiveContainer height="100%" minWidth={0} width="100%">
+            <SafeResponsiveContainer className="h-full">
               <LineChart data={quarterTrend}>
                 <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
                 <XAxis dataKey="label" stroke="#64748B" tickLine={false} />
@@ -544,13 +544,13 @@ export function CoachingAnalyticsDashboard({
                 <Tooltip formatter={(value) => [`${value}%`, "Average score"]} />
                 <Line dataKey="value" dot={{ fill: "#F97316", r: 4 }} stroke="#F97316" strokeWidth={3} type="monotone" />
               </LineChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           ) : <EmptyChart message="No quarterly trend is available yet." />}
         </ChartPanel>
 
         <ChartPanel description="Average coaching score grouped by line." title="Average Score by Line">
           {lineAverages.length ? (
-            <ResponsiveContainer height="100%" minWidth={0} width="100%">
+            <SafeResponsiveContainer className="h-full">
               <BarChart data={lineAverages}>
                 <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
                 <XAxis dataKey="label" stroke="#64748B" tickLine={false} />
@@ -558,13 +558,13 @@ export function CoachingAnalyticsDashboard({
                 <Tooltip formatter={(value) => [`${value}%`, "Average score"]} />
                 <Bar dataKey="value" fill="#F97316" radius={[12, 12, 0, 0]} />
               </BarChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           ) : <EmptyChart message="No line score data available." />}
         </ChartPanel>
 
         <ChartPanel description="Average coaching score grouped by area." title="Average Score by Area">
           {areaAverages.length ? (
-            <ResponsiveContainer height="100%" minWidth={0} width="100%">
+            <SafeResponsiveContainer className="h-full">
               <BarChart data={areaAverages} layout="vertical" margin={{ left: 24, right: 16 }}>
                 <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
                 <XAxis domain={[0, 100]} stroke="#64748B" tickLine={false} type="number" />
@@ -572,26 +572,26 @@ export function CoachingAnalyticsDashboard({
                 <Tooltip formatter={(value) => [`${value}%`, "Average score"]} />
                 <Bar dataKey="value" fill="#0F172A" radius={[0, 12, 12, 0]} />
               </BarChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           ) : <EmptyChart message="No area score data available." />}
         </ChartPanel>
 
         <ChartPanel description="Employee acknowledgment split for completed coaching reports." title="Acknowledgment Status Split">
           {acknowledgmentSplit.length ? (
-            <ResponsiveContainer height="100%" minWidth={0} width="100%">
+            <SafeResponsiveContainer className="h-full">
               <PieChart>
                 <Pie data={acknowledgmentSplit} dataKey="value" innerRadius={65} outerRadius={105} paddingAngle={3}>
                   {acknowledgmentSplit.map((entry) => <Cell fill={entry.key === "acknowledged" ? "#10B981" : "#CBD5E1"} key={entry.key} />)}
                 </Pie>
                 <Tooltip formatter={(value) => [value, "Reports"]} />
               </PieChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           ) : <EmptyChart message="No acknowledgment data available." />}
         </ChartPanel>
 
         <ChartPanel description="Most frequent strongest scoring parameter across completed reports." title="Strongest Parameters Distribution">
           {strongestParameterData.length ? (
-            <ResponsiveContainer height="100%" minWidth={0} width="100%">
+            <SafeResponsiveContainer className="h-full">
               <BarChart data={strongestParameterData} layout="vertical" margin={{ left: 24, right: 16 }}>
                 <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
                 <XAxis allowDecimals={false} stroke="#64748B" tickLine={false} type="number" />
@@ -599,13 +599,13 @@ export function CoachingAnalyticsDashboard({
                 <Tooltip formatter={(value) => [`${value} reports`, "Reports"]} />
                 <Bar dataKey="value" fill="#F97316" radius={[0, 12, 12, 0]} />
               </BarChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           ) : <EmptyChart message="Strongest parameter distribution will appear after scored coaching reports are submitted." />}
         </ChartPanel>
 
         <ChartPanel description="Most frequent priority development focus by report-level category averages." title="Top Development Areas">
           {keyDevelopmentAreaData.length ? (
-            <ResponsiveContainer height="100%" minWidth={0} width="100%">
+            <SafeResponsiveContainer className="h-full">
               <BarChart data={keyDevelopmentAreaData} layout="vertical" margin={{ left: 24, right: 16 }}>
                 <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
                 <XAxis allowDecimals={false} stroke="#64748B" tickLine={false} type="number" />
@@ -613,7 +613,7 @@ export function CoachingAnalyticsDashboard({
                 <Tooltip formatter={(value) => [`${value} reports`, "Reports"]} />
                 <Bar dataKey="value" fill="#0F172A" radius={[0, 12, 12, 0]} />
               </BarChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           ) : <EmptyChart message="Priority Development Focus analytics will appear after scored coaching reports are submitted." />}
         </ChartPanel>
       </div>

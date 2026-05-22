@@ -1,5 +1,7 @@
 import { VacationRequestForm } from "@/components/vacation/vacation-request-form";
+import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { isForbiddenError, resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveNavigationMode } from "@/lib/auth/permissions";
 import {
   getVacationRequestPageData,
   isVacationSchemaMissing,
@@ -29,5 +31,21 @@ export default async function VacationRequestPage() {
     initialError = vacationRequestPageError(error);
   }
 
-  return <VacationRequestForm initialData={initialData} initialError={initialError ?? initialData?.balanceError ?? null} />;
+  if (resolveNavigationMode(access) === "admin") {
+    return <VacationRequestForm initialData={initialData} initialError={initialError ?? initialData?.balanceError ?? null} />;
+  }
+
+  return (
+    <EmployeePortalPageShell
+      badge="Leave Management"
+      description="Submit a leave request with the same employee portal workspace design and manager approval flow."
+      title="Vacation Request"
+    >
+      <VacationRequestForm
+        initialData={initialData}
+        initialError={initialError ?? initialData?.balanceError ?? null}
+        showHero={false}
+      />
+    </EmployeePortalPageShell>
+  );
 }
