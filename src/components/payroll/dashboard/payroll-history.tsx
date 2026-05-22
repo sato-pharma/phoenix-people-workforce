@@ -199,7 +199,7 @@ export function PayrollHistory({
                       </Button>
                     </Link>
                     {publishedPayslipStatuses.has(batch.status) ? (
-                      <Link href={`/api/payroll/${batch.id}/payslips`} target="_blank">
+                      <Link href={`/api/payroll/${batch.id}/payslips?returnTo=${encodeURIComponent(`/payroll?batchId=${batch.id}`)}`} target="_blank">
                         <Button className="px-3 py-1.5 text-xs" variant="secondary">
                           <FileCheck2 className="mr-2 h-3.5 w-3.5" />
                           Payslips

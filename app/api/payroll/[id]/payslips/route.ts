@@ -19,6 +19,7 @@ export const dynamic = "force-dynamic";
 type PayslipRenderOptions = {
   baseHref?: string;
   mode?: "html" | "image";
+  returnHref?: string;
 };
 
 function escapeHtml(value: unknown) {
@@ -37,6 +38,18 @@ function formatEGP(value: number) {
     minimumFractionDigits: 2,
     style: "currency",
   }).format(Number(value ?? 0));
+}
+
+function formatCompactEGP(value: number) {
+  const amount = Number(value ?? 0);
+  const hasDecimals = !Number.isInteger(amount);
+
+  return new Intl.NumberFormat("en-EG", {
+    currency: "EGP",
+    maximumFractionDigits: 2,
+    minimumFractionDigits: hasDecimals ? 2 : 0,
+    style: "currency",
+  }).format(amount);
 }
 
 function formatDate(value: string | null) {
@@ -83,9 +96,34 @@ function payslipStatusClass(status: SalaryBatch["status"]) {
   return isPublishedPayslipStatus(status) ? "published" : "draft";
 }
 
-function infoRow(label: string, value: unknown) {
+function payslipReturnHref(requestUrl: string) {
+  const url = new URL(requestUrl);
+  const returnTo = url.searchParams.get("returnTo");
+  if (!returnTo) return "/payslips";
+
+  try {
+    const target = new URL(returnTo, url.origin);
+    const path = `${target.pathname}${target.search}${target.hash}`;
+
+    if (target.origin !== url.origin || !path.startsWith("/") || path.startsWith("//")) {
+      return "/payslips";
+    }
+
+    return path;
+  } catch {
+    return "/payslips";
+  }
+}
+
+function payslipReturnLabel(returnHref: string) {
+  if (returnHref.startsWith("/admin/payslips-center")) return "Back to Payslips Center";
+  if (returnHref.startsWith("/payroll")) return "Back to Payroll";
+  return "Back to Payslips";
+}
+
+function infoRow(label: string, value: unknown, className = "") {
   return `
-    <div class="info-row">
+    <div class="info-row${className ? ` ${className}` : ""}">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value || "-")}</strong>
     </div>
@@ -158,10 +196,10 @@ function payslip(record: SalaryRecord, month: number, year: number, batchStatus:
   return `
     <article class="payslip">
       <header class="statement-header">
-        <div>
+        <div class="statement-copy">
           <div class="eyebrow">Payroll Statement</div>
           <h1>Payslip</h1>
-          <p>${escapeHtml(periodLabel(month, year))}</p>
+          <p class="statement-subtitle">${escapeHtml(record.fullName || "Employee payslip")}</p>
         </div>
         <img alt="Phoenix" src="/brand/phoenix-main-logo.png" />
         <div class="statement-meta">
@@ -190,10 +228,10 @@ function payslip(record: SalaryRecord, month: number, year: number, batchStatus:
               ${infoRow("HR ID", record.employeeCode)}
               ${infoRow("Employee name", record.fullName)}
               ${infoRow("Arabic name", record.nameAr)}
-              ${infoRow("Job title", record.jobTitle)}
               ${infoRow("Area", record.area)}
               ${infoRow("Line", record.line)}
               ${infoRow("Hire Date", formatDate(record.hireDate))}
+              ${infoRow("Job title", record.jobTitle, "title-row")}
             </div>
           </div>
 
@@ -207,19 +245,19 @@ function payslip(record: SalaryRecord, month: number, year: number, batchStatus:
             <div class="summary-stack">
               <div class="metric muted">
                 <span>Base Salary</span>
-                <strong>${formatEGP(record.baseSalary)}</strong>
+                <strong>${formatCompactEGP(record.baseSalary)}</strong>
               </div>
               <div class="metric add">
                 <span>Gross Salary</span>
-                <strong>${formatEGP(record.grossSalary)}</strong>
+                <strong>${formatCompactEGP(record.grossSalary)}</strong>
               </div>
               <div class="metric deduct">
                 <span>Net Salary</span>
-                <strong>${formatEGP(record.netSalary)}</strong>
+                <strong>${formatCompactEGP(record.netSalary)}</strong>
               </div>
               <div class="metric net">
                 <span>Month Salary</span>
-                <strong>${formatEGP(record.monthSalary)}</strong>
+                <strong>${formatCompactEGP(record.monthSalary)}</strong>
               </div>
             </div>
           </div>
@@ -283,6 +321,8 @@ export function renderPayslipsPage(
   options: PayslipRenderOptions = {},
 ) {
   const bodyClass = options.mode === "image" ? "image-export" : "";
+  const returnHref = options.returnHref ?? "/payslips";
+  const returnLabel = payslipReturnLabel(returnHref);
 
   return `<!doctype html>
   <html>
@@ -328,6 +368,37 @@ export function renderPayslipsPage(
           page-break-after: always;
           width: 960px;
         }
+        .payslip-actions {
+          display: flex;
+          justify-content: flex-start;
+          margin: 18px auto -12px;
+          max-width: calc(100% - 32px);
+          width: 960px;
+        }
+        .return-link {
+          align-items: center;
+          background: #ffffff;
+          border: 1px solid #cbd5e1;
+          border-radius: 999px;
+          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+          color: #0f172a;
+          display: inline-flex;
+          font-size: 13px;
+          font-weight: 900;
+          gap: 8px;
+          min-height: 38px;
+          padding: 0 14px;
+          text-decoration: none;
+        }
+        .return-link:hover {
+          background: #f8fafc;
+          border-color: #94a3b8;
+        }
+        .return-link span {
+          color: var(--orange);
+          font-size: 16px;
+          line-height: 1;
+        }
         .statement-header {
           align-items: center;
           background: linear-gradient(135deg, #0f172a 0%, #111827 54%, #7c2d12 100%);
@@ -355,15 +426,20 @@ export function renderPayslipsPage(
         h1 {
           font-size: 28px;
           font-weight: 900;
+          line-height: 1.08;
           margin-top: 8px;
         }
-        .statement-header p {
+        .statement-subtitle {
           color: #cbd5e1;
           font-size: 15px;
           font-weight: 800;
+          line-height: 1.35;
           margin-top: 9px;
+          max-width: 360px;
+          overflow-wrap: anywhere;
         }
         .statement-meta {
+          align-self: center;
           background: rgba(15, 23, 42, 0.34);
           border: 1px solid rgba(255, 255, 255, 0.22);
           border-radius: 14px;
@@ -391,7 +467,9 @@ export function renderPayslipsPage(
           text-align: right;
         }
         .status-chip {
+          display: inline-flex;
           border-radius: 999px;
+          line-height: 1;
           padding: 5px 10px;
         }
         .status-chip.published {
@@ -500,6 +578,7 @@ export function renderPayslipsPage(
         .metric strong {
           display: block;
           font-size: 22px;
+          line-height: 1.12;
           margin-top: 12px;
           overflow-wrap: anywhere;
           white-space: nowrap;
@@ -541,6 +620,9 @@ export function renderPayslipsPage(
         .image-export .payslip {
           margin: 0 auto;
           page-break-after: auto;
+        }
+        .image-export .payslip-actions {
+          display: none;
         }
         .image-export .sheet-scroll {
           max-height: none;
@@ -677,6 +759,9 @@ export function renderPayslipsPage(
         }
         @media print {
           body { background: white; }
+          .payslip-actions {
+            display: none;
+          }
           .sheet-scroll {
             max-height: none;
             overflow: visible;
@@ -700,16 +785,62 @@ export function renderPayslipsPage(
             max-width: 100%;
             width: 100%;
           }
-          .statement-header,
+          .payslip-actions {
+            background: var(--paper);
+            margin: 0;
+            max-width: 100%;
+            padding: 10px 12px;
+            width: 100%;
+          }
+          .statement-header {
+            align-items: start;
+            gap: 16px;
+            grid-template-columns: minmax(0, 1fr) auto;
+            min-height: 0;
+            padding: 24px;
+          }
           .grid.two,
           .parts {
             grid-template-columns: 1fr;
           }
           .statement-header img {
-            justify-self: start;
+            justify-self: end;
+            max-height: 46px;
+            max-width: 112px;
+          }
+          .statement-meta {
+            grid-column: 1 / -1;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            min-width: 0;
+            padding: 10px;
+            width: 100%;
+          }
+          .statement-meta div {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 4px;
+            justify-content: center;
           }
           .summary-stack {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+          .info-list {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+          .info-row {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 6px;
+            justify-content: center;
+            min-height: 70px;
+            padding: 10px 12px;
+          }
+          .info-row strong {
+            text-align: left;
+          }
+          .info-row.title-row {
+            grid-column: 1 / -1;
+            min-height: 62px;
           }
         }
         @media (max-width: 720px) {
@@ -721,14 +852,15 @@ export function renderPayslipsPage(
             padding: 22px 20px;
           }
           .statement-header img {
-            max-height: 48px;
-            max-width: 170px;
+            max-height: 44px;
+            max-width: 104px;
           }
           h1 {
             font-size: 25px;
           }
-          .statement-header p {
+          .statement-subtitle {
             font-size: 14px;
+            max-width: none;
           }
           .statement-meta {
             min-width: 0;
@@ -759,7 +891,7 @@ export function renderPayslipsPage(
             flex-direction: column;
             gap: 5px;
             justify-content: center;
-            min-height: 56px;
+            min-height: 66px;
             padding: 10px 12px;
           }
           .info-row strong {
@@ -790,6 +922,14 @@ export function renderPayslipsPage(
           }
         }
         @media (max-width: 520px) {
+          .payslip-actions {
+            padding: 9px 10px;
+          }
+          .return-link {
+            font-size: 12px;
+            min-height: 34px;
+            padding: 0 12px;
+          }
           .statement-header {
             padding: 20px 16px;
           }
@@ -800,10 +940,19 @@ export function renderPayslipsPage(
           h1 {
             font-size: 23px;
           }
+          .statement-subtitle {
+            font-size: 13px;
+          }
+          .statement-meta {
+            gap: 8px;
+          }
           .statement-meta div {
             align-items: flex-start;
             flex-direction: column;
             gap: 5px;
+          }
+          .statement-meta span {
+            font-size: 10px;
           }
           .statement-meta strong {
             text-align: left;
@@ -843,6 +992,9 @@ export function renderPayslipsPage(
       </style>
     </head>
     <body class="${bodyClass}">
+      <nav aria-label="Payslip navigation" class="payslip-actions">
+        <a class="return-link" href="${escapeHtml(returnHref)}"><span aria-hidden="true">&larr;</span> ${escapeHtml(returnLabel)}</a>
+      </nav>
       ${records.map((record, index) => payslip(record, month, year, batchStatus, index + 1)).join("")}
     </body>
   </html>`;
@@ -889,7 +1041,9 @@ export async function GET(
     }
 
     return new Response(
-      renderPayslipsPage(records, exportData.batch.month, exportData.batch.year, exportData.batch.status),
+      renderPayslipsPage(records, exportData.batch.month, exportData.batch.year, exportData.batch.status, {
+        returnHref: payslipReturnHref(request.url),
+      }),
       {
         headers: {
           "Content-Type": "text/html; charset=utf-8",

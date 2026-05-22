@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PageTitleSync } from "@/components/layout/page-title-sync";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import "./globals.css";
 
@@ -22,7 +23,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full bg-bg font-sans text-text">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <PageTitleSync />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

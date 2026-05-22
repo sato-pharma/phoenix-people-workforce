@@ -4225,7 +4225,7 @@ export function PayrollDashboard({
                     </Button>
                   </Link>
                   {publishedPayslipStatuses.has(salaryReportBatch.status) ? (
-                    <Link href={`/api/payroll/${salaryReportBatch.id}/payslips`} target="_blank">
+                    <Link href={`/api/payroll/${salaryReportBatch.id}/payslips?returnTo=${encodeURIComponent(`/payroll?batchId=${salaryReportBatch.id}`)}`} target="_blank">
                       <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
                         <FileCheck2 className="mr-2 h-3.5 w-3.5" />
                         Payslips

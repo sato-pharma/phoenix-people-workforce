@@ -64,6 +64,9 @@ export default async function AdminPayslipsCenterPage(
   const employeeSummary = data.employees[0]
     ? `${formatEmployeeDisplayName(data.employees[0].fullName)} - ${data.employees[0].jobTitle} - ${data.employees[0].line}`
     : "Matching payslip history";
+  const payslipCenterReturnTo = data.query
+    ? `/admin/payslips-center?employee=${encodeURIComponent(data.query)}`
+    : "/admin/payslips-center";
 
   return (
     <AppShell navigationMode="admin">
@@ -154,7 +157,7 @@ export default async function AdminPayslipsCenterPage(
                         <div className="flex flex-wrap gap-2">
                           <Link
                             className="inline-flex h-9 items-center justify-center rounded-xl border border-[#D8E0EA] px-4 text-sm font-semibold text-[#0F172A] transition hover:bg-[#F8FAFC]"
-                            href={`/api/payroll/${row.batchId}/payslips?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
+                            href={`/api/payroll/${row.batchId}/payslips?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}&returnTo=${encodeURIComponent(payslipCenterReturnTo)}`}
                             target="_blank"
                           >
                             Open Payslip

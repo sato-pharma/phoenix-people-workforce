@@ -1,4 +1,5 @@
 import { runI18nConfigTests } from "./i18n-config.test.ts";
+import { runPageTitleTests } from "./page-title.test.ts";
 import { runIncentiveSchemeTests } from "./incentive-scheme.test.ts";
 import { runEmailNotificationTests } from "./email-notifications.test.ts";
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
@@ -90,6 +91,7 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 }
 
 await runTest("i18n config", runI18nConfigTests);
+await runTest("page titles", runPageTitleTests);
 await runTest("incentive scheme", runIncentiveSchemeTests);
 await runTest("email notifications", runEmailNotificationTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);

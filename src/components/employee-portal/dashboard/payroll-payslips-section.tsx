@@ -289,7 +289,7 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
                             </Badge>
                           </td>
                           <td className="px-2 py-2.5 text-right sm:px-3">
-                            <Link href={`/api/payroll/${row.id}/payslips`} target="_blank">
+                            <Link href={`/api/payroll/${row.id}/payslips?returnTo=${encodeURIComponent("/payslips")}`} target="_blank">
                               <Button className="h-8 max-w-full px-2 text-[11px] sm:px-3 sm:text-xs" variant="secondary">
                                 <span className="sm:hidden">View</span>
                                 <span className="hidden sm:inline">View payslip</span>
