@@ -37,6 +37,7 @@ const requester = {
   areaId: 30,
   hrId: "MR001",
   lineId: 7,
+  lineName: "Anti infective",
   managerHrId: "DM001",
 };
 
@@ -106,7 +107,7 @@ export function runMarketingRequestServiceTests() {
   assert.equal(prepared.requestRow.request_code, "MKT-REQ-TEST");
   assert.equal(prepared.requestRow.requester_hr_id, "MR001");
   assert.equal(prepared.requestRow.manager_hr_id, "DM009");
-  assert.equal(prepared.requestRow.line_id, 8);
+  assert.equal(prepared.requestRow.line_id, 7);
   assert.equal(prepared.requestRow.area_id, 40);
   assert.equal(prepared.requestRow.expected_roi_value, 10000);
   assert.equal(prepared.requestRow.roi_status, "covers_required");
