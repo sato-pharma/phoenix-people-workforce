@@ -40,6 +40,41 @@ function resolvePortalRole(
   return normalizeRole(accessRole ?? roleLabel);
 }
 
+const marketingRequestRoles = new Set<PhoenixRole>([
+  "Medical Rep",
+  "District Manager",
+  "Regional Manager",
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Marketing Manager",
+  "SFE Manager",
+  "CEO",
+  "Super Admin",
+]);
+
+export function canUseEmployeePortalMarketingRequests(
+  roleLabel: string | null | undefined,
+  accessRole?: string | null | undefined,
+) {
+  return marketingRequestRoles.has(resolvePortalRole(roleLabel, accessRole));
+}
+
+export function canUseEmployeePortalMarketingControl(
+  roleLabel: string | null | undefined,
+  accessRole?: string | null | undefined,
+) {
+  const role = resolvePortalRole(roleLabel, accessRole);
+  return role === "SFE Manager" || role === "Super Admin";
+}
+
+export function canUseEmployeePortalMarketingCustomerDatabase(
+  roleLabel: string | null | undefined,
+  accessRole?: string | null | undefined,
+) {
+  return resolvePortalRole(roleLabel, accessRole) === "Super Admin";
+}
+
 export function resolveEmployeePortalNavVisibility(
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
@@ -66,20 +101,9 @@ export function resolveEmployeePortalNavVisibility(
   const showTeamPerformanceTab = isDistrictManager;
   const showMedRepsPerformanceTab = isNationalSalesManager;
   const showExpenseActionTab = isDistrictManager || isNationalSalesManager;
-  const showMarketingRequestsTab = [
-    "Medical Rep",
-    "District Manager",
-    "Regional Manager",
-    "National Sales Manager",
-    "Product Manager",
-    "Marketing Manager",
-    "SFE Manager",
-    "CEO",
-    "Super Admin",
-  ].includes(resolvedRole);
-  const showMarketingCustomerDatabaseTab = resolvedRole === "Super Admin";
-  const showMarketingControlTab =
-    resolvedRole === "SFE Manager" || resolvedRole === "Super Admin";
+  const showMarketingRequestsTab = canUseEmployeePortalMarketingRequests(resolvedRole);
+  const showMarketingCustomerDatabaseTab = canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
+  const showMarketingControlTab = canUseEmployeePortalMarketingControl(resolvedRole);
   const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
 
   return {

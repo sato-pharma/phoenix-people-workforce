@@ -2,10 +2,13 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { MarketingRequestDraftWorkspace } from "@/components/employee-portal/marketing-request-drafts";
+import { assertEmployeePortalMarketingPageAccess } from "@/lib/employee-portal/page-guards";
 
 export const dynamic = "force-dynamic";
 
-export default function EmployeePortalMarketingRequestsPage() {
+export default async function EmployeePortalMarketingRequestsPage() {
+  await assertEmployeePortalMarketingPageAccess("requests");
+
   return (
     <EmployeePortalPageShell
       badge="Marketing"

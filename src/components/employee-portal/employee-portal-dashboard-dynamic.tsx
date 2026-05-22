@@ -1,12 +1,16 @@
 import dynamic from "next/dynamic";
 
-import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
+import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employee-portal/service";
 
 type PortalDashboardPageProps = {
   data: MedicalRepPortalData;
 };
 
-export const ContactHRSupportPage = dynamic<PortalDashboardPageProps>(() =>
+type ContactHRSupportPageProps = {
+  data: EmployeePortalShellData;
+};
+
+export const ContactHRSupportPage = dynamic<ContactHRSupportPageProps>(() =>
   import("@/components/employee-portal/employee-portal-dashboard").then((mod) => mod.ContactHRSupportPage),
 );
 

@@ -7,20 +7,20 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
+import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function EmployeePortalContactHRSupportPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) !== "employee-portal") {
-    redirect("/payroll");
+    redirect("/overview");
   }
-  await assertPermission(access, "payroll", "read");
+  await assertPermission(access, "employee_profile", "read");
 
   let data = null;
   try {
-    data = await getMedicalRepPortalData(access);
+    data = await getEmployeePortalShellData(access);
   } catch {
     data = null;
   }
