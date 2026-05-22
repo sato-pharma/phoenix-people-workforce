@@ -12,6 +12,18 @@ type PendingApprovalsResponse = {
   message?: string;
 };
 
+const workflowFilterOptions: Array<{ label: string; value: PendingApprovalItem["workflow"] }> = [
+  { label: "Vacation", value: "vacation" },
+  { label: "Employee Excuse", value: "excuse" },
+  { label: "Expense", value: "expense" },
+  { label: "Outstation", value: "outstation" },
+  { label: "Sales Import", value: "sales-import" },
+  { label: "Accepted Offer", value: "offer" },
+  { label: "Contract Renewal", value: "contract-renewal" },
+  { label: "Resignation", value: "resignation" },
+  { label: "Payroll Batch", value: "payroll-batch" },
+];
+
 function formatDateTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value || "-";
@@ -59,12 +71,6 @@ export function PendingApprovalsWorkspace({ initialItems }: { initialItems: Pend
   const [personFilter, setPersonFilter] = useState("");
   const [dateFromFilter, setDateFromFilter] = useState("");
   const [dateToFilter, setDateToFilter] = useState("");
-
-  const workflowOptions = useMemo(() => {
-    return Array.from(
-      new Map(items.map((item) => [item.workflow, item.workflowLabel] as const)).entries(),
-    ).sort((left, right) => left[1].localeCompare(right[1]));
-  }, [items]);
 
   const filteredItems = useMemo(() => {
     const person = personFilter.trim().toLowerCase();
@@ -203,8 +209,8 @@ export function PendingApprovalsWorkspace({ initialItems }: { initialItems: Pend
               value={typeFilter}
             >
               <option value="all">All approval types</option>
-              {workflowOptions.map(([workflow, label]) => (
-                <option key={workflow} value={workflow}>{label}</option>
+              {workflowFilterOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
           </label>
