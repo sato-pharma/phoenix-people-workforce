@@ -21,7 +21,12 @@ import {
   listOutstationRequests,
   rejectOutstationRequestForPayroll,
 } from "@/lib/outstation/service";
-import { decidePayrollExpenseApproval, isPayrollExpensesSchemaMissing, listPayrollExpenses } from "@/lib/payroll/expenses";
+import {
+  canApprovePayrollExpenses,
+  decidePayrollExpenseApproval,
+  isPayrollExpensesSchemaMissing,
+  listPayrollExpenses,
+} from "@/lib/payroll/expenses";
 import { listSalaryBatches, runPayrollWorkflow } from "@/lib/payroll/service";
 import { getResignationsDashboardData, runResignationWorkflow } from "@/lib/resignations/service";
 import { listSalesQueue, updateSalesBatchStatus } from "@/lib/sales/service";
@@ -238,20 +243,14 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
         }));
     }),
     safeApprovalList(async () => {
-      if (!await canApprove(access, "expenses")) return [];
-      const directory = await directoryPromise;
+      if (!await canApprovePayrollExpenses(access)) return [];
       const expenses = await listPayrollExpenses(undefined, undefined, undefined, access);
       return expenses
         .filter((expense) => {
           const status = `${expense.status} ${expense.hr}`.toLowerCase();
           return !expense.hrApproved && !status.includes("reject");
         })
-        .filter((expense) => canApproveHierarchyItem({
-          access,
-          companyRoles: financeApprovalRoles,
-          directory,
-          requesterHrId: expense.hrId,
-        }))
+        .filter((expense) => !isSelfApproval(access, expense.hrId))
         .slice(0, 100)
         .map((expense) => ({
           currentStep: "Expense approval",

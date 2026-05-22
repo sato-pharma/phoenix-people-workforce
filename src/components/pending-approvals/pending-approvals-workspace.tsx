@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, ClipboardCheck, Loader2, RefreshCw, XCircle } from "lucide-react";
+import { CalendarDays, CheckCircle2, ClipboardCheck, Filter, Loader2, RefreshCw, Search, XCircle } from "lucide-react";
 
 import type { PendingApprovalItem } from "@/lib/pending-approvals/service";
 import { cn } from "@/lib/utils";
@@ -42,6 +42,12 @@ function workflowTone(workflow: PendingApprovalItem["workflow"]) {
   }
 }
 
+function submittedDateKey(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
 export function PendingApprovalsWorkspace({ initialItems }: { initialItems: PendingApprovalItem[] }) {
   const [items, setItems] = useState(initialItems);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -49,14 +55,55 @@ export function PendingApprovalsWorkspace({ initialItems }: { initialItems: Pend
   const [rejectTarget, setRejectTarget] = useState<PendingApprovalItem | null>(null);
   const [rejectComment, setRejectComment] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [personFilter, setPersonFilter] = useState("");
+  const [dateFromFilter, setDateFromFilter] = useState("");
+  const [dateToFilter, setDateToFilter] = useState("");
+
+  const workflowOptions = useMemo(() => {
+    return Array.from(
+      new Map(items.map((item) => [item.workflow, item.workflowLabel] as const)).entries(),
+    ).sort((left, right) => left[1].localeCompare(right[1]));
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    const person = personFilter.trim().toLowerCase();
+    return items.filter((item) => {
+      if (typeFilter !== "all" && item.workflow !== typeFilter) return false;
+
+      if (person) {
+        const haystack = [
+          item.requester,
+          item.requesterHrId,
+          item.shortSummary,
+          item.workflowLabel,
+        ].join(" ").toLowerCase();
+        if (!haystack.includes(person)) return false;
+      }
+
+      const submittedDate = submittedDateKey(item.submittedAt);
+      if (dateFromFilter && (!submittedDate || submittedDate < dateFromFilter)) return false;
+      if (dateToFilter && (!submittedDate || submittedDate > dateToFilter)) return false;
+      return true;
+    });
+  }, [dateFromFilter, dateToFilter, items, personFilter, typeFilter]);
+
+  const hasActiveFilters = typeFilter !== "all" || Boolean(personFilter.trim()) || Boolean(dateFromFilter) || Boolean(dateToFilter);
 
   const grouped = useMemo(() => {
     const groups = new Map<string, PendingApprovalItem[]>();
-    for (const item of items) {
+    for (const item of filteredItems) {
       groups.set(item.workflowLabel, [...(groups.get(item.workflowLabel) ?? []), item]);
     }
     return Array.from(groups.entries());
-  }, [items]);
+  }, [filteredItems]);
+
+  function clearFilters() {
+    setTypeFilter("all");
+    setPersonFilter("");
+    setDateFromFilter("");
+    setDateToFilter("");
+  }
 
   async function refresh() {
     try {
@@ -113,7 +160,11 @@ export function PendingApprovalsWorkspace({ initialItems }: { initialItems: Pend
             </span>
             <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-950">Pending Approvals</h1>
-              <p className="mt-1 text-sm leading-6 text-slate-600">{items.length} items require your decision.</p>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                {filteredItems.length === items.length
+                  ? `${items.length} items require your decision.`
+                  : `${filteredItems.length} of ${items.length} items match your filters.`}
+              </p>
             </div>
           </div>
           <button
@@ -131,12 +182,72 @@ export function PendingApprovalsWorkspace({ initialItems }: { initialItems: Pend
             {error}
           </div>
         ) : null}
+        <div className="mt-5 grid gap-3 rounded-[18px] border border-slate-200/70 bg-slate-50/70 p-3 lg:grid-cols-[1.3fr_1fr_1fr_1fr_auto]">
+          <label className="relative block">
+            <span className="sr-only">Requester</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              className="h-11 w-full rounded-[14px] border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+              onChange={(event) => setPersonFilter(event.target.value)}
+              placeholder="Requester or HR ID"
+              type="search"
+              value={personFilter}
+            />
+          </label>
+          <label className="relative block">
+            <span className="sr-only">Approval type</span>
+            <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <select
+              className="h-11 w-full appearance-none rounded-[14px] border border-slate-200 bg-white pl-9 pr-8 text-sm font-black text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+              onChange={(event) => setTypeFilter(event.target.value)}
+              value={typeFilter}
+            >
+              <option value="all">All approval types</option>
+              {workflowOptions.map(([workflow, label]) => (
+                <option key={workflow} value={workflow}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="relative block">
+            <span className="sr-only">Submitted from</span>
+            <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              className="h-11 w-full rounded-[14px] border border-slate-200 bg-white pl-9 pr-3 text-sm font-black text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+              onChange={(event) => setDateFromFilter(event.target.value)}
+              type="date"
+              value={dateFromFilter}
+            />
+          </label>
+          <label className="relative block">
+            <span className="sr-only">Submitted to</span>
+            <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              className="h-11 w-full rounded-[14px] border border-slate-200 bg-white pl-9 pr-3 text-sm font-black text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+              onChange={(event) => setDateToFilter(event.target.value)}
+              type="date"
+              value={dateToFilter}
+            />
+          </label>
+          <button
+            className="inline-flex h-11 items-center justify-center rounded-[14px] border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 transition hover:border-orange-200 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!hasActiveFilters}
+            onClick={clearFilters}
+            type="button"
+          >
+            Clear
+          </button>
+        </div>
       </section>
 
       {items.length === 0 ? (
         <div className="rounded-[22px] border border-dashed border-slate-300 bg-white/80 px-5 py-12 text-center shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
           <p className="text-base font-black text-slate-900">No pending approvals</p>
           <p className="mt-2 text-sm text-slate-500">New items assigned to you will appear here.</p>
+        </div>
+      ) : filteredItems.length === 0 ? (
+        <div className="rounded-[22px] border border-dashed border-slate-300 bg-white/80 px-5 py-12 text-center shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+          <p className="text-base font-black text-slate-900">No matching approvals</p>
+          <p className="mt-2 text-sm text-slate-500">Adjust the filters to see assigned items.</p>
         </div>
       ) : (
         grouped.map(([label, groupItems]) => (

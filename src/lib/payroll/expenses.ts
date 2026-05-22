@@ -20,6 +20,7 @@ import {
   normalizeHrIdForAccess,
   normalizeLineName,
   type AccessContext,
+  type PhoenixRole,
 } from "@/lib/auth/permissions";
 import type {
   EmployeeDirectoryRow,
@@ -42,6 +43,20 @@ export type PayrollExpenseDashboardData = {
   reports: PayrollExpenseReport[];
   trend: PayrollExpenseTrendPoint[];
 };
+
+const payrollExpenseApprovalRoles = new Set<PhoenixRole>(["CEO", "Finance Manager", "Super Admin"]);
+
+export async function canApprovePayrollExpenses(accessContext: AccessContext) {
+  if (accessContext.scope === "system") return true;
+  if (!payrollExpenseApprovalRoles.has(accessContext.role)) return false;
+  return canAccess(accessContext, "expenses", "approve");
+}
+
+async function assertPayrollExpenseApprovalAuthority(accessContext: AccessContext) {
+  if (!await canApprovePayrollExpenses(accessContext)) {
+    throw new Error("Forbidden: only Finance, CEO, or Super Admin can approve payroll expenses.");
+  }
+}
 
 function expenseErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -585,6 +600,8 @@ export async function savePayrollExpenseApprovals(input: {
   }>;
   reportId?: string | null;
 }, accessContext: AccessContext) {
+  await assertPayrollExpenseApprovalAuthority(accessContext);
+
   const approvedBy = resolveEmployeeIdentityId(accessContext) ?? accessContext.loginId ?? "system";
   const now = new Date().toISOString();
   const employeeByName = await employeeCodeBySpecialist();
@@ -714,9 +731,7 @@ export async function decidePayrollExpenseApproval(
   accessContext: AccessContext,
   input: { comment?: string | null; decision: "approve" | "reject" },
 ) {
-  if (!await canAccess(accessContext, "expenses", "approve")) {
-    throw new Error("Forbidden: expenses approval permission is required.");
-  }
+  await assertPayrollExpenseApprovalAuthority(accessContext);
 
   const cleanTripId = String(tripId ?? "").trim();
   if (!cleanTripId) throw new Error("Expense trip ID is required.");

@@ -63,6 +63,18 @@ type InAppNotificationReadRow = {
 
 type NotificationMetadata = Record<string, unknown>;
 
+const readNotificationRetentionMs = 7 * 24 * 60 * 60 * 1000;
+
+function shouldShowNotificationInHistory(notification: { isRead: boolean; readAt: string | null }) {
+  if (!notification.isRead) return true;
+  if (!notification.readAt) return true;
+
+  const readAtMs = new Date(notification.readAt).getTime();
+  if (Number.isNaN(readAtMs)) return true;
+
+  return Date.now() - readAtMs <= readNotificationRetentionMs;
+}
+
 function cleanHrId(value: string | null | undefined) {
   return String(value ?? "").trim().toUpperCase();
 }
@@ -445,8 +457,9 @@ export async function listInAppNotificationsForViewer(
   if (!employeeHrId) return [];
 
   try {
-    const boundedLimit = Math.max(1, Math.min(limit, 200));
-    const rows = await fetchNotificationRowsForViewer(employeeHrId, boundedLimit);
+    const requestedLimit = Math.max(1, Math.min(limit, 200));
+    const fetchLimit = Math.min(200, Math.max(requestedLimit * 3, requestedLimit + 50));
+    const rows = await fetchNotificationRowsForViewer(employeeHrId, fetchLimit);
     const readByEventId = await fetchNotificationReadsForViewer(employeeHrId, rows.map((row) => String(row.id ?? "")));
     const createdAtByEventId = new Map(rows.map((row) => {
       const id = String(row.id ?? "");
@@ -497,7 +510,9 @@ export async function listInAppNotificationsForViewer(
         summary: notificationSummary.summary,
         summaryLine: notificationSummary.summaryLine,
       };
-    });
+    })
+      .filter(shouldShowNotificationInHistory)
+      .slice(0, requestedLimit);
   } catch (error) {
     if (notificationSchemaMissing(error)) return [];
     throw error;

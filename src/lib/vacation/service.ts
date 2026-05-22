@@ -315,6 +315,7 @@ function getVacationVisibilityScope(access: AccessContext): VacationVisibilitySc
     case "SFE Manager":
       return "COMPANY";
     case "National Sales Manager":
+      return "HIERARCHY";
     case "Product Manager":
     case "Group Product Manager":
     case "Training Manager":
@@ -2423,13 +2424,27 @@ function buildReportOptions(rows: VacationRequestRecord[], employees?: EmployeeD
         new Map(rows.map((row) => [row.employeeHrId, { label: `${row.employeeName} (${row.employeeHrId})`, value: row.employeeHrId }])).values(),
       ).sort((left, right) => left.label.localeCompare(right.label));
 
+  const visibleEmployeeByHrId = employees
+    ? new Map(
+        employees
+          .map((employee) => [canonicalHrId(employee.hrId), employee] as const)
+          .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
+      )
+    : null;
   const managerSource = employees
     ? employees
-        .filter((employee) => employee.managerHrId)
-        .map((employee) => ({
-          label: `${employee.managerName ?? employee.managerHrId} (${employee.managerHrId})`,
-          value: employee.managerHrId ?? "",
-        }))
+        .filter((employee) => {
+          const managerHrId = canonicalHrId(employee.managerHrId);
+          return Boolean(managerHrId && visibleEmployeeByHrId?.has(managerHrId));
+        })
+        .map((employee) => {
+          const managerHrId = canonicalHrId(employee.managerHrId);
+          const manager = managerHrId ? visibleEmployeeByHrId?.get(managerHrId) : null;
+          return {
+            label: `${manager?.fullName ?? employee.managerName ?? employee.managerHrId} (${employee.managerHrId})`,
+            value: employee.managerHrId ?? "",
+          };
+        })
     : rows
         .filter((row) => row.managerHrId)
         .map((row) => ({

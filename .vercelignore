@@ -1,0 +1,22 @@
+.git/
+.vercel/
+.next/
+node_modules/
+
+.claude/
+.agents/
+.playwright-mcp/
+local-attendance-agent/
+_junk/
+output/
+
+PHOENIX old/
+Phoenix Workforce/
+sato 4-2026/
+trae/
+
+.env
+.env.*
+*.log
+coverage/
+tsconfig.tsbuildinfo
