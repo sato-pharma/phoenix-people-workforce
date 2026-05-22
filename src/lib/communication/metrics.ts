@@ -50,6 +50,11 @@ export type InAppNotificationMetricRow = {
   subject?: string | null;
 };
 
+export type InAppNotificationDetail = {
+  label: string;
+  value: string;
+};
+
 const deliveryStatuses = ["bounced", "complained", "delivered", "failed", "sent", "suppressed", "unknown"] as const;
 
 export function splitCommunicationEmailList(value: unknown): string[] {
@@ -205,9 +210,11 @@ export function mapInAppNotificationRows(rows: InAppNotificationMetricRow[], emp
       const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
         ? row.metadata
         : {};
+      const details = notificationDetails(metadata);
 
       return {
         category: String(row.category ?? "general"),
+        details,
         href: typeof metadata.href === "string" ? metadata.href : null,
         id: String(row.id ?? ""),
         message: typeof metadata.message === "string" ? metadata.message : String(row.subject ?? "Notification"),
@@ -217,4 +224,55 @@ export function mapInAppNotificationRows(rows: InAppNotificationMetricRow[], emp
         title: typeof metadata.title === "string" ? metadata.title : String(row.subject ?? "Notification"),
       };
     });
+}
+
+function detailValue(value: unknown) {
+  if (value === null || typeof value === "undefined") return "";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "object") return "";
+  return String(value).trim();
+}
+
+function notificationDetails(metadata: Record<string, unknown>): InAppNotificationDetail[] {
+  const preferred: Array<[string, string[]]> = [
+    ["Order", ["orderId", "order_id", "orderNo", "order_no", "orderNumber", "order_number"]],
+    ["Request", ["requestId", "request_id", "requestNo", "request_no"]],
+    ["Employee", ["employee", "employeeName", "employee_name", "employeeHrId", "employee_hr_id"]],
+    ["Status", ["status", "workflowStatus", "workflow_status"]],
+    ["Amount", ["amount", "total", "value"]],
+    ["Date", ["date", "createdAt", "created_at", "submittedAt", "submitted_at"]],
+  ];
+  const details: InAppNotificationDetail[] = [];
+  const used = new Set<string>();
+
+  for (const [label, keys] of preferred) {
+    const key = keys.find((candidate) => detailValue(metadata[candidate]));
+    if (!key) continue;
+    used.add(key);
+    details.push({ label, value: detailValue(metadata[key]) });
+  }
+
+  const metrics = metadata.metrics;
+  if (Array.isArray(metrics)) {
+    for (const metric of metrics) {
+      if (!metric || typeof metric !== "object") continue;
+      const label = detailValue((metric as { label?: unknown }).label);
+      const value = detailValue((metric as { value?: unknown }).value);
+      if (!label || !value) continue;
+      details.push({ label, value });
+    }
+  }
+
+  for (const [key, value] of Object.entries(metadata)) {
+    if (details.length >= 8) break;
+    if (used.has(key) || ["href", "message", "metrics", "title"].includes(key)) continue;
+    const text = detailValue(value);
+    if (!text) continue;
+    details.push({
+      label: key.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2"),
+      value: text,
+    });
+  }
+
+  return details.slice(0, 8);
 }

@@ -1,9 +1,9 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
-import { mapInAppNotificationRows } from "@/lib/communication/metrics";
+import { mapInAppNotificationRows, type InAppNotificationDetail } from "@/lib/communication/metrics";
 
-export type InAppNotificationCategory = "coaching_report" | "general";
+export type InAppNotificationCategory = "coaching_report" | "general" | "internal_message";
 
 export type InAppNotificationInput = {
   category: InAppNotificationCategory | string;
@@ -21,6 +21,7 @@ export type InAppNotificationResult =
 
 export type InAppNotificationView = {
   category: string;
+  details: InAppNotificationDetail[];
   href: string | null;
   id: string;
   message: string;
@@ -142,6 +143,20 @@ export async function listInAppNotificationsForViewer(
     for (const row of (employeeResult.data ?? []) as InAppNotificationEventRow[]) {
       const id = String(row.id ?? "");
       if (id) rowsById.set(id, row);
+    }
+
+    const recipientResult = await supabase
+      .from("notification_events")
+      .select(selectColumns)
+      .contains("recipients", [employeeHrId])
+      .order("created_at", { ascending: false })
+      .limit(boundedLimit);
+
+    if (!recipientResult.error) {
+      for (const row of (recipientResult.data ?? []) as InAppNotificationEventRow[]) {
+        const id = String(row.id ?? "");
+        if (id) rowsById.set(id, row);
+      }
     }
 
     const rows = Array.from(rowsById.values())
