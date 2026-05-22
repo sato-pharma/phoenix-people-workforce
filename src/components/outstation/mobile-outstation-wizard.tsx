@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Car, CheckCircle2, MapPin, ReceiptText, Route, TrainFront } from "lucide-react";
+import { Calculator, Camera, Car, CheckCircle2, MapPin, ReceiptText, Route, TrainFront } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { ApprovalRecommendationBadge } from "@/components/outstation/approval-recommendation-badge";
@@ -26,7 +26,7 @@ import type {
   OutstationExpenseType,
   OutstationTransportationType,
 } from "@/lib/outstation/types";
-import { formatEmployeeDisplayName } from "@/lib/utils";
+import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
 type MedicalTripOption = {
   hrId: string;
@@ -579,6 +579,13 @@ export function MobileOutstationWizard({
   );
 
   const canAutoCalculate = Boolean(captured && tripStartDate && tripEndDate);
+  const summaryStatus = isCalculating
+    ? "Calculating"
+    : calculation
+      ? "Ready to review"
+      : canAutoCalculate
+        ? "Preparing"
+        : "Waiting for trip details";
   const calculationKey = useMemo(() => {
     if (!captured || !tripStartDate || !tripEndDate) return "";
 
@@ -925,7 +932,7 @@ export function MobileOutstationWizard({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <OfflineSyncBanner visible={isOffline} />
 
       {showIntro ? (
@@ -950,13 +957,13 @@ export function MobileOutstationWizard({
       </section>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid min-w-0 gap-3 md:grid-cols-3">
         <WizardStep active={step === 1} icon={ReceiptText} label="1. Trip details" />
         <WizardStep active={step === 2} icon={transportIcon} label="2. Validate route" />
         <WizardStep active={step === 3} icon={CheckCircle2} label="3. Review & submit" />
       </div>
 
-      <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+      <Card className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_18px_40px_rgba(15,23,42,0.06)] sm:p-5">
         <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
           Request Details
         </p>
@@ -964,7 +971,7 @@ export function MobileOutstationWizard({
           Fill the trip and let the system calculate the rest
         </h2>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Field label="Expense Type">
             <select
               className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
@@ -986,40 +993,31 @@ export function MobileOutstationWizard({
           </Field>
 
           <Field label="Duration">
-            <div className="flex min-h-11 items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
+            <div className="flex min-h-11 min-w-0 items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold leading-6 text-slate-800">
               {durationSummary}
             </div>
           </Field>
 
-          <Field label="From">
-            <div className="flex min-h-11 items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
-              {residenceSummary}
-            </div>
+          <Field className="md:col-span-2" label="From">
+            <LocationValue value={residenceSummary} />
           </Field>
 
-          <Field label="To">
-            <button
-              className="flex min-h-11 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-800 transition hover:border-orange-300 hover:bg-orange-50"
+          <Field className="md:col-span-2" label="To">
+            <LocationCaptureButton
               disabled={isCapturing}
+              loading={isCapturing}
               onClick={() => void captureLocation()}
-              type="button"
-            >
-              <span className="truncate">
-                {isCapturing
+              value={
+                isCapturing
                   ? "Capturing destination..."
-                  : captured?.toLabel ?? "Tap here to capture current location"}
-              </span>
-              {isCapturing ? (
-                <LoadingSpinner />
-              ) : (
-                <MapPin className="h-4 w-4 shrink-0 text-orange-500" />
-              )}
-            </button>
+                  : captured?.toLabel ?? "Tap here to capture current location"
+              }
+            />
           </Field>
 
           <Field label="Transportation Type">
             <select
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+              className="h-11 w-full min-w-0 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
               onChange={(event) =>
                 handleTransportationTypeChange(event.target.value as OutstationTransportationType)
               }
@@ -1034,7 +1032,7 @@ export function MobileOutstationWizard({
 
           <Field label="Medical Representative">
             <select
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 disabled:bg-slate-50 disabled:text-slate-400"
+              className="h-11 w-full min-w-0 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 disabled:bg-slate-50 disabled:text-slate-400"
               disabled={medicalTripOptions.length === 0}
               onChange={(event) => setMedicalTripHrId(event.target.value)}
               value={medicalTripHrId}
@@ -1082,9 +1080,9 @@ export function MobileOutstationWizard({
             </>
           ) : null}
 
-          <Field label="Notes">
+          <Field className="md:col-span-2 xl:col-span-4" label="Notes">
             <textarea
-              className="min-h-28 w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-orange-50"
+              className="min-h-28 w-full min-w-0 resize-y rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-orange-50"
               onChange={(event) => setNotes(event.target.value)}
               placeholder="Add any trip note or explanation"
               value={notes}
@@ -1092,17 +1090,41 @@ export function MobileOutstationWizard({
           </Field>
         </div>
 
-        <div className="mt-5">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
-            Auto Calculated Summary
-          </p>
-          <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-6 overflow-hidden rounded-[24px] border border-orange-100 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_58%,#f8fafc_100%)] p-4 shadow-[0_16px_36px_rgba(15,23,42,0.05)] sm:p-5">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-[0_10px_22px_rgba(249,115,22,0.22)]">
+                <Calculator className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-black uppercase text-orange-600">
+                  Auto Calculated Summary
+                </p>
+                <p className="mt-1 text-[13px] font-medium leading-6 text-slate-600">
+                  Live totals update after the dates and destination are captured.
+                </p>
+              </div>
+            </div>
+            <span className="w-fit rounded-full border border-orange-200 bg-white px-3 py-1 text-[11px] font-black uppercase text-orange-700">
+              {summaryStatus}
+            </span>
+          </div>
+
+          <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <SummaryValue
+              featured
+              label="Total Cost"
+              pending={!calculation}
+              value={calculation ? egp(calculation.expectedTotalAmount) : "Will appear automatically"}
+            />
             <SummaryValue
               label="Allowance"
+              pending={!calculation}
               value={calculation ? egp(calculation.allowanceAmount) : "Will appear automatically"}
             />
             <SummaryValue
               label={transportationType === "car" ? "Travel Cost" : "Ticket Cost"}
+              pending={!calculation}
               value={
                 calculation
                   ? transportationType === "car"
@@ -1112,11 +1134,8 @@ export function MobileOutstationWizard({
               }
             />
             <SummaryValue
-              label="Total Cost"
-              value={calculation ? egp(calculation.expectedTotalAmount) : "Will appear automatically"}
-            />
-            <SummaryValue
               label="Kilometer"
+              pending={calculation?.distanceFromResidenceKm == null}
               value={
                 calculation?.distanceFromResidenceKm != null
                   ? `${calculation.distanceFromResidenceKm.toFixed(2)} KM`
@@ -1125,6 +1144,7 @@ export function MobileOutstationWizard({
             />
             <SummaryValue
               label="Estimated Duration"
+              pending={calculation?.durationMinutes == null}
               value={
                 calculation?.durationMinutes != null
                   ? `${calculation.durationMinutes.toFixed(0)} mins`
@@ -1133,6 +1153,7 @@ export function MobileOutstationWizard({
             />
             <SummaryValue
               label="Eligibility"
+              pending={!calculation}
               value={
                 calculation
                   ? calculation.eligibilityStatus.replace(/_/g, " ")
@@ -1142,11 +1163,13 @@ export function MobileOutstationWizard({
           </div>
         </div>
 
-        <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
           {isCalculating ? (
-            <span className="inline-flex items-center gap-2 font-medium text-slate-800">
+            <span className="inline-flex min-w-0 items-center gap-2 font-medium text-slate-800">
               <LoadingSpinner />
-              Phoenix is calculating kilometer, allowance, amount, and validation automatically...
+              <span className="min-w-0 break-words">
+                Phoenix is calculating kilometer, allowance, amount, and validation automatically...
+              </span>
             </span>
           ) : canAutoCalculate ? (
             <span>
@@ -1374,7 +1397,7 @@ function WizardStep({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
+      className={`flex min-w-0 items-center gap-3 rounded-2xl border px-4 py-3 ${
         active ? "border-orange-200 bg-orange-50" : "border-slate-200 bg-white"
       }`}
     >
@@ -1385,25 +1408,70 @@ function WizardStep({
       >
         <Icon className="h-4 w-4" />
       </span>
-      <span className="text-sm font-bold text-slate-900">{label}</span>
+      <span className="min-w-0 text-sm font-bold leading-5 text-slate-900">{label}</span>
     </div>
   );
 }
 
 function Field({
   children,
+  className,
   label,
 }: {
   children: React.ReactNode;
+  className?: string;
   label: string;
 }) {
   return (
-    <label className="block">
+    <label className={cn("block min-w-0", className)}>
       <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
         {label}
       </span>
       {children}
     </label>
+  );
+}
+
+function LocationValue({ value }: { value: string }) {
+  return (
+    <div className="flex min-h-12 w-full min-w-0 items-start gap-2.5 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold leading-6 text-slate-800">
+      <MapPin className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
+      <span className="min-w-0 flex-1 whitespace-normal break-words [overflow-wrap:anywhere]">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function LocationCaptureButton({
+  disabled,
+  loading,
+  onClick,
+  value,
+}: {
+  disabled: boolean;
+  loading: boolean;
+  onClick: () => void;
+  value: string;
+}) {
+  return (
+    <button
+      className="flex min-h-12 w-full min-w-0 items-start gap-2.5 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm font-semibold leading-6 text-slate-800 transition hover:border-orange-300 hover:bg-orange-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="min-w-0 flex-1 whitespace-normal break-words [overflow-wrap:anywhere]">
+        {value}
+      </span>
+      {loading ? (
+        <span className="mt-1 shrink-0">
+          <LoadingSpinner />
+        </span>
+      ) : (
+        <MapPin className="mt-1 h-4 w-4 shrink-0 text-orange-500" />
+      )}
+    </button>
   );
 }
 
@@ -1415,9 +1483,11 @@ function Stat({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white/80 p-4">
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 text-sm font-semibold text-slate-900">{value}</p>
+      <p className="mt-2 break-words text-sm font-semibold leading-6 text-slate-900 [overflow-wrap:anywhere]">
+        {value}
+      </p>
     </div>
   );
 }
@@ -1430,24 +1500,46 @@ function FieldValue({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 text-sm font-semibold capitalize text-slate-900">{value}</p>
+      <p className="mt-2 break-words text-sm font-semibold capitalize leading-6 text-slate-900 [overflow-wrap:anywhere]">
+        {value}
+      </p>
     </div>
   );
 }
 
 function SummaryValue({
+  featured = false,
   label,
+  pending = false,
   value,
 }: {
+  featured?: boolean;
   label: string;
+  pending?: boolean;
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/70 bg-white/90 p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 text-xl font-black tracking-[-0.03em] text-slate-950">{value}</p>
+    <div
+      className={cn(
+        "min-w-0 rounded-[20px] border bg-white/90 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]",
+        featured ? "border-orange-200" : "border-white/80",
+      )}
+    >
+      <p className="text-[11px] font-black uppercase text-slate-500">{label}</p>
+      <p
+        className={cn(
+          "mt-2 break-words leading-tight [overflow-wrap:anywhere]",
+          pending
+            ? "text-[13px] font-semibold text-slate-500"
+            : featured
+              ? "text-2xl font-black text-orange-600"
+              : "text-lg font-black text-slate-950",
+        )}
+      >
+        {value}
+      </p>
     </div>
   );
 }
