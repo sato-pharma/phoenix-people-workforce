@@ -944,8 +944,11 @@ export async function importApprovedExpensesToPayroll(input: {
   const { data: importResult, error: importError } = await supabase.rpc(
     "phx_import_approved_expenses_to_payroll",
     {
-      p_month: input.month,
-      p_year: input.year,
+      p_month:          input.month,
+      p_year:           input.year,
+      p_import_job_id:  importJobId,
+      p_source_file:    input.fileName,
+      p_actor_login_id: accessContext.loginId ?? "system",
     },
   );
 
@@ -958,6 +961,8 @@ export async function importApprovedExpensesToPayroll(input: {
   }
 
   const result = (importResult ?? null) as {
+    import_job_id?: string | null;
+    idempotent_replay?: boolean;
     imported_employees?: number;
     imported_total?: number;
     matched_employees?: string[];
@@ -969,6 +974,8 @@ export async function importApprovedExpensesToPayroll(input: {
   if (!result?.target_batch_id) {
     console.info(`[payroll-expenses] import job ${importJobId} completed — no target batch matched`);
     return {
+      importJobId,
+      idempotentReplay: false,
       importedEmployees: 0,
       importedTotal: 0,
       matchedEmployees: [],
@@ -977,12 +984,16 @@ export async function importApprovedExpensesToPayroll(input: {
     };
   }
 
+  const idempotentReplay = Boolean(result.idempotent_replay);
   console.info(
-    `[payroll-expenses] import job ${importJobId} completed — batch ${result.target_batch_id}, ` +
-    `imported ${result.imported_employees ?? 0} employees, total ${result.imported_total ?? 0}`,
+    `[payroll-expenses] import job ${importJobId} ${idempotentReplay ? "replayed (idempotent)" : "completed"} — ` +
+    `batch ${result.target_batch_id}, imported ${result.imported_employees ?? 0} employees, ` +
+    `total ${result.imported_total ?? 0}`,
   );
 
   return {
+    importJobId,
+    idempotentReplay,
     importedEmployees: Number(result.imported_employees ?? 0),
     importedTotal: Number(result.imported_total ?? 0),
     matchedEmployees: Array.isArray(result.matched_employees) ? result.matched_employees.map(String) : [],
