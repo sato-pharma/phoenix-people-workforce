@@ -49,12 +49,15 @@ function createSupabaseClient(apiKey: string): SupabaseClient {
   );
 }
 
+let _adminClient: SupabaseClient | null = null;
+let _userClient: SupabaseClient | null = null;
+
 /**
  * Admin client using service role key.
  * Bypasses RLS. Use ONLY for system jobs, background tasks, or admin-only logic.
  */
 export function getSupabaseAdmin(): SupabaseClient {
-  return createSupabaseClient(getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
+  return (_adminClient ??= createSupabaseClient(getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY")));
 }
 
 /**
@@ -62,5 +65,5 @@ export function getSupabaseAdmin(): SupabaseClient {
  * Respects RLS. Use for client-facing operations where a user session might be present.
  */
 export function getSupabaseUserClient(): SupabaseClient {
-  return createSupabaseClient(getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"));
+  return (_userClient ??= createSupabaseClient(getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY")));
 }

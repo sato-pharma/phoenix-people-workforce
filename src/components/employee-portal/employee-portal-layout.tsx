@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition, useSyncExternalStore, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useTransition, useSyncExternalStore, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -77,6 +77,11 @@ type EmployeePortalNavSection = {
   hideTitle?: boolean;
   items: EmployeePortalNavItem[];
   title: string;
+};
+
+type EmployeePortalQuickLink = EmployeePortalNavItem & {
+  keywords: string;
+  sectionTitle: string;
 };
 
 function sectionRailIcon(title: string): typeof Activity {
@@ -348,9 +353,12 @@ export function EmployeePortalTopNav({
   disableSessionGuard = false,
   visibility,
 }: EmployeePortalNavProps) {
+  const router = useRouter();
   const currentPathname = usePathname();
   const pathname = activePathOverride ?? currentPathname;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [quickSearchOpen, setQuickSearchOpen] = useState(false);
+  const [quickSearchQuery, setQuickSearchQuery] = useState("");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
@@ -363,6 +371,28 @@ export function EmployeePortalTopNav({
     .toUpperCase();
 
   const menuSections = buildEmployeePortalSections(visibility);
+  const quickLinks = useMemo<EmployeePortalQuickLink[]>(
+    () =>
+      menuSections.flatMap((section) =>
+        section.items.map((item) => ({
+          ...item,
+          keywords: `${section.title} ${item.label} ${item.href}`.toLowerCase(),
+          sectionTitle: section.title,
+        })),
+      ),
+    [menuSections],
+  );
+  const normalizedQuickSearchQuery = quickSearchQuery.trim().toLowerCase();
+  const quickSearchResults = useMemo(() => {
+    const availableLinks = quickLinks.filter((item) => item.href !== pathname);
+    if (!normalizedQuickSearchQuery) {
+      return availableLinks.slice(0, 6);
+    }
+
+    return availableLinks
+      .filter((item) => item.keywords.includes(normalizedQuickSearchQuery))
+      .slice(0, 6);
+  }, [normalizedQuickSearchQuery, pathname, quickLinks]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -381,6 +411,20 @@ export function EmployeePortalTopNav({
     } finally {
       window.location.href = "/login";
     }
+  };
+
+  const navigateToQuickLink = (href: string) => {
+    setQuickSearchOpen(false);
+    setQuickSearchQuery("");
+    dispatchEmployeePortalRoutePending(href);
+    router.push(href);
+  };
+
+  const handleQuickSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const firstMatch = quickSearchResults[0];
+    if (!firstMatch) return;
+    navigateToQuickLink(firstMatch.href);
   };
 
   return (
@@ -406,14 +450,52 @@ export function EmployeePortalTopNav({
             </div>
           </div>
 
-          <div className="relative ml-auto hidden w-full max-w-sm items-center md:flex">
-            <Search className="pointer-events-none absolute left-3 h-4 w-4 text-slate-400" />
-            <input
-              aria-label="Search"
-              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 pl-9 pr-3 text-sm font-medium text-slate-700 shadow-inner placeholder:text-slate-400 outline-none transition focus:border-orange-300 focus:bg-white focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
-              placeholder="Search anything..."
-              type="text"
-            />
+          <div className="relative ml-auto hidden w-full max-w-sm md:flex">
+            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <form className="w-full" onSubmit={handleQuickSearchSubmit}>
+              <input
+                aria-label="Quick page search"
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 pl-9 pr-3 text-sm font-medium text-slate-700 shadow-inner placeholder:text-slate-400 outline-none transition focus:border-orange-300 focus:bg-white focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
+                onBlur={() => window.setTimeout(() => setQuickSearchOpen(false), 120)}
+                onChange={(event) => {
+                  setQuickSearchQuery(event.target.value);
+                  setQuickSearchOpen(true);
+                }}
+                onFocus={() => setQuickSearchOpen(true)}
+                placeholder="Jump to a portal page"
+                type="text"
+                value={quickSearchQuery}
+              />
+            </form>
+            {quickSearchOpen ? (
+              <div className="absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.12)]">
+                {quickSearchResults.length > 0 ? (
+                  <div className="max-h-[320px] overflow-auto py-2">
+                    {quickSearchResults.map((item) => (
+                      <button
+                        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-orange-50"
+                        key={`${item.sectionTitle}-${item.href}`}
+                        onClick={() => navigateToQuickLink(item.href)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        type="button"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-800">{item.label}</p>
+                          <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">
+                            {item.sectionTitle}
+                          </p>
+                        </div>
+                        <span className="truncate text-xs font-semibold text-orange-600">{item.href}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-4 py-3 text-sm font-medium text-slate-500">
+                    No matching portal pages.
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
           <InAppNotificationsBell isAdminMode={false} />
           <InternalMessagesMenu isAdminMode={false} />

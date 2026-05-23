@@ -87,9 +87,11 @@ export function EmployeePortalEmptyState({
   title,
   message,
   children,
+  supportReference,
 }: {
   children?: ReactNode;
   message: string;
+  supportReference?: string | null;
   title: string;
 }) {
   return (
@@ -99,6 +101,11 @@ export function EmployeePortalEmptyState({
       </div>
       <p className="mt-4 text-lg font-semibold text-slate-900">{title}</p>
       <p className="mt-2 text-sm text-slate-600">{message}</p>
+      {supportReference ? (
+        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+          Reference: {supportReference}
+        </p>
+      ) : null}
       {children ? <div className="mt-4">{children}</div> : null}
     </Card>
   );

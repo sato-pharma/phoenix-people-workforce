@@ -13,6 +13,7 @@ import {
   createOutstationCarEvidenceSignedUrl,
   deleteOutstationCarEvidenceImage,
   deleteOutstationTicketAttachments,
+  buildOutstationCarEvidenceImagePath,
   uploadOutstationCarEvidenceImage,
   uploadOutstationTicketAttachments,
 } from "@/lib/outstation/car-evidence-storage";
@@ -113,6 +114,19 @@ function appendCarEvidenceNote(
 function numberValue(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function hasTicketAttachmentEvidence(input: {
+  hasTicketAttachments?: boolean;
+  ticketAttachmentPaths?: string[];
+}) {
+  if (!Array.isArray(input.ticketAttachmentPaths)) {
+    return Boolean(input.hasTicketAttachments);
+  }
+  if (input.ticketAttachmentPaths.length > 0) return true;
+  return input.ticketAttachmentPaths.some(
+    (path) => typeof path === "string" && path.trim().length > 0,
+  );
 }
 
 function nullableNumber(value: unknown) {
@@ -1027,7 +1041,7 @@ export async function calculateOutstationExpense(
     capturedAt: input.capturedAt,
     capturedLatitude: input.capturedLatitude,
     capturedLongitude: input.capturedLongitude,
-    hasTicketAttachments: input.hasTicketAttachments,
+    hasTicketAttachments: hasTicketAttachmentEvidence(input),
     offlineCaptured: input.offlineCaptured,
   });
   const { policy, result } = validated;
@@ -1052,7 +1066,7 @@ export async function calculateOutstationExpense(
     ticketAmount = roundMoney(
       numberValue(input.goTicketAmount) + numberValue(input.returnTicketAmount),
     );
-    if (policy.requiresTicketAttachment && !input.hasTicketAttachments) {
+    if (policy.requiresTicketAttachment && !hasTicketAttachmentEvidence(input)) {
       if (!result.fraudFlags.includes("missing_ticket_attachments")) {
         result.fraudFlags.push("missing_ticket_attachments");
       }
@@ -1081,7 +1095,7 @@ export async function calculateOutstationExpense(
   const recommendation = recommendationForResult({
     eligibilityStatus: result.eligibilityStatus,
     fraudFlags: result.fraudFlags,
-    hasTicketAttachments: Boolean(input.hasTicketAttachments),
+    hasTicketAttachments: hasTicketAttachmentEvidence(input),
     policy,
     suspiciousLocationScore: buildSuspiciousScore(result.fraudFlags),
     territoryValidationStatus: result.territoryValidationStatus,
@@ -1144,6 +1158,8 @@ export async function submitOutstationRequest(
   const identity = await getEmployeeIdentity(access);
   const residence = await getResidenceLocationForEmployee(identity.employeeHrId);
   const supabase = getSupabaseAdmin();
+  const ticketAttachmentMetadata = input.ticketAttachmentMetadata ?? [];
+  const ticketAttachmentPaths = input.ticketAttachmentPaths ?? [];
   const storedCarEvidenceMetadata =
     calculation.transportationType === "car" && input.carEvidenceMetadata
       ? {
@@ -1152,20 +1168,30 @@ export async function submitOutstationRequest(
           requestId: input.carEvidenceMetadata.requestId ?? null,
         }
       : null;
-  let carEvidenceImagePath: string | null = null;
+  let carEvidenceImagePath: string | null = input.carEvidenceImagePath ?? null;
+  let uploadedCarEvidenceInSubmit = false;
 
   if (calculation.transportationType === "car") {
-    if (!input.carEvidenceImageDataUrl) {
+    if (!carEvidenceImagePath && !input.carEvidenceImageDataUrl) {
       throw new Error("Car transport requires the live camera evidence image before submitting the request.");
     }
     if (!storedCarEvidenceMetadata) {
       throw new Error("Car live camera evidence metadata is missing.");
     }
+    if (
+      carEvidenceImagePath &&
+      carEvidenceImagePath !== buildOutstationCarEvidenceImagePath(storedCarEvidenceMetadata)
+    ) {
+      throw new Error("Car evidence image path does not match the submitted metadata.");
+    }
 
-    carEvidenceImagePath = await uploadOutstationCarEvidenceImage({
-      imageDataUrl: input.carEvidenceImageDataUrl,
-      metadata: storedCarEvidenceMetadata,
-    });
+    if (!carEvidenceImagePath && input.carEvidenceImageDataUrl) {
+      carEvidenceImagePath = await uploadOutstationCarEvidenceImage({
+        imageDataUrl: input.carEvidenceImageDataUrl,
+        metadata: storedCarEvidenceMetadata,
+      });
+      uploadedCarEvidenceInSubmit = true;
+    }
   }
 
   const insertPayload = {
@@ -1204,6 +1230,8 @@ export async function submitOutstationRequest(
     notes: appendCarEvidenceNote(calculation.notes, storedCarEvidenceMetadata),
     offline_captured: calculation.offlineCaptured,
     overnight_days: calculation.overnightDays,
+    ticket_attachment_metadata: ticketAttachmentMetadata,
+    ticket_attachment_paths: ticketAttachmentPaths,
     residence_address: residence?.residenceAddress ?? null,
     residence_area: residence?.residenceArea ?? null,
     residence_city: residence?.residenceCity ?? null,
@@ -1234,7 +1262,14 @@ export async function submitOutstationRequest(
     .single();
 
   if (error) {
-    await deleteOutstationCarEvidenceImage(carEvidenceImagePath);
+    const cleanupTasks = [];
+    if (uploadedCarEvidenceInSubmit && carEvidenceImagePath) {
+      cleanupTasks.push(deleteOutstationCarEvidenceImage(carEvidenceImagePath));
+    }
+    if (ticketAttachmentPaths.length > 0) {
+      cleanupTasks.push(deleteOutstationTicketAttachments(ticketAttachmentPaths));
+    }
+    await Promise.all(cleanupTasks).catch(() => undefined);
     throw new Error(error.message);
   }
 
@@ -1405,8 +1440,17 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     residenceCity: text(row.residence_city) || null,
     residenceLatitude: nullableNumber(row.residence_latitude),
     residenceLongitude: nullableNumber(row.residence_longitude),
+    routeAlternatives: safeJsonParse<OutstationRouteAlternative[]>(
+      row.route_alternatives_json,
+      [],
+    ),
     routePolyline: text(row.route_polyline) || null,
-    routeError: null,
+    routeError: text(row.route_error) || null,
+    selectedRouteIndex: nullableNumber(row.selected_route_index),
+    selectedRouteReason:
+      text(row.selected_route_reason) === "fastest_duration"
+        ? "fastest_duration"
+        : null,
     sameDayTrip: Boolean(row.same_day_trip),
     status: text(row.status),
     submittedAt: isoString(row.submitted_at) || null,

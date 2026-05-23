@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import {
-  parseCarEvidenceImageDataUrl,
+  parseCarEvidenceImagePath,
   parseCarEvidenceMetadata,
 } from "@/app/api/outstation/request-body";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       tripEndDate: String(body.tripEndDate ?? ""),
       tripStartDate: String(body.tripStartDate ?? ""),
       attachmentCount: Number(body.attachmentCount ?? 0),
-      carEvidenceImageDataUrl: parseCarEvidenceImageDataUrl(body),
+      carEvidenceImagePath: parseCarEvidenceImagePath(body),
     });
 
     return NextResponse.json(result);

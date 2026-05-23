@@ -1,5 +1,16 @@
 type LatLng = { lat: number; lng: number };
 
+const _reverseGeocodeCache = new Map<string, GeocodeResponse | null>();
+const _geocodeAddressCache = new Map<string, LatLng | null>();
+const _computeRoutesCache = new Map<string, {
+  alternatives: GoogleRouteAlternative[];
+  distanceMeters: number | null;
+  durationInTrafficSeconds: number | null;
+  durationSeconds: number | null;
+  polyline: string | null;
+  selectedRouteIndex: number | null;
+}>();
+
 export type GoogleRoutesApiRoute = {
   description?: string;
   distanceMeters?: number;
@@ -172,6 +183,10 @@ async function computeRoutes(
     };
   }
 
+  const routesCacheKey = `${origin.lat},${origin.lng},${destination.lat},${destination.lng}`;
+  const cached = _computeRoutesCache.get(routesCacheKey);
+  if (cached) return cached;
+
   async function requestRoutes(options: {
     computeAlternativeRoutes: boolean;
     routingPreference: "TRAFFIC_AWARE" | "TRAFFIC_UNAWARE";
@@ -262,7 +277,7 @@ async function computeRoutes(
   const selectedRouteIndex = route ? routes.indexOf(route) : -1;
   const alternatives = buildGoogleRouteAlternatives(routes);
 
-  return {
+  const routesResult = {
     alternatives,
     distanceMeters: route ? routeDistanceMeters(route) : null,
     durationInTrafficSeconds: route ? routeDurationInTrafficSeconds(route) : null,
@@ -270,6 +285,8 @@ async function computeRoutes(
     polyline: route?.polyline?.encodedPolyline ?? null,
     selectedRouteIndex: selectedRouteIndex >= 0 ? selectedRouteIndex : null,
   };
+  _computeRoutesCache.set(routesCacheKey, routesResult);
+  return routesResult;
 }
 
 export function getBrowserKey() {
@@ -284,8 +301,13 @@ export async function googleGeocodeAddress(address: string): Promise<LatLng | nu
   const key = getServerKey();
   if (!key || !address.trim()) return null;
 
+  const normalizedAddress = address.trim();
+  if (_geocodeAddressCache.has(normalizedAddress)) {
+    return _geocodeAddressCache.get(normalizedAddress) ?? null;
+  }
+
   const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
-  url.searchParams.set("address", address);
+  url.searchParams.set("address", normalizedAddress);
   url.searchParams.set("key", key);
 
   const response = await fetch(url.toString(), { cache: "no-store" });
@@ -300,10 +322,13 @@ export async function googleGeocodeAddress(address: string): Promise<LatLng | nu
 
   const location = payload.results?.[0]?.geometry?.location;
   if (!location || !Number.isFinite(location.lat) || !Number.isFinite(location.lng)) {
+    _geocodeAddressCache.set(normalizedAddress, null);
     return null;
   }
 
-  return { lat: Number(location.lat), lng: Number(location.lng) };
+  const result: LatLng = { lat: Number(location.lat), lng: Number(location.lng) };
+  _geocodeAddressCache.set(normalizedAddress, result);
+  return result;
 }
 
 function extractAddressComponent(
@@ -322,8 +347,13 @@ export async function googleReverseGeocode(
   const key = getServerKey();
   if (!key) return null;
 
+  const cacheKey = `${location.lat},${location.lng}`;
+  if (_reverseGeocodeCache.has(cacheKey)) {
+    return _reverseGeocodeCache.get(cacheKey) ?? null;
+  }
+
   const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
-  url.searchParams.set("latlng", `${location.lat},${location.lng}`);
+  url.searchParams.set("latlng", cacheKey);
   url.searchParams.set("key", key);
 
   const response = await fetch(url.toString(), { cache: "no-store" });
@@ -342,10 +372,11 @@ export async function googleReverseGeocode(
   const result = payload.results?.[0];
   const geo = result?.geometry?.location;
   if (!result || !geo || !Number.isFinite(geo.lat) || !Number.isFinite(geo.lng)) {
+    _reverseGeocodeCache.set(cacheKey, null);
     return null;
   }
 
-  return {
+  const geocoded: GeocodeResponse = {
     area:
       extractAddressComponent(result.address_components, [
         "sublocality",
@@ -361,6 +392,8 @@ export async function googleReverseGeocode(
     lat: Number(geo.lat),
     lng: Number(geo.lng),
   };
+  _reverseGeocodeCache.set(cacheKey, geocoded);
+  return geocoded;
 }
 
 export async function googleDistanceMatrix(

@@ -18,6 +18,22 @@ export async function POST(request: Request) {
     await assertPermission(access, "outstation", "create");
 
     const body = (await request.json()) as Record<string, unknown>;
+    const tripStartDate = String(body.tripStartDate ?? "");
+    const tripEndDate = String(body.tripEndDate ?? "");
+    const parsedTripStartDate = Date.parse(tripStartDate);
+    const parsedTripEndDate = Date.parse(tripEndDate);
+
+    if (
+      Number.isFinite(parsedTripStartDate) &&
+      Number.isFinite(parsedTripEndDate) &&
+      parsedTripEndDate < parsedTripStartDate
+    ) {
+      return NextResponse.json(
+        { error: "invalid_date_range", message: "End date cannot be before start date" },
+        { status: 400 },
+      );
+    }
+
     const result = await calculateOutstationExpense(access, {
       capturedAccuracyMeters: Number(body.capturedAccuracyMeters),
       capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : undefined,
@@ -38,8 +54,8 @@ export async function POST(request: Request) {
       returnTicketAmount: Number(body.returnTicketAmount ?? 0),
       carEvidenceMetadata: parseCarEvidenceMetadata(body),
       transportationType: String(body.transportationType ?? "car") as OutstationTransportationType,
-      tripEndDate: String(body.tripEndDate ?? ""),
-      tripStartDate: String(body.tripStartDate ?? ""),
+      tripEndDate,
+      tripStartDate,
       attachmentCount: Number(body.attachmentCount ?? 0),
     });
 

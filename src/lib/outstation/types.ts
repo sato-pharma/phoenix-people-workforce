@@ -145,6 +145,7 @@ export type OutstationCalculationInput = {
   capturedLatitude: number;
   capturedLongitude: number;
   carEvidenceImageDataUrl?: string;
+  carEvidenceImagePath?: string | null;
   claimedTotalAmount: number;
   expenseType: OutstationExpenseType;
   goTicketAmount?: number;
@@ -156,6 +157,8 @@ export type OutstationCalculationInput = {
   offlineCaptured?: boolean;
   returnTicketAmount?: number;
   carEvidenceMetadata?: OutstationCarEvidenceMetadata;
+  ticketAttachmentMetadata?: OutstationTicketAttachmentMetadata[];
+  ticketAttachmentPaths?: string[];
   transportationType: OutstationTransportationType;
   tripEndDate: string;
   tripStartDate: string;

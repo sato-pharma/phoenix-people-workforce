@@ -80,12 +80,14 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
 
   useEffect(() => {
     let mounted = true;
+    let abortCtrl: AbortController | null = null;
 
-    async function loadNotifications() {
+    async function loadNotifications(signal?: AbortSignal) {
       try {
         if (mounted) setLoading(true);
         const response = await fetch("/api/notifications/in-app", {
           headers: { Accept: "application/json" },
+          signal,
         });
         const payload = await response.json().catch(() => ({})) as NotificationsResponse;
         if (!response.ok) throw new Error("Notifications failed to load.");
@@ -93,7 +95,8 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
           setError(null);
           setNotifications(payload.data ?? []);
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
         if (mounted) {
           setError("Unable to load notifications.");
           setNotifications([]);
@@ -104,10 +107,15 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
     }
 
     void loadNotifications();
-    const interval = window.setInterval(() => void loadNotifications(), 60_000);
+    const interval = window.setInterval(() => {
+      abortCtrl?.abort();
+      abortCtrl = new AbortController();
+      void loadNotifications(abortCtrl.signal);
+    }, 300_000);
 
     return () => {
       mounted = false;
+      abortCtrl?.abort();
       window.clearInterval(interval);
     };
   }, []);
@@ -135,7 +143,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
   }
 
   return (
-    <div className="relative hidden sm:block">
+    <div className="relative">
       <button
         aria-label="Notifications"
         className={`relative inline-flex h-10 w-10 items-center justify-center rounded-lg ${

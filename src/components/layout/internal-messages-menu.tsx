@@ -176,7 +176,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
       <button
         aria-expanded={open}
         aria-label="Messages"
-        className={`relative hidden h-10 w-10 items-center justify-center rounded-lg sm:inline-flex ${
+        className={`relative inline-flex h-10 w-10 items-center justify-center rounded-lg ${
           isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
         }`}
         onClick={() => setOpen((current) => !current)}

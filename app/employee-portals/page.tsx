@@ -7,6 +7,7 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
+import { reportEmployeePortalFailure } from "@/lib/employee-portal/failure-reporting";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 
@@ -33,18 +34,21 @@ export default async function EmployeePortalsHomePage({
   await assertPermission(access, "employee_profile", "read");
 
   let data = null;
+  let supportReference: string | null = null;
   try {
     data = await getMedicalRepPortalData(access, {
       teamComparisonPeriod,
     });
-  } catch {
+  } catch (error) {
+    supportReference = await reportEmployeePortalFailure("dashboard-home", error);
     data = null;
   }
 
   if (!data) {
     return (
       <EmployeePortalEmptyState
-        message="Your command center is temporarily unavailable. Please try again in a moment."
+        message="Your command center is temporarily unavailable. Refresh the page, then contact support if the problem keeps happening."
+        supportReference={supportReference}
         title="Portal Unavailable"
       />
     );

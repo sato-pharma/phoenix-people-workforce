@@ -1,6 +1,7 @@
 import { EmployeePortalChrome } from "@/components/employee-portal/employee-portal-layout";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
+import { reportEmployeePortalFailure } from "@/lib/employee-portal/failure-reporting";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 
@@ -22,9 +23,11 @@ export async function EmployeePortalServerShell({
   await assertPermission(access, "employee_profile", "read");
 
   let data = null;
+  let supportReference: string | null = null;
   try {
     data = await getEmployeePortalShellData(access);
-  } catch {
+  } catch (error) {
+    supportReference = await reportEmployeePortalFailure("shell-data", error);
     data = null;
   }
 
@@ -32,6 +35,7 @@ export async function EmployeePortalServerShell({
     return (
       <EmployeePortalEmptyState
         message={unavailableMessage}
+        supportReference={supportReference}
         title={unavailableTitle}
       />
     );

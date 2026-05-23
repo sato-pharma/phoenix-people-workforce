@@ -9,6 +9,7 @@ export const OUTSTATION_EVIDENCE_BUCKET = "outstation-evidence";
 const CAR_EVIDENCE_MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 const TICKET_ATTACHMENT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const CAR_EVIDENCE_SIGNED_URL_TTL_SECONDS = 60 * 60;
+const CAR_EVIDENCE_ALLOWED_CONTENT_TYPES = new Set(["image/jpeg"]);
 const TICKET_ATTACHMENT_ALLOWED_CONTENT_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
@@ -83,27 +84,61 @@ export function parseOutstationCarEvidenceImageDataUrl(dataUrl: string): ParsedC
   };
 }
 
-export async function uploadOutstationCarEvidenceImage(params: {
-  imageDataUrl: string;
+function assertOutstationCarEvidenceBytes(bytes: Buffer) {
+  if (bytes.length === 0) {
+    throw new Error("Car evidence image is empty. Capture the photo again.");
+  }
+
+  if (bytes.length > CAR_EVIDENCE_MAX_UPLOAD_BYTES) {
+    throw new Error("Car evidence image is too large. Capture the photo again.");
+  }
+}
+
+export async function uploadOutstationCarEvidenceImageFromBytes(params: {
+  bytes: Buffer;
   metadata: OutstationCarEvidenceMetadata;
 }) {
-  const parsed = parseOutstationCarEvidenceImageDataUrl(params.imageDataUrl);
+  assertOutstationCarEvidenceBytes(params.bytes);
   const path = buildOutstationCarEvidenceImagePath(params.metadata);
   const supabase = getSupabaseAdmin();
 
-  const { error } = await supabase.storage
-    .from(OUTSTATION_EVIDENCE_BUCKET)
-    .upload(path, parsed.bytes, {
-      cacheControl: "31536000",
-      contentType: parsed.contentType,
-      upsert: true,
-    });
+  const { error } = await supabase.storage.from(OUTSTATION_EVIDENCE_BUCKET).upload(path, params.bytes, {
+    cacheControl: "31536000",
+    contentType: "image/jpeg",
+    upsert: true,
+  });
 
   if (error) {
     throw new Error(`Unable to store car evidence image: ${error.message}`);
   }
 
   return path;
+}
+
+function parseCarEvidenceMetadataFromImage(imageFile: File) {
+  if (!CAR_EVIDENCE_ALLOWED_CONTENT_TYPES.has(imageFile.type)) {
+    throw new Error("Car evidence image must be a JPEG photo.");
+  }
+}
+
+export async function uploadOutstationCarEvidenceImage(params: {
+  imageDataUrl: string;
+  metadata: OutstationCarEvidenceMetadata;
+}) {
+  const parsed = parseOutstationCarEvidenceImageDataUrl(params.imageDataUrl);
+  return uploadOutstationCarEvidenceImageFromBytes({
+    bytes: parsed.bytes,
+    metadata: params.metadata,
+  });
+}
+
+export async function uploadOutstationCarEvidenceFile(params: {
+  imageFile: File;
+  metadata: OutstationCarEvidenceMetadata;
+}) {
+  parseCarEvidenceMetadataFromImage(params.imageFile);
+  const bytes = Buffer.from(await params.imageFile.arrayBuffer());
+  return uploadOutstationCarEvidenceImageFromBytes({ bytes, metadata: params.metadata });
 }
 
 export async function uploadOutstationTicketAttachments(

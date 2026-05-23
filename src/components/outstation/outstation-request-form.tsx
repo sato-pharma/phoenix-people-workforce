@@ -192,8 +192,8 @@ export function OutstationRequestForm({
       setTripStartDate("");
       setTripEndDate("");
       setMessage("Outstation request submitted successfully.");
-    } catch {
-      setMessage("Unable to submit the request.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to submit the request.");
     } finally {
       setIsSubmitting(false);
     }

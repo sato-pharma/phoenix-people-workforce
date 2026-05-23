@@ -2,13 +2,33 @@ import type { NextConfig } from "next";
 
 const isProduction = process.env.NODE_ENV === "production";
 
+const googleMapsCspSources = [
+  "https://maps.googleapis.com",
+  "https://maps.gstatic.com",
+  "https://www.gstatic.com",
+  "https://routes.googleapis.com",
+  "https://*.googleapis.com",
+  "https://*.gstatic.com",
+  "https://*.google.com",
+  "https://www.google.com",
+  "https://google.com",
+  "https://*.google.com",
+  "https://*.google-analytics.com",
+];
+
+const joinWithSpaces = (values: string[]) => values.join(" ");
+
 const contentSecurityPolicy = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' https://maps.googleapis.com https://maps.gstatic.com${isProduction ? "" : " 'unsafe-eval'"}`,
-  "style-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'unsafe-inline' blob:${isProduction ? "" : " 'unsafe-eval'"} ${joinWithSpaces(googleMapsCspSources)}`,
+  `worker-src 'self' blob: ${joinWithSpaces(googleMapsCspSources)}`,
+  `child-src 'self' blob: ${joinWithSpaces(googleMapsCspSources)}`,
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com",
+  "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://routes.googleapis.com",
+  `connect-src 'self' data: https://*.supabase.co wss://*.supabase.co ${joinWithSpaces(googleMapsCspSources)}`,
+  `frame-src 'self' blob: https://maps.google.com https://www.google.com https://www.google.com/maps https://maps.google.com/maps ${joinWithSpaces(googleMapsCspSources)}`,
   "media-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",

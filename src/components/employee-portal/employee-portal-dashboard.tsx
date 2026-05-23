@@ -4,18 +4,18 @@ import Link from "next/link";
 import type { ReactElement, ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  Tooltip,
-  XAxis,
-  YAxis,
-  Legend,
-} from "recharts";
+import dynamic from "next/dynamic";
+
+const AreaChart  = dynamic(() => import("recharts").then((m) => ({ default: m.AreaChart })),  { ssr: false });
+const PieChart   = dynamic(() => import("recharts").then((m) => ({ default: m.PieChart })),   { ssr: false });
+const Area       = dynamic(() => import("recharts").then((m) => ({ default: m.Area })),       { ssr: false });
+const CartesianGrid = dynamic(() => import("recharts").then((m) => ({ default: m.CartesianGrid })), { ssr: false });
+const Cell       = dynamic(() => import("recharts").then((m) => ({ default: m.Cell })),       { ssr: false });
+const Pie        = dynamic(() => import("recharts").then((m) => ({ default: m.Pie })),        { ssr: false });
+const Tooltip    = dynamic(() => import("recharts").then((m) => ({ default: m.Tooltip })),    { ssr: false });
+const XAxis      = dynamic(() => import("recharts").then((m) => ({ default: m.XAxis })),      { ssr: false });
+const YAxis      = dynamic(() => import("recharts").then((m) => ({ default: m.YAxis })),      { ssr: false });
+const Legend     = dynamic(() => import("recharts").then((m) => ({ default: m.Legend })),     { ssr: false });
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import {
   Activity,
@@ -686,6 +686,12 @@ function resolveExpenseActionHref(data: MedicalRepPortalData) {
   return isRole(data, "medical rep", "medical representative")
     ? "/employee-portals/expenses"
     : "/employee-portals/submit-expense";
+}
+
+function resolveTripsOverviewHref(data: MedicalRepPortalData) {
+  return isRole(data, "medical rep", "medical representative")
+    ? "/employee-portals/expenses"
+    : "/employee-portals/expense-dashboard";
 }
 
 function canUsePendingApprovals(data: MedicalRepPortalData) {
@@ -2346,7 +2352,9 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
             <p className="text-lg font-semibold text-slate-900">Recent Trips</p>
           </div>
-          <a className="text-xs font-medium text-orange-600 hover:text-orange-700" href="#">View All Trips &gt;</a>
+          <Link className="text-xs font-medium text-orange-600 hover:text-orange-700" href={resolveTripsOverviewHref(data)}>
+            View All Trips &gt;
+          </Link>
         </div>
         <div className="overflow-x-auto rounded-2xl border border-slate-100">
           <table className="w-full text-left text-sm">

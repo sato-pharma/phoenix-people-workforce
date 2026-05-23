@@ -5,6 +5,7 @@ import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
+import { reportEmployeePortalFailure } from "@/lib/employee-portal/failure-reporting";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getSalesDashboard } from "@/lib/sales/service";
@@ -48,6 +49,7 @@ export default async function EmployeePortalSalesPage({
   const resolvedParams = await searchParams;
 
   let initialData = null;
+  let supportReference: string | null = null;
 
   try {
     await assertPermission(accessContext, "sales", "read");
@@ -61,14 +63,16 @@ export default async function EmployeePortalSalesPage({
     if (normalizedProducts.length > 0) filters.products = normalizedProducts;
     
     initialData = await getSalesDashboard(filters, accessContext);
-  } catch {
+  } catch (error) {
+    supportReference = await reportEmployeePortalFailure("sales-dashboard", error);
     initialData = null;
   }
 
   if (!initialData) {
     return (
       <EmployeePortalEmptyState
-        message="Unable to load sales performance data. Please try again later."
+        message="Unable to load sales performance data right now. Refresh the page, then contact support if it keeps failing."
+        supportReference={supportReference}
         title="Sales Data Unavailable"
       />
     );

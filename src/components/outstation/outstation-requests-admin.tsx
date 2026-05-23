@@ -15,8 +15,9 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AdminCallout, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { OutstationReviewMap } from "@/components/outstation/outstation-review-map";
@@ -72,6 +73,12 @@ function formatKm(value: number | null | undefined) {
 
 function formatStatus(value: string) {
   return value.replace(/_/g, " ");
+}
+
+function parseRequestId(value: string | null) {
+  if (!value) return null;
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized : null;
 }
 
 function statusTone(status: string) {
@@ -421,6 +428,7 @@ export function OutstationRequestsAdmin({
     ? initialRequestId
     : requests[0]?.id ?? null;
   const [localRequests, setLocalRequests] = useState(requests);
+  const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
   const [eligibility, setEligibility] = useState("");
   const [role, setRole] = useState("");
@@ -431,6 +439,19 @@ export function OutstationRequestsAdmin({
   const [acting, setActing] = useState<{ action: AdminAction; id: number } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  const requestedRequestId = useMemo(() => parseRequestId(searchParams.get("requestId")), [searchParams]);
+  const activeRequestedRequestId = useMemo(() => {
+    if (requestedRequestId === null) return null;
+    return localRequests.some((request) => request.id === requestedRequestId) ? requestedRequestId : null;
+  }, [localRequests, requestedRequestId]);
+
+  useEffect(() => {
+    if (activeRequestedRequestId === null) return;
+
+    setSelectedId(activeRequestedRequestId);
+    setDetailRequestId(activeRequestedRequestId);
+  }, [activeRequestedRequestId]);
 
   const roles = useMemo(
     () => [...new Set(localRequests.map((request) => request.employeeRole).filter(Boolean))].sort((a, b) => a.localeCompare(b)),

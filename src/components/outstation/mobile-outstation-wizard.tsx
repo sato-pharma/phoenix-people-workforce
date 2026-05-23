@@ -4,19 +4,22 @@ import { Calculator, Camera, Car, CheckCircle2, MapPin, ReceiptText, Route, Trai
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { ApprovalRecommendationBadge } from "@/components/outstation/approval-recommendation-badge";
-import { EligibilityResultCard } from "@/components/outstation/eligibility-result-card";
 import { OfflineSyncBanner } from "@/components/outstation/offline-sync-banner";
 import { OutstationCostBreakdown } from "@/components/outstation/outstation-cost-breakdown";
 import { RouteMapPreview } from "@/components/outstation/route-map-preview";
+import { InfoStatusCard, StatusCard, type StatusSeverity } from "@/components/outstation/status-card";
 import { TicketUploadCard } from "@/components/outstation/ticket-upload-card";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { useRouter } from "next/navigation";
 import {
   isRestorableOutstationLocalDraft,
   outstationDraftStorageKey,
   parseOutstationLocalDraft,
+  saveOutstationLocalDraft,
+  outstationDraftStorageFullWarning,
   type OutstationLocalDraft,
 } from "@/lib/outstation/local-draft";
 import type {
@@ -24,6 +27,7 @@ import type {
   OutstationCaptureResult,
   OutstationCarEvidenceMetadata,
   OutstationExpenseType,
+  OutstationTicketAttachmentMetadata,
   OutstationTransportationType,
 } from "@/lib/outstation/types";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
@@ -39,6 +43,7 @@ type CarEvidenceState = {
   capturedLocationLabel: string;
   capturedLongitude: number;
   imageDataUrl: string;
+  imagePath: string | null;
   requestDraftId: string;
   requestId: string | null;
 };
@@ -52,6 +57,20 @@ type CarEvidenceCaptureDetails = {
 
 const draftKey = outstationDraftStorageKey;
 const carEvidenceLogoSrc = "/brand/phoenix-camera-watermark.png";
+const dataUrlBlobTypeFallback = "image/jpeg";
+const wizardMessageClassName: Record<StatusSeverity, string> = {
+  error: "text-red-800",
+  info: "text-blue-800",
+  warning: "text-amber-800",
+  success: "text-green-800",
+};
+const wizardMessageRole: Record<StatusSeverity, "alert" | "status"> = {
+  error: "alert",
+  info: "status",
+  warning: "status",
+  success: "status",
+};
+const postSubmitRedirectPath = "/employee-portals";
 
 function buildDraftId() {
   return typeof crypto === "undefined" || typeof crypto.randomUUID !== "function"
@@ -233,6 +252,37 @@ function buildTransportIcon(type: OutstationTransportationType) {
   return type === "car" ? Car : type === "train" || type === "bus" ? TrainFront : Route;
 }
 
+function decodeDataUrlToBlob(imageDataUrl: string) {
+  const commaIndex = imageDataUrl.indexOf(",");
+  if (commaIndex === -1) {
+    throw new Error("Invalid image data.");
+  }
+
+  const header = imageDataUrl.slice(0, commaIndex);
+  const data = imageDataUrl.slice(commaIndex + 1);
+  const mimeMatch = /^data:([^;,]+)(;[^;,]*)*/.exec(header);
+  const mimeType = (mimeMatch?.[1] ?? dataUrlBlobTypeFallback).trim();
+  const isBase64 = /;base64/i.test(header);
+
+  if (!isBase64) {
+    throw new Error("Unsupported image data format.");
+  }
+
+  const normalizedData = data.replace(/\s/g, "");
+  const byteString = atob(normalizedData);
+  const bytes = new Uint8Array(byteString.length);
+  for (let i = 0; i < byteString.length; i += 1) {
+    bytes[i] = byteString.charCodeAt(i);
+  }
+
+  return new Blob([bytes], { type: mimeType });
+}
+
+type TicketAttachmentUploadResult = {
+  metadata: OutstationTicketAttachmentMetadata[];
+  paths: string[];
+};
+
 export function MobileOutstationWizard({
   employeeHrId,
   employeeName,
@@ -251,6 +301,7 @@ export function MobileOutstationWizard({
   showIntro?: boolean;
 }) {
   const [step, setStep] = useState(1);
+  const router = useRouter();
   const [expenseType, setExpenseType] = useState<OutstationExpenseType>("traveling");
   const [transportationType, setTransportationType] =
     useState<OutstationTransportationType>("car");
@@ -267,6 +318,8 @@ export function MobileOutstationWizard({
   const [isCarEvidenceCameraOpen, setIsCarEvidenceCameraOpen] = useState(false);
   const [calculation, setCalculation] = useState<OutstationCalculationResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageSeverity, setMessageSeverity] = useState<StatusSeverity>("info");
+  const [draftStorageError, setDraftStorageError] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isCapturingCarEvidence, setIsCapturingCarEvidence] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
@@ -289,6 +342,19 @@ export function MobileOutstationWizard({
       ? "Return the same day"
       : `Overnight stay - ${calculation.overnightDays} ${calculation.overnightDays === 1 ? "night" : "nights"}`
     : getDurationSummary(tripStartDate, tripEndDate);
+  const parsedTripStartDate = useMemo(() => {
+    return tripStartDate ? Date.parse(tripStartDate) : NaN;
+  }, [tripStartDate]);
+  const parsedTripEndDate = useMemo(() => {
+    return tripEndDate ? Date.parse(tripEndDate) : NaN;
+  }, [tripEndDate]);
+  const tripDateRangeError = useMemo(() => {
+    if (!Number.isFinite(parsedTripStartDate) || !Number.isFinite(parsedTripEndDate)) {
+      return "";
+    }
+    return parsedTripEndDate < parsedTripStartDate ? "End date cannot be before start date" : "";
+  }, [parsedTripStartDate, parsedTripEndDate]);
+  const isTripDateRangeInvalid = tripDateRangeError.length > 0;
 
   const stopCarEvidenceCamera = useCallback(() => {
     if (carEvidenceStreamRef.current) {
@@ -327,8 +393,14 @@ export function MobileOutstationWizard({
 
   useEffect(() => {
     const restore = parseOutstationLocalDraft(window.localStorage.getItem(draftKey));
-    if (!isRestorableOutstationLocalDraft(restore)) {
+    const isValidDraft = isRestorableOutstationLocalDraft(restore, employeeHrId);
+    const shouldRestoreDraft = isValidDraft && !window.navigator.onLine;
+    if (!isValidDraft) {
       window.localStorage.removeItem(draftKey);
+      return;
+    }
+
+    if (!shouldRestoreDraft) {
       return;
     }
 
@@ -349,6 +421,7 @@ export function MobileOutstationWizard({
         capturedLocationLabel: restore.carEvidenceLocationLabel ?? "Location unavailable",
         capturedLongitude: restore.carEvidenceLongitude,
         imageDataUrl: restore.carEvidenceImageDataUrl ?? "",
+        imagePath: restore.carEvidenceImagePath ?? null,
         requestDraftId: draftId,
         requestId: null,
       });
@@ -362,7 +435,7 @@ export function MobileOutstationWizard({
     setTransportationType(restore.transportationType);
     setTripEndDate(restore.tripEndDate);
     setTripStartDate(restore.tripStartDate);
-  }, []);
+  }, [employeeHrId]);
 
   useEffect(() => {
     const syncOnlineState = () => setIsOffline(!navigator.onLine);
@@ -385,14 +458,17 @@ export function MobileOutstationWizard({
       if (!pendingOfflineDraftRef.current) {
         window.localStorage.removeItem(draftKey);
       }
+      queueMicrotask(() => setDraftStorageError(null));
       return;
     }
 
     pendingOfflineDraftRef.current = true;
     const draft: OutstationLocalDraft = {
+      employeeHrId,
       captured,
       carEvidenceCapturedAt: carEvidence?.capturedAt ?? null,
-      carEvidenceImageDataUrl: carEvidence?.imageDataUrl ?? null,
+      carEvidenceImageDataUrl: carEvidence?.imagePath ? null : carEvidence?.imageDataUrl ?? null,
+      carEvidenceImagePath: carEvidence?.imagePath ?? null,
       carEvidenceLatitude: carEvidence?.capturedLatitude ?? null,
       carEvidenceLocationLabel: carEvidence?.capturedLocationLabel ?? null,
       carEvidenceLongitude: carEvidence?.capturedLongitude ?? null,
@@ -404,12 +480,21 @@ export function MobileOutstationWizard({
       medicalTripHrId,
       notes,
       returnTicketAmount,
+      updatedAt: new Date().toISOString(),
       syncPending: true,
       transportationType,
       tripEndDate,
       tripStartDate,
     };
-    window.localStorage.setItem(draftKey, JSON.stringify(draft));
+    const saveResult = saveOutstationLocalDraft(draftKey, draft);
+    if (saveResult.success) {
+      queueMicrotask(() => setDraftStorageError(null));
+      return;
+    }
+
+    if (saveResult.quotaExceeded) {
+      queueMicrotask(() => setDraftStorageError(outstationDraftStorageFullWarning));
+    }
   }, [
     captured,
     carEvidence?.capturedAt,
@@ -429,6 +514,7 @@ export function MobileOutstationWizard({
     transportationType,
     tripEndDate,
     tripStartDate,
+    employeeHrId,
   ]);
 
   useEffect(() => {
@@ -440,10 +526,10 @@ export function MobileOutstationWizard({
           !draft.captured ||
           !draft.tripStartDate ||
           !draft.tripEndDate ||
-          (draft.transportationType === "car" &&
+        (draft.transportationType === "car" &&
             (!draft.carEvidenceRequestId ||
               !draft.carEvidenceCapturedAt ||
-              !draft.carEvidenceImageDataUrl ||
+              (!draft.carEvidenceImagePath && !draft.carEvidenceImageDataUrl) ||
               draft.carEvidenceLatitude == null ||
               !draft.carEvidenceLocationLabel ||
               draft.carEvidenceLongitude == null)) ||
@@ -454,6 +540,31 @@ export function MobileOutstationWizard({
 
         syncAttemptedRef.current = true;
         try {
+          let carEvidenceImagePath = draft.carEvidenceImagePath ?? null;
+          if (
+            draft.transportationType === "car" &&
+            !carEvidenceImagePath &&
+            draft.carEvidenceImageDataUrl &&
+            draft.carEvidenceRequestId &&
+            draft.carEvidenceCapturedAt &&
+            draft.carEvidenceLatitude != null &&
+            draft.carEvidenceLocationLabel &&
+            draft.carEvidenceLongitude != null
+          ) {
+            carEvidenceImagePath = await uploadCarEvidenceImage(draft.carEvidenceImageDataUrl, {
+              capturedAt: draft.carEvidenceCapturedAt,
+              capturedLatitude: draft.carEvidenceLatitude,
+              capturedLocationLabel: draft.carEvidenceLocationLabel,
+              capturedLongitude: draft.carEvidenceLongitude,
+              requestDraftId: draft.carEvidenceRequestId,
+            });
+            saveOutstationLocalDraft(draftKey, {
+              ...draft,
+              carEvidenceImageDataUrl: null,
+              carEvidenceImagePath,
+            });
+          }
+
           const response = await fetch("/api/outstation/sync-offline", {
             body: JSON.stringify({
               attachmentCount: draft.hasTicketAttachments ? 1 : 0,
@@ -475,10 +586,10 @@ export function MobileOutstationWizard({
                       requestDraftId: draft.carEvidenceRequestId,
                       requestId: null,
                       source: "live_camera",
-                    }
+                  }
                   : undefined,
-              carEvidenceImageDataUrl:
-                draft.transportationType === "car" ? draft.carEvidenceImageDataUrl : undefined,
+              carEvidenceImagePath:
+                draft.transportationType === "car" ? carEvidenceImagePath : undefined,
               hasTicketAttachments: draft.hasTicketAttachments,
               kilometerReading: Number(draft.kilometerReading || 0),
               medicalTripHrId: draft.medicalTripHrId,
@@ -496,12 +607,16 @@ export function MobileOutstationWizard({
           });
           if (response.ok) {
             resetFormState();
-            setMessage("Offline outstation draft synced successfully after reconnecting.");
+            setWizardMessage("Offline outstation draft synced successfully after reconnecting.", "success");
           } else {
             syncAttemptedRef.current = false;
           }
-        } catch {
+        } catch (error) {
           syncAttemptedRef.current = false;
+          setWizardMessage(
+            error instanceof Error ? error.message : "Unable to sync offline outstation draft.",
+            "error",
+          );
         }
       };
       void syncPending();
@@ -511,7 +626,117 @@ export function MobileOutstationWizard({
   }, [employeeHrId, isOffline, medicalTripOptions, resetFormState]);
 
   const hasTicketAttachments = ticketFiles.length > 0;
-  const hasCarEvidence = Boolean(carEvidence?.imageDataUrl);
+  const hasCarEvidence = Boolean(carEvidence?.imagePath || carEvidence?.imageDataUrl);
+
+  const setWizardMessage = (nextMessage: string | null, severity: StatusSeverity = "info") => {
+    setMessage(nextMessage);
+    setMessageSeverity(nextMessage ? severity : "info");
+  };
+
+  async function uploadCarEvidenceImage(
+    imageDataUrl: string,
+    details: Omit<CarEvidenceState, "imageDataUrl" | "imagePath" | "requestId">,
+  ) {
+    const blob = imageDataUrl.startsWith("data:")
+      ? decodeDataUrlToBlob(imageDataUrl)
+      : await (await fetch(imageDataUrl)).blob();
+    const requestBody = new FormData();
+    const file = new File([blob], `car-evidence-${details.requestDraftId}.jpg`, {
+      type: blob.type || "image/jpeg",
+    });
+
+    requestBody.set("carEvidenceImage", file);
+    requestBody.set("requestDraftId", details.requestDraftId);
+    requestBody.set("capturedAt", details.capturedAt);
+    requestBody.set("capturedLatitude", String(details.capturedLatitude));
+    requestBody.set("capturedLongitude", String(details.capturedLongitude));
+    requestBody.set("capturedLocationLabel", details.capturedLocationLabel);
+
+    const response = await fetch("/api/outstation/car-evidence", {
+      body: requestBody,
+      method: "POST",
+    });
+    const payload = (await response.json()) as Record<string, unknown>;
+    if (!response.ok) {
+      throw new Error(
+        (typeof payload.message === "string" ? payload.message : undefined) ??
+          (typeof payload.error === "string" ? payload.error : undefined) ??
+          "Unable to upload car evidence image.",
+      );
+    }
+
+    const uploadedPath = typeof payload.carEvidenceImagePath === "string"
+      ? payload.carEvidenceImagePath
+      : "";
+    const trimmedPath = uploadedPath.trim();
+    if (!trimmedPath) {
+      throw new Error("Car evidence upload did not return an image path.");
+    }
+
+    return trimmedPath;
+  }
+
+  async function uploadTicketAttachments() {
+    if (!hasTicketAttachments) {
+      return { metadata: [], paths: [] } satisfies TicketAttachmentUploadResult;
+    }
+
+    const formData = new FormData();
+    const requestDraftId = `${carEvidenceDraftId}-${Date.now()}`;
+    for (const file of ticketFiles) {
+      formData.append("ticketFiles", file);
+    }
+    formData.set("requestDraftId", requestDraftId);
+
+    const response = await fetch("/api/outstation/ticket-attachments", {
+      body: formData,
+      method: "POST",
+    });
+    const payload = (await response.json()) as Record<string, unknown>;
+    if (!response.ok) {
+      throw new Error(
+        (typeof payload.message === "string" ? payload.message : undefined) ??
+          (typeof payload.error === "string" ? payload.error : undefined) ??
+          "Unable to upload ticket attachments.",
+      );
+    }
+
+    const metadata = Array.isArray(payload.ticketAttachmentMetadata)
+      ? payload.ticketAttachmentMetadata
+          .map((entry) => {
+            if (!entry || typeof entry !== "object") return null;
+            const contentType = typeof entry.contentType === "string" ? entry.contentType : "";
+            const name = typeof entry.name === "string" ? entry.name : "";
+            const path = typeof entry.path === "string" ? entry.path : "";
+            const size = typeof entry.size === "number" ? entry.size : NaN;
+            const uploadedAt =
+              typeof entry.uploadedAt === "string" && entry.uploadedAt.trim().length > 0
+                ? entry.uploadedAt
+                : new Date().toISOString();
+
+            if (!contentType || !name || !path || !Number.isFinite(size)) {
+              return null;
+            }
+
+            return {
+              contentType,
+              name,
+              path,
+              size,
+              uploadedAt,
+            } satisfies OutstationTicketAttachmentMetadata;
+          })
+          .filter((item): item is OutstationTicketAttachmentMetadata => item != null)
+      : [];
+
+    const paths = Array.isArray(payload.ticketAttachmentPaths)
+      ? payload.ticketAttachmentPaths
+          .map((path) => (typeof path === "string" ? path.trim() : ""))
+          .filter(Boolean)
+      : [];
+
+    return { metadata, paths } satisfies TicketAttachmentUploadResult;
+  }
 
   function handleTransportationTypeChange(value: OutstationTransportationType) {
     setTransportationType(value);
@@ -519,6 +744,7 @@ export function MobileOutstationWizard({
       setTicketFiles([]);
     } else {
       setCarEvidence(null);
+      setKilometerReading("");
     }
   }
 
@@ -578,7 +804,12 @@ export function MobileOutstationWizard({
     ],
   );
 
-  const canAutoCalculate = Boolean(captured && tripStartDate && tripEndDate);
+  const canAutoCalculate = Boolean(
+    captured &&
+    tripStartDate &&
+    tripEndDate &&
+    !isTripDateRangeInvalid
+  );
   const summaryStatus = isCalculating
     ? "Calculating"
     : calculation
@@ -587,7 +818,7 @@ export function MobileOutstationWizard({
         ? "Preparing"
         : "Waiting for trip details";
   const calculationKey = useMemo(() => {
-    if (!captured || !tripStartDate || !tripEndDate) return "";
+    if (!captured || !tripStartDate || !tripEndDate || isTripDateRangeInvalid) return "";
 
     return JSON.stringify({
       attachmentCount: ticketFiles.length,
@@ -621,11 +852,15 @@ export function MobileOutstationWizard({
       return;
     }
 
+    const shouldApplyResponse = (responseKey?: string) => {
+      return !responseKey || responseKey === lastCalculationKeyRef.current;
+    };
+
     if (submittedCalculationKey) {
       lastCalculationKeyRef.current = submittedCalculationKey;
     }
     setIsCalculating(true);
-    setMessage(null);
+    setWizardMessage(null);
     try {
       const response = await fetch("/api/outstation/calculate", {
         body: JSON.stringify(requestPayload),
@@ -634,20 +869,32 @@ export function MobileOutstationWizard({
       });
       const payload = await response.json();
       if (!response.ok) {
+        if (!shouldApplyResponse(submittedCalculationKey)) {
+          return;
+        }
         if (submittedCalculationKey === lastCalculationKeyRef.current) {
           lastCalculationKeyRef.current = "";
         }
-        setMessage(payload.message ?? payload.error ?? "Unable to calculate the request.");
+        setWizardMessage(payload.message ?? payload.error ?? "Unable to calculate the request.", "error");
+        return;
+      }
+
+      if (!shouldApplyResponse(submittedCalculationKey)) {
         return;
       }
       setCalculation(payload);
     } catch {
+      if (!shouldApplyResponse(submittedCalculationKey)) {
+        return;
+      }
       if (submittedCalculationKey === lastCalculationKeyRef.current) {
         lastCalculationKeyRef.current = "";
       }
-      setMessage("Unable to calculate the request.");
+      setWizardMessage("Unable to calculate the request.", "error");
     } finally {
-      setIsCalculating(false);
+      if (shouldApplyResponse(submittedCalculationKey)) {
+        setIsCalculating(false);
+      }
     }
   });
 
@@ -667,10 +914,10 @@ export function MobileOutstationWizard({
   ]);
 
   async function captureLocation() {
-    setMessage(null);
+    setWizardMessage(null);
     setCalculation(null);
     if (!navigator.geolocation) {
-      setMessage("Browser geolocation is not supported on this device.");
+      setWizardMessage("Browser geolocation is not supported on this device.", "error");
       return;
     }
 
@@ -722,7 +969,10 @@ export function MobileOutstationWizard({
         };
         setCaptured(offlineCapture);
         setStep(2);
-        setMessage("Destination captured offline. The draft will sync when internet returns.");
+        setWizardMessage(
+          "Destination captured offline. The draft will sync when internet returns.",
+          "info",
+        );
         return;
       }
 
@@ -739,7 +989,7 @@ export function MobileOutstationWizard({
       });
       const payload = await response.json();
       if (!response.ok) {
-        setMessage(payload.message ?? payload.error ?? "Unable to capture your location.");
+        setWizardMessage(payload.message ?? payload.error ?? "Unable to capture your location.", "error");
         return;
       }
 
@@ -748,14 +998,16 @@ export function MobileOutstationWizard({
     } catch (error) {
       const geoError = error as GeolocationPositionError | Error;
       if ("code" in geoError && typeof geoError.code === "number" && geoError.code === 1) {
-        setMessage(
+        setWizardMessage(
           "Location permission was denied. This report cannot proceed without GPS permission.",
+          "error",
         );
       } else {
-        setMessage(
+        setWizardMessage(
           geoError instanceof Error
             ? geoError.message
             : "Unable to capture your current location.",
+          "error",
         );
       }
     } finally {
@@ -771,7 +1023,7 @@ export function MobileOutstationWizard({
     const video = videoRef.current;
     video.srcObject = carEvidenceStreamRef.current;
     void video.play().catch(() => {
-      setMessage("Unable to start camera preview.");
+      setWizardMessage("Unable to start camera preview.", "error");
     });
   }, [isCarEvidenceCameraOpen]);
 
@@ -784,9 +1036,9 @@ export function MobileOutstationWizard({
   }, []);
 
   async function openCarEvidenceCamera() {
-    setMessage(null);
+    setWizardMessage(null);
     if (!navigator.mediaDevices?.getUserMedia) {
-      setMessage("Camera capture is not available on this device.");
+      setWizardMessage("Camera capture is not available on this device.", "error");
       return;
     }
 
@@ -800,11 +1052,15 @@ export function MobileOutstationWizard({
     } catch (error) {
       const typedError = error as GeolocationPositionError | DOMException | Error;
       if (typedError instanceof DOMException && typedError.name === "NotAllowedError") {
-        setMessage("Camera permission was denied. Enable camera permission to continue.");
+        setWizardMessage(
+          "Camera permission was denied. Enable camera permission to continue.",
+          "error",
+        );
         return;
       }
-      setMessage(
+      setWizardMessage(
         typedError instanceof Error ? typedError.message : "Unable to open the camera.",
+        "error",
       );
     } finally {
       setIsCapturingCarEvidence(false);
@@ -812,13 +1068,13 @@ export function MobileOutstationWizard({
   }
 
   async function captureCarEvidence() {
-    setMessage(null);
+    setWizardMessage(null);
     if (!navigator.geolocation) {
-      setMessage("Browser geolocation is not supported on this device.");
+      setWizardMessage("Browser geolocation is not supported on this device.", "error");
       return;
     }
     if (!videoRef.current || !carEvidenceStreamRef.current) {
-      setMessage("Open the camera before capturing evidence.");
+      setWizardMessage("Open the camera before capturing evidence.", "warning");
       return;
     }
 
@@ -866,21 +1122,48 @@ export function MobileOutstationWizard({
         capturedLocationLabel,
         capturedLongitude: position.coords.longitude,
         imageDataUrl,
+        imagePath: null,
         requestDraftId: carEvidenceDraftId,
         requestId: carEvidence?.requestId ?? null,
       });
+
+      const imagePath = isOffline
+        ? null
+        : await uploadCarEvidenceImage(imageDataUrl, {
+            capturedAt,
+            capturedLatitude: position.coords.latitude,
+            capturedLocationLabel,
+            capturedLongitude: position.coords.longitude,
+            requestDraftId: carEvidenceDraftId,
+          });
+
+      if (imagePath) {
+        setCarEvidence((current) =>
+          current ? { ...current, imagePath, requestId: current.requestId } : current,
+        );
+      }
+
+      setWizardMessage(
+        isOffline
+          ? "Live car evidence captured. This photo is attached locally and will upload when you sync."
+          : imagePath
+            ? "Live car evidence captured and uploaded."
+            : "Live car evidence captured. This photo is attached to this request.",
+        isOffline || !imagePath ? "info" : "success",
+      );
       stopCarEvidenceCamera();
-      setMessage("Live car evidence captured. This photo is attached to this request.");
     } catch (error) {
       const typedError = error as GeolocationPositionError | DOMException | Error;
       if ("code" in typedError && typeof typedError.code === "number" && typedError.code === 1) {
-        setMessage(
+        setWizardMessage(
           "Location permission was denied. Car evidence cannot be captured without GPS permission.",
+          "error",
         );
         return;
       }
-      setMessage(
+      setWizardMessage(
         typedError instanceof Error ? typedError.message : "Unable to capture live car evidence.",
+        "error",
       );
     } finally {
       setIsCapturingCarEvidence(false);
@@ -889,24 +1172,54 @@ export function MobileOutstationWizard({
 
   async function submit() {
     if (!captured) {
-      setMessage("Tap the To field to capture your current destination first.");
+      setWizardMessage("Tap the To field to capture your current destination first.", "warning");
       return;
     }
 
     if (transportationType === "car" && !hasCarEvidence) {
-      setMessage("Capture live camera evidence before submitting this car request.");
+      setWizardMessage("Capture live camera evidence before submitting this car request.", "warning");
       return;
     }
 
     setIsSubmitting(true);
-    setMessage(null);
+    setWizardMessage(null);
     try {
+      let carEvidenceImagePath = carEvidence?.imagePath ?? null;
+      if (
+        transportationType === "car" &&
+        !carEvidenceImagePath &&
+        carEvidence?.imageDataUrl
+      ) {
+        carEvidenceImagePath = await uploadCarEvidenceImage(carEvidence.imageDataUrl, {
+          capturedAt: carEvidence.capturedAt,
+          capturedLatitude: carEvidence.capturedLatitude,
+          capturedLocationLabel: carEvidence.capturedLocationLabel,
+          capturedLongitude: carEvidence.capturedLongitude,
+          requestDraftId: carEvidence.requestDraftId,
+        });
+
+        setCarEvidence((current) =>
+          current
+            ? {
+                ...current,
+                imagePath: carEvidenceImagePath,
+                requestId: current.requestId,
+              }
+            : current,
+        );
+      }
+
+      const attachmentUpload = isOffline ? { metadata: [], paths: [] } : await uploadTicketAttachments();
       const endpoint = isOffline ? "/api/outstation/sync-offline" : "/api/outstation/submit";
       const response = await fetch(endpoint, {
         body: JSON.stringify({
           ...requestPayload,
-          carEvidenceImageDataUrl:
-            transportationType === "car" ? carEvidence?.imageDataUrl : undefined,
+          attachmentCount: attachmentUpload.paths.length,
+          hasTicketAttachments: attachmentUpload.paths.length > 0,
+          ticketAttachmentMetadata: attachmentUpload.metadata,
+          ticketAttachmentPaths: attachmentUpload.paths,
+          carEvidenceImagePath:
+            transportationType === "car" ? carEvidenceImagePath ?? undefined : undefined,
           claimedTotalAmount: calculation?.expectedTotalAmount ?? 0,
         }),
         headers: { "Content-Type": "application/json" },
@@ -914,26 +1227,33 @@ export function MobileOutstationWizard({
       });
       const payload = await response.json();
       if (!response.ok) {
-        setMessage(payload.message ?? payload.error ?? "Unable to submit the request.");
+        setWizardMessage(payload.message ?? payload.error ?? "Unable to submit the request.", "error");
         return;
       }
 
       resetFormState();
-      setMessage(
+      setWizardMessage(
         isOffline
           ? "Offline request synced successfully."
           : "Outstation request submitted successfully.",
+        "success",
       );
-    } catch {
-      setMessage("Unable to submit the request.");
+      setTimeout(() => {
+        router.replace(postSubmitRedirectPath);
+      }, 900);
+    } catch (error) {
+      setWizardMessage(
+        error instanceof Error ? error.message : "Unable to submit the request.",
+        "error",
+      );
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <div className="min-w-0 space-y-5">
-      <OfflineSyncBanner visible={isOffline} />
+      <div className="min-w-0 space-y-5">
+      <OfflineSyncBanner draftStorageError={draftStorageError} visible={isOffline} />
 
       {showIntro ? (
       <section className="overflow-hidden rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_46%,#f8fafc_100%)] p-6 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
@@ -990,6 +1310,9 @@ export function MobileOutstationWizard({
 
           <Field label="To Date">
             <Input onChange={(event) => setTripEndDate(event.target.value)} type="date" value={tripEndDate} />
+            {tripDateRangeError ? (
+              <p className="mt-1 text-xs font-bold text-red-700">{tripDateRangeError}</p>
+            ) : null}
           </Field>
 
           <Field label="Duration">
@@ -1050,16 +1373,7 @@ export function MobileOutstationWizard({
             </select>
           </Field>
 
-          {transportationType === "car" ? (
-            <Field label="Kilometer Reading">
-              <Input
-                onChange={(event) => setKilometerReading(event.target.value)}
-                placeholder="Enter odometer reading"
-                type="number"
-                value={kilometerReading}
-              />
-            </Field>
-          ) : isTicketBased ? (
+          {isTicketBased ? (
             <>
               <Field label="Go Ticket Amount">
                 <Input
@@ -1184,48 +1498,6 @@ export function MobileOutstationWizard({
           )}
         </div>
 
-        {calculation ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <FieldValue
-              label="Kilometer"
-              value={
-                calculation?.distanceFromResidenceKm != null
-                  ? `${calculation.distanceFromResidenceKm.toFixed(2)} KM`
-                  : "N/A"
-              }
-            />
-            <FieldValue
-              label="Estimated Duration"
-              value={
-                calculation?.durationMinutes != null
-                  ? `${calculation.durationMinutes.toFixed(0)} mins`
-                  : "N/A"
-              }
-            />
-            <FieldValue
-              label={transportationType === "car" ? "Fuel Amount" : "Ticket Amount"}
-              value={
-                calculation
-                  ? transportationType === "car"
-                    ? egp(calculation.fuelAmount)
-                    : egp(calculation.ticketAmount)
-                  : "N/A"
-              }
-            />
-            <FieldValue
-              label="Amount"
-              value={egp(calculation.expectedTotalAmount)}
-            />
-            <FieldValue
-              label="Eligibility"
-              value={calculation.eligibilityStatus.replace(/_/g, " ")}
-            />
-            <FieldValue
-              label="Allowance"
-              value={egp(calculation.allowanceAmount)}
-            />
-          </div>
-        ) : null}
       </Card>
 
       {transportationType === "car" ? (
@@ -1267,19 +1539,6 @@ export function MobileOutstationWizard({
                 )}
               </button>
             </label>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                Evidence status
-              </p>
-              <p className="mt-2 text-sm font-semibold text-slate-900">
-                {hasCarEvidence ? "One live camera photo captured" : "No live camera photo captured"}
-              </p>
-              {carEvidence ? (
-                <p className="mt-2 text-sm text-slate-700">
-                  {carEvidence.capturedLocationLabel}
-                </p>
-              ) : null}
-            </div>
           </div>
           {isCarEvidenceCameraOpen ? (
             <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950">
@@ -1324,9 +1583,7 @@ export function MobileOutstationWizard({
               />
             </div>
           ) : carEvidence ? (
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              Live evidence metadata is restored, but the image preview cannot be restored. Re-capture the photo before submitting if needed.
-            </div>
+            <LiveEvidenceRestoreNotice />
           ) : null}
         </Card>
       ) : (
@@ -1338,7 +1595,6 @@ export function MobileOutstationWizard({
         />
       )}
 
-      <EligibilityResultCard result={calculation} />
       <OutstationCostBreakdown result={calculation} />
       <RouteMapPreview request={calculation} />
 
@@ -1360,6 +1616,7 @@ export function MobileOutstationWizard({
               className="min-h-12 rounded-2xl bg-orange-500 px-5 text-white hover:bg-orange-600"
               disabled={
                 isSubmitting ||
+                isTripDateRangeInvalid ||
                 calculation.eligibilityStatus === "not_eligible" ||
                 (transportationType === "car" && !hasCarEvidence)
               }
@@ -1378,9 +1635,13 @@ export function MobileOutstationWizard({
       ) : null}
 
       {message ? (
-        <Card className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+        <StatusCard
+          className={wizardMessageClassName[messageSeverity]}
+          role={wizardMessageRole[messageSeverity]}
+          severity={messageSeverity}
+        >
           {message}
-        </Card>
+        </StatusCard>
       ) : null}
     </div>
   );
@@ -1429,6 +1690,14 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+function LiveEvidenceRestoreNotice() {
+  return (
+    <InfoStatusCard className="mt-4">
+      Live evidence metadata is restored, but the image preview cannot be restored. Re-capture the photo before submitting if needed.
+    </InfoStatusCard>
   );
 }
 
@@ -1486,23 +1755,6 @@ function Stat({
     <div className="min-w-0 rounded-2xl border border-slate-200 bg-white/80 p-4">
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-2 break-words text-sm font-semibold leading-6 text-slate-900 [overflow-wrap:anywhere]">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function FieldValue({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 break-words text-sm font-semibold capitalize leading-6 text-slate-900 [overflow-wrap:anywhere]">
         {value}
       </p>
     </div>

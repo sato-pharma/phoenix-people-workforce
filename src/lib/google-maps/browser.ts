@@ -3,6 +3,7 @@
 export type GoogleLatLngLiteral = { lat: number; lng: number };
 
 export type GoogleMapHandle = {
+  addListener?(eventName: string, handler: () => void): { remove?: () => void };
   fitBounds(bounds: GoogleLatLngBoundsHandle, padding?: number): void;
 };
 
