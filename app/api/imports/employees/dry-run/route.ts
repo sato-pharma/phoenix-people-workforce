@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -13,45 +13,65 @@ export const dynamic = "force-dynamic";
 
 async function parseExcelRows(file: File) {
   try {
-    const workbook = XLSX.read(await file.arrayBuffer(), {
-      cellDates: true,
-      type: "array",
-    });
-    const firstSheetName = workbook.SheetNames[0];
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(Buffer.from(await file.arrayBuffer()));
 
-    if (!firstSheetName) {
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
       return { error: "empty_worksheet" as const };
     }
 
-    const firstSheet = workbook.Sheets[firstSheetName];
-    const range = XLSX.utils.decode_range(firstSheet["!ref"] ?? "A1:A1");
-    let headerRowIndex = range.s.r;
-    for (let rowIndex = range.s.r; rowIndex <= Math.min(range.e.r, range.s.r + 10); rowIndex += 1) {
+    let headerRowIndex = 0;
+    let headerRowNum = 1;
+    const maxRows = Math.min(worksheet.rowCount || 0, 11);
+
+    for (let rowNum = 1; rowNum <= maxRows; rowNum += 1) {
+      const row = worksheet.getRow(rowNum);
       const values: string[] = [];
-      for (let columnIndex = range.s.c; columnIndex <= range.e.c; columnIndex += 1) {
-        const cell = firstSheet[XLSX.utils.encode_cell({ c: columnIndex, r: rowIndex })];
-        values.push(String(cell?.v ?? "").trim().toLowerCase());
-      }
+
+      row.eachCell((cell) => {
+        values.push(String(cell.value ?? "").trim().toLowerCase());
+      });
 
       if (
         values.some((value) => ["employee id", "hr_id", "hr id", "employee code"].includes(value)) &&
         values.some((value) => value === "full name")
       ) {
-        headerRowIndex = rowIndex;
+        headerRowIndex = rowNum - 1;
+        headerRowNum = rowNum;
         break;
       }
     }
 
-    const rows = XLSX.utils.sheet_to_json<RawEmployeeImportRow>(firstSheet, {
-      defval: null,
-      range: headerRowIndex,
+    const rows: RawEmployeeImportRow[] = [];
+    const headerRow = worksheet.getRow(headerRowNum);
+    const headers: Map<number, string> = new Map();
+
+    headerRow.eachCell((cell, colNum) => {
+      headers.set(colNum, String(cell.value ?? "").trim());
+    });
+
+    worksheet.eachRow((row, rowNum) => {
+      if (rowNum <= headerRowNum) return;
+
+      const record: Record<string, unknown> = {};
+      row.eachCell((cell, colNum) => {
+        const key = headers.get(colNum);
+        if (key) {
+          record[key] = cell.value ?? null;
+        }
+      });
+
+      if (Object.values(record).some((v) => v)) {
+        rows.push(record as RawEmployeeImportRow);
+      }
     });
 
     if (rows.length === 0) {
       return { error: "empty_worksheet" as const };
     }
 
-    return { firstDataRowNumber: headerRowIndex + 2, rows };
+    return { firstDataRowNumber: headerRowNum + 1, rows };
   } catch {
     return { error: "invalid_excel_file" as const };
   }

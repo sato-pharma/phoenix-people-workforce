@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import type {
@@ -131,20 +131,24 @@ function specialistSummary(records: ExpenseTripRecord[]) {
 
 export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysisResult> {
   const employeeCodeByName = await buildEmployeeCodeMap();
-  const workbook = XLSX.read(await file.arrayBuffer(), {
-    cellDates: true,
-    type: "array",
-  });
-  const sheetName = workbook.SheetNames[0];
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(Buffer.from(await file.arrayBuffer()));
 
-  if (!sheetName) {
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
     throw new Error("Expenses workbook has no readable sheets.");
   }
 
-  const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-    defval: "",
-    raw: false,
+  const rows: Record<string, unknown>[] = [];
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // Skip header row
+    const record: Record<string, unknown> = {};
+    row.eachCell((cell, colNumber) => {
+      const headerCell = worksheet.getRow(1).getCell(colNumber);
+      const key = String(headerCell.value ?? `Column ${colNumber}`).trim();
+      record[key] = cell.value ?? "";
+    });
+    rows.push(record);
   });
   const columns = Object.keys(rows[0] ?? {});
   const records: ExpenseTripRecord[] = [];

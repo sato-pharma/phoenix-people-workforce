@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 export const cvDatabaseHeaders = [
   "Name",
@@ -213,23 +213,22 @@ function hasAnyValue(row: unknown[]) {
   return row.some((value) => text(value));
 }
 
-export function parseCvDatabaseWorkbook(buffer: ArrayBuffer, fileName = "uploaded workbook"): CvDatabaseParseResult {
-  const workbook = XLSX.read(buffer, {
-    cellDates: true,
-    type: "array",
-  });
-  const sheetName = workbook.SheetNames[0];
+export async function parseCvDatabaseWorkbook(buffer: ArrayBuffer, fileName = "uploaded workbook"): Promise<CvDatabaseParseResult> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
 
-  if (!sheetName) {
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
     throw new Error("CV workbook has no readable sheets.");
   }
 
-  const worksheet = workbook.Sheets[sheetName];
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
-    blankrows: false,
-    defval: "",
-    header: 1,
-    raw: false,
+  const matrix: unknown[][] = [];
+  worksheet.eachRow((row) => {
+    const values: unknown[] = [];
+    row.eachCell((cell) => {
+      values.push(cell.value ?? "");
+    });
+    matrix.push(values);
   });
   const headerRow = findHeaderRow(matrix);
 

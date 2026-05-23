@@ -15,7 +15,7 @@ import {
   Send,
   Upload,
 } from "lucide-react";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -163,35 +163,25 @@ function rowsForExpenseWorkbook(rows: OutstationExpenseRequest[], fallbackEmploy
   }));
 }
 
-function downloadExpenseWorkbook(rows: OutstationExpenseRequest[], fallbackEmployeeName: string) {
-  const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.json_to_sheet(rowsForExpenseWorkbook(rows, fallbackEmployeeName), {
-    header: expenseExcelHeaders,
-  });
+async function downloadExpenseWorkbook(rows: OutstationExpenseRequest[], fallbackEmployeeName: string) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Expense Input");
 
-  sheet["!cols"] = [
-    { wch: 14 },
-    { wch: 28 },
-    { wch: 14 },
-    { wch: 18 },
-    { wch: 34 },
-    { wch: 34 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 18 },
-    { wch: 20 },
-    { wch: 20 },
-    { wch: 14 },
-    { wch: 18 },
-    { wch: 42 },
-    { wch: 16 },
-  ];
+  worksheet.columns = expenseExcelHeaders.map((header, idx) => ({
+    header,
+    width: [14, 28, 14, 18, 34, 34, 14, 14, 18, 20, 20, 14, 18, 42, 16][idx] || 14,
+  }));
 
-  XLSX.utils.book_append_sheet(workbook, sheet, "Expense Input");
-  XLSX.writeFile(
-    workbook,
-    `phoenix-medical-rep-expenses-${new Date().toISOString().slice(0, 10)}.xlsx`,
-  );
+  worksheet.addRows(rowsForExpenseWorkbook(rows, fallbackEmployeeName));
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `phoenix-medical-rep-expenses-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function tabButtonClassName(active: boolean) {
@@ -540,7 +530,9 @@ export function MedicalRepExpensesWorkspace({
                 <Badge variant="neutral">{egp(filteredTotal)}</Badge>
                 <Button
                   className="min-h-10 gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50"
-                  onClick={() => downloadExpenseWorkbook(filteredRequests, employeeName)}
+                  onClick={async () => {
+                    await downloadExpenseWorkbook(filteredRequests, employeeName);
+                  }}
                   type="button"
                 >
                   <Download className="h-4 w-4" />

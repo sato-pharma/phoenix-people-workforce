@@ -12,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import * as React from "react";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 import {
   AdminCallout,
@@ -75,24 +75,31 @@ function experienceBadgeVariant(status: CvExperienceStatus) {
   return "warning" as const;
 }
 
-function downloadWorkbook(rows: CvDatabaseRow[], fileName: string) {
-  const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.json_to_sheet(rowsForCvWorkbook(rows), {
-    header: [...cvDatabaseHeaders],
-  });
+async function downloadWorkbook(rows: CvDatabaseRow[], fileName: string) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("CV Database");
 
-  sheet["!cols"] = [
-    { wch: 28 },
-    { wch: 18 },
-    { wch: 20 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 18 },
-    { wch: 36 },
-    { wch: 34 },
+  worksheet.columns = [
+    { header: cvDatabaseHeaders[0], width: 28 },
+    { header: cvDatabaseHeaders[1], width: 18 },
+    { header: cvDatabaseHeaders[2], width: 20 },
+    { header: cvDatabaseHeaders[3], width: 14 },
+    { header: cvDatabaseHeaders[4], width: 14 },
+    { header: cvDatabaseHeaders[5], width: 18 },
+    { header: cvDatabaseHeaders[6], width: 36 },
+    { header: cvDatabaseHeaders[7], width: 34 },
   ];
-  XLSX.utils.book_append_sheet(workbook, sheet, "CV Database");
-  XLSX.writeFile(workbook, fileName);
+
+  worksheet.addRows(rowsForCvWorkbook(rows));
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function downloadTemplate() {
@@ -152,7 +159,7 @@ export function CvDatabaseManager() {
     setWarnings([]);
 
     try {
-      const result = parseCvDatabaseWorkbook(await file.arrayBuffer(), file.name);
+      const result = await parseCvDatabaseWorkbook(await file.arrayBuffer(), file.name);
       setRows(result.rows);
       setFileName(result.fileName);
       setWarnings(result.warnings);
@@ -204,7 +211,9 @@ export function CvDatabaseManager() {
               <Button
                 className="rounded-2xl px-3 py-2 text-xs shadow-sm"
                 disabled={filteredRows.length === 0}
-                onClick={() => downloadWorkbook(filteredRows, "phoenix-cv-database-export.xlsx")}
+                onClick={async () => {
+                  await downloadWorkbook(filteredRows, "phoenix-cv-database-export.xlsx");
+                }}
                 variant="secondary"
               >
                 <Download className="mr-2 h-3.5 w-3.5" />
