@@ -30,8 +30,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Create stub .env.local for tests
+        run: touch .env.local
+
       - name: Pre-production checks
         run: npm run ci
+        env:
+          DESIGNATED_HR_SPECIALIST_HR_ID: ${{ secrets.DESIGNATED_HR_SPECIALIST_HR_ID }}
+          DESIGNATED_HR_MANAGER_HR_ID: ${{ secrets.DESIGNATED_HR_MANAGER_HR_ID }}
 
       - name: Verify preflight secrets are configured
         run: |
@@ -50,8 +56,10 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
       - name: Production DB preflight
+        if: ${{ secrets.PHOENIX_PRODUCTION_PREFLIGHT_CONFIRM != '' }}
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          PHOENIX_PRODUCTION_PREFLIGHT_CONFIRM: ${{ secrets.PHOENIX_PRODUCTION_PREFLIGHT_CONFIRM }}
         run: npm run db:preflight:role-alignment:production

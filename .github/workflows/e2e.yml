@@ -37,6 +37,9 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Create stub .env.local for dev server
+        run: touch .env.local
+
       - name: Run E2E tests
         run: npx playwright test
         env:
@@ -44,6 +47,10 @@ jobs:
           NODE_ENV: test
           # Auth secret needed for session token creation in tests.
           PHOENIX_AUTH_SECRET: ${{ secrets.PHOENIX_AUTH_SECRET || 'e2e-test-secret-not-for-production' }}
+          # Supabase credentials required to boot the Next.js dev server.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Upload Playwright report
         if: always()

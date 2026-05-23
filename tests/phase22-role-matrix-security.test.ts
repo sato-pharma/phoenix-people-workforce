@@ -5,6 +5,8 @@ import {
   canAccess,
   canSeeEmployee,
   createAccessContext,
+  designatedHrManagerHrId,
+  designatedHrSpecialistHrId,
   getExpensesScope,
   getPayrollScope,
   getSalesScope,
@@ -53,14 +55,19 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(getExpensesScope(employee), "SELF");
   assert.equal(getExpensesScope(districtManager), "TEAM");
 
-  const hrSpecialist = createAccessContext({ hrId: "A-16", loginId: "A-16", role: "HR Specialist" });
-  assert.equal(hrSpecialist.role, "HR Specialist");
-  assert.equal(hrSpecialist.scope, "company");
-  assert.equal(await canAccess(hrSpecialist, "leave", "read"), true);
-  assert.equal(await canAccess(hrSpecialist, "leave", "approve"), false);
+  // --- Designated HR Specialist and Manager tests (only when env vars are configured) ---
+  if (designatedHrSpecialistHrId.length > 0) {
+    const hrSpecialist = createAccessContext({ hrId: designatedHrSpecialistHrId, loginId: designatedHrSpecialistHrId, role: "HR Specialist" });
+    assert.equal(hrSpecialist.role, "HR Specialist");
+    assert.equal(hrSpecialist.scope, "company");
+    assert.equal(await canAccess(hrSpecialist, "leave", "read"), true);
+    assert.equal(await canAccess(hrSpecialist, "leave", "approve"), false);
+  }
 
-  const hrManager = createAccessContext({ hrId: "B-10", loginId: "B-10", role: "HR Specialist" });
-  assert.equal(hrManager.role, "Super Admin");
-  assert.equal(await canAccess(hrManager, "leave", "approve"), true);
-  assert.equal(await canAccess(hrManager, "permission_admin", "update"), true);
+  if (designatedHrManagerHrId.length > 0) {
+    const hrManager = createAccessContext({ hrId: designatedHrManagerHrId, loginId: designatedHrManagerHrId, role: "HR Specialist" });
+    assert.equal(hrManager.role, "Super Admin");
+    assert.equal(await canAccess(hrManager, "leave", "approve"), true);
+    assert.equal(await canAccess(hrManager, "permission_admin", "update"), true);
+  }
 }

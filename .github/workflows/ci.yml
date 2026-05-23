@@ -36,8 +36,14 @@ jobs:
       - name: Dependency audit
         run: npm audit --audit-level=high
 
+      - name: Create stub .env.local for tests
+        run: touch .env.local
+
       - name: Test
         run: npm run test
+        env:
+          DESIGNATED_HR_SPECIALIST_HR_ID: ${{ secrets.DESIGNATED_HR_SPECIALIST_HR_ID }}
+          DESIGNATED_HR_MANAGER_HR_ID: ${{ secrets.DESIGNATED_HR_MANAGER_HR_ID }}
 
       - name: Build
         run: npm run build
