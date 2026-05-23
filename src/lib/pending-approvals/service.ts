@@ -319,11 +319,9 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
     safeApprovalList(async () => {
       // Sales-import approvals belong to finance — the sales role can submit
       // batches but cannot approve them from the pending-approvals portal.
-      const canViewSalesAsFinance = (await canApprove(access, "payroll"))
-        || (await canApprove(access, "offers"))
-        || (await canApprove(access, "contracts"))
-        || (await canApprove(access, "resignations"));
-      if (!canViewSalesAsFinance) return [];
+      if (access.scope !== "system" && !financeApprovalRoles.has(access.role)) {
+        return [];
+      }
       const batches = await listSalesQueue(access);
       return batches
         .filter(

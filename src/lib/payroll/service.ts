@@ -1238,7 +1238,7 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
 
   void writePayrollLineage({
     batchId:         batch.id,
-    actorId:         input.uploadedBy,
+    actorId:         input.uploadedBy ?? "system",
     sourceFileName:  input.fileName,
     operation:       "create_batch",
     entityType:      "payroll_batch",
@@ -1345,7 +1345,7 @@ export async function replaceSalaryBatch(
 
   void writePayrollLineage({
     batchId:         existing.id,
-    actorId:         input.uploadedBy,
+    actorId:         input.uploadedBy ?? "system",
     sourceFileName:  input.fileName,
     operation:       "replace_batch",
     entityType:      "payroll_batch",
