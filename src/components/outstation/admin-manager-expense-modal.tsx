@@ -112,11 +112,11 @@ export function AdminManagerExpenseModal({
       ? {
           area: request.toArea,
           city: request.toCity,
-          country: ((request as OutstationExpenseRequest & { toCountry?: string | null }).toCountry ?? null),
+          country: request.toCountry,
+          placeId: request.toPlaceId ?? "",
           label: request.toLabel ?? request.toCity ?? "",
           latitude: request.capturedLatitude,
           longitude: request.capturedLongitude,
-          placeId: "",
         }
       : null,
   );
@@ -138,6 +138,13 @@ export function AdminManagerExpenseModal({
   const [calculatingDistance, setCalculatingDistance] = useState(false);
   const [distanceError, setDistanceError] = useState<string | null>(null);
   const [placeError, setPlaceError] = useState<string | null>(null);
+  const [sourceLocationLabel, setSourceLocationLabel] = useState(
+    request
+      ? [request.residenceAddress, request.residenceCity, request.residenceArea]
+          .filter(Boolean)
+          .join(", ")
+      : "",
+  );
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -184,6 +191,12 @@ export function AdminManagerExpenseModal({
         longitude: placePayload.longitude,
         placeId: prediction.placeId,
       };
+      setSourceLocationLabel(
+        distanceResult?.fromLabel ??
+          [request?.residenceAddress, request?.residenceCity, request?.residenceArea]
+            .filter(Boolean)
+            .join(", "),
+      );
       setDestination(resolved);
       setResolvingPlace(false);
 
@@ -227,6 +240,7 @@ export function AdminManagerExpenseModal({
           fromLabel: payload.fromLabel ?? "",
           routePolyline: payload.routePolyline ?? null,
         });
+        setSourceLocationLabel(payload.fromLabel ?? "");
       }
     } catch {
       setDistanceError("Could not reach the distance calculation service.");

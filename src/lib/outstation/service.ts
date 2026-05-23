@@ -1,5 +1,6 @@
 import {
   assertPermission,
+  assertAdminManagerExpenseAccess,
   normalizeHrIdForAccess,
   normalizeRole,
   resolveEmployeeIdentityId,
@@ -1433,6 +1434,12 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     capturedAccuracyMeters: numberValue(row.captured_accuracy_meters),
     capturedAt: isoString(row.captured_at),
     capturedLatitude: numberValue(row.captured_latitude),
+    capturedLocationSource: text(row.captured_location_source) as
+      | "admin_manager_expense"
+      | "admin_manager_expense_edit"
+      | "browser_gps"
+      | "medical_rep_manual"
+      | "unknown",
     capturedLongitude: numberValue(row.captured_longitude),
     carEvidenceImagePath: text(row.car_evidence_image_path) || null,
     carEvidenceImageUrl: null,
@@ -1502,6 +1509,7 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     toArea: text(row.to_area) || null,
     toCity: text(row.to_city) || null,
     toCountry: text(row.to_country) || null,
+    toPlaceId: text(row.to_place_id) || null,
     toLabel: text(row.to_label) || null,
     transportationType,
     tripEndDate: isoString(row.trip_end_date),
@@ -2134,7 +2142,7 @@ export async function createManagerExpenseAsAdmin(
   access: AccessContext,
   input: ManagerExpenseAdminInput,
 ): Promise<OutstationExpenseRequest> {
-  await assertPermission(access, "outstation", "approve");
+  await assertAdminManagerExpenseAccess(access);
 
   const directory = await getEmployeeDirectory();
   const employee = directory.employees.find(
@@ -2142,6 +2150,19 @@ export async function createManagerExpenseAsAdmin(
   );
   if (!employee?.hrId) {
     throw new Error(`Employee ${input.employeeHrId} was not found in the employee directory.`);
+  }
+
+  if (
+    !input.destination.placeId ||
+    !input.destination.label ||
+    !Number.isFinite(input.destination.latitude) ||
+    !Number.isFinite(input.destination.longitude)
+  ) {
+    throw new Error("A valid Google Places destination with coordinates is required.");
+  }
+
+  if (!Number.isFinite(input.distanceKm) || input.distanceKm <= 0) {
+    throw new Error("Distance must be greater than zero.");
   }
 
   const residence = await getResidenceLocationForEmployee(employee.hrId);
@@ -2179,7 +2200,7 @@ export async function createManagerExpenseAsAdmin(
       : 0;
 
   const now = new Date().toISOString();
-  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  const actor = access.loginId ?? resolveEmployeeIdentityId(access) ?? "system";
 
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expense_requests")
@@ -2194,7 +2215,7 @@ export async function createManagerExpenseAsAdmin(
       captured_accuracy_meters: 0,
       captured_at: now,
       captured_latitude: input.destination.latitude,
-      captured_location_source: "browser_gps",
+      captured_location_source: "admin_manager_expense",
       captured_longitude: input.destination.longitude,
       claimed_total_amount: claimedTotalAmount,
       distance_from_residence_km: input.distanceKm,
@@ -2233,6 +2254,8 @@ export async function createManagerExpenseAsAdmin(
       ticket_attachment_paths: [],
       to_area: input.destination.area ?? null,
       to_city: input.destination.city ?? null,
+      to_country: input.destination.country ?? null,
+      to_place_id: input.destination.placeId,
       to_label: input.destination.label,
       transportation_type: input.transportationType,
       trip_end_date: input.tripEndDate,
@@ -2253,11 +2276,39 @@ export async function createManagerExpenseAsAdmin(
     entityId: String(created.id),
     entityType: "outstation_request",
     newValues: {
-      destination: input.destination.label,
-      distanceKm: input.distanceKm,
+      action: "create",
+      destination: {
+        area: input.destination.area,
+        city: input.destination.city,
+        country: input.destination.country,
+        label: input.destination.label,
+        placeId: input.destination.placeId,
+      },
+      payloadDiff: {
+        distanceKm: input.distanceKm,
+        durationMinutes: input.durationMinutes ?? null,
+        fromLocation: {
+          area: residence?.residenceArea ?? null,
+          city: residence?.residenceCity ?? null,
+          country: null,
+          latitude: residence?.residenceLatitude ?? null,
+          label: residence?.residenceAddress ?? null,
+          longitude: residence?.residenceLongitude ?? null,
+          placeId: null,
+        },
+        toLocation: {
+          area: input.destination.area ?? null,
+          city: input.destination.city ?? null,
+          country: input.destination.country ?? null,
+          latitude: input.destination.latitude,
+          label: input.destination.label,
+          longitude: input.destination.longitude,
+          placeId: input.destination.placeId,
+        },
+      },
+      targetManagerHrId: employee.hrId,
       employeeHrId: employee.hrId,
       expenseType: input.expenseType,
-      source: "admin_manager_expense",
       status: "submitted",
       tripEndDate: input.tripEndDate,
       tripStartDate: input.tripStartDate,
@@ -2273,13 +2324,13 @@ export async function updateManagerExpenseAsAdmin(
   access: AccessContext,
   input: Partial<ManagerExpenseAdminInput>,
 ): Promise<OutstationExpenseRequest> {
-  await assertPermission(access, "outstation", "approve");
+  await assertAdminManagerExpenseAccess(access);
 
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
 
   const now = new Date().toISOString();
-  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  const actor = access.loginId ?? resolveEmployeeIdentityId(access) ?? "system";
 
   const employeeHrId = existing.employeeHrId;
   const directory = await getEmployeeDirectory();
@@ -2351,6 +2402,7 @@ export async function updateManagerExpenseAsAdmin(
     overnight_days: allowance.overnightDays,
     route_polyline: routePolyline,
     same_day_trip: allowance.sameDayTrip,
+    captured_location_source: "admin_manager_expense_edit",
     transportation_type: transportationType,
     trip_end_date: tripEndDate,
     trip_start_date: tripStartDate,
@@ -2364,6 +2416,8 @@ export async function updateManagerExpenseAsAdmin(
     updatePayload.captured_longitude = destination.longitude;
     updatePayload.to_area = destination.area ?? null;
     updatePayload.to_city = destination.city ?? null;
+    updatePayload.to_country = destination.country ?? null;
+    updatePayload.to_place_id = destination.placeId;
     updatePayload.to_label = destination.label;
   }
 
@@ -2384,16 +2438,42 @@ export async function updateManagerExpenseAsAdmin(
     entityId: String(updated.id),
     entityType: "outstation_request",
     newValues: {
-      destination: destination?.label ?? existing.toLabel,
-      distanceKm,
+      action: "update",
+      destination: {
+        area: destination?.area ?? existing.toArea,
+        city: destination?.city ?? existing.toCity,
+        country: destination?.country ?? existing.toCountry,
+        label: destination?.label ?? existing.toLabel,
+        placeId: destination?.placeId,
+      },
+      payloadDiff: {
+        distanceKm,
+        durationMinutes,
+        toLocation: {
+          area: destination?.area ?? existing.toArea,
+          city: destination?.city ?? existing.toCity,
+          country: destination?.country ?? existing.toCountry,
+          label: destination?.label ?? existing.toLabel,
+          placeId: destination?.placeId,
+        },
+      },
+      targetManagerHrId: employeeHrId,
+      targetManagerLoginId: null,
       expenseType,
-      source: "admin_manager_expense_edit",
       status: updated.status,
       tripEndDate,
       tripStartDate,
     },
     oldValues: {
-      destination: existing.toLabel,
+      action: "update",
+      destination: {
+        area: existing.toArea,
+        city: existing.toCity,
+        country: existing.toCountry,
+        label: existing.toLabel,
+      },
+      targetManagerHrId: existing.employeeHrId,
+      targetManagerLoginId: null,
       distanceKm: existing.distanceFromResidenceKm,
       expenseType: existing.expenseType,
       status: existing.status,

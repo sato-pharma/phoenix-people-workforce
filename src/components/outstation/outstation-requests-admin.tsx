@@ -424,9 +424,11 @@ function RequestDetailsModal({
 export function OutstationRequestsAdmin({
   initialRequestId = null,
   requests,
+  canManageManagerExpenses,
 }: {
   initialRequestId?: number | null;
   requests: OutstationExpenseRequest[];
+  canManageManagerExpenses: boolean;
 }) {
   const initialSelectedId = requests.some((request) => request.id === initialRequestId)
     ? initialRequestId
@@ -447,7 +449,11 @@ export function OutstationRequestsAdmin({
     | { mode: "create"; targetHrId?: string; targetName?: string }
     | { mode: "edit"; request: OutstationExpenseRequest }
     | null
-  >(null);
+  >(
+    canManageManagerExpenses && searchParams.get("action") === "create-manager-expense"
+      ? { mode: "create" }
+      : null,
+  );
 
   const requestedRequestId = useMemo(() => parseRequestId(searchParams.get("requestId")), [searchParams]);
   const activeRequestedRequestId = useMemo(() => {
@@ -463,12 +469,6 @@ export function OutstationRequestsAdmin({
       setDetailRequestId(activeRequestedRequestId);
     });
   }, [activeRequestedRequestId]);
-
-  useEffect(() => {
-    if (searchParams.get("action") === "create-manager-expense") {
-      setManagerExpenseModal({ mode: "create" });
-    }
-  }, [searchParams]);
 
   const roles = useMemo(
     () => [...new Set(localRequests.map((request) => request.employeeRole).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
@@ -643,6 +643,44 @@ export function OutstationRequestsAdmin({
     }
   }
 
+  async function createManagerExpense(request: OutstationExpenseRequest) {
+    setManagerExpenseModal({
+      mode: "create",
+      targetHrId: request.employeeHrId,
+      targetName: request.employeeName,
+    });
+  }
+
+  async function deleteManagerExpense(request: OutstationExpenseRequest) {
+    const confirmed = window.confirm(
+      `Delete admin-created manager expense ${request.id}? This permanently removes only the manager-expense record.`,
+    );
+    if (!confirmed) return;
+
+    setActing({ action: "delete", id: request.id });
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const response = await fetch(`/api/admin/outstation/manager-expenses/${request.id}`, {
+        method: "DELETE",
+      });
+      const payload = await response.json().catch(() => null) as ActionPayload | null;
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Unable to delete manager expense.");
+      }
+
+      const remaining = localRequests.filter((candidate) => candidate.id !== request.id);
+      setLocalRequests(remaining);
+      if (selectedId === request.id) setSelectedId(remaining[0]?.id ?? null);
+      if (detailRequestId === request.id) setDetailRequestId(null);
+      setActionMessage(payload?.message ?? "Manager expense deleted.");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Unable to delete manager expense.");
+    } finally {
+      setActing(null);
+    }
+  }
+
   const hasActiveFilters = Boolean(search || eligibility || role);
 
   if (localRequests.length === 0) {
@@ -654,14 +692,16 @@ export function OutstationRequestsAdmin({
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
           title="Residence-validated expense review"
           actions={(
-            <Button
-              className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
-              onClick={() => setManagerExpenseModal({ mode: "create" })}
-              type="button"
-            >
-              <PlusCircle className="h-4 w-4" />
-              Create manager expense
-            </Button>
+            canManageManagerExpenses ? (
+              <Button
+                className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
+                onClick={() => setManagerExpenseModal({ mode: "create" })}
+                type="button"
+              >
+                <PlusCircle className="h-4 w-4" />
+                Create manager expense
+              </Button>
+            ) : null
           )}
         />
         <AdminCallout tone="neutral">
@@ -699,14 +739,16 @@ export function OutstationRequestsAdmin({
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
           title="Residence-validated expense requests"
           actions={(
-            <Button
-              className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
-              onClick={() => setManagerExpenseModal({ mode: "create" })}
-              type="button"
-            >
-              <PlusCircle className="h-4 w-4" />
-              Create manager expense
-            </Button>
+            canManageManagerExpenses ? (
+              <Button
+                className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
+                onClick={() => setManagerExpenseModal({ mode: "create" })}
+                type="button"
+              >
+                <PlusCircle className="h-4 w-4" />
+                Create manager expense
+              </Button>
+            ) : null
           )}
           badges={(
             <div className="flex flex-wrap gap-2 text-xs">
@@ -870,18 +912,49 @@ export function OutstationRequestsAdmin({
                               <Eye className="h-3.5 w-3.5" />
                               View
                             </Button>
-                            <Button
-                              className="gap-1.5 rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs font-black text-[#EA580C] hover:bg-[#FFEDD5]"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setManagerExpenseModal({ mode: "edit", request });
-                              }}
-                              title="Edit destination and recalculate distance"
-                              type="button"
-                            >
-                              <Edit2 className="h-3.5 w-3.5" />
-                              Edit
-                            </Button>
+                            {canManageManagerExpenses ? (
+                              request.capturedLocationSource === "admin_manager_expense" ? (
+                                <>
+                                  <Button
+                                    className="gap-1.5 rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs font-black text-[#EA580C] hover:bg-[#FFEDD5]"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setManagerExpenseModal({ mode: "edit", request });
+                                    }}
+                                    title="Edit manager expense destination and recalculate distance"
+                                    type="button"
+                                  >
+                                    <Edit2 className="h-3.5 w-3.5" />
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    className="gap-1.5 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FEE2E2]"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      void deleteManagerExpense(request);
+                                    }}
+                                    title="Delete manager expense"
+                                    type="button"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Delete
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  className="gap-1.5 rounded-xl border border-[#FCA5A5] bg-[#FFF1F2] px-3 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FECDD3]"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void createManagerExpense(request);
+                                  }}
+                                  title="Create manager expense from this employee row"
+                                  type="button"
+                                >
+                                  <PlusCircle className="h-3.5 w-3.5" />
+                                  Create
+                                </Button>
+                              )
+                            ) : null}
                           </div>
                         </td>
                       </tr>

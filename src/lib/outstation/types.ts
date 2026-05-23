@@ -198,6 +198,12 @@ export type OutstationExpenseRequest = {
   attachmentCount: number;
   approvalRecommendation: OutstationApprovalRecommendation;
   approvalReason: string;
+  capturedLocationSource?:
+    | "admin_manager_expense"
+    | "admin_manager_expense_edit"
+    | "browser_gps"
+    | "medical_rep_manual"
+    | "unknown";
   capturedAccuracyMeters: number;
   capturedAt: string;
   capturedLatitude: number;
@@ -252,6 +258,7 @@ export type OutstationExpenseRequest = {
   toArea: string | null;
   toCity: string | null;
   toCountry: string | null;
+  toPlaceId: string | null;
   toLabel: string | null;
   transportationType: OutstationTransportationType;
   tripEndDate: string;

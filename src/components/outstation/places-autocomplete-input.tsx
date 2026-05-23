@@ -27,12 +27,11 @@ export function PlacesAutocompleteInput({
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const prevValueRef = useRef(value);
 
-  if (prevValueRef.current !== value && value !== undefined) {
-    prevValueRef.current = value;
-    setInputValue(value);
-  }
+  useEffect(() => {
+    if (value === undefined) return;
+    setInputValue((currentValue) => (currentValue === value ? currentValue : value));
+  }, [value]);
 
   useEffect(() => {
     function handleClick(event: MouseEvent) {

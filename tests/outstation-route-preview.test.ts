@@ -92,6 +92,7 @@ function baseRequest(): OutstationExpenseRequest {
     toCity: null,
     toCountry: null,
     toLabel: "Captured destination",
+    toPlaceId: null,
     transportationType: "car",
     tripEndDate: "2026-05-22",
     tripStartDate: "2026-05-22",

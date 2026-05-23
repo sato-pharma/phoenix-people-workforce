@@ -1,32 +1,41 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertAdminManagerExpenseAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+
+type AddressComponent = {
+  longText?: string;
+  long_name?: string;
+  shortText?: string;
+  short_name?: string;
+  types?: string[];
+};
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function extractAddressComponent(
-  components: Array<{ long_name?: string; short_name?: string; types?: string[] }> | undefined,
+  components: Array<AddressComponent> | undefined,
   targetTypes: string[],
 ) {
   const component = components?.find(
     (entry) =>
       Array.isArray(entry.types) && entry.types.some((type) => targetTypes.includes(type)),
   );
-  return component?.long_name ?? component?.short_name ?? null;
+  return component?.longText ?? component?.shortText ?? component?.long_name ?? component?.short_name ?? null;
 }
 
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "outstation", "read");
+    await assertAdminManagerExpenseAccess(access);
 
     const { searchParams } = new URL(request.url);
     const placeId = searchParams.get("placeId")?.trim() ?? "";
+    const normalizedPlaceId = placeId.startsWith("places/") ? placeId.slice("places/".length) : placeId;
     const sessiontoken = searchParams.get("sessiontoken") ?? "";
 
-    if (!placeId) {
+    if (!normalizedPlaceId) {
       return NextResponse.json(
         { error: "missing_place_id", message: "placeId is required." },
         { status: 400 },
@@ -41,55 +50,61 @@ export async function GET(request: Request) {
       );
     }
 
-    const url = new URL("https://maps.googleapis.com/maps/api/place/details/json");
-    url.searchParams.set("place_id", placeId);
-    url.searchParams.set(
-      "fields",
-      "geometry,name,formatted_address,address_components",
-    );
-    url.searchParams.set("key", key);
-    url.searchParams.set("language", "ar");
-    if (sessiontoken) url.searchParams.set("sessiontoken", sessiontoken);
+    const url = new URL(`https://places.googleapis.com/v1/places/${encodeURIComponent(normalizedPlaceId)}`);
+    if (sessiontoken) {
+      url.searchParams.set("sessionToken", sessiontoken);
+    }
 
-    const response = await fetch(url.toString(), { cache: "no-store" });
+    const response = await fetch(url.toString(), {
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": "id,displayName,formattedAddress,addressComponents,location",
+      },
+      method: "GET",
+    });
     if (!response.ok) {
-      throw new Error(`Google Places Details failed with ${response.status}.`);
+      const details = await response.text().catch(() => "");
+      throw new Error(
+        `Google Places Details failed with ${response.status}${details ? `: ${details.slice(0, 240)}` : ""}.`,
+      );
     }
 
     const payload = (await response.json()) as {
-      result?: {
-        address_components?: Array<{
-          long_name?: string;
-          short_name?: string;
-          types?: string[];
-        }>;
-        formatted_address?: string;
-        geometry?: {
-          location?: { lat?: number; lng?: number };
-        };
-        name?: string;
+      addressComponents?: Array<AddressComponent>;
+      error?: {
+        message?: string;
       };
-      status?: string;
+      formattedAddress?: string;
+      location?: {
+        latitude?: number;
+        longitude?: number;
+      };
+      displayName?: {
+        text?: string;
+      };
     };
 
-    const result = payload.result;
-    if (!result?.geometry?.location) {
+    if (payload.error) {
+      return NextResponse.json(
+        {
+          error: "place_details_failed",
+          message: payload.error.message ?? "Google Places details request failed.",
+        },
+        { status: 502 },
+      );
+    }
+
+    const lat = Number(payload.location?.latitude);
+    const lng = Number(payload.location?.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return NextResponse.json(
         { error: "place_not_found", message: "Place details could not be resolved." },
         { status: 404 },
       );
     }
 
-    const lat = Number(result.geometry.location.lat);
-    const lng = Number(result.geometry.location.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return NextResponse.json(
-        { error: "invalid_coordinates", message: "Place coordinates are invalid." },
-        { status: 422 },
-      );
-    }
-
-    const components = result.address_components;
+    const components = payload.addressComponents;
     const city =
       extractAddressComponent(components, [
         "administrative_area_level_1",
@@ -101,18 +116,17 @@ export async function GET(request: Request) {
         "sublocality",
         "sublocality_level_1",
       ]) ?? null;
-    const country =
-      extractAddressComponent(components, ["country"]) ?? null;
+    const country = extractAddressComponent(components, ["country"]) ?? null;
 
     return NextResponse.json({
       area,
       city,
       country,
-      formattedAddress: result.formatted_address ?? result.name ?? "",
-      label: result.name ?? result.formatted_address ?? "",
+      formattedAddress: payload.formattedAddress ?? payload.displayName?.text ?? "",
+      label: payload.displayName?.text ?? payload.formattedAddress ?? "",
       latitude: lat,
       longitude: lng,
-      placeId,
+      placeId: normalizedPlaceId,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Place details lookup failed.";

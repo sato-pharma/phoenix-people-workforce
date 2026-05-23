@@ -1,6 +1,6 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { OutstationRequestsAdmin } from "@/components/outstation/outstation-requests-admin";
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertPermission, canManageManagerExpenses } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listOutstationRequests } from "@/lib/outstation/service";
 
@@ -19,6 +19,7 @@ export default async function AdminOutstationRequestsPage({
   const initialRequestId = Number(firstSearchParam(resolvedSearchParams?.requestId));
   const access = await resolveAccessContextFromPage();
   await assertPermission(access, "outstation", "read");
+  const canManageManagerExpenseFlow = await canManageManagerExpenses(access);
   const requests = await listOutstationRequests({ includeCarEvidenceSignedUrls: true });
 
   return (
@@ -26,6 +27,7 @@ export default async function AdminOutstationRequestsPage({
       <OutstationRequestsAdmin
         initialRequestId={Number.isFinite(initialRequestId) ? initialRequestId : null}
         requests={requests}
+        canManageManagerExpenses={canManageManagerExpenseFlow}
       />
     </AppShell>
   );

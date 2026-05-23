@@ -871,6 +871,17 @@ export async function assertPermission(
   }
 }
 
+export async function canManageManagerExpenses(context: AccessContext) {
+  return canAccess(context, "admin_access", "read");
+}
+
+export async function assertAdminManagerExpenseAccess(context: AccessContext) {
+  const allowed = await canManageManagerExpenses(context);
+  if (!allowed) {
+    throw new Error(`Forbidden: ${context.role} is not allowed to manage outstation expenses.`);
+  }
+}
+
 export async function canAccessAttendanceSetup(
   context: AccessContext,
   action: Extract<PermissionAction, "read" | "update"> = "read",

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertAdminManagerExpenseAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 
 export const runtime = "nodejs";
@@ -9,10 +9,14 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "outstation", "read");
+    await assertAdminManagerExpenseAccess(access);
 
     const { searchParams } = new URL(request.url);
-    const input = searchParams.get("input")?.trim() ?? "";
+    const input = (
+      searchParams.get("q")?.trim() ??
+      searchParams.get("input")?.trim() ??
+      ""
+    ).trim();
     const sessiontoken = searchParams.get("sessiontoken") ?? "";
 
     if (!input) {
@@ -27,31 +31,67 @@ export async function GET(request: Request) {
       );
     }
 
-    const url = new URL("https://maps.googleapis.com/maps/api/place/autocomplete/json");
-    url.searchParams.set("input", input);
-    url.searchParams.set("key", key);
-    url.searchParams.set("language", "ar");
-    if (sessiontoken) url.searchParams.set("sessiontoken", sessiontoken);
+    const response = await fetch("https://places.googleapis.com/v1/places:autocomplete", {
+      body: JSON.stringify({
+        input,
+        languageCode: "ar",
+        ...(sessiontoken ? { sessionToken: sessiontoken } : {}),
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": "suggestions.placePrediction.placeId,suggestions.placePrediction.text.text",
+      },
+      method: "POST",
+    });
 
-    const response = await fetch(url.toString(), { cache: "no-store" });
     if (!response.ok) {
-      throw new Error(`Google Places Autocomplete failed with ${response.status}.`);
+      const details = await response.text().catch(() => "");
+      throw new Error(
+        `Google Places Autocomplete failed with ${response.status}${details ? `: ${details.slice(0, 240)}` : ""}.`,
+      );
     }
 
     const payload = (await response.json()) as {
-      predictions?: Array<{
-        description?: string;
-        place_id?: string;
+      error?: {
+        message?: string;
+      };
+      suggestions?: Array<{
+        placePrediction?: {
+          placeId?: string;
+          text?: {
+            text?: string;
+          };
+        };
       }>;
-      status?: string;
     };
 
-    const predictions = (payload.predictions ?? [])
-      .filter((prediction) => prediction.place_id && prediction.description)
+    if (payload.error) {
+      return NextResponse.json(
+        {
+          error: "places_service_error",
+          message: payload.error.message ?? "Google Places autocomplete failed.",
+        },
+        { status: 502 },
+      );
+    }
+
+    const predictions = (payload.suggestions ?? [])
+      .map((entry) => entry.placePrediction)
+      .filter(
+        (prediction): prediction is { placeId: string; text: { text: string } } =>
+          prediction?.placeId != null && prediction.text?.text != null,
+      )
       .map((prediction) => ({
-        description: prediction.description!,
-        placeId: prediction.place_id!,
+        description: prediction.text!.text!,
+        placeId: prediction.placeId!,
       }));
+
+    if (!predictions.length) {
+      return NextResponse.json(
+        { predictions: [] },
+      );
+    }
 
     return NextResponse.json({ predictions });
   } catch (error) {
