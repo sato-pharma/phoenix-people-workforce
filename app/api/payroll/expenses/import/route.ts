@@ -83,6 +83,14 @@ export async function POST(request: Request) {
     const year = parsedBody.data.year;
     const records = (parsedBody.data.records ?? []) as PayrollExpensesImportRecord[];
 
+    const MAX_IMPORT_RECORDS = 5_000;
+    if (records.length > MAX_IMPORT_RECORDS) {
+      return NextResponse.json(
+        { error: "too_many_records", message: `Import is limited to ${MAX_IMPORT_RECORDS.toLocaleString()} records per request.` },
+        { status: 400 },
+      );
+    }
+
     if (month === undefined || year === undefined) {
       return NextResponse.json(
         { error: "missing_period", message: "Payroll month and year are required." },
