@@ -12,7 +12,7 @@ export default async function PasswordSetupPage(
   try {
     preview = await getPasswordSetupPreview(token);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "This password setup link is unavailable.";
+    const message = "This password setup link is unavailable.";
 
     return (
       <main className="min-h-screen bg-[#020202] px-4 py-10 text-white">
