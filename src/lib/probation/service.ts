@@ -95,7 +95,7 @@ type AuthNotificationRecipientRow = {
 
 const probationDays = 90;
 const hrProbationRoles = new Set(["Super Admin", "HR Specialist"]);
-const extensionProbationStatus = "extended";
+const _extensionProbationStatus = "extended";
 
 export function isProbationAdministrator(access: Pick<AccessContext, "role" | "scope">) {
   return access.scope === "system" || hrProbationRoles.has(access.role);
@@ -164,6 +164,7 @@ function isDirectManagerOrManagerOfManager(directory: EmployeeScopeRow[], viewer
   return Boolean(manager && viewerHrId === normalizeHrId(manager.managerHrId));
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function employeeLabel(employee: Pick<EmployeeScopeRow, "fullName" | "hrId"> | null | undefined, fallbackHrId: string | null | undefined) {
   const hrId = String(employee?.hrId ?? fallbackHrId ?? "").trim();
   const name = String(employee?.fullName ?? "").trim();
@@ -222,7 +223,7 @@ function baseProbationEndDate(employee: Pick<EmployeeScopeRow, "hireDate">) {
   return addDays(employee.hireDate, probationDays) ?? "";
 }
 
-function currentProbationEndDate(employee: EmployeeScopeRow, probation: ProbationDbRow | undefined) {
+function currentProbationEndDate(employee: EmployeeScopeRow, _probation: ProbationDbRow | undefined) {
   return baseProbationEndDate(employee);
 }
 
@@ -744,6 +745,7 @@ function assertText(value: string | null | undefined, message: string) {
   if (!cleanText(value)) throw new Error(message);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function assertDateAfter(value: string | null | undefined, current: string | null | undefined, message: string) {
   const next = parseDateOnly(normalizeDate(value));
   const previous = parseDateOnly(normalizeDate(current));

@@ -198,30 +198,6 @@ const permissionDomains: Array<{
   },
 ];
 
-const permissionResourceDescriptions: Partial<Record<PermissionResource, string>> = {
-  admin: "Administrative shell and system controls.",
-  admin_access: "Users & Access dashboard visibility.",
-  coaching: "Coaching reports and performance feedback.",
-  contracts: "Contract renewal and employment terms.",
-  employee_documents: "Employee files and document exports.",
-  employee_profile: "Personal employment profile fields.",
-  employees: "Employee directory and employee record management.",
-  expenses: "Expense request and approval workflows.",
-  hr_calendar: "HR calendar and workforce events.",
-  imports: "Bulk import workflows and validation.",
-  offers: "Offer generation and candidate decision flows.",
-  organogram: "Hierarchy and organization chart visibility.",
-  outstation: "Outstation requests and approvals.",
-  payroll: "Payroll dashboard and salary operations.",
-  payslips: "Payslip visibility and export.",
-  permission_admin: "Role permission override governance.",
-  probation: "Probation tracking and outcomes.",
-  resignations: "Resignation lifecycle workflows.",
-  sales: "Sales dashboards and exports.",
-  team: "Team views and subordinate data.",
-  user_admin: "User identity and role administration.",
-  vacancies: "Vacancy and headcount planning.",
-};
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -344,11 +320,13 @@ function PasswordBadge({ forcePasswordReset }: { forcePasswordReset: boolean }) 
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function auditReason(log: AuditLogRow) {
   const reason = log.newValues?.reason;
   return typeof reason === "string" && reason.trim() ? reason.trim() : null;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function auditActionLabel(log: AuditLogRow) {
   const action = log.newValues?.action;
   if (action === "password_setup_link_generated") return "Token-safe setup/reset event";
@@ -732,7 +710,7 @@ export function AccessControlManager({
     ),
   );
   const permissionOverrideCount = data?.permissionOverrides?.length ?? 0;
-  const visiblePermissionDomains = permissionDomains.map((domain) => ({
+  const _visiblePermissionDomains = permissionDomains.map((domain) => ({
     ...domain,
     resources: domain.resources.filter((resource) => permissionResources.includes(resource)),
   })).filter((domain) => domain.resources.length > 0);

@@ -57,8 +57,6 @@ const blockedProductionRef = "ozucdzovmcqvepbozvqf";
 const phaseTag = `PHASE27-${Date.now()}`;
 const port = Number(process.env.PHOENIX_PHASE27_PORT ?? 3027);
 const baseUrl = `http://localhost:${port}`;
-const fakeUuid = "00000000-0000-0000-0000-000000000000";
-
 const roles: PhoenixRole[] = [
   "Super Admin",
   "HR Specialist",
@@ -575,6 +573,7 @@ function splitSetCookieHeader(value: string | null) {
   return value.split(/,(?=\s*[^;,=\s]+=)/g).map((cookie) => cookie.trim()).filter(Boolean);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function responseSetCookies(response: Response) {
   const getSetCookie = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
   return getSetCookie ? getSetCookie.call(response.headers) : splitSetCookieHeader(response.headers.get("set-cookie"));

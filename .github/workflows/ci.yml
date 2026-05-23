@@ -30,6 +30,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Guard dev-preview imports
+        run: npm run guard:dev-preview-imports
+
       - name: Test
         run: npm run test
 

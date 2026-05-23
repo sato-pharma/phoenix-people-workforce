@@ -12,7 +12,6 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
-import { employeePortalDevPreviewData } from "@/lib/employee-portal/dev-preview-data";
 
 export const metadata = {
   title: "Employee Portal Dev Preview",
@@ -25,6 +24,9 @@ export default async function EmployeePortalDevPreviewPage() {
 
   await connection();
 
+  const { employeePortalDevPreviewData } = await import(
+    "@/lib/employee-portal/dev-preview-data"
+  );
   const data = employeePortalDevPreviewData;
   const visibility = resolveEmployeePortalNavVisibility(
     data.employee.roleLabel,

@@ -1,4 +1,3 @@
-import { isDevelopment } from "@/lib/env";
 import {
   canSeeEmployee,
   resolveEmployeeIdentityId,
@@ -668,6 +667,7 @@ function hasMissingColumnError(error: unknown, columnName: string) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function hasMeaningfulError(error: unknown) {
   if (!error) return false;
   if (error instanceof Error) return Boolean(error.message?.trim());
@@ -1445,6 +1445,7 @@ async function getEmployeePortalSalesDashboard(
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function buildEmployeeSalesDashboard(records: PortalSalesNormalized[]): SalesDashboardData {
   const trendByPeriod = new Map<string, { sales: number; target: number; linkedEmployees: number }>();
   const productPerformanceMap = new Map<string, { sales: number; target: number; family: string; salesUnits: number }>();
@@ -3300,7 +3301,6 @@ async function resolveSalesRankInTeam(params: {
 
   let data: unknown[] = [];
   let error: unknown = null;
-  const startTime = Date.now();
   try {
     data = await fetchAllRows(buildRankQuery);
   } catch (err) {
@@ -3802,7 +3802,7 @@ export async function getMedicalRepPortalData(
         teamRankResult = allPeriodsResult ?? teamRankResult;
       }
     }
-  } catch (error) {
+  } catch {
     // team rank exception
   }
   
@@ -4397,7 +4397,7 @@ export async function getDsmTeamPerformance(
       teamTotalSales,
       teamTotalTarget,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -4710,7 +4710,7 @@ export async function getEmployeePortalVacancies(
       },
       vacancies,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -4922,7 +4922,7 @@ export async function getNsmDsmPerformance(
       lineTotalSales,
       lineTotalTarget
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -5133,7 +5133,7 @@ export async function getNsmTeamExpenses(
       selectedPeriods,
       summary,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }

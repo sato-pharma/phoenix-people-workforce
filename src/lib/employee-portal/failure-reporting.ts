@@ -40,6 +40,7 @@ function normalizeError(error: unknown): ErrorEnvelope {
   return { message: "Unknown error" };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function safeSerialize(value: unknown): unknown | undefined {
   if (typeof value === "undefined") return undefined;
   try {

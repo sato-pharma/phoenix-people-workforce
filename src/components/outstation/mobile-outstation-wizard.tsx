@@ -499,6 +499,7 @@ export function MobileOutstationWizard({
     captured,
     carEvidence?.capturedAt,
     carEvidence?.imageDataUrl,
+    carEvidence?.imagePath,
     carEvidence?.capturedLatitude,
     carEvidence?.capturedLocationLabel,
     carEvidence?.capturedLongitude,
@@ -840,6 +841,7 @@ export function MobileOutstationWizard({
     goTicketAmount,
     hasTicketAttachments,
     isTicketBased,
+    isTripDateRangeInvalid,
     returnTicketAmount,
     ticketFiles.length,
     transportationType,
@@ -1576,6 +1578,7 @@ export function MobileOutstationWizard({
           ) : null}
           {carEvidence?.imageDataUrl ? (
             <div className="relative mt-4 overflow-hidden rounded-2xl border border-slate-200">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 alt="Live car evidence preview"
                 className="h-auto w-full object-cover"

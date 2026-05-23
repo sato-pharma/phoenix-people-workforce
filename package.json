@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit --pretty false",
+    "guard:dev-preview-imports": "node scripts/check-dev-preview-imports.mjs",
     "test": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts",
     "db:rls:create-staging-env": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/create-staging-rls-env-local.ts",
     "db:rls:check-local-prereqs": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/check-local-rls-prereqs.ts",
@@ -32,7 +33,7 @@
     "phase33:migration-history-reconciliation-gate": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase33-migration-history-reconciliation-gate.ts",
     "phase34:post-repair-pending-migrations": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase34-post-repair-pending-migrations.ts",
     "phase36:post-apply-no-pending-migrations": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase36-post-apply-no-pending-migrations.ts",
-    "ci": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "ci": "npm run lint && npm run guard:dev-preview-imports && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",

@@ -1,9 +1,16 @@
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 
 if (process.env.NODE_ENV === "production") {
-  throw new Error(
-    "[dev-preview-data] This module must not be imported in production builds. Remove this import from any production code path.",
-  );
+  const nextPhase = process.env.NEXT_PHASE;
+  const isBuildPhase =
+    nextPhase === "phase-production-build" ||
+    nextPhase === "phase-production-trace";
+
+  if (!isBuildPhase) {
+    throw new Error(
+      "[dev-preview-data] This module must not be imported in production builds. Remove this import from any production code path.",
+    );
+  }
 }
 
 const salesTrend = [

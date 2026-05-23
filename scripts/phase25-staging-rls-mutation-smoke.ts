@@ -365,7 +365,7 @@ async function alignStagingProbationAndLeaveSchema(sql: ReturnType<typeof postgr
   return { createdOrAlignedTables: ["employee_probation", "v2_vacation_requests"] };
 }
 
-async function cleanupPhase25Fixtures(sql: ReturnType<typeof postgres>, cleanup: CleanupState) {
+async function cleanupPhase25Fixtures(sql: ReturnType<typeof postgres>, _cleanup: CleanupState) {
   await sql.begin(async (transaction) => {
     await transaction`
       delete from public.v2_vacation_requests

@@ -242,6 +242,7 @@ function payrollExcelDateOnly(value: string | null) {
   ));
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function calculateBaseProrationDeduction(
   baseSalary: number,
   hireDate: string | null,
@@ -814,9 +815,9 @@ function rowValues(
   options: { formulas?: boolean } = {},
 ) {
   if (options.formulas) {
-    const month = cellRef(rowNumber, 2);
-    const year = cellRef(rowNumber, 3);
-    const hireDate = cellRef(rowNumber, 10);
+    const _month = cellRef(rowNumber, 2);
+    const _year = cellRef(rowNumber, 3);
+    const _hireDate = cellRef(rowNumber, 10);
     const baseSalary = cellRef(rowNumber, 11);
     const netSalary = cellRef(rowNumber, 13);
     const expenses = cellRef(rowNumber, 14);
