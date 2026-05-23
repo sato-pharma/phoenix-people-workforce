@@ -18,9 +18,10 @@ function firstSearchParam(value: string | string[] | undefined) {
 export default async function PendingApprovalsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ type?: string | string[] }>;
+  searchParams?: Promise<{ tab?: string | string[]; type?: string | string[] }>;
 }) {
   const resolvedSearchParams = await searchParams;
+  const initialTab = firstSearchParam(resolvedSearchParams?.tab);
   const initialTypeFilter = firstSearchParam(resolvedSearchParams?.type);
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) {
@@ -37,7 +38,11 @@ export default async function PendingApprovalsPage({
           description="Review approval decisions assigned to you and pending requests submitted by you."
           title="Pending Approvals"
         >
-          <PendingApprovalsWorkspace initialItems={items} initialTypeFilter={initialTypeFilter} />
+          <PendingApprovalsWorkspace
+            initialItems={items}
+            initialTab={initialTab === "by-me" ? "by-me" : "for-me"}
+            initialTypeFilter={initialTypeFilter}
+          />
         </EmployeePortalPageShell>
       </EmployeePortalServerShell>
     );
@@ -46,7 +51,11 @@ export default async function PendingApprovalsPage({
   return (
     <AppShell navigationMode="admin">
       <PageContainer className="max-w-none">
-        <PendingApprovalsWorkspace initialItems={items} initialTypeFilter={initialTypeFilter} />
+        <PendingApprovalsWorkspace
+          initialItems={items}
+          initialTab={initialTab === "by-me" ? "by-me" : "for-me"}
+          initialTypeFilter={initialTypeFilter}
+        />
       </PageContainer>
     </AppShell>
   );

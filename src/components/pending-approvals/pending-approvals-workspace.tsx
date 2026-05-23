@@ -12,6 +12,8 @@ type PendingApprovalsResponse = {
   message?: string;
 };
 
+type ApprovalTab = "for-me" | "by-me";
+
 const workflowFilterOptions: Array<{ label: string; value: PendingApprovalItem["workflow"] }> = [
   { label: "Vacation", value: "vacation" },
   { label: "Employee Excuse", value: "excuse" },
@@ -69,11 +71,14 @@ function submittedDateKey(value: string) {
 
 export function PendingApprovalsWorkspace({
   initialItems,
+  initialTab = "for-me",
   initialTypeFilter = "all",
 }: {
   initialItems: PendingApprovalItem[];
+  initialTab?: ApprovalTab;
   initialTypeFilter?: PendingApprovalItem["workflow"] | "all" | string | null;
 }) {
+  const [activeTab, setActiveTab] = useState<ApprovalTab>(initialTab === "by-me" ? "by-me" : "for-me");
   const [items, setItems] = useState(initialItems);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,10 +89,16 @@ export function PendingApprovalsWorkspace({
   const [personFilter, setPersonFilter] = useState("");
   const [dateFromFilter, setDateFromFilter] = useState("");
   const [dateToFilter, setDateToFilter] = useState("");
+  const forMeItems = useMemo(() => items.filter((item) => item.canDecide !== false), [items]);
+  const byMeItems = useMemo(() => items.filter((item) => item.canDecide === false), [items]);
+  const activeTabItems = activeTab === "for-me" ? forMeItems : byMeItems;
 
   const filteredItems = useMemo(() => {
     const person = personFilter.trim().toLowerCase();
     return items.filter((item) => {
+      if (activeTab === "for-me" && item.canDecide === false) return false;
+      if (activeTab === "by-me" && item.canDecide !== false) return false;
+
       if (typeFilter !== "all" && item.workflow !== typeFilter) return false;
 
       if (person) {
@@ -105,13 +116,11 @@ export function PendingApprovalsWorkspace({
       if (dateToFilter && (!submittedDate || submittedDate > dateToFilter)) return false;
       return true;
     });
-  }, [dateFromFilter, dateToFilter, items, personFilter, typeFilter]);
+  }, [activeTab, dateFromFilter, dateToFilter, items, personFilter, typeFilter]);
 
-  const decisionItemCount = useMemo(() => items.filter((item) => item.canDecide !== false).length, [items]);
-  const filteredDecisionItemCount = useMemo(
-    () => filteredItems.filter((item) => item.canDecide !== false).length,
-    [filteredItems],
-  );
+  const activeTotalCount = activeTabItems.length;
+  const activeFilteredCount = filteredItems.length;
+  const activeDecisionCount = forMeItems.length;
   const hasActiveFilters = typeFilter !== "all" || Boolean(personFilter.trim()) || Boolean(dateFromFilter) || Boolean(dateToFilter);
 
   const grouped = useMemo(() => {
@@ -185,9 +194,12 @@ export function PendingApprovalsWorkspace({
             <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-950">Pending Approvals</h1>
               <p className="mt-1 text-sm leading-6 text-slate-600">
-                {filteredItems.length === items.length
-                  ? `${items.length} pending items, ${decisionItemCount} require your decision.`
-                  : `${filteredItems.length} of ${items.length} pending items match your filters; ${filteredDecisionItemCount} require your decision.`}
+                {activeFilteredCount === activeTotalCount
+                  ? `${activeFilteredCount} ${activeTab === "for-me" ? "pending items for you" : "requests pending by you"}`
+                  : `${activeFilteredCount} of ${activeTotalCount} matching items in this tab`}
+                {activeTab === "for-me" && activeDecisionCount > 0
+                  ? `; ${activeDecisionCount} require your decision`
+                  : ""}
               </p>
             </div>
           </div>
@@ -206,6 +218,34 @@ export function PendingApprovalsWorkspace({
             {error}
           </div>
         ) : null}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-black transition",
+              activeTab === "for-me"
+                ? "bg-orange-600 text-white shadow-[0_10px_22px_rgba(234,88,12,0.35)]"
+                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+            )}
+            onClick={() => setActiveTab("for-me")}
+            type="button"
+          >
+            Approvals for me
+            <span className="rounded-full bg-white/25 px-2 py-0.5 text-[11px] font-black">{forMeItems.length}</span>
+          </button>
+          <button
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-black transition",
+              activeTab === "by-me"
+                ? "bg-orange-600 text-white shadow-[0_10px_22px_rgba(234,88,12,0.35)]"
+                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+            )}
+            onClick={() => setActiveTab("by-me")}
+            type="button"
+          >
+            Approvals by me
+            <span className="rounded-full bg-white/25 px-2 py-0.5 text-[11px] font-black">{byMeItems.length}</span>
+          </button>
+        </div>
         <div className="mt-5 grid gap-3 rounded-[18px] border border-slate-200/70 bg-slate-50/70 p-3 lg:grid-cols-[1.3fr_1fr_1fr_1fr_auto]">
           <label className="relative block">
             <span className="sr-only">Requester</span>
@@ -263,10 +303,10 @@ export function PendingApprovalsWorkspace({
         </div>
       </section>
 
-      {items.length === 0 ? (
+      {activeTotalCount === 0 ? (
         <div className="rounded-[22px] border border-dashed border-slate-300 bg-white/80 px-5 py-12 text-center shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-          <p className="text-base font-black text-slate-900">No pending approvals</p>
-          <p className="mt-2 text-sm text-slate-500">New items assigned to you or submitted by you will appear here.</p>
+          <p className="text-base font-black text-slate-900">No pending approvals in this tab</p>
+          <p className="mt-2 text-sm text-slate-500">New items for this tab will appear here.</p>
         </div>
       ) : filteredItems.length === 0 ? (
         <div className="rounded-[22px] border border-dashed border-slate-300 bg-white/80 px-5 py-12 text-center shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
