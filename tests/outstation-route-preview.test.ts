@@ -90,6 +90,7 @@ function baseRequest(): OutstationExpenseRequest {
     ticketAttachmentPaths: [],
     toArea: null,
     toCity: null,
+    toCountry: null,
     toLabel: "Captured destination",
     transportationType: "car",
     tripEndDate: "2026-05-22",

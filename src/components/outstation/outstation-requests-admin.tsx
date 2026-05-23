@@ -5,11 +5,13 @@ import {
   Camera,
   CheckCircle2,
   Clock,
+  Edit2,
   Eye,
   ExternalLink,
   FileText,
   Loader2,
   MapPinned,
+  PlusCircle,
   Search,
   ShieldAlert,
   Trash2,
@@ -18,6 +20,8 @@ import {
 import { useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { startTransition, useEffect, useMemo, useState } from "react";
+
+import { AdminManagerExpenseModal } from "@/components/outstation/admin-manager-expense-modal";
 
 import { AdminCallout, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { OutstationReviewMap } from "@/components/outstation/outstation-review-map";
@@ -439,6 +443,11 @@ export function OutstationRequestsAdmin({
   const [acting, setActing] = useState<{ action: AdminAction; id: number } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [managerExpenseModal, setManagerExpenseModal] = useState<
+    | { mode: "create"; targetHrId?: string; targetName?: string }
+    | { mode: "edit"; request: OutstationExpenseRequest }
+    | null
+  >(null);
 
   const requestedRequestId = useMemo(() => parseRequestId(searchParams.get("requestId")), [searchParams]);
   const activeRequestedRequestId = useMemo(() => {
@@ -526,6 +535,21 @@ export function OutstationRequestsAdmin({
   function updateRequestInState(updated: OutstationExpenseRequest) {
     setLocalRequests((current) =>
       current.map((request) => request.id === updated.id ? updated : request),
+    );
+  }
+
+  function handleManagerExpenseSaved(saved: OutstationExpenseRequest) {
+    setManagerExpenseModal(null);
+    const exists = localRequests.some((request) => request.id === saved.id);
+    if (exists) {
+      updateRequestInState(saved);
+    } else {
+      setLocalRequests((current) => [saved, ...current]);
+    }
+    setActionMessage(
+      managerExpenseModal?.mode === "edit"
+        ? `Manager expense #${saved.id} updated.`
+        : `Manager expense #${saved.id} created for ${saved.employeeName}.`,
     );
   }
 
@@ -619,15 +643,43 @@ export function OutstationRequestsAdmin({
     return (
       <OutstationAdminShell>
         <AdminPageHero
-          description="No residence-validated outstation request data is currently available."
+          description="No residence-validated outstation request data is currently available. You can still create a manager expense manually."
           eyebrow="Outstation requests"
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
           title="Residence-validated expense review"
+          actions={(
+            <Button
+              className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
+              onClick={() => setManagerExpenseModal({ mode: "create" })}
+              type="button"
+            >
+              <PlusCircle className="h-4 w-4" />
+              Create manager expense
+            </Button>
+          )}
         />
         <AdminCallout tone="neutral">
           <ShieldAlert className="mt-0.5 h-5 w-5 text-[#EA580C]" />
           <p className="font-semibold text-[#334155]">No requests were returned from the data source.</p>
         </AdminCallout>
+        {managerExpenseModal ? (
+          managerExpenseModal.mode === "create" ? (
+            <AdminManagerExpenseModal
+              mode="create"
+              onClose={() => setManagerExpenseModal(null)}
+              onSaved={handleManagerExpenseSaved}
+              targetHrId={managerExpenseModal.targetHrId}
+              targetName={managerExpenseModal.targetName}
+            />
+          ) : (
+            <AdminManagerExpenseModal
+              mode="edit"
+              onClose={() => setManagerExpenseModal(null)}
+              onSaved={handleManagerExpenseSaved}
+              request={managerExpenseModal.request}
+            />
+          )
+        ) : null}
       </OutstationAdminShell>
     );
   }
@@ -640,6 +692,16 @@ export function OutstationRequestsAdmin({
           eyebrow="Outstation review"
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
           title="Residence-validated expense requests"
+          actions={(
+            <Button
+              className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
+              onClick={() => setManagerExpenseModal({ mode: "create" })}
+              type="button"
+            >
+              <PlusCircle className="h-4 w-4" />
+              Create manager expense
+            </Button>
+          )}
           badges={(
             <div className="flex flex-wrap gap-2 text-xs">
               <span className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 font-semibold text-[#EA580C]">Requests: {filtered.length}</span>
@@ -790,17 +852,31 @@ export function OutstationRequestsAdmin({
                           {formatStatus(request.approvalRecommendation)}
                         </td>
                         <td className="px-4 py-3">
-                          <Button
-                            className="gap-1.5 rounded-xl border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-[#0F172A] hover:bg-[#FFF7ED]"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openDetails(request);
-                            }}
-                            type="button"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                            View Details
-                          </Button>
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              className="gap-1.5 rounded-xl border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-[#0F172A] hover:bg-[#FFF7ED]"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openDetails(request);
+                              }}
+                              type="button"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              View
+                            </Button>
+                            <Button
+                              className="gap-1.5 rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs font-black text-[#EA580C] hover:bg-[#FFEDD5]"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setManagerExpenseModal({ mode: "edit", request });
+                              }}
+                              title="Edit destination and recalculate distance"
+                              type="button"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                              Edit
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -832,6 +908,25 @@ export function OutstationRequestsAdmin({
           onReject={(request) => void rejectRequest(request)}
           request={detailRequest}
         />
+      ) : null}
+
+      {managerExpenseModal ? (
+        managerExpenseModal.mode === "create" ? (
+          <AdminManagerExpenseModal
+            mode="create"
+            onClose={() => setManagerExpenseModal(null)}
+            onSaved={handleManagerExpenseSaved}
+            targetHrId={managerExpenseModal.targetHrId}
+            targetName={managerExpenseModal.targetName}
+          />
+        ) : (
+          <AdminManagerExpenseModal
+            mode="edit"
+            onClose={() => setManagerExpenseModal(null)}
+            onSaved={handleManagerExpenseSaved}
+            request={managerExpenseModal.request}
+          />
+        )
       ) : null}
     </OutstationAdminShell>
   );
