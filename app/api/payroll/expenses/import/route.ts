@@ -18,10 +18,44 @@ const optionalCoercedPayrollPeriodValue = z.preprocess(
   z.coerce.number().int().optional(),
 );
 
+const safeString = z.preprocess(
+  (value) => (value === null || value === undefined ? "" : value),
+  z.string(),
+);
+
+const expenseTripRecordSchema = z.object({
+  allowance: z.coerce.number(),
+  amWorkload: z.coerce.number(),
+  date: safeString,
+  description: safeString,
+  from: safeString,
+  hr: safeString,
+  hrId: z.string().min(1).nullable().optional(),
+  hrNotes: safeString,
+  km: z.coerce.number(),
+  location: safeString,
+  meetingAmount: z.coerce.number(),
+  open: safeString,
+  pmWorkload: z.coerce.number(),
+  requestType: safeString,
+  row: z.coerce.number().int(),
+  specialist: safeString,
+  status: safeString,
+  to: safeString,
+  toDate: safeString,
+  total: z.coerce.number(),
+  transportationType: safeString,
+  travelCost: z.coerce.number(),
+  tripId: safeString,
+  tripType: safeString,
+  hrApproved: z.boolean().optional(),
+  hrComment: safeString.optional(),
+});
+
 const payrollExpensesImportBodySchema = z.object({
   fileName: z.string().optional(),
   month: optionalCoercedPayrollPeriodValue,
-  records: z.array(z.unknown()).optional(),
+  records: z.array(expenseTripRecordSchema).optional(),
   year: optionalCoercedPayrollPeriodValue,
 });
 
