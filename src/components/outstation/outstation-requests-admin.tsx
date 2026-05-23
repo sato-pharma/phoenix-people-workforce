@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 
 import { AdminCallout, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { OutstationReviewMap } from "@/components/outstation/outstation-review-map";
@@ -449,8 +449,10 @@ export function OutstationRequestsAdmin({
   useEffect(() => {
     if (activeRequestedRequestId === null) return;
 
-    setSelectedId(activeRequestedRequestId);
-    setDetailRequestId(activeRequestedRequestId);
+    startTransition(() => {
+      setSelectedId(activeRequestedRequestId);
+      setDetailRequestId(activeRequestedRequestId);
+    });
   }, [activeRequestedRequestId]);
 
   const roles = useMemo(
