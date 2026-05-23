@@ -15,7 +15,7 @@ async function workbookBuffer(rows: unknown[][]) {
   const worksheet = workbook.addWorksheet("CV Database");
   worksheet.addRows(rows);
   const buffer = await workbook.xlsx.writeBuffer();
-  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+  return buffer as unknown as ArrayBuffer;
 }
 
 export async function runCvDatabaseTests() {
