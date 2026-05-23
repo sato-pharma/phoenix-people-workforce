@@ -16,22 +16,8 @@
       "Bash(npm run *)",
       "mcp__Claude_Preview__preview_start",
       "Bash(git checkout *)",
-      "Bash(node -e ' *)",
-      "Bash(echo \"EXIT:$?\")",
-      "Bash(git push *)",
-      "Bash(supabase start *)",
-      "Bash(git commit -m 'fix\\(ci\\): gate phase22 designated HR tests on env vars; pass Supabase secrets and .env.local stub to all workflows *)",
-      "Bash(gh pr *)",
-      "Bash(gh run *)",
-      "Bash(python3 -c \"import json; p=json.load\\(open\\('package.json'\\)\\); print\\('next:', p['dependencies'].get\\('next','?'\\)\\); print\\('xlsx:', p['dependencies'].get\\('xlsx','?'\\)\\)\")",
-      "Bash(npm uninstall *)",
-      "Bash(npm audit *)",
-      "Bash(npm install *)",
-      "Bash(git commit -m 'fix\\(deps\\): migrate from vulnerable xlsx to exceljs for Excel file processing *)",
-      "Bash(supabase projects *)",
-      "Bash(cat > *)",
-      "Bash(supabase migration *)",
-      "Bash(git commit -m 'fix\\(lint\\): remove unused headerRowIndex variable and fix Buffer type inference *)"
+      "Bash(git rm *)",
+      "Bash(git cherry-pick *)"
     ]
   }
 }

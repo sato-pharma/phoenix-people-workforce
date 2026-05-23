@@ -464,6 +464,12 @@ export function OutstationRequestsAdmin({
     });
   }, [activeRequestedRequestId]);
 
+  useEffect(() => {
+    if (searchParams.get("action") === "create-manager-expense") {
+      setManagerExpenseModal({ mode: "create" });
+    }
+  }, [searchParams]);
+
   const roles = useMemo(
     () => [...new Set(localRequests.map((request) => request.employeeRole).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
     [localRequests],
