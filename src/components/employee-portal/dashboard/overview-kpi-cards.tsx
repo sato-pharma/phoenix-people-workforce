@@ -16,34 +16,39 @@ export type OverviewKeyCard = {
 function metricTone(accent: MetricAccent = "orange") {
   const tones = {
     amber: {
-      border: "border-amber-200 border-t-amber-500 hover:border-amber-300",
-      icon: "bg-amber-50 text-amber-600 ring-amber-100",
+      border: "border-amber-100 border-t-amber-500",
+      icon: "bg-amber-50 text-amber-700 ring-1 ring-amber-200/60",
       line: "bg-amber-500",
-      soft: "bg-amber-100/70 text-amber-800",
+      soft: "bg-amber-50 text-amber-900",
+      label: "text-amber-600",
     },
     blue: {
-      border: "border-sky-200 border-t-sky-500 hover:border-sky-300",
-      icon: "bg-sky-50 text-sky-600 ring-sky-100",
+      border: "border-sky-100 border-t-sky-500",
+      icon: "bg-sky-50 text-sky-700 ring-1 ring-sky-200/60",
       line: "bg-sky-500",
-      soft: "bg-sky-100/70 text-sky-800",
+      soft: "bg-sky-50 text-sky-900",
+      label: "text-sky-600",
     },
     green: {
-      border: "border-emerald-200 border-t-emerald-500 hover:border-emerald-300",
-      icon: "bg-emerald-50 text-emerald-600 ring-emerald-100",
+      border: "border-emerald-100 border-t-emerald-500",
+      icon: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/60",
       line: "bg-emerald-500",
-      soft: "bg-emerald-100/70 text-emerald-800",
+      soft: "bg-emerald-50 text-emerald-900",
+      label: "text-emerald-600",
     },
     orange: {
-      border: "border-orange-200 border-t-orange-500 hover:border-orange-300",
-      icon: "bg-orange-50 text-orange-600 ring-orange-100",
+      border: "border-orange-100 border-t-orange-500",
+      icon: "bg-orange-50 text-orange-700 ring-1 ring-orange-200/60",
       line: "bg-orange-500",
-      soft: "bg-orange-100/70 text-orange-800",
+      soft: "bg-orange-50 text-orange-900",
+      label: "text-orange-600",
     },
     purple: {
-      border: "border-violet-200 border-t-violet-500 hover:border-violet-300",
-      icon: "bg-violet-50 text-violet-600 ring-violet-100",
+      border: "border-violet-100 border-t-violet-500",
+      icon: "bg-violet-50 text-violet-700 ring-1 ring-violet-200/60",
       line: "bg-violet-500",
-      soft: "bg-violet-100/70 text-violet-800",
+      soft: "bg-violet-50 text-violet-900",
+      label: "text-violet-600",
     },
   } satisfies Record<MetricAccent, Record<string, string>>;
 
@@ -67,30 +72,21 @@ function OverviewStatCard({
   const isLongLabel = label.length > 18;
 
   return (
-    <Card className="group relative min-h-[152px] overflow-hidden rounded-[24px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-300 hover:-translate-y-1 hover:ring-slate-300 hover:shadow-[0_20px_42px_rgba(15,23,42,0.09)]">
-      <div className={`absolute inset-x-0 top-0 h-1 ${tone.line} opacity-90 transition-all duration-300 group-hover:h-1.5`} />
-      <div className="relative flex h-full min-h-[120px] flex-col justify-between gap-4">
+    <Card className={`group relative min-h-[160px] overflow-hidden rounded-2xl border-2 ${tone.border} bg-white/95 backdrop-blur-sm p-6 shadow-[0_2px_12px_rgba(15,23,42,0.04)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_24px_rgba(15,23,42,0.08)]`}>
+      <div className={`absolute inset-x-0 top-0 h-1.5 ${tone.line} transition-all duration-300 group-hover:h-2`} />
+      
+      <div className="relative flex h-full min-h-[132px] flex-col justify-between gap-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className={`h-1.5 w-1.5 rounded-full ${tone.line} shadow-[0_0_0_3px_rgba(15,23,42,0.03)]`} />
-              <p
-                className={[
-                  "whitespace-nowrap font-bold uppercase text-slate-400",
-                  isLongLabel ? "text-[9px] tracking-[0.08em]" : "text-[10px] tracking-[0.15em]",
-                ].join(" ")}
-              >
-                {label}
-              </p>
-            </div>
+            <p className={`text-[10px] font-bold uppercase tracking-[0.12em] ${tone.label} transition-colors group-hover:opacity-80`}>{label}</p>
             <p
               className={[
-                "mt-2.5 max-w-full whitespace-nowrap font-black leading-none tracking-tight text-slate-950",
+                "mt-2.5 max-w-full font-black leading-tight tracking-tight text-slate-950",
                 isCurrencyValue
-                  ? "text-xl tabular-nums"
+                  ? "text-lg tabular-nums"
                   : isLongText
-                    ? "text-lg"
-                    : "text-2xl",
+                    ? "text-xl"
+                    : "text-3xl",
               ].join(" ")}
               title={value}
             >
@@ -99,17 +95,13 @@ function OverviewStatCard({
           </div>
         </div>
 
-        <div className="relative">
-          <div className="flex items-end justify-between gap-3">
-            <div className="min-w-0">
-              {note ? (
-                <p className="line-clamp-2 text-[11px] font-semibold leading-snug text-slate-500" title={note}>
-                  {note}
-                </p>
-              ) : null}
-            </div>
-          </div>
-          <div className={`mt-3 h-1.5 w-16 rounded-full ${tone.line} opacity-70`} />
+        <div className="relative space-y-3 pt-1">
+          {note && (
+            <p className="line-clamp-2 text-[11px] font-medium leading-snug text-slate-600" title={note}>
+              {note}
+            </p>
+          )}
+          <div className={`h-1 w-12 rounded-full ${tone.line} opacity-75 transition-all duration-300 group-hover:w-16 group-hover:opacity-90`} />
         </div>
       </div>
     </Card>
@@ -118,15 +110,16 @@ function OverviewStatCard({
 
 export function OverviewKpiCards({ cards }: { cards: OverviewKeyCard[] }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:gap-4 xl:grid-cols-4">
-      {cards.map((card) => (
-        <OverviewStatCard
-          key={card.label}
-          accent={card.accent}
-          label={card.label}
-          note={card.note}
-          value={card.value}
-        />
+    <div className="grid gap-4 sm:grid-cols-2 lg:gap-5 xl:grid-cols-4">
+      {cards.map((card, index) => (
+        <div key={card.label} style={{ animationDelay: `${index * 40}ms` }} className="ep-fade-in-up">
+          <OverviewStatCard
+            accent={card.accent}
+            label={card.label}
+            note={card.note}
+            value={card.value}
+          />
+        </div>
       ))}
     </div>
   );

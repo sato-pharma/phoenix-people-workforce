@@ -8,40 +8,40 @@ type Tone = "orange" | "emerald" | "blue" | "slate" | "rose" | "violet";
 
 const toneClasses: Record<Tone, { border: string; icon: string; line: string; text: string }> = {
   blue: {
-    border: "border-[#E2E8F0]",
-    icon: "bg-[#F8FAFC] text-[#0F172A]",
-    line: "bg-[#3B82F6]",
-    text: "text-[#0F172A]",
+    border: "border-sky-100",
+    icon: "bg-sky-50 text-sky-700 ring-1 ring-sky-200/50",
+    line: "bg-sky-500",
+    text: "text-sky-600",
   },
   emerald: {
-    border: "border-[#E2E8F0]",
-    icon: "bg-[#F8FAFC] text-[#22C55E]",
-    line: "bg-[#22C55E]",
-    text: "text-[#22C55E]",
+    border: "border-emerald-100",
+    icon: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/50",
+    line: "bg-emerald-500",
+    text: "text-emerald-600",
   },
   orange: {
-    border: "border-[#E2E8F0]",
-    icon: "bg-[#F8FAFC] text-[#F97316]",
-    line: "bg-[#F97316]",
-    text: "text-[#F97316]",
+    border: "border-orange-100",
+    icon: "bg-orange-50 text-orange-700 ring-1 ring-orange-200/50",
+    line: "bg-orange-500",
+    text: "text-orange-600",
   },
   rose: {
-    border: "border-[#E2E8F0]",
-    icon: "bg-[#F8FAFC] text-[#EF4444]",
-    line: "bg-[#EF4444]",
-    text: "text-[#EF4444]",
+    border: "border-red-100",
+    icon: "bg-red-50 text-red-700 ring-1 ring-red-200/50",
+    line: "bg-red-500",
+    text: "text-red-600",
   },
   slate: {
-    border: "border-[#E2E8F0]",
-    icon: "bg-[#F8FAFC] text-[#0F172A]",
-    line: "bg-[#64748B]",
-    text: "text-[#64748B]",
+    border: "border-slate-100",
+    icon: "bg-slate-50 text-slate-700 ring-1 ring-slate-200/50",
+    line: "bg-slate-500",
+    text: "text-slate-600",
   },
   violet: {
-    border: "border-[#E2E8F0]",
-    icon: "bg-[#F8FAFC] text-[#8B5CF6]",
-    line: "bg-[#8B5CF6]",
-    text: "text-[#8B5CF6]",
+    border: "border-violet-100",
+    icon: "bg-violet-50 text-violet-700 ring-1 ring-violet-200/50",
+    line: "bg-violet-500",
+    text: "text-violet-600",
   },
 };
 
@@ -60,28 +60,28 @@ export function KPICard({ icon: Icon, label, value, delta, spark, tone = "orange
   const max = Math.max(...spark, 1);
 
   return (
-    <Card className={cn("overflow-hidden rounded-2xl border bg-white p-0 shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.08)]", toneStyle.border, className)}>
-      <div className={cn("h-1", toneStyle.line)} />
-      <div className="p-4">
+    <Card className={cn("group overflow-hidden rounded-2xl border-2 bg-white p-0 shadow-[0_4px_12px_rgba(15,23,42,0.05)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_20px_rgba(15,23,42,0.08)]", toneStyle.border, className)}>
+      <div className={cn("h-1.5 transition-all duration-300 group-hover:h-2", toneStyle.line)} />
+      <div className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
-            <p className="mt-1 truncate text-2xl font-black text-[#0F172A]">{value}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">{label}</p>
+            <p className="mt-2 truncate text-3xl font-black text-slate-950">{value}</p>
           </div>
-          <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", toneStyle.icon)}>
+          <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-110", toneStyle.icon)}>
             <Icon className="h-5 w-5" />
           </span>
         </div>
-        <div className="mt-4 flex h-9 items-end gap-1">
+        <div className="mt-5 flex h-10 items-end gap-1">
           {spark.map((item, index) => (
             <span
-              className={cn("flex-1 rounded-t-sm opacity-80", toneStyle.line)}
+              className={cn("flex-1 rounded-t-sm transition-opacity opacity-70 group-hover:opacity-90", toneStyle.line)}
               key={`${item}-${index}`}
               style={{ height: `${Math.max((item / max) * 100, 12)}%` }}
             />
           ))}
         </div>
-        <p className={cn("mt-3 text-xs font-black", toneStyle.text)}>{delta}</p>
+        <p className={cn("mt-4 text-xs font-bold", toneStyle.text)}>{delta}</p>
       </div>
     </Card>
   );
