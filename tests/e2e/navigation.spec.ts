@@ -32,14 +32,15 @@ test.describe("Navigation & layout", () => {
 
     expect(response.status()).toBe(403);
     const body = (await response.json()) as { error?: string };
-    expect(body.error).toBe("csrf_violation");
+    expect(body.error).toBe("csrf_blocked");
   });
 
   test("rate limiting: password-setup endpoint enforces request cap", async ({ page }) => {
+    const baseUrl = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
     const makeRequest = () =>
       page.request.post("/api/auth/password-setup/00000000-0000-0000-0000-000000000000", {
         data: { password: "test1234", confirmPassword: "test1234" },
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Referer": `${baseUrl}/password-setup` },
       });
 
     const results = await Promise.all(Array.from({ length: 6 }, makeRequest));

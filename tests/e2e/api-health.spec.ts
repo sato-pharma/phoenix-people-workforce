@@ -12,9 +12,10 @@ test.describe("API health checks", () => {
   });
 
   test("POST /api/auth/login with missing body returns 400", async ({ page }) => {
+    const baseUrl = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
     const response = await page.request.post("/api/auth/login", {
       data: {},
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Referer": `${baseUrl}/login` },
     });
     expect([400, 401]).toContain(response.status());
   });

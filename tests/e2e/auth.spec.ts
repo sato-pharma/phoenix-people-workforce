@@ -6,7 +6,7 @@ test.describe("Authentication", () => {
 
     await expect(page).toHaveTitle(/phoenix/i);
     await expect(page.getByRole("textbox", { name: /login|username|email/i })).toBeVisible();
-    await expect(page.getByRole("textbox", { name: /password/i })).toBeVisible();
+    await expect(page.getByLabel(/password/i)).toBeVisible();
     await expect(page.getByRole("button", { name: /sign in|log in/i })).toBeVisible();
   });
 
@@ -26,7 +26,7 @@ test.describe("Authentication", () => {
     await page.goto("/login");
 
     await page.getByRole("textbox", { name: /login|username|email/i }).fill("invalid-user");
-    await page.getByRole("textbox", { name: /password/i }).fill("wrong-password");
+    await page.getByLabel(/password/i).fill("wrong-password");
     await page.getByRole("button", { name: /sign in|log in/i }).click();
 
     await expect(
@@ -38,7 +38,7 @@ test.describe("Authentication", () => {
     await page.goto("/login");
 
     const loginInput = page.getByRole("textbox", { name: /login|username|email/i });
-    const passwordInput = page.getByRole("textbox", { name: /password/i });
+    const passwordInput = page.getByLabel(/password/i);
     const submitButton = page.getByRole("button", { name: /sign in|log in/i });
 
     await expect(loginInput).toBeVisible();

@@ -298,6 +298,7 @@ function AccessPanel({
             <span className="mb-3 block text-base font-semibold text-white">HR_ID or Login ID</span>
             <span className="relative block">
               <input
+                aria-label="Login ID"
                 autoComplete="username"
                 className="h-16 w-full rounded-2xl border border-white/14 bg-white/[0.045] px-6 pr-14 text-lg text-white outline-none shadow-[inset_0_1px_18px_rgba(255,255,255,0.035)] transition placeholder:text-white/36 focus:border-[#ff7900] focus:bg-white/[0.065] focus:ring-4 focus:ring-[#ff6a00]/16"
                 id="login-id"

@@ -51,6 +51,8 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Cron secret prevents the dev-mode bypass in isAuthorized() from triggering.
+          CRON_SECRET: ${{ secrets.CRON_SECRET || 'cron-test-secret-not-for-production' }}
 
       - name: Upload Playwright report
         if: always()

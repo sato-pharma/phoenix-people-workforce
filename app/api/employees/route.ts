@@ -83,6 +83,9 @@ function employeeApiError(error: unknown) {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    if (!access.loginId && !access.hrId) {
+      return NextResponse.json({ error: "unauthorized", message: "Authentication required." }, { status: 401 });
+    }
     if (!(await canReadEmployeeDirectory(access))) {
       await assertPermission(access, "employees", "read");
     }
