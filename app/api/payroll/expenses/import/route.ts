@@ -9,6 +9,7 @@ import {
   isPayrollExpensesSchemaMissing,
 } from "@/lib/payroll/expenses";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import type { ExpenseTripRecord } from "@/lib/payroll/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,6 +60,11 @@ const payrollExpensesImportBodySchema = z.object({
   year: optionalCoercedPayrollPeriodValue,
 });
 
+type PayrollExpensesImportRecord = ExpenseTripRecord & {
+  hrId?: string | null;
+  hrApproved?: boolean;
+  hrComment?: string;
+};
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -75,7 +81,7 @@ export async function POST(request: Request) {
     const fileName = parsedBody.data.fileName ? parsedBody.data.fileName : "expenses-upload.xls";
     const month = parsedBody.data.month;
     const year = parsedBody.data.year;
-    const records = parsedBody.data.records ?? [];
+    const records = (parsedBody.data.records ?? []) as PayrollExpensesImportRecord[];
 
     if (month === undefined || year === undefined) {
       return NextResponse.json(
