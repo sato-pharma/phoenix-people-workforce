@@ -48,6 +48,7 @@ import { runEmployeeImportSeatValidationTests } from "./employee-import-seat-val
 import { runEmployeeRecordHealthTests } from "./employee-record-health.test.ts";
 import { runEmployeeSalaryDetailsTests } from "./employee-salary-details.test.ts";
 import { runResignationDateEditTests } from "./resignation-date-edit.test.ts";
+import { runSecurityPermissionsTests } from "./security-permissions.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
 import { runEmployeePortalPayslipSalaryTests } from "./employee-portal-payslip-salary.test.ts";
 import { runAdminPayslipImageExportTests } from "./admin-payslip-image-export.test.ts";
@@ -155,6 +156,7 @@ await runTest("employee import seat validation", runEmployeeImportSeatValidation
 await runTest("employee record health", runEmployeeRecordHealthTests);
 await runTest("employee salary details", runEmployeeSalaryDetailsTests);
 await runTest("resignation date edit", runResignationDateEditTests);
+await runTest("security permissions", runSecurityPermissionsTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("vacation calculations", runVacationCalculationTests);
 await runTest("vacation module", runVacationModuleTests);

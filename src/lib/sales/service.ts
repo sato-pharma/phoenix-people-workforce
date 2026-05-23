@@ -495,7 +495,8 @@ function chainForBatch(history: SalesHistoryRow[], batchId: string) {
     if (!current.replacementForBatchId) break;
     current = map.get(current.replacementForBatchId);
   }
-  let pointer = map.get(batchId)?.replacedByBatchId ? map.get(map.get(batchId)!.replacedByBatchId!) : null;
+  const startBatch = map.get(batchId);
+  let pointer = startBatch?.replacedByBatchId ? (map.get(startBatch.replacedByBatchId) ?? null) : null;
   while (pointer) {
     chain.push(pointer);
     pointer = pointer.replacedByBatchId ? map.get(pointer.replacedByBatchId) ?? null : null;

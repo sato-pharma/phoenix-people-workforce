@@ -88,6 +88,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (records.length > 10_000) {
+      return NextResponse.json(
+        { error: "too_many_records", message: "Maximum 10,000 expense records per upload." },
+        { status: 400 },
+      );
+    }
+
     const expenses = await savePayrollExpenseApprovals({ fileName, records, reportId }, access);
 
     return NextResponse.json({ expenses, saved: expenses.length });

@@ -132,8 +132,12 @@ const portalNavigationRoles = new Set<PhoenixRole>([
   "CEO",
   "Manager",
 ]);
-export const designatedHrSpecialistHrId = "a16";
-export const designatedHrManagerHrId = "b10";
+export const designatedHrSpecialistHrId = (process.env.DESIGNATED_HR_SPECIALIST_HR_ID ?? "a16")
+  .toLowerCase()
+  .replace(/[^a-z0-9]/g, "") || "a16";
+export const designatedHrManagerHrId = (process.env.DESIGNATED_HR_MANAGER_HR_ID ?? "b10")
+  .toLowerCase()
+  .replace(/[^a-z0-9]/g, "") || "b10";
 
 const defaultPermissionMatrix: PermissionMap = {
   "Super Admin": {

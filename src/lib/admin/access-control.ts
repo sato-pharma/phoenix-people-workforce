@@ -295,7 +295,10 @@ export function assertActorMayManageUser(input: {
   nextRole: PhoenixRole;
 }) {
   const actor = input.actor;
-  if (!actor?.loginId) return;
+  if (actor == null) return;
+  if (!actor.loginId) {
+    throw new Error("Unauthorized: authenticated actor must have a login ID.");
+  }
 
   const existingRole = getStoredRole(input.existing);
   const actorRank = getRolePrivilegeRank(actor.role);
