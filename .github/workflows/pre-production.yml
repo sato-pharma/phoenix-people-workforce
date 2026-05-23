@@ -33,8 +33,23 @@ jobs:
       - name: Pre-production checks
         run: npm run ci
 
+      - name: Verify preflight secrets are configured
+        run: |
+          MISSING=""
+          [ -z "$NEXT_PUBLIC_SUPABASE_URL" ]     && MISSING="$MISSING NEXT_PUBLIC_SUPABASE_URL"
+          [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]    && MISSING="$MISSING SUPABASE_SERVICE_ROLE_KEY"
+          [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ] && MISSING="$MISSING NEXT_PUBLIC_SUPABASE_ANON_KEY"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Pre-production DB preflight cannot run — missing secrets:$MISSING"
+            echo "Add these secrets to the repository before merging to main."
+            exit 1
+          fi
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
       - name: Production DB preflight
-        if: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' && secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' }}
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

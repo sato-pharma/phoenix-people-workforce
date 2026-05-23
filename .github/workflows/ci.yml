@@ -33,6 +33,9 @@ jobs:
       - name: Guard dev-preview imports
         run: npm run guard:dev-preview-imports
 
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
       - name: Test
         run: npm run test
 
