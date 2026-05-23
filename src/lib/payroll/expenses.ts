@@ -260,17 +260,15 @@ async function getVisibleExpenseReportIds(
 ) {
   let query = supabase
     .from("payroll_expenses")
-    .select("report_id")
-    .not("report_id", "is", null);
+    .select("report_id");
   const allowedHrIds = Array.from(accessFilter.allowedHrIds);
 
   if (!accessFilter.all) {
     if (allowedHrIds.length === 0) return new Set<string>();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query = applyHrIdInFilter(query as any, allowedHrIds);
+    query = applyHrIdInFilter(query, allowedHrIds);
   }
 
-  const { data, error } = await query;
+  const { data, error } = await query.not("report_id", "is", null);
   if (error) {
     if (isPayrollExpensesSchemaMissing(error)) return new Set<string>();
     throw error;

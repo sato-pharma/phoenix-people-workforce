@@ -752,7 +752,7 @@ type SalesFilterQuery = {
   in: (column: string, values: string[]) => SalesFilterQuery;
 };
 
-function applySalesFiltersToQuery(query: SalesFilterQuery, filters: PortalSalesFilters) {
+function applySalesFiltersToQuery(query: SalesFilterQuery, filters: PortalSalesFilters): SalesFilterQuery {
   let nextQuery = query;
   if (filters.year) nextQuery = nextQuery.eq("year", Number(filters.year));
   if (filters.month) nextQuery = nextQuery.eq("month", Number(filters.month));
@@ -1220,26 +1220,22 @@ async function fetchPortalSalesRecords(
 
   try {
     const buildSalesQuery = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let q: any = supabase.from("v_employee_portal_sales").select("*");
-      
+      let q = supabase.from("v_employee_portal_sales").select("*");
+
       if (queryHrIds.length > 0) {
         if (queryHrIds.length === 1) {
           const singleHrId = queryHrIds[0];
-          // For managers, we want to see records where they are the employee OR the manager
           q = q.or(`hr_id.ilike.${singleHrId},manager_hr_id.ilike.${singleHrId}`);
         } else {
-          // Use ilike OR for each ID — .in() is case-sensitive but HR IDs may be stored uppercase
-          // We check both hr_id (employee) and manager_hr_id to ensure managers see their team's data
           const orConditions = queryHrIds.flatMap((id: string) => [
             `hr_id.ilike.${id}`,
-            `manager_hr_id.ilike.${id}`
+            `manager_hr_id.ilike.${id}`,
           ]);
           q = q.or(orConditions.join(","));
         }
       }
 
-      q = applySalesFiltersToQuery(q, normalizedFilters);
+      q = applySalesFiltersToQuery(q as unknown as SalesFilterQuery, normalizedFilters) as unknown as typeof q;
       return q.order("year", { ascending: false }).order("month", { ascending: false });
     };
 
@@ -1358,9 +1354,8 @@ async function fetchPortalSalesSeatContinuityRecords({
   };
 
   const buildContinuityQuery = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let q: any = supabase.from("v_employee_portal_sales").select("*");
-    q = applySalesFiltersToQuery(q, continuityFilters);
+    let q = supabase.from("v_employee_portal_sales").select("*");
+    q = applySalesFiltersToQuery(q as unknown as SalesFilterQuery, continuityFilters) as unknown as typeof q;
     return q.order("year", { ascending: false }).order("month", { ascending: false });
   };
 
@@ -3267,20 +3262,15 @@ async function resolveSalesRankInTeam(params: {
   const periodFilter = parsePeriodToMonthYear(params.comparisonPeriod ?? "");
 
   const buildRankQuery = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let q: any = supabase
+    let q = supabase
       .from("v_employee_portal_sales")
       .select("employee_name,employee_hr_id,hr_id,manager_hr_id,sales_value,target_value,month,year,product,territory");
 
     if (queryCandidates.length === 1) {
       const singleHrId = queryCandidates[0];
       if (isLineManagersMode) {
-        // DSM comparison: fetch all rows where the candidate is a manager (team sales)
-        // or is an employee (DSM's own rows) — both rolled up to the DSM
         q = q.or(`manager_hr_id.ilike.${singleHrId},hr_id.ilike.${singleHrId}`);
       } else {
-        // Med Rep comparison: only fetch rows owned by this employee (hr_id = COALESCE result)
-        // Do NOT include manager_hr_id to avoid pulling in sub-reports that don't exist
         q = q.or(`hr_id.ilike.${singleHrId},employee_hr_id.ilike.${singleHrId}`);
       }
     } else {
@@ -3308,10 +3298,8 @@ async function resolveSalesRankInTeam(params: {
   }
 
   if (!error && data.length === 0 && queryHrIds.size > 0) {
-    // Fallback: retry without HR filtering; attribute rows in application logic.
     const buildFallbackQuery = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let q: any = supabase
+      let q = supabase
         .from("v_employee_portal_sales")
         .select("employee_name,employee_hr_id,hr_id,manager_hr_id,sales_value,target_value,month,year,product,territory");
       if (periodFilter) {
@@ -3579,26 +3567,17 @@ export async function getMedicalRepPortalData(
     employee,
   });
   const shouldBuildScopeSummaries = includePortalOverview || includeWorkforceSummary;
-  const vacancySummary = shouldBuildScopeSummaries
-    ? await fetchOpenVacancySummaryForScope({
-        currentUser,
-        employee,
-      })
-    : emptyPortalVacancySummary();
   const pendingApprovalCount = pendingApprovalItems.length;
   const pendingExpenseApprovalCount = pendingApprovalItems.filter((item) => item.workflow === "expense").length;
-  const overview = includePortalOverview
-    ? await buildEmployeePortalOverviewData({
-        access,
-        currentHrId,
-        pendingApprovalCount,
-        pendingExpenseApprovalCount,
-      })
-    : {
-        employeesOnLeaveToday: [],
-        myActions: [],
-        vacancyDetails: null,
-      };
+
+  const [vacancySummary, overview] = await Promise.all([
+    shouldBuildScopeSummaries
+      ? fetchOpenVacancySummaryForScope({ currentUser, employee })
+      : Promise.resolve(emptyPortalVacancySummary()),
+    includePortalOverview
+      ? buildEmployeePortalOverviewData({ access, currentHrId, pendingApprovalCount, pendingExpenseApprovalCount })
+      : Promise.resolve({ employeesOnLeaveToday: [] as MedicalRepPortalData["overview"]["employeesOnLeaveToday"], myActions: [] as MedicalRepPortalData["overview"]["myActions"], vacancyDetails: null }),
+  ]);
   const workforceScopeLabel = resolvePortalWorkforceScopeLabel({ currentUser, employee });
   const workforce = includeWorkforceSummary
     ? buildPortalWorkforceSummary({

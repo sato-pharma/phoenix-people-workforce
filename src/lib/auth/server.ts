@@ -18,6 +18,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cookies, headers } from "next/headers";
 
 function isDevHeaderEnabled() {
+  // Hard-blocked in production: the NODE_ENV check cannot be overridden by
+  // any runtime env var, preventing accidental bypass in deployed environments.
+  if (process.env.NODE_ENV !== "development") return false;
   return process.env.PHOENIX_ENABLE_DEV_AUTH_HEADERS === "true";
 }
 
@@ -40,10 +43,7 @@ function isLocalHostname(value: string | null | undefined) {
 }
 
 function isLocalDevHeaderRequest(headerStore: Pick<Headers, "get">) {
-  if (!isDevHeaderEnabled() || !isLocalDevelopment()) {
-    return false;
-  }
-
+  if (!isDevHeaderEnabled()) return false;
   return isLocalDevelopmentRequest(headerStore);
 }
 
@@ -52,10 +52,12 @@ function isLocalDevelopmentRequest(headerStore: Pick<Headers, "get">) {
     return false;
   }
 
-  const forwardedHost = headerStore.get("x-forwarded-host");
+  // Use only the `host` header — it reflects the server's own binding and
+  // cannot be spoofed by a client. x-forwarded-host is deliberately excluded
+  // here to prevent a crafted header from satisfying the localhost check in
+  // a proxied environment.
   const host = headerStore.get("host");
-
-  return isLocalHostname(forwardedHost) || isLocalHostname(host);
+  return isLocalHostname(host);
 }
 
 const anonymousAccessContext = createAccessContext({
@@ -72,6 +74,16 @@ type SessionUserRow = {
   role: string;
   session_version?: number | null;
 };
+
+function isSessionUserRow(value: unknown): value is SessionUserRow {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.login_id === "string" &&
+    typeof v.is_active === "boolean" &&
+    typeof v.role === "string"
+  );
+}
 
 export type ViewerIdentity = {
   displayName: string;
@@ -94,7 +106,7 @@ async function resolveSessionAccessContext(token: string | null | undefined) {
     throw error;
   }
 
-  const row = data as SessionUserRow | null;
+  const row = isSessionUserRow(data) ? data : null;
   if (!row) {
     await writeAuthAudit({
       actorLoginId: payload.loginId,
@@ -272,7 +284,7 @@ export async function resolveViewerIdentityFromPage(accessContext?: AccessContex
       .select("login_id, hr_id, role, is_active, session_version, name")
       .eq("login_id", access.loginId)
       .maybeSingle();
-    row = (data as SessionUserRow | null) ?? null;
+    row = isSessionUserRow(data) ? data : null;
   }
 
   if (!row && access.hrId) {
@@ -281,7 +293,7 @@ export async function resolveViewerIdentityFromPage(accessContext?: AccessContex
       .select("login_id, hr_id, role, is_active, session_version, name")
       .ilike("hr_id", access.hrId)
       .maybeSingle();
-    row = (data as SessionUserRow | null) ?? null;
+    row = isSessionUserRow(data) ? data : null;
   }
 
   const displayName = row?.name?.trim() || fallbackName;
