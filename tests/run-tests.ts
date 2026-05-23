@@ -27,6 +27,7 @@ import { runMarketingReferenceImporterTests } from "./marketing-reference-import
 import { runMarketingRequestServiceTests } from "./marketing-request-service.test.ts";
 import { runMarketingRoiTests } from "./marketing-roi.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
+import { runMarketingDraftStagingIntegrationTests } from "./marketing-draft-staging-integration.test.ts";
 import { runSalaryAllowancePolicyTests } from "./salary-allowance-policy.test.ts";
 import { runWorkforceClassificationTests } from "./workforce-classification.test.ts";
 import { runWorkforceLifecycleSeatTests } from "./workforce-lifecycle-seat.test.ts";
@@ -124,6 +125,7 @@ await runTest("sales others bucket", runSalesOthersBucketTests);
 await runTest("sales role mapping", runSalesRoleMappingTests);
 await runTest("sales period", runSalesPeriodTests);
 await runTest("sales source of truth", runSalesSourceOfTruthTests);
+await runTest("marketing draft staging integration", runMarketingDraftStagingIntegrationTests);
 await runTest("marketing reference importer", runMarketingReferenceImporterTests);
 await runTest("marketing ROI", runMarketingRoiTests);
 await runTest("marketing request service", runMarketingRequestServiceTests);
