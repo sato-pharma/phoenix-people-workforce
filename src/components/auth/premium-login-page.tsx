@@ -326,7 +326,7 @@ function AccessPanel({
                 value={password}
               />
               <button
-                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-label={showPassword ? "Hide" : "Show"}
                 className="absolute right-5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-white/62 transition hover:text-white"
                 type="button"
                 onClick={onTogglePassword}
