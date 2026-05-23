@@ -56,7 +56,7 @@ export default async function EmployeePortalsHomePage({
 
   return (
     <div className="mx-auto w-full space-y-5">
-      <IdentityCard data={data} />
+      <IdentityCard data={data} profileLinked={!data.empty.profile} />
       <EmployeePortalPageShell
         badge="Employee Portal"
         description="Performance, structure, and team comparison in one command surface."

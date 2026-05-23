@@ -122,8 +122,19 @@ export function PayrollSummaryPanel({ data }: { data: MedicalRepPortalData }) {
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-slate-100 bg-white px-3 py-2 text-sm text-slate-700">
-        Incentive = <span className="font-semibold text-slate-900">{additionsRatio}%</span> of your gross pay
+      <div className="mt-4 space-y-1.5 rounded-2xl border border-slate-100 bg-white px-3 py-2 text-sm">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-slate-500">Incentive est. of gross</span>
+          <span className="font-semibold text-slate-900">
+            {Math.round((data.payroll.allPeriodsIncentive / Math.max(1, data.payroll.grossSalary)) * 100)}%
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-slate-500">Incentive est. of basic</span>
+          <span className="font-semibold text-slate-900">
+            {Math.round((data.payroll.allPeriodsIncentive / Math.max(1, data.payroll.basicSalary)) * 100)}%
+          </span>
+        </div>
       </div>
     </Card>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   BriefcaseBusiness,
   CalendarDays,
   MapPin,
@@ -29,7 +30,13 @@ function asStatus(value: string): "success" | "warning" | "danger" | "neutral" {
   return "neutral";
 }
 
-export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
+export function IdentityCard({
+  data,
+  profileLinked = true,
+}: {
+  data: EmployeePortalShellData;
+  profileLinked?: boolean;
+}) {
   const employee = data.employee;
   const hiredLabel = prettyDate(data.hrContract.hireDate);
   const statusVariant = asStatus(employee.status);
@@ -68,6 +75,14 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
       <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-orange-500/20 blur-3xl" />
       <div className="absolute -bottom-28 left-8 h-56 w-56 rounded-full bg-sky-500/10 blur-3xl" />
 
+      {!profileLinked && (
+        <div className="relative mb-4 flex items-center gap-3 rounded-lg border border-amber-400/30 bg-amber-500/10 px-4 py-3">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300" />
+          <p className="text-sm font-medium text-amber-100">
+            Your employee profile is not linked yet. Contact HR to complete your setup — some portal features may be unavailable.
+          </p>
+        </div>
+      )}
       <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_250px] lg:items-center xl:grid-cols-[minmax(0,1fr)_292px]">
         <div className="min-w-0">
           <div className="mb-4 inline-flex w-fit items-center gap-2 rounded-lg border border-orange-400/25 bg-orange-500/10 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.20em] text-orange-100">

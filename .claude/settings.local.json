@@ -27,7 +27,11 @@
       "Bash(npm uninstall *)",
       "Bash(npm audit *)",
       "Bash(npm install *)",
-      "Bash(git commit -m 'fix\\(deps\\): migrate from vulnerable xlsx to exceljs for Excel file processing *)"
+      "Bash(git commit -m 'fix\\(deps\\): migrate from vulnerable xlsx to exceljs for Excel file processing *)",
+      "Bash(supabase projects *)",
+      "Bash(cat > *)",
+      "Bash(supabase migration *)",
+      "Bash(git commit -m 'fix\\(lint\\): remove unused headerRowIndex variable and fix Buffer type inference *)"
     ]
   }
 }

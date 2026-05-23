@@ -52,7 +52,8 @@ async function parseExcelRows(file: File) {
   const workbook = new ExcelJS.Workbook();
 
   try {
-    await workbook.xlsx.load(Buffer.from(await file.arrayBuffer()));
+    const buffer = await file.arrayBuffer();
+    await workbook.xlsx.load(buffer as any);
   } catch {
     return { error: "invalid_excel_file" as const };
   }

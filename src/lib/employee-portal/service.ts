@@ -257,8 +257,9 @@ type PortalSalesNormalized = {
 // ---------------------------------------------------------------------------
 
 function logPortalDebug(message: string, payload?: unknown) {
-  void message;
-  void payload;
+  if (process.env.NODE_ENV !== "test") {
+    console.debug("[portal]", message, payload);
+  }
 }
 
 function resolvePortalSalesLineFilter(
