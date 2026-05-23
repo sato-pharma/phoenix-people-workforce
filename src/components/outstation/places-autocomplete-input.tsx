@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Loader2, MapPin, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -17,7 +17,7 @@ type PlacesAutocompleteInputProps = {
 export function PlacesAutocompleteInput({
   disabled,
   onSelect,
-  placeholder = "Search destination…",
+  placeholder = "Search destination...",
   value,
 }: PlacesAutocompleteInputProps) {
   const [inputValue, setInputValue] = useState(value ?? "");
@@ -30,6 +30,7 @@ export function PlacesAutocompleteInput({
 
   useEffect(() => {
     if (value === undefined) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setInputValue((currentValue) => (currentValue === value ? currentValue : value));
   }, [value]);
 
@@ -150,3 +151,5 @@ export function PlacesAutocompleteInput({
     </div>
   );
 }
+
+
