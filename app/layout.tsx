@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
 import { PageTitleSync } from "@/components/layout/page-title-sync";
 import { ThemeProvider } from "@/components/layout/theme-provider";
+import { appTitle, appTitleTemplate } from "@/lib/page-title";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Phoenix Workforce",
+  title: {
+    default: appTitle,
+    template: appTitleTemplate,
+  },
   description: "A premium workforce intelligence foundation for Phoenix.",
   icons: {
     apple: [{ type: "image/png", sizes: "180x180", url: "/apple-icon.png?v=phoenix-transparent-2" }],

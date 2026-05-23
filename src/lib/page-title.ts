@@ -1,4 +1,5 @@
-const appTitle = "Phoenix Workforce";
+export const appTitle = "Phoenix Workforce";
+export const appTitleTemplate = `%s | ${appTitle}`;
 
 const exactRouteTitles: Record<string, string> = {
   "/": appTitle,

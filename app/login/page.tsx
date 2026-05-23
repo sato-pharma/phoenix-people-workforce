@@ -11,7 +11,7 @@ import {
 } from "@/lib/auth/session-token";
 
 export const metadata: Metadata = {
-  title: "Phoenix Workforce",
+  title: "Login",
 };
 
 export const dynamic = "force-dynamic";
