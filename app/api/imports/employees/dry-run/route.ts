@@ -21,7 +21,6 @@ async function parseExcelRows(file: File) {
       return { error: "empty_worksheet" as const };
     }
 
-    let headerRowIndex = 0;
     let headerRowNum = 1;
     const maxRows = Math.min(worksheet.rowCount || 0, 11);
 
@@ -37,7 +36,6 @@ async function parseExcelRows(file: File) {
         values.some((value) => ["employee id", "hr_id", "hr id", "employee code"].includes(value)) &&
         values.some((value) => value === "full name")
       ) {
-        headerRowIndex = rowNum - 1;
         headerRowNum = rowNum;
         break;
       }
