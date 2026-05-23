@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import {
   buildPayrollExpenseBreakdown,
@@ -747,9 +748,16 @@ export async function setPayrollExpenseApproval(
   if (!existingData) throw new Error("Expense row was not found.");
 
   const existing = mapExpense(existingData as Record<string, unknown>);
+  const approved = Boolean(input.hrApproved);
+
+  // Idempotency guard: if already in the requested approval state, return
+  // without a DB write — prevents double-reset of approved_at timestamp.
+  if (existing.hrApproved === approved) {
+    return existing;
+  }
+
   const now = new Date().toISOString();
   const approvedBy = resolveEmployeeIdentityId(accessContext) ?? accessContext.loginId ?? "system";
-  const approved = Boolean(input.hrApproved);
   const comment = String(input.comment ?? existing.hrComment ?? "").trim();
   const { data: updatedData, error: updateError } = await supabase
     .from("payroll_expenses")
@@ -799,9 +807,16 @@ export async function decidePayrollExpenseApproval(
   if (!existingData) throw new Error("Expense row was not found.");
 
   const existing = mapExpense(existingData as Record<string, unknown>);
+  const approved = input.decision === "approve";
+
+  // Idempotency guard: if already in the requested decision state, return
+  // without a DB write — prevents re-approval from overwriting audit metadata.
+  if ((approved && existing.status === "approved") || (!approved && existing.status === "rejected")) {
+    return { previous: existing, updated: existing };
+  }
+
   const now = new Date().toISOString();
   const approvedBy = resolveEmployeeIdentityId(accessContext) ?? accessContext.loginId ?? "system";
-  const approved = input.decision === "approve";
   const { data: updatedData, error: updateError } = await supabase
     .from("payroll_expenses")
     .update({
@@ -893,14 +908,39 @@ export async function importApprovedExpensesToPayroll(input: {
   records?: Array<ExpenseTripRecord & { hrId?: string | null; hrApproved?: boolean; hrComment?: string }>;
   year: number;
 }, accessContext: AccessContext) {
+  const importJobId = randomUUID();
+  const supabase = getSupabaseAdmin();
+
+  // Pre-flight: verify the target salary batch is in a state that can receive
+  // expense imports. Fail fast BEFORE writing expense rows so a blocked import
+  // does not dirty the payroll_expenses table.
+  const { data: batchRow } = await supabase
+    .from("salary_batches")
+    .select("id, status")
+    .eq("month", input.month)
+    .eq("year", input.year)
+    .maybeSingle();
+
+  if (batchRow) {
+    const batchStatus = String((batchRow as Record<string, unknown>).status ?? "");
+    const blockedStatuses = ["locked", "approved", "rejected"];
+    if (blockedStatuses.includes(batchStatus)) {
+      throw new PayrollConflictError(
+        `Cannot import expenses: the ${input.year}/${input.month} payroll batch is already ${batchStatus}. Reopen the batch before importing.`,
+      );
+    }
+  }
+
+  console.info(
+    `[payroll-expenses] import job ${importJobId} started — ${input.year}/${input.month}, file: ${input.fileName}`,
+  );
+
   const savedExpenses = input.records?.length
     ? await savePayrollExpenseApprovals({
         fileName: input.fileName,
         records: input.records,
       }, accessContext)
     : await listPayrollExpenses(input.month, input.year, undefined, accessContext);
-
-  const supabase = getSupabaseAdmin();
   const { data: importResult, error: importError } = await supabase.rpc(
     "phx_import_approved_expenses_to_payroll",
     {
@@ -927,6 +967,7 @@ export async function importApprovedExpensesToPayroll(input: {
   } | null;
 
   if (!result?.target_batch_id) {
+    console.info(`[payroll-expenses] import job ${importJobId} completed — no target batch matched`);
     return {
       importedEmployees: 0,
       importedTotal: 0,
@@ -935,6 +976,11 @@ export async function importApprovedExpensesToPayroll(input: {
       targetBatch: null,
     };
   }
+
+  console.info(
+    `[payroll-expenses] import job ${importJobId} completed — batch ${result.target_batch_id}, ` +
+    `imported ${result.imported_employees ?? 0} employees, total ${result.imported_total ?? 0}`,
+  );
 
   return {
     importedEmployees: Number(result.imported_employees ?? 0),
