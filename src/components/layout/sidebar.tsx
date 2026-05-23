@@ -22,6 +22,7 @@ import {
   Megaphone,
   Network,
   Database,
+  PlusCircle,
   Radar,
   ReceiptText,
   ScrollText,
@@ -156,6 +157,7 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
         { href: "/payroll/expenses", icon: FileSpreadsheet, label: "Expenses", permissions: [{ resource: "expenses" }] },
         { href: "/payroll/expenses/dashboard", icon: ChartColumnBig, label: "Expenses Dashboard", permissions: [{ resource: "expenses" }] },
         { href: "/admin/outstation/requests", icon: MapPinned, label: "Outstation Requests", permissions: [{ resource: "outstation" }] },
+        { href: "/admin/outstation/requests?action=create-manager-expense", icon: PlusCircle, label: "Create Manager Expense", permissions: [{ resource: "outstation", action: "approve" }] },
         { href: "/admin/outstation/policy", icon: CalendarClock, label: "Outstation Policy", permissions: [{ resource: "outstation", action: "update" }] },
         { href: "/admin/outstation/heatmaps", icon: MapPinned, label: "Outstation Heatmaps", permissions: [{ resource: "outstation" }] },
       ],
@@ -299,6 +301,7 @@ function isActivePath(pathname: string, href: string, activeTab: string | null) 
   if (baseHref === "/employee-portals") return pathname === "/employee-portals";
   if (baseHref === "/employee-portals/marketing-requests") return pathname === "/employee-portals/marketing-requests";
   if (baseHref === "/admin/marketing-requests") return pathname === "/admin/marketing-requests";
+  if (href.includes("action=create-manager-expense")) return pathname === "/admin/outstation/requests" && activeTab === "create-manager-expense";
   if (baseHref === "/sales") return pathname === "/sales";
   if (baseHref === "/employee-portals/sales") return pathname === "/employee-portals/sales";
   if (baseHref === "/payroll") return pathname === "/payroll";
@@ -552,6 +555,7 @@ function SidebarNav({
                           onClick={() => {
                             if (item.href.includes("tab=generate")) setActiveTab("generate");
                             else if (item.href.includes("tab=governance")) setActiveTab("governance");
+                            else if (item.href.includes("action=create-manager-expense")) setActiveTab("create-manager-expense");
                             else setActiveTab(null);
                             onNavigate?.();
                           }}
