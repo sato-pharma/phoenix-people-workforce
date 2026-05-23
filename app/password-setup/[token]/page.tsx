@@ -11,7 +11,7 @@ export default async function PasswordSetupPage(
 
   try {
     preview = await getPasswordSetupPreview(token);
-  } catch (error) {
+  } catch {
     const message = "This password setup link is unavailable.";
 
     return (
