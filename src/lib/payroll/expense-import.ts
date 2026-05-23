@@ -132,8 +132,7 @@ function specialistSummary(records: ExpenseTripRecord[]) {
 export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysisResult> {
   const employeeCodeByName = await buildEmployeeCodeMap();
   const workbook = new ExcelJS.Workbook();
-  const buffer = await file.arrayBuffer();
-  await workbook.xlsx.load(buffer as any);
+  await workbook.xlsx.load(await file.arrayBuffer());
 
   const worksheet = workbook.worksheets[0];
   if (!worksheet) {
