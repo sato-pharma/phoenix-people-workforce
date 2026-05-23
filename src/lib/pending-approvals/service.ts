@@ -317,23 +317,23 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
         }));
     }),
     safeApprovalList(async () => {
-      const canViewSalesAsSales = await canApprove(access, "sales");
+      // Sales-import approvals belong to finance — the sales role can submit
+      // batches but cannot approve them from the pending-approvals portal.
       const canViewSalesAsFinance = (await canApprove(access, "payroll"))
         || (await canApprove(access, "offers"))
         || (await canApprove(access, "contracts"))
         || (await canApprove(access, "resignations"));
-      if (!canViewSalesAsSales && !canViewSalesAsFinance) return [];
+      if (!canViewSalesAsFinance) return [];
       const batches = await listSalesQueue(access);
       return batches
         .filter(
           (batch) =>
-            (canViewSalesAsSales ? batch.canApprove : true) &&
             batch.status !== "approved" &&
             batch.status !== "rejected" &&
             batch.status !== "replaced",
         )
         .map((batch) => ({
-          canDecide: canViewSalesAsSales && batch.canApprove,
+          canDecide: !actorMatchesText(access, batch.uploadedBy),
           currentStep: batch.approvalBlockedReason ? "Approval blocked" : "Sales import approval",
           isSubmittedByMe: actorMatchesText(access, batch.uploadedBy),
           detailHref: `/sales/queue/${encodeURIComponent(batch.id)}`,
@@ -487,7 +487,8 @@ export async function decidePendingApproval(
         : rejectOutstationRequestForPayroll(requestId, access, { comment: input.comment });
     }
     case "sales-import": {
-      await assertPermission(access, "sales", "approve");
+      // Finance approves sales imports (not the sales role itself)
+      await assertPermission(access, "payroll", "approve");
       return updateSalesBatchStatus(
         id,
         input.decision === "approve" ? "approved" : "rejected",
