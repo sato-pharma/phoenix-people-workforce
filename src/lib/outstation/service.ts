@@ -30,6 +30,7 @@ import {
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   EmployeeResidenceLocation,
+  ManagerExpenseAdminInput,
   OutstationAllowanceBreakdown,
   OutstationApprovalRecommendation,
   OutstationCarEvidenceMetadata,
@@ -1421,6 +1422,7 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     ticketAmount: numberValue(row.ticket_amount),
     toArea: text(row.to_area) || null,
     toCity: text(row.to_city) || null,
+    toCountry: text(row.to_country) || null,
     toLabel: text(row.to_label) || null,
     transportationType,
     tripEndDate: isoString(row.trip_end_date),
@@ -1822,4 +1824,278 @@ export async function getOutstationHeatmapData(): Promise<OutstationHeatmapData>
     },
     markers,
   };
+}
+
+export async function createManagerExpenseAsAdmin(
+  access: AccessContext,
+  input: ManagerExpenseAdminInput,
+): Promise<OutstationExpenseRequest> {
+  await assertPermission(access, "outstation", "approve");
+
+  const directory = await getEmployeeDirectory();
+  const employee = directory.employees.find(
+    (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(input.employeeHrId),
+  );
+  if (!employee?.hrId) {
+    throw new Error(`Employee ${input.employeeHrId} was not found in the employee directory.`);
+  }
+
+  const residence = await getResidenceLocationForEmployee(employee.hrId);
+  const policy = await getActivePolicyForRole(normalizeRole(employee.jobTitle ?? ""));
+  const allowance = calculateAllowanceBreakdown(input.tripStartDate, input.tripEndDate, policy);
+
+  let fuelAmount = 0;
+  if (input.transportationType === "car") {
+    fuelAmount = roundMoney(input.distanceKm * 2 * policy.fuelRatePerKm);
+  }
+
+  const distanceEligibility = classifyOutstationExpenseEligibility({
+    actualDistanceKm: input.distanceKm,
+    policy: {
+      officialMinimumDistanceKm: policy.minimumDistanceKm,
+      toleranceMinimumDistanceKm: policy.toleranceMinimumDistanceKm,
+    },
+  });
+
+  const eligibilityStatus: OutstationEligibilityStatus =
+    distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
+  const eligibilityReason =
+    `Admin-created manager expense. ${distanceEligibility.reason}`;
+
+  const expectedTotalAmount =
+    eligibilityStatus === "not_eligible"
+      ? 0
+      : roundMoney(fuelAmount + allowance.allowanceAmount);
+  const claimedTotalAmount =
+    input.claimedTotalAmount > 0 ? input.claimedTotalAmount : expectedTotalAmount;
+  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
+  const variancePercent =
+    expectedTotalAmount > 0
+      ? roundMoney((varianceAmount / expectedTotalAmount) * 100)
+      : 0;
+
+  const now = new Date().toISOString();
+  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .insert({
+      allowance_amount: allowance.allowanceAmount,
+      allowance_breakdown_json: JSON.stringify(allowance.breakdown),
+      approval_reason: "Manager expense created by admin. Requires manual review.",
+      approval_recommendation: "manager_review",
+      area: employee.areaName ?? null,
+      attachment_count: 0,
+      calculation_status: "submitted",
+      captured_accuracy_meters: 0,
+      captured_at: now,
+      captured_latitude: input.destination.latitude,
+      captured_location_source: "browser_gps",
+      captured_longitude: input.destination.longitude,
+      claimed_total_amount: claimedTotalAmount,
+      distance_from_residence_km: input.distanceKm,
+      distance_km: input.distanceKm,
+      duration_minutes: input.durationMinutes ?? null,
+      eligibility_reason: eligibilityReason,
+      eligibility_status: eligibilityStatus,
+      employee_hr_id: employee.hrId,
+      employee_name: employee.fullName ?? employee.hrId,
+      employee_role: normalizeRole(employee.jobTitle ?? ""),
+      expected_total_amount: expectedTotalAmount,
+      expense_type: input.expenseType,
+      fraud_flags_json: JSON.stringify([]),
+      fuel_amount: fuelAmount,
+      go_ticket_amount: 0,
+      line: employee.lineName ?? null,
+      minimum_required_distance_km: policy.minimumDistanceKm,
+      notes: input.notes ?? null,
+      offline_captured: false,
+      overnight_days: allowance.overnightDays,
+      residence_address: residence?.residenceAddress ?? null,
+      residence_area: residence?.residenceArea ?? null,
+      residence_city: residence?.residenceCity ?? null,
+      residence_latitude: residence?.residenceLatitude ?? null,
+      residence_longitude: residence?.residenceLongitude ?? null,
+      return_ticket_amount: 0,
+      route_polyline: input.routePolyline ?? null,
+      same_day_trip: allowance.sameDayTrip,
+      status: "submitted",
+      submitted_at: now,
+      suspicious_location_score: 0,
+      territory_validation_reason: "Admin-created expense; territory check not applicable.",
+      territory_validation_status: "not_available",
+      ticket_amount: 0,
+      ticket_attachment_metadata: [],
+      ticket_attachment_paths: [],
+      to_area: input.destination.area ?? null,
+      to_city: input.destination.city ?? null,
+      to_label: input.destination.label,
+      transportation_type: input.transportationType,
+      trip_end_date: input.tripEndDate,
+      trip_start_date: input.tripStartDate,
+      updated_at: now,
+      variance_amount: varianceAmount,
+      variance_percent: variancePercent,
+    })
+    .select("*")
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  const created = mapOutstationRequestRow(data as Record<string, unknown>);
+
+  await writeRequiredAuditLog({
+    actorLoginId: actor,
+    entityId: String(created.id),
+    entityType: "outstation_request",
+    newValues: {
+      destination: input.destination.label,
+      distanceKm: input.distanceKm,
+      employeeHrId: employee.hrId,
+      expenseType: input.expenseType,
+      source: "admin_manager_expense",
+      status: "submitted",
+      tripEndDate: input.tripEndDate,
+      tripStartDate: input.tripStartDate,
+    },
+    summary: `Admin created manager expense for ${employee.hrId} to ${input.destination.label} (${input.distanceKm} km).`,
+  });
+
+  return created;
+}
+
+export async function updateManagerExpenseAsAdmin(
+  requestId: number,
+  access: AccessContext,
+  input: Partial<ManagerExpenseAdminInput>,
+): Promise<OutstationExpenseRequest> {
+  await assertPermission(access, "outstation", "approve");
+
+  const existing = await getOutstationRequestById(requestId);
+  if (!existing) throw new Error("Outstation request was not found.");
+
+  const now = new Date().toISOString();
+  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+
+  const employeeHrId = existing.employeeHrId;
+  const directory = await getEmployeeDirectory();
+  const employee = directory.employees.find(
+    (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(employeeHrId),
+  );
+  const policy = await getActivePolicyForRole(
+    normalizeRole(employee?.jobTitle ?? existing.employeeRole),
+  );
+
+  const tripStartDate = input.tripStartDate ?? existing.tripStartDate;
+  const tripEndDate = input.tripEndDate ?? existing.tripEndDate;
+  const transportationType = input.transportationType ?? existing.transportationType;
+  const expenseType = input.expenseType ?? existing.expenseType;
+  const notes = "notes" in input ? (input.notes ?? null) : existing.notes;
+
+  const destination = input.destination;
+  const distanceKm = input.distanceKm ?? existing.distanceFromResidenceKm ?? 0;
+  const durationMinutes = "durationMinutes" in input
+    ? (input.durationMinutes ?? null)
+    : existing.durationMinutes;
+  const routePolyline = "routePolyline" in input
+    ? (input.routePolyline ?? null)
+    : existing.routePolyline;
+
+  const allowance = calculateAllowanceBreakdown(tripStartDate, tripEndDate, policy);
+  let fuelAmount = 0;
+  if (transportationType === "car") {
+    fuelAmount = roundMoney(distanceKm * 2 * policy.fuelRatePerKm);
+  }
+
+  const distanceEligibility = classifyOutstationExpenseEligibility({
+    actualDistanceKm: distanceKm,
+    policy: {
+      officialMinimumDistanceKm: policy.minimumDistanceKm,
+      toleranceMinimumDistanceKm: policy.toleranceMinimumDistanceKm,
+    },
+  });
+
+  const eligibilityStatus: OutstationEligibilityStatus =
+    distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
+  const expectedTotalAmount =
+    eligibilityStatus === "not_eligible"
+      ? 0
+      : roundMoney(fuelAmount + allowance.allowanceAmount);
+  const claimedTotal = input.claimedTotalAmount;
+  const claimedTotalAmount = claimedTotal != null && claimedTotal > 0
+    ? claimedTotal
+    : expectedTotalAmount;
+  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
+  const variancePercent =
+    expectedTotalAmount > 0
+      ? roundMoney((varianceAmount / expectedTotalAmount) * 100)
+      : 0;
+
+  const updatePayload: Record<string, unknown> = {
+    allowance_amount: allowance.allowanceAmount,
+    allowance_breakdown_json: JSON.stringify(allowance.breakdown),
+    claimed_total_amount: claimedTotalAmount,
+    distance_from_residence_km: distanceKm,
+    distance_km: distanceKm,
+    duration_minutes: durationMinutes,
+    eligibility_reason: `Admin-updated manager expense. ${distanceEligibility.reason}`,
+    eligibility_status: eligibilityStatus,
+    expense_type: expenseType,
+    expected_total_amount: expectedTotalAmount,
+    fuel_amount: fuelAmount,
+    notes: notes,
+    overnight_days: allowance.overnightDays,
+    route_polyline: routePolyline,
+    same_day_trip: allowance.sameDayTrip,
+    transportation_type: transportationType,
+    trip_end_date: tripEndDate,
+    trip_start_date: tripStartDate,
+    updated_at: now,
+    variance_amount: varianceAmount,
+    variance_percent: variancePercent,
+  };
+
+  if (destination) {
+    updatePayload.captured_latitude = destination.latitude;
+    updatePayload.captured_longitude = destination.longitude;
+    updatePayload.to_area = destination.area ?? null;
+    updatePayload.to_city = destination.city ?? null;
+    updatePayload.to_label = destination.label;
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .update(updatePayload)
+    .eq("id", requestId)
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Outstation request not found after update.");
+
+  const updated = mapOutstationRequestRow(data as Record<string, unknown>);
+
+  await writeRequiredAuditLog({
+    actorLoginId: actor,
+    entityId: String(updated.id),
+    entityType: "outstation_request",
+    newValues: {
+      destination: destination?.label ?? existing.toLabel,
+      distanceKm,
+      expenseType,
+      source: "admin_manager_expense_edit",
+      status: updated.status,
+      tripEndDate,
+      tripStartDate,
+    },
+    oldValues: {
+      destination: existing.toLabel,
+      distanceKm: existing.distanceFromResidenceKm,
+      expenseType: existing.expenseType,
+      status: existing.status,
+    },
+    summary: `Admin updated manager expense ${requestId} for ${employeeHrId}.`,
+  });
+
+  return updated;
 }
