@@ -12,7 +12,7 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
-import { calculatePayrollParts, normalizePayrollPaymentMode, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
+import { BASIC_SALARY_RATE, calculatePayrollParts, normalizePayrollPaymentMode, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 import { PayrollConflictError } from "@/lib/payroll/errors";
 import { writePayrollLineage } from "@/lib/payroll/lineage";
 import { getPayrollWorkflowTransition } from "@/lib/payroll/workflow";
@@ -155,10 +155,10 @@ async function collectPayrollBatchIdsForColumn(
   }
 
   const batchIds = new Set<string>();
-  (data ?? []).forEach((row) => {
-    const batchId = (row as Record<string, unknown>).batch_id;
-    if (typeof batchId === "string") {
-      batchIds.add(batchId);
+  (data ?? []).forEach((row: unknown) => {
+    if (row && typeof row === "object" && "batch_id" in row) {
+      const batchId = (row as { batch_id: unknown }).batch_id;
+      if (typeof batchId === "string") batchIds.add(batchId);
     }
   });
 
@@ -1244,7 +1244,7 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
     entityType:      "payroll_batch",
     entityId:        batch.id,
     payloadIdentity: { batchId: batch.id, recordCount: recordPayloads.length },
-    meta:            { month: input.month, year: input.year, recordCount: recordPayloads.length },
+    meta:            { month: input.month, year: input.year, recordCount: recordPayloads.length, formulaConstants: { basicSalaryRate: BASIC_SALARY_RATE } },
   });
 
   return {

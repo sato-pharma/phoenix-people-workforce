@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     await assertPermission(access, "outstation", "create");
 
     const body = (await request.json()) as Record<string, unknown>;
-    const result = await syncOfflineOutstationRequest(access, {
+    const { cached, request: result } = await syncOfflineOutstationRequest(access, {
       capturedAccuracyMeters: Number(body.capturedAccuracyMeters),
       capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : undefined,
       capturedLatitude: Number(body.capturedLatitude),
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       carEvidenceImagePath: parseCarEvidenceImagePath(body),
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, _cached: cached });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unable to sync offline outstation request.";

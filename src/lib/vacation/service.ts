@@ -1635,6 +1635,22 @@ export async function createVacationRequest(access: AccessContext, input: Create
     startDate,
     weeklyOffPolicy: weeklyOffPolicyForDateCalculation(weeklyOffPolicy),
   });
+
+  // Guard against duplicate active requests for identical dates.
+  // The DB partial unique index enforces this at the storage level too, but
+  // a pre-flight check gives a cleaner user-facing error message.
+  const { data: existingRequest } = await getSupabaseAdmin()
+    .from(vacationRequestsTable)
+    .select("id")
+    .eq("employee_hr_id", employee.hrId)
+    .eq("start_date", startDate)
+    .eq("end_date", endDate)
+    .not("status", "in", "(rejected,cancelled)")
+    .limit(1);
+  if (existingRequest && existingRequest.length > 0) {
+    throw new Error("A vacation request for these dates is already submitted or under review.");
+  }
+
   const { manager, managerOfManager } = managerChain(directory, employee);
   if (!manager?.hrId) {
     throw new Error("Your direct manager is not assigned. Please contact HR before submitting a vacation request.");
@@ -1727,6 +1743,7 @@ export async function createVacationRequest(access: AccessContext, input: Create
       updated_at: now,
       used_paid_days: balance.usedPaidDays,
       vacation_type: resolvedVacationType,
+      weekly_off_policy_snapshot: weeklyOffPolicy ? (weeklyOffPolicy as unknown as Record<string, unknown>) : null,
     })
     .select("*")
     .single();

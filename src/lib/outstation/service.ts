@@ -1357,22 +1357,25 @@ export async function syncOfflineOutstationRequest(
 
     if (dupeRows && dupeRows.length > 0) {
       const dupeId = (dupeRows[0] as Record<string, unknown>).id;
-      console.warn(
-        `[outstation] offline sync replay blocked — request ${String(dupeId)} already exists for employee ${identity.employeeHrId} trip ${tripStart}–${tripEnd}`,
-      );
       const { data: fullRow } = await getSupabaseAdmin()
         .from("outstation_expense_requests")
         .select("*")
         .eq("id", dupeId)
         .single();
-      if (fullRow) return mapOutstationRequestRow(fullRow as Record<string, unknown>);
+      if (fullRow) {
+        return {
+          cached: true,
+          request: mapOutstationRequestRow(fullRow as Record<string, unknown>),
+        };
+      }
     }
   }
 
-  return submitOutstationRequest(access, {
+  const request = await submitOutstationRequest(access, {
     ...input,
     offlineCaptured: true,
   });
+  return { cached: false, request };
 }
 
 export async function updateOutstationPolicies(
