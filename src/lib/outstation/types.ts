@@ -251,6 +251,7 @@ export type OutstationExpenseRequest = {
   ticketAmount: number;
   toArea: string | null;
   toCity: string | null;
+  toCountry: string | null;
   toLabel: string | null;
   transportationType: OutstationTransportationType;
   tripEndDate: string;
@@ -258,6 +259,35 @@ export type OutstationExpenseRequest = {
   updatedAt: string;
   varianceAmount: number;
   variancePercent: number;
+};
+
+export type PlacesPrediction = {
+  description: string;
+  placeId: string;
+};
+
+export type ManagerExpenseDestination = {
+  area: string | null;
+  city: string | null;
+  country: string | null;
+  label: string;
+  latitude: number;
+  longitude: number;
+  placeId: string;
+};
+
+export type ManagerExpenseAdminInput = {
+  claimedTotalAmount: number;
+  destination: ManagerExpenseDestination;
+  distanceKm: number;
+  durationMinutes: number | null;
+  employeeHrId: string;
+  expenseType: OutstationExpenseType;
+  notes: string | null;
+  routePolyline: string | null;
+  transportationType: OutstationTransportationType;
+  tripEndDate: string;
+  tripStartDate: string;
 };
 
 export type OutstationHeatmapMarker = {
