@@ -46,6 +46,7 @@ export type PendingApprovalWorkflow =
 
 export type PendingApprovalItem = {
   canDecide?: boolean;
+  isSubmittedByMe: boolean;
   currentStep: string;
   detailHref: string;
   id: string;
@@ -215,6 +216,7 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
         })
         .map((request) => ({
           canDecide: !isSelfApproval(access, request.employeeHrId),
+          isSubmittedByMe: isSelfApproval(access, request.employeeHrId),
           currentStep: isSelfApproval(access, request.employeeHrId)
             ? request.status === "pending_hr"
               ? "Waiting for HR final approval"
@@ -237,9 +239,10 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
       if (!await canApprove(access, "leave")) return [];
       const requests = await listPendingExcuseApprovals(access);
       return requests
-        .filter((request) => !isSelfApproval(access, request.employeeHrId))
         .map((request) => ({
+          canDecide: !isSelfApproval(access, request.employeeHrId),
           currentStep: "Manager approval",
+          isSubmittedByMe: isSelfApproval(access, request.employeeHrId),
           detailHref: "/employee-portals/excuses",
           id: request.id,
           requester: request.employeeName,
@@ -259,10 +262,11 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
           const status = `${expense.status} ${expense.hr}`.toLowerCase();
           return !expense.hrApproved && !status.includes("reject");
         })
-        .filter((expense) => !isSelfApproval(access, expense.hrId))
         .slice(0, 100)
         .map((expense) => ({
-          currentStep: "Expense approval",
+          canDecide: !isSelfApproval(access, expense.hrId),
+          currentStep: isSelfApproval(access, expense.hrId) ? "Waiting for expense approval" : "Expense approval",
+          isSubmittedByMe: isSelfApproval(access, expense.hrId),
           detailHref: "/payroll/expenses",
           id: expense.tripId,
           requester: expense.specialist || expense.hrId || "Unknown employee",
@@ -299,6 +303,7 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
         .filter(({ canDecideRequest, isOwnRequest }) => canDecideRequest || (canViewOwnOutstationStatus && isOwnRequest))
         .map(({ canDecideRequest, isOwnRequest, request }) => ({
           canDecide: canDecideRequest,
+          isSubmittedByMe: isOwnRequest,
           currentStep: isOwnRequest ? "Waiting for outstation approval" : "Outstation approval",
           detailHref: isOwnRequest ? "/employee-portals/expense-dashboard" : `/admin/outstation/requests?requestId=${request.id}`,
           id: String(request.id),
@@ -312,13 +317,25 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
         }));
     }),
     safeApprovalList(async () => {
-      if (!await canApprove(access, "sales")) return [];
+      const canViewSalesAsSales = await canApprove(access, "sales");
+      const canViewSalesAsFinance = (await canApprove(access, "payroll"))
+        || (await canApprove(access, "offers"))
+        || (await canApprove(access, "contracts"))
+        || (await canApprove(access, "resignations"));
+      if (!canViewSalesAsSales && !canViewSalesAsFinance) return [];
       const batches = await listSalesQueue(access);
       return batches
-        .filter((batch) => batch.canApprove && batch.status !== "approved" && batch.status !== "rejected" && batch.status !== "replaced")
-        .filter((batch) => !actorMatchesText(access, batch.uploadedBy))
+        .filter(
+          (batch) =>
+            (canViewSalesAsSales ? batch.canApprove : true) &&
+            batch.status !== "approved" &&
+            batch.status !== "rejected" &&
+            batch.status !== "replaced",
+        )
         .map((batch) => ({
+          canDecide: canViewSalesAsSales && batch.canApprove,
           currentStep: batch.approvalBlockedReason ? "Approval blocked" : "Sales import approval",
+          isSubmittedByMe: actorMatchesText(access, batch.uploadedBy),
           detailHref: `/sales/queue/${encodeURIComponent(batch.id)}`,
           id: batch.id,
           requester: batch.uploadedBy || "Sales import",
@@ -337,7 +354,9 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
         .filter((offer) => offer.status === "accepted" && offer.onboardingStatus === "pending_hr_approval")
         .filter((offer) => canApproveHrItem(access, offer.employeeHrId))
         .map((offer) => ({
+          canDecide: true,
           currentStep: "HR offer approval",
+          isSubmittedByMe: isSelfApproval(access, offer.employeeHrId),
           detailHref: `/offers?offerId=${encodeURIComponent(offer.id)}`,
           id: offer.id,
           requester: offer.candidateName,
@@ -364,7 +383,9 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
           requesterHrId: workflow.employeeHrId,
         }))
         .map((workflow) => ({
+          canDecide: true,
           currentStep: workflow.status.replace(/_/g, " "),
+          isSubmittedByMe: isSelfApproval(access, workflow.employeeHrId),
           detailHref: `/contracts?requestId=${encodeURIComponent(workflow.id)}`,
           id: workflow.id,
           requester: workflow.employeeName,
@@ -389,7 +410,9 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
           requesterHrId: record.employeeHrId,
         }))
         .map((record) => ({
+          canDecide: true,
           currentStep: record.status.replace(/_/g, " "),
+          isSubmittedByMe: isSelfApproval(access, record.employeeHrId),
           detailHref: `/resignations?requestId=${encodeURIComponent(record.id)}`,
           id: record.id,
           requester: record.employeeName,
@@ -406,9 +429,10 @@ export async function listPendingApprovals(access: AccessContext): Promise<Pendi
       const batches = await listSalaryBatches();
       return batches
         .filter((batch) => batch.status === "under_review")
-        .filter((batch) => !actorMatchesText(access, batch.uploadedBy))
         .map((batch) => ({
           currentStep: "Payroll approval",
+          canDecide: !actorMatchesText(access, batch.uploadedBy),
+          isSubmittedByMe: actorMatchesText(access, batch.uploadedBy),
           detailHref: `/payroll?batchId=${encodeURIComponent(batch.id)}`,
           id: batch.id,
           requester: batch.uploadedBy || "Payroll",

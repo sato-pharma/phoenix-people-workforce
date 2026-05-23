@@ -89,15 +89,15 @@ export function PendingApprovalsWorkspace({
   const [personFilter, setPersonFilter] = useState("");
   const [dateFromFilter, setDateFromFilter] = useState("");
   const [dateToFilter, setDateToFilter] = useState("");
-  const forMeItems = useMemo(() => items.filter((item) => item.canDecide !== false), [items]);
-  const byMeItems = useMemo(() => items.filter((item) => item.canDecide === false), [items]);
+  const forMeItems = useMemo(() => items.filter((item) => !item.isSubmittedByMe), [items]);
+  const byMeItems = useMemo(() => items.filter((item) => item.isSubmittedByMe), [items]);
   const activeTabItems = activeTab === "for-me" ? forMeItems : byMeItems;
 
   const filteredItems = useMemo(() => {
     const person = personFilter.trim().toLowerCase();
     return items.filter((item) => {
-      if (activeTab === "for-me" && item.canDecide === false) return false;
-      if (activeTab === "by-me" && item.canDecide !== false) return false;
+      if (activeTab === "for-me" && item.isSubmittedByMe) return false;
+      if (activeTab === "by-me" && !item.isSubmittedByMe) return false;
 
       if (typeFilter !== "all" && item.workflow !== typeFilter) return false;
 
@@ -120,7 +120,7 @@ export function PendingApprovalsWorkspace({
 
   const activeTotalCount = activeTabItems.length;
   const activeFilteredCount = filteredItems.length;
-  const activeDecisionCount = forMeItems.length;
+  const activeDecisionCount = forMeItems.filter((item) => item.canDecide !== false).length;
   const hasActiveFilters = typeFilter !== "all" || Boolean(personFilter.trim()) || Boolean(dateFromFilter) || Boolean(dateToFilter);
 
   const grouped = useMemo(() => {
