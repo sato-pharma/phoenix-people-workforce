@@ -15,7 +15,9 @@
       "Bash(ls -la \"F:\\\\Phoenix Workforce\\\\phoenix-workforce\\\\\" | head -20)",
       "Bash(npm run *)",
       "mcp__Claude_Preview__preview_start",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(git cherry-pick *)",
+      "Bash(git rm *)"
     ]
   }
 }
