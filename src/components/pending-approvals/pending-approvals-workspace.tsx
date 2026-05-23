@@ -91,6 +91,11 @@ export function PendingApprovalsWorkspace({
   const [dateToFilter, setDateToFilter] = useState("");
   const forMeItems = useMemo(() => items.filter((item) => !item.isSubmittedByMe), [items]);
   const byMeItems = useMemo(() => items.filter((item) => item.isSubmittedByMe), [items]);
+  // Only show filter options for workflow types that are actually present in the list
+  const availableFilterOptions = useMemo(() => {
+    const present = new Set(items.map((item) => item.workflow));
+    return workflowFilterOptions.filter((option) => present.has(option.value));
+  }, [items]);
   const activeTabItems = activeTab === "for-me" ? forMeItems : byMeItems;
 
   const filteredItems = useMemo(() => {
@@ -267,7 +272,7 @@ export function PendingApprovalsWorkspace({
               value={typeFilter}
             >
               <option value="all">All approval types</option>
-              {workflowFilterOptions.map((option) => (
+              {availableFilterOptions.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
