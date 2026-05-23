@@ -2158,14 +2158,17 @@ export async function createMarketingRequestDraft(
     unrestrictedProductLines: canUseAnyMarketingProductLine(access),
   });
 
-  const requestInsert = await supabase
-    .from("marketing_requests")
-    .insert(prepared.requestRow)
-    .select("*")
-    .single();
+  const requestInsert = await supabase.rpc("phx_create_marketing_request_draft_atomic", {
+    p_request: prepared.requestRow,
+  });
   if (requestInsert.error) throw requestInsert.error;
 
-  const request = mapRequest(requestInsert.data as MarketingRequestDbRow);
+  const requestRow = Array.isArray(requestInsert.data)
+    ? requestInsert.data[0] as MarketingRequestDbRow | undefined
+    : requestInsert.data as MarketingRequestDbRow | null;
+  if (!requestRow) throw new Error("Marketing request draft creation failed.");
+
+  const request = mapRequest(requestRow);
 
   try {
     const productInsertRows = prepared.productRows.map((row) => ({

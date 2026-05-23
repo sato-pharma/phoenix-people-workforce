@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isPayrollConflictError } from "@/lib/payroll/errors";
@@ -12,18 +13,37 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const optionalCoercedPayrollPeriodValue = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? undefined : value),
+  z.coerce.number().int().optional(),
+);
+
+const payrollExpensesImportBodySchema = z.object({
+  fileName: z.string().optional(),
+  month: optionalCoercedPayrollPeriodValue,
+  records: z.array(z.unknown()).optional(),
+  year: optionalCoercedPayrollPeriodValue,
+});
+
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "expenses", "import");
 
-    const body = await request.json();
-    const fileName = String(body.fileName ?? "expenses-upload.xls");
-    const month = Number(body.month);
-    const year = Number(body.year);
-    const records = Array.isArray(body.records) ? body.records : [];
+    const parsedBody = payrollExpensesImportBodySchema.safeParse(await request.json());
+    if (!parsedBody.success) {
+      return NextResponse.json(
+        { error: "invalid_request", message: "Invalid expenses import payload." },
+        { status: 400 },
+      );
+    }
 
-    if (body.month === undefined || body.month === null || body.month === "" || body.year === undefined || body.year === null || body.year === "") {
+    const fileName = parsedBody.data.fileName ? parsedBody.data.fileName : "expenses-upload.xls";
+    const month = parsedBody.data.month;
+    const year = parsedBody.data.year;
+    const records = parsedBody.data.records ?? [];
+
+    if (month === undefined || year === undefined) {
       return NextResponse.json(
         { error: "missing_period", message: "Payroll month and year are required." },
         { status: 400 },

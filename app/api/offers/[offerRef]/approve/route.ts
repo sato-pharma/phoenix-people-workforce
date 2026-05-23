@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -14,6 +15,10 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const offerApproveBodySchema = z.object({
+  hrId: z.string().min(1).optional(),
+});
 
 function offerApiError(error: unknown) {
   const message = offerErrorMessage(error);
@@ -36,10 +41,15 @@ export async function POST(
     await assertPermission(access, "offers", "approve");
     const { offerRef } = await context.params;
 
-    const body = await request.json().catch(() => ({}));
-    const hrId = body?.hrId;
+    const parsedBody = offerApproveBodySchema.safeParse(await request.json().catch(() => ({})));
+    if (!parsedBody.success) {
+      return NextResponse.json(
+        { error: "invalid_request", message: "Invalid offer approval payload." },
+        { status: 400 },
+      );
+    }
 
-    const result = await approveAcceptedOffer(offerRef, access.hrId, hrId);
+    const result = await approveAcceptedOffer(offerRef, access.hrId, parsedBody.data.hrId);
     const accessProvisioning = await provisionNewHireAccess({
       actor: { loginId: access.loginId ?? null, role: access.role },
       hrIds: [result.employeeHrId],

@@ -948,6 +948,10 @@ export async function getSalaryBatchExport(
     console.debug("[employee-portal] getSalaryBatchExport records count after access filter:", rows.length);
   }
 
+  if (!payrollAccessFilter.all && rows.length === 0) {
+    return null;
+  }
+
   return {
     batch: mapBatch(batchResult.data as Record<string, unknown>),
     records: await withHireDates(

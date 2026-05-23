@@ -4,6 +4,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { canAccess } from "@/lib/auth/permissions";
 import { getSalaryFlags, resolveSalaryFlag } from "@/lib/admin/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,6 +43,18 @@ export async function PATCH(request: Request) {
     }
 
     const resolvedBy = access.loginId ?? "system";
+
+    const supabase = getSupabaseAdmin();
+    const flagResult = await supabase
+      .from("salary_flags")
+      .select("id")
+      .eq("id", body.id)
+      .maybeSingle();
+    if (flagResult.error) throw flagResult.error;
+    if (!flagResult.data) {
+      return NextResponse.json({ message: "Salary flag not found." }, { status: 404 });
+    }
+
     await resolveSalaryFlag(body.id, resolvedBy);
 
     await writeAuditLog({

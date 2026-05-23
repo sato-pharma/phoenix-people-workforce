@@ -21,7 +21,7 @@ export async function GET(
     const { id } = await params;
     const exportData = await getSalaryBatchExport(id, access);
 
-    if (!exportData) {
+    if (!exportData || exportData.records.length === 0) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
 
