@@ -1,5 +1,11 @@
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 
+if (process.env.NODE_ENV === "production") {
+  throw new Error(
+    "[dev-preview-data] This module must not be imported in production builds. Remove this import from any production code path.",
+  );
+}
+
 const salesTrend = [
   { period: "2025-12", sales: 860000, target: 920000 },
   { period: "2026-01", sales: 940000, target: 980000 },

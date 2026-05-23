@@ -1,4 +1,5 @@
 import {
+  EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { MarketingControlWorkspace } from "@/components/employee-portal/marketing-control-workspace";
@@ -7,7 +8,18 @@ import { assertEmployeePortalMarketingPageAccess } from "@/lib/employee-portal/p
 export const dynamic = "force-dynamic";
 
 export default async function EmployeePortalMarketingControlPage() {
-  await assertEmployeePortalMarketingPageAccess("control");
+  try {
+    await assertEmployeePortalMarketingPageAccess("control");
+  } catch (error) {
+    if (typeof (error as { digest?: string }).digest === "string") throw error;
+    console.error("[employee-portal] marketing-control access check failed:", error);
+    return (
+      <EmployeePortalEmptyState
+        message="Unable to verify your access. Please try again or contact your administrator."
+        title="Access Check Failed"
+      />
+    );
+  }
 
   return (
     <EmployeePortalPageShell

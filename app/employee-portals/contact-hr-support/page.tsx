@@ -21,7 +21,8 @@ export default async function EmployeePortalContactHRSupportPage() {
   let data = null;
   try {
     data = await getEmployeePortalShellData(access);
-  } catch {
+  } catch (error) {
+    console.error("[employee-portal] contact-hr-support shell load failed:", error);
     data = null;
   }
 

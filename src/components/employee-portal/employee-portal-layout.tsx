@@ -408,6 +408,8 @@ export function EmployeePortalTopNav({
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
+    } catch (error) {
+      console.error("[employee-portal] logout API call failed:", error);
     } finally {
       window.location.href = "/login";
     }
@@ -674,6 +676,8 @@ export function EmployeePortalSidebar({
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
+    } catch (error) {
+      console.error("[employee-portal] logout API call failed:", error);
     } finally {
       window.location.href = "/login";
     }

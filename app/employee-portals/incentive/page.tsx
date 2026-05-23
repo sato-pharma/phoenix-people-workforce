@@ -25,7 +25,8 @@ export default async function EmployeePortalIncentivePageRoute() {
   let data = null;
   try {
     data = await getEmployeePortalIncentiveData(access);
-  } catch {
+  } catch (error) {
+    console.error("[employee-portal] incentive data load failed:", error);
     data = null;
   }
 

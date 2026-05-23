@@ -68,6 +68,13 @@ export async function resolve(specifier, context, nextResolve) {
     return nextResolve(`${specifier}.js`, context);
   }
 
+  if (specifier === "server-only") {
+    return {
+      shortCircuit: true,
+      url: "data:text/javascript,export%20%7B%7D%3B",
+    };
+  }
+
   const stubPath = emailStubs.get(specifier);
   if (stubPath) {
     return { shortCircuit: true, url: pathToFileURL(path.resolve(projectRoot, stubPath)).href };

@@ -229,7 +229,7 @@ function normalizeCityName(value: string) {
 
   const lowered = base.toLowerCase().replace(/\s+/g, " ").trim();
   if (Object.prototype.hasOwnProperty.call(canonicalMap, lowered)) return canonicalMap[lowered];
-  if (/[\\u0600-\\u06FF]/.test(base)) return base;
+  if (/[؀-ۿ]/.test(base)) return base;
 
   return base
     .toLowerCase()
