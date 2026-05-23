@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { ReceiptText } from "lucide-react";
 
-import { NsmTeamExpensesDashboard } from "@/components/employee-portal/nsm-team-expenses-dashboard";
+import { DynamicNsmTeamExpensesDashboard as NsmTeamExpensesDashboard } from "@/components/charts/dynamic-charts";
 import { TeamExpensesFilters } from "@/components/employee-portal/team-expenses-filters";
 import {
   EmployeePortalActionBar,

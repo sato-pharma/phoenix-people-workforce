@@ -7,10 +7,10 @@ import {
   AdminPageHero,
 } from "@/components/admin/admin-design-system";
 import {
-  CoachingAnalyticsDashboard,
   type CoachingAnalyticsFilterOptions,
   type CoachingAnalyticsPayload,
 } from "@/components/coaching/coaching-analytics-dashboard";
+import { DynamicCoachingAnalyticsDashboard as CoachingAnalyticsDashboard } from "@/components/charts/dynamic-charts";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import {
   canAccess,

@@ -1,4 +1,4 @@
-import { SalesPerformancePage } from "@/components/sales/sales-performance-page";
+import { DynamicSalesPerformancePage as SalesPerformancePage } from "@/components/charts/dynamic-charts";
 import { redirect } from "next/navigation";
 import {
   EmployeePortalActionLink,

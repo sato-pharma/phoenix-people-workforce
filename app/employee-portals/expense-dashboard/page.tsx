@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { PersonalExpenseWorkloadDashboard } from "@/components/employee-portal/personal-expense-workload-dashboard";
+import { DynamicPersonalExpenseWorkloadDashboard as PersonalExpenseWorkloadDashboard } from "@/components/charts/dynamic-charts";
 import {
   assertPermission,
   resolveNavigationMode,
