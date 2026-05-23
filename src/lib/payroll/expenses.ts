@@ -9,6 +9,7 @@ import {
   type PayrollExpenseTrendPoint,
 } from "@/lib/payroll/expense-metrics";
 import { PayrollConflictError } from "@/lib/payroll/errors";
+import { writePayrollLineage } from "@/lib/payroll/lineage";
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
@@ -670,8 +671,37 @@ export async function savePayrollExpenseApprovals(input: {
     reportId = String(report.id);
   }
 
+  // P1-05: resolve batch_id for each distinct (payout_month, payout_year) so
+  // the upsert can use the composite conflict key (batch_id, trip_id) instead
+  // of the bare trip_id — allowing the same trip_id to exist in different periods.
+  const periodKeys = new Set(
+    input.records.map((r) => {
+      const p = nextPayrollPeriod(r.date);
+      return `${p.month}-${p.year}`;
+    }),
+  );
+  const periods = [...periodKeys].map((k) => {
+    const [m, y] = k.split("-");
+    return { month: Number(m), year: Number(y) };
+  });
+
+  const batchIdByPeriod = new Map<string, string>();
+  if (periods.length > 0) {
+    const months = [...new Set(periods.map((p) => p.month))];
+    const years  = [...new Set(periods.map((p) => p.year))];
+    const { data: periodBatches } = await supabase
+      .from("salary_batches")
+      .select("id, month, year")
+      .in("month", months)
+      .in("year", years);
+    for (const row of (periodBatches ?? []) as Array<{ id: string; month: number; year: number }>) {
+      batchIdByPeriod.set(`${row.month}-${row.year}`, row.id);
+    }
+  }
+
   const payload = input.records.map((record) => {
     const period = nextPayrollPeriod(record.date);
+    const batchId = batchIdByPeriod.get(`${period.month}-${period.year}`) ?? null;
     const hrId =
       record.hrId?.trim() ||
       employeeNameKeys(record.specialist)
@@ -685,6 +715,7 @@ export async function savePayrollExpenseApprovals(input: {
       am_workload: record.amWorkload,
       approved_at: approved ? now : null,
       approved_by: approved ? approvedBy : null,
+      batch_id: batchId,
       description: record.description,
       hr_id: hrId,
       expense_date: record.date || null,
@@ -719,12 +750,28 @@ export async function savePayrollExpenseApprovals(input: {
 
   const { data, error } = await supabase
     .from("payroll_expenses")
-    .upsert(payload, { onConflict: "trip_id" })
+    .upsert(payload, { onConflict: "batch_id,trip_id" })
     .select("*");
 
   if (error) throw error;
 
-  return (data ?? []).map((row) => mapExpense(row as Record<string, unknown>));
+  const saved = (data ?? []).map((row) => mapExpense(row as Record<string, unknown>));
+
+  // P1-06: lineage row — one per write-batch call
+  const firstBatchId = batchIdByPeriod.size > 0 ? [...batchIdByPeriod.values()][0] : null;
+  const tripIds = input.records.map((r) => r.tripId).filter(Boolean);
+  void writePayrollLineage({
+    batchId:         firstBatchId,
+    actorId:         approvedBy,
+    sourceFileName:  input.fileName,
+    operation:       "save_expenses",
+    entityType:      "payroll_expense",
+    entityId:        reportId ?? null,
+    payloadIdentity: tripIds,
+    meta:            { rowCount: saved.length, fileName: input.fileName },
+  });
+
+  return saved;
 }
 
 export async function setPayrollExpenseApproval(
@@ -780,7 +827,20 @@ export async function setPayrollExpenseApproval(
     await recomputePayrollExpenseReportTotals(reportId, supabase);
   }
 
-  return mapExpense(updatedData as Record<string, unknown>);
+  const updatedExpense = mapExpense(updatedData as Record<string, unknown>);
+
+  // P1-06: lineage
+  void writePayrollLineage({
+    batchId:         String((existingData as Record<string, unknown>).batch_id ?? "") || null,
+    actorId:         approvedBy,
+    operation:       "set_approval",
+    entityType:      "payroll_expense",
+    entityId:        cleanTripId,
+    payloadIdentity: { tripId: cleanTripId, hrApproved: approved },
+    meta:            { hrApproved: approved, tripId: cleanTripId },
+  });
+
+  return updatedExpense;
 }
 
 export async function decidePayrollExpenseApproval(
@@ -839,9 +899,22 @@ export async function decidePayrollExpenseApproval(
     await recomputePayrollExpenseReportTotals(reportId, supabase);
   }
 
+  const updatedExpense = mapExpense(updatedData as Record<string, unknown>);
+
+  // P1-06: lineage
+  void writePayrollLineage({
+    batchId:         String((existingData as Record<string, unknown>).batch_id ?? "") || null,
+    actorId:         approvedBy,
+    operation:       "decide_approval",
+    entityType:      "payroll_expense",
+    entityId:        cleanTripId,
+    payloadIdentity: { tripId: cleanTripId, decision: input.decision },
+    meta:            { decision: input.decision, tripId: cleanTripId },
+  });
+
   return {
     previous: existing,
-    updated: mapExpense(updatedData as Record<string, unknown>),
+    updated: updatedExpense,
   };
 }
 
@@ -991,6 +1064,28 @@ export async function importApprovedExpensesToPayroll(input: {
     `total ${result.imported_total ?? 0}`,
   );
 
+  const targetBatchId = String(result.target_batch_id);
+
+  // P1-06: lineage row (the import_jobs table also tracks this, but lineage
+  // gives a single unified view across all write paths)
+  void writePayrollLineage({
+    batchId:         targetBatchId,
+    importJobId,
+    actorId:         accessContext.loginId ?? "system",
+    sourceFileName:  input.fileName,
+    operation:       "import_expenses",
+    entityType:      "payroll_batch",
+    entityId:        targetBatchId,
+    payloadIdentity: { importJobId, batchId: targetBatchId },
+    meta: {
+      importedEmployees: Number(result.imported_employees ?? 0),
+      importedTotal:     Number(result.imported_total ?? 0),
+      idempotentReplay,
+      month:             input.month,
+      year:              input.year,
+    },
+  });
+
   return {
     importJobId,
     idempotentReplay,
@@ -999,7 +1094,7 @@ export async function importApprovedExpensesToPayroll(input: {
     matchedEmployees: Array.isArray(result.matched_employees) ? result.matched_employees.map(String) : [],
     saved: savedExpenses.length,
     targetBatch: {
-      id: String(result.target_batch_id),
+      id: targetBatchId,
       month: Number(result.target_batch_month),
       year: Number(result.target_batch_year),
     },

@@ -14,6 +14,7 @@ import {
 } from "@/lib/auth/permissions";
 import { calculatePayrollParts, normalizePayrollPaymentMode, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 import { PayrollConflictError } from "@/lib/payroll/errors";
+import { writePayrollLineage } from "@/lib/payroll/lineage";
 import { getPayrollWorkflowTransition } from "@/lib/payroll/workflow";
 import type { SalaryValidationIssue, SalaryValidationRow } from "@/lib/payroll/salary-import";
 import type {
@@ -1235,6 +1236,17 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
   const batch = mapBatch(batchData as Record<string, unknown>);
   await verifySalaryRecordPayloads(supabase, batch.id, recordPayloads);
 
+  void writePayrollLineage({
+    batchId:         batch.id,
+    actorId:         input.uploadedBy,
+    sourceFileName:  input.fileName,
+    operation:       "create_batch",
+    entityType:      "payroll_batch",
+    entityId:        batch.id,
+    payloadIdentity: { batchId: batch.id, recordCount: recordPayloads.length },
+    meta:            { month: input.month, year: input.year, recordCount: recordPayloads.length },
+  });
+
   return {
     batch,
     importedRecords: recordPayloads.length,
@@ -1330,6 +1342,17 @@ export async function replaceSalaryBatch(
   }
 
   await verifySalaryRecordPayloads(supabase, existing.id, recordPayloads);
+
+  void writePayrollLineage({
+    batchId:         existing.id,
+    actorId:         input.uploadedBy,
+    sourceFileName:  input.fileName,
+    operation:       "replace_batch",
+    entityType:      "payroll_batch",
+    entityId:        existing.id,
+    payloadIdentity: { batchId: existing.id, recordCount: recordPayloads.length },
+    meta:            { month: existing.month, year: existing.year, recordCount: recordPayloads.length },
+  });
 
   return {
     batch: mapBatch(updatedBatchData as Record<string, unknown>),
@@ -1427,6 +1450,16 @@ export async function runPayrollWorkflow(
     },
     oldValues: { status: currentStatus },
     summary: `Payroll workflow ${action}.`,
+  });
+
+  void writePayrollLineage({
+    batchId:         batchId,
+    actorId:         actorName,
+    operation:       "workflow_transition",
+    entityType:      "payroll_batch",
+    entityId:        batchId,
+    payloadIdentity: { batchId, action, from: currentStatus, to: transition.nextStatus },
+    meta:            { action, fromStatus: currentStatus, toStatus: transition.nextStatus },
   });
 
   return updatedBatch;
