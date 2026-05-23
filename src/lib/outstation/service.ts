@@ -1339,6 +1339,36 @@ export async function syncOfflineOutstationRequest(
   access: AccessContext,
   input: OutstationCalculationInput,
 ) {
+  // Deduplication guard: prevent offline-sync retries from inserting the same
+  // trip twice. Match on employee + trip dates + offline flag before inserting.
+  const identity = await getEmployeeIdentity(access);
+  const tripStart = isoString(input.tripStartDate);
+  const tripEnd = isoString(input.tripEndDate);
+
+  if (tripStart && tripEnd) {
+    const { data: dupeRows } = await getSupabaseAdmin()
+      .from("outstation_expense_requests")
+      .select("id")
+      .eq("employee_hr_id", identity.employeeHrId)
+      .eq("trip_start_date", tripStart)
+      .eq("trip_end_date", tripEnd)
+      .eq("offline_captured", true)
+      .limit(1);
+
+    if (dupeRows && dupeRows.length > 0) {
+      const dupeId = (dupeRows[0] as Record<string, unknown>).id;
+      console.warn(
+        `[outstation] offline sync replay blocked — request ${String(dupeId)} already exists for employee ${identity.employeeHrId} trip ${tripStart}–${tripEnd}`,
+      );
+      const { data: fullRow } = await getSupabaseAdmin()
+        .from("outstation_expense_requests")
+        .select("*")
+        .eq("id", dupeId)
+        .single();
+      if (fullRow) return mapOutstationRequestRow(fullRow as Record<string, unknown>);
+    }
+  }
+
   return submitOutstationRequest(access, {
     ...input,
     offlineCaptured: true,
@@ -1713,6 +1743,9 @@ export async function approveOutstationRequestForPayroll(
   if (existing.status === "rejected") {
     throw new Error("Rejected outstation requests cannot be approved for payroll.");
   }
+  if (existing.status === "approved") {
+    throw new Error("This outstation request is already approved for payroll. Refresh and check the payroll report.");
+  }
   if (existing.eligibilityStatus === "not_eligible") {
     throw new Error("Not eligible outstation requests cannot be approved for payroll.");
   }
@@ -1728,7 +1761,7 @@ export async function approveOutstationRequestForPayroll(
       updated_at: now,
     })
     .eq("id", requestId)
-    .in("status", ["submitted", "approved"])
+    .eq("status", "submitted")
     .select("*")
     .maybeSingle();
 
@@ -1949,13 +1982,18 @@ export async function deleteOutstationRequestAsAdmin(
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
 
-  const linkedPayroll = await deleteLinkedOutstationPayrollExpense(existing.id);
+  // Delete the request row first so no concurrent approval can sneak in between
+  // the payroll-expense cleanup and the request delete. Orphaned payroll rows
+  // (if the cleanup below fails) are visible and fixable; a re-approved deleted
+  // request is not.
   const { error } = await getSupabaseAdmin()
     .from("outstation_expense_requests")
     .delete()
     .eq("id", existing.id);
 
   if (error) throw new Error(error.message);
+
+  const linkedPayroll = await deleteLinkedOutstationPayrollExpense(existing.id);
 
   await Promise.all([
     deleteOutstationCarEvidenceImage(existing.carEvidenceImagePath),
