@@ -263,6 +263,8 @@ export function AdminManagerExpenseModal({
   async function calculateDistance(dest: ManagerExpenseDestination, hrId: string) {
     const requestId = calculationRequestRef.current + 1;
     calculationRequestRef.current = requestId;
+    await Promise.resolve();
+    if (calculationRequestRef.current !== requestId) return;
     setCalculatingDistance(true);
     setDistanceError(null);
     setDistanceResult(null);
