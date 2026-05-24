@@ -9,15 +9,35 @@
 --   • The application upsert changes onConflict from "trip_id" to
 --     "batch_id,trip_id" which resolves against this constraint.
 
-alter table public.payroll_expenses
-  add column if not exists batch_id uuid
-    references public.salary_batches(id) on delete set null;
+do $$
+begin
+  if exists (
+    select 1
+    from pg_tables
+    where schemaname = 'public'
+      and tablename = 'payroll_expenses'
+  ) then
+    execute $sql$
+      alter table public.payroll_expenses
+        add column if not exists batch_id uuid
+          references public.salary_batches(id) on delete set null
+    $sql$;
 
--- NULLS NOT DISTINCT: two (null, "T001") rows still conflict, matching the
--- old trip_id unique behaviour for legacy rows that have no batch_id.
-alter table public.payroll_expenses
-  add constraint payroll_expenses_batch_trip_unique
-  unique nulls not distinct (batch_id, trip_id);
+    -- NULLS NOT DISTINCT: two (null, "T001") rows still conflict, matching the
+    -- old trip_id unique behaviour for legacy rows that have no batch_id.
+    if not exists (
+      select 1
+      from pg_constraint
+      where conname = 'payroll_expenses_batch_trip_unique'
+        and conrelid = 'public.payroll_expenses'::regclass
+    ) then
+      execute $sql$
+        alter table public.payroll_expenses
+          add constraint payroll_expenses_batch_trip_unique
+          unique nulls not distinct (batch_id, trip_id)
+      $sql$;
+    end if;
 
-create index if not exists payroll_expenses_batch_id_idx
-  on public.payroll_expenses (batch_id);
+    execute 'create index if not exists payroll_expenses_batch_id_idx on public.payroll_expenses (batch_id)';
+  end if;
+end $$;

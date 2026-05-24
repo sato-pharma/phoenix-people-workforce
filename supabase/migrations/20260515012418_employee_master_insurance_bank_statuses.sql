@@ -48,25 +48,124 @@ begin
   end if;
 end $$;
 
-update public.employees
-set has_bank_account = case
-    when nullif(trim(bank_account), '') is not null then 'yes'
-    else 'no'
-  end
-where has_bank_account is null;
+do $$
+declare
+  has_bank_account_column boolean;
+  has_medical_insurance_number_column boolean;
+  has_medical_insurance_column boolean;
+  has_social_insurance_number_column boolean;
+  has_social_insurance_column boolean;
+begin
+  select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'employees'
+      and column_name = 'bank_account'
+  ) into has_bank_account_column;
 
-update public.employees
-set medical_insurance_status = 'yes'
-where medical_insurance_status is null
-  and (
-    nullif(trim(medical_insurance_number), '') is not null
-    or medical_insurance is not null
-  );
+  select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'employees'
+      and column_name = 'medical_insurance_number'
+  ) into has_medical_insurance_number_column;
 
-update public.employees
-set social_insurance_status = 'yes'
-where social_insurance_status is null
-  and (
-    nullif(trim(social_insurance_number), '') is not null
-    or social_insurance is not null
-  );
+  select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'employees'
+      and column_name = 'medical_insurance'
+  ) into has_medical_insurance_column;
+
+  select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'employees'
+      and column_name = 'social_insurance_number'
+  ) into has_social_insurance_number_column;
+
+  select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'employees'
+      and column_name = 'social_insurance'
+  ) into has_social_insurance_column;
+
+  if has_bank_account_column then
+    execute $sql$
+      update public.employees
+      set has_bank_account = case
+          when nullif(trim(bank_account), '') is not null then 'yes'
+          else 'no'
+        end
+      where has_bank_account is null
+    $sql$;
+  else
+    update public.employees
+    set has_bank_account = 'no'
+    where has_bank_account is null;
+  end if;
+
+  if has_medical_insurance_number_column or has_medical_insurance_column then
+    execute format(
+      $sql$
+        update public.employees
+        set medical_insurance_status = 'yes'
+        where medical_insurance_status is null
+          and (%s)
+      $sql$,
+      array_to_string(
+        array_remove(
+          array[
+            case
+              when has_medical_insurance_number_column
+                then 'nullif(trim(medical_insurance_number), '''') is not null'
+              else null
+            end,
+            case
+              when has_medical_insurance_column
+                then 'medical_insurance is not null'
+              else null
+            end
+          ],
+          null
+        ),
+        ' or '
+      )
+    );
+  end if;
+
+  if has_social_insurance_number_column or has_social_insurance_column then
+    execute format(
+      $sql$
+        update public.employees
+        set social_insurance_status = 'yes'
+        where social_insurance_status is null
+          and (%s)
+      $sql$,
+      array_to_string(
+        array_remove(
+          array[
+            case
+              when has_social_insurance_number_column
+                then 'nullif(trim(social_insurance_number), '''') is not null'
+              else null
+            end,
+            case
+              when has_social_insurance_column
+                then 'social_insurance is not null'
+              else null
+            end
+          ],
+          null
+        ),
+        ' or '
+      )
+    );
+  end if;
+end $$;

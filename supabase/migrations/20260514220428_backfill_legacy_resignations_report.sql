@@ -5,7 +5,15 @@
 alter table public.employee_resignations
   add column if not exists create_vacancy boolean not null default true,
   add column if not exists vacancy_id bigint references public.position_vacancies(id),
-  add column if not exists submitted_by_hr_id text references public.employees(hr_id);
+  add column if not exists submitted_by_hr_id text references public.employees(hr_id),
+  add column if not exists employee_name text,
+  add column if not exists job_title text,
+  add column if not exists line_name text,
+  add column if not exists submitted_date date,
+  add column if not exists effective_date date,
+  add column if not exists workflow_notes text,
+  add column if not exists status text,
+  add column if not exists created_by text;
 
 insert into public.employee_resignations (
   employee_hr_id,

@@ -18,6 +18,8 @@ where
   or exit_status is null
   or exit_status = '';
 
+drop function if exists public.phx_resign_employee_and_open_vacancy(text,date,date,text,text,text,text,text,text);
+
 create or replace function public.phx_resign_employee_and_open_vacancy(
   p_employee_hr_id text,
   p_submitted_date date,

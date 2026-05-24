@@ -12,7 +12,15 @@ declare
   orphaned_salary_records   int;
   orphaned_salary_flags     int;
   orphaned_payroll_expenses int;
+  has_payroll_expenses      boolean;
 begin
+  select exists (
+    select 1
+    from pg_tables
+    where schemaname = 'public'
+      and tablename = 'payroll_expenses'
+  ) into has_payroll_expenses;
+
   -- Salary records whose hr_id does not match any employee
   select count(*)
   into orphaned_salary_records
@@ -34,14 +42,18 @@ begin
     );
 
   -- Payroll expenses whose hr_id does not match any employee
-  select count(*)
-  into orphaned_payroll_expenses
-  from public.payroll_expenses pe
-  where pe.hr_id is not null
-    and not exists (
-      select 1 from public.employees e
-      where lower(e.hr_id) = lower(pe.hr_id)
-    );
+  if has_payroll_expenses then
+    select count(*)
+    into orphaned_payroll_expenses
+    from public.payroll_expenses pe
+    where pe.hr_id is not null
+      and not exists (
+        select 1 from public.employees e
+        where lower(e.hr_id) = lower(pe.hr_id)
+      );
+  else
+    orphaned_payroll_expenses := 0;
+  end if;
 
   if orphaned_salary_records > 0 then
     raise warning 'DATA INTEGRITY: % salary_records row(s) reference an hr_id not present in employees.',
@@ -67,22 +79,48 @@ end $$;
 
 -- Materialised orphan view for the data-health dashboard.
 -- Recreate idempotently so subsequent runs are safe.
-drop view if exists public.v_orphaned_payroll_hr_ids;
-create or replace view public.v_orphaned_payroll_hr_ids as
-  select 'salary_records'  as source_table, hr_id, null::text as batch_id
-  from public.salary_records
-  where hr_id is not null
-    and not exists (select 1 from public.employees e where lower(e.hr_id) = lower(salary_records.hr_id))
-  union all
-  select 'salary_flags', hr_id, null
-  from public.salary_flags
-  where hr_id is not null
-    and not exists (select 1 from public.employees e where lower(e.hr_id) = lower(salary_flags.hr_id))
-  union all
-  select 'payroll_expenses', hr_id, null
-  from public.payroll_expenses
-  where hr_id is not null
-    and not exists (select 1 from public.employees e where lower(e.hr_id) = lower(payroll_expenses.hr_id));
+do $$
+begin
+  drop view if exists public.v_orphaned_payroll_hr_ids;
+
+  if exists (
+    select 1
+    from pg_tables
+    where schemaname = 'public'
+      and tablename = 'payroll_expenses'
+  ) then
+    execute $view$
+      create or replace view public.v_orphaned_payroll_hr_ids as
+        select 'salary_records' as source_table, hr_id, null::text as batch_id
+        from public.salary_records
+        where hr_id is not null
+          and not exists (select 1 from public.employees e where lower(e.hr_id) = lower(salary_records.hr_id))
+        union all
+        select 'salary_flags', hr_id, null
+        from public.salary_flags
+        where hr_id is not null
+          and not exists (select 1 from public.employees e where lower(e.hr_id) = lower(salary_flags.hr_id))
+        union all
+        select 'payroll_expenses', hr_id, null
+        from public.payroll_expenses
+        where hr_id is not null
+          and not exists (select 1 from public.employees e where lower(e.hr_id) = lower(payroll_expenses.hr_id))
+    $view$;
+  else
+    execute $view$
+      create or replace view public.v_orphaned_payroll_hr_ids as
+        select 'salary_records' as source_table, hr_id, null::text as batch_id
+        from public.salary_records
+        where hr_id is not null
+          and not exists (select 1 from public.employees e where lower(e.hr_id) = lower(salary_records.hr_id))
+        union all
+        select 'salary_flags', hr_id, null
+        from public.salary_flags
+        where hr_id is not null
+          and not exists (select 1 from public.employees e where lower(e.hr_id) = lower(salary_flags.hr_id))
+    $view$;
+  end if;
+end $$;
 
 -- Grant read access to service_role only (used by the data-health API).
 revoke all on public.v_orphaned_payroll_hr_ids from anon, authenticated;

@@ -53,18 +53,47 @@ create trigger trg_employees_manager_history
 
 -- View: employees whose manager was recently nulled (last 90 days).
 -- Used by the data-health dashboard to surface orphaned hierarchy nodes.
-create or replace view public.v_recently_orphaned_managers as
-  select
-    h.employee_hr_id,
-    h.old_manager_hr_id,
-    h.changed_at,
-    e.full_name   as employee_name,
-    e.department_name
-  from public.employees_manager_history h
-  left join public.employees e on lower(e.hr_id) = lower(h.employee_hr_id)
-  where h.new_manager_hr_id is null
-    and h.changed_at >= now() - interval '90 days'
-  order by h.changed_at desc;
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'employees'
+      and column_name = 'department_name'
+  ) then
+    execute $view$
+      create or replace view public.v_recently_orphaned_managers as
+        select
+          h.employee_hr_id,
+          h.old_manager_hr_id,
+          h.changed_at,
+          e.full_name as employee_name,
+          e.department_name
+        from public.employees_manager_history h
+        left join public.employees e on lower(e.hr_id) = lower(h.employee_hr_id)
+        where h.new_manager_hr_id is null
+          and h.changed_at >= now() - interval '90 days'
+        order by h.changed_at desc
+    $view$;
+  else
+    execute $view$
+      create or replace view public.v_recently_orphaned_managers as
+        select
+          h.employee_hr_id,
+          h.old_manager_hr_id,
+          h.changed_at,
+          e.full_name as employee_name,
+          null::text as department_name
+        from public.employees_manager_history h
+        left join public.employees e on lower(e.hr_id) = lower(h.employee_hr_id)
+        where h.new_manager_hr_id is null
+          and h.changed_at >= now() - interval '90 days'
+        order by h.changed_at desc
+    $view$;
+  end if;
+end;
+$$;
 
 revoke all on public.v_recently_orphaned_managers from anon, authenticated;
 grant select on public.v_recently_orphaned_managers to service_role;

@@ -271,6 +271,82 @@ set name = excluded.name,
     year = excluded.year,
     is_active = true;
 
+create or replace function private.phx_current_hr_id()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(public.current_access_hr_id(), null);
+$$;
+
+create or replace function private.phx_current_role()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case coalesce(public.current_access_role(), '')
+    when 'admin' then 'Super Admin'
+    when 'hr' then 'HR Specialist'
+    when 'finance' then 'Finance Manager'
+    when 'manager' then 'Manager'
+    else 'Employee'
+  end;
+$$;
+
+create or replace function private.phx_current_scope()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case coalesce(public.current_access_role(), '')
+    when 'admin' then 'SUPER_ADMIN'
+    when 'hr' then 'HR'
+    when 'finance' then 'FINANCE'
+    when 'manager' then 'TEAM'
+    else 'SELF'
+  end;
+$$;
+
+create or replace function private.phx_has_company_access()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(private.phx_current_scope(), 'SELF') in ('SUPER_ADMIN', 'HR');
+$$;
+
+create or replace function private.phx_can_access_employee(target_hr_id text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    private.phx_has_company_access()
+    or lower(coalesce(target_hr_id, '')) = lower(coalesce(private.phx_current_hr_id(), ''))
+    or exists (
+      select 1
+      from public.employees e
+      where lower(coalesce(e.hr_id, '')) = lower(coalesce(target_hr_id, ''))
+        and public.current_access_can_see_employee(e.hr_id, e.manager_hr_id)
+    );
+$$;
+
+grant execute on function private.phx_current_hr_id() to authenticated, service_role;
+grant execute on function private.phx_current_role() to authenticated, service_role;
+grant execute on function private.phx_current_scope() to authenticated, service_role;
+grant execute on function private.phx_has_company_access() to authenticated, service_role;
+grant execute on function private.phx_can_access_employee(text) to authenticated, service_role;
+
 create or replace function private.phx_can_manage_leave()
 returns boolean
 language sql

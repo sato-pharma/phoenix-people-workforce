@@ -12,92 +12,66 @@ set check_function_bodies = off;
 -- Missing foreign-key indexes observed in the live project
 -- ---------------------------------------------------------------------------
 
-create index if not exists employee_documents_employee_hr_id_idx
-on public.employee_documents (employee_hr_id);
+do $$ begin
+  if exists (select 1 from pg_tables where schemaname = 'public' and tablename = 'employee_documents') then
+    execute 'create index if not exists employee_documents_employee_hr_id_idx on public.employee_documents (employee_hr_id)';
+    execute 'create index if not exists employee_documents_uploaded_by_user_id_idx on public.employee_documents (uploaded_by_user_id)';
+  end if;
+end $$;
 
-create index if not exists employee_documents_uploaded_by_user_id_idx
-on public.employee_documents (uploaded_by_user_id);
-
-create index if not exists employee_history_area_id_idx
-on public.employee_history (area_id);
-
-create index if not exists employee_history_changed_by_user_id_idx
-on public.employee_history (changed_by_user_id);
-
-create index if not exists employee_history_department_id_idx
-on public.employee_history (department_id);
-
-create index if not exists employee_history_line_id_idx
-on public.employee_history (line_id);
-
-create index if not exists employee_history_position_id_idx
-on public.employee_history (position_id);
-
-create index if not exists employee_history_team_id_idx
-on public.employee_history (team_id);
-
-create index if not exists employee_resignations_submitted_by_hr_id_idx
-on public.employee_resignations (submitted_by_hr_id);
-
-create index if not exists employee_resignations_vacancy_id_idx
-on public.employee_resignations (vacancy_id);
-
-create index if not exists employees_position_id_idx
-on public.employees (position_id);
-
-create index if not exists employees_team_id_idx
-on public.employees (team_id);
-
-create index if not exists job_offers_area_id_idx
-on public.job_offers (area_id);
-
-create index if not exists job_offers_created_by_hr_id_idx
-on public.job_offers (created_by_hr_id);
-
-create index if not exists job_offers_department_id_idx
-on public.job_offers (department_id);
-
-create index if not exists job_offers_employee_hr_id_idx
-on public.job_offers (employee_hr_id);
-
-create index if not exists job_offers_line_id_idx
-on public.job_offers (line_id);
-
-create index if not exists job_offers_manager_hr_id_idx
-on public.job_offers (manager_hr_id);
-
-create index if not exists job_offers_position_id_idx
-on public.job_offers (position_id);
-
-create index if not exists messages_sender_id_idx
-on public.messages (sender_id);
-
-create index if not exists platform_settings_updated_by_user_id_idx
-on public.platform_settings (updated_by_user_id);
-
-create index if not exists position_vacancies_area_id_idx
-on public.position_vacancies (area_id);
-
-create index if not exists position_vacancies_position_id_idx
-on public.position_vacancies (position_id);
-
-create index if not exists position_vacancies_team_id_idx
-on public.position_vacancies (team_id);
-
-create index if not exists positions_team_id_idx
-on public.positions (team_id);
-
-create index if not exists system_audit_logs_actor_user_id_idx
-on public.system_audit_logs (actor_user_id);
-
-create index if not exists teams_area_id_idx
-on public.teams (area_id);
-
-create index if not exists user_roles_assigned_by_user_id_idx
-on public.user_roles (assigned_by_user_id);
-
-create index if not exists users_employee_hr_id_idx
-on public.users (employee_hr_id);
+do $$
+declare
+  idx record;
+begin
+  for idx in
+    select *
+    from (
+      values
+        ('employee_history', 'area_id', 'employee_history_area_id_idx'),
+        ('employee_history', 'changed_by_user_id', 'employee_history_changed_by_user_id_idx'),
+        ('employee_history', 'department_id', 'employee_history_department_id_idx'),
+        ('employee_history', 'line_id', 'employee_history_line_id_idx'),
+        ('employee_history', 'position_id', 'employee_history_position_id_idx'),
+        ('employee_history', 'team_id', 'employee_history_team_id_idx'),
+        ('employee_resignations', 'submitted_by_hr_id', 'employee_resignations_submitted_by_hr_id_idx'),
+        ('employee_resignations', 'vacancy_id', 'employee_resignations_vacancy_id_idx'),
+        ('employees', 'position_id', 'employees_position_id_idx'),
+        ('employees', 'team_id', 'employees_team_id_idx'),
+        ('job_offers', 'area_id', 'job_offers_area_id_idx'),
+        ('job_offers', 'created_by_hr_id', 'job_offers_created_by_hr_id_idx'),
+        ('job_offers', 'department_id', 'job_offers_department_id_idx'),
+        ('job_offers', 'employee_hr_id', 'job_offers_employee_hr_id_idx'),
+        ('job_offers', 'line_id', 'job_offers_line_id_idx'),
+        ('job_offers', 'manager_hr_id', 'job_offers_manager_hr_id_idx'),
+        ('job_offers', 'position_id', 'job_offers_position_id_idx'),
+        ('messages', 'sender_id', 'messages_sender_id_idx'),
+        ('platform_settings', 'updated_by_user_id', 'platform_settings_updated_by_user_id_idx'),
+        ('position_vacancies', 'area_id', 'position_vacancies_area_id_idx'),
+        ('position_vacancies', 'position_id', 'position_vacancies_position_id_idx'),
+        ('position_vacancies', 'team_id', 'position_vacancies_team_id_idx'),
+        ('positions', 'team_id', 'positions_team_id_idx'),
+        ('system_audit_logs', 'actor_user_id', 'system_audit_logs_actor_user_id_idx'),
+        ('teams', 'area_id', 'teams_area_id_idx'),
+        ('user_roles', 'assigned_by_user_id', 'user_roles_assigned_by_user_id_idx'),
+        ('users', 'employee_hr_id', 'users_employee_hr_id_idx')
+    ) as t(table_name, column_name, index_name)
+  loop
+    if exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = idx.table_name
+        and column_name = idx.column_name
+    ) then
+      execute format(
+        'create index if not exists %I on public.%I (%I)',
+        idx.index_name,
+        idx.table_name,
+        idx.column_name
+      );
+    end if;
+  end loop;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Consolidate overlapping permissive RLS policies
@@ -184,49 +158,71 @@ using (
   )
 );
 
-drop policy if exists payroll_expense_reports_hr_admin_write
-on public.payroll_expense_reports;
+do $$ begin
+  if exists (
+    select 1
+    from pg_tables
+    where schemaname = 'public'
+      and tablename = 'payroll_expense_reports'
+  ) then
+    execute 'drop policy if exists payroll_expense_reports_hr_admin_write on public.payroll_expense_reports';
+    execute $policy$
+      create policy payroll_expense_reports_hr_admin_insert
+      on public.payroll_expense_reports
+      for insert
+      to authenticated
+      with check (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]))
+    $policy$;
+    execute $policy$
+      create policy payroll_expense_reports_hr_admin_update
+      on public.payroll_expense_reports
+      for update
+      to authenticated
+      using (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]))
+      with check (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]))
+    $policy$;
+    execute $policy$
+      create policy payroll_expense_reports_hr_admin_delete
+      on public.payroll_expense_reports
+      for delete
+      to authenticated
+      using (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]))
+    $policy$;
+  end if;
+end $$;
 
-create policy payroll_expense_reports_hr_admin_insert
-on public.payroll_expense_reports
-for insert
-to authenticated
-with check (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]));
-
-create policy payroll_expense_reports_hr_admin_update
-on public.payroll_expense_reports
-for update
-to authenticated
-using (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]))
-with check (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]));
-
-create policy payroll_expense_reports_hr_admin_delete
-on public.payroll_expense_reports
-for delete
-to authenticated
-using (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]));
-
-drop policy if exists payroll_expenses_hr_admin_write
-on public.payroll_expenses;
-
-create policy payroll_expenses_hr_admin_insert
-on public.payroll_expenses
-for insert
-to authenticated
-with check (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]));
-
-create policy payroll_expenses_hr_admin_update
-on public.payroll_expenses
-for update
-to authenticated
-using (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]))
-with check (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]));
-
-create policy payroll_expenses_hr_admin_delete
-on public.payroll_expenses
-for delete
-to authenticated
-using (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]));
+do $$ begin
+  if exists (
+    select 1
+    from pg_tables
+    where schemaname = 'public'
+      and tablename = 'payroll_expenses'
+  ) then
+    execute 'drop policy if exists payroll_expenses_hr_admin_write on public.payroll_expenses';
+    execute $policy$
+      create policy payroll_expenses_hr_admin_insert
+      on public.payroll_expenses
+      for insert
+      to authenticated
+      with check (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]))
+    $policy$;
+    execute $policy$
+      create policy payroll_expenses_hr_admin_update
+      on public.payroll_expenses
+      for update
+      to authenticated
+      using (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]))
+      with check (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]))
+    $policy$;
+    execute $policy$
+      create policy payroll_expenses_hr_admin_delete
+      on public.payroll_expenses
+      for delete
+      to authenticated
+      using (current_access_role() = any (array['admin'::text, 'hr'::text, 'manager'::text]))
+    $policy$;
+  end if;
+end $$;
 
 drop policy if exists salary_batches_hr_admin_write
 on public.salary_batches;
@@ -294,27 +290,38 @@ for delete
 to authenticated
 using (current_access_can_manage_employees());
 
-drop policy if exists sales_records_hr_admin_write
-on public.sales_records;
-
-create policy sales_records_hr_admin_insert
-on public.sales_records
-for insert
-to authenticated
-with check (current_access_role() = any (array['admin'::text, 'hr'::text]));
-
-create policy sales_records_hr_admin_update
-on public.sales_records
-for update
-to authenticated
-using (current_access_role() = any (array['admin'::text, 'hr'::text]))
-with check (current_access_role() = any (array['admin'::text, 'hr'::text]));
-
-create policy sales_records_hr_admin_delete
-on public.sales_records
-for delete
-to authenticated
-using (current_access_role() = any (array['admin'::text, 'hr'::text]));
+do $$ begin
+  if exists (
+    select 1
+    from pg_tables
+    where schemaname = 'public'
+      and tablename = 'sales_records'
+  ) then
+    execute 'drop policy if exists sales_records_hr_admin_write on public.sales_records';
+    execute $policy$
+      create policy sales_records_hr_admin_insert
+      on public.sales_records
+      for insert
+      to authenticated
+      with check (current_access_role() = any (array['admin'::text, 'hr'::text]))
+    $policy$;
+    execute $policy$
+      create policy sales_records_hr_admin_update
+      on public.sales_records
+      for update
+      to authenticated
+      using (current_access_role() = any (array['admin'::text, 'hr'::text]))
+      with check (current_access_role() = any (array['admin'::text, 'hr'::text]))
+    $policy$;
+    execute $policy$
+      create policy sales_records_hr_admin_delete
+      on public.sales_records
+      for delete
+      to authenticated
+      using (current_access_role() = any (array['admin'::text, 'hr'::text]))
+    $policy$;
+  end if;
+end $$;
 
 drop policy if exists user_access_profiles_admin_write
 on public.user_access_profiles;
