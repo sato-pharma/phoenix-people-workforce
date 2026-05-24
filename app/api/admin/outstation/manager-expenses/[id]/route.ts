@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertAdminManagerExpenseAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
-  deleteOutstationRequestAsAdmin,
+  deleteManagerExpenseAsAdmin,
   updateManagerExpenseAsAdmin,
 } from "@/lib/outstation/service";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
@@ -58,8 +58,36 @@ export async function PATCH(
 
     const updated = await updateManagerExpenseAsAdmin(id, access, body);
 
+    const destinationMetadata = {
+      area: updated.toArea,
+      city: updated.toCity,
+      country: updated.toCountry,
+      label: updated.toLabel,
+      latitude: updated.capturedLatitude,
+      longitude: updated.capturedLongitude,
+      placeId: updated.toPlaceId,
+    };
+
+    const sourceMetadata = {
+      area: updated.residenceArea,
+      city: updated.residenceCity,
+      country: null,
+      latitude: updated.residenceLatitude,
+      label: updated.residenceAddress,
+      longitude: updated.residenceLongitude,
+    };
+
     return NextResponse.json({
       message: "Manager expense updated successfully.",
+      distanceKm: updated.distanceFromResidenceKm,
+      routeDurationMinutes: updated.durationMinutes,
+      destinationMetadata,
+      sourceLocationMetadata: sourceMetadata,
+      audit: {
+        action: "update",
+        targetManagerHrId: updated.employeeHrId,
+        actorLoginId: access.loginId ?? access.hrId,
+      },
       request: updated,
       success: true,
     });
@@ -93,9 +121,15 @@ export async function DELETE(
       );
     }
 
-    const deleted = await deleteOutstationRequestAsAdmin(id, access);
+    const deleted = await deleteManagerExpenseAsAdmin(id, access);
 
     return NextResponse.json({
+      audit: {
+        action: "delete",
+        targetManagerHrId: deleted.request.employeeHrId,
+        actorLoginId: access.loginId ?? access.hrId,
+      },
+      requestId: deleted.request.id,
       linkedPayroll: deleted.linkedPayroll,
       message: "Manager expense deleted.",
       success: true,

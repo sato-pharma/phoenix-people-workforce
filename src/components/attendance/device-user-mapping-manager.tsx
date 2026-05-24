@@ -58,7 +58,21 @@ type AgentHealth = {
   };
 };
 
+const localAgentBaseUrl = "http://127.0.0.1:8787";
+
 async function fetchAgentHealth(): Promise<AgentHealth> {
+  try {
+    const response = await fetch(`${localAgentBaseUrl}/health`, { cache: "no-store" });
+    const payload = await response.json();
+    return {
+      ok: response.ok,
+      reachable: true,
+      payload,
+    };
+  } catch {
+    // Fall back to the server-side check for local Phoenix development.
+  }
+
   try {
     const response = await fetch("/api/attendance/agent/health", { cache: "no-store" });
     return await response.json();
@@ -254,9 +268,12 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
     setSyncResult(null);
 
     try {
-      const response = await fetch("/api/attendance/sync-now", {
+      const response = await fetch(`${localAgentBaseUrl}/sync-now`, {
         body: "{}",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Phoenix-Local-Agent": "1",
+        },
         method: "POST",
       });
       const payload = await response.json();
@@ -273,7 +290,12 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
       await load();
       await loadAgentHealth();
     } catch (syncError) {
-      setError(syncError instanceof Error ? syncError.message : "Attendance sync failed.");
+      const message = syncError instanceof Error ? syncError.message : "Attendance sync failed.";
+      setError(
+        message === "Failed to fetch"
+          ? `Browser could not reach the local attendance agent at ${localAgentBaseUrl}. Start local-attendance-agent\\start-agent.ps1 on this PC, close ZKTime, then try Sync Now again.`
+          : message,
+      );
     } finally {
       setSyncing(false);
     }
@@ -285,6 +307,19 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
     setNotice(null);
 
     try {
+      const host = window.location.hostname;
+      if (host !== "localhost" && host !== "127.0.0.1") {
+        const health = await fetchAgentHealth();
+        setAgentHealth(health);
+        if (health.reachable) {
+          setNotice("Local attendance agent is already running on this PC.");
+          return;
+        }
+        throw new Error(
+          "Hosted Phoenix cannot start a Windows program on this PC. Start local-attendance-agent\\start-agent.ps1 once, then click Sync Now.",
+        );
+      }
+
       const response = await fetch("/api/attendance/agent/start", {
         body: "{}",
         headers: { "Content-Type": "application/json" },

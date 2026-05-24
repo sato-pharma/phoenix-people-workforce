@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 const defaultAgentUrl = "http://127.0.0.1:8787";
-const defaultStartScript = "local-attendance-agent\\start-agent.ps1";
+const defaultStartScript = ".\\start-agent.ps1";
 
 export function attendanceAgentBaseUrl() {
   return process.env.ATTENDANCE_AGENT_LOCAL_URL?.trim() || defaultAgentUrl;

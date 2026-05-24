@@ -84,6 +84,24 @@ type ValidatedLocationBundle = {
   result: OutstationCaptureResult;
 };
 
+export type ManagerExpensePolicyPreview = {
+  allowanceAmount: number;
+  allowanceBreakdown: OutstationAllowanceBreakdown;
+  claimedTotalAmount: number;
+  eligibilityReason: string;
+  eligibilityStatus: OutstationEligibilityStatus;
+  expectedTotalAmount: number;
+  fuelAmount: number;
+  fuelRatePerKm: number;
+  minimumRequiredDistanceKm: number;
+  overnightDays: number;
+  policyRoleName: string;
+  sameDayTrip: boolean;
+  toleranceMinimumDistanceKm: number | null;
+  varianceAmount: number;
+  variancePercent: number;
+};
+
 function text(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
@@ -570,6 +588,69 @@ async function getActivePolicyForRole(roleName: string) {
   }
 
   return fallback;
+}
+
+export async function calculateManagerExpensePolicyPreview(input: {
+  claimedTotalAmount?: number | null;
+  distanceKm: number;
+  employeeHrId: string;
+  transportationType: OutstationTransportationType;
+  tripEndDate: string;
+  tripStartDate: string;
+}): Promise<ManagerExpensePolicyPreview> {
+  const directory = await getEmployeeDirectory();
+  const employee = directory.employees.find(
+    (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(input.employeeHrId),
+  );
+  if (!employee?.hrId) {
+    throw new Error(`Employee ${input.employeeHrId} was not found in the employee directory.`);
+  }
+
+  const policy = await getActivePolicyForRole(normalizeRole(employee.jobTitle ?? ""));
+  const allowance = calculateAllowanceBreakdown(input.tripStartDate, input.tripEndDate, policy);
+  const fuelAmount =
+    input.transportationType === "car"
+      ? roundMoney(input.distanceKm * 2 * policy.fuelRatePerKm)
+      : 0;
+  const distanceEligibility = classifyOutstationExpenseEligibility({
+    actualDistanceKm: input.distanceKm,
+    policy: {
+      officialMinimumDistanceKm: policy.minimumDistanceKm,
+      toleranceMinimumDistanceKm: policy.toleranceMinimumDistanceKm,
+    },
+  });
+  const eligibilityStatus: OutstationEligibilityStatus =
+    distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
+  const expectedTotalAmount =
+    eligibilityStatus === "not_eligible"
+      ? 0
+      : roundMoney(fuelAmount + allowance.allowanceAmount);
+  const inputClaimedTotalAmount = numberValue(input.claimedTotalAmount);
+  const claimedTotalAmount =
+    inputClaimedTotalAmount > 0 ? inputClaimedTotalAmount : expectedTotalAmount;
+  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
+  const variancePercent =
+    expectedTotalAmount > 0
+      ? roundMoney((varianceAmount / expectedTotalAmount) * 100)
+      : 0;
+
+  return {
+    allowanceAmount: allowance.allowanceAmount,
+    allowanceBreakdown: allowance.breakdown,
+    claimedTotalAmount,
+    eligibilityReason: `Admin-created manager expense. ${distanceEligibility.reason}`,
+    eligibilityStatus,
+    expectedTotalAmount,
+    fuelAmount,
+    fuelRatePerKm: policy.fuelRatePerKm,
+    minimumRequiredDistanceKm: policy.minimumDistanceKm,
+    overnightDays: allowance.overnightDays,
+    policyRoleName: policy.roleName,
+    sameDayTrip: allowance.sameDayTrip,
+    toleranceMinimumDistanceKm: policy.toleranceMinimumDistanceKm ?? null,
+    varianceAmount,
+    variancePercent,
+  };
 }
 
 async function getLatestValidationSignal(employeeHrId: string): Promise<ValidationSignal | null> {
@@ -2034,6 +2115,81 @@ export async function deleteOutstationRequestAsAdmin(
   };
 }
 
+function isAdminManagerExpenseSource(
+  source: OutstationExpenseRequest["capturedLocationSource"],
+) {
+  return source === "admin_manager_expense" || source === "admin_manager_expense_edit";
+}
+
+function assertAdminManagerExpenseRecord(record: OutstationExpenseRequest) {
+  if (!isAdminManagerExpenseSource(record.capturedLocationSource)) {
+    throw new Error("The selected request is not an admin-created manager expense.");
+  }
+}
+
+export async function deleteManagerExpenseAsAdmin(
+  requestId: number,
+  access: AccessContext,
+) {
+  await assertAdminManagerExpenseAccess(access);
+
+  if (!Number.isFinite(requestId)) {
+    throw new Error("Manager expense request ID is invalid.");
+  }
+
+  const existing = await getOutstationRequestById(requestId);
+  if (!existing) {
+    throw new Error("Manager expense was not found.");
+  }
+  assertAdminManagerExpenseRecord(existing);
+
+  const { error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .delete()
+    .eq("id", existing.id);
+
+  if (error) throw new Error(error.message);
+
+  const linkedPayroll = await deleteLinkedOutstationPayrollExpense(existing.id);
+
+  await Promise.all([
+    deleteOutstationCarEvidenceImage(existing.carEvidenceImagePath),
+    deleteOutstationTicketAttachments(existing.ticketAttachmentPaths),
+  ]).catch(() => undefined);
+
+  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? actor,
+    entityId: String(existing.id),
+    entityType: "outstation_request",
+    newValues: {
+      action: "delete",
+      linkedPayroll,
+      payloadDiff: {
+        targetManagerHrId: existing.employeeHrId,
+        toLocation: {
+          area: existing.toArea,
+          city: existing.toCity,
+          country: existing.toCountry,
+          label: existing.toLabel,
+          placeId: existing.toPlaceId,
+        },
+      },
+      targetManagerHrId: existing.employeeHrId,
+      timestamp: new Date().toISOString(),
+    },
+    oldValues: {
+      request: existing,
+    },
+    summary: `Admin deleted manager expense ${existing.id} for ${existing.employeeHrId}.`,
+  });
+
+  return {
+    linkedPayroll,
+    request: existing,
+  };
+}
+
 function uniqueValues(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((value) => text(value)).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b),
@@ -2152,6 +2308,17 @@ export async function createManagerExpenseAsAdmin(
     throw new Error(`Employee ${input.employeeHrId} was not found in the employee directory.`);
   }
 
+  const residence = await getResidenceLocationForEmployee(employee.hrId);
+  if (
+    !residence ||
+    residence.residenceLatitude == null ||
+    residence.residenceLongitude == null
+  ) {
+    throw new Error(
+      `Manager ${employee.hrId} does not have a valid registered residence location. Please update their address before creating a manager expense.`,
+    );
+  }
+
   if (
     !input.destination.placeId ||
     !input.destination.label ||
@@ -2165,7 +2332,6 @@ export async function createManagerExpenseAsAdmin(
     throw new Error("Distance must be greater than zero.");
   }
 
-  const residence = await getResidenceLocationForEmployee(employee.hrId);
   const policy = await getActivePolicyForRole(normalizeRole(employee.jobTitle ?? ""));
   const allowance = calculateAllowanceBreakdown(input.tripStartDate, input.tripEndDate, policy);
 
@@ -2328,6 +2494,7 @@ export async function updateManagerExpenseAsAdmin(
 
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
+  assertAdminManagerExpenseRecord(existing);
 
   const now = new Date().toISOString();
   const actor = access.loginId ?? resolveEmployeeIdentityId(access) ?? "system";
@@ -2348,6 +2515,29 @@ export async function updateManagerExpenseAsAdmin(
   const notes = "notes" in input ? (input.notes ?? null) : existing.notes;
 
   const destination = input.destination;
+  if (destination) {
+    if (
+      !destination.placeId ||
+      !destination.label ||
+      !Number.isFinite(destination.latitude) ||
+      !Number.isFinite(destination.longitude)
+    ) {
+      throw new Error("A valid Google Places destination with coordinates is required.");
+    }
+  }
+
+  if (destination === undefined && input.distanceKm === undefined && existing.distanceFromResidenceKm == null) {
+    throw new Error("An existing distance value is required for this manager expense.");
+  }
+
+  if (destination && (input.distanceKm === undefined || !Number.isFinite(input.distanceKm) || input.distanceKm <= 0)) {
+    throw new Error("Distance must be greater than zero.");
+  }
+
+  if (input.distanceKm !== undefined && (!Number.isFinite(input.distanceKm) || input.distanceKm <= 0)) {
+    throw new Error("Distance must be greater than zero.");
+  }
+
   const distanceKm = input.distanceKm ?? existing.distanceFromResidenceKm ?? 0;
   const durationMinutes = "durationMinutes" in input
     ? (input.durationMinutes ?? null)
@@ -2355,6 +2545,10 @@ export async function updateManagerExpenseAsAdmin(
   const routePolyline = "routePolyline" in input
     ? (input.routePolyline ?? null)
     : existing.routePolyline;
+
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0) {
+    throw new Error("Distance must be greater than zero.");
+  }
 
   const allowance = calculateAllowanceBreakdown(tripStartDate, tripEndDate, policy);
   let fuelAmount = 0;

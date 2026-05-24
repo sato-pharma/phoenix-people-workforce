@@ -101,8 +101,36 @@ export async function POST(request: Request) {
 
     const created = await createManagerExpenseAsAdmin(access, input);
 
+    const destinationMetadata = {
+      area: created.toArea,
+      city: created.toCity,
+      country: created.toCountry,
+      label: created.toLabel,
+      latitude: created.capturedLatitude,
+      longitude: created.capturedLongitude,
+      placeId: created.toPlaceId,
+    };
+
+    const sourceMetadata = {
+      area: created.residenceArea,
+      city: created.residenceCity,
+      country: null,
+      latitude: created.residenceLatitude,
+      label: created.residenceAddress,
+      longitude: created.residenceLongitude,
+    };
+
     return NextResponse.json({
       message: "Manager expense created successfully.",
+      distanceKm: created.distanceFromResidenceKm,
+      routeDurationMinutes: created.durationMinutes,
+      destinationMetadata,
+      sourceLocationMetadata: sourceMetadata,
+      audit: {
+        action: "create",
+        targetManagerHrId: created.employeeHrId,
+        actorLoginId: access.loginId ?? access.hrId,
+      },
       request: created,
       success: true,
     });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertAdminManagerExpenseAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { getPlacesServerKey, type GoogleGeocodeCandidate } from "@/lib/google-maps/server";
 
 type AddressComponent = {
   longText?: string;
@@ -13,6 +14,34 @@ type AddressComponent = {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function decodeGeocodePlaceId(placeId: string): GoogleGeocodeCandidate | null {
+  if (!placeId.startsWith("geocode:")) return null;
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(placeId.slice("geocode:".length), "base64url").toString("utf8"),
+    ) as Partial<GoogleGeocodeCandidate>;
+    const lat = Number(payload.lat);
+    const lng = Number(payload.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !payload.label) {
+      return null;
+    }
+
+    return {
+      area: payload.area ?? null,
+      city: payload.city ?? null,
+      country: payload.country ?? null,
+      formattedAddress: payload.formattedAddress ?? null,
+      label: payload.label,
+      lat,
+      lng,
+      placeId: payload.placeId ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function extractAddressComponent(
   components: Array<AddressComponent> | undefined,
@@ -42,7 +71,21 @@ export async function GET(request: Request) {
       );
     }
 
-    const key = process.env.GOOGLE_MAPS_SERVER_KEY ?? "";
+    const geocodePlace = decodeGeocodePlaceId(placeId);
+    if (geocodePlace) {
+      return NextResponse.json({
+        area: geocodePlace.area,
+        city: geocodePlace.city,
+        country: geocodePlace.country,
+        formattedAddress: geocodePlace.formattedAddress ?? geocodePlace.label,
+        label: geocodePlace.label,
+        latitude: geocodePlace.lat,
+        longitude: geocodePlace.lng,
+        placeId: geocodePlace.placeId ?? normalizedPlaceId,
+      });
+    }
+
+    const key = getPlacesServerKey();
     if (!key) {
       return NextResponse.json(
         { error: "maps_unavailable", message: "Google Maps is not configured on this server." },
@@ -105,16 +148,20 @@ export async function GET(request: Request) {
     }
 
     const components = payload.addressComponents;
+    const governorate = extractAddressComponent(components, [
+      "administrative_area_level_1",
+    ]) ?? null;
     const city =
       extractAddressComponent(components, [
-        "administrative_area_level_1",
         "locality",
-      ]) ?? null;
-    const area =
-      extractAddressComponent(components, [
         "administrative_area_level_2",
         "sublocality",
         "sublocality_level_1",
+      ]) ?? null;
+    const area =
+      governorate ??
+      extractAddressComponent(components, [
+        "administrative_area_level_2",
       ]) ?? null;
     const country = extractAddressComponent(components, ["country"]) ?? null;
 

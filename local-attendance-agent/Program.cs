@@ -34,11 +34,31 @@ builder.Services.AddHttpClient<PhoenixClient>((services, client) => {
   client.BaseAddress = new Uri(config.PhoenixBaseUrl.TrimEnd('/') + "/");
   client.Timeout = TimeSpan.FromMinutes(5);
   client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.AttendanceAgentToken);
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler {
+  UseProxy = false,
 });
 
 var app = builder.Build();
 var config = app.Services.GetRequiredService<AgentConfig>();
 var validator = app.Services.GetRequiredService<StartupValidator>();
+
+app.Use(async (context, next) => {
+  var origin = context.Request.Headers.Origin.ToString();
+  if (BrowserOriginAuth.IsAllowedOrigin(origin, config)) {
+    context.Response.Headers["Access-Control-Allow-Origin"] = origin;
+    context.Response.Headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS";
+    context.Response.Headers["Access-Control-Allow-Headers"] = "Authorization,Content-Type,X-Phoenix-Local-Agent";
+    context.Response.Headers["Access-Control-Max-Age"] = "600";
+    context.Response.Headers["Vary"] = "Origin";
+  }
+
+  if (HttpMethods.IsOptions(context.Request.Method)) {
+    context.Response.StatusCode = StatusCodes.Status204NoContent;
+    return;
+  }
+
+  await next();
+});
 
 Log.Info("attendance_agent_starting", new {
   listenUrl = Environment.GetEnvironmentVariable("ASPNETCORE_URLS"),
@@ -69,7 +89,7 @@ app.MapGet("/health", async (StartupValidator startupValidator) => {
 });
 
 app.MapPost("/test-device", async (HttpRequest request, AgentConfig cfg, ZktecoDeviceClient deviceClient) => {
-  if (!Auth.IsAuthorized(request, cfg.AttendanceAgentToken)) {
+  if (!Auth.IsAuthorized(request, cfg)) {
     return Results.Unauthorized();
   }
 
@@ -93,7 +113,7 @@ app.MapPost("/test-device", async (HttpRequest request, AgentConfig cfg, ZktecoD
 });
 
 app.MapPost("/sync-now", async (HttpRequest request, AgentConfig cfg, AttendanceSyncRunner syncRunner) => {
-  if (!Auth.IsAuthorized(request, cfg.AttendanceAgentToken)) {
+  if (!Auth.IsAuthorized(request, cfg)) {
     return Results.Unauthorized();
   }
 
@@ -677,17 +697,42 @@ sealed record PhoenixIngestionResponse(
 }
 
 static class Auth {
-  public static bool IsAuthorized(HttpRequest request, string expectedToken) {
+  public static bool IsAuthorized(HttpRequest request, AgentConfig config) {
     var header = request.Headers.Authorization.ToString();
-    if (!header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) {
-      return false;
+    if (header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) {
+      var actualToken = header["Bearer ".Length..].Trim();
+      var expectedBytes = Encoding.UTF8.GetBytes(config.AttendanceAgentToken);
+      var actualBytes = Encoding.UTF8.GetBytes(actualToken);
+      return expectedBytes.Length == actualBytes.Length
+        && CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
     }
 
-    var actualToken = header["Bearer ".Length..].Trim();
-    var expectedBytes = Encoding.UTF8.GetBytes(expectedToken);
-    var actualBytes = Encoding.UTF8.GetBytes(actualToken);
-    return expectedBytes.Length == actualBytes.Length
-      && CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
+    return BrowserOriginAuth.IsAllowedCommandRequest(request, config);
+  }
+}
+
+static class BrowserOriginAuth {
+  const string BrowserCommandHeader = "X-Phoenix-Local-Agent";
+
+  public static bool IsAllowedCommandRequest(HttpRequest request, AgentConfig config) {
+    return request.Headers[BrowserCommandHeader].ToString() == "1"
+      && IsAllowedOrigin(request.Headers.Origin.ToString(), config);
+  }
+
+  public static bool IsAllowedOrigin(string origin, AgentConfig config) {
+    if (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri)) return false;
+
+    var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+      "https://phoenix-workforce.vercel.app",
+    };
+
+    if (Uri.TryCreate(config.PhoenixBaseUrl, UriKind.Absolute, out var phoenixUri)) {
+      allowed.Add($"{phoenixUri.Scheme}://{phoenixUri.Authority}");
+    }
+
+    return allowed.Contains($"{originUri.Scheme}://{originUri.Authority}");
   }
 }
 
@@ -742,7 +787,8 @@ static class NetworkChecks {
   public static async Task<bool> CanReachHttpAsync(string url, TimeSpan timeout) {
     try {
       using var cts = new CancellationTokenSource(timeout);
-      using var client = new HttpClient { Timeout = timeout };
+      using var handler = new HttpClientHandler { UseProxy = false };
+      using var client = new HttpClient(handler) { Timeout = timeout };
       using var response = await client.GetAsync(url, cts.Token);
       return (int)response.StatusCode < 500;
     } catch {

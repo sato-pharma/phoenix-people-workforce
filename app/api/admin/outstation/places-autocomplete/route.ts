@@ -2,9 +2,26 @@ import { NextResponse } from "next/server";
 
 import { assertAdminManagerExpenseAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import {
+  getPlacesServerKey,
+  googleGeocodeAddressCandidates,
+  type GoogleGeocodeCandidate,
+} from "@/lib/google-maps/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function encodeGeocodePlaceId(candidate: GoogleGeocodeCandidate) {
+  return `geocode:${Buffer.from(JSON.stringify(candidate), "utf8").toString("base64url")}`;
+}
+
+async function geocodingPredictions(input: string) {
+  const candidates = await googleGeocodeAddressCandidates(input);
+  return candidates.slice(0, 5).map((candidate) => ({
+    description: candidate.label,
+    placeId: encodeGeocodePlaceId(candidate),
+  }));
+}
 
 export async function GET(request: Request) {
   try {
@@ -23,7 +40,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ predictions: [] });
     }
 
-    const key = process.env.GOOGLE_MAPS_SERVER_KEY ?? "";
+    const key = getPlacesServerKey();
     if (!key) {
       return NextResponse.json(
         { error: "maps_unavailable", message: "Google Maps is not configured on this server." },
@@ -47,6 +64,10 @@ export async function GET(request: Request) {
 
     if (!response.ok) {
       const details = await response.text().catch(() => "");
+      if (response.status === 403 && details.includes("API_KEY_SERVICE_BLOCKED")) {
+        return NextResponse.json({ predictions: await geocodingPredictions(input) });
+      }
+
       throw new Error(
         `Google Places Autocomplete failed with ${response.status}${details ? `: ${details.slice(0, 240)}` : ""}.`,
       );

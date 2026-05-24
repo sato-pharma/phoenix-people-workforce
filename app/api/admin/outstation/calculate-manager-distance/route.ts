@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 import { assertAdminManagerExpenseAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { googleDirectionsRoute } from "@/lib/google-maps/server";
-import { getResidenceLocationForEmployee } from "@/lib/outstation/service";
+import {
+  calculateManagerExpensePolicyPreview,
+  getResidenceLocationForEmployee,
+} from "@/lib/outstation/service";
+import type { OutstationTransportationType } from "@/lib/outstation/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,14 +22,26 @@ export async function POST(request: Request) {
     await assertAdminManagerExpenseAccess(access);
 
     const body = (await request.json().catch(() => ({}))) as {
+      claimedTotalAmount?: number;
       destinationLat?: number;
       destinationLng?: number;
       managerHrId?: string;
+      transportationType?: OutstationTransportationType;
+      tripEndDate?: string;
+      tripStartDate?: string;
     };
 
     const managerHrId = typeof body.managerHrId === "string" ? body.managerHrId.trim() : "";
     const destinationLat = Number(body.destinationLat);
     const destinationLng = Number(body.destinationLng);
+    const tripStartDate = typeof body.tripStartDate === "string" ? body.tripStartDate.trim() : "";
+    const tripEndDate = typeof body.tripEndDate === "string" ? body.tripEndDate.trim() : "";
+    const transportationType =
+      body.transportationType === "train" ||
+      body.transportationType === "bus" ||
+      body.transportationType === "other"
+        ? body.transportationType
+        : "car";
 
     if (!managerHrId) {
       return NextResponse.json(
@@ -75,6 +91,17 @@ export async function POST(request: Request) {
     const durationMinutes =
       minutesFromSeconds(directions.durationInTrafficSeconds) ??
       minutesFromSeconds(directions.durationSeconds);
+    const policyPreview =
+      tripStartDate && tripEndDate
+        ? await calculateManagerExpensePolicyPreview({
+            claimedTotalAmount: Number(body.claimedTotalAmount),
+            distanceKm,
+            employeeHrId: managerHrId,
+            transportationType,
+            tripEndDate,
+            tripStartDate,
+          })
+        : null;
 
     return NextResponse.json({
       distanceKm,
@@ -86,6 +113,7 @@ export async function POST(request: Request) {
       ]
         .filter(Boolean)
         .join(", ") || `${residence.residenceLatitude}, ${residence.residenceLongitude}`,
+      policyPreview,
       routePolyline: directions.polyline,
     });
   } catch (error) {

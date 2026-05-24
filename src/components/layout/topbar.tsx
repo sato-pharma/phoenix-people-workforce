@@ -2,7 +2,7 @@
 
 import { ChevronDown, LogOut, Menu, Search, UserCog } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
@@ -26,6 +26,9 @@ export function Topbar({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const mobileSearchRef = useRef<HTMLInputElement>(null);
   const isAdminMode = navigationMode === "admin";
   const profileHref = isAdminMode ? "/admin/profile" : "/employee-portals/profile";
   const handleLogout = async () => {
@@ -37,6 +40,38 @@ export function Topbar({
     }
   };
 
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (
+        userMenuOpen &&
+        userMenuRef.current &&
+        !userMenuRef.current.contains(event.target as Node)
+      ) {
+        setUserMenuOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setUserMenuOpen(false);
+        setMobileSearchOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [userMenuOpen]);
+
+  useEffect(() => {
+    if (mobileSearchOpen) {
+      mobileSearchRef.current?.focus();
+    }
+  }, [mobileSearchOpen]);
+
   return (
     <>
       <MobileSidebar
@@ -46,12 +81,12 @@ export function Topbar({
         open={menuOpen}
         permissionLookup={permissionLookup}
       />
-      <header className={`sticky top-0 z-20 px-3 py-3 backdrop-blur-xl sm:px-6 ${
+      <header className={`sticky top-0 z-40 border-b px-3 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:px-6 ${
         isAdminMode
-          ? "border-b border-[#1a1a1a] bg-[#000000]"
-          : "border-b border-[#E2E8F0]/80 bg-white/82"
+          ? "border-[#1a1a1a] bg-[#000000]/96"
+          : "border-[#E2E8F0]/80 bg-white/92"
       }`}>
-        <div className="mx-auto flex min-h-14 w-full max-w-[1480px] items-center gap-2 sm:min-h-16 sm:gap-4">
+        <div className="mx-auto flex min-h-14 w-full max-w-[1480px] flex-wrap items-center gap-2 sm:min-h-16 sm:gap-4">
         <button
           aria-label="Open menu"
           className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg lg:hidden ${
@@ -83,14 +118,20 @@ export function Topbar({
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-3">
-          <button className={`inline-flex h-10 w-10 items-center justify-center rounded-lg md:hidden ${
+          <button
+            aria-expanded={mobileSearchOpen}
+            aria-label="Open search"
+            className={`inline-flex h-10 w-10 items-center justify-center rounded-lg md:hidden ${
             isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
-          }`}>
+          }`}
+            onClick={() => setMobileSearchOpen((open) => !open)}
+            type="button"
+          >
             <Search className="h-5 w-5" />
           </button>
           <InAppNotificationsBell isAdminMode={isAdminMode} />
           <InternalMessagesMenu isAdminMode={isAdminMode} />
-          <div className="relative">
+          <div className="relative" ref={userMenuRef}>
             <button
               aria-expanded={userMenuOpen}
               aria-haspopup="menu"
@@ -99,7 +140,7 @@ export function Topbar({
                   ? "border-[#333333] bg-[#0B0B0B] shadow-[0_10px_30px_rgba(0,0,0,0.24)] hover:bg-[#111111]"
                   : "border-[#E2E8F0] bg-white/95 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:bg-[#FCFDFE]"
               }`}
-              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              onClick={() => setUserMenuOpen((open) => !open)}
               type="button"
             >
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F97316]/15 text-xs font-black text-[#F97316] ring-[#F97316]/20 ring-1">
@@ -113,7 +154,7 @@ export function Topbar({
             </button>
 
             {userMenuOpen && (
-              <div className={`absolute right-0 top-full z-30 mt-2 w-56 overflow-hidden rounded-lg border shadow-lg ${
+              <div className={`absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-2xl border shadow-[0_22px_50px_rgba(0,0,0,0.22)] ${
                 isAdminMode ? "border-[#333333] bg-[#050505]" : "border-[#E2E8F0] bg-white"
               }`} role="menu">
                 <Link
@@ -148,6 +189,27 @@ export function Topbar({
           </div>
         </div>
         </div>
+        {mobileSearchOpen ? (
+          <div className="mx-auto mt-2 w-full max-w-[1480px] md:hidden">
+            <div className="relative">
+              <Search className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${isAdminMode ? "text-[#F8B56B]" : "text-[#64748B]"}`} />
+              <input
+                ref={mobileSearchRef}
+                aria-label="Search"
+                className={`h-11 w-full rounded-2xl border px-3 pl-9 text-sm font-semibold outline-none transition focus:ring-2 focus:ring-[#F97316]/25 ${
+                  isAdminMode
+                    ? "border-[#333333] bg-[#0B0B0B] text-[#F8FAFC] placeholder:text-[#64748B] focus:border-[#F97316]"
+                    : "border-[#E2E8F0] bg-white text-[#0F172A] placeholder:text-[#94A3B8] focus:border-[#F97316]"
+                }`}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setMobileSearchOpen(false);
+                }}
+                placeholder="Search employees, reports, pages..."
+                type="search"
+              />
+            </div>
+          </div>
+        ) : null}
       </header>
     </>
   );

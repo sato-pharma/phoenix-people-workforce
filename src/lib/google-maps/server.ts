@@ -38,6 +38,33 @@ type GeocodeResponse = {
   lng: number;
 };
 
+type GoogleGeocodeAddressComponent = {
+  longText?: string;
+  long_name?: string;
+  shortText?: string;
+  short_name?: string;
+  types?: string[];
+};
+
+type GoogleGeocodeResult = {
+  addressComponents?: GoogleGeocodeAddressComponent[];
+  formattedAddress?: string;
+  geometry?: { location?: { lat?: number; lng?: number } };
+  location?: { latitude?: number; longitude?: number };
+  placeId?: string;
+};
+
+export type GoogleGeocodeCandidate = {
+  area: string | null;
+  city: string | null;
+  country: string | null;
+  formattedAddress: string | null;
+  label: string;
+  lat: number;
+  lng: number;
+  placeId: string | null;
+};
+
 async function postJsonWithHttpsFallback(
   url: string,
   init: {
@@ -92,8 +119,39 @@ async function postJsonWithHttpsFallback(
   }
 }
 
-function getServerKey() {
-  return process.env.GOOGLE_MAPS_SERVER_KEY ?? "";
+function firstConfiguredEnv(...names: string[]) {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+export function getPlacesServerKey() {
+  return firstConfiguredEnv(
+    "GOOGLE_PLACES_SERVER_KEY",
+    "GOOGLE_PLACES_API_KEY",
+    "GOOGLE_MAPS_PLACES_KEY",
+    "GOOGLE_MAPS_SERVER_KEY",
+  );
+}
+
+function getRoutesServerKey() {
+  return firstConfiguredEnv(
+    "GOOGLE_ROUTES_SERVER_KEY",
+    "GOOGLE_ROUTES_API_KEY",
+    "GOOGLE_MAPS_ROUTES_KEY",
+    "GOOGLE_MAPS_SERVER_KEY",
+  );
+}
+
+function getGeocodingServerKey() {
+  return firstConfiguredEnv(
+    "GOOGLE_GEOCODING_SERVER_KEY",
+    "GOOGLE_GEOCODING_API_KEY",
+    "GOOGLE_MAPS_GEOCODING_KEY",
+    "GOOGLE_MAPS_SERVER_KEY",
+  );
 }
 
 function parseDurationSeconds(value: unknown) {
@@ -171,7 +229,7 @@ async function computeRoutes(
   polyline: string | null;
   selectedRouteIndex: number | null;
 }> {
-  const key = getServerKey();
+  const key = getRoutesServerKey();
   if (!key) {
     return {
       alternatives: [],
@@ -294,11 +352,15 @@ export function getBrowserKey() {
 }
 
 export function hasGoogleServerKey() {
-  return getServerKey().trim().length > 0;
+  return [
+    getPlacesServerKey(),
+    getRoutesServerKey(),
+    getGeocodingServerKey(),
+  ].some((key) => key.trim().length > 0);
 }
 
 export async function googleGeocodeAddress(address: string): Promise<LatLng | null> {
-  const key = getServerKey();
+  const key = getGeocodingServerKey();
   if (!key || !address.trim()) return null;
 
   const normalizedAddress = address.trim();
@@ -306,45 +368,128 @@ export async function googleGeocodeAddress(address: string): Promise<LatLng | nu
     return _geocodeAddressCache.get(normalizedAddress) ?? null;
   }
 
-  const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
-  url.searchParams.set("address", normalizedAddress);
-  url.searchParams.set("key", key);
+  const url = new URL(`https://geocode.googleapis.com/v4/geocode/address/${encodeURIComponent(normalizedAddress)}`);
 
-  const response = await fetch(url.toString(), { cache: "no-store" });
+  const response = await fetch(url.toString(), {
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": "results.location",
+    },
+  });
   if (!response.ok) {
-    throw new Error(`Google Geocoding API failed with ${response.status}.`);
+    const details = await response.text().catch(() => "");
+    throw new Error(
+      `Google Geocoding API failed with ${response.status}${details ? `: ${details.slice(0, 240)}` : ""}.`,
+    );
   }
 
   const payload = (await response.json()) as {
-    results?: Array<{ geometry?: { location?: { lat?: number; lng?: number } } }>;
-    status?: string;
+    results?: GoogleGeocodeResult[];
   };
 
-  const location = payload.results?.[0]?.geometry?.location;
-  if (!location || !Number.isFinite(location.lat) || !Number.isFinite(location.lng)) {
+  const location = getGeocodeResultLocation(payload.results?.[0]);
+  if (!location) {
     _geocodeAddressCache.set(normalizedAddress, null);
     return null;
   }
 
-  const result: LatLng = { lat: Number(location.lat), lng: Number(location.lng) };
-  _geocodeAddressCache.set(normalizedAddress, result);
-  return result;
+  _geocodeAddressCache.set(normalizedAddress, location);
+  return location;
+}
+
+export async function googleGeocodeAddressCandidates(address: string): Promise<GoogleGeocodeCandidate[]> {
+  const key = getGeocodingServerKey();
+  if (!key || !address.trim()) return [];
+
+  const normalizedAddress = address.trim();
+  const url = new URL(`https://geocode.googleapis.com/v4/geocode/address/${encodeURIComponent(normalizedAddress)}`);
+
+  const response = await fetch(url.toString(), {
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": "results.addressComponents,results.formattedAddress,results.location,results.placeId",
+    },
+  });
+  if (!response.ok) {
+    const details = await response.text().catch(() => "");
+    throw new Error(
+      `Google Geocoding API failed with ${response.status}${details ? `: ${details.slice(0, 240)}` : ""}.`,
+    );
+  }
+
+  const payload = (await response.json()) as {
+    results?: GoogleGeocodeResult[];
+  };
+
+  return (payload.results ?? [])
+    .map(geocodeResultToCandidate)
+    .filter((candidate): candidate is GoogleGeocodeCandidate => candidate != null);
 }
 
 function extractAddressComponent(
-  components: Array<{ long_name?: string; short_name?: string; types?: string[] }> | undefined,
+  components: Array<GoogleGeocodeAddressComponent> | undefined,
   targetTypes: string[],
 ) {
   const component = components?.find((entry) =>
     Array.isArray(entry.types) && entry.types.some((type) => targetTypes.includes(type)),
   );
-  return component?.long_name ?? component?.short_name ?? null;
+  return component?.longText ?? component?.shortText ?? component?.long_name ?? component?.short_name ?? null;
+}
+
+function getGeocodeResultLocation(result: GoogleGeocodeResult | null | undefined): LatLng | null {
+  const lat = Number(result?.location?.latitude ?? result?.geometry?.location?.lat);
+  const lng = Number(result?.location?.longitude ?? result?.geometry?.location?.lng);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
+function geocodeResultToCandidate(
+  result: GoogleGeocodeResult | null | undefined,
+): GoogleGeocodeCandidate | null {
+  const geo = getGeocodeResultLocation(result);
+  if (!result || !geo) return null;
+
+  const governorate =
+    extractAddressComponent(result.addressComponents, [
+      "administrative_area_level_1",
+    ]) ?? null;
+  const city =
+    extractAddressComponent(result.addressComponents, [
+      "locality",
+      "administrative_area_level_2",
+      "sublocality",
+      "sublocality_level_1",
+    ]) ?? null;
+  const area =
+    governorate ??
+    extractAddressComponent(result.addressComponents, [
+      "administrative_area_level_2",
+    ]) ??
+    null;
+  const country = extractAddressComponent(result.addressComponents, ["country"]) ?? null;
+  const label = result.formattedAddress ?? [city, area, country].filter(Boolean).join(", ");
+
+  if (!label) return null;
+
+  return {
+    area,
+    city,
+    country,
+    formattedAddress: result.formattedAddress ?? null,
+    label,
+    lat: geo.lat,
+    lng: geo.lng,
+    placeId: result.placeId ?? null,
+  };
 }
 
 export async function googleReverseGeocode(
   location: LatLng,
 ): Promise<GeocodeResponse | null> {
-  const key = getServerKey();
+  const key = getGeocodingServerKey();
   if (!key) return null;
 
   const cacheKey = `${location.lat},${location.lng}`;
@@ -352,45 +497,49 @@ export async function googleReverseGeocode(
     return _reverseGeocodeCache.get(cacheKey) ?? null;
   }
 
-  const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
-  url.searchParams.set("latlng", cacheKey);
-  url.searchParams.set("key", key);
+  const url = new URL(`https://geocode.googleapis.com/v4/geocode/location/${encodeURIComponent(cacheKey)}`);
 
-  const response = await fetch(url.toString(), { cache: "no-store" });
+  const response = await fetch(url.toString(), {
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": "results.addressComponents,results.formattedAddress,results.location",
+    },
+  });
   if (!response.ok) {
-    throw new Error(`Google Reverse Geocoding API failed with ${response.status}.`);
+    const details = await response.text().catch(() => "");
+    throw new Error(
+      `Google Reverse Geocoding API failed with ${response.status}${details ? `: ${details.slice(0, 240)}` : ""}.`,
+    );
   }
 
   const payload = (await response.json()) as {
-    results?: Array<{
-      address_components?: Array<{ long_name?: string; short_name?: string; types?: string[] }>;
-      formatted_address?: string;
-      geometry?: { location?: { lat?: number; lng?: number } };
-    }>;
+    results?: GoogleGeocodeResult[];
   };
 
   const result = payload.results?.[0];
-  const geo = result?.geometry?.location;
-  if (!result || !geo || !Number.isFinite(geo.lat) || !Number.isFinite(geo.lng)) {
+  const geo = getGeocodeResultLocation(result);
+  if (!result || !geo) {
     _reverseGeocodeCache.set(cacheKey, null);
     return null;
   }
 
   const geocoded: GeocodeResponse = {
     area:
-      extractAddressComponent(result.address_components, [
+      extractAddressComponent(result.addressComponents, [
         "sublocality",
         "sublocality_level_1",
         "administrative_area_level_2",
       ]) ?? null,
     city:
-      extractAddressComponent(result.address_components, [
+      extractAddressComponent(result.addressComponents, [
         "locality",
         "administrative_area_level_1",
       ]) ?? null,
-    formattedAddress: result.formatted_address ?? null,
-    lat: Number(geo.lat),
-    lng: Number(geo.lng),
+    formattedAddress: result.formattedAddress ?? null,
+    lat: geo.lat,
+    lng: geo.lng,
   };
   _reverseGeocodeCache.set(cacheKey, geocoded);
   return geocoded;

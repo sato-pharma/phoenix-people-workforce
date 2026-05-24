@@ -872,7 +872,9 @@ export async function assertPermission(
 }
 
 export async function canManageManagerExpenses(context: AccessContext) {
-  return canAccess(context, "admin_access", "read");
+  if (context.scope === "system") return true;
+  if (isDesignatedHrManagerIdentity(context)) return true;
+  return context.role === "Super Admin";
 }
 
 export async function assertAdminManagerExpenseAccess(context: AccessContext) {

@@ -17,7 +17,16 @@
       "mcp__Claude_Preview__preview_start",
       "Bash(git checkout *)",
       "Bash(git rm *)",
-      "Bash(git cherry-pick *)"
+      "Bash(git cherry-pick *)",
+      "Bash(git push *)",
+      "Bash(gh run *)",
+      "Bash(cat \"C:\\\\Users\\\\satoh\\\\.claude\\\\settings.json\" 2>&1 | head -60)",
+      "Bash(ls \"C:\\\\Users\\\\satoh\\\\.claude\\\\\" 2>&1)",
+      "Bash(gh pr *)",
+      "Bash(npx supabase *)",
+      "mcp__45bb6356-8105-4482-9464-25bfd754baec__list_branches",
+      "mcp__45bb6356-8105-4482-9464-25bfd754baec__reset_branch",
+      "Bash(git commit *)"
     ]
   }
 }

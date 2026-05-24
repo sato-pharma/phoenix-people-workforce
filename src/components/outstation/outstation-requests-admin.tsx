@@ -23,7 +23,7 @@ import { startTransition, useEffect, useMemo, useState } from "react";
 
 import { AdminManagerExpenseModal } from "@/components/outstation/admin-manager-expense-modal";
 
-import { AdminCallout, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
+import { AdminCallout } from "@/components/admin/admin-design-system";
 import { OutstationReviewMap } from "@/components/outstation/outstation-review-map";
 import { TerritoryValidationPanel } from "@/components/outstation/territory-validation-panel";
 import { Button } from "@/components/ui/button";
@@ -108,8 +108,8 @@ function recommendationTone(value: string) {
 }
 
 const panelClassName =
-  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
-const adminTableHeaderClassName = "px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+  "rounded-none border border-[#D8E0EA]/90 bg-white/90 shadow-[0_22px_60px_rgba(15,23,42,0.09)] ring-1 ring-white/70 backdrop-blur-xl";
+const adminTableHeaderClassName = "px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-[#64748B]";
 const stickyEmployeeHeaderClassName = `${adminTableHeaderClassName} sticky left-0 z-30 w-[260px] min-w-[260px] bg-[#F8FAFC] shadow-[10px_0_18px_rgba(15,23,42,0.06)]`;
 const stickyTripHeaderClassName = `${adminTableHeaderClassName} sticky left-[260px] z-30 w-[220px] min-w-[220px] bg-[#F8FAFC] shadow-[10px_0_18px_rgba(15,23,42,0.04)]`;
 const stickyEmployeeCellClassName = "sticky left-0 z-20 w-[260px] min-w-[260px] px-4 py-3 shadow-[10px_0_18px_rgba(15,23,42,0.05)]";
@@ -117,31 +117,111 @@ const stickyTripCellClassName = "sticky left-[260px] z-20 w-[220px] min-w-[220px
 
 function OutstationAdminShell({ children }: { children: ReactNode }) {
   return (
-    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-none border border-[#D8E0EA] bg-[radial-gradient(circle_at_8%_0%,rgba(249,115,22,0.18),transparent_30%),radial-gradient(circle_at_86%_12%,rgba(15,23,42,0.10),transparent_26%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_46%,#F3F7FB_100%)] p-4 shadow-[0_28px_80px_rgba(15,23,42,0.12)] sm:p-6">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rotate-12 bg-[#F97316]/12 blur-3xl"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 -rotate-12 bg-[#0F172A]/6 blur-3xl"
       />
-      <div className="relative z-10 space-y-6">{children}</div>
+      <div className="relative z-10 space-y-5">{children}</div>
     </div>
   );
 }
 
 function Metric({
   label,
+  tone = "slate",
   value,
 }: {
   label: string;
+  tone?: "blue" | "green" | "orange" | "red" | "slate";
   value: string;
 }) {
+  const toneClassName = {
+    blue: "from-[#EFF6FF] to-white text-[#1D4ED8] ring-[#BFDBFE]",
+    green: "from-[#ECFDF5] to-white text-[#047857] ring-[#A7F3D0]",
+    orange: "from-[#FFF7ED] to-white text-[#EA580C] ring-[#FED7AA]",
+    red: "from-[#FEF2F2] to-white text-[#B91C1C] ring-[#FECACA]",
+    slate: "from-[#F8FAFC] to-white text-[#0F172A] ring-[#DDE6F1]",
+  }[tone];
+
   return (
-    <Card className={`${panelClassName} p-4 transition-transform duration-200 hover:-translate-y-0.5`}>
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
-      <p className="mt-2 truncate text-lg font-black text-[#0F172A]">{value}</p>
+    <Card className={`${panelClassName} relative overflow-hidden bg-gradient-to-br ${toneClassName} p-4 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_26px_70px_rgba(15,23,42,0.12)]`}>
+      <div aria-hidden="true" className="absolute -right-8 -top-8 h-20 w-20 rotate-12 bg-current opacity-[0.07]" />
+      <p className="relative text-[10px] font-black uppercase tracking-[0.18em] text-[#64748B]">{label}</p>
+      <p className="relative mt-2 truncate text-xl font-black text-[#0F172A]">{value}</p>
+    </Card>
+  );
+}
+
+function SharpPageHero({
+  actions,
+  badges,
+  description,
+  eyebrow,
+  icon,
+  title,
+}: {
+  actions?: ReactNode;
+  badges?: ReactNode;
+  description: string;
+  eyebrow: string;
+  icon?: ReactNode;
+  title: string;
+}) {
+  return (
+    <Card className={`${panelClassName} overflow-hidden p-0`}>
+      <div className="border-l-4 border-[#EA580C] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF7ED_42%,#F8FAFC_100%)] px-4 py-4 sm:px-5 lg:px-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 space-y-3">
+            <div className="inline-flex w-fit items-center gap-2 border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-[#C2410C]">
+              {icon}
+              {eyebrow}
+            </div>
+            <div className="space-y-2">
+              <h1 className="max-w-4xl text-[1.45rem] font-black tracking-[-0.04em] text-[#0F172A] sm:text-[1.7rem] lg:text-[1.9rem]">
+                {title}
+              </h1>
+              <p className="max-w-3xl text-sm leading-6 text-[#475569]">{description}</p>
+            </div>
+          </div>
+          {actions ? (
+            <div className="flex w-full flex-wrap items-stretch gap-2 sm:w-auto sm:items-center xl:max-w-[46%] xl:justify-end">{actions}</div>
+          ) : null}
+        </div>
+        {badges ? <div className="mt-4 flex flex-wrap gap-2 text-xs text-[#475569]">{badges}</div> : null}
+      </div>
+    </Card>
+  );
+}
+
+function SharpTableShell({
+  action,
+  children,
+  description,
+  title,
+}: {
+  action?: ReactNode;
+  children: ReactNode;
+  description: string;
+  title: string;
+}) {
+  return (
+    <Card className={`${panelClassName} overflow-hidden p-0`}>
+      <div className="flex flex-col gap-4 border-b border-[#D8E0EA] bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] px-5 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <span className="h-7 w-1 bg-[#EA580C] shadow-[0_0_12px_rgba(249,115,22,0.35)]" />
+            <h2 className="text-lg font-black tracking-tight text-[#0F172A]">{title}</h2>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-[#64748B]">{description}</p>
+        </div>
+        {action ? <div className="w-full shrink-0 sm:w-auto">{action}</div> : null}
+      </div>
+      {children}
     </Card>
   );
 }
@@ -154,7 +234,7 @@ function Info({
   value: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-[#E2E8F0] bg-[#F8FAFC]/85 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+    <div className="rounded-none border border-[#E2E8F0] bg-[#F8FAFC]/85 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
       <p className="mt-2 text-sm font-semibold text-[#0F172A]">{value}</p>
     </div>
@@ -188,7 +268,7 @@ function RequestActionButtons({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <Button
-          className="gap-2 rounded-xl bg-[#047857] px-4 py-2 text-xs font-black text-white hover:bg-[#065F46]"
+          className="gap-2 rounded-none bg-[#047857] px-4 py-2 text-xs font-black text-white hover:bg-[#065F46]"
           disabled={busy || terminal || request.eligibilityStatus === "not_eligible"}
           onClick={() => onApprove(request)}
           type="button"
@@ -197,7 +277,7 @@ function RequestActionButtons({
           Approve for payroll
         </Button>
         <Button
-          className="gap-2 rounded-xl bg-[#B91C1C] px-4 py-2 text-xs font-black text-white hover:bg-[#991B1B]"
+          className="gap-2 rounded-none bg-[#B91C1C] px-4 py-2 text-xs font-black text-white hover:bg-[#991B1B]"
           disabled={busy || terminal}
           onClick={() => onReject(request)}
           type="button"
@@ -206,7 +286,7 @@ function RequestActionButtons({
           Reject
         </Button>
         <Button
-          className="gap-2 rounded-xl border border-[#FECACA] bg-white px-4 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FEF2F2]"
+          className="gap-2 rounded-none border border-[#FECACA] bg-white px-4 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FEF2F2]"
           disabled={busy}
           onClick={() => onDelete(request)}
           type="button"
@@ -247,15 +327,15 @@ function RequestDetailsModal({
   request: OutstationExpenseRequest;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-3 backdrop-blur-sm sm:p-6">
-      <div className="w-full max-w-7xl overflow-hidden rounded-[24px] border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-white/98 px-5 py-4 backdrop-blur">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center overflow-hidden bg-[#020617]/72 p-3 backdrop-blur-md sm:p-6">
+      <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-7xl flex-col overflow-hidden rounded-none border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)] sm:max-h-[calc(100dvh-3rem)]">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[#E2E8F0] bg-white/98 px-5 py-4 backdrop-blur">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
+              <span className={`inline-flex rounded-none px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
                 {formatStatus(request.status)}
               </span>
-              <span className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1 text-xs font-black text-[#C2410C]">
+              <span className="rounded-none border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1 text-xs font-black text-[#C2410C]">
                 Request #{request.id}
               </span>
             </div>
@@ -267,7 +347,7 @@ function RequestDetailsModal({
             </p>
           </div>
           <button
-            className="shrink-0 rounded-xl border border-[#E2E8F0] bg-white px-4 py-2 text-xs font-black text-[#64748B] hover:bg-[#F8FAFC]"
+            className="shrink-0 rounded-none border border-[#E2E8F0] bg-white px-4 py-2 text-xs font-black text-[#64748B] hover:bg-[#F8FAFC]"
             onClick={onClose}
             type="button"
           >
@@ -275,7 +355,7 @@ function RequestDetailsModal({
           </button>
         </div>
 
-        <div className="space-y-5 p-5">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-5">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Info label="Trip date" value={`${formatDate(request.tripStartDate)} to ${formatDate(request.tripEndDate)}`} />
             <Info label="Submitted" value={formatDateTime(request.submittedAt ?? request.createdAt)} />
@@ -298,7 +378,7 @@ function RequestDetailsModal({
           <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
             <Card className={`${panelClassName} p-5`}>
               <div className="mb-4 flex items-start gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FFF7ED] text-[#EA580C]">
+                <span className="flex h-11 w-11 items-center justify-center rounded-none bg-[#FFF7ED] text-[#EA580C]">
                   <Camera className="h-5 w-5" />
                 </span>
                 <div>
@@ -308,7 +388,7 @@ function RequestDetailsModal({
               </div>
 
               {request.carEvidenceImageUrl ? (
-                <div className="overflow-hidden rounded-[22px] border border-[#E2E8F0] bg-[#F8FAFC]">
+                <div className="overflow-hidden rounded-none border border-[#E2E8F0] bg-[#F8FAFC]">
                   {/* eslint-disable-next-line @next/next/no-img-element -- Private signed Supabase URLs are not configured for Next image optimization. */}
                   <img
                     alt={`Car evidence for outstation request ${request.id}`}
@@ -317,7 +397,7 @@ function RequestDetailsModal({
                   />
                 </div>
               ) : (
-                <div className="rounded-[22px] border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-5 text-sm font-semibold text-[#64748B]">
+                <div className="rounded-none border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-5 text-sm font-semibold text-[#64748B]">
                   No signed evidence photo is available for this request.
                 </div>
               )}
@@ -333,7 +413,7 @@ function RequestDetailsModal({
                 />
                 {request.carEvidenceImageUrl ? (
                   <a
-                    className="inline-flex w-fit items-center gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
+                    className="inline-flex w-fit items-center gap-2 rounded-none bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
                     href={request.carEvidenceImageUrl}
                     rel="noreferrer"
                     target="_blank"
@@ -344,12 +424,12 @@ function RequestDetailsModal({
                 ) : null}
               </div>
 
-              <div className="mt-5 rounded-[18px] border border-[#E2E8F0] bg-[#F8FAFC]/85 p-4">
+              <div className="mt-5 rounded-none border border-[#E2E8F0] bg-[#F8FAFC]/85 p-4">
                 <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Ticket attachments</p>
                 {request.ticketAttachmentMetadata.length > 0 ? (
                   <div className="mt-3 space-y-2">
                     {request.ticketAttachmentMetadata.map((attachment) => (
-                      <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm" key={attachment.path}>
+                      <div className="flex items-center justify-between gap-3 rounded-none bg-white px-3 py-2 text-sm" key={attachment.path}>
                         <div className="min-w-0">
                           <p className="truncate font-bold text-[#0F172A]">{attachment.name}</p>
                           <p className="text-xs text-[#64748B]">{attachment.contentType} - {(attachment.size / 1024).toFixed(1)} KB</p>
@@ -399,7 +479,7 @@ function RequestDetailsModal({
             </div>
           </Card>
         </div>
-        <div className="sticky bottom-0 z-10 border-t border-[#E2E8F0] bg-white/98 px-5 py-4 backdrop-blur">
+        <div className="shrink-0 border-t border-[#E2E8F0] bg-white/98 px-5 py-4 backdrop-blur">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748B]">Admin decision</p>
@@ -454,6 +534,21 @@ export function OutstationRequestsAdmin({
       ? { mode: "create" }
       : null,
   );
+
+  useEffect(() => {
+    if (detailRequestId === null) return;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [detailRequestId]);
 
   const requestedRequestId = useMemo(() => parseRequestId(searchParams.get("requestId")), [searchParams]);
   const activeRequestedRequestId = useMemo(() => {
@@ -686,7 +781,7 @@ export function OutstationRequestsAdmin({
   if (localRequests.length === 0) {
     return (
       <OutstationAdminShell>
-        <AdminPageHero
+        <SharpPageHero
           description="No residence-validated outstation request data is currently available. You can still create a manager expense manually."
           eyebrow="Outstation requests"
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
@@ -694,7 +789,7 @@ export function OutstationRequestsAdmin({
           actions={(
             canManageManagerExpenses ? (
               <Button
-                className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
+                className="gap-2 rounded-none bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
                 onClick={() => setManagerExpenseModal({ mode: "create" })}
                 type="button"
               >
@@ -733,15 +828,15 @@ export function OutstationRequestsAdmin({
   return (
     <OutstationAdminShell>
       <div className="space-y-6">
-        <AdminPageHero
-          description="Review captured distance, eligibility, expected payout, claimed amount, evidence, route validation, and final admin decisions."
+        <SharpPageHero
+          description="A command-center view for captured distance, eligibility, expected payout, claimed amount, route evidence, and final admin decisions."
           eyebrow="Outstation review"
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
           title="Residence-validated expense requests"
           actions={(
             canManageManagerExpenses ? (
               <Button
-                className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
+                className="gap-2 rounded-none bg-[#EA580C] px-4 py-2.5 text-xs font-black text-white shadow-[0_14px_34px_rgba(234,88,12,0.28)] hover:bg-[#C2410C]"
                 onClick={() => setManagerExpenseModal({ mode: "create" })}
                 type="button"
               >
@@ -752,43 +847,43 @@ export function OutstationRequestsAdmin({
           )}
           badges={(
             <div className="flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 font-semibold text-[#EA580C]">Requests: {filtered.length}</span>
-              <span className="rounded-full border border-[#DDE6F1] bg-white/85 px-3 py-2 font-semibold text-[#64748B]">Expected: {formatCurrency(totals.expected)}</span>
-              <span className="rounded-full border border-[#DDE6F1] bg-white/85 px-3 py-2 font-semibold text-[#64748B]">Claimed: {formatCurrency(totals.claimed)}</span>
-              <span className="rounded-full border border-[#A7F3D0] bg-[#ECFDF5] px-3 py-2 font-semibold text-[#047857]">Approved: {totals.approved}</span>
+              <span className="border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 font-black text-[#EA580C] shadow-sm">Requests: {filtered.length}</span>
+              <span className="border border-[#DDE6F1] bg-white/90 px-3 py-2 font-black text-[#475569] shadow-sm">Expected: {formatCurrency(totals.expected)}</span>
+              <span className="border border-[#DDE6F1] bg-white/90 px-3 py-2 font-black text-[#475569] shadow-sm">Claimed: {formatCurrency(totals.claimed)}</span>
+              <span className="border border-[#A7F3D0] bg-[#ECFDF5] px-3 py-2 font-black text-[#047857] shadow-sm">Approved: {totals.approved}</span>
             </div>
           )}
         />
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <Metric label="Requests" value={String(filtered.length)} />
-          <Metric label="Submitted" value={String(totals.submitted)} />
-          <Metric label="Approved" value={String(totals.approved)} />
-          <Metric label="Rejected" value={String(totals.rejected)} />
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <Metric label="Requests" tone="orange" value={String(filtered.length)} />
+          <Metric label="Submitted" tone="blue" value={String(totals.submitted)} />
+          <Metric label="Approved" tone="green" value={String(totals.approved)} />
+          <Metric label="Rejected" tone="red" value={String(totals.rejected)} />
           <Metric label="Expected" value={formatCurrency(totals.expected)} />
-          <Metric label="Claimed" value={formatCurrency(totals.claimed)} />
+          <Metric label="Claimed" tone="orange" value={formatCurrency(totals.claimed)} />
         </div>
 
-        <AdminTableShell
+        <SharpTableShell
           action={hasActiveFilters ? (
             <button
-              className="inline-flex rounded-2xl border border-[#E2E8F0] bg-white px-3 py-2 text-xs font-semibold text-[#64748B] shadow-sm transition hover:border-[#F97316] hover:text-[#EA580C]"
+              className="inline-flex rounded-none border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs font-black text-[#EA580C] shadow-sm transition hover:border-[#F97316] hover:bg-[#FFEDD5]"
               onClick={clearFilters}
               type="button"
             >
               Clear filters
             </button>
           ) : null}
-          description="Search by employee or location and filter by eligibility and role."
-          title="Request filters"
+          description="Quickly narrow the queue without losing the premium page rhythm."
+          title="Smart filters"
         >
-          <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 bg-[linear-gradient(135deg,rgba(255,247,237,0.72),rgba(255,255,255,0.92)_42%,rgba(248,250,252,0.92))] p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-3">
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Search</span>
+              <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.18em] text-[#64748B]">Search</span>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white/95 pl-9 shadow-sm"
+                  className="h-12 rounded-none border-[#DDE6F1] bg-white/95 pl-9 font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_22px_rgba(15,23,42,0.04)] focus-visible:ring-[#FED7AA]"
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Employee, HR ID, area, city"
                   value={search}
@@ -797,9 +892,9 @@ export function OutstationRequestsAdmin({
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Eligibility</span>
+              <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.18em] text-[#64748B]">Eligibility</span>
               <select
-                className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+                className="h-12 w-full rounded-none border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_22px_rgba(15,23,42,0.04)] focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setEligibility(event.target.value)}
                 value={eligibility}
               >
@@ -811,9 +906,9 @@ export function OutstationRequestsAdmin({
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Role</span>
+              <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.18em] text-[#64748B]">Role</span>
               <select
-                className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+                className="h-12 w-full rounded-none border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_22px_rgba(15,23,42,0.04)] focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setRole(event.target.value)}
                 value={role}
               >
@@ -826,24 +921,34 @@ export function OutstationRequestsAdmin({
               </select>
             </label>
           </div>
-        </AdminTableShell>
+        </SharpTableShell>
 
         <Card className={`${panelClassName} overflow-hidden p-0`}>
-            <div className="relative overflow-hidden border-b border-[#1F2937] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_34%),linear-gradient(135deg,#080B10_0%,#111827_58%,#24150D_100%)] px-5 py-5 text-white">
+            <div className="relative overflow-hidden border-b border-[#1F2937]/80 bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.28),transparent_34%),radial-gradient(circle_at_12%_10%,rgba(255,255,255,0.10),transparent_24%),linear-gradient(135deg,#070A0F_0%,#111827_58%,#2A170B_100%)] px-5 py-5 text-white sm:px-6">
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#F97316]/20 blur-3xl"
+                className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rotate-12 bg-[#F97316]/20 blur-3xl"
               />
-              <div className="relative z-10 space-y-1.5">
-                <p className="inline-flex rounded-full border border-[#F97316]/35 bg-[#F97316]/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-[#FDBA74]">Request queue</p>
-                <h2 className="text-xl font-black text-white">Submitted outstation requests</h2>
-                <p className="text-sm text-[#CBD5E1]">Open any row to inspect evidence, route metrics, location validation, and admin decisions.</p>
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -bottom-20 left-10 h-36 w-36 -rotate-12 bg-white/10 blur-3xl"
+              />
+              <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div className="space-y-1.5">
+                  <p className="inline-flex border border-[#F97316]/35 bg-[#F97316]/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-[#FDBA74] shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]">Request queue</p>
+                  <h2 className="text-2xl font-black text-white">Submitted outstation requests</h2>
+                  <p className="max-w-2xl text-sm leading-6 text-[#CBD5E1]">Open any row to inspect evidence, route metrics, location validation, and admin decisions in one clean review flow.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs sm:flex">
+                  <span className="border border-white/10 bg-white/10 px-3 py-2 font-black text-white backdrop-blur">Visible {filtered.length}</span>
+                  <span className="border border-[#F97316]/25 bg-[#F97316]/15 px-3 py-2 font-black text-[#FDBA74] backdrop-blur">Selected #{selectedRequest?.id ?? "N/A"}</span>
+                </div>
               </div>
             </div>
 
-            <div className="max-h-[68vh] overflow-auto">
-              <table className="min-w-[1240px] w-full border-separate border-spacing-0 text-left text-sm">
-                <thead className="sticky top-0 z-40 bg-[#F8FAFC] text-[11px] uppercase tracking-[0.16em] text-[#64748B]">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1240px] border-separate border-spacing-0 text-left text-sm">
+                <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.16em] text-[#64748B]">
                   <tr>
                     <th className={stickyEmployeeHeaderClassName}>Employee</th>
                     <th className={stickyTripHeaderClassName}>Trip</th>
@@ -860,15 +965,15 @@ export function OutstationRequestsAdmin({
                 <tbody className="divide-y divide-[#E2E8F0] bg-white">
                   {filtered.map((request) => {
                     const selected = request.id === selectedRequest?.id;
-                    const stickyCellBg = selected ? "bg-[#FFF7ED]" : "bg-white";
+                    const stickyCellBg = selected ? "bg-[#FFF7ED]" : "bg-white group-hover:bg-[#FFF7ED]/65";
                     return (
                       <tr
-                        className={`cursor-pointer ${selected ? "bg-[#FFF7ED] ring-1 ring-inset ring-[#FDBA74]/60" : "transition-colors hover:bg-[#FFF7ED]/65"}`}
+                        className={`group cursor-pointer ${selected ? "bg-[#FFF7ED] ring-1 ring-inset ring-[#FDBA74]/60" : "transition-colors hover:bg-[#FFF7ED]/65"}`}
                         key={request.id}
                         onClick={() => selectRequest(request)}
                       >
                         <td className={`${stickyEmployeeCellClassName} ${stickyCellBg}`}>
-                          <div className="font-bold text-[#0F172A]">{formatEmployeeDisplayName(request.employeeName)}</div>
+                          <div className="font-black text-[#0F172A]">{formatEmployeeDisplayName(request.employeeName)}</div>
                           <div className="text-xs text-[#64748B]">{`${request.employeeHrId} - ${request.employeeRole}`}</div>
                         </td>
                         <td className={`${stickyTripCellClassName} ${stickyCellBg} text-[#64748B]`}>
@@ -878,12 +983,12 @@ export function OutstationRequestsAdmin({
                           {formatKm(request.distanceFromResidenceKm)}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusTone(request.eligibilityStatus)}`}>
+                          <span className={`inline-flex rounded-none px-3 py-1 text-xs font-bold ring-1 ${statusTone(request.eligibilityStatus)}`}>
                             {formatStatus(request.eligibilityStatus)}
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
+                          <span className={`inline-flex rounded-none px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
                             {formatStatus(request.status)}
                           </span>
                         </td>
@@ -902,7 +1007,7 @@ export function OutstationRequestsAdmin({
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5">
                             <Button
-                              className="gap-1.5 rounded-xl border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-[#0F172A] hover:bg-[#FFF7ED]"
+                              className="gap-1.5 rounded-none border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-[#0F172A] hover:bg-[#FFF7ED]"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 openDetails(request);
@@ -913,10 +1018,11 @@ export function OutstationRequestsAdmin({
                               View
                             </Button>
                             {canManageManagerExpenses ? (
-                              request.capturedLocationSource === "admin_manager_expense" ? (
+                              request.capturedLocationSource === "admin_manager_expense" ||
+                              request.capturedLocationSource === "admin_manager_expense_edit" ? (
                                 <>
                                   <Button
-                                    className="gap-1.5 rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs font-black text-[#EA580C] hover:bg-[#FFEDD5]"
+                                    className="gap-1.5 rounded-none border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs font-black text-[#EA580C] hover:bg-[#FFEDD5]"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       setManagerExpenseModal({ mode: "edit", request });
@@ -928,7 +1034,7 @@ export function OutstationRequestsAdmin({
                                     Edit
                                   </Button>
                                   <Button
-                                    className="gap-1.5 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FEE2E2]"
+                                    className="gap-1.5 rounded-none border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FEE2E2]"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       void deleteManagerExpense(request);
@@ -942,7 +1048,7 @@ export function OutstationRequestsAdmin({
                                 </>
                               ) : (
                                 <Button
-                                  className="gap-1.5 rounded-xl border border-[#FCA5A5] bg-[#FFF1F2] px-3 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FECDD3]"
+                                  className="gap-1.5 rounded-none border border-[#FCA5A5] bg-[#FFF1F2] px-3 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FECDD3]"
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     void createManagerExpense(request);
@@ -967,12 +1073,12 @@ export function OutstationRequestsAdmin({
       </div>
 
       {actionMessage && !acting ? (
-        <div className="fixed bottom-4 right-4 z-40 max-w-md rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] px-4 py-3 text-sm font-semibold text-[#047857] shadow-xl">
+        <div className="fixed bottom-4 right-4 z-40 max-w-md rounded-none border border-[#A7F3D0] bg-[#ECFDF5] px-4 py-3 text-sm font-semibold text-[#047857] shadow-xl">
           {actionMessage}
         </div>
       ) : null}
       {actionError && !acting ? (
-        <div className="fixed bottom-4 right-4 z-40 max-w-md rounded-2xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm font-semibold text-[#B91C1C] shadow-xl">
+        <div className="fixed bottom-4 right-4 z-40 max-w-md rounded-none border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm font-semibold text-[#B91C1C] shadow-xl">
           {actionError}
         </div>
       ) : null}
