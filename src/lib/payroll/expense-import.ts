@@ -1,11 +1,14 @@
-import * as XLSX from "xlsx";
-
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import type {
   ExpenseAnalysisResult,
   ExpenseSpecialistSummary,
   ExpenseTripRecord,
 } from "@/lib/payroll/types";
+import {
+  excelWorksheetToJsonRows,
+  firstExcelWorksheet,
+  loadExcelWorkbook,
+} from "@/lib/uploads/exceljs-rows";
 
 function text(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -131,21 +134,14 @@ function specialistSummary(records: ExpenseTripRecord[]) {
 
 export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysisResult> {
   const employeeCodeByName = await buildEmployeeCodeMap();
-  const workbook = XLSX.read(await file.arrayBuffer(), {
-    cellDates: true,
-    type: "array",
-  });
-  const sheetName = workbook.SheetNames[0];
+  const workbook = await loadExcelWorkbook(await file.arrayBuffer());
+  const sheet = firstExcelWorksheet(workbook);
 
-  if (!sheetName) {
+  if (!sheet) {
     throw new Error("Expenses workbook has no readable sheets.");
   }
 
-  const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-    defval: "",
-    raw: false,
-  });
+  const rows = excelWorksheetToJsonRows(sheet, 1);
   const columns = Object.keys(rows[0] ?? {});
   const records: ExpenseTripRecord[] = [];
   const warnings: string[] = [];

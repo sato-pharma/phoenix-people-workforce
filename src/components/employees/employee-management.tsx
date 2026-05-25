@@ -1297,7 +1297,7 @@ export function EmployeeManagement({
                 )}
                 <span className="hidden sm:inline">Upload</span>
                 <input
-                  accept=".xlsx,.xls"
+                  accept=".xlsx"
                   className="sr-only"
                   onChange={(event) => void uploadTemplate(event.target.files?.[0] ?? null)}
                   ref={templateInputRef}

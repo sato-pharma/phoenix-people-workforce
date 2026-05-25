@@ -11,8 +11,8 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
+import ExcelJS from "exceljs";
 import * as React from "react";
-import * as XLSX from "xlsx";
 
 import {
   AdminCallout,
@@ -75,24 +75,26 @@ function experienceBadgeVariant(status: CvExperienceStatus) {
   return "warning" as const;
 }
 
-function downloadWorkbook(rows: CvDatabaseRow[], fileName: string) {
-  const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.json_to_sheet(rowsForCvWorkbook(rows), {
-    header: [...cvDatabaseHeaders],
-  });
+async function downloadWorkbook(rows: CvDatabaseRow[], fileName: string) {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("CV Database");
+  sheet.columns = cvDatabaseHeaders.map((header, index) => ({
+    header,
+    key: header,
+    width: [28, 18, 20, 14, 14, 18, 36, 34][index],
+  }));
+  sheet.addRows(rowsForCvWorkbook(rows));
 
-  sheet["!cols"] = [
-    { wch: 28 },
-    { wch: 18 },
-    { wch: 20 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 18 },
-    { wch: 36 },
-    { wch: 34 },
-  ];
-  XLSX.utils.book_append_sheet(workbook, sheet, "CV Database");
-  XLSX.writeFile(workbook, fileName);
+  const output = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([output], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  window.URL.revokeObjectURL(url);
 }
 
 function downloadTemplate() {
@@ -152,7 +154,7 @@ export function CvDatabaseManager() {
     setWarnings([]);
 
     try {
-      const result = parseCvDatabaseWorkbook(await file.arrayBuffer(), file.name);
+      const result = await parseCvDatabaseWorkbook(await file.arrayBuffer(), file.name);
       setRows(result.rows);
       setFileName(result.fileName);
       setWarnings(result.warnings);
@@ -196,7 +198,7 @@ export function CvDatabaseManager() {
               </Button>
               <input
                 ref={fileInputRef}
-                accept=".xlsx,.xls"
+                accept=".xlsx"
                 className="sr-only"
                 onChange={(event) => void uploadWorkbook(event.target.files?.[0] ?? null)}
                 type="file"
@@ -204,7 +206,7 @@ export function CvDatabaseManager() {
               <Button
                 className="rounded-2xl px-3 py-2 text-xs shadow-sm"
                 disabled={filteredRows.length === 0}
-                onClick={() => downloadWorkbook(filteredRows, "phoenix-cv-database-export.xlsx")}
+                onClick={() => void downloadWorkbook(filteredRows, "phoenix-cv-database-export.xlsx")}
                 variant="secondary"
               >
                 <Download className="mr-2 h-3.5 w-3.5" />

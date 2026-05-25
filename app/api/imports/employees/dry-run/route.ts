@@ -1,57 +1,55 @@
 import { NextResponse } from "next/server";
-import * as XLSX from "xlsx";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
 import type { RawEmployeeImportRow } from "@/lib/imports/employee-import-types";
-import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import {
+  excelCellText,
+  excelWorksheetToJsonRows,
+  firstExcelWorksheet,
+  loadExcelWorkbook,
+} from "@/lib/uploads/exceljs-rows";
+import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function parseExcelRows(file: File) {
   try {
-    const workbook = XLSX.read(await file.arrayBuffer(), {
-      cellDates: true,
-      type: "array",
-    });
-    const firstSheetName = workbook.SheetNames[0];
+    const workbook = await loadExcelWorkbook(await file.arrayBuffer());
+    const firstSheet = firstExcelWorksheet(workbook);
 
-    if (!firstSheetName) {
+    if (!firstSheet) {
       return { error: "empty_worksheet" as const };
     }
 
-    const firstSheet = workbook.Sheets[firstSheetName];
-    const range = XLSX.utils.decode_range(firstSheet["!ref"] ?? "A1:A1");
-    let headerRowIndex = range.s.r;
-    for (let rowIndex = range.s.r; rowIndex <= Math.min(range.e.r, range.s.r + 10); rowIndex += 1) {
-      const values: string[] = [];
-      for (let columnIndex = range.s.c; columnIndex <= range.e.c; columnIndex += 1) {
-        const cell = firstSheet[XLSX.utils.encode_cell({ c: columnIndex, r: rowIndex })];
-        values.push(String(cell?.v ?? "").trim().toLowerCase());
-      }
+    let headerRowNumber = 1;
+    for (let rowNumber = 1; rowNumber <= Math.min(firstSheet.rowCount, 10); rowNumber += 1) {
+      const row = firstSheet.getRow(rowNumber);
+      const values = Array.from({ length: firstSheet.columnCount }, (_, index) =>
+        excelCellText(row.getCell(index + 1).value).toLowerCase(),
+      );
 
       if (
         values.some((value) => ["employee id", "hr_id", "hr id", "employee code"].includes(value)) &&
         values.some((value) => value === "full name")
       ) {
-        headerRowIndex = rowIndex;
+        headerRowNumber = rowNumber;
         break;
       }
     }
 
-    const rows = XLSX.utils.sheet_to_json<RawEmployeeImportRow>(firstSheet, {
-      defval: null,
-      range: headerRowIndex,
-    });
+    const rows = excelWorksheetToJsonRows(firstSheet, headerRowNumber, {
+      defaultValue: null,
+    }) as RawEmployeeImportRow[];
 
     if (rows.length === 0) {
       return { error: "empty_worksheet" as const };
     }
 
-    return { firstDataRowNumber: headerRowIndex + 2, rows };
+    return { firstDataRowNumber: headerRowNumber + 1, rows };
   } catch {
     return { error: "invalid_excel_file" as const };
   }
@@ -69,13 +67,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "missing_file" }, { status: 400 });
     }
     const fileValidation = validateSpreadsheetFile(file, {
-      ...excelSpreadsheetValidation,
+      ...xlsxSpreadsheetValidation,
       emptyError: "invalid_excel_file",
       emptyMessage: "Employee import file is empty.",
       tooLargeError: "employee_import_file_too_large",
       tooLargeMessage: "Employee import file exceeds the 10MB upload limit.",
       unsupportedError: "unsupported_format",
-      unsupportedMessage: "Upload an employee import Excel file in .xls or .xlsx format.",
+      unsupportedMessage: "Upload an employee import Excel file in .xlsx format.",
     });
     if (!fileValidation.ok) {
       return NextResponse.json({ error: fileValidation.error, message: fileValidation.message }, { status: fileValidation.status });
