@@ -12,6 +12,11 @@ import {
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import {
+  clearSessionActivity,
+  markSessionActivity,
+  phoenixSessionTimeoutReason,
+} from "@/lib/auth/client-session";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 
 const rememberedLoginIdKey = "phoenix_remembered_login_id";
@@ -72,7 +77,14 @@ export function PremiumLoginPage() {
 
   useEffect(() => {
     const frames: number[] = [];
-    const loginError = new URLSearchParams(window.location.search).get("error");
+    const searchParams = new URLSearchParams(window.location.search);
+    const loginError = searchParams.get("error");
+    const loginReason = searchParams.get("reason");
+
+    if (loginReason === phoenixSessionTimeoutReason) {
+      clearSessionActivity();
+    }
+
     if (loginError && loginErrorMessages[loginError]) {
       frames.push(window.requestAnimationFrame(() => setError(loginErrorMessages[loginError])));
     }
@@ -128,6 +140,7 @@ export function PremiumLoginPage() {
         window.localStorage.removeItem(rememberedLoginIdKey);
       }
 
+      markSessionActivity();
       window.location.assign(resolveLandingPathForRole(payload.user?.role));
     } catch {
       setError("Unable to sign in. Check your connection and try again.");

@@ -2,8 +2,12 @@
 
 import { useEffect, useRef } from "react";
 
-const lastActivityKey = "phoenix_last_activity_at";
-const timeoutReason = "session-timeout";
+import {
+  clearSessionActivity,
+  markSessionActivity,
+  phoenixSessionTimeoutReason,
+  readSessionActivityAt,
+} from "@/lib/auth/client-session";
 
 async function logoutForTimeout() {
   try {
@@ -11,14 +15,9 @@ async function logoutForTimeout() {
   } catch {
     // Redirect even if the logout request fails; expired cookies will be cleared on next login.
   } finally {
-    window.localStorage.removeItem(lastActivityKey);
-    window.location.assign(`/login?reason=${timeoutReason}`);
+    clearSessionActivity();
+    window.location.assign(`/login?reason=${phoenixSessionTimeoutReason}`);
   }
-}
-
-function readLastActivity() {
-  const parsed = Number(window.localStorage.getItem(lastActivityKey));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 export function SessionSecurityGuard({
@@ -39,8 +38,8 @@ export function SessionSecurityGuard({
         const response = await fetch("/api/auth/heartbeat", { method: "POST" });
         if (response.status === 401 && !loggingOutRef.current) {
           loggingOutRef.current = true;
-          window.localStorage.removeItem(lastActivityKey);
-          window.location.assign(`/login?reason=${timeoutReason}`);
+          clearSessionActivity();
+          window.location.assign(`/login?reason=${phoenixSessionTimeoutReason}`);
         }
       } catch {
         // Keep client-side timeout enforcement active when the heartbeat is temporarily unavailable.
@@ -48,13 +47,13 @@ export function SessionSecurityGuard({
     };
 
     const markActivity = () => {
-      window.localStorage.setItem(lastActivityKey, String(Date.now()));
+      markSessionActivity();
     };
 
     const enforceTimeout = () => {
       if (loggingOutRef.current) return;
 
-      const lastActivity = readLastActivity();
+      const lastActivity = readSessionActivityAt();
       if (!lastActivity) {
         markActivity();
         return;
@@ -81,7 +80,7 @@ export function SessionSecurityGuard({
       }
     };
 
-    if (readLastActivity()) {
+    if (readSessionActivityAt()) {
       enforceTimeout();
     } else {
       markActivity();

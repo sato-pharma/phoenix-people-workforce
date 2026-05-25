@@ -1,4 +1,5 @@
 import {
+  assertPermission,
   normalizeHrIdForAccess,
   normalizeRole,
   resolveEmployeeIdentityId,
@@ -16,7 +17,7 @@ import {
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { savePayrollExpenseApprovals } from "@/lib/payroll/expenses";
+import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/payroll/expenses";
 import {
   validateMedicalRepSimpleExpenseInput,
   type MedicalRepSimpleExpenseInput,
@@ -1929,6 +1930,7 @@ export async function createManagerExpenseAsAdmin(
       ticket_attachment_paths: [],
       to_area: input.destination.area ?? null,
       to_city: input.destination.city ?? null,
+      to_country: input.destination.country ?? null,
       to_label: input.destination.label,
       transportation_type: input.transportationType,
       trip_end_date: input.tripEndDate,
@@ -2060,6 +2062,7 @@ export async function updateManagerExpenseAsAdmin(
     updatePayload.captured_longitude = destination.longitude;
     updatePayload.to_area = destination.area ?? null;
     updatePayload.to_city = destination.city ?? null;
+    updatePayload.to_country = destination.country ?? null;
     updatePayload.to_label = destination.label;
   }
 
@@ -2098,4 +2101,61 @@ export async function updateManagerExpenseAsAdmin(
   });
 
   return updated;
+}
+
+export async function deleteOutstationRequestAsAdmin(
+  requestId: number,
+  access: AccessContext,
+) {
+  await assertPermission(access, "outstation", "delete");
+
+  const existing = await getOutstationRequestById(requestId);
+  if (!existing) throw new Error("Outstation request was not found.");
+
+  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  const expenseTripId = outstationPayrollTripId(existing.id);
+  const supabase = getSupabaseAdmin();
+
+  const { data: linkedPayrollRows, error: linkedPayrollError } = await supabase
+    .from("payroll_expenses")
+    .delete()
+    .eq("trip_id", expenseTripId)
+    .select("trip_id");
+
+  if (linkedPayrollError && !isPayrollExpensesSchemaMissing(linkedPayrollError)) {
+    throw new Error(linkedPayrollError.message);
+  }
+
+  await deleteOutstationCarEvidenceImage(existing.carEvidenceImagePath);
+  await deleteOutstationTicketAttachments(existing.ticketAttachmentPaths);
+
+  const { error } = await supabase
+    .from("outstation_expense_requests")
+    .delete()
+    .eq("id", requestId);
+
+  if (error) throw new Error(error.message);
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? actor,
+    entityId: String(existing.id),
+    entityType: "outstation_request",
+    oldValues: {
+      employeeHrId: existing.employeeHrId,
+      expenseTripId,
+      status: existing.status,
+      toLabel: existing.toLabel,
+      tripEndDate: existing.tripEndDate,
+      tripStartDate: existing.tripStartDate,
+    },
+    summary: `Admin deleted outstation request ${existing.id}.`,
+  });
+
+  return {
+    linkedPayroll: {
+      deletedRows: linkedPayrollRows?.length ?? 0,
+      expenseTripId,
+    },
+    request: existing,
+  };
 }
