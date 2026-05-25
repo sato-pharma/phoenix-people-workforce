@@ -466,7 +466,9 @@ export function OutstationRequestsAdmin({
 
   useEffect(() => {
     if (searchParams.get("action") === "create-manager-expense") {
-      setManagerExpenseModal({ mode: "create" });
+      startTransition(() => {
+        setManagerExpenseModal({ mode: "create" });
+      });
     }
   }, [searchParams]);
 

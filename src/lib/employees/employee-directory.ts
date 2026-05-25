@@ -3,7 +3,6 @@ import {
   resolveFixedSalaryAmounts,
   type PayrollPaymentMode,
 } from "@/lib/payroll/policy";
-import { isDevelopment } from "@/lib/env";
 import { googleGeocodeAddress } from "@/lib/google-maps/server";
 import { canonicalHrIdForDisplay, hrIdLookupKeys } from "@/lib/hr-id";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
@@ -793,7 +792,6 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     return directoryCache.data;
   }
 
-  const startTime = Date.now();
   try {
     const result = await fetchEmployeeDirectory();
     directoryCache = {

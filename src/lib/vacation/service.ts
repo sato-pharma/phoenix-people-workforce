@@ -47,7 +47,6 @@ import type {
   VacationEmployeeSummary,
   VacationEligibilityStatus,
   VacationEmployeeEligibilityRow,
-  VacationPaymentStatus,
   VacationReportData,
   VacationReportFilters,
   VacationRequestInput,

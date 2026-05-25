@@ -36,6 +36,34 @@ type LoginRequestPayload = LoginPayload & {
   responseMode: "json" | "redirect";
 };
 
+class InvalidLoginPayloadError extends Error {
+  constructor(message = "Login request body must be valid JSON.") {
+    super(message);
+    this.name = "InvalidLoginPayloadError";
+  }
+}
+
+function parseJsonLoginPayload(payload: unknown): LoginPayload {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new InvalidLoginPayloadError("Login request body must be a JSON object.");
+  }
+
+  const record = payload as Record<string, unknown>;
+  const loginId = record.loginId;
+  const password = record.password;
+  const remember = record.remember;
+
+  if (
+    (loginId !== undefined && typeof loginId !== "string") ||
+    (password !== undefined && typeof password !== "string") ||
+    (remember !== undefined && typeof remember !== "boolean")
+  ) {
+    throw new InvalidLoginPayloadError("Login request body has invalid fields.");
+  }
+
+  return { loginId, password, remember };
+}
+
 async function readLoginPayload(request: Request): Promise<LoginRequestPayload> {
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
 
@@ -50,10 +78,18 @@ async function readLoginPayload(request: Request): Promise<LoginRequestPayload> 
     };
   }
 
-  const payload = (await request.json()) as LoginPayload;
+  let payload: unknown;
+
+  try {
+    payload = await request.json();
+  } catch {
+    throw new InvalidLoginPayloadError();
+  }
+
+  const parsedPayload = parseJsonLoginPayload(payload);
 
   return {
-    ...payload,
+    ...parsedPayload,
     responseMode: "json",
   };
 }
@@ -332,6 +368,13 @@ export async function POST(request: Request) {
 
     return response;
   } catch (error) {
+    if (error instanceof InvalidLoginPayloadError) {
+      return NextResponse.json(
+        { error: "invalid_request", message: error.message },
+        { status: 400 },
+      );
+    }
+
     const diagnostic = serializeLoginError(error);
     console.error("[auth/login] failed", diagnostic);
 

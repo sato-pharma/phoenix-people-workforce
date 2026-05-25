@@ -20,12 +20,19 @@ import {
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 
 const rememberedLoginIdKey = "phoenix_remembered_login_id";
+const loginIdRequiredMessage = "Enter your HR_ID or login ID.";
+const maxLoginIdLength = 120;
+const maxPasswordLength = 1024;
+const passwordLinkHelpMessage = "Need a password link? Ask your Phoenix admin to generate one from Users & Access.";
+const passwordRequiredMessage = "Enter your password.";
 
 const loginErrorMessages: Record<string, string> = {
   invalid_credentials: "Invalid login ID or password.",
   password_setup_required: "Your password must be set or reset from the admin link before you can sign in.",
   rate_limited: "Too many failed login attempts. Please try again later.",
 };
+
+type LoginErrorField = "form" | "loginId" | "password";
 
 const embers = Array.from({ length: 42 }, (_, index) => ({
   delay: `${(index % 12) * 0.42}s`,
@@ -54,6 +61,7 @@ const features = [
 
 export function PremiumLoginPage() {
   const [error, setError] = useState<string | null>(null);
+  const [errorField, setErrorField] = useState<LoginErrorField | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
@@ -75,6 +83,29 @@ export function PremiumLoginPage() {
     return "Good evening. Secure access starts here.";
   }, []);
 
+  function showLoginError(message: string, field: LoginErrorField = "form") {
+    setError(message);
+    setErrorField(field);
+    setShakeError(true);
+    window.setTimeout(() => setShakeError(false), 460);
+  }
+
+  function updateLoginId(value: string) {
+    setLoginId(value);
+    if (errorField === "loginId") {
+      setError(null);
+      setErrorField(null);
+    }
+  }
+
+  function updatePassword(value: string) {
+    setPassword(value);
+    if (errorField === "password") {
+      setError(null);
+      setErrorField(null);
+    }
+  }
+
   useEffect(() => {
     const frames: number[] = [];
     const searchParams = new URLSearchParams(window.location.search);
@@ -86,10 +117,13 @@ export function PremiumLoginPage() {
     }
 
     if (loginError && loginErrorMessages[loginError]) {
-      frames.push(window.requestAnimationFrame(() => setError(loginErrorMessages[loginError])));
+      frames.push(window.requestAnimationFrame(() => {
+        setError(loginErrorMessages[loginError]);
+        setErrorField("form");
+      }));
     }
 
-    const rememberedLoginId = window.localStorage.getItem(rememberedLoginIdKey);
+    const rememberedLoginId = safeLocalStorageGet(rememberedLoginIdKey);
 
     if (rememberedLoginId) {
       frames.push(window.requestAnimationFrame(() => {
@@ -105,13 +139,26 @@ export function PremiumLoginPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const trimmedLoginId = loginId.trim();
     setError(null);
+    setErrorField(null);
     setShakeError(false);
+
+    if (!trimmedLoginId) {
+      showLoginError(loginIdRequiredMessage, "loginId");
+      return;
+    }
+
+    if (!password) {
+      showLoginError(passwordRequiredMessage, "password");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       const response = await fetch("/api/auth/login", {
-        body: JSON.stringify({ loginId, password, remember }),
+        body: JSON.stringify({ loginId: trimmedLoginId, password, remember }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -121,12 +168,10 @@ export function PremiumLoginPage() {
           | { error?: string; message?: string }
           | null;
 
-        setError(
+        showLoginError(
           payload?.message ??
             "Credentials not recognized. Please check your HR_ID or login ID and password.",
         );
-        setShakeError(true);
-        window.setTimeout(() => setShakeError(false), 460);
         return;
       }
 
@@ -135,17 +180,15 @@ export function PremiumLoginPage() {
       };
 
       if (remember) {
-        window.localStorage.setItem(rememberedLoginIdKey, loginId);
+        safeLocalStorageSet(rememberedLoginIdKey, trimmedLoginId);
       } else {
-        window.localStorage.removeItem(rememberedLoginIdKey);
+        safeLocalStorageRemove(rememberedLoginIdKey);
       }
 
       markSessionActivity();
       window.location.assign(resolveLandingPathForRole(payload.user?.role));
     } catch {
-      setError("Unable to sign in. Check your connection and try again.");
-      setShakeError(true);
-      window.setTimeout(() => setShakeError(false), 460);
+      showLoginError("Unable to sign in. Check your connection and try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -158,11 +201,12 @@ export function PremiumLoginPage() {
       <section className="relative mx-auto grid min-h-[calc(100vh-16px)] w-full max-w-[1740px] overflow-hidden rounded-[28px] border border-white/10 bg-black shadow-[0_28px_90px_rgba(0,0,0,0.72)] sm:min-h-[calc(100vh-32px)] lg:min-h-[calc(100vh-48px)] lg:grid-cols-[1.06fr_0.94fr]">
         <AccessPanel
           error={error}
+          errorField={errorField}
           greeting={greeting}
           isSubmitting={isSubmitting}
           loginId={loginId}
-          onLoginIdChange={setLoginId}
-          onPasswordChange={setPassword}
+          onLoginIdChange={updateLoginId}
+          onPasswordChange={updatePassword}
           onRememberChange={setRemember}
           onSubmit={handleSubmit}
           onTogglePassword={() => setShowPassword((current) => !current)}
@@ -177,9 +221,33 @@ export function PremiumLoginPage() {
   );
 }
 
+function safeLocalStorageGet(key: string) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeLocalStorageRemove(key: string) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore blocked storage; remembering the login ID is optional.
+  }
+}
+
+function safeLocalStorageSet(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignore blocked storage; successful login must not depend on local storage.
+  }
+}
+
 function BrandPanel() {
   return (
-    <aside className="relative order-2 min-h-[500px] lg:min-h-[690px] overflow-hidden px-6 py-12 sm:px-10 lg:order-1 lg:px-10 lg:py-7 xl:px-16">
+    <aside className="relative order-2 min-h-[500px] overflow-hidden px-6 py-12 sm:px-10 lg:order-1 lg:min-h-[620px] lg:px-10 lg:py-6 xl:px-16">
       <div className="login-fire-haze absolute inset-0" />
       <div className="login-bottom-fire absolute inset-x-0 bottom-0 h-64" />
       <div className="login-rock-floor pointer-events-none absolute inset-x-0 bottom-0 h-40" />
@@ -203,7 +271,7 @@ function BrandPanel() {
 
       <div className="relative z-10 flex min-h-full flex-col">
         <div className="mx-auto mt-4 flex w-full max-w-[660px] flex-1 flex-col items-center text-center lg:mt-5">
-          <div className="login-logo-glow relative flex h-48 w-48 items-center justify-center sm:h-[300px] sm:w-[300px] lg:h-[340px] lg:w-[340px]">
+          <div className="login-logo-glow relative flex h-48 w-48 items-center justify-center sm:h-[300px] sm:w-[300px] lg:h-[260px] lg:w-[260px] xl:h-[300px] xl:w-[300px]">
             <Image
               alt="Phoenix logo"
               className="relative z-10 h-auto w-[112%] max-w-none object-contain drop-shadow-[0_0_32px_rgba(255,106,0,0.52)]"
@@ -214,7 +282,7 @@ function BrandPanel() {
             />
           </div>
 
-          <h1 className="-mt-2 text-4xl font-black uppercase tracking-[0.20em] text-white drop-shadow-[0_0_18px_rgba(255,255,255,0.22)] sm:text-6xl lg:text-7xl">
+          <h1 className="-mt-2 text-4xl font-black uppercase tracking-[0.20em] text-white drop-shadow-[0_0_18px_rgba(255,255,255,0.22)] sm:text-6xl lg:text-6xl xl:text-7xl">
             PHOENI<span className="text-[#ff6a00]">X</span>
           </h1>
           <p className="mt-2 text-[10px] font-black uppercase tracking-[0.20em] text-white/88 sm:mt-3 sm:text-sm sm:tracking-[0.28em]">
@@ -225,13 +293,13 @@ function BrandPanel() {
             <span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_0_22px_7px_rgba(255,106,0,0.9)]" />
           </div>
 
-          <p className="mt-6 max-w-[620px] text-lg font-medium leading-7 text-white/92 sm:mt-8 sm:text-2xl sm:leading-8">
+          <p className="mt-5 max-w-[620px] text-lg font-medium leading-7 text-white/92 sm:mt-7 sm:text-2xl sm:leading-8 lg:text-xl">
             Phoenix is more than a system &mdash;
             <br />
             it&apos;s your partner in performance and growth.
           </p>
 
-          <div className="mt-8 w-full max-w-[560px] space-y-4 text-left sm:mt-9">
+          <div className="mt-7 w-full max-w-[560px] space-y-4 text-left sm:mt-8 lg:space-y-3">
             {features.map((feature) => (
               <div className="flex items-center gap-4 sm:gap-5" key={feature.title}>
                 <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border border-[#ff6a00]/80 bg-black/35 text-[#ff6a00] shadow-[0_0_24px_rgba(255,106,0,0.16)] sm:h-[62px] sm:w-[62px] sm:rounded-2xl">
@@ -245,7 +313,7 @@ function BrandPanel() {
             ))}
           </div>
 
-          <p className="mt-8 w-full max-w-[560px] text-left text-xl font-black text-[#ff7900] sm:mt-9 sm:text-3xl">
+          <p className="mt-7 w-full max-w-[560px] text-left text-xl font-black text-[#ff7900] sm:mt-8 sm:text-3xl">
             Rise. Learn. Rebuild.
           </p>
         </div>
@@ -256,6 +324,7 @@ function BrandPanel() {
 
 function AccessPanel({
   error,
+  errorField,
   greeting,
   isSubmitting,
   loginId,
@@ -270,6 +339,7 @@ function AccessPanel({
   showPassword,
 }: {
   error: string | null;
+  errorField: LoginErrorField | null;
   greeting: string;
   isSubmitting: boolean;
   loginId: string;
@@ -283,73 +353,85 @@ function AccessPanel({
   shakeError: boolean;
   showPassword: boolean;
 }) {
+  const loginInvalid = errorField === "form" || errorField === "loginId";
+  const passwordInvalid = errorField === "form" || errorField === "password";
+
   return (
-    <section className="relative order-1 flex min-h-[690px] items-center justify-center px-4 py-8 sm:px-8 lg:order-2 lg:px-9 xl:px-14">
+    <section className="relative order-1 flex min-h-[610px] items-center justify-center px-4 py-6 sm:px-8 lg:order-2 lg:px-9 xl:px-14">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,106,0,0.08),transparent_34%)]" />
       <form
         action="/api/auth/login"
-        className={`relative w-full max-w-[620px] rounded-[36px] border border-white/12 bg-[linear-gradient(145deg,rgba(19,22,27,0.9),rgba(5,6,8,0.98))] px-6 py-8 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_32px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:px-10 sm:py-12 lg:px-12 xl:px-14 ${shakeError ? "login-card-shake" : ""}`}
+        className={`relative w-full max-w-[620px] rounded-[28px] border border-white/12 bg-[linear-gradient(145deg,rgba(19,22,27,0.9),rgba(5,6,8,0.98))] px-6 py-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_32px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:px-8 sm:py-7 lg:px-10 xl:px-12 ${shakeError ? "login-card-shake" : ""}`}
         method="post"
+        noValidate
         onSubmit={onSubmit}
       >
         <div className="text-center">
-          <p className="text-4xl font-black uppercase tracking-[0.26em] text-white sm:text-5xl">
+          <p className="text-3xl font-black uppercase tracking-[0.26em] text-white sm:text-4xl">
             PHOENI<span className="text-[#ff6a00]">X</span>
           </p>
-          <div className="mx-auto mt-3 flex max-w-[360px] items-center gap-4">
+          <div className="mx-auto mt-2 flex max-w-[360px] items-center gap-4">
             <span className="h-px flex-1 bg-gradient-to-r from-transparent to-[#ff6a00]" />
-            <p className="text-sm font-black uppercase tracking-[0.24em] text-[#ff7900] sm:text-base">SECURE ACCESS</p>
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-[#ff7900] sm:text-sm">SECURE ACCESS</p>
             <span className="h-px flex-1 bg-gradient-to-l from-transparent to-[#ff6a00]" />
           </div>
-          <h2 className="mt-10 text-2xl font-bold text-white sm:text-3xl">Sign in to your account</h2>
-          <p className="mt-3 text-lg text-white/52">Enter your credentials to continue</p>
-          <p className="mt-2 text-sm font-medium text-[#ff9a2f]/85">{greeting}</p>
+          <h2 className="mt-5 text-2xl font-bold text-white sm:text-3xl">Sign in to your account</h2>
+          <p className="mt-2 text-base text-white/52">Enter your credentials to continue</p>
+          <p className="mt-1.5 text-sm font-medium text-[#ff9a2f]/85">{greeting}</p>
         </div>
 
-        <div className="mt-9 space-y-6">
+        <div className="mt-5 space-y-4">
           <label className="block" htmlFor="login-id">
-            <span className="mb-3 block text-base font-semibold text-white">HR_ID or Login ID</span>
+            <span className="mb-2 block text-base font-semibold text-white">HR_ID or Login ID</span>
             <span className="relative block">
               <input
+                aria-describedby={error ? "login-error" : undefined}
+                aria-invalid={loginInvalid}
                 autoComplete="username"
-                className="h-16 w-full rounded-2xl border border-white/14 bg-white/[0.045] px-6 pr-14 text-lg text-white outline-none shadow-[inset_0_1px_18px_rgba(255,255,255,0.035)] transition placeholder:text-white/36 focus:border-[#ff7900] focus:bg-white/[0.065] focus:ring-4 focus:ring-[#ff6a00]/16"
+                className="h-12 w-full rounded-2xl border border-white/14 bg-white/[0.045] px-5 pr-12 text-base text-white outline-none shadow-[inset_0_1px_18px_rgba(255,255,255,0.035)] transition placeholder:text-white/36 focus:border-[#ff7900] focus:bg-white/[0.065] focus:ring-4 focus:ring-[#ff6a00]/16"
                 id="login-id"
+                maxLength={maxLoginIdLength}
                 name="loginId"
                 onChange={(event) => onLoginIdChange(event.target.value)}
                 placeholder="Enter HR_ID or login ID"
+                required
                 type="text"
                 value={loginId}
               />
-              <User className="pointer-events-none absolute right-5 top-1/2 h-6 w-6 -translate-y-1/2 text-white/48" />
+              <User className="pointer-events-none absolute right-5 top-1/2 h-5 w-5 -translate-y-1/2 text-white/48" />
             </span>
           </label>
 
-          <label className="block" htmlFor="login-password">
-            <span className="mb-3 block text-base font-semibold text-white">Password</span>
+          <div className="block">
+            <label className="mb-2 block text-base font-semibold text-white" htmlFor="login-password">Password</label>
             <span className="relative block">
               <input
+                aria-describedby={error ? "login-error" : undefined}
+                aria-invalid={passwordInvalid}
                 autoComplete="current-password"
-                className="h-16 w-full rounded-2xl border border-white/14 bg-white/[0.045] px-6 pr-14 text-lg text-white outline-none shadow-[inset_0_1px_18px_rgba(255,255,255,0.035)] transition placeholder:text-white/36 focus:border-[#ff7900] focus:bg-white/[0.065] focus:ring-4 focus:ring-[#ff6a00]/16"
+                className="h-12 w-full rounded-2xl border border-white/14 bg-white/[0.045] px-5 pr-12 text-base text-white outline-none shadow-[inset_0_1px_18px_rgba(255,255,255,0.035)] transition placeholder:text-white/36 focus:border-[#ff7900] focus:bg-white/[0.065] focus:ring-4 focus:ring-[#ff6a00]/16"
                 id="login-password"
+                maxLength={maxPasswordLength}
                 name="password"
                 onChange={(event) => onPasswordChange(event.target.value)}
                 placeholder="Enter your password"
+                required
                 type={showPassword ? "text" : "password"}
                 value={password}
               />
               <button
                 aria-label={showPassword ? "Hide password" : "Show password"}
-                className="absolute right-5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-white/62 transition hover:text-white"
+                className="absolute right-4 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-white/62 transition hover:text-white"
                 type="button"
                 onClick={onTogglePassword}
               >
-                {showPassword ? <EyeOff className="h-6 w-6" /> : <Eye className="h-6 w-6" />}
+                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
               </button>
             </span>
-          </label>
+          </div>
         </div>
 
-        <div className="mt-7 flex flex-col gap-4 text-base sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-4 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
           <label className="flex cursor-pointer items-center gap-3 text-white/82" htmlFor="remember-login">
             <input
               checked={remember}
@@ -369,18 +451,15 @@ function AccessPanel({
             </span>
             Remember login ID
           </label>
-          <a
-            className="font-semibold text-[#ff7900] transition hover:text-[#ff9a2f]"
-            href="#"
-            onClick={(event) => event.preventDefault()}
-          >
-            Ask admin for a password link
-          </a>
+          <p className="max-w-[260px] font-semibold leading-5 text-[#ff9a2f]/90 sm:text-right">
+            {passwordLinkHelpMessage}
+          </p>
         </div>
 
         {error && (
           <div
-            className="mt-5 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100"
+            className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100"
+            id="login-error"
             role="alert"
           >
             {error}
@@ -388,7 +467,7 @@ function AccessPanel({
         )}
 
         <button
-          className="mt-7 flex h-16 w-full items-center justify-center gap-3 rounded-[14px] bg-gradient-to-b from-[#ff8a00] to-[#ff4d00] text-xl font-black text-white shadow-[0_14px_38px_rgba(255,106,0,0.34),inset_0_1px_0_rgba(255,255,255,0.3)] transition hover:translate-y-[-1px] hover:shadow-[0_18px_48px_rgba(255,106,0,0.48),inset_0_1px_0_rgba(255,255,255,0.35)] focus:outline-none focus:ring-4 focus:ring-[#ff6a00]/30 disabled:cursor-not-allowed disabled:opacity-70"
+          className="mt-4 flex h-[52px] w-full items-center justify-center gap-3 rounded-[14px] bg-gradient-to-b from-[#ff8a00] to-[#ff4d00] text-lg font-black text-white shadow-[0_14px_38px_rgba(255,106,0,0.34),inset_0_1px_0_rgba(255,255,255,0.3)] transition hover:translate-y-[-1px] hover:shadow-[0_18px_48px_rgba(255,106,0,0.48),inset_0_1px_0_rgba(255,255,255,0.35)] focus:outline-none focus:ring-4 focus:ring-[#ff6a00]/30 disabled:cursor-not-allowed disabled:opacity-70"
           disabled={isSubmitting}
           type="submit"
         >
@@ -400,7 +479,7 @@ function AccessPanel({
           {isSubmitting ? "Signing in..." : "Sign in"}
         </button>
 
-        <p className="mt-10 flex items-center justify-center gap-3 text-center text-base text-white/48">
+        <p className="mt-5 flex items-center justify-center gap-3 text-center text-sm text-white/48">
           <ShieldCheck className="h-5 w-5" />
           Secure. Trusted. Built for performance.
         </p>

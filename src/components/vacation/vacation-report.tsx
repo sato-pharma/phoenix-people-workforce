@@ -32,7 +32,6 @@ import type {
   VacationReportData,
   VacationRequestRecord,
   VacationRequestStatus,
-  VacationType,
 } from "@/lib/vacation/types";
 import { VACATION_DAY_PARTS, VACATION_PAYMENT_STATUSES, VACATION_STATUSES, VACATION_TYPES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";

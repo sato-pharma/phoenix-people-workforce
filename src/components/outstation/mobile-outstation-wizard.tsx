@@ -1294,6 +1294,7 @@ export function MobileOutstationWizard({
           ) : null}
           {carEvidence?.imageDataUrl ? (
             <div className="relative mt-4 overflow-hidden rounded-2xl border border-slate-200">
+              {/* eslint-disable-next-line @next/next/no-img-element -- Local camera data URLs cannot be optimized by Next Image. */}
               <img
                 alt="Live car evidence preview"
                 className="h-auto w-full object-cover"

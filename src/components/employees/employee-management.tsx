@@ -1,20 +1,14 @@
 ﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿"use client";
 
 import {
-  Activity,
   AlertCircle,
-  Briefcase,
   Building2,
   Check,
   CircleAlert,
-  CreditCard,
   Download,
   Info,
-  Layers,
-  MapPin,
   Pencil,
   Plus,
-  ShieldCheck,
   Users,
   RefreshCw,
   Search,
@@ -22,14 +16,12 @@ import {
   UserCheck2,
   UserPlus,
   UserX,
-  Wallet,
   X,
 } from "lucide-react";
 import * as React from "react";
 
 import {
   AdminCallout,
-  AdminInsightChip,
   AdminPageHero,
   AdminSectionHeader,
   AdminStatCard,
@@ -268,8 +260,6 @@ const emptyResignationForm: ResignationFormState = {
 
 const panelClassName =
   "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
-const selectClassName =
-  "h-11 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-sm text-text shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 
 function EmployeePageShell({ children }: { children: React.ReactNode }) {
   return (
@@ -299,18 +289,6 @@ function masterText(value: string | number | boolean | null | undefined) {
 
 function dateText(value: string | null | undefined) {
   return value ? value.slice(0, 10) : "Not provided";
-}
-
-function statusBadgeVariant(status: string | null) {
-  if (!status || status === "active") {
-    return "success" as const;
-  }
-
-  if (status === "inactive" || status === "on_leave") {
-    return "warning" as const;
-  }
-
-  return "danger" as const;
 }
 
 function optionName(value: string) {

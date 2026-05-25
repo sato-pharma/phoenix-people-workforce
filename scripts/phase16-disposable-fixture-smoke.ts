@@ -256,7 +256,8 @@ async function runProbationSmoke(lookup: LookupContext) {
     .select("id")
     .single();
   if (probationInsert.error && message(probationInsert.error).includes("hr_id")) {
-    const { hr_id: _legacyHrId, ...currentPayload } = probationPayload;
+    const { hr_id: legacyHrId, ...currentPayload } = probationPayload;
+    void legacyHrId;
     probationInsert = await supabase
       .from("employee_probation")
       .insert(currentPayload)

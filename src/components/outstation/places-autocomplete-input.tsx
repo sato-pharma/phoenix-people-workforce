@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, MapPin, Search, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 
 import type { PlacesPrediction } from "@/lib/outstation/types";
 
@@ -29,7 +29,11 @@ export function PlacesAutocompleteInput({
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (value !== undefined) setInputValue(value);
+    if (value !== undefined) {
+      startTransition(() => {
+        setInputValue(value);
+      });
+    }
   }, [value]);
 
   useEffect(() => {

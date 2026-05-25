@@ -13,6 +13,7 @@ import { runRecruitmentOnboardingMetricsTests } from "./recruitment-onboarding-m
 import { runAttendanceCalendarSourceTests } from "./attendance-calendar-source.test.ts";
 import { runLeaveSourceOfTruthTests } from "./leave-source-of-truth.test.ts";
 import { runLifecycleRiskSourceTests } from "./lifecycle-risk-source.test.ts";
+import { runLoginPageHardeningTests } from "./login-page-hardening.test.ts";
 import { runCommunicationSourceOfTruthTests } from "./communication-source-of-truth.test.ts";
 import { runCoachingScoringTests } from "./coaching-scoring.test.ts";
 import { runCoachingAnalyticsTests } from "./coaching-analytics.test.ts";
@@ -104,6 +105,7 @@ await runTest("recruitment onboarding metrics", runRecruitmentOnboardingMetricsT
 await runTest("attendance calendar source", runAttendanceCalendarSourceTests);
 await runTest("leave source of truth", runLeaveSourceOfTruthTests);
 await runTest("lifecycle risk source", runLifecycleRiskSourceTests);
+await runTest("login page hardening", runLoginPageHardeningTests);
 await runTest("communication source of truth", runCommunicationSourceOfTruthTests);
 await runTest("coaching scoring", runCoachingScoringTests);
 await runTest("coaching analytics", runCoachingAnalyticsTests);

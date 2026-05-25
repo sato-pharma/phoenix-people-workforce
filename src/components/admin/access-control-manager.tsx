@@ -161,68 +161,6 @@ const roleFamilies: Record<PhoenixRole, "executive" | "finance" | "hr" | "manage
   "Training Manager": "manager",
 };
 
-const permissionDomains: Array<{
-  description: string;
-  label: string;
-  resources: PermissionResource[];
-}> = [
-  {
-    description: "Employee records, lifecycle workflows, hierarchy, documents, and team visibility.",
-    label: "People",
-    resources: ["employees", "employee_profile", "employee_documents", "team", "organogram", "vacancies", "offers", "probation", "resignations", "contracts"],
-  },
-  {
-    description: "Payroll dashboards, salary artifacts, and payslip access.",
-    label: "Payroll",
-    resources: ["payroll", "payslips"],
-  },
-  {
-    description: "Sales performance, coaching, and line-based commercial visibility.",
-    label: "Sales",
-    resources: ["sales", "coaching"],
-  },
-  {
-    description: "Expense requests, approvals, exports, and outstation workflows.",
-    label: "Expenses / Outstation",
-    resources: ["expenses", "outstation"],
-  },
-  {
-    description: "User administration, imports, permission overrides, and admin route access.",
-    label: "Admin / Governance",
-    resources: ["admin", "overview", "admin_access", "imports", "user_admin", "permission_admin"],
-  },
-  {
-    description: "Calendar and cross-system operating surfaces.",
-    label: "System",
-    resources: ["hr_calendar"],
-  },
-];
-
-const permissionResourceDescriptions: Partial<Record<PermissionResource, string>> = {
-  admin: "Administrative shell and system controls.",
-  admin_access: "Users & Access dashboard visibility.",
-  coaching: "Coaching reports and performance feedback.",
-  contracts: "Contract renewal and employment terms.",
-  employee_documents: "Employee files and document exports.",
-  employee_profile: "Personal employment profile fields.",
-  employees: "Employee directory and employee record management.",
-  expenses: "Expense request and approval workflows.",
-  hr_calendar: "HR calendar and workforce events.",
-  imports: "Bulk import workflows and validation.",
-  offers: "Offer generation and candidate decision flows.",
-  organogram: "Hierarchy and organization chart visibility.",
-  outstation: "Outstation requests and approvals.",
-  payroll: "Payroll dashboard and salary operations.",
-  payslips: "Payslip visibility and export.",
-  permission_admin: "Role permission override governance.",
-  probation: "Probation tracking and outcomes.",
-  resignations: "Resignation lifecycle workflows.",
-  sales: "Sales dashboards and exports.",
-  team: "Team views and subordinate data.",
-  user_admin: "User identity and role administration.",
-  vacancies: "Vacancy and headcount planning.",
-};
-
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
     day: "2-digit",
@@ -342,21 +280,6 @@ function PasswordBadge({ forcePasswordReset }: { forcePasswordReset: boolean }) 
       {forcePasswordReset ? "Setup pending" : "Password ready"}
     </span>
   );
-}
-
-function auditReason(log: AuditLogRow) {
-  const reason = log.newValues?.reason;
-  return typeof reason === "string" && reason.trim() ? reason.trim() : null;
-}
-
-function auditActionLabel(log: AuditLogRow) {
-  const action = log.newValues?.action;
-  if (action === "password_setup_link_generated") return "Token-safe setup/reset event";
-  if (log.entityType === "permission_override") return "Permission override";
-  if (/deactivated/i.test(log.summary)) return "Access revoked";
-  if (/activated/i.test(log.summary)) return "Access restored";
-  if (/role/i.test(log.summary)) return "Role governance";
-  return "User governance";
 }
 
 export function AccessControlManager({
@@ -732,11 +655,6 @@ export function AccessControlManager({
     ),
   );
   const permissionOverrideCount = data?.permissionOverrides?.length ?? 0;
-  const visiblePermissionDomains = permissionDomains.map((domain) => ({
-    ...domain,
-    resources: domain.resources.filter((resource) => permissionResources.includes(resource)),
-  })).filter((domain) => domain.resources.length > 0);
-
   const statCards = [
     {
       description: "Enabled identities with access to protected workflows.",
