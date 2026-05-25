@@ -30,6 +30,8 @@ The project should keep only two active Vercel deployments:
 
 Old Vercel deployments were intentionally removed to reduce confusion. The working preview URL above is the stable branch alias; the underlying deployment-specific URL changes after each branch push. Do not delete the active production deployment or the latest active preview deployment unless explicitly replacing them with newer deployments for the same purpose.
 
+The working preview is configured as a production-data read-only environment. It can read production Supabase data so dashboards are realistic, but Vercel Preview must keep `PHOENIX_PREVIEW_READ_ONLY=true`. With that flag enabled, `proxy.ts` blocks Preview mutations except authentication login/logout/heartbeat. Do not point Preview at production Supabase unless this guard is deployed and enabled.
+
 ## Deployment Rules
 
 Production deploy rule:

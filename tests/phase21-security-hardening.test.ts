@@ -8,6 +8,7 @@ export function runPhase21SecurityHardeningTests() {
   const emailReplyRoute = readFileSync("app/api/admin/email-reply/send/route.ts", "utf8");
   const probationRoute = readFileSync("app/api/probation/route.ts", "utf8");
   const probationWorkflowRoute = readFileSync("app/api/probation/[id]/workflow/route.ts", "utf8");
+  const proxySource = readFileSync("proxy.ts", "utf8");
   const scorecard = readFileSync("docs/system-production-build-scorecard.md", "utf8");
 
   assert.match(bulkActionRoute, /Authentication is required/);
@@ -22,6 +23,13 @@ export function runPhase21SecurityHardeningTests() {
 
   assert.match(probationRoute, /assertPermission\(access, "probation", "update"\)/);
   assert.match(probationWorkflowRoute, /assertPermission\(access, "probation", action === "pass" \|\| action === "terminate" \? "approve" : "update"\)/);
+
+  assert.match(proxySource, /PHOENIX_PREVIEW_READ_ONLY/);
+  assert.match(proxySource, /VERCEL_ENV === "preview"/);
+  assert.match(proxySource, /preview_read_only/);
+  assert.match(proxySource, /\/api\/auth\/login/);
+  assert.match(proxySource, /\/api\/auth\/logout/);
+  assert.match(proxySource, /\/api\/auth\/heartbeat/);
 
   assert.match(phase21Smoke, /critical public tables have RLS enabled/);
   assert.match(phase21Smoke, /critical tables do not grant direct anon privileges/);
