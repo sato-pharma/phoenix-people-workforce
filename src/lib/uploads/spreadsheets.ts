@@ -29,6 +29,13 @@ export const excelSpreadsheetValidation = {
   ],
 } as const;
 
+export const xlsxSpreadsheetValidation = {
+  allowedExtensions: [".xlsx"],
+  allowedMimeTypes: [
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ],
+} as const;
+
 export const salesSpreadsheetValidation = {
   allowedExtensions: [".xls", ".xlsx"],
   allowedMimeTypes: [

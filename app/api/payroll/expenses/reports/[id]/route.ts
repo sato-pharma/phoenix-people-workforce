@@ -9,7 +9,7 @@ import {
   savePayrollExpenseApprovals,
 } from "@/lib/payroll/expenses";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,13 +75,13 @@ export async function PUT(request: Request, { params }: Params) {
       );
     }
     const fileValidation = validateSpreadsheetFile(file, {
-      ...excelSpreadsheetValidation,
+      ...xlsxSpreadsheetValidation,
       emptyError: "invalid_expenses_file",
       emptyMessage: "Replacement expenses file is empty.",
       tooLargeError: "expenses_file_too_large",
       tooLargeMessage: "Replacement expenses file exceeds the 10MB upload limit.",
       unsupportedError: "unsupported_expenses_file_type",
-      unsupportedMessage: "Upload an Excel expenses file in .xls or .xlsx format.",
+      unsupportedMessage: "Upload an Excel expenses file in .xlsx format.",
     });
     if (!fileValidation.ok) {
       return NextResponse.json(

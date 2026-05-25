@@ -354,7 +354,7 @@ export function ExpenseReport({
           </div>
           <div className="relative z-10 flex flex-wrap items-center gap-2">
           <input
-            accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="hidden"
             onChange={(event) => onUpload(event.target.files?.[0] ?? null)}
             ref={inputRef}
@@ -405,7 +405,7 @@ export function ExpenseReport({
       {reports.length > 0 && (
         <div className="overflow-hidden rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_16px_38px_rgba(15,23,42,0.07)]">
           <input
-            accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="hidden"
             onChange={(event) => {
               onReplaceReport(replaceReportId ?? "", event.target.files?.[0] ?? null);
