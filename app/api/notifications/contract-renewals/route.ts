@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getContractRenewalReminderCandidates } from "@/lib/contracts/service";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,8 +57,11 @@ async function runContractRenewalNotifications(request: Request) {
     results.push({ daysUntil: row.daysUntil, employeeHrId: row.hr_id, result });
   }
 
+  const processing = await runScheduledNotificationProcessing(10);
+
   return NextResponse.json({
     matched: candidates.length,
+    processing,
     results,
     runDate,
   });

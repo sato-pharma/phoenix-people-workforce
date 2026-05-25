@@ -40,8 +40,14 @@ export function runContractRenewalHardeningTests() {
   const reminderRoute = readFileSync("app/api/notifications/contract-renewals/route.ts", "utf8");
   assert.match(reminderRoute, /getContractRenewalReminderCandidates/);
   assert.match(reminderRoute, /safeSendNotificationEmail/);
+  assert.match(reminderRoute, /runScheduledNotificationProcessing/);
 
   const vercelConfig = readFileSync("vercel.json", "utf8");
-  assert.match(vercelConfig, /\/api\/notifications\/contract-renewals/);
-  assert.match(vercelConfig, /\/api\/notifications\/process/);
+  const crons = JSON.parse(vercelConfig).crons as Array<{ path: string; schedule: string }>;
+  assert.equal(crons.length, 2);
+  assert.deepEqual(
+    crons.map((cron) => cron.path).sort(),
+    ["/api/notifications/birthdays", "/api/notifications/contract-renewals"],
+  );
+  assert.ok(crons.every((cron) => !cron.schedule.startsWith("*/")));
 }

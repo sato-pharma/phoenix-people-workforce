@@ -9,6 +9,8 @@ export function runProbationStabilizationTests() {
   const permissionsSource = readFileSync("src/lib/auth/permissions.ts", "utf8");
   const workflowRouteSource = readFileSync("app/api/probation/[id]/workflow/route.ts", "utf8");
   const notificationProcessRouteSource = readFileSync("app/api/notifications/process/route.ts", "utf8");
+  const scheduledNotificationProcessingSource = readFileSync("src/lib/notifications/scheduled-processing.ts", "utf8");
+  const contractRenewalsCronSource = readFileSync("app/api/notifications/contract-renewals/route.ts", "utf8");
   const inAppNotificationsSource = readFileSync("src/lib/notifications/in-app.ts", "utf8");
   const portalServiceSource = readFileSync("src/lib/employee-portal/service.ts", "utf8");
   const resignationsSource = readFileSync("src/lib/resignations/service.ts", "utf8");
@@ -49,8 +51,10 @@ export function runProbationStabilizationTests() {
   assert.match(serviceSource, /processDueProbationReminderEvents/);
   assert.match(serviceSource, /ctaLabel:\s*"Submit Your Feedback"/);
   assert.match(serviceSource, /ensureSystemProbationReview/);
-  assert.match(notificationProcessRouteSource, /processDueProbationReminderEvents/);
-  assert.match(notificationProcessRouteSource, /processNotificationOutbox/);
+  assert.match(notificationProcessRouteSource, /runScheduledNotificationProcessing/);
+  assert.match(scheduledNotificationProcessingSource, /processDueProbationReminderEvents/);
+  assert.match(scheduledNotificationProcessingSource, /processNotificationOutbox/);
+  assert.match(contractRenewalsCronSource, /runScheduledNotificationProcessing/);
   assert.match(inAppNotificationsSource, /\.overlaps\("recipients"/);
   assert.match(inAppNotificationsSource, /mapInAppNotificationRows/);
   assert.match(portalServiceSource, /recipients\.cs/);
