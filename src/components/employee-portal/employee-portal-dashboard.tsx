@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactElement, ReactNode } from "react";
+import { Component, type ReactElement, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -15,6 +15,7 @@ import {
   XAxis,
   YAxis,
   Legend,
+  ReferenceLine,
 } from "recharts";
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import {
@@ -25,19 +26,16 @@ import {
   CalendarClock,
   CalendarDays,
   Car,
-  CircleDollarSign,
   Eye,
   EyeOff,
   HelpCircle,
   Info,
   MapPin,
   Megaphone,
-  MinusCircle,
   ReceiptText,
   RefreshCw,
   Send,
   ShieldCheck,
-  Target,
   TrendingUp,
   Trophy,
   Upload,
@@ -72,7 +70,6 @@ void retainedEmployeePortalPayslipGuardText;
 
 type ContributionMetric = "sales" | "units";
 type MetricAccent = "amber" | "blue" | "green" | "orange" | "purple";
-type MetricIcon = typeof Activity;
 type ContributionRow = {
   name: string;
   sales: number;
@@ -139,19 +136,80 @@ function ContributionMetricToggle({
   onChange: (metric: ContributionMetric) => void;
 }) {
   return (
-    <div className="inline-flex rounded-xl border border-slate-200 bg-white/80 p-1 shadow-[0_6px_18px_rgba(15,23,42,0.05)] ring-1 ring-white/80">
+    <div className="inline-flex rounded border border-slate-200 bg-white/80 p-1 shadow-[0_6px_18px_rgba(15,23,42,0.05)] ring-1 ring-white/80">
       {(["sales", "units"] as const).map((option) => {
         const active = metric === option;
         return (
           <button
             className={active
-              ? "rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white shadow-sm"
-              : "rounded-lg px-3 py-1.5 text-xs font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"}
+              ? "rounded bg-slate-950 px-3 py-1.5 text-xs font-bold text-white shadow-sm"
+              : "rounded px-3 py-1.5 text-xs font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"}
             key={option}
             onClick={() => onChange(option)}
             type="button"
           >
             {option === "sales" ? "Sales" : "Units"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PeriodSegmentedControl({
+  options,
+  value,
+  onChange,
+}: {
+  options: Array<{ value: string; label: string }>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const handleKeyDown = (event: React.KeyboardEvent, index: number) => {
+    let nextIndex = index;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      nextIndex = (index + 1) % options.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      nextIndex = (index - 1 + options.length) % options.length;
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      event.preventDefault();
+      nextIndex = options.length - 1;
+    } else {
+      return;
+    }
+    onChange(options[nextIndex].value);
+    const group = (event.currentTarget as HTMLElement).parentElement;
+    const buttons = group?.querySelectorAll<HTMLButtonElement>("[role=radio]");
+    buttons?.[nextIndex]?.focus();
+  };
+
+  return (
+    <div
+      className="inline-flex flex-wrap gap-1 rounded border border-slate-200 bg-white/80 p-1 shadow-[0_4px_14px_rgba(15,23,42,0.04)] ring-1 ring-white/80"
+      role="radiogroup"
+      aria-label="Period filter"
+    >
+      {options.map((option, index) => {
+        const active = value === option.value;
+        return (
+          <button
+            aria-checked={active}
+            className={active
+              ? "rounded bg-slate-950 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-1"
+              : "rounded px-3 py-1.5 text-[11px] font-bold text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-1"}
+            key={option.value}
+            onClick={() => onChange(option.value)}
+            onKeyDown={(e) => handleKeyDown(e, index)}
+            role="radio"
+            tabIndex={active ? 0 : -1}
+            type="button"
+          >
+            {option.label}
           </button>
         );
       })}
@@ -219,7 +277,7 @@ function chartTooltipStyle() {
     backdropFilter: "blur(18px)",
     background: "rgba(255,255,255,0.96)",
     border: "1px solid rgba(226,232,240,0.9)",
-    borderRadius: 14,
+    borderRadius: 4,
     boxShadow: "0 18px 44px rgba(15,23,42,0.14)",
     color: "#0f172a",
     fontSize: 12,
@@ -233,6 +291,10 @@ const chartAxisStyle = {
   fontWeight: 700,
   letterSpacing: 0,
 };
+
+/* Enterprise table grid: thin vertical + horizontal lines in very light grey */
+const gridCellClass = "border border-slate-100 px-4 py-3";
+const gridHeaderClass = "border border-slate-100 bg-slate-50 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500";
 
 const chartMargin = { bottom: 6, left: 2, right: 16, top: 16 };
 const chartGridStroke = "#e8edf4";
@@ -265,13 +327,15 @@ function StableChartFrame({
   height: number;
 }) {
   return (
-    <SafeResponsiveContainer
-      className={`${className} min-w-0 overflow-hidden`}
-      minHeight={height}
-      style={{ height }}
-    >
-      {children}
-    </SafeResponsiveContainer>
+    <ChartErrorBoundary>
+      <SafeResponsiveContainer
+        className={`${className} min-w-0 overflow-hidden`}
+        minHeight={height}
+        style={{ height }}
+      >
+        {children}
+      </SafeResponsiveContainer>
+    </ChartErrorBoundary>
   );
 }
 
@@ -321,7 +385,7 @@ function insightMeta(text: string) {
 function sectionTitle(kicker: string, title: string) {
   return (
     <div className="mb-2 flex items-center gap-3">
-      <div className="h-8 w-[3px] rounded-full bg-gradient-to-b from-orange-400 to-orange-600" />
+      <div className="h-8 w-[3px] rounded-sm bg-gradient-to-b from-orange-400 to-orange-600" />
       <div>
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-500">{kicker}</p>
         <h2 className="mt-0.5 text-[22px] font-semibold leading-tight tracking-tight text-slate-900">{title}</h2>
@@ -332,12 +396,69 @@ function sectionTitle(kicker: string, title: string) {
 
 export function LoadingSkeleton() {
   return (
-    <div className="space-y-6">
-      <div className="h-[300px] animate-pulse rounded-3xl border border-slate-200 bg-slate-100/80" />
-      <div className="h-[420px] animate-pulse rounded-3xl border border-slate-200 bg-slate-100/80" />
-      <div className="h-[120px] animate-pulse rounded-3xl border border-slate-200 bg-slate-100/80" />
+    <div className="space-y-5">
+      {/* KPI row skeleton */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-[100px] animate-pulse rounded border border-slate-200 bg-slate-100/60" />
+        ))}
+      </div>
+      {/* Actions + Quick Actions */}
+      <div className="grid gap-5 xl:grid-cols-2">
+        <div className="h-[260px] animate-pulse rounded border border-slate-200 bg-slate-100/60" />
+        <div className="h-[260px] animate-pulse rounded border border-slate-200 bg-slate-100/60" />
+      </div>
+      {/* Chart skeleton */}
+      <div className="h-[320px] animate-pulse rounded border border-slate-200 bg-slate-100/60">
+        <div className="flex h-full flex-col justify-end p-5">
+          <div className="flex items-end gap-2">
+            {[40, 60, 35, 80, 55, 70].map((h, i) => (
+              <div key={i} className="flex-1 rounded-sm bg-slate-200/80" style={{ height: `${h}%` }} />
+            ))}
+          </div>
+        </div>
+      </div>
+      {/* Insights row */}
+      <div className="grid gap-3 md:grid-cols-2">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-[80px] animate-pulse rounded border border-slate-200 bg-slate-100/60" />
+        ))}
+      </div>
+      {/* Bottom sections */}
+      <div className="grid gap-5 xl:grid-cols-[1.55fr_0.9fr]">
+        <div className="h-[300px] animate-pulse rounded border border-slate-200 bg-slate-100/60" />
+        <div className="h-[300px] animate-pulse rounded border border-slate-200 bg-slate-100/60" />
+      </div>
     </div>
   );
+}
+
+/* Chart Error Boundary — wraps Recharts rendering errors gracefully */
+class ChartErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex h-full min-h-[160px] flex-col items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50/60 px-4 text-center">
+          <Activity className="mb-2 h-6 w-6 text-slate-300" />
+          <p className="text-sm font-medium text-slate-500">Chart unavailable</p>
+          <p className="mt-1 text-xs text-slate-400">Unable to render this visualization</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export function EmptyStateCard({
@@ -348,7 +469,7 @@ export function EmptyStateCard({
   title: string;
 }) {
   return (
-    <Card className="rounded-3xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-10 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
+    <Card className="rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-10 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
       <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
       <p className="mt-2 text-sm text-slate-600">{message}</p>
     </Card>
@@ -366,7 +487,7 @@ export function MetricCard({
 }) {
   return (
     <div
-      className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300"
+      className="group relative overflow-hidden rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300"
       title={tooltip}
     >
       <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
@@ -385,7 +506,7 @@ export function SmartInsightCard({
   value: string;
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
+    <div className="group relative overflow-hidden rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
       <div className="flex items-center gap-2 text-slate-700">
         <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
       </div>
@@ -431,7 +552,7 @@ export function SalesAchievementRing({
   };
 
   return (
-    <div className="flex h-full flex-col justify-center rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+    <div className="flex h-full flex-col justify-center rounded border border-slate-100 bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
       <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Sales Achievement</p>
       <div className="mt-4 flex flex-col items-center">
         <div className="relative flex h-[280px] w-[280px] items-center justify-center rounded-full" style={circleStyle} title="Sales achievement">
@@ -445,7 +566,7 @@ export function SalesAchievementRing({
         <p className={`mt-2 text-sm font-medium ${growthNegative ? "text-rose-600" : "text-emerald-600"}`}>
           {growthText}
         </p>
-        <div className="mt-3 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-sm text-slate-700">
+        <div className="mt-3 rounded border border-slate-200 bg-slate-50 px-4 py-1.5 text-sm text-slate-700">
           Gap to target: <span className="font-semibold text-orange-600">{egp(gapToTarget)}</span>
         </div>
       </div>
@@ -485,8 +606,8 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
           : "bg-slate-500";
 
   return (
-    <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_22px_48px_rgba(15,23,42,0.06)] lg:p-8">
-      <div className="mb-6 rounded-[32px] border border-slate-200 bg-white px-6 py-6 shadow-[0_8px_26px_rgba(15,23,42,0.05)] lg:px-8 lg:py-7">
+    <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_22px_48px_rgba(15,23,42,0.06)] lg:p-8">
+      <div className="mb-6 rounded border border-slate-200 bg-white px-6 py-6 shadow-[0_8px_26px_rgba(15,23,42,0.05)] lg:px-8 lg:py-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
           <div className="flex h-[152px] w-[152px] shrink-0 items-center justify-center rounded-full border-2 border-orange-100 bg-orange-50/30">
             <div className="flex h-[96px] w-[96px] items-center justify-center rounded-full bg-orange-500/10 text-[34px] font-semibold text-orange-500">
@@ -524,7 +645,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
 
               <span className="h-7 w-px bg-slate-200" />
 
-              <span className={`inline-flex items-center gap-2.5 rounded-full border px-5 py-1.5 text-[22px] font-medium ${statusPillClass}`}>
+              <span className={`inline-flex items-center gap-2.5 rounded border px-5 py-1.5 text-[22px] font-medium ${statusPillClass}`}>
                 {employee.status}
                 <span className={`h-3.5 w-3.5 rounded-full ${statusDotClass}`} />
               </span>
@@ -538,7 +659,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
           </div>
         </div>
       </div>
-      <div className="hidden mb-5 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+      <div className="hidden mb-5 rounded border border-slate-200 bg-slate-50/60 px-4 py-3">
         <p className="text-base font-semibold text-slate-900">
           {employee.fullName} <span className="text-slate-500">·</span> {employee.roleLabel}
         </p>
@@ -559,7 +680,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
       <div className="grid gap-6 xl:grid-cols-[0.82fr_1.38fr_0.85fr]">
         <div className="space-y-4 xl:pr-2">
           <div className="flex items-start gap-3">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-xl font-semibold text-slate-700">
+            <div className="flex h-16 w-16 items-center justify-center rounded bg-slate-100 text-xl font-semibold text-slate-700">
               {employee.fullName.split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("").toUpperCase()}
             </div>
             <div>
@@ -572,7 +693,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
             </div>
           </div>
 
-          <div className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+          <div className="space-y-2 rounded border border-slate-100 bg-slate-50/70 p-4">
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-500">Line</span>
               <span className="font-semibold text-slate-900">{employee.line ?? "Not assigned"}</span>
@@ -612,7 +733,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
             label="Top Product"
             value={sales.topProduct ?? "No product data"}
           />
-          <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
+          <div className="rounded border border-slate-100 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">Trend</p>
               <p className={`text-sm font-medium ${growthNegative ? "text-rose-600" : "text-emerald-600"}`}>
@@ -652,12 +773,12 @@ function SmartInsightsStrip({ data }: { data: MedicalRepPortalData }) {
         {items.map((insight) => {
           const meta = insightMeta(insight);
           return (
-            <div key={insight} className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
+            <div key={insight} className="group relative overflow-hidden rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-slate-700">
                   <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Insight</span>
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${meta.classes}`}>{meta.badge}</span>
+                <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${meta.classes}`}>{meta.badge}</span>
               </div>
               <p className="mt-2.5 text-sm font-medium text-slate-700">{shortInsight(insight)}</p>
             </div>
@@ -700,7 +821,6 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
   const signals = [
     {
       accent: "green" as const,
-      icon: CircleDollarSign,
       label: "Sales",
       note: `Target ${egp(data.sales.overviewTarget)}`,
       progress: achievement,
@@ -708,7 +828,6 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
     },
     {
       accent: "orange" as const,
-      icon: Target,
       label: "Target",
       progress: achievement,
       note: "Approved sales target",
@@ -716,7 +835,6 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
     },
     {
       accent: "blue" as const,
-      icon: Trophy,
       label: "Achievement Rate",
       note: "All-time sales versus target",
       progress: achievement,
@@ -724,7 +842,6 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
     },
     {
       accent: "amber" as const,
-      icon: MinusCircle,
       label: "Gap to Target",
       note: performanceState,
       progress: achievement,
@@ -732,7 +849,6 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
     },
   ] satisfies Array<{
     accent: MetricAccent;
-    icon: MetricIcon;
     label: string;
     note: string;
     progress: number;
@@ -747,40 +863,28 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
           <h2 className="mt-1 text-lg font-black tracking-[-0.02em] text-slate-950">Key operating signals</h2>
         </div>
         <div className="flex flex-wrap gap-2">
-          <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm backdrop-blur-sm">{data.workforce.scopeLabel}</span>
+          <span className="rounded border border-slate-200 bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm backdrop-blur-sm">{data.workforce.scopeLabel}</span>
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {signals.map((signal) => {
           const tone = metricTone(signal.accent);
-          const Icon = signal.icon;
           return (
             <Card
-              className={`group relative flex min-h-[116px] min-w-0 flex-col overflow-hidden rounded-xl border bg-gradient-to-br px-4 py-4 shadow-sm transition-shadow duration-200 hover:shadow-md ${tone.card}`}
+              className={`group relative flex min-h-[100px] min-w-0 flex-col overflow-hidden rounded border-l-[3px] border bg-white px-4 py-3.5 shadow-sm ${tone.border}`}
               key={signal.label}
             >
-              <div className={`absolute inset-x-0 top-0 h-1 ${tone.line} opacity-90`} />
-              <div className="relative flex flex-1 flex-col justify-between gap-2">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{signal.label}</p>
-                    </div>
-                    <p className={`mt-2 max-w-full truncate text-2xl font-black leading-none tracking-[-0.03em] tabular-nums ${tone.value}`}>
-                      {signal.value}
-                    </p>
-                    <p className="mt-1.5 line-clamp-2 text-[11px] font-medium leading-snug text-slate-500">{signal.note}</p>
-                  </div>
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ${tone.icon}`}>
-                    <Icon className="h-5 w-5" />
-                  </div>
+              <div className="flex flex-1 flex-col justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{signal.label}</p>
+                  <p className={`mt-2 whitespace-nowrap text-2xl font-black leading-none tracking-[-0.03em] tabular-nums ${tone.value}`}>
+                    {signal.value}
+                  </p>
+                  <p className="mt-1.5 text-[11px] font-medium leading-snug text-slate-500">{signal.note}</p>
                 </div>
-                <div className="space-y-2">
-                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                    <div className={`${tone.line} h-full rounded-full transition-[width] duration-500`} style={{ width: `${Math.max(8, Math.min(100, achievement))}%` }} />
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] font-medium text-slate-400">
-                    <span>Live signal</span>
+                <div className="space-y-1">
+                  <div className="h-1 overflow-hidden rounded-sm bg-slate-100">
+                    <div className={`${tone.line} h-full rounded-sm transition-[width] duration-500`} style={{ width: `${Math.max(8, Math.min(100, achievement))}%` }} />
                   </div>
                 </div>
               </div>
@@ -816,8 +920,8 @@ function IncentiveStatusCard({
   const isEligible = achievementPercent >= 90;
 
   return (
-    <Card className="group rounded-2xl border border-slate-200 bg-white/95 px-5 py-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
-      <div className="mb-4 h-0.5 w-8 rounded-full bg-amber-200 transition group-hover:w-12 group-hover:bg-amber-500" />
+    <Card className="group rounded border border-slate-200 bg-white/95 px-5 py-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
+      <div className="mb-4 h-0.5 w-8 rounded-sm bg-amber-200 transition group-hover:w-12 group-hover:bg-amber-500" />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-2xl leading-tight font-semibold tracking-tight text-slate-900">
@@ -833,12 +937,12 @@ function IncentiveStatusCard({
             Based on Basic Salary x 2 months per semester.
           </p>
         </div>
-        <div className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${isEligible ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+        <div className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded transition-colors ${isEligible ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
           <Wallet className="h-4 w-4" />
         </div>
       </div>
       <div className="mt-4 flex items-center gap-2">
-        <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${isEligible ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+        <span className={`rounded px-2 py-1 text-[11px] font-medium ${isEligible ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
           {isEligible ? 'In the Money' : 'Threshold Pending'}
         </span>
         {isEligible && (
@@ -862,7 +966,7 @@ function IncentiveSalaryVisibilityToggle({
     <button
       aria-label={label}
       aria-pressed={isSalaryVisible}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-2 focus-visible:outline-orange-500 focus-visible:outline-offset-1"
+      className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-2 focus-visible:outline-orange-500 focus-visible:outline-offset-1"
       onClick={onToggleSalaryVisibility}
       title={label}
       type="button"
@@ -921,13 +1025,13 @@ function IncentiveCalculatorWidget({
       }
     >
       <div className="space-y-6">
-        <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+        <div className="rounded border border-slate-200 bg-slate-50/70 p-3">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-600">Base Salary</span>
             <span className="font-medium text-slate-900">{isSalaryVisible ? egp(calculatedBaseSalary) : maskedMoneyValue}</span>
           </div>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+        <div className="rounded border border-slate-200 bg-slate-50/70 p-3">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-600">Basic Salary</span>
             <span className="font-medium text-slate-900">{isSalaryVisible ? egp(calculatedBasicSalary) : maskedMoneyValue}</span>
@@ -946,12 +1050,12 @@ function IncentiveCalculatorWidget({
               onChange={(e) => setSimAchievement(Math.min(150, Number(e.target.value)))} 
               max={150} 
               step={1}
-              className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-100 accent-orange-500"
+              className="h-1.5 w-full cursor-pointer appearance-none rounded-sm bg-slate-100 accent-orange-500"
             />
           </div>
         </div>
 
-        <div className="rounded-2xl bg-slate-900 p-4 text-white shadow-lg">
+        <div className="rounded bg-slate-900 p-4 text-white shadow-lg">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Estimated Semester Payout</p>
@@ -980,22 +1084,22 @@ function ToReachTargetWidget({ data }: { data: MedicalRepPortalData }) {
       <div className="space-y-3">
         {achieved ? (
           <>
-            <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2">
+            <div className="rounded border border-emerald-100 bg-emerald-50/60 px-3 py-2">
               <p className="text-sm font-semibold text-emerald-700">Target Achieved</p>
               <p className="mt-1 text-sm text-emerald-700">Great job! You have reached your target and are now in over-achievement.</p>
             </div>
           </>
         ) : (
           <>
-            <div className="rounded-xl border border-orange-100 bg-orange-50/50 px-3 py-2">
+            <div className="rounded border border-orange-100 bg-orange-50/50 px-3 py-2">
               <p className="text-xs text-slate-500">Remaining Gap</p>
               <p className="text-xl font-semibold text-slate-900">{egp(gap)}</p>
             </div>
             <div className="text-sm text-slate-600">
               <span className="font-semibold text-slate-900">{percent.toFixed(1)}%</span> all-period achievement
             </div>
-            <div className="h-2 rounded-full bg-slate-100">
-              <div className="h-2 rounded-full bg-orange-500" style={{ width: `${percent}%` }} />
+            <div className="h-2 rounded-sm bg-slate-100">
+              <div className="h-2 rounded-sm bg-orange-500" style={{ width: `${percent}%` }} />
             </div>
             <p className="text-sm text-slate-600">
               Suggested Focus: <span className="text-slate-900">You are {egp(gap)} away from reaching your target to unlock full incentives.</span>
@@ -1009,7 +1113,7 @@ function ToReachTargetWidget({ data }: { data: MedicalRepPortalData }) {
 
 function IncentiveSchemeDescriptionCard() {
   return (
-    <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+    <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
       <div className="mb-4 flex items-center gap-2">
         <span className="h-2 w-2 rounded-full bg-emerald-500/80" />
         <p className="text-lg font-semibold text-slate-900">Incentive Policy</p>
@@ -1073,22 +1177,23 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
     router.push(next ? `${pathname}?${next}` : pathname);
   };
 
+  const periodOptions = [
+    { value: "all", label: "All" },
+    ...comparisonPeriods.slice(0, 5).map((period) => ({
+      value: period,
+      label: toPeriodLabel(period),
+    })),
+  ];
+
   if (rows.length === 0) {
     return (
       <OverviewPagePanel title="Rank in Team Comparison">
         <div className="mb-3">
-          <label className="mb-1 inline-block text-xs text-slate-500" htmlFor="team-period-filter">Comparison period</label>
-          <select
-            id="team-period-filter"
-            className="w-full max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
-            onChange={(event) => handlePeriodChange(event.target.value)}
+          <PeriodSegmentedControl
+            options={periodOptions}
             value={selectedPeriod}
-          >
-            <option value="all">All periods</option>
-            {comparisonPeriods.map((period) => (
-              <option key={period} value={period}>{toPeriodLabel(period)}</option>
-            ))}
-          </select>
+            onChange={handlePeriodChange}
+          />
         </div>
         <p className="text-sm text-slate-500">Team comparison is not available for this period.</p>
       </OverviewPagePanel>
@@ -1099,22 +1204,11 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
     <OverviewPagePanel
       title="Rank in Team Comparison"
       action={(
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500" htmlFor="team-period-filter">
-            Period
-          </label>
-          <select
-            id="team-period-filter"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
-            onChange={(event) => handlePeriodChange(event.target.value)}
-            value={selectedPeriod}
-          >
-            <option value="all">All periods</option>
-            {comparisonPeriods.map((period) => (
-              <option key={period} value={period}>{toPeriodLabel(period)}</option>
-            ))}
-          </select>
-        </div>
+        <PeriodSegmentedControl
+          options={periodOptions}
+          value={selectedPeriod}
+          onChange={handlePeriodChange}
+        />
       )}
     >
       <div className="space-y-2">
@@ -1123,22 +1217,22 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
           const fillWidth = Math.max(6, Math.min(100, pct));
           const pctClass = pct >= 100 ? "text-emerald-600" : pct >= 80 ? "text-orange-600" : "text-rose-500";
           return (
-            <div key={`${row.position}-${row.name}`} className="rounded-2xl border border-slate-100 bg-white px-3 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/30">
+            <div key={`${row.position}-${row.name}`} className="rounded border border-slate-100 bg-white px-3 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/30">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2.5">
-                  <span className={`shrink-0 flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-black ${row.position === 1 ? "bg-slate-950 text-white shadow-sm" : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"}`}>
+                  <span className={`shrink-0 flex h-7 w-7 items-center justify-center rounded text-[11px] font-black ${row.position === 1 ? "bg-slate-950 text-white shadow-sm" : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"}`}>
                     {row.position}
                   </span>
-                  <span className="truncate text-sm font-bold text-slate-700">{row.name}</span>
+                  <span className="whitespace-nowrap text-sm font-bold text-slate-700">{row.name}</span>
                 </div>
                 <div className="shrink-0 text-right">
                   <p className={`font-mono text-sm font-black tabular-nums ${pctClass}`}>{pct.toFixed(1)}%</p>
                   <p className="whitespace-nowrap font-mono text-[11px] text-slate-400 tabular-nums">{egp(row.sales)}</p>
                 </div>
               </div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div className="mt-2 h-1.5 overflow-hidden rounded-sm bg-slate-100">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-orange-500 via-amber-400 to-emerald-400"
+                  className="h-full rounded-sm bg-gradient-to-r from-orange-500 via-amber-400 to-emerald-400"
                   style={{ width: `${fillWidth}%` }}
                 />
               </div>
@@ -1162,11 +1256,11 @@ function OverviewPagePanel({
   action?: ReactNode;
 }) {
   return (
-    <Card className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.05)] transition-shadow duration-200 hover:shadow-[0_8px_24px_rgba(15,23,42,0.08)] lg:p-5">
+    <Card className="group relative flex h-full flex-col overflow-hidden rounded border border-slate-200 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.05)] transition-shadow duration-200 hover:shadow-[0_8px_24px_rgba(15,23,42,0.08)] lg:p-5">
       <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-400 to-orange-300 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
       <div className="relative mb-3 flex flex-wrap items-center justify-between gap-3 lg:mb-4">
         <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+          <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
           <h3 className="text-[15px] font-semibold tracking-tight text-slate-900 lg:text-base">{title}</h3>
         </div>
         {action}
@@ -1210,10 +1304,10 @@ function OverviewInsightsAlerts({ data }: { data: MedicalRepPortalData }) {
                 ? "border-l-blue-500"
                 : "border-l-rose-500";
           return (
-            <div key={text} className={`rounded-xl border border-slate-100 border-l-2 ${borderTone} bg-white p-3 shadow-[0_4px_14px_rgba(15,23,42,0.03)]`}>
+            <div key={text} className={`rounded border border-slate-100 border-l-2 ${borderTone} bg-white p-3 shadow-[0_4px_14px_rgba(15,23,42,0.03)]`}>
               <div className="flex items-center gap-2">
                 <Icon className="h-4 w-4 text-slate-500" />
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.classes}`}>{meta.badge}</span>
+                <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${meta.classes}`}>{meta.badge}</span>
               </div>
               <p className="mt-2 text-sm text-slate-700">{shortInsight(text)}</p>
             </div>
@@ -1248,7 +1342,7 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
           const width = Math.max(8, Math.round((value / max) * 100));
           const contributionPercent = total > 0 ? (value / total) * 100 : 0;
           return (
-            <div key={row.name} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+            <div key={row.name} className="rounded border border-slate-100 bg-white p-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
               <div className="mb-1 flex items-center justify-between text-sm">
                 <div className="flex flex-col">
                   <span className="font-bold text-slate-800">{row.name}</span>
@@ -1256,8 +1350,8 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
                 </div>
                 <span className="font-mono text-xs font-black text-slate-900 tabular-nums">{formatContributionValue(metric, value)}</span>
               </div>
-              <div className="h-2.5 overflow-hidden rounded-full bg-slate-100 shadow-inner">
-                <div className="h-full rounded-full bg-gradient-to-r from-orange-600 via-amber-400 to-sky-400 shadow-[0_0_18px_rgba(249,115,22,0.24)]" style={{ width: `${width}%` }} />
+              <div className="h-2.5 overflow-hidden rounded-sm bg-slate-100 shadow-inner">
+                <div className="h-full rounded-sm bg-gradient-to-r from-orange-600 via-amber-400 to-sky-400 shadow-[0_0_18px_rgba(249,115,22,0.24)]" style={{ width: `${width}%` }} />
               </div>
             </div>
           );
@@ -1267,178 +1361,200 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
   );
 }
 
+function PerformanceChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; dataKey: string; color: string }>; label?: string }) {
+  if (!active || !payload?.length) return null;
+  const salesEntry = payload.find((p) => p.dataKey === "sales");
+  const targetEntry = payload.find((p) => p.dataKey === "target");
+  const sales = salesEntry?.value ?? 0;
+  const target = targetEntry?.value ?? 0;
+  const achievement = target > 0 ? ((sales / target) * 100).toFixed(1) : "—";
+  const gap = sales - target;
+  return (
+    <div className="rounded border border-slate-200 bg-white px-4 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.18)]">
+      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <div className="mt-2 space-y-1.5">
+        <div className="flex items-center justify-between gap-6">
+          <span className="flex items-center gap-1.5 text-xs text-slate-600"><span className="inline-block h-2 w-2 rounded-sm bg-orange-500" />Sales</span>
+          <span className="text-xs font-black text-orange-600">{egp(sales)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-6">
+          <span className="flex items-center gap-1.5 text-xs text-slate-600"><span className="inline-block h-2 w-2 rounded-sm bg-slate-400" />Target</span>
+          <span className="text-xs font-black text-slate-700">{egp(target)}</span>
+        </div>
+        <div className="border-t border-slate-100 pt-1.5">
+          <div className="flex items-center justify-between gap-6">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Achievement</span>
+            <span className="text-xs font-black text-orange-600">{achievement}%</span>
+          </div>
+          <div className="mt-0.5 flex items-center justify-between gap-6">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Gap</span>
+            <span className="text-xs font-black text-slate-700">{gap >= 0 ? "+" : ""}{egp(gap)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
-  const [activeTrendIndex, setActiveTrendIndex] = useState<number | null>(null);
   const trendData = Array.isArray(data.sales.trend) ? data.sales.trend : [];
-  const chartWidth = 720;
-  const chartHeight = 232;
-  const padding = { bottom: 34, left: 58, right: 22, top: 20 };
-  const innerWidth = chartWidth - padding.left - padding.right;
-  const innerHeight = chartHeight - padding.top - padding.bottom;
-  const values = trendData.flatMap((point) => [point.sales, point.target]).filter(Number.isFinite);
-  const maxValue = Math.max(1, ...values);
-  const roundedMax = Math.ceil(maxValue / 100000) * 100000;
-  const xFor = (index: number) => padding.left + (trendData.length <= 1 ? innerWidth / 2 : (index / (trendData.length - 1)) * innerWidth);
-  const yFor = (value: number) => padding.top + (1 - Math.max(0, Math.min(1, value / roundedMax))) * innerHeight;
-  const salesPoints = trendData.map((point, index) => `${xFor(index)},${yFor(point.sales)}`).join(" ");
-  const targetPoints = trendData.map((point, index) => `${xFor(index)},${yFor(point.target)}`).join(" ");
-  const activeTrendPoint = activeTrendIndex === null ? null : trendData[activeTrendIndex] ?? null;
-  const activeTrendX = activeTrendIndex === null ? 0 : xFor(activeTrendIndex);
-  const activeTrendY = activeTrendPoint ? yFor(activeTrendPoint.sales) : 0;
-  const tooltipLeft = `${Math.max(18, Math.min(82, (activeTrendX / chartWidth) * 100))}%`;
-  const tooltipTop = `${Math.max(14, Math.min(72, (activeTrendY / chartHeight) * 100))}%`;
+
+  const chartData = trendData.map((point) => {
+    const achievement = point.target > 0 ? (point.sales / point.target) * 100 : 0;
+    return {
+      period: periodLabel(point.period),
+      shortPeriod: periodMonthLabel(point.period),
+      sales: point.sales,
+      target: point.target,
+      achievement: Math.round(achievement),
+    };
+  });
+
+  const totalSales = trendData.reduce((sum, p) => sum + p.sales, 0);
+  const totalTarget = trendData.reduce((sum, p) => sum + p.target, 0);
+  const overallAchievement = totalTarget > 0 ? ((totalSales / totalTarget) * 100).toFixed(1) : "0";
+  const avgTarget = trendData.length > 0 ? totalTarget / trendData.length : 0;
 
   return (
-      <OverviewPagePanel
-        title="Performance Overview"
-      >
-        <div className="relative h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
-          {trendData.length === 0 ? (
-            <div className="flex h-full items-center justify-center rounded-2xl bg-slate-50 text-sm font-semibold text-slate-500">
-              No trend data available
+    <OverviewPagePanel
+      title="Performance Overview"
+      action={
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+            {trendData.length} months
+          </span>
+          <span className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-orange-700">
+            {overallAchievement}% achievement
+          </span>
+        </div>
+      }
+    >
+      <ChartErrorBoundary>
+        {trendData.length === 0 ? (
+          <div className="flex h-64 items-center justify-center rounded border border-slate-100 bg-slate-50 text-sm font-semibold text-slate-500">
+            No trend data available
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Summary metrics strip */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Total Sales</p>
+                <p className="mt-1 text-sm font-black text-orange-600">{egp(totalSales)}</p>
+              </div>
+              <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Total Target</p>
+                <p className="mt-1 text-sm font-black text-slate-700">{egp(totalTarget)}</p>
+              </div>
+              <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Gap</p>
+                <p className="mt-1 text-sm font-black text-slate-700">
+                  {totalSales >= totalTarget ? "+" : ""}{egp(totalSales - totalTarget)}
+                </p>
+              </div>
             </div>
-          ) : (
-            <div className="h-full min-w-0" onPointerLeave={() => setActiveTrendIndex(null)}>
-              <svg
-                aria-label="Sales and target performance trend"
-                className="h-full w-full overflow-visible"
-                preserveAspectRatio="none"
-                role="img"
-                viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-              >
-                <defs>
-                  <linearGradient id="overviewSalesStaticFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.26} />
-                    <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-                  const y = padding.top + ratio * innerHeight;
-                  const labelValue = Math.round((roundedMax * (1 - ratio)) / 1000);
+
+            {/* Chart */}
+            <div className="h-[280px] w-full rounded border border-slate-100 bg-white/70 px-1 pt-3 shadow-inner sm:h-[320px]">
+              <SafeResponsiveContainer style={{ width: "100%", height: "100%" }}>
+                <AreaChart data={chartData} margin={{ top: 10, right: 12, left: -8, bottom: 6 }}>
+                  <defs>
+                    <linearGradient id="perfSalesGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f97316" stopOpacity={0.35} />
+                      <stop offset="50%" stopColor="#f97316" stopOpacity={0.12} />
+                      <stop offset="100%" stopColor="#f97316" stopOpacity={0.01} />
+                    </linearGradient>
+                    <linearGradient id="perfTargetGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#64748b" stopOpacity={0.12} />
+                      <stop offset="100%" stopColor="#64748b" stopOpacity={0.01} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis
+                    dataKey="shortPeriod"
+                    tick={{ fontSize: 11, fontWeight: 700, fill: "#64748b" }}
+                    tickLine={false}
+                    axisLine={{ stroke: "#e2e8f0" }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fontWeight: 600, fill: "#94a3b8" }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value: number) => `${Math.round(value / 1000)}k`}
+                    width={52}
+                  />
+                  {avgTarget > 0 ? (
+                    <ReferenceLine
+                      y={avgTarget}
+                      stroke="#f97316"
+                      strokeDasharray="8 4"
+                      strokeOpacity={0.25}
+                      label={{ value: "Avg Target", position: "insideTopRight", fill: "#f97316", fontSize: 9, fontWeight: 700 }}
+                    />
+                  ) : null}
+                  <Tooltip content={<PerformanceChartTooltip />} cursor={{ stroke: "#f97316", strokeDasharray: "4 4", strokeOpacity: 0.4 }} />
+                  <Legend
+                    verticalAlign="top"
+                    align="right"
+                    iconType="rect"
+                    iconSize={10}
+                    wrapperStyle={{ fontSize: 11, fontWeight: 700, paddingBottom: 8 }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="target"
+                    name="Target"
+                    stroke="#94a3b8"
+                    strokeWidth={2}
+                    strokeDasharray="6 4"
+                    fill="url(#perfTargetGradient)"
+                    dot={false}
+                    activeDot={{ r: 4, fill: "#64748b", stroke: "#fff", strokeWidth: 2 }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="sales"
+                    name="Sales"
+                    stroke="#f97316"
+                    strokeWidth={2.5}
+                    fill="url(#perfSalesGradient)"
+                    dot={{ r: 3.5, fill: "#f97316", stroke: "#fff", strokeWidth: 2 }}
+                    activeDot={{ r: 5.5, fill: "#f97316", stroke: "#fff", strokeWidth: 2.5 }}
+                  />
+                </AreaChart>
+              </SafeResponsiveContainer>
+            </div>
+
+            {/* Achievement per period — horizontal bar indicators */}
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Monthly Achievement</p>
+              <div className="space-y-1">
+                {chartData.map((point) => {
+                  const pct = Math.min(point.achievement, 150);
+                  const grad = point.achievement >= 100 ? "#16a34a,#86efac" : point.achievement >= 70 ? "#ca8a04,#fde047" : "#dc2626,#fca5a5";
+                  const [from, to] = grad.split(",");
                   return (
-                    <g key={ratio}>
-                      <line
-                        stroke="#e8edf4"
-                        strokeDasharray="3 3"
-                        strokeWidth="1"
-                        vectorEffect="non-scaling-stroke"
-                        x1={padding.left}
-                        x2={chartWidth - padding.right}
-                        y1={y}
-                        y2={y}
-                      />
-                      <text fill="#64748b" fontSize="11" fontWeight="700" textAnchor="end" x={padding.left - 10} y={y + 4}>
-                        {labelValue}k
-                      </text>
-                    </g>
+                    <div key={point.period} className="flex items-center gap-2">
+                      <span className="w-14 shrink-0 text-[11px] font-semibold text-slate-500">{point.shortPeriod}</span>
+                      <div className="relative h-3 flex-1 overflow-hidden rounded-sm bg-slate-100">
+                        <div
+                          className="absolute inset-y-0 left-0 rounded-sm"
+                          style={{ width: `${Math.min(100, (pct / 150) * 100)}%`, background: `linear-gradient(to right, ${from}, ${to})` }}
+                        />
+                        <div className="absolute inset-y-0 border-r border-dashed border-slate-300/60" style={{ left: `${(100 / 150) * 100}%` }} />
+                      </div>
+                      <span className="w-12 shrink-0 text-right text-[11px] font-black text-slate-700">
+                        {point.achievement}%
+                      </span>
+                    </div>
                   );
                 })}
-                {trendData.length > 1 ? (
-                  <polygon
-                    fill="url(#overviewSalesStaticFill)"
-                    points={`${padding.left},${chartHeight - padding.bottom} ${salesPoints} ${chartWidth - padding.right},${chartHeight - padding.bottom}`}
-                  />
-                ) : null}
-                {targetPoints ? (
-                  <polyline
-                    fill="none"
-                    points={targetPoints}
-                    stroke="#64748b"
-                    strokeDasharray="5 5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2.25"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                ) : null}
-                {salesPoints ? (
-                  <polyline
-                    fill="none"
-                    points={salesPoints}
-                    stroke="#f97316"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="3"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                ) : null}
-                {trendData.map((point, index) => (
-                  <g
-                    aria-label={`${periodLabel(point.period)} sales ${egp(point.sales)} target ${egp(point.target)}`}
-                    className="cursor-pointer"
-                    key={point.period}
-                    onClick={() => setActiveTrendIndex(index)}
-                    onFocus={() => setActiveTrendIndex(index)}
-                    onPointerEnter={() => setActiveTrendIndex(index)}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <circle
-                      cx={xFor(index)}
-                      cy={yFor(point.sales)}
-                      fill="transparent"
-                      r="16"
-                    />
-                    <circle
-                      cx={xFor(index)}
-                      cy={yFor(point.sales)}
-                      fill="#f97316"
-                      r={activeTrendIndex === index ? 5.5 : index === trendData.length - 1 ? 4.5 : 3}
-                      stroke="#ffffff"
-                      strokeWidth="2"
-                      vectorEffect="non-scaling-stroke"
-                    />
-                    {activeTrendIndex === index ? (
-                      <line
-                        stroke="#f97316"
-                        strokeDasharray="4 4"
-                        strokeOpacity="0.45"
-                        strokeWidth="1.5"
-                        vectorEffect="non-scaling-stroke"
-                        x1={xFor(index)}
-                        x2={xFor(index)}
-                        y1={padding.top}
-                        y2={chartHeight - padding.bottom}
-                      />
-                    ) : null}
-                  </g>
-                ))}
-                {trendData.map((point, index) => (
-                  <text
-                    fill="#64748b"
-                    fontSize="11"
-                    fontWeight="700"
-                    key={`label-${point.period}`}
-                    textAnchor="middle"
-                    x={xFor(index)}
-                    y={chartHeight - 9}
-                  >
-                    {periodMonthLabel(point.period)}
-                  </text>
-                ))}
-              </svg>
-              {activeTrendPoint ? (
-                <div
-                  className="pointer-events-none absolute z-10 min-w-[160px] -translate-x-1/2 -translate-y-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-[0_16px_35px_rgba(15,23,42,0.16)]"
-                  style={{ left: tooltipLeft, top: tooltipTop }}
-                >
-                  <p className="font-black text-slate-900">{periodLabel(activeTrendPoint.period)}</p>
-                  <div className="mt-1.5 space-y-1">
-                    <p className="flex items-center justify-between gap-4 text-slate-600">
-                      <span>Sales</span>
-                      <span className="font-black text-orange-600">{egp(activeTrendPoint.sales)}</span>
-                    </p>
-                    <p className="flex items-center justify-between gap-4 text-slate-600">
-                      <span>Target</span>
-                      <span className="font-black text-slate-700">{egp(activeTrendPoint.target)}</span>
-                    </p>
-                  </div>
-                </div>
-              ) : null}
+              </div>
             </div>
-          )}
-        </div>
-      </OverviewPagePanel>
+          </div>
+        )}
+      </ChartErrorBoundary>
+    </OverviewPagePanel>
   );
 }
 
@@ -1463,7 +1579,7 @@ function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
   return (
     <OverviewPagePanel title="My Actions">
       {actions.length === 0 ? (
-        <div className="flex h-full min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-6 text-center">
+        <div className="flex h-full min-h-[200px] flex-col items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50/60 px-6 text-center">
           <ShieldCheck className="mb-2 h-8 w-8 text-slate-300" />
           <p className="text-sm font-medium text-slate-500">No pending actions right now.</p>
           <p className="mt-1 text-xs text-slate-400">You&apos;re all caught up.</p>
@@ -1476,7 +1592,7 @@ function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-slate-900">{item.label}</p>
                   <p className="text-[11px] text-slate-500">Pending items in your visible queue.</p>
-                  <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11px]">
+                  <div className="flex items-center justify-between rounded border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11px]">
                     <span className="text-slate-500">Visible count</span>
                     <span className="font-semibold text-slate-900">{item.count}</span>
                   </div>
@@ -1486,10 +1602,10 @@ function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
               triggerClassName="block"
             >
               <Link
-                className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/40"
+                className="group flex items-center gap-3 rounded border border-slate-200 bg-white px-4 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/40"
                 href={item.href}
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-orange-50 text-orange-600 ring-1 ring-orange-100 transition-transform duration-200 group-hover:scale-105">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded bg-orange-50 text-orange-600 ring-1 ring-orange-100 transition-transform duration-200 group-hover:scale-105">
                   {(() => {
                     const Icon = actionIconMap[item.id] ?? ReceiptText;
                     return <Icon className="h-5 w-5" />;
@@ -1536,10 +1652,10 @@ function QuickActionsPanel({ data }: { data: MedicalRepPortalData }) {
             triggerClassName="block"
           >
             <Link
-              className="group flex h-full min-h-[116px] flex-col items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-center shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/50"
+              className="group flex h-full min-h-[116px] flex-col items-center justify-between rounded border border-slate-200 bg-white px-3 py-3 text-center shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/50"
               href={item.href}
             >
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition-all duration-200 group-hover:scale-105 group-hover:bg-white">
+              <span className="flex h-12 w-12 items-center justify-center rounded bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition-all duration-200 group-hover:scale-105 group-hover:bg-white">
                 <item.icon className="h-5 w-5" />
               </span>
               <span className="flex min-h-[40px] items-center text-[14px] font-medium leading-5 text-slate-800">
@@ -1563,7 +1679,7 @@ function EmployeesOnLeaveTodayPanel({ data }: { data: MedicalRepPortalData }) {
   return (
     <OverviewPagePanel title="Employees on Leave Today">
       {rows.length === 0 ? (
-        <div className="flex h-full min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-6 text-center">
+        <div className="flex h-full min-h-[200px] flex-col items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50/60 px-6 text-center">
           <CalendarDays className="mb-2 h-8 w-8 text-slate-300" />
           <p className="text-sm font-medium text-slate-500">No employees are on leave today.</p>
           <p className="mt-1 text-xs text-slate-400">Full team is available.</p>
@@ -1572,16 +1688,16 @@ function EmployeesOnLeaveTodayPanel({ data }: { data: MedicalRepPortalData }) {
         <div className="space-y-3">
           {rows.slice(0, 6).map((row) => (
             <div
-              className="flex items-start justify-between gap-3 rounded-[18px] border border-slate-200 bg-white/80 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+              className="flex items-start justify-between gap-3 rounded border border-slate-200 bg-white/80 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
               key={row.id}
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-900">{row.employeeName}</p>
+                <p className="whitespace-nowrap text-sm font-medium text-slate-900">{row.employeeName}</p>
                 <p className="mt-1 text-xs font-normal text-slate-500">
                   {row.lineName ?? row.departmentName ?? "Phoenix"} • Until {prettyDate(row.endDate)}
                 </p>
               </div>
-              <span className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
+              <span className="shrink-0 rounded border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
                 {vacationTypeChipLabel(row.vacationType)}
               </span>
             </div>
@@ -1597,54 +1713,103 @@ function TeamStructurePanel({ data }: { data: MedicalRepPortalData }) {
   const totalStructure = data.orgStructure?.totalStructure ?? data.workforce.activeHeadcount + data.workforce.openVacancies;
   const actualNow = data.orgStructure?.actualNow ?? data.workforce.activeHeadcount;
   const vacancies = data.orgStructure?.vacancies ?? data.workforce.openVacancies;
-  const visibleAreas = Array.from(
-    new Set(
-      (vacancyDetails?.vacancies ?? [])
-        .map((row) => row.areaName ?? row.regionName ?? row.positionTitle ?? row.jobTitle ?? row.vacancyCode)
-        .filter(Boolean),
-    ),
-  ).slice(0, 4);
+  const allVacancies = vacancyDetails?.vacancies ?? [];
+  const fillRate = totalStructure > 0 ? Math.round((actualNow / totalStructure) * 100) : 0;
+
+  // Group vacancies by job title for differentiation
+  const groupedByTitle = new Map<string, typeof allVacancies>();
+  for (const row of allVacancies) {
+    const title = row.jobTitle ?? row.positionTitle ?? "Unspecified Role";
+    const group = groupedByTitle.get(title) ?? [];
+    group.push(row);
+    groupedByTitle.set(title, group);
+  }
+  const titleGroups = Array.from(groupedByTitle.entries()).sort((a, b) => b[1].length - a[1].length);
+
+  const titleColorMap: Record<number, string> = {
+    0: "border-l-orange-500 bg-orange-50/40",
+    1: "border-l-sky-500 bg-sky-50/40",
+    2: "border-l-emerald-500 bg-emerald-50/40",
+    3: "border-l-purple-500 bg-purple-50/40",
+    4: "border-l-amber-500 bg-amber-50/40",
+  };
+  const titleBadgeMap: Record<number, string> = {
+    0: "border-orange-200 bg-orange-50 text-orange-700",
+    1: "border-sky-200 bg-sky-50 text-sky-700",
+    2: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    3: "border-purple-200 bg-purple-50 text-purple-700",
+    4: "border-amber-200 bg-amber-50 text-amber-700",
+  };
 
   return (
     <OverviewPagePanel title="Team Structure">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-[18px] border border-slate-200 bg-white/80 p-3.5 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Total Structure</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{formatUnits(totalStructure)}</p>
+      {/* Summary metrics */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded border border-slate-200 bg-white/80 p-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Structure</p>
+          <p className="mt-1.5 text-xl font-black text-slate-900">{formatUnits(totalStructure)}</p>
         </div>
-        <div className="rounded-[18px] border border-slate-200 bg-white/80 p-3.5 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Actual</p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-600">{formatUnits(actualNow)}</p>
+        <div className="rounded border border-slate-200 bg-white/80 p-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Filled</p>
+          <p className="mt-1.5 text-xl font-black text-emerald-600">{formatUnits(actualNow)}</p>
         </div>
-        <div className="rounded-[18px] border border-slate-200 bg-white/80 p-3.5 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Vacant</p>
-          <p className="mt-2 text-2xl font-semibold text-orange-600">{formatUnits(vacancies)}</p>
+        <div className="rounded border border-slate-200 bg-white/80 p-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Vacant</p>
+          <p className="mt-1.5 text-xl font-black text-orange-600">{formatUnits(vacancies)}</p>
         </div>
       </div>
-      <div className="mt-3 rounded-[18px] border border-slate-200 bg-slate-50/70 p-3.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-medium text-slate-900">
-            {data.orgStructure?.scopeLabel ?? data.workforce.scopeLabel}
-          </p>
-          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
-            {formatUnits(vacancies)} vacant
-          </span>
+
+      {/* Fill rate bar */}
+      <div className="mt-3 rounded border border-slate-200 bg-white/80 p-3">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Fill Rate</p>
+          <span className="text-xs font-black text-slate-700">{fillRate}%</span>
         </div>
-        {visibleAreas.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {visibleAreas.map((area) => (
-              <span
-                className="rounded-full border border-orange-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
-                key={area}
-              >
-                {area}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-3 text-sm font-medium text-slate-500">No active vacancy areas are visible in your current scope.</p>
-        )}
+        <div className="relative mt-2 h-2.5 w-full overflow-hidden rounded-sm bg-slate-100">
+          <div
+            className="absolute inset-y-0 left-0 rounded-sm transition-all duration-500"
+            style={{ width: `${Math.min(100, fillRate)}%`, background: "linear-gradient(to right, #f97316, #fdba74)" }}
+          />
+        </div>
       </div>
+
+      {/* Scope label */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+        <p className="text-sm font-medium text-slate-900">
+          {data.orgStructure?.scopeLabel ?? data.workforce.scopeLabel}
+        </p>
+        <span className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-orange-700">
+          {formatUnits(allVacancies.length)} open position{allVacancies.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {/* All vacancies grouped by title */}
+      {titleGroups.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {titleGroups.map(([title, rows], groupIndex) => (
+            <div key={title} className={`rounded border border-slate-200 border-l-[3px] p-3 ${titleColorMap[groupIndex % 5] ?? "border-l-slate-400 bg-slate-50/40"}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[13px] font-bold text-slate-800">{title}</p>
+                <span className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] ${titleBadgeMap[groupIndex % 5] ?? "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                  {rows.length} vacant
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {rows.map((row) => (
+                  <span
+                    className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600"
+                    key={row.id ?? row.vacancyCode}
+                  >
+                    {row.areaName ?? row.regionName ?? "Unassigned"}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm font-medium text-slate-500">No active vacancy areas are visible in your current scope.</p>
+      )}
     </OverviewPagePanel>
   );
 }
@@ -1719,7 +1884,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
           <div className="mb-4 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
             <p className="text-lg font-semibold text-slate-900">Contact HR</p>
@@ -1729,9 +1894,9 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
           <div className="space-y-4">
             {hrTeam.length > 0 ? (
               hrTeam.map((member) => (
-                <div key={member.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3 transition hover:bg-slate-50">
+                <div key={member.id} className="flex items-center justify-between rounded border border-slate-100 bg-slate-50/70 px-4 py-3 transition hover:bg-slate-50">
                   <div className="flex items-start gap-3">
-                    <div className="shrink-0 overflow-hidden rounded-lg ring-2 ring-orange-100"
+                    <div className="shrink-0 overflow-hidden rounded ring-2 ring-orange-100"
                       style={{ width: "2cm", height: "3cm" }}>
                       <div className="flex h-full w-full items-center justify-center bg-orange-100 text-sm font-semibold text-orange-700">
                         {member.name.split(" ").map((n) => n[0]).join("")}
@@ -1746,7 +1911,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                   </div>
                   </div>
                   <Button
-                    className="h-8 rounded-lg text-xs"
+                    className="h-8 rounded text-xs"
                     variant="secondary"
                     onClick={() => {
                       setCategory("HR Request");
@@ -1759,7 +1924,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 </div>
               ))
             ) : (
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 py-8 text-center">
+              <div className="flex flex-col items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50/50 py-8 text-center">
                 <Users className="mb-2 h-8 w-8 text-slate-300" />
                 <p className="text-sm font-medium text-slate-500">No HR contacts available</p>
                 <p className="text-xs text-slate-400">Please use the support form for inquiries</p>
@@ -1767,9 +1932,9 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             )}
           </div>
 
-          <div className="mt-6 space-y-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+          <div className="mt-6 space-y-3 rounded border border-slate-100 bg-slate-50/70 p-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 text-orange-600">
+              <div className="flex h-8 w-8 items-center justify-center rounded bg-orange-50 text-orange-600">
                 <CalendarClock className="h-4 w-4" />
               </div>
               <div>
@@ -1782,7 +1947,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
           <p className="mt-4 text-xs text-slate-500 italic">For urgent HR matters, use the support form below so the request is tracked inside Phoenix Workforce.</p>
         </Card>
 
-        <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
           <div className="mb-4 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
             <p className="text-lg font-semibold text-slate-900">Request Support</p>
@@ -1790,7 +1955,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
           <p className="mb-6 text-sm text-slate-600">Submit a request and our team will get back to you as soon as possible</p>
 
           {showSuccess && (
-            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <div className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-4 py-3">
               <p className="text-sm font-medium text-emerald-800">Request submitted successfully!</p>
             </div>
           )}
@@ -1799,7 +1964,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             <div>
               <label className="mb-1.5 block text-xs font-medium text-slate-700">Category</label>
               <select
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
+                className="w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 required
@@ -1815,7 +1980,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             <div>
               <label className="mb-1.5 block text-xs font-medium text-slate-700">Subject</label>
               <input
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
+                className="w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
                 placeholder="Enter a short subject"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
@@ -1826,7 +1991,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             <div>
               <label className="mb-1.5 block text-xs font-medium text-slate-700">Description</label>
               <textarea
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] resize-none"
+                className="w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] resize-none"
                 placeholder="Describe your issue or request in detail..."
                 rows={4}
                 value={description}
@@ -1837,14 +2002,14 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
 
             <div>
               <label className="mb-1.5 block text-xs font-medium text-slate-700">Attachments (Optional)</label>
-              <div className="flex h-24 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 transition hover:border-orange-300 hover:bg-slate-50">
+              <div className="flex h-24 w-full cursor-pointer flex-col items-center justify-center rounded border-2 border-dashed border-slate-200 bg-slate-50/50 transition hover:border-orange-300 hover:bg-slate-50">
                 <Upload className="mb-2 h-5 w-5 text-slate-400" />
                 <p className="text-xs text-slate-500">Drag and drop files here or click to upload</p>
                 <p className="text-[10px] text-slate-400">Max file size 10MB (PDF, PNG, JPG)</p>
               </div>
             </div>
 
-            <Button className="w-full rounded-xl" disabled={isSubmitting} type="submit">
+            <Button className="w-full rounded" disabled={isSubmitting} type="submit">
               {isSubmitting ? (
                 "Submitting..."
               ) : (
@@ -1858,7 +2023,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
         </Card>
       </div>
 
-      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
@@ -1866,37 +2031,37 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
           </div>
           <a className="text-xs font-medium text-orange-600 hover:text-orange-700" href="#">View All Requests &gt;</a>
         </div>
-        <div className="overflow-x-auto rounded-2xl border border-slate-100">
-          <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto rounded border border-slate-100">
+          <table className="w-full border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
-                <th className="px-4 py-3">Request ID</th>
-                <th className="px-4 py-3">Subject</th>
-                <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Action</th>
+              <tr>
+                <th className={gridHeaderClass}>Request ID</th>
+                <th className={gridHeaderClass}>Subject</th>
+                <th className={gridHeaderClass}>Category</th>
+                <th className={gridHeaderClass}>Status</th>
+                <th className={gridHeaderClass}>Date</th>
+                <th className={gridHeaderClass}>Action</th>
               </tr>
             </thead>
             <tbody>
               {recentRequests.length > 0 ? (
                 recentRequests.map((request) => (
-                  <tr key={request.id} className="border-b border-slate-100">
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600">{request.id}</td>
-                    <td className="px-4 py-3 font-medium text-slate-900">{request.subject}</td>
-                    <td className="px-4 py-3 text-slate-600">{request.category}</td>
-                    <td className="px-4 py-3">
+                  <tr key={request.id} className="transition hover:bg-slate-50/60">
+                    <td className={`${gridCellClass} font-mono text-xs text-slate-600`}>{request.id}</td>
+                    <td className={`${gridCellClass} font-medium text-slate-900`}>{request.subject}</td>
+                    <td className={`${gridCellClass} text-slate-600`}>{request.category}</td>
+                    <td className={gridCellClass}>
                       <Badge className={getStatusColor(request.status)}>{request.status}</Badge>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{request.date}</td>
-                    <td className="px-4 py-3">
-                      <Button className="h-7 rounded-lg px-2 text-xs" variant="secondary">View</Button>
+                    <td className={`${gridCellClass} text-slate-600`}>{request.date}</td>
+                    <td className={gridCellClass}>
+                      <Button className="h-7 rounded px-2 text-xs" variant="secondary">View</Button>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td className="px-4 py-12 text-center text-slate-400" colSpan={6}>
+                  <td className="border border-slate-100 px-4 py-12 text-center text-slate-400" colSpan={6}>
                     <div className="flex flex-col items-center justify-center">
                       <HelpCircle className="mb-2 h-8 w-8 text-slate-200" />
                       <p className="text-sm font-medium">No recent requests found</p>
@@ -1970,31 +2135,31 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold text-slate-900">Workload & Expense Dashboard</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Workload & Expense Dashboard</h1>
           <p className="mt-1 text-sm text-slate-500">Track workload, trips, and expense efficiency across AMs & PMs</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-            <CalendarDays className="h-4 w-4 text-slate-400" />
-            <input className="w-32 text-sm text-slate-700 outline-none" placeholder="From" type="date" />
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2">
+            <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
+            <input className="w-28 text-sm text-slate-700 outline-none sm:w-32" placeholder="From" type="date" />
             <span className="text-slate-400">-</span>
-            <input className="w-32 text-sm text-slate-700 outline-none" placeholder="To" type="date" />
+            <input className="w-28 text-sm text-slate-700 outline-none sm:w-32" placeholder="To" type="date" />
           </div>
-          <Button className="rounded-xl" disabled={isRefreshing} onClick={handleRefresh} variant="secondary">
+          <Button className="rounded" disabled={isRefreshing} onClick={handleRefresh} variant="secondary">
             <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
             Refresh
           </Button>
         </div>
       </div>
 
-      <Card className="rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-        <div className="flex flex-wrap items-center gap-4">
+      <Card className="rounded border border-slate-100 bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+        <div className="grid grid-cols-2 gap-3 xs:grid-cols-3 sm:flex sm:flex-wrap sm:items-center sm:gap-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">View By</label>
             <select
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
+              className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
               value={viewBy}
               onChange={(e) => setViewBy(e.target.value)}
             >
@@ -2006,7 +2171,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Employee</label>
             <select
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
+              className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
               value={selectedEmployee}
               onChange={(e) => setSelectedEmployee(e.target.value)}
             >
@@ -2019,7 +2184,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Role</label>
             <select
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
+              className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
             >
@@ -2031,7 +2196,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Territory</label>
             <select
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
+              className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
               value={selectedTerritory}
               onChange={(e) => setSelectedTerritory(e.target.value)}
             >
@@ -2044,7 +2209,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Trip Type</label>
             <select
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
+              className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
               value={tripType}
               onChange={(e) => setTripType(e.target.value)}
             >
@@ -2057,7 +2222,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
         </div>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 xs:grid-cols-3 md:grid-cols-5">
         {kpiCards.map((card) => (
           <WorkloadKPICard
             key={card.label}
@@ -2071,14 +2236,14 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-6 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
+        <Card className="rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-6 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
           <div className="mb-4 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
             <p className="text-lg font-black tracking-tight text-slate-900">Workload Overview</p>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {workloadOverview.map((item) => (
-              <div key={item.label} className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+              <div key={item.label} className="rounded border border-slate-100 bg-slate-50/50 p-4">
                 <p className="text-xs font-medium text-slate-500">{item.label}</p>
                 <p className="mt-1 text-xl font-semibold text-slate-900">{item.value}</p>
                 <p className="mt-1 text-xs text-emerald-600">{item.delta}</p>
@@ -2086,7 +2251,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             ))}
           </div>
           <StableChartFrame
-            className="mt-6 h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
+            className="mt-6 h-64 rounded border border-slate-100 bg-white/70 p-3 shadow-inner"
             height={232}
           >
               <AreaChart data={tripsVsDistanceTrend} margin={chartMargin}>
@@ -2107,19 +2272,19 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           </StableChartFrame>
         </Card>
 
-        <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-6 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
+        <Card className="rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-6 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
           <div className="mb-4 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
             <p className="text-lg font-black tracking-tight text-slate-900">Workload Distribution</p>
           </div>
           <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
             <StableChartFrame
-              className="h-64 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
+              className="h-64 rounded border border-slate-100 bg-white/70 p-3 shadow-inner"
               height={232}
             >
                 <PieChart>
                   <Pie
-                    cornerRadius={7}
+                    cornerRadius={2}
                     data={workloadDistribution}
                     dataKey="value"
                     innerRadius={60}
@@ -2138,7 +2303,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             </StableChartFrame>
             <div className="flex flex-col justify-center space-y-3">
               {workloadDistribution.map((item) => (
-                <div key={item.name} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white px-3 py-2 shadow-[0_5px_14px_rgba(15,23,42,0.03)]">
+                <div key={item.name} className="flex items-center justify-between rounded border border-slate-100 bg-white px-3 py-2 shadow-[0_5px_14px_rgba(15,23,42,0.03)]">
                   <div className="flex items-center gap-2">
                     <div className="h-3 w-3 rounded-full ring-2 ring-white" style={{ backgroundColor: item.color }} />
                     <span className="text-sm font-bold text-slate-700">{item.name}</span>
@@ -2151,32 +2316,58 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
         </Card>
       </div>
 
-      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
         <div className="mb-4 flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-orange-500/80" />
           <p className="text-lg font-semibold text-slate-900">Workload by Day (Heatmap)</p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        {/* Mobile vertical layout for <480px */}
+        <div className="space-y-4 xs:hidden">
+          {([
+            { label: "Trips", data: heatmapData.trips, max: 6 },
+            { label: "Distance (km)", data: heatmapData.distance, max: 520 },
+            { label: "Expenses (EGP)", data: heatmapData.expenses, max: 3600 },
+          ] as const).map((metric) => (
+            <div key={metric.label} className="rounded border border-slate-100 bg-white p-3">
+              <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{metric.label}</p>
+              <div className="grid grid-cols-7 gap-1">
+                {["M", "T", "W", "T", "F", "S", "S"].map((day, i) => (
+                  <div key={`${metric.label}-${i}`} className="text-center">
+                    <p className="mb-1 text-[9px] font-bold text-slate-400">{day}</p>
+                    <div
+                      className="flex h-8 items-center justify-center rounded text-xs font-semibold text-white"
+                      style={{ backgroundColor: `rgba(249, 115, 22, ${0.2 + (metric.data[i] / metric.max) * 0.8})` }}
+                    >
+                      {metric.data[i]}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Desktop table for ≥480px */}
+        <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
-                <th className="px-4 py-3">Metric</th>
-                <th className="px-4 py-3">Mon</th>
-                <th className="px-4 py-3">Tue</th>
-                <th className="px-4 py-3">Wed</th>
-                <th className="px-4 py-3">Thu</th>
-                <th className="px-4 py-3">Fri</th>
-                <th className="px-4 py-3">Sat</th>
-                <th className="px-4 py-3">Sun</th>
+              <tr>
+                <th className={gridHeaderClass}>Metric</th>
+                <th className={`${gridHeaderClass} text-center`}>Mon</th>
+                <th className={`${gridHeaderClass} text-center`}>Tue</th>
+                <th className={`${gridHeaderClass} text-center`}>Wed</th>
+                <th className={`${gridHeaderClass} text-center`}>Thu</th>
+                <th className={`${gridHeaderClass} text-center`}>Fri</th>
+                <th className={`${gridHeaderClass} text-center`}>Sat</th>
+                <th className={`${gridHeaderClass} text-center`}>Sun</th>
               </tr>
             </thead>
             <tbody>
-              <tr className="border-b border-slate-100">
-                <td className="px-4 py-3 font-medium text-slate-900">Trips</td>
+              <tr>
+                <td className={`${gridCellClass} font-medium text-slate-900`}>Trips</td>
                 {heatmapData.trips.map((value, index) => (
-                  <td key={index} className="px-4 py-3">
+                  <td key={index} className={gridCellClass}>
                     <div
-                      className="flex h-8 items-center justify-center rounded-lg text-sm font-semibold text-white"
+                      className="flex h-8 items-center justify-center rounded text-sm font-semibold text-white"
                       style={{ backgroundColor: `rgba(249, 115, 22, ${0.2 + (value / 6) * 0.8})` }}
                     >
                       {value}
@@ -2184,12 +2375,12 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
                   </td>
                 ))}
               </tr>
-              <tr className="border-b border-slate-100">
-                <td className="px-4 py-3 font-medium text-slate-900">Distance (km)</td>
+              <tr>
+                <td className={`${gridCellClass} font-medium text-slate-900`}>Distance (km)</td>
                 {heatmapData.distance.map((value, index) => (
-                  <td key={index} className="px-4 py-3">
+                  <td key={index} className={gridCellClass}>
                     <div
-                      className="flex h-8 items-center justify-center rounded-lg text-sm font-semibold text-white"
+                      className="flex h-8 items-center justify-center rounded text-sm font-semibold text-white"
                       style={{ backgroundColor: `rgba(249, 115, 22, ${0.2 + (value / 520) * 0.8})` }}
                     >
                       {value}
@@ -2198,11 +2389,11 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
                 ))}
               </tr>
               <tr>
-                <td className="px-4 py-3 font-medium text-slate-900">Expenses (EGP)</td>
+                <td className={`${gridCellClass} font-medium text-slate-900`}>Expenses (EGP)</td>
                 {heatmapData.expenses.map((value, index) => (
-                  <td key={index} className="px-4 py-3">
+                  <td key={index} className={gridCellClass}>
                     <div
-                      className="flex h-8 items-center justify-center rounded-lg text-sm font-semibold text-white"
+                      className="flex h-8 items-center justify-center rounded text-sm font-semibold text-white"
                       style={{ backgroundColor: `rgba(249, 115, 22, ${0.2 + (value / 3600) * 0.8})` }}
                     >
                       {value}
@@ -2215,37 +2406,66 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
         </div>
       </Card>
 
-      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
         <div className="mb-4 flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-orange-500/80" />
           <p className="text-lg font-semibold text-slate-900">Employee Performance (AM & PM)</p>
         </div>
-        <div className="overflow-x-auto rounded-2xl border border-slate-100">
-          <table className="w-full text-left text-sm">
+        {/* Mobile card view for <480px */}
+        <div className="space-y-2 xs:hidden">
+          {employeePerformance.map((emp, index) => (
+            <div key={emp.name} className="rounded border border-slate-100 bg-white p-3.5 shadow-[0_2px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  {index < 2 && <Trophy className="h-4 w-4 text-orange-500" />}
+                  <span className="text-sm font-bold text-slate-900">{emp.name}</span>
+                </div>
+                <Badge variant="neutral">{emp.role}</Badge>
+              </div>
+              <div className="mt-2.5 grid grid-cols-3 gap-2">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Trips</p>
+                  <p className="mt-0.5 text-sm font-semibold text-slate-900">{emp.trips}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Distance</p>
+                  <p className="mt-0.5 text-sm text-slate-600">{emp.distance} km</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Active Days</p>
+                  <p className="mt-0.5 text-sm text-slate-600">{emp.activeDays}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Desktop table for ≥480px */}
+        <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
+          <table className="w-full border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
-                <th className="px-4 py-3">Employee Name</th>
-                <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3">Trips</th>
-                <th className="px-4 py-3">Distance</th>
-                <th className="px-4 py-3">Active Days</th>
+              <tr>
+                <th className={gridHeaderClass}>Employee Name</th>
+                <th className={gridHeaderClass}>Role</th>
+                <th className={gridHeaderClass}>Trips</th>
+                <th className={gridHeaderClass}>Distance</th>
+                <th className={gridHeaderClass}>Active Days</th>
               </tr>
             </thead>
             <tbody>
               {employeePerformance.map((emp, index) => (
-                <tr key={emp.name} className="border-b border-slate-100 transition hover:bg-slate-50">
-                  <td className="px-4 py-3 text-slate-900">
+                <tr key={emp.name} className="transition hover:bg-slate-50/60">
+                  <td className={`${gridCellClass} text-slate-900`}>
                     <div className="flex items-center gap-2">
                       {index < 2 && <Trophy className="h-4 w-4 text-orange-500" />}
                       {emp.name}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className={gridCellClass}>
                     <Badge variant="neutral">{emp.role}</Badge>
                   </td>
-                  <td className="px-4 py-3 font-semibold text-slate-900">{emp.trips}</td>
-                  <td className="px-4 py-3 text-slate-600">{emp.distance} km</td>
-                  <td className="px-4 py-3 text-slate-600">{emp.activeDays}</td>
+                  <td className={`${gridCellClass} font-semibold text-slate-900`}>{emp.trips}</td>
+                  <td className={`${gridCellClass} text-slate-600`}>{emp.distance} km</td>
+                  <td className={`${gridCellClass} text-slate-600`}>{emp.activeDays}</td>
                 </tr>
               ))}
             </tbody>
@@ -2254,14 +2474,14 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-6 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
+        <Card className="rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-6 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
           <div className="mb-4 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
             <p className="text-lg font-black tracking-tight text-slate-900">Expense Analysis</p>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             {expenseAnalysis.map((item) => (
-              <div key={item.label} className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+              <div key={item.label} className="rounded border border-slate-100 bg-slate-50/50 p-4">
                 <p className="text-xs font-medium text-slate-500">{item.label}</p>
                 <p className="mt-1 text-xl font-semibold text-slate-900">{item.value}</p>
                 <p className="mt-1 text-xs text-slate-400">{item.delta}</p>
@@ -2269,7 +2489,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             ))}
           </div>
           <StableChartFrame
-            className="mt-6 h-48 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
+            className="mt-6 h-48 rounded border border-slate-100 bg-white/70 p-3 shadow-inner"
             height={168}
           >
               <AreaChart data={expenseTrend} margin={chartMargin}>
@@ -2288,28 +2508,51 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           </StableChartFrame>
         </Card>
 
-        <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
           <div className="mb-4 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
             <p className="text-lg font-semibold text-slate-900">Territory Analysis</p>
           </div>
-          <div className="overflow-x-auto rounded-2xl border border-slate-100">
-            <table className="w-full text-left text-sm">
+          {/* Mobile card view for <480px */}
+          <div className="space-y-2 xs:hidden">
+            {territoryAnalysis.map((territory) => (
+              <div key={territory.territory} className="rounded border border-slate-100 bg-white p-3.5 shadow-[0_2px_8px_rgba(15,23,42,0.04)]">
+                <p className="text-sm font-bold text-slate-900">{territory.territory}</p>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Trips</p>
+                    <p className="mt-0.5 text-sm text-slate-600">{territory.trips}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Distance</p>
+                    <p className="mt-0.5 text-sm text-slate-600">{territory.distance} km</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Expenses</p>
+                    <p className="mt-0.5 text-sm font-semibold text-slate-900">{egp(territory.expenses)}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Desktop table for ≥480px */}
+          <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
+            <table className="w-full border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
-                  <th className="px-4 py-3">Territory</th>
-                  <th className="px-4 py-3">Trips</th>
-                  <th className="px-4 py-3">Distance</th>
-                  <th className="px-4 py-3">Expenses</th>
+                <tr>
+                  <th className={gridHeaderClass}>Territory</th>
+                  <th className={gridHeaderClass}>Trips</th>
+                  <th className={gridHeaderClass}>Distance</th>
+                  <th className={gridHeaderClass}>Expenses</th>
                 </tr>
               </thead>
               <tbody>
                 {territoryAnalysis.map((territory) => (
-                  <tr key={territory.territory} className="border-b border-slate-100 transition hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-900">{territory.territory}</td>
-                    <td className="px-4 py-3 text-slate-600">{territory.trips}</td>
-                    <td className="px-4 py-3 text-slate-600">{territory.distance} km</td>
-                    <td className="px-4 py-3 font-semibold text-slate-900">{egp(territory.expenses)}</td>
+                  <tr key={territory.territory} className="transition hover:bg-slate-50/60">
+                    <td className={`${gridCellClass} font-medium text-slate-900`}>{territory.territory}</td>
+                    <td className={`${gridCellClass} text-slate-600`}>{territory.trips}</td>
+                    <td className={`${gridCellClass} text-slate-600`}>{territory.distance} km</td>
+                    <td className={`${gridCellClass} font-semibold text-slate-900`}>{egp(territory.expenses)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -2318,7 +2561,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
         </Card>
       </div>
 
-      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
@@ -2326,37 +2569,68 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           </div>
           <a className="text-xs font-medium text-orange-600 hover:text-orange-700" href="#">View All Trips &gt;</a>
         </div>
-        <div className="overflow-x-auto rounded-2xl border border-slate-100">
-          <table className="w-full text-left text-sm">
+        {/* Mobile card view for <480px */}
+        <div className="space-y-2 xs:hidden">
+          {recentTrips.map((trip) => (
+            <div key={trip.id} className="rounded border border-slate-100 bg-white p-3.5 shadow-[0_2px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-xs text-slate-500">{trip.id}</span>
+                <span className="text-xs font-semibold text-slate-600">{trip.date}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="text-sm font-bold text-slate-900">{trip.employee}</span>
+                <span className="text-lg font-black text-slate-900">{egp(trip.cost)}</span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="font-bold uppercase tracking-[0.12em] text-slate-400">From</span>
+                  <p className="mt-0.5 text-slate-600">{trip.from}</p>
+                </div>
+                <div>
+                  <span className="font-bold uppercase tracking-[0.12em] text-slate-400">To</span>
+                  <p className="mt-0.5 text-slate-600">{trip.to}</p>
+                </div>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <Badge variant="neutral">{trip.role}</Badge>
+                <Badge variant="neutral">{trip.type}</Badge>
+                <span className="ml-auto text-xs text-slate-500">{trip.distance} km</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Desktop table for ≥480px */}
+        <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
+          <table className="w-full border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
-                <th className="px-4 py-3">Trip ID</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Employee</th>
-                <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3">From</th>
-                <th className="px-4 py-3">To</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Distance</th>
-                <th className="px-4 py-3">Cost</th>
+              <tr>
+                <th className={`${gridHeaderClass} whitespace-nowrap`}>Trip ID</th>
+                <th className={gridHeaderClass}>Date</th>
+                <th className={gridHeaderClass}>Employee</th>
+                <th className={gridHeaderClass}>Role</th>
+                <th className={gridHeaderClass}>From</th>
+                <th className={gridHeaderClass}>To</th>
+                <th className={gridHeaderClass}>Type</th>
+                <th className={gridHeaderClass}>Distance</th>
+                <th className={gridHeaderClass}>Cost</th>
               </tr>
             </thead>
             <tbody>
               {recentTrips.map((trip) => (
-                <tr key={trip.id} className="border-b border-slate-100 transition hover:bg-slate-50">
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{trip.id}</td>
-                  <td className="px-4 py-3 text-slate-900">{trip.date}</td>
-                  <td className="px-4 py-3 text-slate-600">{trip.employee}</td>
-                  <td className="px-4 py-3">
+                <tr key={trip.id} className="transition hover:bg-slate-50/60">
+                  <td className={`${gridCellClass} whitespace-nowrap font-mono text-xs text-slate-600`}>{trip.id}</td>
+                  <td className={`${gridCellClass} whitespace-nowrap text-slate-900`}>{trip.date}</td>
+                  <td className={`${gridCellClass} whitespace-nowrap text-slate-600`}>{trip.employee}</td>
+                  <td className={gridCellClass}>
                     <Badge variant="neutral">{trip.role}</Badge>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{trip.from}</td>
-                  <td className="px-4 py-3 text-slate-600">{trip.to}</td>
-                  <td className="px-4 py-3">
+                  <td className={`${gridCellClass} whitespace-nowrap text-slate-600`}>{trip.from}</td>
+                  <td className={`${gridCellClass} whitespace-nowrap text-slate-600`}>{trip.to}</td>
+                  <td className={gridCellClass}>
                     <Badge variant="neutral">{trip.type}</Badge>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{trip.distance} km</td>
-                  <td className="px-4 py-3 font-semibold text-slate-900">{egp(trip.cost)}</td>
+                  <td className={`${gridCellClass} whitespace-nowrap text-slate-600`}>{trip.distance} km</td>
+                  <td className={`${gridCellClass} whitespace-nowrap font-semibold text-slate-900`}>{egp(trip.cost)}</td>
                 </tr>
               ))}
             </tbody>
@@ -2382,7 +2656,7 @@ function WorkloadKPICard({
 }) {
   const isPositive = delta.startsWith("+");
   return (
-    <Card className="group rounded-2xl border border-slate-200 bg-white/95 px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
+    <Card className="group rounded border border-slate-200 bg-white/95 px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-2xl font-semibold tracking-tight text-slate-900">{value}</p>
@@ -2390,7 +2664,7 @@ function WorkloadKPICard({
           <p className="mt-0.5 text-[10px] text-slate-400">{subLabel}</p>
           <p className={`mt-1 text-xs font-medium ${isPositive ? "text-emerald-600" : "text-red-600"}`}>{delta}</p>
         </div>
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded bg-orange-50 text-orange-600">
           <Icon className="h-4 w-4" />
         </div>
       </div>
@@ -2404,8 +2678,8 @@ export function HRContractSection({ data }: { data: MedicalRepPortalData }) {
   return (
     <section id="hr-contract" className="space-y-4">
       {sectionTitle("HR & Contract", "Employment and Contract Status")}
-      <Card className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        <div className="mb-4 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
+      <Card className="rounded border border-slate-100 bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <div className="mb-4 rounded border border-slate-100 bg-slate-50/70 px-4 py-3">
           <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Contract Countdown</p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">
             {daysRemaining === null ? "No renewal date" : `${daysRemaining} days remaining`}
@@ -2463,7 +2737,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
     .toUpperCase();
 
   return (
-    <div className="relative overflow-hidden rounded-[30px] border border-white/80 bg-[linear-gradient(135deg,#ffffff_0%,#ffffff_48%,#f8fafc_100%)] px-5 py-5 shadow-[0_18px_48px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/70 lg:px-10 lg:py-8">
+    <div className="relative overflow-hidden rounded border border-white/80 bg-[linear-gradient(135deg,#ffffff_0%,#ffffff_48%,#f8fafc_100%)] px-5 py-5 shadow-[0_18px_48px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/70 lg:px-10 lg:py-8">
       <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
       <div className="absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.025)_1px,transparent_1px)] bg-[size:34px_34px] opacity-70 [mask-image:linear-gradient(110deg,rgba(0,0,0,0.85),transparent_76%)]" />
       
@@ -2488,7 +2762,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
             <h1 className="text-[24px] font-black leading-tight tracking-tight text-slate-950 lg:text-[32px]">
               {employee.fullName}
             </h1>
-            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider lg:px-4 lg:text-[13px] ${statusPillClass}`}>
+            <span className={`inline-flex items-center gap-2 rounded border px-3 py-1 text-[11px] font-bold uppercase tracking-wider lg:px-4 lg:text-[13px] ${statusPillClass}`}>
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full lg:h-2 lg:w-2 ${statusDotClass} ${statusVariant === "success" ? "animate-pulse" : ""}`} />
               {employee.status}
             </span>
@@ -2504,32 +2778,32 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
           {/* Line · Territory · Manager - Enhanced Grid */}
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:mt-6">
             <div className="flex items-center gap-2.5 group/item">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-orange-500 shadow-sm ring-1 ring-slate-200 transition-colors group-hover/item:bg-orange-50">
+              <div className="flex h-8 w-8 items-center justify-center rounded bg-white text-orange-500 shadow-sm ring-1 ring-slate-200 transition-colors group-hover/item:bg-orange-50">
                 <BriefcaseBusiness className="h-4 w-4" />
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Business Line</p>
-                <p className="truncate text-sm font-bold text-slate-700">{employee.line ?? "Unassigned"}</p>
+                <p className="whitespace-nowrap text-sm font-bold text-slate-700">{employee.line ?? "Unassigned"}</p>
               </div>
             </div>
             
             <div className="flex items-center gap-2.5 group/item">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-orange-500 shadow-sm ring-1 ring-slate-200 transition-colors group-hover/item:bg-orange-50">
+              <div className="flex h-8 w-8 items-center justify-center rounded bg-white text-orange-500 shadow-sm ring-1 ring-slate-200 transition-colors group-hover/item:bg-orange-50">
                 <MapPin className="h-4 w-4" />
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Territory</p>
-                <p className="truncate text-sm font-bold text-slate-700">{employee.territory ?? "Unassigned"}</p>
+                <p className="whitespace-nowrap text-sm font-bold text-slate-700">{employee.territory ?? "Unassigned"}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-2.5 group/item">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-orange-500 shadow-sm ring-1 ring-slate-200 transition-colors group-hover/item:bg-orange-50">
+              <div className="flex h-8 w-8 items-center justify-center rounded bg-white text-orange-500 shadow-sm ring-1 ring-slate-200 transition-colors group-hover/item:bg-orange-50">
                 <Users className="h-4 w-4" />
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Direct Manager</p>
-                <p className="truncate text-sm font-bold text-slate-700">{employee.manager ?? "Unassigned"}</p>
+                <p className="whitespace-nowrap text-sm font-bold text-slate-700">{employee.manager ?? "Unassigned"}</p>
               </div>
             </div>
           </div>
@@ -2553,6 +2827,164 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
   );
 }
 
+function TerritoryComparisonChart({ data }: { data: MedicalRepPortalData }) {
+  const territories = Array.isArray(data.sales.territories) ? data.sales.territories : [];
+  if (territories.length === 0) return null;
+
+  const sorted = [...territories].sort((a, b) => b.achievementPercent - a.achievementPercent);
+  const totalSales = territories.reduce((s, t) => s + t.sales, 0);
+  const totalTarget = territories.reduce((s, t) => s + t.target, 0);
+
+  return (
+    <OverviewPagePanel
+      title="Territory Performance"
+      action={
+        <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          {territories.length} territories
+        </span>
+      }
+    >
+      <ChartErrorBoundary>
+        {/* Totals */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
+            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Total Sales</p>
+            <p className="mt-1 text-sm font-black text-orange-600">{egp(totalSales)}</p>
+          </div>
+          <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
+            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Total Target</p>
+            <p className="mt-1 text-sm font-black text-slate-700">{egp(totalTarget)}</p>
+          </div>
+        </div>
+
+        {/* Territory rows */}
+        <div className="mt-3 space-y-1">
+          {sorted.map((t) => {
+            const pct = Math.min(t.achievementPercent, 150);
+            const grad = t.achievementPercent >= 100 ? "#16a34a,#86efac" : t.achievementPercent >= 70 ? "#ca8a04,#fde047" : "#dc2626,#fca5a5";
+            const [from, to] = grad.split(",");
+            return (
+              <PremiumTooltip
+                key={t.name}
+                triggerClassName="block"
+                content={
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-black text-slate-900">{t.name}</p>
+                    <div className="flex items-center justify-between gap-5 text-[11px]">
+                      <span className="text-slate-500">Sales</span>
+                      <span className="font-bold text-orange-600">{egp(t.sales)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-5 text-[11px]">
+                      <span className="text-slate-500">Target</span>
+                      <span className="font-bold text-slate-700">{egp(t.target)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-5 border-t border-slate-100 pt-1 text-[11px]">
+                      <span className="text-slate-500">Achievement</span>
+                      <span className="font-bold text-orange-600">{t.achievementPercent.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                }
+              >
+                <div className="flex items-center gap-2 rounded border border-slate-100 bg-white/80 px-3 py-1.5">
+                  <span className="w-[90px] shrink-0 break-words text-[12px] font-bold text-slate-700">{t.name}</span>
+                  <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-100">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-sm"
+                      style={{ width: `${Math.min(100, (pct / 150) * 100)}%`, background: `linear-gradient(to right, ${from}, ${to})` }}
+                    />
+                    <div className="absolute inset-y-0 border-r border-dashed border-slate-300/60" style={{ left: `${(100 / 150) * 100}%` }} />
+                  </div>
+                  <span className="w-10 shrink-0 text-right text-[11px] font-black text-slate-700">{t.achievementPercent.toFixed(0)}%</span>
+                </div>
+              </PremiumTooltip>
+            );
+          })}
+        </div>
+      </ChartErrorBoundary>
+    </OverviewPagePanel>
+  );
+}
+
+function ProductFamilyBreakdown({ data }: { data: MedicalRepPortalData }) {
+  const families = Array.isArray(data.sales.familyContribution) ? data.sales.familyContribution : [];
+  if (families.length === 0) return null;
+
+  const sorted = [...families].sort((a, b) => b.sales - a.sales);
+  const totalSales = sorted.reduce((sum, f) => sum + f.sales, 0);
+  const totalUnits = sorted.reduce((sum, f) => sum + f.units, 0);
+  const maxSales = sorted[0]?.sales ?? 1;
+
+  return (
+    <OverviewPagePanel
+      title="Product Family Contribution"
+      action={
+        <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          {families.length} families
+        </span>
+      }
+    >
+      <ChartErrorBoundary>
+        {/* Totals */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
+            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Total Sales</p>
+            <p className="mt-1 text-sm font-black text-orange-600">{egp(totalSales)}</p>
+          </div>
+          <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
+            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Total Units</p>
+            <p className="mt-1 text-sm font-black text-slate-700">{formatUnits(totalUnits)}</p>
+          </div>
+        </div>
+
+        {/* Family rows with proportional bars */}
+        <div className="mt-3 space-y-1">
+          {sorted.map((f, i) => {
+            const pct = totalSales > 0 ? (f.sales / totalSales) * 100 : 0;
+            const barWidth = maxSales > 0 ? (f.sales / maxSales) * 100 : 0;
+            const tier = sorted.length <= 1 ? 0 : i / (sorted.length - 1);
+            const grad = tier <= 0.33 ? "#16a34a,#86efac" : tier <= 0.66 ? "#ca8a04,#fde047" : "#dc2626,#fca5a5";
+            const [from, to] = grad.split(",");
+            return (
+              <PremiumTooltip
+                key={f.name}
+                triggerClassName="block"
+                content={
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-black text-slate-900">{f.name}</p>
+                    <div className="flex items-center justify-between gap-5 text-[11px]">
+                      <span className="text-slate-500">Sales</span>
+                      <span className="font-bold text-orange-600">{egp(f.sales)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-5 text-[11px]">
+                      <span className="text-slate-500">Units</span>
+                      <span className="font-bold text-slate-700">{formatUnits(f.units)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-5 border-t border-slate-100 pt-1 text-[11px]">
+                      <span className="text-slate-500">Contribution</span>
+                      <span className="font-bold text-orange-600">{pct.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                }
+              >
+                <div className="flex items-center gap-2 rounded border border-slate-100 bg-white/80 px-3 py-1.5">
+                  <span className="w-[90px] shrink-0 break-words text-[12px] font-bold text-slate-700">{f.name}</span>
+                  <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-100">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-sm"
+                      style={{ width: `${barWidth}%`, background: `linear-gradient(to right, ${from}, ${to})` }}
+                    />
+                  </div>
+                  <span className="w-12 shrink-0 text-right text-[11px] font-black text-slate-700">{pct.toFixed(1)}%</span>
+                </div>
+              </PremiumTooltip>
+            );
+          })}
+        </div>
+      </ChartErrorBoundary>
+    </OverviewPagePanel>
+  );
+}
+
 export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData }) {
   if (data.empty.profile) {
     return <EmptyStateCard message="Your employee profile is not linked yet. Please contact HR." title="Profile Not Linked" />;
@@ -2570,6 +3002,10 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
       </div>
       <OverviewPerformanceChart data={data} />
       <OverviewInsightsAlerts data={data} />
+      <div className="grid gap-5 xl:grid-cols-2">
+        <TerritoryComparisonChart data={data} />
+        <ProductFamilyBreakdown data={data} />
+      </div>
       <div className="grid gap-5 xl:grid-cols-[1.55fr_0.9fr]">
         <div className="space-y-5">
           <OverviewTopProducts data={data} />
@@ -2579,7 +3015,7 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
       </div>
       <div className="flex justify-center lg:justify-end">
         <Link className="w-full lg:w-auto" href="/employee-portals/sales">
-          <Button className="w-full rounded-xl px-5 lg:w-auto" variant="secondary">Open Full Performance</Button>
+          <Button className="w-full rounded px-5 lg:w-auto" variant="secondary">Open Full Performance</Button>
         </Link>
       </div>
     </div>
@@ -2624,7 +3060,7 @@ export function EmployeePortalProfile({ data }: { data: MedicalRepPortalData }) 
 
   return (
     <>
-      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
+      <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
         <div className="flex items-center gap-2">
           <UserRound className="h-5 w-5 text-slate-500" />
           <p className="text-lg font-semibold text-slate-900">{data.employee.fullName}</p>

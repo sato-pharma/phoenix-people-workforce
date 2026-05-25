@@ -89,7 +89,7 @@ function SelectField({
 }) {
   return (
     <select
-      className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+      className="h-12 w-full rounded border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       value={value}
@@ -375,28 +375,28 @@ export function MarketingRequestDraftWorkspace() {
 
   return (
     <div className="space-y-6">
-      <Card className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] sm:p-5">
+      <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] sm:p-5">
         <div className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3">
+          <div className="rounded border border-orange-100 bg-orange-50 px-4 py-3">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-orange-600">
               Drafts
             </p>
             <p className="mt-1 text-2xl font-black text-slate-950">{workspace.drafts.length}</p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
               Customers
             </p>
             <p className="mt-1 text-2xl font-black text-slate-950">{workspace.customers.length}</p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
               Products
             </p>
             <p className="mt-1 text-2xl font-black text-slate-950">{workspace.products.length}</p>
           </div>
           <button
-            className="flex min-h-[78px] items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+            className="flex min-h-[78px] items-center justify-center gap-2 rounded border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
             onClick={() => {
               setIsLoading(true);
               setMessage(null);
@@ -411,15 +411,15 @@ export function MarketingRequestDraftWorkspace() {
       </Card>
 
       {message ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+        <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
           {message}
         </div>
       ) : null}
 
-      <Card className="rounded-[24px] border border-slate-200 bg-white p-2 shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
+      <Card className="rounded border border-slate-200 bg-white p-2 shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
         <div className="grid gap-2 sm:grid-cols-2">
           <button
-            className={`flex min-h-12 items-center justify-center gap-2 rounded-[18px] px-4 text-sm font-black transition ${
+            className={`flex min-h-12 items-center justify-center gap-2 rounded px-4 text-sm font-black transition ${
               activeView === "create"
                 ? "bg-orange-500 text-white shadow-[0_10px_24px_rgba(249,115,22,0.22)]"
                 : "bg-white text-slate-600 hover:bg-slate-50"
@@ -431,7 +431,7 @@ export function MarketingRequestDraftWorkspace() {
             Create Request
           </button>
           <button
-            className={`flex min-h-12 items-center justify-center gap-2 rounded-[18px] px-4 text-sm font-black transition ${
+            className={`flex min-h-12 items-center justify-center gap-2 rounded px-4 text-sm font-black transition ${
               activeView === "approved"
                 ? "bg-orange-500 text-white shadow-[0_10px_24px_rgba(249,115,22,0.22)]"
                 : "bg-white text-slate-600 hover:bg-slate-50"
@@ -446,7 +446,7 @@ export function MarketingRequestDraftWorkspace() {
       </Card>
 
       <div className={activeView === "create" ? "space-y-6" : "hidden"}>
-        <Card className="overflow-hidden rounded-[32px] border border-slate-200 bg-white p-0 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+        <Card className="overflow-hidden rounded border border-slate-200 bg-white p-0 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
           <form onSubmit={submitDraft}>
             <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/60 to-white p-5 sm:p-7">
               <div className="flex flex-wrap items-center justify-between gap-4">
@@ -495,7 +495,7 @@ export function MarketingRequestDraftWorkspace() {
                 <div className="lg:col-span-6">
                   <Field label="Other Type Description">
                     <Input
-                      className="h-12 rounded-2xl border-slate-200 bg-white"
+                      className="h-12 rounded border-slate-200 bg-white"
                       onChange={(event) => setOtherRequestType(event.target.value)}
                       placeholder="Describe the request type"
                       value={otherRequestType}
@@ -507,7 +507,7 @@ export function MarketingRequestDraftWorkspace() {
               <div className="lg:col-span-2">
                 <Field label="Request Date">
                   <Input
-                    className="h-12 rounded-2xl border-slate-200 bg-white"
+                    className="h-12 rounded border-slate-200 bg-white"
                     onChange={(event) => setRequestDate(event.target.value)}
                     type="date"
                     value={requestDate}
@@ -518,7 +518,7 @@ export function MarketingRequestDraftWorkspace() {
               <div className="lg:col-span-2">
                 <Field label="Pay Date">
                   <Input
-                    className="h-12 rounded-2xl border-slate-200 bg-white"
+                    className="h-12 rounded border-slate-200 bg-white"
                     onChange={(event) => setPayDate(event.target.value)}
                     type="date"
                     value={payDate}
@@ -529,7 +529,7 @@ export function MarketingRequestDraftWorkspace() {
               <div className="lg:col-span-2">
                 <Field label="ROI Duration">
                   <Input
-                    className="h-12 rounded-2xl border-slate-200 bg-white"
+                    className="h-12 rounded border-slate-200 bg-white"
                     min="1"
                     onChange={(event) => setRoiDurationMonths(event.target.value)}
                     type="number"
@@ -541,7 +541,7 @@ export function MarketingRequestDraftWorkspace() {
               <div className="lg:col-span-3">
                 <Field label="Estimated Cost">
                   <Input
-                    className="h-12 rounded-2xl border-slate-200 bg-white"
+                    className="h-12 rounded border-slate-200 bg-white"
                     min="0"
                     onChange={(event) => setEstimatedCost(event.target.value)}
                     placeholder="EGP"
@@ -565,7 +565,7 @@ export function MarketingRequestDraftWorkspace() {
                       </p>
                     </div>
                     <Button
-                      className="gap-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      className="gap-2 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                       onClick={addProductLine}
                       type="button"
                     >
@@ -577,7 +577,7 @@ export function MarketingRequestDraftWorkspace() {
                   {productLines.map((line) => {
                     const product = productMap.get(line.productId);
                     return (
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3" key={line.key}>
+                      <div className="rounded border border-slate-200 bg-slate-50 p-3" key={line.key}>
                         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_130px_130px_150px_90px_44px]">
                           <SelectField
                             disabled={visibleProducts.length === 0}
@@ -594,7 +594,7 @@ export function MarketingRequestDraftWorkspace() {
                             ))}
                           </SelectField>
                           <Input
-                            className="h-12 rounded-2xl border-slate-200 bg-white"
+                            className="h-12 rounded border-slate-200 bg-white"
                             min="0"
                             onChange={(event) => updateProductLine(line.key, { quantity: event.target.value })}
                             placeholder="Qty"
@@ -611,7 +611,7 @@ export function MarketingRequestDraftWorkspace() {
                           />
                           <button
                             aria-label="Remove product"
-                            className="flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                            className="flex h-12 w-full items-center justify-center rounded border border-slate-200 bg-white text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
                             onClick={() => removeProductLine(line.key)}
                             type="button"
                           >
@@ -627,7 +627,7 @@ export function MarketingRequestDraftWorkspace() {
               <div className="lg:col-span-6">
                 <Field label="Note">
                   <textarea
-                    className="min-h-28 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                    className="min-h-28 w-full rounded border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
                     onChange={(event) => setNotes(event.target.value)}
                     placeholder="Optional request note"
                     value={notes}
@@ -642,7 +642,7 @@ export function MarketingRequestDraftWorkspace() {
                 <span>Required ROI: {egp(roiPreview.requiredRoiValue)}</span>
               </div>
               <Button
-                className="min-h-12 min-w-[210px] gap-2 rounded-2xl bg-orange-500 px-6 text-white hover:bg-orange-600"
+                className="min-h-12 min-w-[210px] gap-2 rounded bg-orange-500 px-6 text-white hover:bg-orange-600"
                 disabled={!canSave}
                 type="submit"
               >
@@ -654,9 +654,9 @@ export function MarketingRequestDraftWorkspace() {
         </Card>
 
         <div className="space-y-6">
-          <Card className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
+          <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
+              <div className="flex h-11 w-11 items-center justify-center rounded bg-orange-50 text-orange-600 ring-1 ring-orange-100">
                 <Megaphone className="h-5 w-5" />
               </div>
               <div>
@@ -670,7 +670,7 @@ export function MarketingRequestDraftWorkspace() {
               <Metric label="Expected ROI" value={egp(roiPreview.expectedRoiValue)} />
               <Metric label="Coverage" value={`${Math.round(roiPreview.roiCoverageRatio * 100)}%`} />
             </div>
-            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+            <div className="mt-5 overflow-hidden rounded border border-slate-200">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] border-collapse text-left text-sm">
                   <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
@@ -705,9 +705,9 @@ export function MarketingRequestDraftWorkspace() {
             </div>
           </Card>
 
-          <Card className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
+          <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-50 text-slate-600 ring-1 ring-slate-200">
+              <div className="flex h-11 w-11 items-center justify-center rounded bg-slate-50 text-slate-600 ring-1 ring-slate-200">
                 <ListChecks className="h-5 w-5" />
               </div>
               <div>
@@ -717,10 +717,10 @@ export function MarketingRequestDraftWorkspace() {
             </div>
             <div className="mt-5 space-y-3">
               {workspace.drafts.slice(0, 6).map((draft) => (
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3" key={draft.id}>
+                <div className="rounded border border-slate-100 bg-slate-50 p-3" key={draft.id}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate font-mono text-xs font-bold text-slate-600">{draft.requestCode}</p>
+                      <p className="whitespace-nowrap font-mono text-xs font-bold text-slate-600">{draft.requestCode}</p>
                       <p className="mt-1 text-sm font-black text-slate-950">{egp(draft.estimatedCost)}</p>
                     </div>
                     <Badge variant={roiBadgeVariant(draft.roiStatus)}>
@@ -734,7 +734,7 @@ export function MarketingRequestDraftWorkspace() {
                 </div>
               ))}
               {!isLoading && workspace.drafts.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm font-semibold text-slate-500">
+                <p className="rounded border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm font-semibold text-slate-500">
                   No draft rows yet.
                 </p>
               ) : null}
@@ -744,7 +744,7 @@ export function MarketingRequestDraftWorkspace() {
       </div>
 
       <div className={activeView === "approved" ? "space-y-6" : "hidden"}>
-        <Card className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
+        <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
           <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -824,7 +824,7 @@ export function MarketingRequestDraftWorkspace() {
       </div>
 
       {workspace.customers.length === 0 || workspace.products.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
+        <div className="rounded border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
           {workspace.customers.length === 0
             ? "No active marketing customers are available yet. Customer creation is the next UI slice."
             : "No active marketing products are available yet. Run the reference-data seed before saving real drafts."}
@@ -842,7 +842,7 @@ function Metric({
   value: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+    <div className="flex items-center justify-between gap-3 rounded border border-slate-100 bg-slate-50 px-3 py-2">
       <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
       <span className="text-sm font-black text-slate-950">{value}</span>
     </div>
@@ -863,12 +863,12 @@ function EvidenceUpload({
   onUpload: (file: File | null | undefined) => void;
 }) {
   return (
-    <label className="flex min-w-[150px] cursor-pointer flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 transition hover:border-orange-200 hover:bg-orange-50">
+    <label className="flex min-w-[150px] cursor-pointer flex-col gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 transition hover:border-orange-200 hover:bg-orange-50">
       <span className="flex items-center gap-2 text-xs font-black text-slate-700">
         {isUploading ? <LoadingSpinner /> : <Upload className="h-3.5 w-3.5 text-orange-600" />}
         {isUploading ? "Uploading..." : label}
       </span>
-      <span className="truncate text-[11px] font-semibold text-slate-500">
+      <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500">
         {fileName ?? "No file yet"}
       </span>
       <input
@@ -893,9 +893,9 @@ function ReadOnlyValue({
   value: string;
 }) {
   return (
-    <div className="flex h-12 min-w-0 flex-col justify-center rounded-2xl border border-slate-200 bg-white px-3">
-      <span className="truncate text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</span>
-      <span className="truncate text-sm font-black text-slate-800">{value}</span>
+    <div className="flex h-12 min-w-0 flex-col justify-center rounded border border-slate-200 bg-white px-3">
+      <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</span>
+      <span className="whitespace-nowrap text-sm font-black text-slate-800">{value}</span>
     </div>
   );
 }

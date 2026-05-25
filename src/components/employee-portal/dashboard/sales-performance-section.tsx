@@ -82,14 +82,14 @@ function ContributionMetricToggle({
   onChange: (metric: ContributionMetric) => void;
 }) {
   return (
-    <div className="inline-flex rounded-xl border border-slate-200 bg-white/80 p-1 shadow-[0_6px_18px_rgba(15,23,42,0.05)] ring-1 ring-white/80">
+    <div className="inline-flex rounded border border-slate-200 bg-white/80 p-1 shadow-[0_6px_18px_rgba(15,23,42,0.05)] ring-1 ring-white/80">
       {(["sales", "units"] as const).map((option) => {
         const active = metric === option;
         return (
           <button
             className={active
-              ? "rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white shadow-sm"
-              : "rounded-lg px-3 py-1.5 text-xs font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"}
+              ? "rounded bg-slate-950 px-3 py-1.5 text-xs font-bold text-white shadow-sm"
+              : "rounded px-3 py-1.5 text-xs font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"}
             key={option}
             onClick={() => onChange(option)}
             type="button"
@@ -107,7 +107,7 @@ function chartTooltipStyle() {
     backdropFilter: "blur(18px)",
     background: "rgba(255,255,255,0.96)",
     border: "1px solid rgba(226,232,240,0.9)",
-    borderRadius: 14,
+    borderRadius: 4,
     boxShadow: "0 18px 44px rgba(15,23,42,0.14)",
     color: "#0f172a",
     fontSize: 12,
@@ -155,7 +155,7 @@ function EmptyStateCard({
   title: string;
 }) {
   return (
-    <Card className="rounded-3xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-10 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
+    <Card className="rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-10 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
       <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
       <p className="mt-2 text-sm text-slate-600">{message}</p>
     </Card>
@@ -173,7 +173,7 @@ function MetricCard({
 }) {
   return (
     <div
-      className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300"
+      className="group relative overflow-hidden rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300"
       title={tooltip}
     >
       <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
@@ -243,19 +243,19 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
             </div>
 
             <div className="grid gap-4 xl:grid-cols-2">
-              <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
+              <Card className="rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
+                    <span className="flex h-8 w-8 items-center justify-center rounded bg-orange-50 text-orange-600 ring-1 ring-orange-100">
                       <LineChartIcon className="h-4 w-4" />
                     </span>
                     <p className="text-sm font-black tracking-tight text-slate-900">Sales Trend</p>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Monthly</span>
+                  <span className="rounded bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Monthly</span>
                 </div>
                 {trendData.length > 0 ? (
                   <StableChartFrame
-                    className="h-64 w-full rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
+                    className="h-64 w-full rounded border border-slate-100 bg-white/70 p-3 shadow-inner"
                     height={232}
                   >
                     <AreaChart data={trendData} margin={chartMargin}>
@@ -279,7 +279,7 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
                     </AreaChart>
                   </StableChartFrame>
                 ) : (
-                  <div className="h-64 w-full min-w-0 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
+                  <div className="h-64 w-full min-w-0 rounded border border-slate-100 bg-white/70 p-3 shadow-inner">
                     <div className="flex h-full items-center justify-center">
                       <p className="text-sm text-slate-500">No trend data available</p>
                     </div>
@@ -287,14 +287,14 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
                 )}
               </Card>
 
-              <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
+              <Card className="rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <p className="text-sm font-black tracking-tight text-slate-900">Sales vs Target</p>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Variance</span>
+                  <span className="rounded bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Variance</span>
                 </div>
                 {trendData.length > 0 ? (
                   <StableChartFrame
-                    className="h-64 w-full rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
+                    className="h-64 w-full rounded border border-slate-100 bg-white/70 p-3 shadow-inner"
                     height={232}
                   >
                     <BarChart data={trendData} margin={chartMargin}>
@@ -313,7 +313,7 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
                     </BarChart>
                   </StableChartFrame>
                 ) : (
-                  <div className="h-64 w-full min-w-0 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
+                  <div className="h-64 w-full min-w-0 rounded border border-slate-100 bg-white/70 p-3 shadow-inner">
                     <div className="flex h-full items-center justify-center">
                       <p className="text-sm text-slate-500">No trend data available</p>
                     </div>
@@ -322,7 +322,7 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
               </Card>
             </div>
 
-            <Card className="rounded-3xl border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
+            <Card className="rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <p className="text-sm font-black tracking-tight text-slate-900">Product Mix & Contribution</p>
                 <ContributionMetricToggle metric={productMetric} onChange={setProductMetric} />
@@ -330,7 +330,7 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
               <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
                 {productChartRows.length > 0 ? (
                   <StableChartFrame
-                    className="h-56 w-full rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner"
+                    className="h-56 w-full rounded border border-slate-100 bg-white/70 p-3 shadow-inner"
                     height={200}
                   >
                     <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
@@ -353,7 +353,7 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
                     </PieChart>
                   </StableChartFrame>
                 ) : (
-                  <div className="h-56 w-full min-w-0 rounded-[22px] border border-slate-100 bg-white/70 p-3 shadow-inner">
+                  <div className="h-56 w-full min-w-0 rounded border border-slate-100 bg-white/70 p-3 shadow-inner">
                     <div className="flex h-full items-center justify-center">
                       <p className="text-sm text-slate-500">No product mix data available</p>
                     </div>
@@ -361,10 +361,10 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
                 )}
                 <div className="flex flex-col justify-center space-y-2">
                   {productRows.slice(0, 5).map((p, i) => (
-                    <div key={p.name} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs shadow-[0_5px_14px_rgba(15,23,42,0.03)]">
+                    <div key={p.name} className="flex items-center justify-between rounded border border-slate-100 bg-white px-3 py-2 text-xs shadow-[0_5px_14px_rgba(15,23,42,0.03)]">
                       <div className="flex items-center gap-2">
                         <div className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: chartColors[i % chartColors.length] }} />
-                        <span className="max-w-[120px] truncate font-bold text-slate-700" title={p.name}>{p.name}</span>
+                        <span className="max-w-[120px] whitespace-nowrap font-bold text-slate-700" title={p.name}>{p.name}</span>
                       </div>
                       <div className="flex gap-3">
                         <span className="font-mono font-black text-slate-900 tabular-nums">{getContributionPercentage(p, productMetric).toFixed(1)}%</span>

@@ -69,13 +69,13 @@ const BRAND = {
 };
 
 const premiumCardClass =
-  "rounded-[28px] border border-orange-100/80 bg-white/94 shadow-[0_22px_58px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03] backdrop-blur";
+  "rounded border border-orange-100/80 bg-white/94 shadow-[0_22px_58px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03] backdrop-blur";
 
 const premiumControlClass =
-  "h-11 w-full min-w-0 rounded-2xl border border-orange-100 bg-white/95 px-3 text-sm text-slate-800 shadow-[0_12px_30px_rgba(15,23,42,0.05)] outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100";
+  "h-11 w-full min-w-0 rounded border border-orange-100 bg-white/95 px-3 text-sm text-slate-800 shadow-[0_12px_30px_rgba(15,23,42,0.05)] outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100";
 
 const chartPanelClass =
-  "rounded-[28px] border border-orange-100/80 bg-white/96 p-5 shadow-[0_22px_60px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03]";
+  "rounded border border-orange-100/80 bg-white/96 p-5 shadow-[0_22px_60px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03]";
 
 const statusOptions = ["All", "System Approval", "Pending", "Declined", "Confirmed by HR", "Other"] as const;
 type SortField =
@@ -308,7 +308,7 @@ function DashboardCard({
   const showDelta = delta === undefined ? "" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`;
   const isPositive = delta === undefined ? false : delta >= 0;
   return (
-    <Card className="group relative overflow-hidden rounded-[26px] border border-orange-100/80 bg-white/95 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.07)] ring-1 ring-slate-950/[0.03] transition hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(249,115,22,0.13)]">
+    <Card className="group relative overflow-hidden rounded border border-orange-100/80 bg-white/95 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.07)] ring-1 ring-slate-950/[0.03] transition hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(249,115,22,0.13)]">
       <div className="absolute -right-8 -top-10 h-24 w-24 rounded-full bg-orange-100/70 blur-2xl transition group-hover:bg-orange-200/80" />
       <p className="relative text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="relative mt-3 text-2xl font-black text-slate-950" style={{ color: BRAND.textPrimary }}>
@@ -316,7 +316,7 @@ function DashboardCard({
       </p>
       {helper ? <p className="relative mt-1 text-xs font-medium text-slate-500">{helper}</p> : null}
       {delta === undefined ? null : (
-        <span className={`relative mt-3 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${isPositive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+        <span className={`relative mt-3 inline-block rounded px-2.5 py-1 text-xs font-bold ${isPositive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
           {showDelta}
         </span>
       )}
@@ -356,14 +356,14 @@ function AdminKeyCard({
   }[tone];
 
   return (
-    <Card className={`group relative overflow-hidden rounded-lg border bg-gradient-to-br px-4 py-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${toneClassName.card}`}>
+    <Card className={`group relative overflow-hidden rounded border bg-gradient-to-br px-4 py-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${toneClassName.card}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+          <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p>
           <p className={`mt-2 text-2xl font-black tracking-[-0.03em] ${toneClassName.value}`}>{value}</p>
           <p className="mt-1.5 text-xs leading-5 text-slate-500">{helper}</p>
         </div>
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ${toneClassName.icon}`}>
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded ring-1 ${toneClassName.icon}`}>
           <Icon className="h-5 w-5" />
         </div>
       </div>
@@ -659,12 +659,12 @@ export function PersonalExpenseWorkloadDashboard({
   return (
     <div className="space-y-6 text-slate-950">
       {showHero ? (
-      <section className="relative overflow-hidden rounded-[30px] border border-orange-100 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_46%,#fff1e6_100%)] p-6 shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
+      <section className="relative overflow-hidden rounded border border-orange-100 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_46%,#fff1e6_100%)] p-6 shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
         <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full bg-orange-200/45 blur-3xl" />
         <div className="absolute -bottom-20 left-10 h-40 w-40 rounded-full bg-amber-100/60 blur-3xl" />
         <div className="relative flex flex-wrap items-end justify-between gap-4">
           <div>
-            <span className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">
+            <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">
               Personal expense command
             </span>
             <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Expense Dashboard</h1>
@@ -672,7 +672,7 @@ export function PersonalExpenseWorkloadDashboard({
               Track your personal trips, expenses, approvals, and workload from one clean view.
             </p>
           </div>
-          <div className="rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-right shadow-[0_14px_35px_rgba(15,23,42,0.07)]">
+          <div className="rounded border border-white/80 bg-white/80 px-4 py-3 text-right shadow-[0_14px_35px_rgba(15,23,42,0.07)]">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Filtered spend</p>
             <p className="mt-1 text-2xl font-black text-orange-600">{formatMoney(totalExpenses)}</p>
           </div>
@@ -687,7 +687,7 @@ export function PersonalExpenseWorkloadDashboard({
               <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Filters</p>
             </div>
             <button
-              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-orange-200 bg-orange-500 px-4 text-sm font-black text-white shadow-[0_14px_34px_rgba(249,115,22,0.25)] transition hover:-translate-y-0.5 hover:bg-orange-600 sm:w-auto"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded border border-orange-200 bg-orange-500 px-4 text-sm font-black text-white shadow-[0_14px_34px_rgba(249,115,22,0.25)] transition hover:-translate-y-0.5 hover:bg-orange-600 sm:w-auto"
               onClick={resetFilters}
               type="button"
             >
@@ -833,7 +833,7 @@ export function PersonalExpenseWorkloadDashboard({
               <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Monthly Expense Trend</p>
               <p className="text-sm font-medium text-slate-500">Spend rhythm and unusual spikes</p>
             </div>
-            <span className="rounded-2xl border border-orange-100 bg-orange-50 p-2 text-orange-600">
+            <span className="rounded border border-orange-100 bg-orange-50 p-2 text-orange-600">
               <Filter className="h-4 w-4" />
             </span>
           </div>
@@ -894,7 +894,7 @@ export function PersonalExpenseWorkloadDashboard({
                   </PieChart>
                 </SafeResponsiveContainer>
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <div className="rounded-full border border-orange-100 bg-white/95 px-4 py-2 text-center shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
+                  <div className="rounded border border-orange-100 bg-white/95 px-4 py-2 text-center shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
                     <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Total</p>
                     <p className="text-lg font-black text-slate-950">{formatMoney(categoryBreakdown.total)}</p>
                   </div>
@@ -955,7 +955,7 @@ export function PersonalExpenseWorkloadDashboard({
               </p>
             </div>
             <button
-              className="rounded-2xl border border-orange-100 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700 transition hover:bg-orange-100"
+              className="rounded border border-orange-100 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700 transition hover:bg-orange-100"
               onClick={() => setShowCostByTransportation((prev) => !prev)}
               type="button"
             >
@@ -1066,7 +1066,7 @@ export function PersonalExpenseWorkloadDashboard({
             <span className="sr-only">Search trips</span>
             <Search className="absolute left-3 top-3.5 h-4 w-4 text-orange-500" />
             <input
-              className="h-11 w-full rounded-2xl border border-orange-100 bg-white/95 py-2 pl-9 pr-3 text-sm font-medium text-slate-800 shadow-[0_12px_30px_rgba(15,23,42,0.05)] outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+              className="h-11 w-full rounded border border-orange-100 bg-white/95 py-2 pl-9 pr-3 text-sm font-medium text-slate-800 shadow-[0_12px_30px_rgba(15,23,42,0.05)] outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
               onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Search trips..."
               value={searchTerm}
@@ -1074,7 +1074,7 @@ export function PersonalExpenseWorkloadDashboard({
           </label>
         </div>
 
-        <Card className="overflow-hidden rounded-[28px] border border-orange-100/80 bg-white/95 shadow-[0_24px_65px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03]">
+        <Card className="overflow-hidden rounded border border-orange-100/80 bg-white/95 shadow-[0_24px_65px_rgba(15,23,42,0.08)] ring-1 ring-slate-950/[0.03]">
           <div className="hidden overflow-x-auto md:block">
             <table className="min-w-[1580px] divide-y divide-orange-50 text-left text-sm">
               <thead className="bg-orange-50/70">
@@ -1114,8 +1114,8 @@ export function PersonalExpenseWorkloadDashboard({
                       <td className="px-4 py-3 text-right font-medium text-slate-700">{formatKm(trip.km)}</td>
                       <td className="px-4 py-3"><Badge variant={statusVariant(category)}>{category}</Badge></td>
                       <td className="px-4 py-3 font-medium text-slate-700">{trip.transportationType || "N/A"}</td>
-                      <td className="max-w-[220px] truncate px-4 py-3 font-medium text-slate-700">{trip.description || "—"}</td>
-                      <td className="max-w-[260px] truncate px-4 py-3 font-medium text-slate-700">{trip.hrNotes || "—"}</td>
+                      <td className="max-w-[220px] whitespace-nowrap px-4 py-3 font-medium text-slate-700">{trip.description || "—"}</td>
+                      <td className="max-w-[260px] whitespace-nowrap px-4 py-3 font-medium text-slate-700">{trip.hrNotes || "—"}</td>
                     </tr>
                   );
                 })}
@@ -1127,7 +1127,7 @@ export function PersonalExpenseWorkloadDashboard({
             {pagedTrips.map((trip) => {
               const category = mapStatusCategory(trip.status);
               return (
-                <Card key={`${trip.tripId}-${trip.date}-mobile`} className="rounded-2xl border border-orange-100 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
+                <Card key={`${trip.tripId}-${trip.date}-mobile`} className="rounded border border-orange-100 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-semibold text-slate-900">{trip.tripId || "N/A"}</p>
                     <Badge variant={statusVariant(category)}>{category}</Badge>
@@ -1159,7 +1159,7 @@ export function PersonalExpenseWorkloadDashboard({
             </p>
             <div className="flex items-center gap-2">
               <button
-                className="rounded-xl border border-orange-100 bg-white p-2 text-slate-600 shadow-sm transition hover:text-orange-600 disabled:opacity-50"
+                className="rounded border border-orange-100 bg-white p-2 text-slate-600 shadow-sm transition hover:text-orange-600 disabled:opacity-50"
                 disabled={safePage <= 1}
                 onClick={() => setPage((value) => Math.max(1, value - 1))}
                 type="button"
@@ -1168,7 +1168,7 @@ export function PersonalExpenseWorkloadDashboard({
               </button>
               <span className="text-xs font-black text-slate-700">{safePage} / {totalPages}</span>
               <button
-                className="rounded-xl border border-orange-100 bg-white p-2 text-slate-600 shadow-sm transition hover:text-orange-600 disabled:opacity-50"
+                className="rounded border border-orange-100 bg-white p-2 text-slate-600 shadow-sm transition hover:text-orange-600 disabled:opacity-50"
                 disabled={safePage >= totalPages}
                 onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
                 type="button"
