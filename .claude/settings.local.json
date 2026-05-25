@@ -28,7 +28,8 @@
       "mcp__Claude_in_Chrome__resize_window",
       "Bash(echo \"EXIT: $?\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/dev/employee-portals/sales)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:38332/dev/employee-portals/sales)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:38332/dev/employee-portals/sales)",
+      "mcp__Claude_in_Chrome__read_console_messages"
     ]
   }
 }

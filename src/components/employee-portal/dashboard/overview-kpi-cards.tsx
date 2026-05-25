@@ -67,7 +67,7 @@ function OverviewStatCard({
   const isLongLabel = label.length > 18;
 
   return (
-    <Card className="group relative min-h-[152px] overflow-hidden rounded-[24px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-300 hover:-translate-y-1 hover:ring-slate-300 hover:shadow-[0_20px_42px_rgba(15,23,42,0.09)]">
+    <Card className="group relative min-h-[152px] overflow-hidden rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-300 hover:-translate-y-1 hover:ring-slate-300 hover:shadow-[0_20px_42px_rgba(15,23,42,0.09)]">
       <div className={`absolute inset-x-0 top-0 h-1 ${tone.line} opacity-90 transition-all duration-300 group-hover:h-1.5`} />
       <div className="relative flex h-full min-h-[120px] flex-col justify-between gap-4">
         <div className="flex items-start justify-between gap-3">
@@ -109,7 +109,7 @@ function OverviewStatCard({
               ) : null}
             </div>
           </div>
-          <div className={`mt-3 h-1.5 w-16 rounded-full ${tone.line} opacity-70`} />
+          <div className={`mt-3 h-1.5 w-16 rounded-sm ${tone.line} opacity-70`} />
         </div>
       </div>
     </Card>

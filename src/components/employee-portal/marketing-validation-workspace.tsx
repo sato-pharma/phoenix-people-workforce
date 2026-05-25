@@ -162,7 +162,7 @@ function ReadOnlyCaptureValue({
   placeholder: string;
   value: string;
 }) {
-  const captureClassName = "w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 text-sm font-bold text-slate-700 shadow-inner outline-none";
+  const captureClassName = "w-full rounded border border-slate-200 bg-slate-100 px-4 text-sm font-bold text-slate-700 shadow-inner outline-none";
 
   if (multiline) {
     return (
@@ -179,7 +179,7 @@ function ReadOnlyCaptureValue({
   return (
     <Input
       aria-readonly="true"
-      className="h-12 cursor-default rounded-2xl border-slate-200 bg-slate-100 font-bold text-slate-700 shadow-inner"
+      className="h-12 cursor-default rounded border-slate-200 bg-slate-100 font-bold text-slate-700 shadow-inner"
       placeholder={placeholder}
       readOnly
       value={value}
@@ -200,7 +200,7 @@ function SelectField({
 }) {
   return (
     <select
-      className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+      className="h-12 w-full rounded border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       value={value}
@@ -218,7 +218,7 @@ function Metric({
   value: number;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+    <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
         {label}
       </p>
@@ -268,7 +268,7 @@ function TabButton({
 }) {
   return (
     <button
-      className={`min-h-11 rounded-2xl px-4 text-sm font-black transition ${
+      className={`min-h-11 rounded px-4 text-sm font-black transition ${
         active
           ? "bg-orange-500 text-white shadow-[0_12px_24px_rgba(249,115,22,0.22)]"
           : "border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
@@ -292,14 +292,14 @@ function ValidatedPharmaciesModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-      <div className="max-h-[88vh] w-full max-w-3xl overflow-hidden rounded-[28px] border border-white/20 bg-white shadow-2xl">
+      <div className="max-h-[88vh] w-full max-w-3xl overflow-hidden rounded border border-white/20 bg-white shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div className="min-w-0">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Linked pharmacies</p>
-            <h3 className="mt-1 truncate text-xl font-black text-slate-950">{group.customerName}</h3>
+            <h3 className="mt-1 whitespace-nowrap text-xl font-black text-slate-950">{group.customerName}</h3>
           </div>
           <Button
-            className="rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            className="rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             onClick={onClose}
             type="button"
           >
@@ -307,7 +307,7 @@ function ValidatedPharmaciesModal({
           </Button>
         </div>
         <div className="max-h-[65vh] overflow-auto p-5">
-          <div className="overflow-hidden rounded-2xl border border-slate-200">
+          <div className="overflow-hidden rounded border border-slate-200">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px] border-collapse text-left">
                 <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
@@ -328,7 +328,7 @@ function ValidatedPharmaciesModal({
                         <div className="flex flex-wrap gap-2">
                           {pharmacy.vendorCodes.map((line) => (
                             <span
-                              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700"
+                              className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700"
                               key={line.id}
                             >
                               {line.distributorName}: <span className="font-mono">{line.code}</span>
@@ -365,16 +365,16 @@ function CapturePanel({
   const hasPhoto = Boolean(capture.photoName && capture.photoCapturedAt);
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+    <div className="rounded border border-slate-200 bg-slate-50 p-3">
       <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
         <div className="min-w-0">
           <p className="text-sm font-black text-slate-950">{label}</p>
-          <p className="mt-1 truncate text-xs font-semibold text-slate-500">
+          <p className="mt-1 whitespace-nowrap text-xs font-semibold text-slate-500">
             {hasLocation ? capture.address || `${capture.latitude?.toFixed(5)}, ${capture.longitude?.toFixed(5)}` : "No GPS capture yet"}
           </p>
         </div>
         <Button
-          className="gap-2 rounded-2xl border border-orange-200 bg-white text-orange-700 hover:bg-orange-50"
+          className="gap-2 rounded border border-orange-200 bg-white text-orange-700 hover:bg-orange-50"
           disabled={isCapturing}
           onClick={onCaptureLocation}
           type="button"
@@ -383,7 +383,7 @@ function CapturePanel({
           Capture Location
         </Button>
         <Button
-          className="gap-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+          className="gap-2 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
           disabled={!hasLocation}
           onClick={onOpenCamera}
           type="button"
@@ -401,7 +401,7 @@ function CapturePanel({
         </Badge>
       </div>
       {capture.photoDataUrl ? (
-        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950">
+        <div className="mt-3 overflow-hidden rounded border border-slate-200 bg-slate-950">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img alt={`${label} captured evidence`} className="h-40 w-full object-contain" src={capture.photoDataUrl} />
           <p className="bg-white px-3 py-2 text-xs font-bold text-slate-500">{capture.photoCapturedAt}</p>
@@ -565,7 +565,7 @@ function LiveCameraModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-xl overflow-hidden rounded-[28px] border border-white/20 bg-white shadow-2xl">
+      <div className="w-full max-w-xl overflow-hidden rounded border border-white/20 bg-white shadow-2xl">
         <div className="border-b border-slate-100 px-5 py-4">
           <p className="text-sm font-black text-slate-950">Live timestamped photo</p>
           <p className="mt-1 text-xs font-semibold text-slate-500">{message}</p>
@@ -587,7 +587,7 @@ function LiveCameraModal({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3 bg-slate-50 px-5 py-4">
           <Button
-            className="rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            className="rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             onClick={onClose}
             type="button"
           >
@@ -596,7 +596,7 @@ function LiveCameraModal({
           {pendingPhoto ? (
             <>
               <Button
-                className="gap-2 rounded-2xl border border-orange-200 bg-white text-orange-700 hover:bg-orange-50"
+                className="gap-2 rounded border border-orange-200 bg-white text-orange-700 hover:bg-orange-50"
                 onClick={() => {
                   setPendingPhoto(null);
                   setMessage("Camera ready");
@@ -606,7 +606,7 @@ function LiveCameraModal({
                 Re-take
               </Button>
               <Button
-                className="gap-2 rounded-2xl bg-orange-500 text-white hover:bg-orange-600"
+                className="gap-2 rounded bg-orange-500 text-white hover:bg-orange-600"
                 onClick={confirmPhoto}
                 type="button"
               >
@@ -616,7 +616,7 @@ function LiveCameraModal({
           ) : (
             <>
               <Button
-                className="gap-2 rounded-2xl border border-orange-200 bg-white text-orange-700 hover:bg-orange-50"
+                className="gap-2 rounded border border-orange-200 bg-white text-orange-700 hover:bg-orange-50"
                 disabled={isStarting}
                 onClick={startCamera}
                 type="button"
@@ -625,7 +625,7 @@ function LiveCameraModal({
                 {cameraReady ? "Restart Camera" : "Start Camera"}
               </Button>
               <Button
-                className="gap-2 rounded-2xl bg-orange-500 text-white hover:bg-orange-600"
+                className="gap-2 rounded bg-orange-500 text-white hover:bg-orange-600"
                 disabled={!cameraReady || !hasLocationStamp}
                 onClick={captureFrame}
                 type="button"
@@ -958,14 +958,14 @@ export function MarketingValidationWorkspace() {
 
   return (
     <div className="space-y-6">
-      <Card className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] sm:p-5">
+      <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] sm:p-5">
         <div className="grid gap-3 md:grid-cols-5">
           <Metric label="System Validated" value={workspace.summary.system_validated} />
           <Metric label="Pending" value={workspace.summary.pending} />
           <Metric label="SFE Validated" value={workspace.summary.sfe_validated} />
           <Metric label="Rejected" value={workspace.summary.rejected} />
           <button
-            className="flex min-h-[78px] items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+            className="flex min-h-[78px] items-center justify-center gap-2 rounded border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
             onClick={() => {
               setIsLoading(true);
               setMessage(null);
@@ -979,7 +979,7 @@ export function MarketingValidationWorkspace() {
         </div>
       </Card>
 
-      <div className="flex flex-wrap gap-2 rounded-[24px] border border-slate-200 bg-white p-2 shadow-[0_18px_44px_rgba(15,23,42,0.06)]">
+      <div className="flex flex-wrap gap-2 rounded border border-slate-200 bg-white p-2 shadow-[0_18px_44px_rgba(15,23,42,0.06)]">
         <TabButton active={activeTab === "validation"} onClick={() => setActiveTab("validation")}>
           Customer + Pharmacy Validation
         </TabButton>
@@ -989,13 +989,13 @@ export function MarketingValidationWorkspace() {
       </div>
 
       {message ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+        <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
           {message}
         </div>
       ) : null}
 
       {activeTab === "validation" ? (
-        <Card className="overflow-hidden rounded-[32px] border border-slate-200 bg-white p-0 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+        <Card className="overflow-hidden rounded border border-slate-200 bg-white p-0 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
           <form onSubmit={submitValidation}>
             <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/60 to-white p-5 sm:p-7">
               <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1007,7 +1007,7 @@ export function MarketingValidationWorkspace() {
                     Customer and pharmacy evidence
                   </h2>
                 </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
+                <div className="flex h-12 w-12 items-center justify-center rounded bg-orange-50 text-orange-600 ring-1 ring-orange-100">
                   <ShieldCheck className="h-5 w-5" />
                 </div>
               </div>
@@ -1028,7 +1028,7 @@ export function MarketingValidationWorkspace() {
               <div className="lg:col-span-4">
                 <Field label="Customer Name">
                   <Input
-                    className="h-12 rounded-2xl border-slate-200 bg-white"
+                    className="h-12 rounded border-slate-200 bg-white"
                     onChange={(event) => setCustomerName(event.target.value)}
                     placeholder="Customer name"
                     value={customerName}
@@ -1039,7 +1039,7 @@ export function MarketingValidationWorkspace() {
                 <div className="lg:col-span-3">
                   <Field label="Other Type">
                     <Input
-                      className="h-12 rounded-2xl border-slate-200 bg-white"
+                      className="h-12 rounded border-slate-200 bg-white"
                       onChange={(event) => setCustomerOtherType(event.target.value)}
                       placeholder="Describe customer type"
                       value={customerOtherType}
@@ -1066,7 +1066,7 @@ export function MarketingValidationWorkspace() {
               <div className="lg:col-span-2">
                 <Field label="Customer Phone">
                   <Input
-                    className="h-12 rounded-2xl border-slate-200 bg-white"
+                    className="h-12 rounded border-slate-200 bg-white"
                     onChange={(event) => setCustomerMobile(event.target.value)}
                     placeholder="Mobile number"
                     type="tel"
@@ -1100,7 +1100,7 @@ export function MarketingValidationWorkspace() {
                     <p className="mt-1 text-sm font-semibold text-slate-500">Each customer can have multiple pharmacies, and each pharmacy can have multiple vendors.</p>
                   </div>
                   <Button
-                    className="gap-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    className="gap-2 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     onClick={() => setPharmacies((current) => [...current, newPharmacyLine(defaultDistributorId)])}
                     type="button"
                   >
@@ -1112,17 +1112,17 @@ export function MarketingValidationWorkspace() {
 
               {pharmacies.map((pharmacy, index) => (
                 <div className="lg:col-span-6" key={pharmacy.key}>
-                  <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                  <div className="rounded border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-orange-600 ring-1 ring-orange-100">
+                        <div className="flex h-10 w-10 items-center justify-center rounded bg-white text-orange-600 ring-1 ring-orange-100">
                           <Store className="h-4 w-4" />
                         </div>
                         <p className="text-sm font-black text-slate-950">Pharmacy {index + 1}</p>
                       </div>
                       <button
                         aria-label="Remove pharmacy"
-                        className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                        className="flex h-10 w-10 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
                         disabled={pharmacies.length === 1}
                         onClick={() => setPharmacies((current) => current.length === 1 ? current : current.filter((item) => item.key !== pharmacy.key))}
                         type="button"
@@ -1134,7 +1134,7 @@ export function MarketingValidationWorkspace() {
                       <div className="lg:col-span-2">
                         <Field label="Pharmacy Name">
                           <Input
-                            className="h-12 rounded-2xl border-slate-200 bg-white"
+                            className="h-12 rounded border-slate-200 bg-white"
                             onChange={(event) => updatePharmacy(pharmacy.key, { name: event.target.value })}
                             placeholder="Pharmacy display name"
                             value={pharmacy.name}
@@ -1182,7 +1182,7 @@ export function MarketingValidationWorkspace() {
                               Vendors
                             </p>
                             <Button
-                              className="gap-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              className="gap-2 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                               onClick={() => updatePharmacy(pharmacy.key, { vendorCodes: [...pharmacy.vendorCodes, newVendorCodeLine(defaultDistributorId)] })}
                               type="button"
                             >
@@ -1205,14 +1205,14 @@ export function MarketingValidationWorkspace() {
                                 ))}
                               </SelectField>
                               <Input
-                                className="h-12 rounded-2xl border-slate-200 bg-white"
+                                className="h-12 rounded border-slate-200 bg-white"
                                 onChange={(event) => updateVendorCode(pharmacy.key, line.key, { distributorCode: event.target.value })}
                                 placeholder="Vendor pharmacy code"
                                 value={line.distributorCode}
                               />
                               <button
                                 aria-label="Remove vendor"
-                                className="flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                className="flex h-12 w-full items-center justify-center rounded border border-slate-200 bg-white text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
                                 disabled={pharmacy.vendorCodes.length === 1}
                                 onClick={() =>
                                   updatePharmacy(pharmacy.key, {
@@ -1241,7 +1241,7 @@ export function MarketingValidationWorkspace() {
                 <span>{pharmacies.length} pharmacy row{pharmacies.length === 1 ? "" : "s"}</span>
               </div>
               <Button
-                className="min-h-12 min-w-[210px] gap-2 rounded-2xl bg-orange-500 px-6 text-white hover:bg-orange-600"
+                className="min-h-12 min-w-[210px] gap-2 rounded bg-orange-500 px-6 text-white hover:bg-orange-600"
                 disabled={!canSave}
                 type="submit"
               >
@@ -1252,7 +1252,7 @@ export function MarketingValidationWorkspace() {
           </form>
         </Card>
       ) : (
-        <Card className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
+        <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Validated Customers</p>
@@ -1260,7 +1260,7 @@ export function MarketingValidationWorkspace() {
             </div>
             <Badge variant="success">{validatedGroups.length} customers</Badge>
           </div>
-          <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+          <div className="mt-5 overflow-hidden rounded border border-slate-200">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] border-collapse text-left">
                 <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
@@ -1279,7 +1279,7 @@ export function MarketingValidationWorkspace() {
                       <tr className="align-middle" key={group.key}>
                         <td className="px-4 py-3">
                           <div className="min-w-0">
-                            <p className="truncate font-black text-slate-950">{group.customerName}</p>
+                            <p className="whitespace-nowrap font-black text-slate-950">{group.customerName}</p>
                             <div className="mt-1 flex flex-wrap items-center gap-2">
                               <span className="text-xs font-semibold capitalize text-slate-500">{group.customerType}</span>
                               <Badge variant={statusVariant(group.status)}>{group.status.replace(/_/g, " ")}</Badge>
@@ -1294,7 +1294,7 @@ export function MarketingValidationWorkspace() {
                         </td>
                         <td className="px-4 py-3 text-center">
                           <button
-                            className="inline-flex h-10 min-w-10 items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 px-3 text-sm font-black text-orange-700 transition hover:bg-orange-100"
+                            className="inline-flex h-10 min-w-10 items-center justify-center rounded border border-orange-200 bg-orange-50 px-3 text-sm font-black text-orange-700 transition hover:bg-orange-100"
                             onClick={() => setSelectedValidatedCustomerKey(group.key)}
                             type="button"
                           >

@@ -75,7 +75,7 @@ function StatCard({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+    <div className="rounded border border-slate-100 bg-slate-50 p-4">
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
         {label}
       </p>
@@ -122,7 +122,7 @@ export function NsmTeamExpensesDashboard({
       </section>
 
       <section className="grid gap-6 xl:grid-cols-2">
-        <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
+        <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
           <div className="mb-5">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               Monthly Team Expense Trend
@@ -171,7 +171,7 @@ export function NsmTeamExpensesDashboard({
           </SafeResponsiveContainer>
         </Card>
 
-        <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
+        <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
           <div className="mb-5">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               DSM Expense Ranking
@@ -218,7 +218,7 @@ export function NsmTeamExpensesDashboard({
         </Card>
       </section>
 
-      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
+      <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
         <div className="mb-5">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
             DSM Summary
@@ -292,7 +292,7 @@ export function NsmTeamExpensesDashboard({
         </div>
       </Card>
 
-      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
+      <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
         <div className="mb-5">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
             Recent Team Expense Rows

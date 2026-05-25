@@ -82,7 +82,7 @@ export function TeamExpensesFilters({
           DSM
         </label>
         <select
-          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_4px_rgba(249,115,22,0.08)]"
+          className="w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_4px_rgba(249,115,22,0.08)]"
           id="team-expenses-dsm"
           onChange={(event) => setDsm(event.target.value)}
           value={dsm}
@@ -105,7 +105,7 @@ export function TeamExpensesFilters({
             Request Type
           </label>
           <select
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_4px_rgba(249,115,22,0.08)]"
+            className="w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_4px_rgba(249,115,22,0.08)]"
             id="team-expenses-request-type"
             onChange={(event) => setRequestType(event.target.value)}
             value={requestType}
@@ -125,17 +125,17 @@ export function TeamExpensesFilters({
           Period
         </span>
         <button
-          className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 transition hover:border-slate-300"
+          className="flex w-full items-center justify-between rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 transition hover:border-slate-300"
           onClick={() => setIsPeriodMenuOpen((current) => !current)}
           type="button"
         >
-          <span className="truncate">{periodLabel}</span>
+          <span className="whitespace-nowrap">{periodLabel}</span>
           <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
         </button>
 
         {isPeriodMenuOpen ? (
-          <div className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
-            <label className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+          <div className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded border border-slate-200 bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
+            <label className="flex cursor-pointer items-center gap-3 rounded px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
               <input
                 checked={periodSelection.length === 0}
                 className="h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-400"
@@ -147,7 +147,7 @@ export function TeamExpensesFilters({
             {periods.map((period) => (
               <label
                 key={period}
-                className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                className="flex cursor-pointer items-center gap-3 rounded px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
               >
                 <input
                   checked={periodSelection.includes(period)}
@@ -164,14 +164,14 @@ export function TeamExpensesFilters({
 
       <div className="flex items-end gap-2">
         <button
-          className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+          className="rounded bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
           onClick={applyFilters}
           type="button"
         >
           Apply Filters
         </button>
         <button
-          className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+          className="rounded border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
           onClick={resetFilters}
           type="button"
         >
