@@ -6,6 +6,7 @@ node_modules/
 coverage/
 *.log
 .playwright-mcp/
+.vercel/
 tsconfig.tsbuildinfo
 _junk/
 .claude/worktrees/
