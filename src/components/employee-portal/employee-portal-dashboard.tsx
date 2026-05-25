@@ -232,6 +232,7 @@ function metricTone(accent: MetricAccent = "orange") {
       card: "border-amber-200 from-amber-50 to-white ring-1 ring-amber-200/70",
       icon: "bg-amber-50 text-amber-600 ring-amber-100",
       line: "bg-amber-500",
+      lineGradient: "linear-gradient(to right, #d97706, #fcd34d)",
       soft: "bg-amber-100/70 text-amber-800",
       value: "text-amber-700",
     },
@@ -240,6 +241,7 @@ function metricTone(accent: MetricAccent = "orange") {
       card: "border-slate-200 from-white to-slate-50",
       icon: "bg-sky-50 text-sky-600 ring-sky-100",
       line: "bg-sky-500",
+      lineGradient: "linear-gradient(to right, #0284c7, #7dd3fc)",
       soft: "bg-sky-100/70 text-sky-800",
       value: "text-sky-700",
     },
@@ -248,6 +250,7 @@ function metricTone(accent: MetricAccent = "orange") {
       card: "border-emerald-200 from-emerald-50 to-white ring-1 ring-emerald-200/70",
       icon: "bg-emerald-50 text-emerald-600 ring-emerald-100",
       line: "bg-emerald-500",
+      lineGradient: "linear-gradient(to right, #059669, #6ee7b7)",
       soft: "bg-emerald-100/70 text-emerald-800",
       value: "text-emerald-700",
     },
@@ -256,6 +259,7 @@ function metricTone(accent: MetricAccent = "orange") {
       card: "border-orange-200 from-orange-50 to-white ring-1 ring-orange-200/70",
       icon: "bg-orange-50 text-orange-600 ring-orange-100",
       line: "bg-orange-500",
+      lineGradient: "linear-gradient(to right, #ea580c, #fdba74)",
       soft: "bg-orange-100/70 text-orange-800",
       value: "text-orange-700",
     },
@@ -264,6 +268,7 @@ function metricTone(accent: MetricAccent = "orange") {
       card: "border-violet-200 from-violet-50 to-white ring-1 ring-violet-200/70",
       icon: "bg-violet-50 text-violet-600 ring-violet-100",
       line: "bg-violet-500",
+      lineGradient: "linear-gradient(to right, #7c3aed, #c4b5fd)",
       soft: "bg-violet-100/70 text-violet-800",
       value: "text-violet-700",
     },
@@ -876,15 +881,15 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
             >
               <div className="flex flex-1 flex-col justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{signal.label}</p>
-                  <p className={`mt-2 whitespace-nowrap text-2xl font-black leading-none tracking-[-0.03em] tabular-nums ${tone.value}`}>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{signal.label}</p>
+                  <p className={`mt-2 break-words text-2xl font-black leading-none tracking-[-0.03em] tabular-nums ${tone.value}`}>
                     {signal.value}
                   </p>
                   <p className="mt-1.5 text-[11px] font-medium leading-snug text-slate-500">{signal.note}</p>
                 </div>
                 <div className="space-y-1">
                   <div className="h-1 overflow-hidden rounded-sm bg-slate-100">
-                    <div className={`${tone.line} h-full rounded-sm transition-[width] duration-500`} style={{ width: `${Math.max(8, Math.min(100, achievement))}%` }} />
+                    <div className="h-full rounded-sm transition-[width] duration-500" style={{ width: `${Math.max(8, Math.min(100, achievement))}%`, background: tone.lineGradient }} />
                   </div>
                 </div>
               </div>
@@ -1099,7 +1104,17 @@ function ToReachTargetWidget({ data }: { data: MedicalRepPortalData }) {
               <span className="font-semibold text-slate-900">{percent.toFixed(1)}%</span> all-period achievement
             </div>
             <div className="h-2 rounded-sm bg-slate-100">
-              <div className="h-2 rounded-sm bg-orange-500" style={{ width: `${percent}%` }} />
+              <div
+                className="h-2 rounded-sm"
+                style={{
+                  width: `${percent}%`,
+                  background: percent >= 90
+                    ? "linear-gradient(to right, #16a34a, #86efac)"
+                    : percent >= 70
+                      ? "linear-gradient(to right, #ca8a04, #fde047)"
+                      : "linear-gradient(to right, #dc2626, #fca5a5)",
+                }}
+              />
             </div>
             <p className="text-sm text-slate-600">
               Suggested Focus: <span className="text-slate-900">You are {egp(gap)} away from reaching your target to unlock full incentives.</span>
@@ -1215,7 +1230,7 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
         {rows.map((row) => {
           const pct = row.achievementPercent;
           const fillWidth = Math.max(6, Math.min(100, pct));
-          const pctClass = pct >= 100 ? "text-emerald-600" : pct >= 80 ? "text-orange-600" : "text-rose-500";
+          const grad = pct >= 100 ? "linear-gradient(to right, #16a34a, #86efac)" : pct >= 70 ? "linear-gradient(to right, #ca8a04, #fde047)" : "linear-gradient(to right, #dc2626, #fca5a5)";
           return (
             <div key={`${row.position}-${row.name}`} className="rounded border border-slate-100 bg-white px-3 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/30">
               <div className="flex items-center justify-between gap-3">
@@ -1223,17 +1238,17 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
                   <span className={`shrink-0 flex h-7 w-7 items-center justify-center rounded text-[11px] font-black ${row.position === 1 ? "bg-slate-950 text-white shadow-sm" : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"}`}>
                     {row.position}
                   </span>
-                  <span className="whitespace-nowrap text-sm font-bold text-slate-700">{row.name}</span>
+                  <span className="break-words text-sm font-bold text-slate-700">{row.name}</span>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className={`font-mono text-sm font-black tabular-nums ${pctClass}`}>{pct.toFixed(1)}%</p>
-                  <p className="whitespace-nowrap font-mono text-[11px] text-slate-400 tabular-nums">{egp(row.sales)}</p>
+                  <p className="font-mono text-sm font-black tabular-nums text-slate-700">{pct.toFixed(1)}%</p>
+                  <p className="break-words font-mono text-[11px] text-slate-400 tabular-nums">{egp(row.sales)}</p>
                 </div>
               </div>
               <div className="mt-2 h-1.5 overflow-hidden rounded-sm bg-slate-100">
                 <div
-                  className="h-full rounded-sm bg-gradient-to-r from-orange-500 via-amber-400 to-emerald-400"
-                  style={{ width: `${fillWidth}%` }}
+                  className="h-full rounded-sm"
+                  style={{ width: `${fillWidth}%`, background: grad }}
                 />
               </div>
             </div>
@@ -1337,10 +1352,12 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
       <div className="space-y-3.5">
         {rows.length === 0 ? (
           <p className="text-sm text-slate-500">No product contribution data.</p>
-        ) : rows.map((row) => {
+        ) : rows.map((row, idx) => {
           const value = getContributionValue(row, metric);
           const width = Math.max(8, Math.round((value / max) * 100));
           const contributionPercent = total > 0 ? (value / total) * 100 : 0;
+          const tier = rows.length <= 1 ? 0 : idx / (rows.length - 1);
+          const grad = tier <= 0.33 ? "linear-gradient(to right, #16a34a, #86efac)" : tier <= 0.66 ? "linear-gradient(to right, #ca8a04, #fde047)" : "linear-gradient(to right, #dc2626, #fca5a5)";
           return (
             <div key={row.name} className="rounded border border-slate-100 bg-white p-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
               <div className="mb-1 flex items-center justify-between text-sm">
@@ -1350,8 +1367,8 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
                 </div>
                 <span className="font-mono text-xs font-black text-slate-900 tabular-nums">{formatContributionValue(metric, value)}</span>
               </div>
-              <div className="h-2.5 overflow-hidden rounded-sm bg-slate-100 shadow-inner">
-                <div className="h-full rounded-sm bg-gradient-to-r from-orange-600 via-amber-400 to-sky-400 shadow-[0_0_18px_rgba(249,115,22,0.24)]" style={{ width: `${width}%` }} />
+              <div className="h-2.5 overflow-hidden rounded-sm bg-slate-100">
+                <div className="h-full rounded-sm" style={{ width: `${width}%`, background: grad }} />
               </div>
             </div>
           );
@@ -1527,7 +1544,13 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
 
             {/* Achievement per period — horizontal bar indicators */}
             <div className="space-y-1.5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Monthly Achievement</p>
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Monthly Achievement</p>
+                <span className="flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
+                  <span className="inline-block h-px w-3 border-t border-dashed border-slate-400" />
+                  100% target
+                </span>
+              </div>
               <div className="space-y-1">
                 {chartData.map((point) => {
                   const pct = Math.min(point.achievement, 150);
@@ -1692,9 +1715,9 @@ function EmployeesOnLeaveTodayPanel({ data }: { data: MedicalRepPortalData }) {
               key={row.id}
             >
               <div className="min-w-0">
-                <p className="whitespace-nowrap text-sm font-medium text-slate-900">{row.employeeName}</p>
-                <p className="mt-1 text-xs font-normal text-slate-500">
-                  {row.lineName ?? row.departmentName ?? "Phoenix"} • Until {prettyDate(row.endDate)}
+                <p className="break-words text-sm font-medium text-slate-900">{row.employeeName}</p>
+                <p className="mt-1 break-words text-xs font-normal text-slate-500">
+                  {row.lineName ?? row.departmentName ?? "Phoenix"} • {prettyDate(row.startDate)} – {prettyDate(row.endDate)}
                 </p>
               </div>
               <span className="shrink-0 rounded border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
@@ -2783,7 +2806,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Business Line</p>
-                <p className="whitespace-nowrap text-sm font-bold text-slate-700">{employee.line ?? "Unassigned"}</p>
+                <p className="break-words text-sm font-bold text-slate-700">{employee.line ?? "Unassigned"}</p>
               </div>
             </div>
             
@@ -2793,7 +2816,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Territory</p>
-                <p className="whitespace-nowrap text-sm font-bold text-slate-700">{employee.territory ?? "Unassigned"}</p>
+                <p className="break-words text-sm font-bold text-slate-700">{employee.territory ?? "Unassigned"}</p>
               </div>
             </div>
 
@@ -2803,7 +2826,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Direct Manager</p>
-                <p className="whitespace-nowrap text-sm font-bold text-slate-700">{employee.manager ?? "Unassigned"}</p>
+                <p className="break-words text-sm font-bold text-slate-700">{employee.manager ?? "Unassigned"}</p>
               </div>
             </div>
           </div>
