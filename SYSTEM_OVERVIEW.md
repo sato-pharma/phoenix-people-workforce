@@ -1,6 +1,6 @@
 # Phoenix Workforce - System Overview
 
-Current workspace snapshot: 403 TypeScript/TSX files, 66 `app/api` route handlers, and the Next.js App Router under `app/`.
+Current operating state: see [Current Operating State](F:/Phoenix%20Workforce/phoenix-workforce/docs/current-operating-state.md).
 
 ## Architecture
 
@@ -9,8 +9,17 @@ Current workspace snapshot: 403 TypeScript/TSX files, 66 `app/api` route handler
 - **Authentication**: Custom Phoenix session cookies backed by `app_auth_users`; dev preview auth is available only in local development.
 - **Authorization**: Role/action permission matrix in `src/lib/auth/permissions.ts`, optionally overlaid by `role_permission_overrides`.
 - **UI shell**: Admin and employee-portal navigation are handled by `AppShell`, `Sidebar`, and employee portal layout components.
-- **Imports/exports**: Excel workflows use `exceljs` or `xlsx`; employee import validation is centralized in `src/lib/imports`.
+- **Imports/exports**: Excel workflows use `exceljs`; employee import validation is centralized in `src/lib/imports`.
 - **Maps and routing**: Outstation uses neutral Google Maps server helpers in `src/lib/google-maps/server.ts`.
+
+## Current Git And Deployment Workflow
+
+- `main` is production-only and should stay aligned with the live production deployment.
+- `codex/work-from-production` is the active working branch for new edits, feature work, and function changes.
+- Production is served at `https://phoenix-workforce.vercel.app`.
+- The active working preview is `https://phoenix-workforce-b2yvc8r35-phoenix-workspace-s-projects.vercel.app`.
+- Vercel should keep only two active deployments: production `main` and the `codex/work-from-production` preview.
+- `.vercel/` is local Vercel CLI metadata and is intentionally ignored.
 
 ## Roles And Permissions
 
@@ -203,6 +212,7 @@ Coaching:
 Notifications:
 
 - `/api/notifications/birthdays`
+- `/api/notifications/contract-renewals`
 - `/api/notifications/in-app`
 - `/api/notifications/process`
 - `/api/notifications/test`
@@ -288,4 +298,6 @@ Safe local checks:
 
 - `npm run typecheck`
 - `npm run test`
+- `npm run build`
+- `npm audit --audit-level=low`
 - Targeted Playwright checks where a UI flow needs browser verification
