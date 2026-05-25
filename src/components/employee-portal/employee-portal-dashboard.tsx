@@ -41,7 +41,6 @@ import {
   Upload,
   UserRound,
   Users,
-  Wallet,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -901,63 +900,6 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
   );
 }
 
-function IncentiveStatusCard({
-  data,
-  isSalaryVisible,
-}: {
-  data: MedicalRepPortalData;
-  isSalaryVisible: boolean;
-}) {
-  const achievementPercent = data.sales.overviewAchievementPercent;
-  const shortfallPercent = Math.max(0, 90 - achievementPercent);
-  const calculation = calculateIncentive2026({
-    basicSalary: data.payroll.basicSalary,
-    baseSalary: data.payroll.baseSalary,
-    extraCostOfLiving: data.payroll.extraCostOfLiving,
-    fuelAllowance: data.payroll.fuelAllowance,
-    netSalary: data.payroll.netSalary,
-    grossSalary: data.payroll.grossSalary,
-    socialInsurance: data.payroll.socialInsurance,
-    taxes: data.payroll.incomeTax,
-    achievementPercent,
-  });
-
-  const isEligible = achievementPercent >= 90;
-
-  return (
-    <Card className="group rounded border border-slate-200 bg-white/95 px-5 py-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
-      <div className="mb-4 h-0.5 w-8 rounded-sm bg-amber-200 transition group-hover:w-12 group-hover:bg-amber-500" />
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-2xl leading-tight font-semibold tracking-tight text-slate-900">
-            {isEligible ? (isSalaryVisible ? egp(calculation.payoutAmount) : maskedMoneyValue) : "Below Threshold"}
-          </p>
-          <p className="mt-1.5 text-xs font-medium text-slate-500">Incentive Policy</p>
-          <p className="mt-1 text-xs text-slate-500">
-            {isEligible 
-              ? `Estimated payout (${calculation.payoutPercentage.toFixed(1)}%)`
-              : `Missing ${shortfallPercent.toFixed(1)}% to unlock 90% threshold`}
-          </p>
-          <p className="mt-2 text-[11px] text-slate-400">
-            Based on Basic Salary x 2 months per semester.
-          </p>
-        </div>
-        <div className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded transition-colors ${isEligible ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
-          <Wallet className="h-4 w-4" />
-        </div>
-      </div>
-      <div className="mt-4 flex items-center gap-2">
-        <span className={`rounded px-2 py-1 text-[11px] font-medium ${isEligible ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-          {isEligible ? 'In the Money' : 'Threshold Pending'}
-        </span>
-        {isEligible && (
-          <span className="text-[10px] text-slate-400">Semester Payout</span>
-        )}
-      </div>
-    </Card>
-  );
-}
-
 function IncentiveSalaryVisibilityToggle({
   isSalaryVisible,
   onToggleSalaryVisibility,
@@ -981,7 +923,7 @@ function IncentiveSalaryVisibilityToggle({
   );
 }
 
-function IncentiveCalculatorWidget({
+function IncentiveSimulatorCard({
   data,
   isSalaryVisible,
   onToggleSalaryVisibility,
@@ -1001,10 +943,8 @@ function IncentiveCalculatorWidget({
     socialInsurance: data.payroll.socialInsurance,
     taxes: data.payroll.incomeTax,
   });
-  const calculatedBaseSalary = data.payroll.baseSalary;
-  const calculatedNetSalary = salaryReference.netSalary;
   const calculatedBasicSalary = salaryReference.basicSalary;
-  const simNetSalary = calculatedNetSalary;
+  const simNetSalary = salaryReference.netSalary;
   const [simAchievement, setSimAchievement] = useState(data.sales.overviewAchievementPercent || 100);
 
   const calc = calculateIncentive2026({
@@ -1019,62 +959,158 @@ function IncentiveCalculatorWidget({
     achievementPercent: simAchievement,
   });
 
+  const simGrad = simAchievement >= 100
+    ? "linear-gradient(to right, #16a34a, #86efac)"
+    : simAchievement >= 90
+      ? "linear-gradient(to right, #ca8a04, #fde047)"
+      : "linear-gradient(to right, #dc2626, #fca5a5)";
+
   return (
-    <OverviewPagePanel 
-      title="Incentive Calculator (2026 Scheme)" 
-      action={
+    <Card className="rounded border border-slate-200 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
+          <h3 className="text-[15px] font-bold tracking-tight text-slate-900">Simulate Achievement</h3>
+        </div>
         <IncentiveSalaryVisibilityToggle
           isSalaryVisible={isSalaryVisible}
           onToggleSalaryVisibility={onToggleSalaryVisibility}
         />
-      }
-    >
-      <div className="space-y-6">
-        <div className="rounded border border-slate-200 bg-slate-50/70 p-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-600">Base Salary</span>
-            <span className="font-medium text-slate-900">{isSalaryVisible ? egp(calculatedBaseSalary) : maskedMoneyValue}</span>
-          </div>
-        </div>
-        <div className="rounded border border-slate-200 bg-slate-50/70 p-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-600">Basic Salary</span>
-            <span className="font-medium text-slate-900">{isSalaryVisible ? egp(calculatedBasicSalary) : maskedMoneyValue}</span>
-          </div>
-        </div>
+      </div>
 
-            <div className="grid gap-4 md:grid-cols-1">
-              <div className="space-y-3">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Achievement %</span>
-                  <span className="font-medium text-slate-900">{simAchievement.toFixed(1)}%</span>
-                </div>
-            <input
-              type="range"
-              value={simAchievement} 
-              onChange={(e) => setSimAchievement(Math.min(150, Number(e.target.value)))} 
-              max={150} 
-              step={1}
-              className="h-1.5 w-full cursor-pointer appearance-none rounded-sm bg-slate-100 accent-orange-500"
-            />
-          </div>
-        </div>
-
-        <div className="rounded bg-slate-900 p-4 text-white shadow-lg">
+      <div className="space-y-4 p-5">
+        {/* Slider */}
+        <div>
           <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Estimated Semester Payout</p>
-              <p className="text-2xl font-bold text-emerald-400">{isSalaryVisible ? egp(calc.payoutAmount) : maskedMoneyValue}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Achievement %</p>
+            <span className="rounded border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-black text-orange-700">{simAchievement.toFixed(0)}%</span>
+          </div>
+          <input
+            type="range"
+            value={simAchievement}
+            onChange={(e) => setSimAchievement(Math.min(150, Number(e.target.value)))}
+            min={0}
+            max={150}
+            step={1}
+            className="mt-3 h-1.5 w-full cursor-pointer appearance-none rounded-sm bg-slate-100 accent-orange-500"
+          />
+          <div className="mt-1 flex items-center justify-between text-[9px] text-slate-400">
+            <span>0%</span>
+            <span className="font-semibold text-rose-400">90%</span>
+            <span>100%</span>
+            <span>150%</span>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-sm bg-slate-100">
+            <div className="h-full rounded-sm" style={{ width: `${(Math.min(simAchievement, 150) / 150) * 100}%`, background: simGrad }} />
+          </div>
+        </div>
+
+        {/* Payout result */}
+        <div className="rounded border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50/60 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Payout Rate</p>
+              <p className="mt-1.5 text-xl font-black text-orange-700">{calc.payoutPercentage.toFixed(1)}%</p>
             </div>
-            <div className="text-right space-y-1">
-              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Payout %</p>
-              <p className="text-xl font-bold text-white">{calc.payoutPercentage.toFixed(1)}%</p>
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Estimated Payout</p>
+              <p className="mt-1.5 break-words text-xl font-black text-slate-900">{isSalaryVisible ? egp(calc.payoutAmount) : maskedMoneyValue}</p>
             </div>
           </div>
-          
+        </div>
+
+        {/* Actual vs simulated */}
+        <div className="rounded border border-orange-100 bg-orange-50/40 px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] font-bold text-orange-800">
+              Your actual: {data.sales.overviewAchievementPercent.toFixed(1)}%
+            </p>
+            <p className="text-[11px] font-bold text-orange-600">
+              Simulating: {simAchievement.toFixed(0)}%
+            </p>
+          </div>
         </div>
       </div>
-    </OverviewPagePanel>
+    </Card>
+  );
+}
+
+function IncentivePayoutCurveChart({ data }: { data: MedicalRepPortalData }) {
+  const curveData: Array<{ achievement: number; payout: number }> = [];
+  for (let a = 0; a <= 150; a += 2) {
+    const c = calculateIncentive2026({ ...data.payroll, achievementPercent: a, taxes: data.payroll.incomeTax });
+    curveData.push({ achievement: a, payout: c.payoutPercentage });
+  }
+
+  const actualAchievement = data.sales.overviewAchievementPercent;
+
+  return (
+    <Card className="rounded border border-slate-200 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
+          <h3 className="text-[15px] font-bold tracking-tight text-slate-900">Performance Payout Curve</h3>
+        </div>
+        <span className="text-[10px] font-medium text-slate-400">Achievement vs Payout %</span>
+      </div>
+      <div className="p-5">
+        <ChartErrorBoundary>
+          <div className="h-[280px] w-full rounded border border-slate-100 bg-white/70 px-1 pt-2 shadow-inner xs:h-[320px]">
+            <SafeResponsiveContainer style={{ width: "100%", height: "100%" }}>
+              <AreaChart data={curveData} margin={{ top: 8, right: 12, left: -4, bottom: 4 }}>
+                <defs>
+                  <linearGradient id="payoutCurveGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#f97316" stopOpacity={0.25} />
+                    <stop offset="100%" stopColor="#f97316" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis
+                  dataKey="achievement"
+                  tick={{ fontSize: 10, fontWeight: 600, fill: "#94a3b8" }}
+                  tickLine={false}
+                  axisLine={{ stroke: "#e2e8f0" }}
+                  tickFormatter={(v: number) => `${v}%`}
+                  interval={9}
+                />
+                <YAxis
+                  tick={{ fontSize: 10, fontWeight: 600, fill: "#94a3b8" }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v: number) => `${v}%`}
+                  width={48}
+                />
+                <ReferenceLine x={90} stroke="#dc2626" strokeDasharray="6 3" strokeOpacity={0.4} label={{ value: "90%", position: "top", fill: "#dc2626", fontSize: 9, fontWeight: 700 }} />
+                <ReferenceLine x={Math.round(actualAchievement)} stroke="#f97316" strokeWidth={2} strokeDasharray="4 2" strokeOpacity={0.7} label={{ value: `You: ${actualAchievement.toFixed(0)}%`, position: "top", fill: "#f97316", fontSize: 9, fontWeight: 700 }} />
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null;
+                    const d = payload[0]?.payload as { achievement: number; payout: number } | undefined;
+                    if (!d) return null;
+                    return (
+                      <div className="rounded border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_32px_rgba(15,23,42,0.16)]">
+                        <p className="text-[11px] font-black text-slate-700">Achievement: {d.achievement}%</p>
+                        <p className="mt-1 text-[11px] font-bold text-orange-600">Payout: {d.payout.toFixed(1)}%</p>
+                      </div>
+                    );
+                  }}
+                />
+                <Area
+                  type="stepAfter"
+                  dataKey="payout"
+                  name="Payout %"
+                  stroke="#f97316"
+                  strokeWidth={2}
+                  fill="url(#payoutCurveGradient)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: "#f97316", stroke: "#fff", strokeWidth: 2 }}
+                />
+              </AreaChart>
+            </SafeResponsiveContainer>
+          </div>
+        </ChartErrorBoundary>
+      </div>
+    </Card>
   );
 }
 
@@ -1127,25 +1163,114 @@ function ToReachTargetWidget({ data }: { data: MedicalRepPortalData }) {
 }
 
 function IncentiveSchemeDescriptionCard() {
+  const tiers = [
+    { range: "< 90%", payout: "0%", rate: "Not eligible", accent: "border-l-slate-300 bg-slate-50/50", badge: "border-slate-200 bg-slate-50 text-slate-500" },
+    { range: "90%", payout: "50%", rate: "Threshold unlock", accent: "border-l-amber-400 bg-amber-50/30", badge: "border-amber-200 bg-amber-50 text-amber-700" },
+    { range: "91 – 100%", payout: "55 – 100%", rate: "+5% per 1%", accent: "border-l-orange-400 bg-orange-50/30", badge: "border-orange-200 bg-orange-50 text-orange-700" },
+    { range: "101 – 120%", payout: "101.5 – 130%", rate: "+1.5% per 1%", accent: "border-l-emerald-400 bg-emerald-50/30", badge: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+    { range: "121 – 150%", payout: "133 – 220%", rate: "+3% per 1%", accent: "border-l-sky-400 bg-sky-50/30", badge: "border-sky-200 bg-sky-50 text-sky-700" },
+  ];
+
   return (
-    <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+    <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
       <div className="mb-4 flex items-center gap-2">
-        <span className="h-2 w-2 rounded-full bg-emerald-500/80" />
-        <p className="text-lg font-semibold text-slate-900">Incentive Policy</p>
+        <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
+        <p className="text-[15px] font-bold tracking-tight text-slate-900">2026 Incentive Policy</p>
       </div>
-      <div className="space-y-3 text-sm text-slate-600">
-        <p>The 2026 incentive plan is paid per semester (2 payouts per year).</p>
-        <p>Semester target incentive = <span className="font-semibold text-slate-800">Basic Salary × 2 months</span>.</p>
-        <p>Performance curve:</p>
-        <ul className="ml-5 list-disc space-y-1 text-sm text-slate-600">
-          <li>&lt; 90% achievement: 0%</li>
-          <li>90% achievement: 50%</li>
-          <li>91% to 100%: add +5% per 1%</li>
-          <li>101% to 120%: add +1.5% per 1%</li>
-          <li>Above 120%: add +3% per 1%, achievement capped at 150% and payout tops at 220%</li>
-        </ul>
+
+      {/* Key formula */}
+      <div className="mb-4 rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Semester Target</p>
+        <p className="mt-1 text-sm font-bold text-slate-800">Basic Salary × 2 months</p>
+        <p className="mt-0.5 text-[11px] text-slate-500">2 payouts per year — paid each semester</p>
       </div>
+
+      {/* Tiered bands */}
+      <div className="space-y-1">
+        {/* Header */}
+        <div className="grid grid-cols-[1fr_80px_1fr] gap-2 px-3 pb-1">
+          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Achievement</p>
+          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Payout</p>
+          <p className="text-right text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Rate</p>
+        </div>
+        {tiers.map((tier) => (
+          <div
+            key={tier.range}
+            className={`grid grid-cols-[1fr_80px_1fr] items-center gap-2 rounded border border-slate-100 border-l-[3px] px-3 py-2 ${tier.accent}`}
+          >
+            <p className="text-[12px] font-bold text-slate-700">{tier.range}</p>
+            <span className={`inline-flex w-fit rounded border px-2 py-0.5 text-[10px] font-bold ${tier.badge}`}>
+              {tier.payout}
+            </span>
+            <p className="text-right text-[11px] font-medium text-slate-500">{tier.rate}</p>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-3 text-[10px] font-medium text-slate-400">
+        Achievement capped at 150%. Maximum payout: 220%.
+      </p>
     </Card>
+  );
+}
+
+function IncentiveKpiCards({ data, isSalaryVisible }: { data: MedicalRepPortalData; isSalaryVisible: boolean }) {
+  const achievementPercent = data.sales.overviewAchievementPercent;
+  const gapToThreshold = Math.max(0, 90 - achievementPercent);
+  const salaryRef = calculateIncentive2026({
+    achievementPercent: 100,
+    basicSalary: data.payroll.basicSalary,
+    baseSalary: data.payroll.baseSalary,
+    extraCostOfLiving: data.payroll.extraCostOfLiving,
+    fuelAllowance: data.payroll.fuelAllowance,
+    grossSalary: data.payroll.grossSalary,
+    netSalary: data.payroll.netSalary,
+    socialInsurance: data.payroll.socialInsurance,
+    taxes: data.payroll.incomeTax,
+  });
+
+  const cards: Array<{ label: string; value: string; note: string; accent: MetricAccent }> = [
+    {
+      label: "Achievement",
+      value: `${achievementPercent.toFixed(1)}%`,
+      note: achievementPercent >= 100 ? "Above target" : achievementPercent >= 90 ? "Eligible zone" : `${gapToThreshold.toFixed(1)}% to threshold`,
+      accent: achievementPercent >= 100 ? "green" : achievementPercent >= 90 ? "amber" : "orange",
+    },
+    {
+      label: "Base Salary",
+      value: isSalaryVisible ? egp(data.payroll.baseSalary) : maskedMoneyValue,
+      note: "Fixed compensation",
+      accent: "blue",
+    },
+    {
+      label: "Basic Salary",
+      value: isSalaryVisible ? egp(salaryRef.basicSalary) : maskedMoneyValue,
+      note: "Base × 70% — incentive basis",
+      accent: "purple",
+    },
+  ];
+
+  return (
+    <div className="grid gap-3 xs:grid-cols-3">
+      {cards.map((card) => {
+        const tone = metricTone(card.accent);
+        return (
+          <Card
+            className={`group relative flex min-w-0 flex-col overflow-hidden rounded border-l-[3px] border bg-white px-4 py-3.5 shadow-sm ${tone.border}`}
+            key={card.label}
+          >
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{card.label}</p>
+            <p className={`mt-2 break-words text-xl font-black leading-none tracking-tight tabular-nums ${tone.value}`}>
+              {card.value}
+            </p>
+            <p className="mt-1.5 break-words text-[11px] font-medium leading-snug text-slate-500">{card.note}</p>
+            <div className="mt-auto pt-2">
+              <div className="h-1 w-12 rounded-sm" style={{ background: tone.lineGradient }} />
+            </div>
+          </Card>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1157,16 +1282,22 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-5 xl:grid-cols-[1.2fr_1fr]">
+    <div className="space-y-5">
+      {/* KPI strip — Achievement + Base Salary + Basic Salary */}
+      <IncentiveKpiCards data={data} isSalaryVisible={isIncentiveSalaryVisible} />
+
+      {/* Policy + Simulator side by side */}
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
         <IncentiveSchemeDescriptionCard />
-        <IncentiveStatusCard data={data} isSalaryVisible={isIncentiveSalaryVisible} />
+        <IncentiveSimulatorCard
+          data={data}
+          isSalaryVisible={isIncentiveSalaryVisible}
+          onToggleSalaryVisibility={() => setIsIncentiveSalaryVisible((current) => !current)}
+        />
       </div>
-      <IncentiveCalculatorWidget
-        data={data}
-        isSalaryVisible={isIncentiveSalaryVisible}
-        onToggleSalaryVisibility={() => setIsIncentiveSalaryVisible((current) => !current)}
-      />
+
+      {/* Payout curve chart — standalone */}
+      <IncentivePayoutCurveChart data={data} />
     </div>
   );
 }
