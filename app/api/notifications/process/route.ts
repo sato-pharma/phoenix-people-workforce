@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { processNotificationOutbox } from "@/lib/notifications/email";
-import { processDueProbationReminderEvents } from "@/lib/probation/service";
+import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,9 +14,8 @@ function isCronAuthorized(request: Request) {
 }
 
 async function runNotificationOutbox(limit: number) {
-  const probationReminders = await processDueProbationReminderEvents(limit);
-  const outbox = await processNotificationOutbox(limit);
-  return NextResponse.json({ success: true, outbox, probationReminders });
+  const processing = await runScheduledNotificationProcessing(limit);
+  return NextResponse.json({ success: true, ...processing });
 }
 
 export async function POST(request: Request) {
