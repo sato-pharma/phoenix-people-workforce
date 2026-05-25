@@ -64,7 +64,7 @@ Short version:
 - `main` is production-only and should not be edited directly.
 - `codex/work-from-production` is the active local working branch for new edits and function changes.
 - Production URL: [https://phoenix-workforce.vercel.app](https://phoenix-workforce.vercel.app)
-- Working preview URL: [https://phoenix-workforce-b2yvc8r35-phoenix-workspace-s-projects.vercel.app](https://phoenix-workforce-b2yvc8r35-phoenix-workspace-s-projects.vercel.app)
+- Working preview URL: [https://phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects.vercel.app](https://phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects.vercel.app)
 - Vercel should keep only these two active deployments: production `main` and the `codex/work-from-production` preview.
 - `.vercel/` is local Vercel CLI metadata and is intentionally ignored.
 

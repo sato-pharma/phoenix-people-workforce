@@ -121,7 +121,7 @@ Current Phoenix Workforce branch policy:
 - `main` is production-only and must not be edited directly.
 - `codex/work-from-production` is the active working branch for new edits, functions, fixes, and feature work.
 - Production URL: `https://phoenix-workforce.vercel.app`.
-- Working preview URL: `https://phoenix-workforce-b2yvc8r35-phoenix-workspace-s-projects.vercel.app`.
+- Working preview URL: `https://phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects.vercel.app`.
 - Vercel should keep only two active deployments: production `main` and the `codex/work-from-production` preview.
 - `.vercel/` is local Vercel CLI metadata and must remain ignored/uncommitted.
 
