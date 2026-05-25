@@ -1,6 +1,8 @@
 # Phoenix Workforce: Team Performance Enhancements
 Current: f:/Phoenix Workforce/phoenix-workforce
 
+Branch context: do this work on `codex/work-from-production`, not `main`. Validate with the branch preview before production.
+
 ## Status: [IN PROGRESS] 0/8
 
 ✅ **DONE** | 🔄 **IN PROGRESS** | ⏳ **PENDING**

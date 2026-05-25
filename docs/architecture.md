@@ -57,11 +57,27 @@ Phoenix Workforce is a monolithic Next.js application that combines UI, route ha
 ## Delivery and Validation
 
 - CI now runs lint, typecheck, test, and build in sequence
-- The current repository still contains pre-existing TypeScript issues outside the i18n baseline added in this change
 - Production readiness depends on both application deployment and coordinated Supabase SQL rollout
+
+## Current Git And Deployment Model
+
+- `main` is production-only. Do not edit it directly.
+- `codex/work-from-production` is the active working branch for local edits and feature work.
+- Production public domain: `https://phoenix-workforce.vercel.app`
+- Working preview deployment: `https://phoenix-workforce-b2yvc8r35-phoenix-workspace-s-projects.vercel.app`
+- Vercel should keep only two active deployments: production `main` and the `codex/work-from-production` preview.
+- The exact public production domain must be checked after every production deploy because Vercel workspace aliases and public aliases can point to different deployments.
+
+## Current Vercel Cron Model
+
+The project currently runs on Vercel Hobby limits, so Vercel Cron must stay at two daily jobs.
+
+- `/api/notifications/birthdays`
+- `/api/notifications/contract-renewals`
+
+Notification outbox and probation reminder processing are shared through `src/lib/notifications/scheduled-processing.ts` and run from the daily contract-renewal cron. Sub-daily notification processing requires Vercel Pro or an external scheduler.
 
 ## Current Gaps
 
-- Type safety is not yet clean across all domains
 - Localization is not centralized even though Arabic data already exists
 - Some workflows still depend on disciplined server-side access boundaries rather than uniformly mature database policy coverage
