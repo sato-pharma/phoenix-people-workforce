@@ -125,6 +125,7 @@ function getAdminSections(permissionLookup: PermissionLookup, currentRole?: Phoe
     {
       id: "sales-performance",
       items: [
+        { href: "/sales/import", icon: Database, label: "Source of Sales", permissions: [{ resource: "sales" }] },
         { href: "/sales/queue", icon: FileUp, label: "Monthly Sales", permissions: [{ resource: "sales" }] },
         { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }] },
         { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },

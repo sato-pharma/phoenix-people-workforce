@@ -379,6 +379,12 @@ export function SalesQueue({ initialData, initialError }: Props) {
                 Sales Dashboard
               </Button>
             </Link>
+            <Link href="/sales/import">
+              <Button className="gap-2" variant="secondary">
+                <UploadCloud className="h-4 w-4" />
+                Source of Sales
+              </Button>
+            </Link>
             <Button
               className="gap-2"
               onClick={() => fileInputRef.current?.click()}

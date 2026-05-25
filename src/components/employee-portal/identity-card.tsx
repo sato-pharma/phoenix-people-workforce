@@ -106,36 +106,19 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
             </span>
           </div>
 
-          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="group/item flex items-center gap-2.5 rounded border border-white/10 bg-white/10 px-3.5 py-3 shadow-sm backdrop-blur">
-              <div className="flex h-8 w-8 items-center justify-center rounded bg-orange-500/15 text-orange-200 shadow-sm ring-1 ring-orange-300/20 transition-colors group-hover/item:bg-orange-500/25">
-                <MapPin className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Area</p>
-                <p className="break-words text-sm font-bold text-white">{employee.area ?? "Unassigned"}</p>
-              </div>
-            </div>
-
-            <div className="group/item flex items-center gap-2.5 rounded border border-white/10 bg-white/10 px-3.5 py-3 shadow-sm backdrop-blur">
-              <div className="flex h-8 w-8 items-center justify-center rounded bg-sky-500/15 text-sky-200 shadow-sm ring-1 ring-sky-300/20 transition-colors group-hover/item:bg-sky-500/25">
-                <Users className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Manager</p>
-                <p className="break-words text-sm font-bold text-white">{employee.manager ?? "Unassigned"}</p>
-              </div>
-            </div>
-
-            <div className="group/item flex items-center gap-2.5 rounded border border-white/10 bg-white/10 px-3 py-3 shadow-sm backdrop-blur sm:col-span-2 lg:col-span-1">
-              <div className="flex h-8 w-8 items-center justify-center rounded bg-emerald-500/15 text-emerald-200 shadow-sm ring-1 ring-emerald-300/20 transition-colors group-hover/item:bg-emerald-500/25">
-                <BriefcaseBusiness className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Business Line</p>
-                <p className="break-words text-sm font-bold text-white">{employee.line ?? "Phoenix"}</p>
-              </div>
-            </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-slate-300">
+            <span className="inline-flex items-center gap-2 break-words rounded border border-white/10 bg-white/10 px-3.5 py-1.5 text-[13px] font-medium text-slate-200 shadow-sm backdrop-blur">
+              <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-200" />
+              <span>{employee.area ?? "Unassigned"}</span>
+            </span>
+            <span className="inline-flex items-center gap-2 break-words rounded border border-white/10 bg-white/10 px-3.5 py-1.5 text-[13px] font-medium text-slate-200 shadow-sm backdrop-blur">
+              <Users className="h-3.5 w-3.5 shrink-0 text-sky-200" />
+              <span>{employee.manager ?? "Unassigned"}</span>
+            </span>
+            <span className="inline-flex items-center gap-2 break-words rounded border border-white/10 bg-white/10 px-3.5 py-1.5 text-[13px] font-medium text-slate-200 shadow-sm backdrop-blur">
+              <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0 text-emerald-200" />
+              <span>{employee.line ?? "Phoenix"}</span>
+            </span>
           </div>
 
         </div>

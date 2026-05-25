@@ -12,6 +12,7 @@ import {
   Package,
   Target,
   TrendingUp,
+  UploadCloud,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -816,9 +817,14 @@ export function SalesDashboard(props: Props) {
         <AdminPageHero
           actions={
             !portalMode ? (
-              <Link href="/sales/queue">
-                <Button variant="secondary">Review Uploaded Sheets</Button>
-              </Link>
+              <>
+                <Link href="/sales/import">
+                  <Button variant="secondary">Source of Sales</Button>
+                </Link>
+                <Link href="/sales/queue">
+                  <Button variant="secondary">Review Uploaded Sheets</Button>
+                </Link>
+              </>
             ) : null
           }
           description="We were unable to load the current sales dataset for dashboard visualizations."
@@ -998,6 +1004,12 @@ function SalesDashboardContent({
                     <Button className="gap-2 rounded-xl bg-[#0B0B0B] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition-all duration-160 ease-out hover:bg-[#F97316] hover:shadow-md hover:-translate-y-px active:scale-95">
                       <FileSpreadsheet className="h-4 w-4" />
                       Uploaded Sheets
+                    </Button>
+                  </Link>
+                  <Link href="/sales/import">
+                    <Button className="gap-2 rounded-xl" variant="secondary">
+                      <UploadCloud className="h-4 w-4" />
+                      Source of Sales
                     </Button>
                   </Link>
                 </>
@@ -1201,11 +1213,18 @@ function SalesDashboardContent({
                 : "Upload a monthly sales sheet to populate this dashboard."}
             </p>
             {!portalMode ? (
-              <Link className="mt-3 inline-flex" href="/sales/queue">
-                <Button variant="secondary">
-                  Review Uploaded Sheets
-                </Button>
-              </Link>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link className="inline-flex" href="/sales/import">
+                  <Button variant="secondary">
+                    Source of Sales
+                  </Button>
+                </Link>
+                <Link className="inline-flex" href="/sales/queue">
+                  <Button variant="secondary">
+                    Review Uploaded Sheets
+                  </Button>
+                </Link>
+              </div>
             ) : null}
           </div>
         </AdminCallout>
