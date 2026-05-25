@@ -96,6 +96,32 @@ function loginFailureResponse(
   return NextResponse.json({ error, message }, { status });
 }
 
+function serializeLoginError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    };
+  }
+
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+
+    return {
+      code: typeof record.code === "string" ? record.code : undefined,
+      details: typeof record.details === "string" ? record.details : undefined,
+      hint: typeof record.hint === "string" ? record.hint : undefined,
+      message: typeof record.message === "string" ? record.message : "Non-Error login failure.",
+      name: typeof record.name === "string" ? record.name : undefined,
+    };
+  }
+
+  return {
+    message: typeof error === "string" ? error : "Login failed.",
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const payload = await readLoginPayload(request);
@@ -306,7 +332,12 @@ export async function POST(request: Request) {
 
     return response;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Login failed.";
-    return NextResponse.json({ error: "login_failed", message }, { status: 500 });
+    const diagnostic = serializeLoginError(error);
+    console.error("[auth/login] failed", diagnostic);
+
+    return NextResponse.json(
+      { error: "login_failed", message: "Login failed." },
+      { status: 500 },
+    );
   }
 }
