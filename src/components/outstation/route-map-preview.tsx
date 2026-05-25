@@ -73,6 +73,7 @@ export function RouteMapPreview({
         ticketAmount: request.ticketAmount,
         toArea: request.toArea,
         toCity: request.toCity,
+        toCountry: null,
         toLabel: request.toLabel,
         transportationType: request.transportationType,
         tripEndDate: request.tripEndDate,
