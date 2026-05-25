@@ -646,7 +646,6 @@ function OrganogramView({
   selectedLine: string | null;
 }) {
   const employees = rows.filter((row) => row.type === "employee");
-  const vacancies = rows.filter((row) => row.type === "vacancy");
   const structureKpis = calculateOrganogramStructureKpis(rows);
   const lineName = selectedLine ?? "Select Line";
   const chiefExecutive = rows.find((row) => isChiefExecutive(row)) ?? null;

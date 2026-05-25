@@ -17,7 +17,15 @@
       "mcp__Claude_Preview__preview_start",
       "Bash(git checkout *)",
       "Bash(git rm *)",
-      "Bash(git cherry-pick *)"
+      "Bash(git cherry-pick *)",
+      "mcp__Claude_in_Chrome__navigate",
+      "mcp__Claude_in_Chrome__computer",
+      "mcp__Claude_in_Chrome__browser_batch",
+      "PowerShell(New-Item -ItemType Directory -Path \"F:\\\\Phoenix Workforce\\\\phoenix-workforce\\\\app\\\\dev\\\\employee-portals\\\\sales\" -Force)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":3000\")",
+      "Bash(findstr \"LISTENING\")",
+      "mcp__Claude_in_Chrome__resize_window"
     ]
   }
 }

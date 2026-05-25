@@ -1,4 +1,3 @@
-import { isDevelopment } from "@/lib/env";
 import {
   canSeeEmployee,
   resolveEmployeeIdentityId,
@@ -665,14 +664,6 @@ function hasMissingColumnError(error: unknown, columnName: string) {
       message.includes(columnName) ||
       message.includes(`column ${columnName}`))
   );
-}
-
-function hasMeaningfulError(error: unknown) {
-  if (!error) return false;
-  if (error instanceof Error) return Boolean(error.message?.trim());
-  if (typeof error !== "object") return Boolean(String(error ?? "").trim());
-  const typed = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
-  return Boolean(typed.message ?? typed.details ?? typed.hint ?? typed.code);
 }
 
 function buildSalaryTrendFromRecords(records: PortalPayrollRecord[]): SalaryTrendPoint[] {
@@ -1444,7 +1435,7 @@ async function getEmployeePortalSalesDashboard(
   };
 }
 
-function buildEmployeeSalesDashboard(records: PortalSalesNormalized[]): SalesDashboardData {
+export function buildEmployeeSalesDashboard(records: PortalSalesNormalized[]): SalesDashboardData {
   const trendByPeriod = new Map<string, { sales: number; target: number; linkedEmployees: number }>();
   const productPerformanceMap = new Map<string, { sales: number; target: number; family: string; salesUnits: number }>();
   const familyMatrixMap = new Map<string, { sales: number; target: number; units: number; salesRows: PortalSalesNormalized[] }>();
@@ -3299,7 +3290,6 @@ async function resolveSalesRankInTeam(params: {
 
   let data: unknown[] = [];
   let error: unknown = null;
-  const startTime = Date.now();
   try {
     data = await fetchAllRows(buildRankQuery);
   } catch (err) {
@@ -3798,7 +3788,7 @@ export async function getMedicalRepPortalData(
         teamRankResult = allPeriodsResult ?? teamRankResult;
       }
     }
-  } catch (error) {
+  } catch {
     // team rank exception
   }
   
@@ -4393,7 +4383,7 @@ export async function getDsmTeamPerformance(
       teamTotalSales,
       teamTotalTarget,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -4706,7 +4696,7 @@ export async function getEmployeePortalVacancies(
       },
       vacancies,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -4918,7 +4908,7 @@ export async function getNsmDsmPerformance(
       lineTotalSales,
       lineTotalTarget
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -5129,7 +5119,7 @@ export async function getNsmTeamExpenses(
       selectedPeriods,
       summary,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
