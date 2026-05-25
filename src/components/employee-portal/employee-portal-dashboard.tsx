@@ -756,18 +756,17 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
           const Icon = signal.icon;
           return (
             <Card
-              className={`group relative flex min-h-[124px] min-w-0 flex-col overflow-hidden rounded-lg border bg-gradient-to-br px-4 py-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${tone.card}`}
+              className={`group relative flex min-h-[116px] min-w-0 flex-col overflow-hidden rounded-xl border bg-gradient-to-br px-4 py-4 shadow-sm transition-shadow duration-200 hover:shadow-md ${tone.card}`}
               key={signal.label}
             >
-              <div className={`absolute inset-x-0 top-0 h-1 ${tone.line} opacity-90 transition-all duration-300 group-hover:h-1.5`} />
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.92),transparent_42%)] opacity-80" />
+              <div className={`absolute inset-x-0 top-0 h-1 ${tone.line} opacity-90`} />
               <div className="relative flex flex-1 flex-col justify-between gap-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{signal.label}</p>
                     </div>
-                    <p className={`mt-2 max-w-full whitespace-nowrap text-2xl font-black leading-none tracking-[-0.03em] tabular-nums ${tone.value}`}>
+                    <p className={`mt-2 max-w-full truncate text-2xl font-black leading-none tracking-[-0.03em] tabular-nums ${tone.value}`}>
                       {signal.value}
                     </p>
                     <p className="mt-1.5 line-clamp-2 text-[11px] font-medium leading-snug text-slate-500">{signal.note}</p>
@@ -1124,7 +1123,7 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
           const fillWidth = Math.max(6, Math.min(100, pct));
           const pctClass = pct >= 100 ? "text-emerald-600" : pct >= 80 ? "text-orange-600" : "text-rose-500";
           return (
-            <div key={`${row.position}-${row.name}`} className="rounded-2xl border border-slate-100 bg-white px-3 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:border-orange-100 hover:shadow-[0_12px_26px_rgba(15,23,42,0.07)]">
+            <div key={`${row.position}-${row.name}`} className="rounded-2xl border border-slate-100 bg-white px-3 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/30">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <span className={`shrink-0 flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-black ${row.position === 1 ? "bg-slate-950 text-white shadow-sm" : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"}`}>
@@ -1163,12 +1162,12 @@ function OverviewPagePanel({
   action?: ReactNode;
 }) {
   return (
-    <Card className="group relative flex h-full flex-col overflow-hidden rounded-[22px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:ring-slate-300 hover:shadow-[0_20px_44px_rgba(15,23,42,0.09)] lg:p-5">
-      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-400/80 via-sky-400/70 to-emerald-400/70 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+    <Card className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.05)] transition-shadow duration-200 hover:shadow-[0_8px_24px_rgba(15,23,42,0.08)] lg:p-5">
+      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-400 to-orange-300 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
       <div className="relative mb-3 flex flex-wrap items-center justify-between gap-3 lg:mb-4">
-        <div className="flex items-center gap-2.5">
-          <span className="h-2 w-2 rounded-full bg-orange-500 ep-pulse-orange" />
-          <p className="text-[17px] font-semibold tracking-normal text-slate-900 lg:text-[18px]">{title}</p>
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+          <h3 className="text-[15px] font-semibold tracking-tight text-slate-900 lg:text-base">{title}</h3>
         </div>
         {action}
       </div>
@@ -1290,9 +1289,6 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
   const tooltipTop = `${Math.max(14, Math.min(72, (activeTrendY / chartHeight) * 100))}%`;
 
   return (
-    <div
-      className="flex h-full flex-col"
-    >
       <OverviewPagePanel
         title="Performance Overview"
       >
@@ -1369,6 +1365,7 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
                 {trendData.map((point, index) => (
                   <g
                     aria-label={`${periodLabel(point.period)} sales ${egp(point.sales)} target ${egp(point.target)}`}
+                    className="cursor-pointer"
                     key={point.period}
                     onClick={() => setActiveTrendIndex(index)}
                     onFocus={() => setActiveTrendIndex(index)}
@@ -1442,7 +1439,6 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
           )}
         </div>
       </OverviewPagePanel>
-    </div>
   );
 }
 
@@ -1455,14 +1451,22 @@ function vacationTypeChipLabel(value: string) {
   return value;
 }
 
+const actionIconMap: Record<string, typeof ReceiptText> = {
+  "vacation-approvals": CalendarClock,
+  "my-vacation-requests": CalendarDays,
+  "marketing-drafts": Megaphone,
+};
+
 function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
   const actions = data.overview.myActions;
 
   return (
     <OverviewPagePanel title="My Actions">
       {actions.length === 0 ? (
-        <div className="flex h-full min-h-[200px] items-center justify-center rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 px-6 text-center">
-                <p className="text-sm font-medium text-slate-500">No pending actions right now.</p>
+        <div className="flex h-full min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-6 text-center">
+          <ShieldCheck className="mb-2 h-8 w-8 text-slate-300" />
+          <p className="text-sm font-medium text-slate-500">No pending actions right now.</p>
+          <p className="mt-1 text-xs text-slate-400">You&apos;re all caught up.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -1482,19 +1486,14 @@ function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
               triggerClassName="block"
             >
               <Link
-                className="group flex items-center gap-3 rounded-[18px] border border-slate-200 bg-white/80 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-orange-200 hover:bg-orange-50/60"
+                className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/40"
                 href={item.href}
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-orange-50 text-orange-600 ring-1 ring-orange-100 transition-transform duration-200 group-hover:scale-105">
-                  {item.id === "vacation-approvals" ? (
-                    <CalendarClock className="h-5 w-5" />
-                  ) : item.id === "my-vacation-requests" ? (
-                    <CalendarDays className="h-5 w-5" />
-                  ) : item.id === "marketing-drafts" ? (
-                    <Megaphone className="h-5 w-5" />
-                  ) : (
-                    <ReceiptText className="h-5 w-5" />
-                  )}
+                  {(() => {
+                    const Icon = actionIconMap[item.id] ?? ReceiptText;
+                    return <Icon className="h-5 w-5" />;
+                  })()}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-[15px] font-medium text-slate-800">{item.label}</p>
@@ -1537,7 +1536,7 @@ function QuickActionsPanel({ data }: { data: MedicalRepPortalData }) {
             triggerClassName="block"
           >
             <Link
-              className="group flex h-full min-h-[116px] flex-col items-center justify-between rounded-[18px] border border-slate-200 bg-white/80 px-3 py-3 text-center shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-orange-200 hover:bg-orange-50/60"
+              className="group flex h-full min-h-[116px] flex-col items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-center shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/50"
               href={item.href}
             >
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition-all duration-200 group-hover:scale-105 group-hover:bg-white">
@@ -1564,8 +1563,10 @@ function EmployeesOnLeaveTodayPanel({ data }: { data: MedicalRepPortalData }) {
   return (
     <OverviewPagePanel title="Employees on Leave Today">
       {rows.length === 0 ? (
-        <div className="flex h-full min-h-[200px] items-center justify-center rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 px-6 text-center">
+        <div className="flex h-full min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-6 text-center">
+          <CalendarDays className="mb-2 h-8 w-8 text-slate-300" />
           <p className="text-sm font-medium text-slate-500">No employees are on leave today.</p>
+          <p className="mt-1 text-xs text-slate-400">Full team is available.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -2559,22 +2560,18 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
   const showTeamLeaveAndStructurePanels = canSeeTeamLeaveAndStructurePanels(data);
 
   return (
-    <div className="space-y-6 lg:space-y-7">
+    <div className="space-y-6">
       <ExecutiveCommandStrip data={data} />
-      <div className="grid gap-4 lg:gap-5 xl:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2">
         <MyActionsPanel data={data} />
         <QuickActionsPanel data={data} />
         {showTeamLeaveAndStructurePanels ? <EmployeesOnLeaveTodayPanel data={data} /> : null}
         {showTeamLeaveAndStructurePanels ? <TeamStructurePanel data={data} /> : null}
       </div>
-      <div className="grid gap-4 lg:gap-5 xl:grid-cols-1">
-        <OverviewPerformanceChart data={data} />
-      </div>
-      <div className="grid gap-4 lg:gap-5 xl:grid-cols-1">
-        <OverviewInsightsAlerts data={data} />
-      </div>
-      <div className="grid gap-4 lg:gap-5 xl:grid-cols-[1.55fr_0.9fr]">
-        <div className="grid gap-4 lg:gap-5">
+      <OverviewPerformanceChart data={data} />
+      <OverviewInsightsAlerts data={data} />
+      <div className="grid gap-5 xl:grid-cols-[1.55fr_0.9fr]">
+        <div className="space-y-5">
           <OverviewTopProducts data={data} />
           <ToReachTargetWidget data={data} />
         </div>

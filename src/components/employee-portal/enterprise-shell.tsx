@@ -34,7 +34,7 @@ export function EmployeePortalPageShell({
               <span className="h-1.5 w-1.5 rounded-full bg-orange-300" />
               {badge ?? "Employee Portal"}
             </p>
-            <h1 className="mt-5 max-w-4xl text-[30px] font-black leading-[1.02] tracking-[-0.04em] text-white sm:text-[40px] lg:text-[48px]">
+            <h1 className="mt-5 max-w-4xl text-[26px] font-black leading-[1.05] tracking-[-0.03em] text-white sm:text-[32px] lg:text-[36px]">
               {title}
             </h1>
             <p
