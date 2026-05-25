@@ -335,8 +335,23 @@ export async function POST(request: Request) {
     const diagnostic = serializeLoginError(error);
     console.error("[auth/login] failed", diagnostic);
 
+    const isPreview = process.env.VERCEL_ENV === "preview";
+
     return NextResponse.json(
-      { error: "login_failed", message: "Login failed." },
+      {
+        error: "login_failed",
+        message: isPreview ? diagnostic.message : "Login failed.",
+        ...(isPreview
+          ? {
+              diagnostic: {
+                code: diagnostic.code,
+                details: diagnostic.details,
+                hint: diagnostic.hint,
+                name: diagnostic.name,
+              },
+            }
+          : {}),
+      },
       { status: 500 },
     );
   }
