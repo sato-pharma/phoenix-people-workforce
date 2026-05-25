@@ -464,7 +464,7 @@ function SidebarNav({
           <input
             ref={searchInputRef}
             aria-label="Search sidebar modules"
-            className="h-9 w-full rounded-[14px] border border-[#333333] bg-[#050505] px-3 text-[13px] font-semibold text-[#D4DDE8] outline-none transition placeholder:text-[#64748B] focus:border-[#F97316]/60 focus:ring-2 focus:ring-[#F97316]/30"
+            className="h-9 w-full rounded border border-[#333333] bg-[#050505] px-3 text-[13px] font-semibold text-[#D4DDE8] outline-none transition placeholder:text-[#64748B] focus:border-[#F97316]/60 focus:ring-2 focus:ring-[#F97316]/30"
             onChange={(event) => setSearchQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -497,13 +497,13 @@ function SidebarNav({
                   aria-controls={sectionContentId}
                   aria-expanded={!collapsed}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-lg text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#000000]",
+                    "flex w-full items-center gap-2 rounded text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#000000]",
                     adminSection && "border-t border-[#333333] px-2 pt-4",
                   )}
                   onClick={() => toggleSection(section.id)}
                   type="button"
                 >
-                  <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#FFF7ED]", adminSection && "bg-[#000000] ring-1 ring-[#333333]")}>
+                  <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[#FFF7ED]", adminSection && "bg-[#000000] ring-1 ring-[#333333]")}>
                     <ChevronRight
                       className={cn(
                         "h-3 w-3 shrink-0 text-[#F97316] transition-transform duration-300 ease-out",
@@ -513,7 +513,7 @@ function SidebarNav({
                       )}
                     />
                   </span>
-                  <span className={cn("min-w-0 flex-1 truncate text-[11px] font-black uppercase tracking-[0.18em] text-[#F97316]", adminSection && "text-[#F8B56B]")}>
+                  <span className={cn("min-w-0 flex-1 whitespace-nowrap text-[11px] font-black uppercase tracking-[0.18em] text-[#F97316]", adminSection && "text-[#F8B56B]")}>
                     {section.label}
                   </span>
                 </button>
@@ -539,7 +539,7 @@ function SidebarNav({
                       return (
                         <Link
                           className={cn(
-                            "group relative flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-[13px] font-semibold transition-all duration-150",
+                            "group relative flex w-full items-center gap-3 rounded px-3 py-3 text-[13px] font-semibold transition-all duration-150",
                             adminSection
                               ? active
                                 ? "bg-[linear-gradient(180deg,#1a1a1a_0%,#000000_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_24px_rgba(0,0,0,0.24)]"
@@ -563,14 +563,14 @@ function SidebarNav({
                           {adminSection && (
                             <span
                               className={cn(
-                                "absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full bg-[#F97316] transition-opacity",
+                                "absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-sm bg-[#F97316] transition-opacity",
                                 active ? "opacity-100" : "opacity-0",
                               )}
                             />
                           )}
                           <span
                             className={cn(
-                              "flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] transition-colors duration-150",
+                              "flex h-10 w-10 shrink-0 items-center justify-center rounded transition-colors duration-150",
                               adminSection
                                 ? active
                                   ? "bg-[linear-gradient(180deg,#FF8A1C_0%,#F97316_100%)] text-white shadow-[0_10px_18px_rgba(249,115,22,0.28)]"
@@ -582,9 +582,9 @@ function SidebarNav({
                           >
                             <item.icon className="h-4 w-4" />
                           </span>
-                          <span className={cn("min-w-0 flex-1 truncate", adminSection && "tracking-[-0.01em]")}>{item.label}</span>
+                          <span className={cn("min-w-0 flex-1 whitespace-nowrap", adminSection && "tracking-[-0.01em]")}>{item.label}</span>
                           {active && (
-                            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#F59E0B] shadow-[0_0_10px_rgba(245,158,11,0.7)]" />
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-sm bg-[#F59E0B] shadow-[0_0_10px_rgba(245,158,11,0.7)]" />
                           )}
                         </Link>
                       );
@@ -612,7 +612,7 @@ function SidebarLogo({
   if (mode === "admin") {
     return (
       <Link
-        className="mx-2 mt-2 block overflow-hidden rounded-[22px] border border-[#333333] bg-[#050505] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_30px_rgba(0,0,0,0.28)] transition hover:border-[#F97316]/60"
+        className="mx-2 mt-2 block overflow-hidden rounded border border-[#333333] bg-[#050505] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_30px_rgba(0,0,0,0.28)] transition hover:border-[#F97316]/60"
         href={homePath}
         onClick={onNavigate}
       >
@@ -633,7 +633,7 @@ function SidebarLogo({
   return (
     <Link
       className={cn(
-        "mx-3 mt-3 flex items-center gap-3 rounded-[22px] px-4 py-4 transition",
+        "mx-3 mt-3 flex items-center gap-3 rounded px-4 py-4 transition",
       )}
       href={homePath}
       onClick={onNavigate}
@@ -649,7 +649,7 @@ function SidebarLogo({
         <p className="whitespace-nowrap text-[15px] font-black tracking-[0.26em] text-[#0F172A]">
           PHOENI<span className="text-[#F97316]">X</span>
         </p>
-        <p className="mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.22em] text-[#64748B]">
+        <p className="mt-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.22em] text-[#64748B]">
           Workforce Portal
         </p>
       </div>
@@ -663,7 +663,7 @@ function SidebarIntro({ mode = "admin" }: { mode?: NavigationMode }) {
   }
 
   return (
-    <div className="mx-3 mt-3 rounded-[24px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4">
+    <div className="mx-3 mt-3 rounded border border-[#E2E8F0] bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4">
       <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#F97316]">
         Portal
       </p>
@@ -684,9 +684,9 @@ function SidebarFooter({ mode = "admin" }: { mode?: NavigationMode }) {
 
   return (
     <div className="p-3">
-      <div className="overflow-hidden rounded-[24px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#fff7ed_0%,#ffffff_100%)] p-3">
+      <div className="overflow-hidden rounded border border-[#E2E8F0] bg-[linear-gradient(180deg,#fff7ed_0%,#ffffff_100%)] p-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#F97316]/10 text-[#F97316]">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-[#F97316]/10 text-[#F97316]">
             <ShieldCheck className="h-5 w-5" />
           </div>
           <div className="min-w-0">
@@ -761,7 +761,7 @@ export function MobileSidebar({
           <SidebarLogo mode={navigationMode} onNavigate={onClose} />
           <button
             aria-label="Close menu"
-            className="mr-3 mt-4 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#F8FAFC] text-[#64748B] transition hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+            className="mr-3 mt-4 flex h-9 w-9 shrink-0 items-center justify-center rounded bg-[#F8FAFC] text-[#64748B] transition hover:bg-[#E2E8F0] hover:text-[#0F172A]"
             onClick={onClose}
             type="button"
           >
