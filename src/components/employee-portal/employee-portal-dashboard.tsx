@@ -3155,7 +3155,6 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
         {showTeamLeaveAndStructurePanels ? <TeamStructurePanel data={data} /> : null}
       </div>
       <OverviewPerformanceChart data={data} />
-      <OverviewInsightsAlerts data={data} />
       <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
         <TerritoryComparisonChart data={data} />
         <div className="self-start space-y-5">
@@ -3163,6 +3162,7 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
           <OverviewTopProducts data={data} />
           <TeamRankComparisonWidget data={data} />
           <ToReachTargetWidget data={data} />
+          <OverviewInsightsAlerts data={data} />
         </div>
       </div>
       <div className="flex justify-center lg:justify-end">
