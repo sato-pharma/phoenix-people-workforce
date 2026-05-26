@@ -103,6 +103,47 @@ export type SourceOfSalesUploadBatch = {
   warningRows: number;
 };
 
+export type SourceOfSalesProduct = SalesProductReference & {
+  active: boolean;
+  createdAt: string;
+  normalizedLine: string;
+  normalizedProductName: string;
+  sourceFile: string;
+  sourceRowNumber: number | null;
+  sourceSheet: string;
+  updatedAt: string;
+};
+
+export type SourceOfSalesProductInput = {
+  active?: boolean;
+  factoryPrice: number | string;
+  family: string;
+  familyCode: string;
+  line: string;
+  productCode: string;
+  productName: string;
+  source: string;
+  sourceFile?: string | null;
+  sourceRowNumber?: number | string | null;
+  sourceSheet?: string | null;
+};
+
+type NormalizedSourceOfSalesProductInput = {
+  active: boolean;
+  factoryPrice: number;
+  family: string;
+  familyCode: string;
+  line: string;
+  normalizedLine: string;
+  normalizedProductName: string;
+  productCode: string;
+  productName: string;
+  source: string;
+  sourceFile: string;
+  sourceRowNumber: number | null;
+  sourceSheet: string;
+};
+
 type HeaderMap = {
   columns: Map<string, number>;
   rowNumber: number;
@@ -147,6 +188,11 @@ function normalizeCode(value: unknown) {
 
 function normalizeDisplay(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function normalizeOptionalDisplay(value: unknown, fallback: string) {
+  const normalized = normalizeDisplay(value);
+  return normalized || fallback;
 }
 
 function isNotAvailable(value: unknown) {
@@ -212,6 +258,77 @@ function parseNumber(value: unknown, options?: { emptyAsZero?: boolean }) {
   if (typeof value === "number") return Number.isFinite(value) ? value : Number.NaN;
   const parsed = Number(text.replace(/,/g, ""));
   return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+function parseOptionalInteger(value: unknown) {
+  const text = normalizeDisplay(value);
+  if (!text) return null;
+  const parsed = Number(text.replace(/,/g, ""));
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
+}
+
+function requireSourceOfSalesProductField(
+  input: SourceOfSalesProductInput,
+  key: keyof SourceOfSalesProductInput,
+  label: string,
+) {
+  const value = normalizeDisplay(input[key]);
+  if (!value) {
+    throw new SalesWorkflowError(
+      "invalid_product_reference",
+      `${label} is required.`,
+      400,
+      { field: key },
+    );
+  }
+  return value;
+}
+
+export function normalizeSourceOfSalesProductInput(
+  input: SourceOfSalesProductInput,
+): NormalizedSourceOfSalesProductInput {
+  const productCode = normalizeCode(requireSourceOfSalesProductField(input, "productCode", "Product Code"));
+  const productName = requireSourceOfSalesProductField(input, "productName", "Product Name");
+  const family = requireSourceOfSalesProductField(input, "family", "Family");
+  const familyCode = normalizeCode(requireSourceOfSalesProductField(input, "familyCode", "Family Code"));
+  const source = requireSourceOfSalesProductField(input, "source", "Source");
+  const line = requireSourceOfSalesProductField(input, "line", "Line");
+  const factoryPrice = parseNumber(input.factoryPrice);
+  const sourceRowNumber = parseOptionalInteger(input.sourceRowNumber);
+
+  if (!Number.isFinite(factoryPrice) || factoryPrice < 0) {
+    throw new SalesWorkflowError(
+      "invalid_product_reference",
+      "Factory Price must be a non-negative number.",
+      400,
+      { field: "factoryPrice" },
+    );
+  }
+
+  if (Number.isNaN(sourceRowNumber)) {
+    throw new SalesWorkflowError(
+      "invalid_product_reference",
+      "Source Row Number must be a positive whole number.",
+      400,
+      { field: "sourceRowNumber" },
+    );
+  }
+
+  return {
+    active: input.active ?? true,
+    factoryPrice,
+    family,
+    familyCode,
+    line,
+    normalizedLine: normalizeKey(line),
+    normalizedProductName: normalizeKey(productName),
+    productCode,
+    productName,
+    source,
+    sourceFile: normalizeOptionalDisplay(input.sourceFile, "Manual Entry"),
+    sourceRowNumber,
+    sourceSheet: normalizeOptionalDisplay(input.sourceSheet, "Products"),
+  };
 }
 
 function excelSerialToDate(serial: number) {
@@ -592,14 +709,17 @@ export async function loadSalesReferenceData(): Promise<SalesReferenceData> {
     supabase
       .from("source_of_sales_area_regions")
       .select("area_code,area_name,region_code,region_name")
+      .eq("active", true)
       .order("region_code", { ascending: true }),
     supabase
       .from("source_of_sales_products")
       .select("product_code,product_name,factory_price,family,family_code,source,line")
+      .eq("active", true)
       .order("product_name", { ascending: true }),
     supabase
       .from("source_of_sales_distributors")
       .select("distributor_code,distributor_name")
+      .eq("active", true)
       .order("distributor_name", { ascending: true }),
   ]);
 
@@ -633,6 +753,187 @@ export async function loadSalesReferenceData(): Promise<SalesReferenceData> {
 export async function listSalesImportDistributors() {
   const references = await loadSalesReferenceData();
   return references.distributors;
+}
+
+function mapSourceOfSalesProduct(row: Record<string, unknown>): SourceOfSalesProduct {
+  return {
+    active: Boolean(row.active ?? true),
+    createdAt: String(row.created_at ?? ""),
+    factoryPrice: Number(row.factory_price ?? 0),
+    family: String(row.family ?? ""),
+    familyCode: String(row.family_code ?? ""),
+    line: String(row.line ?? ""),
+    normalizedLine: String(row.normalized_line ?? ""),
+    normalizedProductName: String(row.normalized_product_name ?? ""),
+    productCode: String(row.product_code ?? ""),
+    productName: String(row.product_name ?? ""),
+    source: String(row.source ?? ""),
+    sourceFile: String(row.source_file ?? ""),
+    sourceRowNumber: row.source_row_number === null || row.source_row_number === undefined
+      ? null
+      : Number(row.source_row_number),
+    sourceSheet: String(row.source_sheet ?? ""),
+    updatedAt: String(row.updated_at ?? ""),
+  };
+}
+
+function sourceOfSalesProductPayload(input: NormalizedSourceOfSalesProductInput) {
+  return {
+    active: input.active,
+    factory_price: input.factoryPrice,
+    family: input.family,
+    family_code: input.familyCode,
+    line: input.line,
+    normalized_line: input.normalizedLine,
+    normalized_product_name: input.normalizedProductName,
+    product_code: input.productCode,
+    product_name: input.productName,
+    source: input.source,
+    source_file: input.sourceFile,
+    source_row_number: input.sourceRowNumber,
+    source_sheet: input.sourceSheet,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function throwProductMutationError(error: { code?: string; message?: string } | null, fallback: string): never {
+  if (error?.code === "23505") {
+    throw new SalesWorkflowError(
+      "duplicate_product_reference",
+      "Product Code or Product Name already exists in the Source of Sales product reference.",
+      409,
+    );
+  }
+  throw new SalesWorkflowError("product_reference_mutation_failed", error?.message ?? fallback, 500);
+}
+
+export async function listSourceOfSalesProducts(): Promise<SourceOfSalesProduct[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_products")
+    .select("*")
+    .order("line", { ascending: true })
+    .order("product_name", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []).map((row) => mapSourceOfSalesProduct(row as Record<string, unknown>));
+}
+
+export async function createSourceOfSalesProduct(input: {
+  actorLoginId: string;
+  product: SourceOfSalesProductInput;
+}) {
+  const normalized = normalizeSourceOfSalesProductInput(input.product);
+  const supabase = getSupabaseAdmin();
+  const insertResult = await supabase
+    .from("source_of_sales_products")
+    .insert(sourceOfSalesProductPayload(normalized))
+    .select("*")
+    .single();
+
+  if (insertResult.error) {
+    throwProductMutationError(insertResult.error, "Failed to add Source of Sales product.");
+  }
+
+  const product = mapSourceOfSalesProduct(insertResult.data as Record<string, unknown>);
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: product.productCode,
+    entityType: "source_of_sales_product",
+    newValues: { product, source: "source_of_sales" },
+    summary: "Source of Sales product added.",
+  });
+
+  return product;
+}
+
+export async function updateSourceOfSalesProduct(input: {
+  actorLoginId: string;
+  product: SourceOfSalesProductInput;
+  productCode: string;
+}) {
+  const currentCode = normalizeCode(input.productCode);
+  if (!currentCode) {
+    throw new SalesWorkflowError("invalid_product_reference", "Product Code is required.", 400);
+  }
+
+  const normalized = normalizeSourceOfSalesProductInput(input.product);
+  const supabase = getSupabaseAdmin();
+  const existingResult = await supabase
+    .from("source_of_sales_products")
+    .select("*")
+    .eq("product_code", currentCode)
+    .maybeSingle();
+
+  if (existingResult.error) throw existingResult.error;
+  if (!existingResult.data) {
+    throw new SalesWorkflowError("product_reference_not_found", "Source of Sales product was not found.", 404);
+  }
+
+  const updateResult = await supabase
+    .from("source_of_sales_products")
+    .update(sourceOfSalesProductPayload(normalized))
+    .eq("product_code", currentCode)
+    .select("*")
+    .single();
+
+  if (updateResult.error) {
+    throwProductMutationError(updateResult.error, "Failed to update Source of Sales product.");
+  }
+
+  const product = mapSourceOfSalesProduct(updateResult.data as Record<string, unknown>);
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: product.productCode,
+    entityType: "source_of_sales_product",
+    newValues: { product, source: "source_of_sales" },
+    oldValues: {
+      product: mapSourceOfSalesProduct(existingResult.data as Record<string, unknown>),
+      source: "source_of_sales",
+    },
+    summary: "Source of Sales product updated.",
+  });
+
+  return product;
+}
+
+export async function deleteSourceOfSalesProduct(input: {
+  actorLoginId: string;
+  productCode: string;
+}) {
+  const productCode = normalizeCode(input.productCode);
+  if (!productCode) {
+    throw new SalesWorkflowError("invalid_product_reference", "Product Code is required.", 400);
+  }
+
+  const supabase = getSupabaseAdmin();
+  const existingResult = await supabase
+    .from("source_of_sales_products")
+    .select("*")
+    .eq("product_code", productCode)
+    .maybeSingle();
+
+  if (existingResult.error) throw existingResult.error;
+  if (!existingResult.data) return null;
+
+  const { error } = await supabase
+    .from("source_of_sales_products")
+    .delete()
+    .eq("product_code", productCode);
+  if (error) throwProductMutationError(error, "Failed to delete Source of Sales product.");
+
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: productCode,
+    entityType: "source_of_sales_product",
+    oldValues: {
+      product: mapSourceOfSalesProduct(existingResult.data as Record<string, unknown>),
+      source: "source_of_sales",
+    },
+    summary: "Source of Sales product deleted.",
+  });
+
+  return true;
 }
 
 function mapSourceOfSalesBatch(row: Record<string, unknown>): SourceOfSalesUploadBatch {

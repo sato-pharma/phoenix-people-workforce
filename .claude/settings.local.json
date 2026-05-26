@@ -33,7 +33,14 @@
       "mcp__Claude_in_Chrome__find",
       "mcp__Claude_in_Chrome__javascript_tool",
       "Bash(findstr /i \"marketing-validation\")",
-      "Bash(findstr /C:\"error\")"
+      "Bash(findstr /C:\"error\")",
+      "PowerShell(\\(Get-ChildItem \"F:\\\\Phoenix Workforce\\\\phoenix-workforce\\\\node_modules\" -Recurse -File | Measure-Object -Property Length -Sum\\).Sum / 1MB)",
+      "PowerShell(node -e \"console.log\\('Node: ' + process.version\\); console.log\\('Arch: ' + process.arch\\); console.log\\('Platform: ' + process.platform\\)\")",
+      "PowerShell(Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 20 Name, @{N='RAM_MB';E={[math]::Round\\($_.WorkingSet64/1MB,0\\)}}, @{N='CPU_s';E={[math]::Round\\($_.CPU,1\\)}} | Format-Table -AutoSize)",
+      "Bash(npm ls *)",
+      "Bash(xargs grep -l \"vacation\\\\|leave-management\")",
+      "Bash(xargs grep -l \"excuse\" -i)",
+      "mcp__Claude_in_Chrome__form_input"
     ]
   }
 }

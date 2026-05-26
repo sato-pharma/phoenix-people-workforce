@@ -9,6 +9,7 @@ export type AuditEntityType =
   | "permission_override"
   | "salary_flag"
   | "sales_import_batch"
+  | "source_of_sales_product"
   | "user"
   | "vacation_request";
 

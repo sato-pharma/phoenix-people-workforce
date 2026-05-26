@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 
 import {
+  normalizeSourceOfSalesProductInput,
   validateDistributorSalesWorkbookBuffer,
   type SalesReferenceData,
 } from "../src/lib/sales/monthly-distributor-import.ts";
+import { SalesWorkflowError } from "../src/lib/sales/contracts.ts";
 
 const references: SalesReferenceData = {
   distributors: [{ code: "PS", name: "overseas" }],
@@ -66,6 +68,43 @@ async function buildWorkbookBuffer(rows: unknown[][]) {
 }
 
 export async function runSalesDistributorImportTests() {
+  const normalizedProduct = normalizeSourceOfSalesProductInput({
+    active: true,
+    factoryPrice: "1,250.75",
+    family: "Tebofortin",
+    familyCode: " te ",
+    line: "  CNS  ",
+    productCode: " te009 ",
+    productName: "  Tebofortin Test  ",
+    source: "Marcyl",
+    sourceFile: "",
+    sourceRowNumber: "",
+    sourceSheet: "",
+  });
+
+  assert.equal(normalizedProduct.productCode, "TE009");
+  assert.equal(normalizedProduct.productName, "Tebofortin Test");
+  assert.equal(normalizedProduct.familyCode, "TE");
+  assert.equal(normalizedProduct.factoryPrice, 1250.75);
+  assert.equal(normalizedProduct.normalizedProductName, "tebofortin test");
+  assert.equal(normalizedProduct.normalizedLine, "cns");
+  assert.equal(normalizedProduct.sourceFile, "Manual Entry");
+  assert.equal(normalizedProduct.sourceSheet, "Products");
+  assert.equal(normalizedProduct.sourceRowNumber, null);
+
+  assert.throws(
+    () => normalizeSourceOfSalesProductInput({
+      factoryPrice: "-1",
+      family: "Family",
+      familyCode: "FA",
+      line: "Line",
+      productCode: "P-X",
+      productName: "Product X",
+      source: "Source",
+    }),
+    SalesWorkflowError,
+  );
+
   const buffer = await buildWorkbookBuffer([
     ["B1", "Branch", "Vendor", "C1", "Customer", "Address", "D", "Desc", "Cairo", "CA", "INV1", new Date("2026-04-01T00:00:00Z"), "Sales", "M1", "Mat", "Product A", "P-A", 10, 1, 100, "PS"],
     ["B1", "Branch", "Vendor", "C2", "Customer", "Address", "D", "Desc", "Alex", "AB", "INV2", new Date("2026-04-02T00:00:00Z"), "Sales", "M2", "Mat", "Product B", "P-B", 5, 2, 250, "PS"],
