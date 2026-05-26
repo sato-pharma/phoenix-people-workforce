@@ -6,7 +6,9 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   listSalesImportDistributors,
+  listSourceOfSalesProducts,
   listSourceOfSalesUploadBatches,
+  type SourceOfSalesProduct,
   type SourceOfSalesUploadBatch,
   type SalesDistributorOption,
 } from "@/lib/sales/monthly-distributor-import";
@@ -21,13 +23,15 @@ export default async function SalesImportPage() {
 
   let distributors: SalesDistributorOption[] = [];
   let initialBatches: SourceOfSalesUploadBatch[] = [];
+  let initialProducts: SourceOfSalesProduct[] = [];
   let initialError: string | null = null;
 
   try {
     await assertPermission(accessContext, "sales", "import");
-    [distributors, initialBatches] = await Promise.all([
+    [distributors, initialBatches, initialProducts] = await Promise.all([
       listSalesImportDistributors(),
       listSourceOfSalesUploadBatches(),
+      listSourceOfSalesProducts(),
     ]);
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load sales import.";
@@ -39,6 +43,7 @@ export default async function SalesImportPage() {
         distributors={distributors}
         initialBatches={initialBatches}
         initialError={initialError}
+        initialProducts={initialProducts}
       />
     </AppShell>
   );

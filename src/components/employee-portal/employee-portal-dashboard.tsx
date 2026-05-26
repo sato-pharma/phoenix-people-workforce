@@ -3156,16 +3156,14 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
       </div>
       <OverviewPerformanceChart data={data} />
       <OverviewInsightsAlerts data={data} />
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
         <TerritoryComparisonChart data={data} />
-        <ProductFamilyBreakdown data={data} />
-      </div>
-      <div className="grid gap-5 xl:grid-cols-[1.55fr_0.9fr]">
-        <div className="space-y-5">
+        <div className="self-start space-y-5">
+          <ProductFamilyBreakdown data={data} />
           <OverviewTopProducts data={data} />
+          <TeamRankComparisonWidget data={data} />
           <ToReachTargetWidget data={data} />
         </div>
-        <TeamRankComparisonWidget data={data} />
       </div>
       <div className="flex justify-center lg:justify-end">
         <Link className="w-full lg:w-auto" href="/employee-portals/sales">

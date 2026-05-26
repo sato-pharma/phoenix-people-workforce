@@ -23,6 +23,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-products-tab";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type {
   DistributorSalesLineSummary,
@@ -31,6 +32,7 @@ import type {
   DistributorSalesValidationIssue,
   DistributorSalesValidationResult,
   SalesDistributorOption,
+  SourceOfSalesProduct,
   SourceOfSalesUploadBatch,
 } from "@/lib/sales/monthly-distributor-import";
 import { cn } from "@/lib/utils";
@@ -39,6 +41,7 @@ type Props = {
   distributors: SalesDistributorOption[];
   initialBatches: SourceOfSalesUploadBatch[];
   initialError: string | null;
+  initialProducts: SourceOfSalesProduct[];
 };
 
 type ValidationResponse = {
@@ -340,7 +343,9 @@ function UploadedSheetsTable({
   );
 }
 
-export function SalesImportWorkspace({ distributors, initialBatches, initialError }: Props) {
+type SourceOfSalesTab = "products" | "sheets";
+
+export function SalesImportWorkspace({ distributors, initialBatches, initialError, initialProducts }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const defaultDistributor = useMemo(
     () => distributors.find((distributor) => distributor.code.toUpperCase() === "PS") ?? distributors[0] ?? null,
@@ -350,6 +355,8 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialErro
   const [selectedDistributorCode, setSelectedDistributorCode] = useState(defaultDistributor?.code ?? "");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [batches, setBatches] = useState(initialBatches);
+  const [activeTab, setActiveTab] = useState<SourceOfSalesTab>("sheets");
+  const [productsCount, setProductsCount] = useState(initialProducts.length);
   const [result, setResult] = useState<DistributorSalesValidationResult | null>(null);
   const [error, setError] = useState<string | null>(initialError);
   const [isValidating, setIsValidating] = useState(false);
@@ -506,11 +513,39 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialErro
           <div className="relative mt-5 flex flex-wrap gap-2 border-t border-[#E2E8F0] pt-4">
             <AdminInsightChip>Distributors: {formatNumber(distributors.length)}</AdminInsightChip>
             <AdminInsightChip>Uploaded sheets: {formatNumber(batches.length)}</AdminInsightChip>
+            <AdminInsightChip>Products: {formatNumber(productsCount)}</AdminInsightChip>
             {selectedDistributor ? <AdminInsightChip tone="orange">{selectedDistributor.name} / {selectedDistributor.code}</AdminInsightChip> : null}
             <AdminInsightChip tone="slate">New source tables</AdminInsightChip>
           </div>
         </div>
 
+        <div className="flex flex-wrap gap-2 rounded-2xl border border-[#D8E0EA] bg-white/90 p-2 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+          <Button
+            className={cn(
+              "gap-2 rounded-xl font-black",
+              activeTab === "sheets" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+            )}
+            onClick={() => setActiveTab("sheets")}
+            variant="secondary"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Uploaded Sheets
+          </Button>
+          <Button
+            className={cn(
+              "gap-2 rounded-xl font-black",
+              activeTab === "products" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+            )}
+            onClick={() => setActiveTab("products")}
+            variant="secondary"
+          >
+            <Package className="h-4 w-4" />
+            Products Reference
+          </Button>
+        </div>
+
+        {activeTab === "sheets" ? (
+          <>
         <AdminTableShell
           description="Select the distributor, attach the monthly workbook, then run validation."
           title="Validate Monthly Sheet"
@@ -669,6 +704,13 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialErro
             <IssueTable issues={result.issues} />
           </>
         ) : null}
+          </>
+        ) : (
+          <SourceOfSalesProductsTab
+            initialProducts={initialProducts}
+            onProductsChange={setProductsCount}
+          />
+        )}
       </div>
     </div>
   );

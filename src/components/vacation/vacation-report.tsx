@@ -1,24 +1,38 @@
 "use client";
 
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
   AlertCircle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Download,
   Filter,
   Pencil,
   Plus,
+  Printer,
   Search,
   Table2,
   Trash2,
   XCircle,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
 
-import { AdminCallout, AdminPageHero, AdminStatCard, adminPanelClassName } from "@/components/admin/admin-design-system";
+import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { PageContainer } from "@/components/layout/page-container";
 import {
   vacationDayPartLabel,
@@ -36,6 +50,10 @@ import type {
 import { VACATION_DAY_PARTS, VACATION_PAYMENT_STATUSES, VACATION_STATUSES, VACATION_TYPES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";
 
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Types ────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
 type VacationReportProps = {
   initialData: VacationReportData | null;
   initialError: string | null;
@@ -43,9 +61,6 @@ type VacationReportProps = {
 };
 
 type VacationReportTab = "entitlements" | "requests";
-
-const reportHeaderCellClass = "border border-slate-300 bg-slate-900 px-3 py-3 text-left text-[11px] font-black uppercase tracking-[0.12em] text-white";
-const reportCellClass = "border border-slate-200 px-3 py-3 align-middle text-sm text-slate-700";
 
 type AdminVacationFormState = {
   dayPart: string;
@@ -56,6 +71,25 @@ type AdminVacationFormState = {
   status: string;
   vacationType: string;
 };
+
+type SortDirection = "asc" | "desc";
+
+type EntitlementSortKey = "annualBalanceDays" | "daysSinceHire" | "fullName" | "hrId";
+
+type RequestSortKey = "createdAt" | "durationDays" | "employeeName" | "startDate" | "status";
+
+const PAGE_SIZE = 25;
+
+const DATE_PRESETS = [
+  { label: "This month", value: "this_month" },
+  { label: "Last 30 days", value: "last_30" },
+  { label: "This quarter", value: "this_quarter" },
+  { label: "This year", value: "this_year" },
+] as const;
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Helpers ──────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
 
 function emptyAdminVacationForm(employeeHrId = ""): AdminVacationFormState {
   return {
@@ -142,19 +176,813 @@ function eligibilityStatusLabel(status: VacationEmployeeEligibilityRow["eligibil
   return "Missing hire date";
 }
 
-function tabCardClassName(active: boolean, tone: "emerald" | "orange") {
-  if (tone === "emerald") {
-    return active
-      ? "border-emerald-300 bg-gradient-to-br from-emerald-100 via-emerald-50 to-white shadow-[0_14px_36px_rgba(16,185,129,0.14)]"
-      : "border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40";
-  }
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── CSV Export ──────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
 
-  return active
-    ? "border-orange-300 bg-gradient-to-br from-orange-100 via-orange-50 to-white shadow-[0_14px_36px_rgba(249,115,22,0.14)]"
-    : "border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/40";
+function csvEscape(v: string | number | null | undefined): string {
+  const s = String(v ?? "");
+  return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-export function VacationReport({ initialData, initialError, showHero = true }: VacationReportProps) {
+function downloadCsv(filename: string, csvContent: string) {
+  const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportEntitlementsCSV(data: VacationEmployeeEligibilityRow[]) {
+  const header = ["HR ID", "Full Name", "Department", "Line", "Hire Date", "Days Since Hire", "6-Month Date", "Eligibility", "Entitlement Days", "Used Days", "Balance Days", "Manager", "Review Flags"];
+  const rows = data.map((r) => [
+    csvEscape(r.hrId), csvEscape(r.fullName), csvEscape(r.departmentName), csvEscape(r.lineName),
+    csvEscape(r.hireDate), csvEscape(r.daysSinceHire), csvEscape(r.sixMonthAnniversary),
+    csvEscape(eligibilityStatusLabel(r.eligibilityStatus)),
+    csvEscape(r.annualEntitlementDays), csvEscape(r.annualUsedDays), csvEscape(r.annualBalanceDays),
+    csvEscape(r.managerName), csvEscape(r.reviewFlags.join("; ")),
+  ].join(","));
+  downloadCsv(`entitlements-${new Date().toISOString().slice(0, 10)}.csv`, [header.join(","), ...rows].join("\n"));
+}
+
+function exportRequestsCSV(data: VacationRequestRecord[]) {
+  const header = ["Request ID", "HR ID", "Employee", "Department", "Line", "Type", "Day Part", "Start", "End", "Duration", "Status", "Payment", "Paid Days", "Unpaid Days", "Submitted", "Manager"];
+  const rows = data.map((r) => [
+    csvEscape(vacationRequestDisplayId(r.id)), csvEscape(r.employeeHrId), csvEscape(r.employeeName),
+    csvEscape(r.departmentName), csvEscape(r.lineName), csvEscape(vacationTypeLabel(r.vacationType)),
+    csvEscape(vacationDayPartLabel(r.dayPart)), csvEscape(r.startDate), csvEscape(r.endDate),
+    csvEscape(r.durationDays), csvEscape(statusLabel(r.status)), csvEscape(paymentStatusLabel(r.paymentStatus)),
+    csvEscape(r.paidDurationDays), csvEscape(r.unpaidDurationDays),
+    csvEscape(r.createdAt), csvEscape(r.managerName),
+  ].join(","));
+  downloadCsv(`vacation-requests-${new Date().toISOString().slice(0, 10)}.csv`, [header.join(","), ...rows].join("\n"));
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Date Preset Computation ─────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function computeDatePreset(preset: (typeof DATE_PRESETS)[number]["value"]): { from: string; to: string } {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  switch (preset) {
+    case "this_month":
+      return { from: `${y}-${pad(m + 1)}-01`, to: fmt(new Date(y, m + 1, 0)) };
+    case "last_30": {
+      const from = new Date(now);
+      from.setDate(from.getDate() - 30);
+      return { from: fmt(from), to: fmt(now) };
+    }
+    case "this_quarter": {
+      const qStart = Math.floor(m / 3) * 3;
+      return { from: `${y}-${pad(qStart + 1)}-01`, to: fmt(new Date(y, qStart + 3, 0)) };
+    }
+    case "this_year":
+      return { from: `${y}-01-01`, to: `${y}-12-31` };
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Sort Comparisons ────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function compareEntitlements(a: VacationEmployeeEligibilityRow, b: VacationEmployeeEligibilityRow, key: EntitlementSortKey, dir: SortDirection): number {
+  let cmp = 0;
+  switch (key) {
+    case "hrId":
+      cmp = (a.hrId ?? "").localeCompare(b.hrId ?? "");
+      break;
+    case "fullName":
+      cmp = (a.fullName ?? "").localeCompare(b.fullName ?? "");
+      break;
+    case "annualBalanceDays":
+      cmp = (a.annualBalanceDays ?? 0) - (b.annualBalanceDays ?? 0);
+      break;
+    case "daysSinceHire":
+      cmp = (a.daysSinceHire ?? 0) - (b.daysSinceHire ?? 0);
+      break;
+  }
+  return dir === "desc" ? -cmp : cmp;
+}
+
+function compareRequests(a: VacationRequestRecord, b: VacationRequestRecord, key: RequestSortKey, dir: SortDirection): number {
+  let cmp = 0;
+  switch (key) {
+    case "employeeName":
+      cmp = (a.employeeName ?? "").localeCompare(b.employeeName ?? "");
+      break;
+    case "startDate":
+      cmp = (a.startDate ?? "").localeCompare(b.startDate ?? "");
+      break;
+    case "durationDays":
+      cmp = (a.durationDays ?? 0) - (b.durationDays ?? 0);
+      break;
+    case "status":
+      cmp = (a.status ?? "").localeCompare(b.status ?? "");
+      break;
+    case "createdAt":
+      cmp = (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
+      break;
+  }
+  return dir === "desc" ? -cmp : cmp;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Sortable Table Header ───────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function SortableHeader<K extends string>({
+  active,
+  children,
+  className: cls,
+  direction,
+  sortKey,
+  onSort,
+}: {
+  active: boolean;
+  children: React.ReactNode;
+  className?: string;
+  direction: SortDirection;
+  sortKey: K;
+  onSort: (key: K) => void;
+}) {
+  return (
+    <th
+      className={cn("cursor-pointer select-none border-b border-r border-slate-100 px-3 py-2.5 transition hover:bg-slate-100", cls)}
+      onClick={() => onSort(sortKey)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {children}
+        {active ? (
+          direction === "asc" ? <ArrowUp className="h-3 w-3 text-orange-500" /> : <ArrowDown className="h-3 w-3 text-orange-500" />
+        ) : (
+          <ArrowUpDown className="h-3 w-3 text-slate-300" />
+        )}
+      </span>
+    </th>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Pagination Controls ─────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function PaginationControls({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (p: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (total <= pageSize) return null;
+
+  const from = page * pageSize + 1;
+  const to = Math.min((page + 1) * pageSize, total);
+
+  return (
+    <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5">
+      <p className="text-[11px] font-bold text-slate-500">
+        {from}–{to} of {total}
+      </p>
+      <div className="flex items-center gap-1">
+        <button
+          className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+          disabled={page === 0}
+          onClick={() => onPageChange(page - 1)}
+          type="button"
+          aria-label="Previous page"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+        <span className="px-2 text-[11px] font-bold text-slate-700">
+          {page + 1} / {totalPages}
+        </span>
+        <button
+          className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+          disabled={page >= totalPages - 1}
+          onClick={() => onPageChange(page + 1)}
+          type="button"
+          aria-label="Next page"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Select with focus trap ──────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+const selectClass =
+  "h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
+
+const labelClass = "text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500";
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Skeleton Loaders ─────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function MetricCardSkeleton() {
+  return (
+    <div className="animate-pulse rounded-sm border border-slate-200 bg-white p-4">
+      <div className="h-2.5 w-16 rounded-sm bg-slate-200" />
+      <div className="mt-3 h-7 w-12 rounded-sm bg-slate-200" />
+      <div className="mt-2 h-2 w-32 rounded-sm bg-slate-100" />
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Metric Card ──────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function MetricCard({
+  description,
+  label,
+  tone,
+  value,
+}: {
+  description: string;
+  label: string;
+  tone: "blue" | "emerald" | "orange" | "rose" | "violet";
+  value: number | string;
+}) {
+  const toneMap = {
+    blue: {
+      bg: "bg-sky-50",
+      border: "border-sky-100",
+      label: "text-sky-600",
+      value: "text-sky-900",
+    },
+    emerald: {
+      bg: "bg-emerald-50",
+      border: "border-emerald-100",
+      label: "text-emerald-600",
+      value: "text-emerald-900",
+    },
+    orange: {
+      bg: "bg-orange-50",
+      border: "border-orange-100",
+      label: "text-orange-600",
+      value: "text-orange-900",
+    },
+    rose: {
+      bg: "bg-rose-50",
+      border: "border-rose-100",
+      label: "text-rose-600",
+      value: "text-rose-900",
+    },
+    violet: {
+      bg: "bg-violet-50",
+      border: "border-violet-100",
+      label: "text-violet-600",
+      value: "text-violet-900",
+    },
+  };
+
+  const t = toneMap[tone];
+
+  return (
+    <div className={cn("rounded-sm border p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]", t.border, t.bg)}>
+      <p className={cn("text-[10px] font-bold uppercase tracking-[0.12em]", t.label)}>
+        {label}
+      </p>
+      <p className={cn("mt-1.5 text-[1.75rem] font-extrabold leading-none tracking-[-0.04em]", t.value)}>
+        {value}
+      </p>
+      <p className="mt-2 text-[11px] font-medium leading-4 text-slate-500">{description}</p>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Status Distribution Bar ──────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function StatusDistributionBar({
+  approved,
+  pending,
+  rejected,
+  total,
+}: {
+  approved: number;
+  pending: number;
+  rejected: number;
+  total: number;
+}) {
+  if (total === 0) return null;
+
+  const approvedPct = (approved / total) * 100;
+  const pendingPct = (pending / total) * 100;
+  const rejectedPct = (rejected / total) * 100;
+
+  return (
+    <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Request status distribution</p>
+        <p className="text-[11px] font-bold text-slate-400">{total} total</p>
+      </div>
+      <div className="mt-2.5 flex h-3 w-full overflow-hidden rounded-sm bg-slate-100">
+        {approvedPct > 0 ? (
+          <div
+            className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
+            style={{ width: `${approvedPct}%` }}
+            title={`Approved: ${approved}`}
+          />
+        ) : null}
+        {pendingPct > 0 ? (
+          <div
+            className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-500"
+            style={{ width: `${pendingPct}%` }}
+            title={`Pending: ${pending}`}
+          />
+        ) : null}
+        {rejectedPct > 0 ? (
+          <div
+            className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-500"
+            style={{ width: `${rejectedPct}%` }}
+            title={`Rejected: ${rejected}`}
+          />
+        ) : null}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-[0.08em]">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
+          <span className="text-emerald-700">Approved {approved}</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-sm bg-amber-500" />
+          <span className="text-amber-700">Pending {pending}</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-sm bg-rose-500" />
+          <span className="text-rose-700">Rejected {rejected}</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Balance Distribution Bar ─────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function EligibilityDistributionBar({
+  eligible,
+  firstSixMonths,
+  missingHireDate,
+  total,
+}: {
+  eligible: number;
+  firstSixMonths: number;
+  missingHireDate: number;
+  total: number;
+}) {
+  if (total === 0) return null;
+
+  const eligiblePct = (eligible / total) * 100;
+  const sixMonthPct = (firstSixMonths / total) * 100;
+  const missingPct = (missingHireDate / total) * 100;
+
+  return (
+    <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Eligibility distribution</p>
+        <p className="text-[11px] font-bold text-slate-400">{total} employees</p>
+      </div>
+      <div className="mt-2.5 flex h-3 w-full overflow-hidden rounded-sm bg-slate-100">
+        {eligiblePct > 0 ? (
+          <div
+            className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
+            style={{ width: `${eligiblePct}%` }}
+            title={`Eligible: ${eligible}`}
+          />
+        ) : null}
+        {sixMonthPct > 0 ? (
+          <div
+            className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-500"
+            style={{ width: `${sixMonthPct}%` }}
+            title={`First 6 months: ${firstSixMonths}`}
+          />
+        ) : null}
+        {missingPct > 0 ? (
+          <div
+            className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-500"
+            style={{ width: `${missingPct}%` }}
+            title={`Missing hire date: ${missingHireDate}`}
+          />
+        ) : null}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-[0.08em]">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
+          <span className="text-emerald-700">Eligible {eligible}</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-sm bg-amber-500" />
+          <span className="text-amber-700">First 6 months {firstSixMonths}</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-sm bg-rose-500" />
+          <span className="text-rose-700">Missing data {missingHireDate}</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Paid vs Unpaid Days Bar ──────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function PaidUnpaidBar({
+  paidDays,
+  unpaidDays,
+}: {
+  paidDays: number;
+  unpaidDays: number;
+}) {
+  const total = paidDays + unpaidDays;
+  if (total === 0) return null;
+
+  const paidPct = (paidDays / total) * 100;
+
+  return (
+    <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Paid vs Unpaid days</p>
+        <p className="text-[11px] font-bold text-slate-400">{formatDays(total)} total</p>
+      </div>
+      <div className="mt-2.5 flex h-3 w-full overflow-hidden rounded-sm bg-slate-100">
+        <div
+          className="h-full bg-gradient-to-r from-emerald-600 to-emerald-300 transition-all duration-500"
+          style={{ width: `${paidPct}%` }}
+          title={`Paid: ${formatDays(paidDays)}`}
+        />
+        <div
+          className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-500"
+          style={{ width: `${100 - paidPct}%` }}
+          title={`Unpaid: ${formatDays(unpaidDays)}`}
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-[0.08em]">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
+          <span className="text-emerald-700">Paid {formatDays(paidDays)} days</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-sm bg-amber-500" />
+          <span className="text-amber-700">Unpaid {formatDays(unpaidDays)} days</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Collapsible Filter Panel ─────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function FilterPanel({
+  children,
+  filterCount,
+  onApply,
+}: {
+  children: React.ReactNode;
+  filterCount: number;
+  onApply: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Focus trap when open
+  useEffect(() => {
+    if (!open) return;
+    const container = panelRef.current;
+    if (!container) return;
+
+    const focusableSelector =
+      'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOpen(false);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusable = container!.querySelectorAll<HTMLElement>(focusableSelector);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
+  return (
+    <div ref={panelRef} className="rounded-sm border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+      <button
+        className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-slate-50"
+        onClick={() => setOpen((c) => !c)}
+        type="button"
+        aria-expanded={open}
+      >
+        <div className="flex items-center gap-2">
+          <Filter className="h-3.5 w-3.5 text-slate-400" />
+          <span className="text-[13px] font-bold text-slate-800">Filters</span>
+          {filterCount > 0 ? (
+            <Badge className="border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">
+              {filterCount} active
+            </Badge>
+          ) : null}
+        </div>
+        <ChevronDown className={cn("h-3.5 w-3.5 text-slate-400 transition-transform duration-200", open ? "rotate-180" : "")} />
+      </button>
+      {open ? (
+        <div className="border-t border-slate-100 px-4 py-3">
+          <div className="grid gap-3 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+            {children}
+          </div>
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <Button
+              className="h-9 gap-2 rounded-sm bg-orange-500 px-4 text-[12px] font-bold text-white hover:bg-orange-600"
+              onClick={() => {
+                onApply();
+                setOpen(false);
+              }}
+              type="button"
+            >
+              <Filter className="h-3 w-3" />
+              Apply Filters
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Entitlements Mobile Card ─────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function EntitlementCard({ row }: { row: VacationEmployeeEligibilityRow }) {
+  const usedPct = row.annualEntitlementDays > 0
+    ? Math.min((row.annualUsedDays / row.annualEntitlementDays) * 100, 100)
+    : 0;
+  const remainPct = 100 - usedPct;
+  const barColor =
+    remainPct >= 60
+      ? "from-emerald-600 to-emerald-300"
+      : remainPct >= 30
+        ? "from-amber-500 to-amber-300"
+        : "from-rose-600 to-rose-300";
+
+  return (
+    <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-bold text-slate-900">{row.fullName}</p>
+          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+            {row.hrId} {[row.departmentName, row.lineName].filter(Boolean).join(" / ") ? ` · ${[row.departmentName, row.lineName].filter(Boolean).join(" / ")}` : ""}
+          </p>
+        </div>
+        <Badge variant={eligibilityBadgeVariant(row.eligibilityStatus)}>
+          {eligibilityStatusLabel(row.eligibilityStatus)}
+        </Badge>
+      </div>
+
+      <div className="mt-2.5 grid grid-cols-3 gap-2">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Hire date</p>
+          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{formatDate(row.hireDate)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Since hire</p>
+          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{row.daysSinceHire ?? "-"} days</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">6-mo date</p>
+          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{formatDate(row.sixMonthAnniversary)}</p>
+        </div>
+      </div>
+
+      {/* Balance bar */}
+      <div className="mt-2.5">
+        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+          <span>Used {formatDays(row.annualUsedDays)}</span>
+          <span>of {formatDays(row.annualEntitlementDays)}</span>
+        </div>
+        <div className="mt-1 h-2 w-full overflow-hidden rounded-sm bg-slate-100">
+          <div
+            className={cn("h-full bg-gradient-to-r transition-all duration-500", barColor)}
+            style={{ width: `${usedPct}%` }}
+          />
+        </div>
+        <p className="mt-1 text-[12px] font-extrabold text-slate-900">{formatDays(row.annualBalanceDays)} days remaining</p>
+      </div>
+
+      {row.eligibilityStatus === "first_six_months" && (row.daysUntilEligibility ?? 0) > 0 ? (
+        <p className="mt-1.5 text-[11px] font-bold text-amber-700">{row.daysUntilEligibility} days until eligible</p>
+      ) : null}
+
+      {row.managerName ? (
+        <p className="mt-1.5 text-[11px] font-medium text-slate-500">Manager: {row.managerName}</p>
+      ) : null}
+
+      {row.reviewFlags.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {row.reviewFlags.map((flag) => (
+            <Badge key={flag} variant="warning">{flag}</Badge>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Request Mobile Card ──────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function RequestCard({
+  actingId,
+  canAdminManage,
+  onDecide,
+  onDelete,
+  onEdit,
+  row,
+}: {
+  actingId: string | null;
+  canAdminManage: boolean;
+  onDecide: (id: string, decision: "approve" | "reject") => void;
+  onDelete: (row: VacationRequestRecord) => void;
+  onEdit: (row: VacationRequestRecord) => void;
+  row: VacationRequestRecord;
+}) {
+  return (
+    <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-bold text-slate-900">{row.employeeName}</p>
+          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+            {row.employeeHrId} · {vacationRequestDisplayId(row.id)}
+          </p>
+          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+            {[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Badge variant={statusBadgeVariant(row.status)}>{statusLabel(row.status)}</Badge>
+          <Badge variant={paymentBadgeVariant(row.paymentStatus)}>{paymentStatusLabel(row.paymentStatus)}</Badge>
+        </div>
+      </div>
+
+      <div className="mt-2.5 grid grid-cols-2 gap-2">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Type</p>
+          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{vacationTypeLabel(row.vacationType)}</p>
+          <p className="text-[11px] font-medium text-slate-500">{vacationDayPartLabel(row.dayPart)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Duration</p>
+          <p className="mt-0.5 text-[12px] font-extrabold text-slate-900">{formatDays(row.durationDays)} days</p>
+        </div>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">From</p>
+          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{formatDate(row.startDate)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">To</p>
+          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{formatDate(row.endDate)}</p>
+        </div>
+      </div>
+
+      {row.paymentStatus === "partial" ? (
+        <p className="mt-1.5 text-[11px] font-bold text-amber-700">
+          {formatDays(row.paidDurationDays)} paid / {formatDays(row.unpaidDurationDays)} unpaid
+        </p>
+      ) : null}
+      {row.unpaidReason ? <p className="mt-1 text-[11px] font-bold text-amber-700">{vacationUnpaidReasonLabel(row.unpaidReason)}</p> : null}
+
+      {row.vacationType === "compensatory" ? (
+        <div className="mt-2 rounded-sm border border-orange-100 bg-orange-50/70 px-2.5 py-2 text-[11px] font-semibold leading-4 text-orange-900">
+          <p>{row.compensatoryEventName ?? "Compensatory event"}</p>
+          <p className="text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
+        </div>
+      ) : null}
+      {row.vacationType === "other" && row.notes ? (
+        <p className="mt-2 rounded-sm border border-amber-100 bg-amber-50/70 px-2.5 py-2 text-[11px] font-semibold leading-4 text-amber-900">
+          {row.notes}
+        </p>
+      ) : null}
+
+      <div className="mt-2 flex items-center justify-between text-[11px] font-medium text-slate-500">
+        <span>Submitted {formatDateTime(row.createdAt)}</span>
+        {row.managerName ? <span>Mgr: {row.managerName}</span> : null}
+      </div>
+
+      {/* Decision info or action buttons */}
+      {row.canDecide ? (
+        <div className="mt-2.5 flex gap-2">
+          <Button
+            className="h-8 flex-1 gap-1.5 rounded-sm bg-emerald-600 text-[11px] font-bold hover:bg-emerald-700"
+            disabled={actingId === row.id}
+            onClick={() => onDecide(row.id, "approve")}
+            type="button"
+          >
+            <CheckCircle2 className="h-3 w-3" />
+            {row.status === "pending_hr" ? "Final Approve" : "Approve"}
+          </Button>
+          <Button
+            className="h-8 flex-1 gap-1.5 rounded-sm bg-rose-600 text-[11px] font-bold text-white hover:bg-rose-700"
+            disabled={actingId === row.id}
+            onClick={() => onDecide(row.id, "reject")}
+            type="button"
+          >
+            <XCircle className="h-3 w-3" />
+            {row.status === "pending_hr" ? "Final Reject" : "Reject"}
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-2 text-[11px] text-slate-500">
+          {row.hrDecisionAt ? <p>HR: {formatDateTime(row.hrDecisionAt)}</p> : null}
+          {row.managerDecisionAt ? <p>Manager: {formatDateTime(row.managerDecisionAt)}</p> : null}
+          {row.managerDecisionComment ? <p className="text-slate-600">{row.managerDecisionComment}</p> : null}
+          {row.hrDecisionComment ? <p className="text-slate-600">{row.hrDecisionComment}</p> : null}
+        </div>
+      )}
+
+      {canAdminManage ? (
+        <div className="mt-2 flex gap-2 border-t border-slate-100 pt-2">
+          <button
+            className="flex items-center gap-1 text-[11px] font-bold text-slate-500 transition hover:text-slate-700"
+            disabled={actingId === row.id}
+            onClick={() => onEdit(row)}
+            type="button"
+          >
+            <Pencil className="h-3 w-3" /> Edit
+          </button>
+          <button
+            className="flex items-center gap-1 text-[11px] font-bold text-rose-500 transition hover:text-rose-700"
+            disabled={actingId === row.id}
+            onClick={() => onDelete(row)}
+            type="button"
+          >
+            <Trash2 className="h-3 w-3" /> Delete
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Exported Component (Error Boundary Wrapper) ──────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+export function VacationReport(props: VacationReportProps) {
+  return (
+    <WorkspaceErrorBoundary fallbackTitle="Vacation report failed to load">
+      <VacationReportInner {...props} />
+    </WorkspaceErrorBoundary>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Main Report ──────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function VacationReportInner({ initialData, initialError, showHero = true }: VacationReportProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeTab: VacationReportTab = searchParams.get("tab") === "requests" ? "requests" : "entitlements";
@@ -179,8 +1007,18 @@ export function VacationReport({ initialData, initialError, showHero = true }: V
   const [adminMode, setAdminMode] = useState<"add" | "edit" | null>(null);
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
 
-  const rows = initialData?.rows ?? [];
-  const employeeEligibility = initialData?.employeeEligibility ?? [];
+  /* ── Pagination state ────────────────────────────── */
+  const [entitlementPage, setEntitlementPage] = useState(0);
+  const [requestPage, setRequestPage] = useState(0);
+
+  /* ── Sort state ──────────────────────────────────── */
+  const [entitlementSort, setEntitlementSort] = useState<EntitlementSortKey>("hrId");
+  const [entitlementSortDir, setEntitlementSortDir] = useState<SortDirection>("asc");
+  const [requestSort, setRequestSort] = useState<RequestSortKey>("createdAt");
+  const [requestSortDir, setRequestSortDir] = useState<SortDirection>("desc");
+
+  const rows = useMemo(() => initialData?.rows ?? [], [initialData?.rows]);
+  const employeeEligibility = useMemo(() => initialData?.employeeEligibility ?? [], [initialData?.employeeEligibility]);
   const employeeEligibilitySummary = initialData?.employeeEligibilitySummary;
   const options = initialData?.options;
   const summary = initialData?.summary;
@@ -192,12 +1030,77 @@ export function VacationReport({ initialData, initialError, showHero = true }: V
     ? VACATION_TYPES
     : addVacationTypeOptions;
 
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.search) count++;
+    if (filters.requestId) count++;
+    if (filters.status && filters.status !== "all") count++;
+    if (filters.paymentStatus && filters.paymentStatus !== "all") count++;
+    if (filters.vacationType && filters.vacationType !== "all") count++;
+    if (filters.employee) count++;
+    if (filters.manager) count++;
+    if (filters.department) count++;
+    if (filters.line) count++;
+    if (filters.dateFrom) count++;
+    if (filters.dateTo) count++;
+    return count;
+  }, [filters]);
+
   function updateFilter(key: keyof typeof filters, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));
   }
 
   function updateAdminForm(key: keyof AdminVacationFormState, value: string) {
     setAdminForm((current) => ({ ...current, [key]: value }));
+  }
+
+  /* ── Sorted + paginated entitlements ────────────── */
+  const sortedEntitlements = useMemo(() => {
+    const sorted = [...employeeEligibility].sort((a, b) => compareEntitlements(a, b, entitlementSort, entitlementSortDir));
+    return sorted;
+  }, [employeeEligibility, entitlementSort, entitlementSortDir]);
+
+  const paginatedEntitlements = useMemo(() => {
+    const start = entitlementPage * PAGE_SIZE;
+    return sortedEntitlements.slice(start, start + PAGE_SIZE);
+  }, [sortedEntitlements, entitlementPage]);
+
+  /* ── Sorted + paginated requests ─────────────────── */
+  const sortedRequests = useMemo(() => {
+    const sorted = [...rows].sort((a, b) => compareRequests(a, b, requestSort, requestSortDir));
+    return sorted;
+  }, [rows, requestSort, requestSortDir]);
+
+  const paginatedRequests = useMemo(() => {
+    const start = requestPage * PAGE_SIZE;
+    return sortedRequests.slice(start, start + PAGE_SIZE);
+  }, [sortedRequests, requestPage]);
+
+  /* ── Sort toggle handlers ────────────────────────── */
+  function toggleEntitlementSort(key: EntitlementSortKey) {
+    if (entitlementSort === key) {
+      setEntitlementSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setEntitlementSort(key);
+      setEntitlementSortDir("asc");
+    }
+    setEntitlementPage(0);
+  }
+
+  function toggleRequestSort(key: RequestSortKey) {
+    if (requestSort === key) {
+      setRequestSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setRequestSort(key);
+      setRequestSortDir("asc");
+    }
+    setRequestPage(0);
+  }
+
+  /* ── Date preset handler ─────────────────────────── */
+  function applyDatePreset(preset: (typeof DATE_PRESETS)[number]["value"]) {
+    const { from, to } = computeDatePreset(preset);
+    setFilters((current) => ({ ...current, dateFrom: from, dateTo: to }));
   }
 
   function buildReportUrl(tab: VacationReportTab, source: URLSearchParams) {
@@ -283,7 +1186,7 @@ export function VacationReport({ initialData, initialError, showHero = true }: V
     router.push(buildReportUrl(activeTab, params));
   }
 
-  async function decide(requestId: string, decision: "approve" | "reject") {
+  const decide = useCallback(async (requestId: string, decision: "approve" | "reject") => {
     const decisionComment = decision === "reject"
       ? window.prompt("Rejection reason") ?? null
       : null;
@@ -307,108 +1210,144 @@ export function VacationReport({ initialData, initialError, showHero = true }: V
     } finally {
       setActingId(null);
     }
-  }
+  }, [router]);
+
+  /* ═══════════════════════════════════════════════════════════════ */
+  /* ─── Tab Items ─────────────────────────────────────────────────── */
+  /* ═══════════════════════════════════════════════════════════════ */
+
+  const tabItems = [
+    {
+      count: employeeEligibility.length,
+      label: "Leave Entitlements",
+      value: "entitlements" as const,
+    },
+    {
+      count: rows.length,
+      label: "Master Requests",
+      value: "requests" as const,
+    },
+  ];
+
+  /* ═══════════════════════════════════════════════════════════════ */
+  /* ─── Render ───────────────────────────────────────────────────── */
+  /* ═══════════════════════════════════════════════════════════════ */
 
   return (
-    <PageContainer className="max-w-none">
-      {showHero ? (
-        <AdminPageHero
-          description="Employee leave entitlements and request tracking in one admin workspace."
-          eyebrow="Leave Management"
-          icon={<Table2 className="h-3.5 w-3.5" />}
-          title="Vacation Report"
-        />
-      ) : null}
+    <PageContainer className="vacation-report-premium">
+      {/* Print-friendly stylesheet */}
+      <style>{`
+        @media print {
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .vacation-report-premium { padding: 0; }
+          .vacation-report-premium [role="tablist"],
+          .vacation-report-premium button[aria-expanded],
+          .vacation-report-premium .print\\:hidden { display: none !important; }
+          .vacation-report-premium table { font-size: 10px; }
+          .vacation-report-premium td, .vacation-report-premium th { padding: 4px 6px; }
+          nav, header, footer, aside { display: none !important; }
+        }
+      `}</style>
+      <div className="space-y-3" dir="auto">
+        {showHero ? (
+          <AdminPageHero
+            description="Employee leave entitlements and request tracking in one admin workspace."
+            eyebrow="Leave Management"
+            icon={<Table2 className="h-3.5 w-3.5" />}
+            title="Vacation Report"
+          />
+        ) : null}
 
-      {initialError ? (
-        <AdminCallout tone="danger">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{initialError}</span>
-        </AdminCallout>
-      ) : null}
-      {actionError ? (
-        <AdminCallout tone="danger">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{actionError}</span>
-        </AdminCallout>
-      ) : null}
-      {adminError ? (
-        <AdminCallout tone="danger">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{adminError}</span>
-        </AdminCallout>
-      ) : null}
+        {/* ── Error Banners ──────────────────────────────────────── */}
+        {initialError ? (
+          <AdminCallout tone="danger">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{initialError}</span>
+          </AdminCallout>
+        ) : null}
+        {actionError ? (
+          <AdminCallout tone="danger">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{actionError}</span>
+          </AdminCallout>
+        ) : null}
+        {adminError ? (
+          <AdminCallout tone="danger">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{adminError}</span>
+          </AdminCallout>
+        ) : null}
 
-      <Card className={cn(adminPanelClassName, "p-2")}>
-        <div className="grid gap-2 md:grid-cols-2">
-          <button className={cn("rounded-2xl border px-5 py-4 text-left transition-all duration-200", tabCardClassName(showEntitlementsTab, "emerald"))} onClick={() => switchTab("entitlements")} type="button">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">Tab 1</p>
-            <h2 className="mt-2 text-xl font-black text-slate-950">Employee Leave Entitlements</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-600">
-              All active employees, 6-month eligibility, and annual balance position.
-            </p>
-          </button>
-
-          <button className={cn("rounded-2xl border px-5 py-4 text-left transition-all duration-200", tabCardClassName(showRequestsTab, "orange"))} onClick={() => switchTab("requests")} type="button">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-700">Tab 2</p>
-            <h2 className="mt-2 text-xl font-black text-slate-950">Employee Master Requests</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-600">
-              Full leave request ledger with approvals, payment status, and admin actions.
-            </p>
-          </button>
+        {/* ── Tab Bar ────────────────────────────────────────────── */}
+        <div
+          className="flex w-full gap-0.5 overflow-x-auto rounded-sm border border-slate-200 bg-slate-50 p-0.5"
+          role="tablist"
+          aria-label="Vacation report tabs"
+        >
+          {tabItems.map((tab) => {
+            const active = activeTab === tab.value;
+            return (
+              <button
+                aria-selected={active}
+                className={cn(
+                  "flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-sm px-3 text-[13px] font-bold transition",
+                  active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700",
+                )}
+                key={tab.value}
+                role="tab"
+                type="button"
+                onClick={() => switchTab(tab.value)}
+              >
+                {tab.label}
+                <span className={cn(
+                  "inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 text-[10px] font-bold",
+                  active ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-600",
+                )}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
-      </Card>
 
-      <Card className={cn(adminPanelClassName, "p-5")}>
-        <div className="mb-4">
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
-            {showEntitlementsTab ? "Entitlements filters" : "Request filters"}
-          </p>
-          <h2 className="mt-2 text-xl font-black text-slate-950">
-            {showEntitlementsTab ? "Employee leave entitlements" : "Employee master requests"}
-          </h2>
-          <p className="mt-1 text-sm text-slate-600">
-            {showEntitlementsTab
-              ? "Review active employees by person, manager, department, line, and current eligibility status."
-              : "Review all leave requests with approval flow, dates, payment status, and request history."}
-          </p>
-        </div>
-
-        <div className={cn("grid gap-3 md:grid-cols-2", showRequestsTab ? "xl:grid-cols-4" : "xl:grid-cols-5")}>
-          <label className="space-y-2 xl:col-span-2">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Search</span>
+        {/* ── Filters ────────────────────────────────────────────── */}
+        <FilterPanel filterCount={activeFilterCount} onApply={applyFilters}>
+          <label className="space-y-1.5 xs:col-span-2">
+            <span className={labelClass}>Search</span>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input className="pl-9" value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <Input
+                className="rounded-sm pl-9"
+                placeholder="Name, HR ID, department..."
+                value={filters.search}
+                onChange={(event) => updateFilter("search", event.target.value)}
+              />
             </div>
           </label>
 
           {showRequestsTab ? (
             <>
-              <label className="space-y-2">
-                <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Request ID</span>
-                <Input value={filters.requestId} onChange={(event) => updateFilter("requestId", event.target.value)} />
+              <label className="space-y-1.5">
+                <span className={labelClass}>Request ID</span>
+                <Input className="rounded-sm" placeholder="VAC-XXXX" value={filters.requestId} onChange={(event) => updateFilter("requestId", event.target.value)} />
               </label>
-
-              <label className="space-y-2">
-                <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Status</span>
-                <select className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold" value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
+              <label className="space-y-1.5">
+                <span className={labelClass}>Status</span>
+                <select className={selectClass} value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
                   <option value="all">All statuses</option>
                   {VACATION_STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </label>
-
-              <label className="space-y-2">
-                <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Payment</span>
-                <select className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold" value={filters.paymentStatus} onChange={(event) => updateFilter("paymentStatus", event.target.value)}>
+              <label className="space-y-1.5">
+                <span className={labelClass}>Payment</span>
+                <select className={selectClass} value={filters.paymentStatus} onChange={(event) => updateFilter("paymentStatus", event.target.value)}>
                   <option value="all">All payment</option>
                   {VACATION_PAYMENT_STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </label>
-
-              <label className="space-y-2">
-                <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Type</span>
-                <select className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold" value={filters.vacationType} onChange={(event) => updateFilter("vacationType", event.target.value)}>
+              <label className="space-y-1.5">
+                <span className={labelClass}>Type</span>
+                <select className={selectClass} value={filters.vacationType} onChange={(event) => updateFilter("vacationType", event.target.value)}>
                   <option value="all">All types</option>
                   {VACATION_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
@@ -416,33 +1355,30 @@ export function VacationReport({ initialData, initialError, showHero = true }: V
             </>
           ) : null}
 
-          <label className="space-y-2">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Employee</span>
-            <select className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold" value={filters.employee} onChange={(event) => updateFilter("employee", event.target.value)}>
+          <label className="space-y-1.5">
+            <span className={labelClass}>Employee</span>
+            <select className={selectClass} value={filters.employee} onChange={(event) => updateFilter("employee", event.target.value)}>
               <option value="">All employees</option>
               {(options?.employees ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-
-          <label className="space-y-2">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Manager</span>
-            <select className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold" value={filters.manager} onChange={(event) => updateFilter("manager", event.target.value)}>
+          <label className="space-y-1.5">
+            <span className={labelClass}>Manager</span>
+            <select className={selectClass} value={filters.manager} onChange={(event) => updateFilter("manager", event.target.value)}>
               <option value="">All managers</option>
               {(options?.managers ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-
-          <label className="space-y-2">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Department</span>
-            <select className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold" value={filters.department} onChange={(event) => updateFilter("department", event.target.value)}>
+          <label className="space-y-1.5">
+            <span className={labelClass}>Department</span>
+            <select className={selectClass} value={filters.department} onChange={(event) => updateFilter("department", event.target.value)}>
               <option value="">All departments</option>
               {(options?.departments ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
           </label>
-
-          <label className="space-y-2">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Line</span>
-            <select className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold" value={filters.line} onChange={(event) => updateFilter("line", event.target.value)}>
+          <label className="space-y-1.5">
+            <span className={labelClass}>Line</span>
+            <select className={selectClass} value={filters.line} onChange={(event) => updateFilter("line", event.target.value)}>
               <option value="">All lines</option>
               {(options?.lines ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
@@ -450,325 +1386,545 @@ export function VacationReport({ initialData, initialError, showHero = true }: V
 
           {showRequestsTab ? (
             <>
-              <label className="space-y-2">
-                <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">From</span>
-                <Input type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} />
+              <label className="space-y-1.5">
+                <span className={labelClass}>From</span>
+                <Input className="rounded-sm" type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} />
               </label>
-
-              <label className="space-y-2">
-                <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">To</span>
-                <Input type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} />
+              <label className="space-y-1.5">
+                <span className={labelClass}>To</span>
+                <Input className="rounded-sm" type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} />
               </label>
+              {/* Date presets */}
+              <div className="space-y-1.5 xs:col-span-2 md:col-span-3 xl:col-span-4">
+                <span className={labelClass}>Quick date range</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {DATE_PRESETS.map((preset) => (
+                    <button
+                      className="rounded-sm border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                      key={preset.value}
+                      onClick={() => applyDatePreset(preset.value)}
+                      type="button"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </>
           ) : null}
+        </FilterPanel>
 
-          <div className="flex items-end">
-            <Button className="h-10 w-full gap-2 rounded-xl bg-slate-950 font-black text-white hover:bg-slate-800" onClick={applyFilters}>
-              <Filter className="h-4 w-4" />
-              Apply
-            </Button>
-          </div>
-        </div>
-      </Card>
+        {/* ══════════════════════════════════════════════════════════ */}
+        {/* ── ENTITLEMENTS TAB ──────────────────────────────────── */}
+        {/* ══════════════════════════════════════════════════════════ */}
 
-      {showEntitlementsTab ? (
-          <>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-              <AdminStatCard description="Active employees included in your visible review scope." icon={<Table2 className="h-5 w-5" />} label="Active employees" value={employeeEligibilitySummary?.activeEmployees ?? 0} tone="blue" variant="full" />
-              <AdminStatCard description="Completed 6 months and can use paid annual leave rules." icon={<CheckCircle2 className="h-5 w-5" />} label="Eligible now" value={employeeEligibilitySummary?.eligibleNow ?? 0} tone="emerald" variant="full" />
-              <AdminStatCard description="Still inside the first 6 months of service." icon={<Filter className="h-5 w-5" />} label="First 6 months" value={employeeEligibilitySummary?.inFirstSixMonths ?? 0} tone="orange" variant="full" />
-              <AdminStatCard description="Employees needing HR data correction before leave eligibility can be confirmed." icon={<AlertCircle className="h-5 w-5" />} label="Missing hire date" value={employeeEligibilitySummary?.missingHireDate ?? 0} tone="rose" variant="full" />
-              <AdminStatCard description="Eligible employees with no paid annual balance left right now." icon={<XCircle className="h-5 w-5" />} label="Zero balance" value={employeeEligibilitySummary?.zeroBalance ?? 0} tone="violet" variant="full" />
-            </div>
+        {showEntitlementsTab ? (
+          <div className="space-y-3">
+            {/* Metric cards */}
+            {!initialData ? (
+              <div className="grid gap-2 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+                {[0, 1, 2, 3, 4].map((i) => <MetricCardSkeleton key={i} />)}
+              </div>
+            ) : (
+              <div className="grid gap-2 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+                <MetricCard
+                  description="Active employees in your visible review scope."
+                  label="Active employees"
+                  tone="blue"
+                  value={employeeEligibilitySummary?.activeEmployees ?? 0}
+                />
+                <MetricCard
+                  description="Completed 6 months, can use paid annual leave."
+                  label="Eligible now"
+                  tone="emerald"
+                  value={employeeEligibilitySummary?.eligibleNow ?? 0}
+                />
+                <MetricCard
+                  description="Still inside the first 6 months of service."
+                  label="First 6 months"
+                  tone="orange"
+                  value={employeeEligibilitySummary?.inFirstSixMonths ?? 0}
+                />
+                <MetricCard
+                  description="Need HR data correction before eligibility."
+                  label="Missing hire date"
+                  tone="rose"
+                  value={employeeEligibilitySummary?.missingHireDate ?? 0}
+                />
+                <MetricCard
+                  description="Eligible employees with no paid balance left."
+                  label="Zero balance"
+                  tone="violet"
+                  value={employeeEligibilitySummary?.zeroBalance ?? 0}
+                />
+              </div>
+            )}
 
-            <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
-              <div className="border-b border-slate-200 px-5 py-4">
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">
-                  {canAdminManage ? "Master review" : "Visible scope review"}
-                </p>
-                <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+            {/* Eligibility distribution bar */}
+            {employeeEligibilitySummary ? (
+              <EligibilityDistributionBar
+                eligible={employeeEligibilitySummary.eligibleNow}
+                firstSixMonths={employeeEligibilitySummary.inFirstSixMonths}
+                missingHireDate={employeeEligibilitySummary.missingHireDate}
+                total={employeeEligibilitySummary.activeEmployees}
+              />
+            ) : null}
+
+            {/* Table header */}
+            <div className="rounded-sm border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+              <div className="border-b border-slate-100 px-4 py-3">
+                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h2 className="text-xl font-black text-slate-950">Employee leave entitlements</h2>
-                    <p className="mt-1 text-sm font-medium text-slate-600">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-emerald-600">
+                      {canAdminManage ? "Master review" : "Visible scope review"}
+                    </p>
+                    <h3 className="mt-1 text-base font-extrabold text-slate-900">Employee leave entitlements</h3>
+                    <p className="mt-0.5 text-[12px] font-medium leading-5 text-slate-500">
                       Tracks visible employees against the 6-month rule and current annual leave balance.
                     </p>
                   </div>
-                  <p className="max-w-xl text-right text-xs font-semibold leading-5 text-slate-500">
-                    This tab follows your role scope plus employee, manager, department, line, and search filters.
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <Badge className="w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">
+                      {employeeEligibility.length} records
+                    </Badge>
+                    <button
+                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
+                      onClick={() => exportEntitlementsCSV(sortedEntitlements)}
+                      title="Export to CSV"
+                      type="button"
+                    >
+                      <Download className="h-3 w-3" /> CSV
+                    </button>
+                    <button
+                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
+                      onClick={() => window.print()}
+                      title="Print report"
+                      type="button"
+                    >
+                      <Printer className="h-3 w-3" /> Print
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-[1500px] w-full border-collapse bg-white text-left text-sm">
-                  <thead>
+              {/* Desktop table (xs+) */}
+              <div className="hidden xs:block overflow-x-auto">
+                <table className="w-full border-collapse text-left text-[12px]">
+                  <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
-                      <th className={reportHeaderCellClass}>HR ID</th>
-                      <th className={reportHeaderCellClass}>Employee</th>
-                      <th className={reportHeaderCellClass}>Hire Date</th>
-                      <th className={reportHeaderCellClass}>Days Since Hire</th>
-                      <th className={reportHeaderCellClass}>6-Month Date</th>
-                      <th className={reportHeaderCellClass}>Eligibility</th>
-                      <th className={reportHeaderCellClass}>Annual Balance</th>
-                      <th className={reportHeaderCellClass}>Manager</th>
-                      <th className={reportHeaderCellClass}>Review</th>
+                      <SortableHeader active={entitlementSort === "hrId"} direction={entitlementSortDir} sortKey="hrId" onSort={toggleEntitlementSort}>HR ID</SortableHeader>
+                      <SortableHeader active={entitlementSort === "fullName"} direction={entitlementSortDir} sortKey="fullName" onSort={toggleEntitlementSort}>Employee</SortableHeader>
+                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Hire Date</th>
+                      <SortableHeader active={entitlementSort === "daysSinceHire"} direction={entitlementSortDir} sortKey="daysSinceHire" onSort={toggleEntitlementSort}>Since Hire</SortableHeader>
+                      <th className="border-b border-r border-slate-100 px-3 py-2.5">6-Mo Date</th>
+                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Eligibility</th>
+                      <SortableHeader active={entitlementSort === "annualBalanceDays"} direction={entitlementSortDir} sortKey="annualBalanceDays" onSort={toggleEntitlementSort}>Balance</SortableHeader>
+                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Manager</th>
+                      <th className="border-b border-slate-100 px-3 py-2.5">Review</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {employeeEligibility.map((row) => (
-                      <tr key={row.hrId} className="bg-white transition even:bg-slate-50/60 hover:bg-emerald-50/40">
-                        <td className={cn(reportCellClass, "whitespace-nowrap font-mono font-black text-slate-900")}>{row.hrId}</td>
-                        <td className={cn(reportCellClass, "min-w-[240px]")}>
-                          <p className="font-black text-slate-950">{row.fullName}</p>
-                          <p className="mt-1 text-xs font-semibold text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
-                          <p className="mt-1 text-xs text-slate-500">{row.employmentStatus ?? "-"}</p>
+                  <tbody className="divide-y divide-slate-100">
+                    {paginatedEntitlements.map((row) => (
+                      <tr key={row.hrId} className="bg-white transition hover:bg-emerald-50/30">
+                        <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-[12px] font-bold text-slate-900">{row.hrId}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5">
+                          <p className="font-bold text-slate-900">{row.fullName}</p>
+                          <p className="mt-0.5 text-[11px] font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
+                          <p className="text-[11px] text-slate-400">{row.employmentStatus ?? "-"}</p>
                         </td>
-                        <td className={cn(reportCellClass, "whitespace-nowrap font-semibold text-slate-900")}>{formatDate(row.hireDate)}</td>
-                        <td className={cn(reportCellClass, "whitespace-nowrap text-center font-black text-slate-900")}>{row.daysSinceHire ?? "-"}</td>
-                        <td className={cn(reportCellClass, "whitespace-nowrap font-semibold text-slate-900")}>{formatDate(row.sixMonthAnniversary)}</td>
-                        <td className={reportCellClass}>
+                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.hireDate)}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-800">{row.daysSinceHire ?? "-"}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.sixMonthAnniversary)}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5">
                           <Badge variant={eligibilityBadgeVariant(row.eligibilityStatus)}>
                             {eligibilityStatusLabel(row.eligibilityStatus)}
                           </Badge>
                           {row.eligibilityStatus === "first_six_months" && (row.daysUntilEligibility ?? 0) > 0 ? (
-                            <p className="mt-2 text-xs font-semibold text-amber-700">{row.daysUntilEligibility} days remaining</p>
+                            <p className="mt-1 text-[11px] font-bold text-amber-700">{row.daysUntilEligibility} days left</p>
                           ) : null}
                         </td>
-                        <td className={cn(reportCellClass, "min-w-[200px]")}>
-                          <p className="font-black text-slate-950">{formatDays(row.annualBalanceDays)} days left</p>
-                          <p className="mt-1 text-xs font-semibold text-slate-500">
-                            Opened {formatDays(row.annualEntitlementDays)} / Used {formatDays(row.annualUsedDays)}
+                        <td className="border-r border-slate-100 px-3 py-2.5">
+                          <p className="font-bold text-slate-900">{formatDays(row.annualBalanceDays)} left</p>
+                          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                            {formatDays(row.annualEntitlementDays)} total / {formatDays(row.annualUsedDays)} used
                           </p>
                         </td>
-                        <td className={cn(reportCellClass, "min-w-[180px]")}>
-                          <p className="font-semibold text-slate-800">{row.managerName ?? "-"}</p>
-                          <p className="text-xs text-slate-500">{row.managerHrId ?? ""}</p>
+                        <td className="border-r border-slate-100 px-3 py-2.5">
+                          <p className="font-semibold text-slate-700">{row.managerName ?? "-"}</p>
+                          <p className="text-[11px] text-slate-400">{row.managerHrId ?? ""}</p>
                         </td>
-                        <td className={cn(reportCellClass, "min-w-[260px]")}>
+                        <td className="px-3 py-2.5">
                           {row.reviewFlags.length > 0 ? (
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-1">
                               {row.reviewFlags.map((flag) => (
                                 <Badge key={flag} variant="warning">{flag}</Badge>
                               ))}
                             </div>
                           ) : (
-                            <span className="text-sm font-semibold text-emerald-700">No immediate issue</span>
+                            <span className="text-[11px] font-bold text-emerald-600">No issue</span>
                           )}
                         </td>
                       </tr>
                     ))}
-                    {employeeEligibility.length === 0 ? (
+                    {paginatedEntitlements.length === 0 ? (
                       <tr>
-                        <td className="border border-slate-200 px-4 py-10 text-center text-sm font-semibold text-slate-500" colSpan={9}>
+                        <td className="border-b border-slate-100 px-4 py-8 text-center text-[13px] font-medium text-slate-500" colSpan={9}>
                           No active employees matched the current filters.
                         </td>
                       </tr>
                     ) : null}
                   </tbody>
                 </table>
+                <PaginationControls page={entitlementPage} pageSize={PAGE_SIZE} total={sortedEntitlements.length} onPageChange={setEntitlementPage} />
               </div>
-            </Card>
-          </>
-      ) : null}
 
-      {showRequestsTab ? (
-        <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <AdminStatCard description="Visible requests after filters." icon={<Table2 className="h-5 w-5" />} label="Total" value={summary?.total ?? 0} tone="blue" />
-            <AdminStatCard description="Awaiting manager or HR human decision." icon={<Filter className="h-5 w-5" />} label="Pending" value={summary?.pending ?? 0} tone="orange" />
-            <AdminStatCard description="Approved by HR final review." icon={<CheckCircle2 className="h-5 w-5" />} label="Approved" value={summary?.approved ?? 0} tone="emerald" />
-            <AdminStatCard description="Rejected by HR final review." icon={<XCircle className="h-5 w-5" />} label="Rejected" value={summary?.rejected ?? 0} tone="rose" />
-            <AdminStatCard description="Paid / unpaid visible days." icon={<Table2 className="h-5 w-5" />} label="Days" value={`${formatDays(summary?.paidDays ?? 0)} / ${formatDays(summary?.unpaidDays ?? 0)}`} tone="violet" />
+              {/* Mobile card view (< xs) */}
+              <div className="block xs:hidden space-y-2 p-3">
+                {paginatedEntitlements.length === 0 ? (
+                  <p className="py-6 text-center text-[13px] font-medium text-slate-500">
+                    No active employees matched the current filters.
+                  </p>
+                ) : (
+                  paginatedEntitlements.map((row) => (
+                    <EntitlementCard key={row.hrId} row={row} />
+                  ))
+                )}
+                <PaginationControls page={entitlementPage} pageSize={PAGE_SIZE} total={sortedEntitlements.length} onPageChange={setEntitlementPage} />
+              </div>
+            </div>
           </div>
+        ) : null}
 
-          {canAdminManage ? (
-            <Card className={cn(adminPanelClassName, "p-5")}>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Admin controls</p>
-                  <h2 className="text-xl font-black text-slate-950">Employee master requests</h2>
-                </div>
-                <Button className="gap-2 rounded-xl bg-orange-600 font-black text-white hover:bg-orange-700" onClick={startAdminAdd}>
-                  <Plus className="h-4 w-4" />
-                  Add Vacation
-                </Button>
+        {/* ══════════════════════════════════════════════════════════ */}
+        {/* ── REQUESTS TAB ─────────────────────────────────────── */}
+        {/* ══════════════════════════════════════════════════════════ */}
+
+        {showRequestsTab ? (
+          <div className="space-y-3">
+            {/* Metric cards */}
+            {!initialData ? (
+              <div className="grid gap-2 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+                {[0, 1, 2, 3, 4].map((i) => <MetricCardSkeleton key={i} />)}
               </div>
+            ) : (
+              <div className="grid gap-2 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+                <MetricCard
+                  description="Visible requests after applied filters."
+                  label="Total"
+                  tone="blue"
+                  value={summary?.total ?? 0}
+                />
+                <MetricCard
+                  description="Awaiting manager or HR decision."
+                  label="Pending"
+                  tone="orange"
+                  value={summary?.pending ?? 0}
+                />
+                <MetricCard
+                  description="Approved by HR final review."
+                  label="Approved"
+                  tone="emerald"
+                  value={summary?.approved ?? 0}
+                />
+                <MetricCard
+                  description="Rejected by HR final review."
+                  label="Rejected"
+                  tone="rose"
+                  value={summary?.rejected ?? 0}
+                />
+                <MetricCard
+                  description={`${formatDays(summary?.paidDays ?? 0)} paid / ${formatDays(summary?.unpaidDays ?? 0)} unpaid days.`}
+                  label="Days"
+                  tone="violet"
+                  value={`${formatDays((summary?.paidDays ?? 0) + (summary?.unpaidDays ?? 0))}`}
+                />
+              </div>
+            )}
 
-              {adminMode ? (
-                <div className="mt-5 grid gap-3 rounded-2xl border border-orange-100 bg-orange-50/40 p-4 md:grid-cols-2 xl:grid-cols-4">
-                  <label className="space-y-2 xl:col-span-2">
-                    <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Employee</span>
-                    <select className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold" value={adminForm.employeeHrId} onChange={(event) => updateAdminForm("employeeHrId", event.target.value)}>
-                      <option value="">Select employee</option>
-                      {(options?.employees ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
+            {/* Distribution bars */}
+            {summary ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                <StatusDistributionBar
+                  approved={summary.approved}
+                  pending={summary.pending}
+                  rejected={summary.rejected}
+                  total={summary.total}
+                />
+                <PaidUnpaidBar
+                  paidDays={summary.paidDays}
+                  unpaidDays={summary.unpaidDays}
+                />
+              </div>
+            ) : null}
 
-                  <label className="space-y-2">
-                    <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Type</span>
-                    <select className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold" value={adminForm.vacationType} onChange={(event) => updateAdminForm("vacationType", event.target.value)}>
-                      {(adminMode === "add" ? addVacationTypeOptions : editVacationTypeOptions).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
+            {/* Admin controls */}
+            {canAdminManage ? (
+              <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">Admin controls</p>
+                    <h3 className="mt-1 text-base font-extrabold text-slate-900">Employee master requests</h3>
+                  </div>
+                  <Button
+                    className="gap-2 rounded-sm bg-orange-500 px-4 py-2 text-[12px] font-bold text-white hover:bg-orange-600"
+                    onClick={startAdminAdd}
+                    type="button"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Vacation
+                  </Button>
+                </div>
 
-                  <label className="space-y-2">
-                    <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Status</span>
-                    <select className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold" value={adminForm.status} onChange={(event) => updateAdminForm("status", event.target.value)}>
-                      {VACATION_STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
+                {adminMode ? (
+                  <div className="mt-4 grid gap-3 rounded-sm border border-orange-100 bg-orange-50/40 p-3 xs:grid-cols-2 xl:grid-cols-4">
+                    <label className="space-y-1.5 xs:col-span-2">
+                      <span className={labelClass}>Employee</span>
+                      <select className={selectClass} value={adminForm.employeeHrId} onChange={(event) => updateAdminForm("employeeHrId", event.target.value)}>
+                        <option value="">Select employee</option>
+                        {(options?.employees ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className={labelClass}>Type</span>
+                      <select className={selectClass} value={adminForm.vacationType} onChange={(event) => updateAdminForm("vacationType", event.target.value)}>
+                        {(adminMode === "add" ? addVacationTypeOptions : editVacationTypeOptions).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className={labelClass}>Status</span>
+                      <select className={selectClass} value={adminForm.status} onChange={(event) => updateAdminForm("status", event.target.value)}>
+                        {VACATION_STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className={labelClass}>Day part</span>
+                      <select className={selectClass} value={adminForm.dayPart} onChange={(event) => updateAdminForm("dayPart", event.target.value)}>
+                        {VACATION_DAY_PARTS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className={labelClass}>From</span>
+                      <Input className="rounded-sm" type="date" value={adminForm.startDate} onChange={(event) => updateAdminForm("startDate", event.target.value)} />
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className={labelClass}>To</span>
+                      <Input className="rounded-sm" type="date" value={adminForm.endDate} onChange={(event) => updateAdminForm("endDate", event.target.value)} />
+                    </label>
+                    <label className="space-y-1.5 xs:col-span-2">
+                      <span className={labelClass}>Admin note</span>
+                      <Input className="rounded-sm" value={adminForm.notes} onChange={(event) => updateAdminForm("notes", event.target.value)} />
+                    </label>
+                    <div className="flex items-end gap-2 xs:col-span-2">
+                      <Button
+                        className="h-9 flex-1 rounded-sm bg-orange-500 text-[12px] font-bold text-white hover:bg-orange-600"
+                        disabled={Boolean(actingId)}
+                        onClick={submitAdminForm}
+                        type="button"
+                      >
+                        {adminMode === "edit" ? "Save Changes" : "Create Vacation"}
+                      </Button>
+                      <Button
+                        className="h-9 rounded-sm border border-slate-200 bg-white text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+                        disabled={Boolean(actingId)}
+                        onClick={() => setAdminMode(null)}
+                        type="button"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
-                  <label className="space-y-2">
-                    <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Day part</span>
-                    <select className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold" value={adminForm.dayPart} onChange={(event) => updateAdminForm("dayPart", event.target.value)}>
-                      {VACATION_DAY_PARTS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
-
-                  <label className="space-y-2">
-                    <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">From</span>
-                    <Input type="date" value={adminForm.startDate} onChange={(event) => updateAdminForm("startDate", event.target.value)} />
-                  </label>
-
-                  <label className="space-y-2">
-                    <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">To</span>
-                    <Input type="date" value={adminForm.endDate} onChange={(event) => updateAdminForm("endDate", event.target.value)} />
-                  </label>
-
-                  <label className="space-y-2 xl:col-span-2">
-                    <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Admin note</span>
-                    <Input value={adminForm.notes} onChange={(event) => updateAdminForm("notes", event.target.value)} />
-                  </label>
-
-                  <div className="flex items-end gap-2 xl:col-span-2">
-                    <Button className="h-10 flex-1 rounded-xl bg-slate-950 font-black text-white hover:bg-slate-800" disabled={Boolean(actingId)} onClick={submitAdminForm}>
-                      {adminMode === "edit" ? "Save Changes" : "Create Vacation"}
-                    </Button>
-                    <Button className="h-10 rounded-xl border border-slate-200 bg-white font-black text-slate-700 hover:bg-slate-50" disabled={Boolean(actingId)} onClick={() => setAdminMode(null)}>
-                      Cancel
-                    </Button>
+            {/* Requests table */}
+            <div className="rounded-sm border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+              <div className="border-b border-slate-100 px-4 py-3">
+                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">
+                      {canAdminManage ? "Master ledger" : "Request history"}
+                    </p>
+                    <h3 className="mt-1 text-base font-extrabold text-slate-900">Vacation requests</h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge className="w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">
+                      {rows.length} requests
+                    </Badge>
+                    <button
+                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
+                      onClick={() => exportRequestsCSV(sortedRequests)}
+                      title="Export to CSV"
+                      type="button"
+                    >
+                      <Download className="h-3 w-3" /> CSV
+                    </button>
+                    <button
+                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
+                      onClick={() => window.print()}
+                      title="Print report"
+                      type="button"
+                    >
+                      <Printer className="h-3 w-3" /> Print
+                    </button>
                   </div>
                 </div>
-              ) : null}
-            </Card>
-          ) : null}
+              </div>
 
-          <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
-            <div className="overflow-x-auto">
-              <table className="min-w-[1680px] w-full border-collapse bg-white text-left text-sm">
-                <thead>
-                  <tr>
-                    <th className={reportHeaderCellClass}>Request ID</th>
-                    <th className={reportHeaderCellClass}>HR ID</th>
-                    <th className={reportHeaderCellClass}>Employee</th>
-                    <th className={reportHeaderCellClass}>Type</th>
-                    <th className={reportHeaderCellClass}>From</th>
-                    <th className={reportHeaderCellClass}>To</th>
-                    <th className={reportHeaderCellClass}>Duration</th>
-                    <th className={reportHeaderCellClass}>Payment</th>
-                    <th className={reportHeaderCellClass}>Status</th>
-                    <th className={reportHeaderCellClass}>Submitted</th>
-                    <th className={reportHeaderCellClass}>Manager</th>
-                    <th className={reportHeaderCellClass}>{canAdminManage ? "Decision / Admin" : "Decision"}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.id} className="bg-white transition even:bg-slate-50/60 hover:bg-orange-50/40">
-                      <td className={cn(reportCellClass, "whitespace-nowrap font-mono font-black text-slate-950")}>
-                        <span title={row.id}>{vacationRequestDisplayId(row.id)}</span>
-                      </td>
-                      <td className={cn(reportCellClass, "whitespace-nowrap font-mono font-black text-slate-900")}>{row.employeeHrId}</td>
-                      <td className={cn(reportCellClass, "min-w-[210px]")}>
-                        <p className="font-black text-slate-950">{row.employeeName}</p>
-                        <p className="mt-1 text-xs font-semibold text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
-                      </td>
-                      <td className={cn(reportCellClass, "min-w-[190px]")}>
-                        <p className="font-bold text-slate-800">{vacationTypeLabel(row.vacationType)}</p>
-                        <p className="text-xs text-slate-500">{vacationDayPartLabel(row.dayPart)}</p>
-                        {row.vacationType === "compensatory" ? (
-                          <div className="mt-2 max-w-[260px] rounded-lg border border-orange-100 bg-orange-50/70 px-2.5 py-2 text-xs font-semibold leading-5 text-orange-900">
-                            <p>{row.compensatoryEventName ?? "Compensatory event"}</p>
-                            <p className="text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
-                            <p className="text-orange-700">{[row.compensatoryManager1, row.compensatoryManager2].filter(Boolean).join(", ")}</p>
-                          </div>
-                        ) : null}
-                        {row.vacationType === "other" && row.notes ? (
-                          <p className="mt-2 max-w-[260px] rounded-lg border border-amber-100 bg-amber-50/70 px-2.5 py-2 text-xs font-semibold leading-5 text-amber-900">
-                            {row.notes}
-                          </p>
-                        ) : null}
-                      </td>
-                      <td className={cn(reportCellClass, "whitespace-nowrap font-semibold text-slate-900")}>{formatDate(row.startDate)}</td>
-                      <td className={cn(reportCellClass, "whitespace-nowrap font-semibold text-slate-900")}>{formatDate(row.endDate)}</td>
-                      <td className={cn(reportCellClass, "whitespace-nowrap text-center font-black text-slate-900")}>{formatDays(row.durationDays)}</td>
-                      <td className={reportCellClass}>
-                        <Badge variant={paymentBadgeVariant(row.paymentStatus)}>
-                          {paymentStatusLabel(row.paymentStatus)}
-                        </Badge>
-                        {row.paymentStatus === "partial" ? (
-                          <p className="mt-2 text-xs font-semibold text-amber-700">
-                            {formatDays(row.paidDurationDays)} paid / {formatDays(row.unpaidDurationDays)} unpaid
-                          </p>
-                        ) : null}
-                        {row.unpaidReason ? <p className="mt-2 text-xs font-semibold text-amber-700">{vacationUnpaidReasonLabel(row.unpaidReason)}</p> : null}
-                      </td>
-                      <td className={reportCellClass}>
-                        <Badge variant={statusBadgeVariant(row.status)}>{statusLabel(row.status)}</Badge>
-                      </td>
-                      <td className={cn(reportCellClass, "whitespace-nowrap font-semibold text-slate-700")}>{formatDateTime(row.createdAt)}</td>
-                      <td className={cn(reportCellClass, "min-w-[190px]")}>
-                        <p className="font-semibold text-slate-800">{row.managerName ?? "-"}</p>
-                        <p className="text-xs text-slate-500">{row.managerHrId ?? ""}</p>
-                        {row.managerOfManagerName ? <p className="mt-1 text-xs text-slate-500">MoM: {row.managerOfManagerName}</p> : null}
-                      </td>
-                      <td className={cn(reportCellClass, "min-w-[230px]")}>
-                        {canAdminManage ? (
-                          <div className="mb-3 flex flex-wrap gap-2">
-                            <Button className="gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50" disabled={actingId === row.id} onClick={() => startAdminEdit(row)}>
-                              <Pencil className="h-3.5 w-3.5" />
-                              Edit
-                            </Button>
-                            <Button className="gap-1.5 rounded-lg bg-rose-600 px-3 py-2 text-xs font-black text-white hover:bg-rose-700" disabled={actingId === row.id} onClick={() => deleteAdminRequest(row)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                              Delete
-                            </Button>
-                          </div>
-                        ) : null}
-                        {row.canDecide ? (
-                          <div className="flex flex-wrap gap-2">
-                            <Button className="gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black hover:bg-emerald-700" disabled={actingId === row.id} onClick={() => decide(row.id, "approve")}>
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              {row.status === "pending_hr" ? "Final Approve" : "Approve"}
-                            </Button>
-                            <Button className="gap-2 rounded-lg bg-rose-600 px-3 py-2 text-xs font-black text-white hover:bg-rose-700" disabled={actingId === row.id} onClick={() => decide(row.id, "reject")}>
-                              <XCircle className="h-3.5 w-3.5" />
-                              {row.status === "pending_hr" ? "Final Reject" : "Reject"}
-                            </Button>
-                          </div>
-                        ) : (
-                          <div>
-                            <p className="font-semibold text-slate-700">{row.hrDecisionAt ? formatDateTime(row.hrDecisionAt) : row.managerDecisionAt ? formatDateTime(row.managerDecisionAt) : "-"}</p>
-                            {row.managerDecisionComment ? <p className="mt-1 max-w-[220px] text-xs leading-5 text-slate-500">{row.managerDecisionComment}</p> : null}
-                            {row.hrDecisionComment ? <p className="mt-1 max-w-[220px] text-xs leading-5 text-slate-500">{row.hrDecisionComment}</p> : null}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {rows.length === 0 ? (
+              {/* Desktop table (xs+) */}
+              <div className="hidden xs:block overflow-x-auto">
+                <table className="w-full border-collapse text-left text-[12px]">
+                  <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
-                      <td className="border border-slate-200 px-4 py-10 text-center text-sm font-semibold text-slate-500" colSpan={12}>
-                        No vacation requests found.
-                      </td>
+                      <th className="border-b border-r border-slate-100 px-3 py-2.5">ID</th>
+                      <SortableHeader active={requestSort === "employeeName"} direction={requestSortDir} sortKey="employeeName" onSort={toggleRequestSort}>Employee</SortableHeader>
+                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Type</th>
+                      <SortableHeader active={requestSort === "startDate"} direction={requestSortDir} sortKey="startDate" onSort={toggleRequestSort}>From</SortableHeader>
+                      <th className="border-b border-r border-slate-100 px-3 py-2.5">To</th>
+                      <SortableHeader active={requestSort === "durationDays"} direction={requestSortDir} sortKey="durationDays" onSort={toggleRequestSort}>Days</SortableHeader>
+                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Payment</th>
+                      <SortableHeader active={requestSort === "status"} direction={requestSortDir} sortKey="status" onSort={toggleRequestSort}>Status</SortableHeader>
+                      <SortableHeader active={requestSort === "createdAt"} direction={requestSortDir} sortKey="createdAt" onSort={toggleRequestSort}>Submitted</SortableHeader>
+                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Manager</th>
+                      <th className="border-b border-slate-100 px-3 py-2.5">{canAdminManage ? "Decision / Admin" : "Decision"}</th>
                     </tr>
-                  ) : null}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {paginatedRequests.map((row) => (
+                      <tr key={row.id} className="bg-white transition hover:bg-orange-50/30">
+                        <td className="border-r border-slate-100 px-3 py-2.5">
+                          <span className="font-mono text-[11px] font-bold text-slate-800" title={row.id}>{vacationRequestDisplayId(row.id)}</span>
+                          <p className="mt-0.5 text-[10px] font-medium text-slate-400">{row.employeeHrId}</p>
+                        </td>
+                        <td className="border-r border-slate-100 px-3 py-2.5">
+                          <p className="font-bold text-slate-900">{row.employeeName}</p>
+                          <p className="mt-0.5 text-[11px] font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
+                        </td>
+                        <td className="border-r border-slate-100 px-3 py-2.5">
+                          <p className="font-semibold text-slate-800">{vacationTypeLabel(row.vacationType)}</p>
+                          <p className="text-[11px] text-slate-500">{vacationDayPartLabel(row.dayPart)}</p>
+                          {row.vacationType === "compensatory" ? (
+                            <div className="mt-1.5 rounded-sm border border-orange-100 bg-orange-50/70 px-2 py-1.5 text-[10px] font-semibold leading-4 text-orange-900">
+                              <p>{row.compensatoryEventName ?? "Event"}</p>
+                              <p className="text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
+                            </div>
+                          ) : null}
+                          {row.vacationType === "other" && row.notes ? (
+                            <p className="mt-1.5 rounded-sm border border-amber-100 bg-amber-50/70 px-2 py-1.5 text-[10px] font-semibold leading-4 text-amber-900">{row.notes}</p>
+                          ) : null}
+                        </td>
+                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.startDate)}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.endDate)}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">{formatDays(row.durationDays)}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5">
+                          <Badge variant={paymentBadgeVariant(row.paymentStatus)}>
+                            {paymentStatusLabel(row.paymentStatus)}
+                          </Badge>
+                          {row.paymentStatus === "partial" ? (
+                            <p className="mt-1 text-[10px] font-bold text-amber-700">
+                              {formatDays(row.paidDurationDays)} paid / {formatDays(row.unpaidDurationDays)} unpaid
+                            </p>
+                          ) : null}
+                          {row.unpaidReason ? <p className="mt-1 text-[10px] font-bold text-amber-700">{vacationUnpaidReasonLabel(row.unpaidReason)}</p> : null}
+                        </td>
+                        <td className="border-r border-slate-100 px-3 py-2.5">
+                          <Badge variant={statusBadgeVariant(row.status)}>{statusLabel(row.status)}</Badge>
+                        </td>
+                        <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-600">{formatDateTime(row.createdAt)}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5">
+                          <p className="font-semibold text-slate-700">{row.managerName ?? "-"}</p>
+                          <p className="text-[11px] text-slate-400">{row.managerHrId ?? ""}</p>
+                          {row.managerOfManagerName ? <p className="mt-0.5 text-[10px] text-slate-400">MoM: {row.managerOfManagerName}</p> : null}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {canAdminManage ? (
+                            <div className="mb-2 flex flex-wrap gap-1.5">
+                              <button
+                                className="flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50"
+                                disabled={actingId === row.id}
+                                onClick={() => startAdminEdit(row)}
+                                type="button"
+                              >
+                                <Pencil className="h-3 w-3" /> Edit
+                              </button>
+                              <button
+                                className="flex items-center gap-1 rounded-sm bg-rose-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-rose-700"
+                                disabled={actingId === row.id}
+                                onClick={() => deleteAdminRequest(row)}
+                                type="button"
+                              >
+                                <Trash2 className="h-3 w-3" /> Delete
+                              </button>
+                            </div>
+                          ) : null}
+                          {row.canDecide ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              <button
+                                className="flex items-center gap-1 rounded-sm bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-emerald-700"
+                                disabled={actingId === row.id}
+                                onClick={() => decide(row.id, "approve")}
+                                type="button"
+                              >
+                                <CheckCircle2 className="h-3 w-3" />
+                                {row.status === "pending_hr" ? "Final Approve" : "Approve"}
+                              </button>
+                              <button
+                                className="flex items-center gap-1 rounded-sm bg-rose-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-rose-700"
+                                disabled={actingId === row.id}
+                                onClick={() => decide(row.id, "reject")}
+                                type="button"
+                              >
+                                <XCircle className="h-3 w-3" />
+                                {row.status === "pending_hr" ? "Final Reject" : "Reject"}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="text-[11px]">
+                              <p className="font-medium text-slate-600">{row.hrDecisionAt ? formatDateTime(row.hrDecisionAt) : row.managerDecisionAt ? formatDateTime(row.managerDecisionAt) : "-"}</p>
+                              {row.managerDecisionComment ? <p className="mt-0.5 leading-4 text-slate-500">{row.managerDecisionComment}</p> : null}
+                              {row.hrDecisionComment ? <p className="mt-0.5 leading-4 text-slate-500">{row.hrDecisionComment}</p> : null}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {paginatedRequests.length === 0 ? (
+                      <tr>
+                        <td className="border-b border-slate-100 px-4 py-8 text-center text-[13px] font-medium text-slate-500" colSpan={11}>
+                          No vacation requests found.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+                <PaginationControls page={requestPage} pageSize={PAGE_SIZE} total={sortedRequests.length} onPageChange={setRequestPage} />
+              </div>
+
+              {/* Mobile card view (< xs) */}
+              <div className="block xs:hidden space-y-2 p-3">
+                {paginatedRequests.length === 0 ? (
+                  <p className="py-6 text-center text-[13px] font-medium text-slate-500">
+                    No vacation requests found.
+                  </p>
+                ) : (
+                  paginatedRequests.map((row) => (
+                    <RequestCard
+                      key={row.id}
+                      actingId={actingId}
+                      canAdminManage={canAdminManage}
+                      onDecide={decide}
+                      onDelete={deleteAdminRequest}
+                      onEdit={startAdminEdit}
+                      row={row}
+                    />
+                  ))
+                )}
+                <PaginationControls page={requestPage} pageSize={PAGE_SIZE} total={sortedRequests.length} onPageChange={setRequestPage} />
+              </div>
             </div>
-          </Card>
-        </>
-      ) : null}
+          </div>
+        ) : null}
+      </div>
     </PageContainer>
   );
 }
