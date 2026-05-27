@@ -17,6 +17,7 @@ _junk/
 # Sentry
 .sentryclirc
 .env.sentry-build-plugin
+tmp-sentry-test*
 .claude/worktrees/
 .claude/settings.local.json
 
