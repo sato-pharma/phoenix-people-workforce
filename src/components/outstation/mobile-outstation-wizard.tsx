@@ -58,6 +58,16 @@ type CarEvidenceCaptureDetails = {
   capturedLongitude: number;
 };
 
+type PermissionPromptKind =
+  | "destination-location"
+  | "car-evidence-location"
+  | "camera";
+
+type PermissionPromptState = {
+  blocked?: boolean;
+  kind: PermissionPromptKind;
+};
+
 const draftKey = outstationDraftStorageKey;
 const carEvidenceLogoSrc = "/brand/phoenix-camera-watermark.png";
 
@@ -154,6 +164,105 @@ function capturedDestinationParts(captured: OutstationCaptureResult | null) {
     governorate,
     shortLabel: compactLocationLabel(area, governorate, fullAddress),
   };
+}
+
+function isDeniedPermissionError(error: unknown) {
+  if (typeof error === "object" && error && "code" in error && Number(error.code) === 1) {
+    return true;
+  }
+  return error instanceof DOMException && (
+    error.name === "NotAllowedError" ||
+    error.name === "PermissionDeniedError"
+  );
+}
+
+function permissionDeniedMessage(kind: PermissionPromptKind) {
+  if (kind === "camera") {
+    return "Camera permission is blocked. Tap Open browser settings to unblock it for this website, then tap Accept & retry.";
+  }
+
+  return "Location permission is blocked. Tap Open browser settings to unblock it for this website, then tap Accept & retry.";
+}
+
+function getCurrentSiteUrl() {
+  return typeof window === "undefined" ? "" : window.location.origin;
+}
+
+function getPermissionSettingsUrl(kind: PermissionPromptKind) {
+  if (typeof navigator === "undefined") {
+    return null;
+  }
+
+  const permissionPath = kind === "camera" ? "camera" : "location";
+  const siteDetailsPath = getCurrentSiteUrl()
+    ? `content/siteDetails?site=${encodeURIComponent(getCurrentSiteUrl())}`
+    : `content/${permissionPath}`;
+  const userAgent = navigator.userAgent.toLowerCase();
+
+  if (userAgent.includes("edg/")) {
+    return `edge://settings/${siteDetailsPath}`;
+  }
+  if (userAgent.includes("opr/") || userAgent.includes("opera/")) {
+    return `opera://settings/content/${permissionPath}`;
+  }
+  if (userAgent.includes("firefox/")) {
+    return "about:preferences#privacy";
+  }
+  if (userAgent.includes("chrome/") || userAgent.includes("crios/")) {
+    return `chrome://settings/${siteDetailsPath}`;
+  }
+
+  return null;
+}
+
+function getPermissionSettingsSteps(kind: PermissionPromptKind) {
+  if (typeof navigator === "undefined") {
+    return [];
+  }
+
+  const permissionName = kind === "camera" ? "Camera" : "Location";
+  const lowerPermissionName = permissionName.toLowerCase();
+  const userAgent = navigator.userAgent.toLowerCase();
+
+  if (/iphone|ipad|ipod/.test(userAgent)) {
+    if (userAgent.includes("crios/")) {
+      return [
+        `Open the iOS Settings app, then open Chrome.`,
+        `Set ${permissionName} to Allow.`,
+        "Return to this page, reload it, then tap Accept & retry.",
+      ];
+    }
+
+    return [
+      "Tap the AA/page settings icon in Safari's address bar, then open Website Settings.",
+      `Set ${permissionName} to Allow for this website.`,
+      `If it is still blocked, open the iOS Settings app, open Safari, and allow ${lowerPermissionName}.`,
+      "Return to this page, reload it, then tap Accept & retry.",
+    ];
+  }
+
+  if (userAgent.includes("android")) {
+    return [
+      "Tap the lock/tune icon beside the website address.",
+      `Open Permissions and set ${permissionName} to Allow.`,
+      "Return to this page, reload it, then tap Accept & retry.",
+    ];
+  }
+
+  if (userAgent.includes("firefox/")) {
+    return [
+      "Click the lock icon beside the website address.",
+      `Open Permissions and set ${permissionName} to Allow.`,
+      "Reload this page, then tap Accept & retry.",
+    ];
+  }
+
+  return [
+    "Click the lock/tune icon beside the website address.",
+    "Open Site settings.",
+    `Set ${permissionName} to Allow for this website.`,
+    "Return to this page, reload it, then tap Accept & retry.",
+  ];
 }
 
 function formatEvidenceDateTime(value: string) {
@@ -334,9 +443,11 @@ export function MobileOutstationWizard({
   const [isCalculating, setIsCalculating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
+  const [permissionPrompt, setPermissionPrompt] = useState<PermissionPromptState | null>(null);
   const [ticketFiles, setTicketFiles] = useState<File[]>([]);
   const carEvidenceStreamRef = useRef<MediaStream | null>(null);
   const pendingOfflineDraftRef = useRef(false);
+  const permissionActionRef = useRef<(() => Promise<void>) | null>(null);
   const skipInitialDraftPersistRef = useRef(true);
   const syncAttemptedRef = useRef(false);
   const lastCalculationKeyRef = useRef("");
@@ -354,6 +465,32 @@ export function MobileOutstationWizard({
     : getDurationSummary(tripStartDate, tripEndDate);
   const fromShortLabel = cleanLocationPart(residenceShortSummary) || residenceSummary;
   const destinationLocation = capturedDestinationParts(captured);
+
+  function openPermissionPrompt(kind: PermissionPromptKind, action: () => Promise<void>, blocked = false) {
+    permissionActionRef.current = action;
+    setPermissionPrompt({ blocked, kind });
+  }
+
+  function closePermissionPrompt() {
+    permissionActionRef.current = null;
+    setPermissionPrompt(null);
+  }
+
+  async function acceptPermissionPrompt() {
+    const action = permissionActionRef.current;
+    closePermissionPrompt();
+    await action?.();
+  }
+
+  function declinePermissionPrompt() {
+    const kind = permissionPrompt?.kind;
+    closePermissionPrompt();
+    setMessage(
+      kind === "camera"
+        ? "Camera permission was declined. Car evidence cannot be captured without camera access."
+        : "Location permission was declined. This expense cannot continue without GPS access.",
+    );
+  }
 
   const stopCarEvidenceCamera = useCallback(() => {
     if (carEvidenceStreamRef.current) {
@@ -804,12 +941,11 @@ export function MobileOutstationWizard({
       setCaptured(payload);
       setStep(2);
     } catch (error) {
-      const geoError = error as GeolocationPositionError | Error;
-      if ("code" in geoError && typeof geoError.code === "number" && geoError.code === 1) {
-        setMessage(
-          "Location permission was denied. This report cannot proceed without GPS permission.",
-        );
+      if (isDeniedPermissionError(error)) {
+        setMessage(permissionDeniedMessage("destination-location"));
+        openPermissionPrompt("destination-location", captureLocation, true);
       } else {
+        const geoError = error as Error;
         setMessage(
           geoError instanceof Error
             ? geoError.message
@@ -857,8 +993,9 @@ export function MobileOutstationWizard({
       setIsCarEvidenceCameraOpen(true);
     } catch (error) {
       const typedError = error as GeolocationPositionError | DOMException | Error;
-      if (typedError instanceof DOMException && typedError.name === "NotAllowedError") {
-        setMessage("Camera permission was denied. Enable camera permission to continue.");
+      if (isDeniedPermissionError(typedError)) {
+        setMessage(permissionDeniedMessage("camera"));
+        openPermissionPrompt("camera", openCarEvidenceCamera, true);
         return;
       }
       setMessage(
@@ -931,10 +1068,9 @@ export function MobileOutstationWizard({
       setMessage("Live car evidence captured. This photo is attached to this request.");
     } catch (error) {
       const typedError = error as GeolocationPositionError | DOMException | Error;
-      if ("code" in typedError && typeof typedError.code === "number" && typedError.code === 1) {
-        setMessage(
-          "Location permission was denied. Car evidence cannot be captured without GPS permission.",
-        );
+      if (isDeniedPermissionError(typedError)) {
+        setMessage(permissionDeniedMessage("car-evidence-location"));
+        openPermissionPrompt("car-evidence-location", captureCarEvidence, true);
         return;
       }
       setMessage(
@@ -992,6 +1128,14 @@ export function MobileOutstationWizard({
   return (
     <div className="space-y-5">
       <OfflineSyncBanner visible={isOffline} />
+      {permissionPrompt ? (
+        <PermissionPromptModal
+          blocked={permissionPrompt.blocked}
+          kind={permissionPrompt.kind}
+          onAccept={() => void acceptPermissionPrompt()}
+          onDecline={declinePermissionPrompt}
+        />
+      ) : null}
 
       {showIntro ? (
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
@@ -1114,6 +1258,7 @@ export function MobileOutstationWizard({
             <PremiumTooltip
               className="w-80"
               content={<LocationTooltipContent label="Full residence address" value={residenceSummary} />}
+              placement="top"
               triggerClassName="block"
             >
               <div
@@ -1131,6 +1276,7 @@ export function MobileOutstationWizard({
             <PremiumTooltip
               className="w-80"
               content={<LocationTooltipContent label="Full destination address" value={destinationLocation.fullAddress} />}
+              placement="top"
               triggerClassName="block"
             >
               <button
@@ -1166,8 +1312,9 @@ export function MobileOutstationWizard({
               <div className="sm:col-span-2 xl:col-span-2">
                 <Field label="Full Address">
                   <PremiumTooltip
-                    className="w-96"
+                    className="w-80 max-w-[calc(100vw-2rem)]"
                     content={<LocationTooltipContent label="Captured full address" value={destinationLocation.fullAddress} />}
+                    placement="top"
                     triggerClassName="block"
                   >
                     <LocationReadout value={destinationLocation.fullAddress} />
@@ -1583,6 +1730,170 @@ function LocationReadout({ value }: { value: string }) {
       title={value}
     >
       <span className="truncate">{value}</span>
+    </div>
+  );
+}
+
+function permissionPromptCopy(kind: PermissionPromptKind, blocked?: boolean) {
+  if (kind === "camera") {
+    return {
+      badge: blocked ? "Camera blocked" : "Camera permission",
+      description: blocked
+        ? "Camera is blocked by the browser for this website. Open browser settings, change camera to Allow for this site, return here, then retry. If the permission is still set to Ask, the browser will show its real camera prompt."
+        : "Phoenix will request the real browser camera permission now. If you approve it, the camera opens immediately.",
+      title: blocked ? "Camera permission blocked" : "Camera permission required",
+    };
+  }
+
+  if (kind === "car-evidence-location") {
+    return {
+      badge: blocked ? "Location blocked" : "Location permission",
+      description: blocked
+        ? "Location is blocked by the browser for this website. Open browser settings, change location to Allow for this site, return here, then retry."
+        : "Phoenix will request the real browser location permission now and attach the GPS position to this car evidence photo.",
+      title: blocked ? "Location permission blocked" : "Location permission required",
+    };
+  }
+
+  return {
+    badge: blocked ? "Location blocked" : "Location permission",
+    description: blocked
+      ? "Location is blocked by the browser for this website. Open browser settings, change location to Allow for this site, return here, then retry."
+      : "Phoenix will request the real browser location permission now and use it to capture your destination.",
+    title: blocked ? "Location permission blocked" : "Location permission required",
+  };
+}
+
+function PermissionPromptModal({
+  blocked = false,
+  kind,
+  onAccept,
+  onDecline,
+}: {
+  blocked?: boolean;
+  kind: PermissionPromptKind;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  const copy = permissionPromptCopy(kind, blocked);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [settingsAttempted, setSettingsAttempted] = useState(false);
+  const settingsUrl = getPermissionSettingsUrl(kind);
+  const siteUrl = getCurrentSiteUrl();
+  const steps = getPermissionSettingsSteps(kind);
+
+  function handleOpenSettings() {
+    setSettingsAttempted(true);
+    if (!settingsUrl) {
+      return;
+    }
+
+    try {
+      window.open(settingsUrl, "_blank", "noopener,noreferrer");
+    } catch {
+      // Browser security commonly blocks internal settings URLs from webpages.
+    }
+  }
+
+  async function copyText(value: string, label: string) {
+    if (!value) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyMessage(`${label} copied.`);
+    } catch {
+      setCopyMessage(`Could not copy ${label.toLowerCase()}. Select and copy it manually.`);
+    }
+  }
+
+  return (
+    <div
+      aria-labelledby="outstation-permission-title"
+      aria-modal="true"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/45 px-4 py-6 backdrop-blur-sm"
+      role="dialog"
+    >
+      <div className="w-full max-w-md rounded-lg border border-white/30 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.24)]">
+        <span className="inline-flex rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
+          {copy.badge}
+        </span>
+        <h2 id="outstation-permission-title" className="mt-3 text-lg font-bold text-slate-900">
+          {copy.title}
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{copy.description}</p>
+        {blocked ? (
+          <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-800">
+            Browser security can prevent the native prompt from appearing again after a permanent block.
+            The app can open settings as a shortcut, but you must switch this site's permission to Allow.
+          </p>
+        ) : null}
+        {blocked ? (
+          <Button
+            className="mt-4 min-h-11 w-full rounded-md border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
+            onClick={handleOpenSettings}
+            type="button"
+            variant="secondary"
+          >
+            Open settings / show steps
+          </Button>
+        ) : null}
+        {blocked && settingsAttempted ? (
+          <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-700">
+            <p className="font-semibold text-slate-900">
+              If no settings page opened, your browser blocked the shortcut.
+            </p>
+            <ol className="mt-2 list-decimal space-y-1 pl-4">
+              {steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {settingsUrl ? (
+                <Button
+                  className="min-h-10 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+                  onClick={() => void copyText(settingsUrl, "Settings shortcut")}
+                  type="button"
+                  variant="secondary"
+                >
+                  Copy settings shortcut
+                </Button>
+              ) : null}
+              {siteUrl ? (
+                <Button
+                  className="min-h-10 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+                  onClick={() => void copyText(siteUrl, "Site URL")}
+                  type="button"
+                  variant="secondary"
+                >
+                  Copy site URL
+                </Button>
+              ) : null}
+            </div>
+            {copyMessage ? (
+              <p className="mt-2 font-medium text-slate-600">{copyMessage}</p>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Button
+            className="min-h-11 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            onClick={onDecline}
+            type="button"
+            variant="secondary"
+          >
+            Decline
+          </Button>
+          <Button
+            className="min-h-11 rounded-md bg-orange-500 text-white hover:bg-orange-600"
+            onClick={onAccept}
+            type="button"
+          >
+            {blocked ? "Accept & retry" : "Accept"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
