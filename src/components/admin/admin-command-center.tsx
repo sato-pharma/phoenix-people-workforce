@@ -611,7 +611,7 @@ export function AdminCommandCenter({
                   <KpiCard icon={TrendingUp} label="Total Sales" sub={`vs ${egp(o.sales.targetValue)} target`} value={egp(o.sales.salesValue)} />
                 ) : null}
                 {showFinancialModules ? (
-                  <KpiCard icon={Receipt} label="Expense Claims" sub={`${n(o.expenses.totalRows)} entries`} value={egp(o.expenses.approvedAmount)} />
+                  <KpiCard icon={Receipt} label="Outstation Expenses" sub={`${n(o.expenses.totalRows)} entries`} value={egp(o.expenses.approvedAmount)} />
                 ) : null}
                 <KpiCard
                   accent={health.employeeHealthRate >= 90}
@@ -789,7 +789,7 @@ export function AdminCommandCenter({
                   { label: "Reports", value: n(o.expenses.reportCount) },
                   { label: "Entries", value: n(o.expenses.totalRows) },
                 ]}
-                title="Field Expenses"
+                title="Outstation Expenses"
               />
             ) : null}
             <ModuleCard

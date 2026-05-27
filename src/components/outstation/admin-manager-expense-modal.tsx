@@ -289,7 +289,7 @@ export function AdminManagerExpenseModal({
       };
 
       if (!response.ok || !payload.request) {
-        setSubmitError(payload.message ?? "Failed to save manager expense.");
+        setSubmitError(payload.message ?? "Failed to save outstation expense.");
       } else {
         onSaved(payload.request);
       }
@@ -317,14 +317,14 @@ export function AdminManagerExpenseModal({
         <div className="flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-white/98 px-6 py-5">
           <div>
             <span className="inline-flex rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-[#EA580C]">
-              Manager expense · Admin
+              Manual outstation expense - Admin
             </span>
             <h2 className="mt-2 text-xl font-black text-[#0F172A]">
-              {isEdit ? "Edit manager expense" : "Create manager expense"}
+              {isEdit ? "Edit outstation expense" : "Add manual outstation expense"}
             </h2>
             {(targetName ?? request?.employeeName) ? (
               <p className="mt-1 text-sm font-semibold text-[#64748B]">
-                {targetName ?? request?.employeeName} · {employeeHrId}
+                {targetName ?? request?.employeeName} - {employeeHrId}
               </p>
             ) : null}
           </div>
@@ -349,7 +349,7 @@ export function AdminManagerExpenseModal({
                 value={employeeHrId}
               />
               <p className="mt-1 text-xs text-[#64748B]">
-                Enter the HR ID of the manager for whom you are creating this expense.
+                Enter the HR ID of the employee for whom you are adding this expense.
               </p>
             </div>
           ) : null}
@@ -557,7 +557,7 @@ export function AdminManagerExpenseModal({
               ) : (
                 <CheckCircle2 className="h-4 w-4" />
               )}
-              {isEdit ? "Save changes" : "Create expense"}
+              {isEdit ? "Save changes" : "Add expense"}
             </Button>
           </div>
         </form>

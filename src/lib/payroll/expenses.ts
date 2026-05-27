@@ -9,6 +9,7 @@ import {
 } from "@/lib/payroll/expense-metrics";
 import { PayrollConflictError } from "@/lib/payroll/errors";
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
+import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -57,6 +58,17 @@ export function isPayrollExpensesSchemaMissing(error: unknown) {
   return (
     message.includes("payroll_expenses") ||
     message.includes("payroll_expense_reports") ||
+    message.includes("could not find the table") ||
+    message.includes("schema cache") ||
+    (message.includes("relation") && message.includes("does not exist"))
+  );
+}
+
+function isOutstationRequestsSchemaMissing(error: unknown) {
+  const message = expenseErrorMessage(error).toLowerCase();
+
+  return (
+    message.includes("outstation_expense_requests") ||
     message.includes("could not find the table") ||
     message.includes("schema cache") ||
     (message.includes("relation") && message.includes("does not exist"))
@@ -385,6 +397,16 @@ function applyHrIdInFilter<T extends { or: (value: string) => T; ilike: (column:
   return query.or(ors);
 }
 
+function applyEmployeeHrIdInFilter<T extends { or: (value: string) => T }>(
+  query: T,
+  hrIds: string[],
+) {
+  const normalized = buildHrIdFilters(hrIds);
+  if (normalized.length === 0) return query;
+
+  return query.or(normalized.map((id) => `employee_hr_id.ilike.${id}`).join(","));
+}
+
 export async function listPayrollExpenseReports(accessContext: AccessContext) {
   const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
@@ -466,6 +488,59 @@ export async function listPayrollExpenses(
     .map((row) => mapExpense(row as Record<string, unknown>));
 }
 
+export async function listOutstationRequestExpenses(
+  accessContext: AccessContext,
+) {
+  const accessFilter = await resolveExpenseAccessFilter(accessContext);
+  const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
+  let query = supabase
+    .from("outstation_expense_requests")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  const allowedHrIds = Array.from(accessFilter.allowedHrIds);
+  if (!accessFilter.all) {
+    if (allowedHrIds.length === 0) return [];
+    query = applyEmployeeHrIdInFilter(query, allowedHrIds);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    if (isOutstationRequestsSchemaMissing(error)) return [];
+    throw error;
+  }
+
+  return ((data ?? []) as Array<Record<string, unknown>>)
+    .map(mapOutstationRequestRowToPayrollApproval);
+}
+
+export async function listUnifiedOutstationExpenses(
+  month: number | undefined,
+  year: number | undefined,
+  reportId: string | undefined,
+  accessContext: AccessContext,
+) {
+  const [historicalExpenses, requestExpenses] = await Promise.all([
+    listPayrollExpenses(month, year, reportId, accessContext),
+    listOutstationRequestExpenses(accessContext),
+  ]);
+  const filteredRequestExpenses = reportId
+    ? []
+    : month && year
+    ? requestExpenses.filter((expense) => expense.payoutMonth === month && expense.payoutYear === year)
+    : requestExpenses;
+  const requestTripIds = new Set(filteredRequestExpenses.map((expense) => expense.tripId));
+  const dedupedHistoricalExpenses = historicalExpenses.filter(
+    (expense) => !requestTripIds.has(expense.tripId),
+  );
+
+  return [...filteredRequestExpenses, ...dedupedHistoricalExpenses].sort((left, right) => {
+    const leftTime = left.date ? new Date(left.date).getTime() : 0;
+    const rightTime = right.date ? new Date(right.date).getTime() : 0;
+    return rightTime - leftTime;
+  });
+}
+
 export function buildPayrollExpenseMetrics(input: {
   expenses: PayrollExpenseApproval[];
   reports?: PayrollExpenseReport[];
@@ -480,7 +555,7 @@ export async function getPayrollExpenseMetrics(
   accessContext: AccessContext,
 ): Promise<PayrollExpenseMetrics> {
   const [expenses, reports] = await Promise.all([
-    listPayrollExpenses(undefined, undefined, undefined, accessContext),
+    listUnifiedOutstationExpenses(undefined, undefined, undefined, accessContext),
     listPayrollExpenseReports(accessContext),
   ]);
 
@@ -492,7 +567,7 @@ export async function getPayrollExpenseDashboardData(
 ): Promise<PayrollExpenseDashboardData> {
   const [directory, expenses, reports] = await Promise.all([
     getEmployeeDirectory(),
-    listPayrollExpenses(undefined, undefined, undefined, accessContext),
+    listUnifiedOutstationExpenses(undefined, undefined, undefined, accessContext),
     listPayrollExpenseReports(accessContext),
   ]);
 

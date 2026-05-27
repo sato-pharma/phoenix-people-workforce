@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { ProbationTracker } from "@/components/probation/probation-tracker";
+
+import { EmployeeProbationDashboard } from "@/components/employee-portal/employee-probation-dashboard";
 import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
@@ -15,18 +16,44 @@ import {
   isEmployeeDirectorySchemaMissing,
   isEmployeeDirectoryTimeout,
 } from "@/lib/employees/employee-directory";
-import { getProbationRows, isProbationSchemaMissing, probationErrorMessage } from "@/lib/probation/service";
+import {
+  getProbationRows,
+  isProbationSchemaMissing,
+  probationErrorMessage,
+} from "@/lib/probation/service";
 import type { ProbationRow } from "@/lib/probation/types";
 
 export const dynamic = "force-dynamic";
 
-function probationPageError(error: unknown) {
-  if (isEmployeeDirectoryTimeout(error)) return "Supabase request timed out. Check your connection and try again.";
-  if (isEmployeeDirectoryEnvMissing(error)) return "Supabase environment variables are missing.";
-  if (isEmployeeDirectorySchemaMissing(error)) return "Supabase schema is not ready. Run supabase/phoenix-schema.sql in Supabase SQL editor.";
-  if (isProbationSchemaMissing(error)) return "Probation review schema is not ready.";
-  return probationErrorMessage(error) || employeeDirectoryErrorMessage(error);
+/* ---------- print stylesheet ---------- */
+
+const printStyles = `
+@media print {
+  body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  nav, header, footer, button, [data-no-print] { display: none !important; }
+  .print\\:break-inside-avoid { break-inside: avoid; }
+  .print\\:shadow-none { box-shadow: none !important; }
+  * { border-color: #e2e8f0 !important; }
 }
+`;
+
+/* ---------- error handling ---------- */
+
+function probationPageError(error: unknown) {
+  if (isEmployeeDirectoryTimeout(error))
+    return "Supabase request timed out. Check your connection and try again.";
+  if (isEmployeeDirectoryEnvMissing(error))
+    return "Supabase environment variables are missing.";
+  if (isEmployeeDirectorySchemaMissing(error))
+    return "Supabase schema is not ready. Run supabase/phoenix-schema.sql in Supabase SQL editor.";
+  if (isProbationSchemaMissing(error))
+    return "Probation review schema is not ready.";
+  return (
+    probationErrorMessage(error) || employeeDirectoryErrorMessage(error)
+  );
+}
+
+/* ---------- page ---------- */
 
 export default async function EmployeePortalProbationPage() {
   const access = await resolveAccessContextFromPage();
@@ -36,7 +63,13 @@ export default async function EmployeePortalProbationPage() {
   }
 
   await assertPermission(access, "probation", "read");
-  const canSubmitManagerFeedback = access.role === "District Manager" || access.role === "Regional Manager" || access.role === "National Sales Manager" || access.role === "Manager";
+
+  const canSubmitManagerFeedback =
+    access.role === "District Manager" ||
+    access.role === "Regional Manager" ||
+    access.role === "National Sales Manager" ||
+    access.role === "Manager";
+
   let initialData: ProbationRow[] | null = null;
   let initialError: string | null = null;
 
@@ -66,13 +99,16 @@ export default async function EmployeePortalProbationPage() {
 
   return (
     <EmployeePortalPageShell
-      description="Track probation timelines for your own profile or scoped team."
+      badge="People Operations"
+      description="Track probation timelines and risk zones for your scoped team."
       title="Probation Tracker"
     >
-      <ProbationTracker
-        capabilities={{ canCreate: false, canExport: false, canManageWorkflow: false, canSubmitManagerFeedback, viewerMode: canSubmitManagerFeedback ? "manager" : "employee" }}
+      {/* Print stylesheet */}
+      <style dangerouslySetInnerHTML={{ __html: printStyles }} />
+
+      <EmployeeProbationDashboard
+        canSubmitManagerFeedback={canSubmitManagerFeedback}
         initialData={initialData}
-        initialError={initialError}
       />
     </EmployeePortalPageShell>
   );

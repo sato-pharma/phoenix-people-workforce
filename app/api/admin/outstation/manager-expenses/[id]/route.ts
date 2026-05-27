@@ -59,15 +59,15 @@ export async function PATCH(
     const updated = await updateManagerExpenseAsAdmin(id, access, body);
 
     return NextResponse.json({
-      message: "Manager expense updated successfully.",
+      message: "Outstation expense updated successfully.",
       request: updated,
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update manager expense.";
+    const message = error instanceof Error ? error.message : "Failed to update outstation expense.";
     return NextResponse.json(
       {
-        error: isForbiddenError(error) ? "forbidden" : "manager_expense_update_failed",
+        error: isForbiddenError(error) ? "forbidden" : "outstation_expense_update_failed",
         message,
         success: false,
       },
@@ -97,14 +97,14 @@ export async function DELETE(
 
     return NextResponse.json({
       linkedPayroll: deleted.linkedPayroll,
-      message: "Manager expense deleted.",
+      message: "Outstation expense deleted.",
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to delete manager expense.";
+    const message = error instanceof Error ? error.message : "Failed to delete outstation expense.";
     return NextResponse.json(
       {
-        error: isForbiddenError(error) ? "forbidden" : "manager_expense_delete_failed",
+        error: isForbiddenError(error) ? "forbidden" : "outstation_expense_delete_failed",
         message,
         success: false,
       },

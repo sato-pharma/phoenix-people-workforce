@@ -102,15 +102,15 @@ export async function POST(request: Request) {
     const created = await createManagerExpenseAsAdmin(access, input);
 
     return NextResponse.json({
-      message: "Manager expense created successfully.",
+      message: "Manual outstation expense added successfully.",
       request: created,
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create manager expense.";
+    const message = error instanceof Error ? error.message : "Failed to add manual outstation expense.";
     return NextResponse.json(
       {
-        error: isForbiddenError(error) ? "forbidden" : "manager_expense_create_failed",
+        error: isForbiddenError(error) ? "forbidden" : "outstation_expense_create_failed",
         message,
         success: false,
       },

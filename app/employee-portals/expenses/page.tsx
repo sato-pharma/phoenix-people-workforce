@@ -55,17 +55,17 @@ export default async function EmployeePortalExpensesPage() {
         message={
           loadError instanceof Error
             ? loadError.message
-            : "Unable to load your expense submission workspace."
+            : "Unable to load your outstation expense workspace."
         }
-        title="Expenses Unavailable"
+        title="Outstation Expenses Unavailable"
       />
     );
   }
 
   return (
     <EmployeePortalPageShell
-      description="Simple traveling expense submission with residence as the fixed origin."
-      title="Expenses"
+      description="Simple outstation expense submission with residence as the fixed origin."
+      title="My Outstation Expenses"
     >
       <MedicalRepExpensesWorkspace
         canSubmit={Boolean(context.fromLocation) && canSubmitExpense}

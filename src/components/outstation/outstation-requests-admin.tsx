@@ -183,6 +183,7 @@ function RequestActionButtons({
   const deleting = busy && acting?.action === "delete";
   const rejecting = busy && acting?.action === "reject";
   const terminal = request.status === "approved" || request.status === "rejected";
+  const addedToPayroll = request.status === "approved";
 
   return (
     <div className="space-y-3">
@@ -207,8 +208,9 @@ function RequestActionButtons({
         </Button>
         <Button
           className="gap-2 rounded-xl border border-[#FECACA] bg-white px-4 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FEF2F2]"
-          disabled={busy}
+          disabled={busy || addedToPayroll}
           onClick={() => onDelete(request)}
+          title={addedToPayroll ? "This expense has already been added to payroll and cannot be deleted." : "Delete this expense before payroll."}
           type="button"
         >
           {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -216,7 +218,7 @@ function RequestActionButtons({
         </Button>
       </div>
       {request.status === "approved" ? (
-        <p className="text-xs font-black uppercase tracking-[0.12em] text-[#047857]">Approved for payroll</p>
+        <p className="text-xs font-black uppercase tracking-[0.12em] text-[#047857]">Added to payroll - delete locked</p>
       ) : null}
       {request.status === "rejected" ? (
         <p className="text-xs font-black uppercase tracking-[0.12em] text-[#B91C1C]">Rejected by admin review</p>
@@ -403,7 +405,7 @@ function RequestDetailsModal({
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748B]">Admin decision</p>
-              <p className="mt-1 text-sm font-semibold text-[#475569]">Approve, reject, or permanently delete this outstation expense.</p>
+              <p className="mt-1 text-sm font-semibold text-[#475569]">Approve, reject, edit, or delete before the expense is added to payroll.</p>
             </div>
             <RequestActionButtons
               actionError={actionError}
@@ -556,8 +558,8 @@ export function OutstationRequestsAdmin({
     }
     setActionMessage(
       managerExpenseModal?.mode === "edit"
-        ? `Manager expense #${saved.id} updated.`
-        : `Manager expense #${saved.id} created for ${saved.employeeName}.`,
+        ? `Outstation expense #${saved.id} updated.`
+        : `Outstation expense #${saved.id} created for ${saved.employeeName}.`,
     );
   }
 
@@ -615,8 +617,12 @@ export function OutstationRequestsAdmin({
   }
 
   async function deleteRequest(request: OutstationExpenseRequest) {
+    if (request.status === "approved") {
+      setActionError("This outstation expense has already been added to payroll and cannot be deleted.");
+      return;
+    }
     const confirmed = window.confirm(
-      `Delete outstation request ${request.id}? This permanently removes the request, stored evidence files, and any linked payroll expense row.`,
+      `Delete outstation expense ${request.id}? This permanently removes the request and stored evidence files. Expenses already added to payroll cannot be deleted.`,
     );
     if (!confirmed) return;
 
@@ -634,10 +640,7 @@ export function OutstationRequestsAdmin({
       setLocalRequests(remaining);
       if (selectedId === request.id) setSelectedId(remaining[0]?.id ?? null);
       if (detailRequestId === request.id) setDetailRequestId(null);
-      const payrollNote = payload?.linkedPayroll?.deletedRows
-        ? ` Linked payroll row ${payload.linkedPayroll.expenseTripId ?? ""} was also removed.`
-        : "";
-      setActionMessage(`${payload?.message ?? "Outstation request deleted."}${payrollNote}`);
+      setActionMessage(payload?.message ?? "Outstation expense deleted.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Unable to delete outstation request.");
     } finally {
@@ -651,8 +654,8 @@ export function OutstationRequestsAdmin({
     return (
       <OutstationAdminShell>
         <AdminPageHero
-          description="No residence-validated outstation request data is currently available. You can still create a manager expense manually."
-          eyebrow="Outstation requests"
+          description="No outstation expense data is currently available. You can still add a manual expense."
+          eyebrow="Outstation expenses"
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
           title="Residence-validated expense review"
           actions={(
@@ -662,7 +665,7 @@ export function OutstationRequestsAdmin({
               type="button"
             >
               <PlusCircle className="h-4 w-4" />
-              Create manager expense
+              Add manual expense
             </Button>
           )}
         />
@@ -696,10 +699,10 @@ export function OutstationRequestsAdmin({
     <OutstationAdminShell>
       <div className="space-y-6">
         <AdminPageHero
-          description="Review captured distance, eligibility, expected payout, claimed amount, evidence, route validation, and final admin decisions."
-          eyebrow="Outstation review"
+          description="Review uploaded history, employee requests, manual entries, eligibility, expected payout, claimed amount, evidence, route validation, and final admin decisions."
+          eyebrow="Outstation expenses"
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
-          title="Residence-validated expense requests"
+          title="Outstation expenses"
           actions={(
             <Button
               className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
@@ -707,7 +710,7 @@ export function OutstationRequestsAdmin({
               type="button"
             >
               <PlusCircle className="h-4 w-4" />
-              Create manager expense
+              Add manual expense
             </Button>
           )}
           badges={(
@@ -796,7 +799,7 @@ export function OutstationRequestsAdmin({
               />
               <div className="relative z-10 space-y-1.5">
                 <p className="inline-flex rounded-full border border-[#F97316]/35 bg-[#F97316]/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-[#FDBA74]">Request queue</p>
-                <h2 className="text-xl font-black text-white">Submitted outstation requests</h2>
+                <h2 className="text-xl font-black text-white">Outstation expense queue</h2>
                 <p className="text-sm text-[#CBD5E1]">Open any row to inspect evidence, route metrics, location validation, and admin decisions.</p>
               </div>
             </div>
@@ -878,7 +881,7 @@ export function OutstationRequestsAdmin({
                                 event.stopPropagation();
                                 setManagerExpenseModal({ mode: "edit", request });
                               }}
-                              title="Edit destination and recalculate distance"
+                              title="Edit expense details and recalculate distance"
                               type="button"
                             >
                               <Edit2 className="h-3.5 w-3.5" />

@@ -52,7 +52,7 @@ function ExpenseErrorBanner({
     <AdminCallout tone="danger">
       <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
       <div>
-        <p className="font-semibold">Expenses analysis error</p>
+        <p className="font-semibold">Outstation expenses analysis error</p>
         <p className="mt-1 leading-6">{message}</p>
       </div>
     </AdminCallout>
@@ -328,7 +328,7 @@ export function ExpenseReport({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `expenses-filtered-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `outstation-expenses-filtered-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -343,13 +343,13 @@ export function ExpenseReport({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="relative z-10">
             <p className="inline-flex rounded-full border border-[#F97316]/35 bg-[#F97316]/12 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-[#FDBA74]">
-              Expense Operations
+              Outstation Expense Operations
             </p>
-            <h2 className="mt-3 text-2xl font-black tracking-tight text-white">Expenses Report</h2>
+            <h2 className="mt-3 text-2xl font-black tracking-tight text-white">Outstation Expenses Report</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#CBD5E1]">
               {analysis
                 ? `${analysis.fileName} - ${formatNumber(analysis.summary.trips)} trips saved for review`
-                : "Upload an expenses sheet, approve rows from HR, then import approved expenses into payroll."}
+                : "Upload a historical outstation expenses sheet, approve rows from HR, then import approved expenses into payroll."}
             </p>
           </div>
           <div className="relative z-10 flex flex-wrap items-center gap-2">
@@ -371,7 +371,7 @@ export function ExpenseReport({
             ) : (
               <Upload className="mr-2 h-4 w-4" />
             )}
-            Upload Expenses
+            Upload Historical Expenses
           </Button>
           <Button
             className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(0,0,0,0.18)] hover:bg-white/16"
@@ -380,7 +380,7 @@ export function ExpenseReport({
             variant="secondary"
           >
             <Download className="mr-2 h-4 w-4" />
-            Download Expenses
+            Download Outstation Expenses
           </Button>
           <Button
             className="rounded-2xl border border-[#FDBA74]/40 bg-[#F97316] px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(249,115,22,0.22)] hover:bg-[#EA580C]"
@@ -416,9 +416,9 @@ export function ExpenseReport({
           />
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] bg-[linear-gradient(135deg,#F8FAFC_0%,#FFF7ED_100%)] px-4 py-3">
             <div>
-              <h3 className="text-sm font-semibold text-[#0F172A]">Saved Expense Reports</h3>
+              <h3 className="text-sm font-semibold text-[#0F172A]">Historical Outstation Uploads</h3>
               <p className="mt-0.5 text-xs text-[#64748B]">
-                Preview, replace, or delete uploaded expense reports from the system database.
+                Preview, replace, or delete historical uploaded expense reports from the system database.
               </p>
             </div>
             <Badge variant="neutral">{formatNumber(reports.length)} reports</Badge>

@@ -2679,7 +2679,7 @@ function mapOutstationExpenseToPayrollApproval(row: Record<string, unknown>): Pa
   const total = claimedTotal > 0 ? claimedTotal : expectedTotal;
   const ticketAmount = toNumber(row.ticket_amount);
   const fuelAmount = toNumber(row.fuel_amount);
-  const tripId = `OUT-${String(row.id ?? "").trim() || "request"}`;
+  const tripId = `OUTSTATION-${String(row.id ?? "").trim() || "request"}`;
   const createdAt = String(row.created_at ?? "").trim();
   const tripStartDate = String(row.trip_start_date ?? createdAt).trim();
   const tripEndDate = String(row.trip_end_date ?? tripStartDate).trim();
@@ -2722,7 +2722,7 @@ function mapOutstationExpenseToPayrollApproval(row: Record<string, unknown>): Pa
     requestType,
     returnTicketAmount: 0,
     row: Number(row.id ?? 0),
-    sourceFileName: "Live Outstation Requests",
+    sourceFileName: "Outstation Requests",
     specialist: employeeName,
     status,
     to: destination,
@@ -3545,13 +3545,17 @@ export async function getMedicalRepPortalData(
       includeLiveOutstationExpenses ? listOutstationExpensesForPortal(currentHrId ? [currentHrId] : []) : Promise.resolve([]),
       listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     ]);
-    const expenses = [...historicalExpenses, ...liveOutstationExpenses];
+    const liveOutstationTripIds = new Set(liveOutstationExpenses.map((expense) => expense.tripId));
+    const expenses = [
+      ...historicalExpenses.filter((expense) => !liveOutstationTripIds.has(expense.tripId)),
+      ...liveOutstationExpenses,
+    ];
 
     const base = await getEmployeePortalData(access, {
       payroll: payrollDashboard,
       sales: salesDashboard,
       directory: directory,
-      expenses: historicalExpenses,
+      expenses,
       expenseReports: expenseReports,
     });
 
@@ -4983,21 +4987,23 @@ export async function getNsmTeamExpenses(
     const selectedReportId =
       options.reportId && reports.some((report) => report.id === options.reportId)
         ? options.reportId
-        : reports[0]?.id ?? null;
+        : null;
 
-    const reportExpenses = selectedReportId
-      ? await listPayrollExpenses(
-          undefined,
-          undefined,
-          selectedReportId,
-          access,
-        )
-      : [];
+    const reportExpenses = await listPayrollExpenses(
+      undefined,
+      undefined,
+      selectedReportId ?? undefined,
+      access,
+    );
     const liveOutstationExpenses = await listOutstationExpensesForPortal(
       scopedDsms.map((employee) => employee.hrId),
     );
 
-    const combinedExpenses = [...reportExpenses, ...liveOutstationExpenses];
+    const liveOutstationTripIds = new Set(liveOutstationExpenses.map((expense) => expense.tripId));
+    const combinedExpenses = [
+      ...reportExpenses.filter((expense) => !liveOutstationTripIds.has(expense.tripId)),
+      ...liveOutstationExpenses,
+    ];
 
     const lineExpenses = combinedExpenses.filter((expense) => {
       const canonicalHrId = normalizeHrIdForAccess(expense.hrId);

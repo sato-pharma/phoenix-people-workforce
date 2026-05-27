@@ -7,7 +7,7 @@ export function runEmployeePortalNavigationTests() {
   const medicalRep = resolveEmployeePortalNavVisibility("Medical Rep");
   assert.equal(medicalRep.showDashboardTab, true, "Medical Rep should see Dashboard");
   assert.equal(medicalRep.showMyPerformanceTab, true, "Medical Rep should see My Performance");
-  assert.equal(medicalRep.showExpenseActionTab, false, "Medical Rep should not see the manager expense action");
+  assert.equal(medicalRep.showExpenseActionTab, false, "Medical Rep should not see the manual outstation expense action");
   assert.equal(medicalRep.showMedicalRepExpensesTab, true, "Medical Rep should see their own expenses tab");
   assert.equal(medicalRep.showMyCoachingTab, true, "Medical Rep should see My Coaching Reports");
   assert.equal(medicalRep.showTeamCoachingTab, false, "Medical Rep should not see Team Coaching Reports");
@@ -17,7 +17,7 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(
     medicalRepWithManagerAccess.showExpenseActionTab,
     false,
-    "Medical Rep navigation should not inherit manager expense actions from access role fallback",
+    "Medical Rep navigation should not inherit manual outstation expense actions from access role fallback",
   );
   assert.equal(
     medicalRepWithManagerAccess.showMedicalRepExpensesTab,

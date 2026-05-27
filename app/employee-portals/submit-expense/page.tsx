@@ -81,9 +81,9 @@ export default async function EmployeePortalSubmitExpensePage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Expenses"
+      badge="Outstation Expenses"
       description="Capture outstation travel from the employee portal without duplicating the full admin expense workspace."
-      title="Submit Expense"
+      title="Submit Outstation Expense"
     >
       <MobileOutstationWizard
         employeeHrId={access.hrId ?? portalData.employee.hrId}

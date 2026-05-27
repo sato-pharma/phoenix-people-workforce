@@ -19,6 +19,10 @@ import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classific
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/payroll/expenses";
 import {
+  mapOutstationRequestToPayrollExpenseRecord,
+  outstationPayrollTripId,
+} from "@/lib/outstation/payroll-expense-mapping";
+import {
   validateMedicalRepSimpleExpenseInput,
   type MedicalRepSimpleExpenseInput,
 } from "@/lib/outstation/medical-rep-expenses";
@@ -1621,43 +1625,52 @@ export async function submitMedicalRepSimpleExpenseRequest(
   }
 }
 
-function outstationPayrollTripId(requestId: number) {
-  return `OUTSTATION-${requestId}`;
-}
+type LinkedOutstationPayrollExpense = {
+  id: string;
+  reportId: string | null;
+  tripId: string;
+};
 
-function outstationRequestToPayrollExpenseRecord(request: OutstationExpenseRequest) {
-  const tripStartDate = request.tripStartDate ? request.tripStartDate.slice(0, 10) : "";
-  const tripEndDate = request.tripEndDate ? request.tripEndDate.slice(0, 10) : tripStartDate;
-  const total = request.claimedTotalAmount || request.expectedTotalAmount;
+async function getLinkedOutstationPayrollExpense(
+  requestId: number,
+): Promise<LinkedOutstationPayrollExpense | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("payroll_expenses")
+    .select("id,report_id,trip_id")
+    .eq("trip_id", outstationPayrollTripId(requestId))
+    .maybeSingle();
+
+  if (error) {
+    if (isPayrollExpensesSchemaMissing(error)) return null;
+    throw new Error(error.message);
+  }
+
+  if (!data) return null;
 
   return {
-    allowance: request.allowanceAmount,
-    amWorkload: 0,
-    date: tripStartDate,
-    description: request.notes ?? request.approvalReason ?? "Approved outstation request",
-    from: request.residenceCity ?? request.residenceArea ?? "Residence",
-    hr: "Approved",
-    hrApproved: true,
-    hrComment: "Approved from outstation workflow.",
-    hrId: request.employeeHrId,
-    hrNotes: request.approvalReason,
-    km: request.distanceFromResidenceKm ?? 0,
-    location: request.toLabel ?? request.toCity ?? request.toArea ?? "",
-    meetingAmount: request.expenseType === "meeting" ? total : 0,
-    open: "",
-    pmWorkload: 0,
-    requestType: "Outstation",
-    row: 1,
-    specialist: request.employeeName,
-    status: "Approved",
-    to: request.toLabel ?? request.toCity ?? request.toArea ?? "",
-    toDate: tripEndDate,
-    total,
-    transportationType: request.transportationType,
-    travelCost: request.fuelAmount + request.ticketAmount,
-    tripId: outstationPayrollTripId(request.id),
-    tripType: request.expenseType,
+    id: String(data.id),
+    reportId: data.report_id ? String(data.report_id) : null,
+    tripId: String(data.trip_id),
   };
+}
+
+async function syncLinkedOutstationPayrollExpense(input: {
+  access: AccessContext;
+  linkedPayroll: LinkedOutstationPayrollExpense | null;
+  request: OutstationExpenseRequest;
+}) {
+  if (input.request.status !== "approved" && !input.linkedPayroll) return 0;
+
+  const expenseRecord = mapOutstationRequestToPayrollExpenseRecord(input.request, {
+    reportId: input.linkedPayroll?.reportId ?? null,
+  });
+  const saved = await savePayrollExpenseApprovals({
+    fileName: `outstation-request-${input.request.id}.workflow`,
+    records: [expenseRecord],
+    reportId: input.linkedPayroll?.reportId ?? null,
+  }, input.access);
+
+  return saved.length;
 }
 
 export async function approveOutstationRequestForPayroll(
@@ -1695,10 +1708,14 @@ export async function approveOutstationRequestForPayroll(
   }
 
   const request = mapOutstationRequestRow(data as Record<string, unknown>);
-  const expenseRecord = outstationRequestToPayrollExpenseRecord(request);
+  const linkedPayroll = await getLinkedOutstationPayrollExpense(request.id);
+  const expenseRecord = mapOutstationRequestToPayrollExpenseRecord(request, {
+    reportId: linkedPayroll?.reportId ?? null,
+  });
   const savedExpenses = await savePayrollExpenseApprovals({
     fileName: `outstation-request-${request.id}.workflow`,
     records: [expenseRecord],
+    reportId: linkedPayroll?.reportId ?? null,
   }, access);
 
   await writeRequiredAuditLog({
@@ -1861,7 +1878,7 @@ export async function createManagerExpenseAsAdmin(
   const eligibilityStatus: OutstationEligibilityStatus =
     distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
   const eligibilityReason =
-    `Admin-created manager expense. ${distanceEligibility.reason}`;
+    `Admin-created manual outstation expense. ${distanceEligibility.reason}`;
 
   const expectedTotalAmount =
     eligibilityStatus === "not_eligible"
@@ -1883,7 +1900,7 @@ export async function createManagerExpenseAsAdmin(
     .insert({
       allowance_amount: allowance.allowanceAmount,
       allowance_breakdown_json: JSON.stringify(allowance.breakdown),
-      approval_reason: "Manager expense created by admin. Requires manual review.",
+      approval_reason: "Manual outstation expense created by admin. Requires manual review.",
       approval_recommendation: "manager_review",
       area: employee.areaName ?? null,
       attachment_count: 0,
@@ -1955,12 +1972,12 @@ export async function createManagerExpenseAsAdmin(
       distanceKm: input.distanceKm,
       employeeHrId: employee.hrId,
       expenseType: input.expenseType,
-      source: "admin_manager_expense",
+      source: "admin_manual_outstation_expense",
       status: "submitted",
       tripEndDate: input.tripEndDate,
       tripStartDate: input.tripStartDate,
     },
-    summary: `Admin created manager expense for ${employee.hrId} to ${input.destination.label} (${input.distanceKm} km).`,
+    summary: `Admin created manual outstation expense for ${employee.hrId} to ${input.destination.label} (${input.distanceKm} km).`,
   });
 
   return created;
@@ -1975,6 +1992,7 @@ export async function updateManagerExpenseAsAdmin(
 
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
+  const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
 
   const now = new Date().toISOString();
   const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
@@ -2040,7 +2058,7 @@ export async function updateManagerExpenseAsAdmin(
     distance_from_residence_km: distanceKm,
     distance_km: distanceKm,
     duration_minutes: durationMinutes,
-    eligibility_reason: `Admin-updated manager expense. ${distanceEligibility.reason}`,
+    eligibility_reason: `Admin-updated manual outstation expense. ${distanceEligibility.reason}`,
     eligibility_status: eligibilityStatus,
     expense_type: expenseType,
     expected_total_amount: expectedTotalAmount,
@@ -2077,6 +2095,11 @@ export async function updateManagerExpenseAsAdmin(
   if (!data) throw new Error("Outstation request not found after update.");
 
   const updated = mapOutstationRequestRow(data as Record<string, unknown>);
+  const syncedPayrollRows = await syncLinkedOutstationPayrollExpense({
+    access,
+    linkedPayroll,
+    request: updated,
+  });
 
   await writeRequiredAuditLog({
     actorLoginId: actor,
@@ -2086,7 +2109,8 @@ export async function updateManagerExpenseAsAdmin(
       destination: destination?.label ?? existing.toLabel,
       distanceKm,
       expenseType,
-      source: "admin_manager_expense_edit",
+      payrollExpenseRows: syncedPayrollRows,
+      source: "admin_manual_outstation_expense_edit",
       status: updated.status,
       tripEndDate,
       tripStartDate,
@@ -2097,10 +2121,70 @@ export async function updateManagerExpenseAsAdmin(
       expenseType: existing.expenseType,
       status: existing.status,
     },
-    summary: `Admin updated manager expense ${requestId} for ${employeeHrId}.`,
+    summary: `Admin updated manual outstation expense ${requestId} for ${employeeHrId}.`,
   });
 
   return updated;
+}
+
+export async function rejectOutstationRequestAsAdmin(
+  requestId: number,
+  access: AccessContext,
+  options: { comment: string },
+): Promise<OutstationExpenseRequest> {
+  await assertPermission(access, "outstation", "approve");
+
+  const existing = await getOutstationRequestById(requestId);
+  if (!existing) throw new Error("Outstation request was not found.");
+
+  const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
+  if (existing.status === "approved" || linkedPayroll) {
+    throw new Error("This outstation expense has already been added to payroll and cannot be rejected.");
+  }
+
+  const comment = cleanText(options.comment);
+  if (!comment) {
+    throw new Error("A rejection reason is required.");
+  }
+
+  const now = new Date().toISOString();
+  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .update({
+      approval_reason: comment,
+      approval_recommendation: "reject",
+      calculation_status: "rejected",
+      status: "rejected",
+      updated_at: now,
+    })
+    .eq("id", requestId)
+    .in("status", ["submitted", "rejected"])
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) {
+    throw new Error("Outstation request state changed. Refresh and retry.");
+  }
+
+  const rejected = mapOutstationRequestRow(data as Record<string, unknown>);
+
+  await writeRequiredAuditLog({
+    actorLoginId: actor,
+    entityId: String(rejected.id),
+    entityType: "outstation_request",
+    newValues: {
+      approvalReason: comment,
+      status: rejected.status,
+    },
+    oldValues: {
+      status: existing.status,
+    },
+    summary: `Admin rejected outstation request ${rejected.id}.`,
+  });
+
+  return rejected;
 }
 
 export async function deleteOutstationRequestAsAdmin(
@@ -2118,12 +2202,16 @@ export async function deleteOutstationRequestAsAdmin(
 
   const { data: linkedPayrollRows, error: linkedPayrollError } = await supabase
     .from("payroll_expenses")
-    .delete()
-    .eq("trip_id", expenseTripId)
-    .select("trip_id");
+    .select("trip_id")
+    .eq("trip_id", expenseTripId);
 
   if (linkedPayrollError && !isPayrollExpensesSchemaMissing(linkedPayrollError)) {
     throw new Error(linkedPayrollError.message);
+  }
+
+  const addedToPayroll = existing.status === "approved" || Boolean(linkedPayrollRows?.length);
+  if (addedToPayroll) {
+    throw new Error("This outstation expense has already been added to payroll and cannot be deleted.");
   }
 
   await deleteOutstationCarEvidenceImage(existing.carEvidenceImagePath);
@@ -2153,7 +2241,7 @@ export async function deleteOutstationRequestAsAdmin(
 
   return {
     linkedPayroll: {
-      deletedRows: linkedPayrollRows?.length ?? 0,
+      deletedRows: 0,
       expenseTripId,
     },
     request: existing,
