@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { LockKeyhole, RefreshCcw, Save, Settings2, SlidersHorizontal, Workflow } from "lucide-react";
@@ -233,7 +233,7 @@ export function MarketingControlWorkspace() {
 
   return (
     <div className="space-y-6">
-      <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] sm:p-5">
+      <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
         <div className="grid gap-3 md:grid-cols-4">
           <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Request Types</p>

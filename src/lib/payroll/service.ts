@@ -15,6 +15,7 @@ import {
 import { calculatePayrollParts, normalizePayrollPaymentMode, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 import { PayrollConflictError } from "@/lib/payroll/errors";
 import { getPayrollWorkflowTransition } from "@/lib/payroll/workflow";
+import { assertPayrollWorkflowRegistryTransition } from "@/lib/payroll/workflow-registry";
 import type { SalaryValidationIssue, SalaryValidationRow } from "@/lib/payroll/salary-import";
 import type {
   PayrollDashboardData,
@@ -1337,9 +1338,19 @@ export async function replaceSalaryBatch(
 export async function runPayrollWorkflow(
   batchId: string,
   action: PayrollWorkflowAction,
-  actorName: string,
-  rejectedReason?: string
+  accessContextOrActorName: Pick<AccessContext, "role"> | string,
+  actorNameOrRejectedReason?: string,
+  rejectedReasonInput?: string,
 ): Promise<SalaryBatch | null> {
+  const accessContext = typeof accessContextOrActorName === "string"
+    ? { role: "Super Admin" as const }
+    : accessContextOrActorName;
+  const actorName = typeof accessContextOrActorName === "string"
+    ? accessContextOrActorName
+    : actorNameOrRejectedReason ?? accessContext.role;
+  const rejectedReason = typeof accessContextOrActorName === "string"
+    ? actorNameOrRejectedReason
+    : rejectedReasonInput;
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
 
@@ -1359,6 +1370,12 @@ export async function runPayrollWorkflow(
 
   const currentStatus = String((existingBatchData as Record<string, unknown>).status ?? "");
   const transition = getPayrollWorkflowTransition(currentStatus, action, rejectedReason);
+  await assertPayrollWorkflowRegistryTransition({
+    access: accessContext,
+    action,
+    currentStatus,
+    expectedNextStatus: transition.nextStatus,
+  });
   const updates: Record<string, unknown> = { updated_at: now };
   updates.status = transition.nextStatus;
 

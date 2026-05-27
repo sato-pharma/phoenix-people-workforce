@@ -352,7 +352,7 @@ export function MedicalRepExpensesWorkspace({
 
       {activeTab === "submit" ? (
         <Card className="overflow-hidden rounded border border-slate-200 bg-white p-0 shadow-[0_24px_60px_rgba(15,23,42,0.09)]">
-          <form onSubmit={submitExpense}>
+          <form aria-busy={isSubmitting} onSubmit={submitExpense}>
             <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/60 to-white p-6 sm:p-8">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>

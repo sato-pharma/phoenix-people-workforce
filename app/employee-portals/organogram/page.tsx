@@ -21,17 +21,8 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/* ---------- print stylesheet ---------- */
-
-const printStyles = `
-@media print {
-  body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  nav, header, footer, button, [data-no-print] { display: none !important; }
-  .print\\:break-inside-avoid { break-inside: avoid; }
-  .print\\:shadow-none { box-shadow: none !important; }
-  * { border-color: #e2e8f0 !important; }
-}
-`;
+// Print stylesheet + dir="auto" are now provided automatically by
+// EmployeePortalPageShell.
 
 /* ---------- error handling ---------- */
 
@@ -88,11 +79,9 @@ export default async function EmployeePortalOrganogramPage() {
     <EmployeePortalPageShell
       badge="People Operations"
       description="Understand reporting structure and role relationships for your territory."
+      errorBoundaryTitle="Organogram unavailable"
       title="Organogram"
     >
-      {/* Print stylesheet */}
-      <style dangerouslySetInnerHTML={{ __html: printStyles }} />
-
       <EmployeeOrganogramDashboard
         fixedLine={fixedLine}
         initialError={initialError}

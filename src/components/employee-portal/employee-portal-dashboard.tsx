@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { Component, type ReactElement, type ReactNode } from "react";
@@ -437,7 +437,7 @@ export function LoadingSkeleton() {
   );
 }
 
-/* Chart Error Boundary — wraps Recharts rendering errors gracefully */
+/* Chart Error Boundary â€” wraps Recharts rendering errors gracefully */
 class ChartErrorBoundary extends Component<
   { children: ReactNode },
   { hasError: boolean }
@@ -556,7 +556,7 @@ export function SalesAchievementRing({
   };
 
   return (
-    <div className="flex h-full flex-col justify-center rounded border border-slate-100 bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+    <div className="flex h-full flex-col justify-center rounded border border-slate-100 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
       <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Sales Achievement</p>
       <div className="mt-4 flex flex-col items-center">
         <div className="relative flex h-[280px] w-[280px] items-center justify-center rounded-full" style={circleStyle} title="Sales achievement">
@@ -610,7 +610,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
           : "bg-slate-500";
 
   return (
-    <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_22px_48px_rgba(15,23,42,0.06)] lg:p-8">
+    <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.06)] lg:p-8">
       <div className="mb-6 rounded border border-slate-200 bg-white px-6 py-6 shadow-[0_8px_26px_rgba(15,23,42,0.05)] lg:px-8 lg:py-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
           <div className="flex h-[152px] w-[152px] shrink-0 items-center justify-center rounded-full border-2 border-orange-100 bg-orange-50/30">
@@ -665,20 +665,20 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
       </div>
       <div className="hidden mb-5 rounded border border-slate-200 bg-slate-50/60 px-4 py-3">
         <p className="text-base font-semibold text-slate-900">
-          {employee.fullName} <span className="text-slate-500">·</span> {employee.roleLabel}
+          {employee.fullName} <span className="text-slate-500">Â·</span> {employee.roleLabel}
         </p>
         <p className="mt-1 text-sm text-slate-600">
-          {employee.line ?? "Unassigned Line"} Line <span className="text-slate-400">·</span>{" "}
-          {employee.territory ?? "Unassigned Territory"} Territory <span className="text-slate-400">·</span>{" "}
+          {employee.line ?? "Unassigned Line"} Line <span className="text-slate-400">Â·</span>{" "}
+          {employee.territory ?? "Unassigned Territory"} Territory <span className="text-slate-400">Â·</span>{" "}
           Reports to {employee.manager ?? "Unassigned Manager"}
         </p>
         <p className="mt-1 text-sm text-slate-600">
-          HR ID: {displayHrId} <span className="text-slate-400">·</span>{" "}
+          HR ID: {displayHrId} <span className="text-slate-400">Â·</span>{" "}
           <span className="inline-flex items-center gap-1">
             {employee.status}
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
           </span>{" "}
-          <span className="text-slate-400">·</span> Hired {hiredLabel}
+          <span className="text-slate-400">Â·</span> Hired {hiredLabel}
         </p>
       </div>
       <div className="grid gap-6 xl:grid-cols-[0.82fr_1.38fr_0.85fr]">
@@ -1166,9 +1166,9 @@ function IncentiveSchemeDescriptionCard() {
   const tiers = [
     { range: "< 90%", payout: "0%", rate: "Not eligible", accent: "border-l-slate-300 bg-slate-50/50", badge: "border-slate-200 bg-slate-50 text-slate-500" },
     { range: "90%", payout: "50%", rate: "Threshold unlock", accent: "border-l-amber-400 bg-amber-50/30", badge: "border-amber-200 bg-amber-50 text-amber-700" },
-    { range: "91 – 100%", payout: "55 – 100%", rate: "+5% per 1%", accent: "border-l-orange-400 bg-orange-50/30", badge: "border-orange-200 bg-orange-50 text-orange-700" },
-    { range: "101 – 120%", payout: "101.5 – 130%", rate: "+1.5% per 1%", accent: "border-l-emerald-400 bg-emerald-50/30", badge: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-    { range: "121 – 150%", payout: "133 – 220%", rate: "+3% per 1%", accent: "border-l-sky-400 bg-sky-50/30", badge: "border-sky-200 bg-sky-50 text-sky-700" },
+    { range: "91 â€“ 100%", payout: "55 â€“ 100%", rate: "+5% per 1%", accent: "border-l-orange-400 bg-orange-50/30", badge: "border-orange-200 bg-orange-50 text-orange-700" },
+    { range: "101 â€“ 120%", payout: "101.5 â€“ 130%", rate: "+1.5% per 1%", accent: "border-l-emerald-400 bg-emerald-50/30", badge: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+    { range: "121 â€“ 150%", payout: "133 â€“ 220%", rate: "+3% per 1%", accent: "border-l-sky-400 bg-sky-50/30", badge: "border-sky-200 bg-sky-50 text-sky-700" },
   ];
 
   return (
@@ -1181,8 +1181,8 @@ function IncentiveSchemeDescriptionCard() {
       {/* Key formula */}
       <div className="mb-4 rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
         <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Semester Target</p>
-        <p className="mt-1 text-sm font-bold text-slate-800">Basic Salary × 2 months</p>
-        <p className="mt-0.5 text-[11px] text-slate-500">2 payouts per year — paid each semester</p>
+        <p className="mt-1 text-sm font-bold text-slate-800">Basic Salary Ã— 2 months</p>
+        <p className="mt-0.5 text-[11px] text-slate-500">2 payouts per year â€” paid each semester</p>
       </div>
 
       {/* Tiered bands */}
@@ -1245,7 +1245,7 @@ function IncentiveKpiCards({ data, isSalaryVisible }: { data: MedicalRepPortalDa
     {
       label: "Basic Salary",
       value: isSalaryVisible ? egp(salaryRef.basicSalary) : maskedMoneyValue,
-      note: "Base × 70% — incentive basis",
+      note: "Base Ã— 70% â€” incentive basis",
       accent: "purple",
     },
   ];
@@ -1283,7 +1283,7 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
 
   return (
     <div className="space-y-5">
-      {/* KPI strip — Achievement + Base Salary + Basic Salary */}
+      {/* KPI strip â€” Achievement + Base Salary + Basic Salary */}
       <IncentiveKpiCards data={data} isSalaryVisible={isIncentiveSalaryVisible} />
 
       {/* Policy + Simulator side by side */}
@@ -1296,7 +1296,7 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
         />
       </div>
 
-      {/* Payout curve chart — standalone */}
+      {/* Payout curve chart â€” standalone */}
       <IncentivePayoutCurveChart data={data} />
     </div>
   );
@@ -1515,7 +1515,7 @@ function PerformanceChartTooltip({ active, payload, label }: { active?: boolean;
   const targetEntry = payload.find((p) => p.dataKey === "target");
   const sales = salesEntry?.value ?? 0;
   const target = targetEntry?.value ?? 0;
-  const achievement = target > 0 ? ((sales / target) * 100).toFixed(1) : "—";
+  const achievement = target > 0 ? ((sales / target) * 100).toFixed(1) : "â€”";
   const gap = sales - target;
   return (
     <div className="rounded border border-slate-200 bg-white px-4 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.18)]">
@@ -1673,7 +1673,7 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
               </SafeResponsiveContainer>
             </div>
 
-            {/* Achievement per period — horizontal bar indicators */}
+            {/* Achievement per period â€” horizontal bar indicators */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Monthly Achievement</p>
@@ -1848,7 +1848,7 @@ function EmployeesOnLeaveTodayPanel({ data }: { data: MedicalRepPortalData }) {
               <div className="min-w-0">
                 <p className="break-words text-sm font-medium text-slate-900">{row.employeeName}</p>
                 <p className="mt-1 break-words text-xs font-normal text-slate-500">
-                  {row.lineName ?? row.departmentName ?? "Phoenix"} • {prettyDate(row.startDate)} – {prettyDate(row.endDate)}
+                  {row.lineName ?? row.departmentName ?? "Phoenix"} â€¢ {prettyDate(row.startDate)} â€“ {prettyDate(row.endDate)}
                 </p>
               </div>
               <span className="shrink-0 rounded border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
@@ -2113,7 +2113,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
         window.localStorage.removeItem(SUPPORT_DRAFT_KEY);
       }
     } catch {
-      // storage full / disabled — silently ignore
+      // storage full / disabled â€” silently ignore
     }
   }, [category, subcategory, subject, description]);
 
@@ -2160,7 +2160,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
   };
 
   const formatRequestDate = (iso: string) => {
-    if (!iso) return "—";
+    if (!iso) return "â€”";
     try {
       return new Intl.DateTimeFormat("en-GB", {
         day: "2-digit",
@@ -2349,7 +2349,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                           aria-label={`Email ${member.name}`}
                           className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
                           href={`mailto:${member.email}?subject=${encodeURIComponent(
-                            `Phoenix Workforce — ${employeeName}`,
+                            `Phoenix Workforce â€” ${employeeName}`,
                           )}`}
                           rel="noopener noreferrer"
                         >
@@ -2448,7 +2448,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               </select>
             </label>
 
-            {/* Conditional sub-category — only when "HR Request" is selected */}
+            {/* Conditional sub-category â€” only when "HR Request" is selected */}
             {category === "HR Request" && (
               <label className="block">
                 <span className={`mb-1.5 block ${labelClass}`}>
@@ -2560,7 +2560,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                         onClick={() => removeAttachment(file.name, file.size)}
                         type="button"
                       >
-                        ×
+                        Ã—
                       </button>
                     </li>
                   ))}
@@ -2587,7 +2587,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
         </Card>
       </div>
 
-      {/* ---- Last Ticket (pinned) — only when at least one exists ---- */}
+      {/* ---- Last Ticket (pinned) â€” only when at least one exists ---- */}
       {lastTicket && (
         <Card
           className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}
@@ -2608,7 +2608,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             </p>
             <p className="mt-0.5 text-[11px] text-slate-500">
               {lastTicket.category}
-              {lastTicket.subcategory ? ` · ${lastTicket.subcategory}` : ""} &middot;{" "}
+              {lastTicket.subcategory ? ` Â· ${lastTicket.subcategory}` : ""} &middot;{" "}
               {formatRequestDate(lastTicket.createdAt)}
             </p>
             <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-slate-600">
@@ -2648,7 +2648,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
         {isLoadingRequests ? (
           <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
             <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">
-              Loading…
+              Loadingâ€¦
             </p>
           </div>
         ) : recentRequests.length === 0 ? (
@@ -2698,7 +2698,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                       </td>
                       <td className="px-4 py-2.5 text-[12px] text-slate-600">
                         {request.category}
-                        {request.subcategory ? ` · ${request.subcategory}` : ""}
+                        {request.subcategory ? ` Â· ${request.subcategory}` : ""}
                       </td>
                       <td className="px-4 py-2.5">
                         <span
@@ -2738,7 +2738,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                   </p>
                   <p className="mt-0.5 text-[11px] text-slate-500">
                     {request.category}
-                    {request.subcategory ? ` · ${request.subcategory}` : ""} &middot;{" "}
+                    {request.subcategory ? ` Â· ${request.subcategory}` : ""} &middot;{" "}
                     {formatRequestDate(request.createdAt)}
                   </p>
                 </div>
@@ -3019,7 +3019,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             </div>
           ))}
         </div>
-        {/* Desktop table for ≥480px */}
+        {/* Desktop table for â‰¥480px */}
         <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -3112,7 +3112,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             </div>
           ))}
         </div>
-        {/* Desktop table for ≥480px */}
+        {/* Desktop table for â‰¥480px */}
         <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
@@ -3208,7 +3208,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               </div>
             ))}
           </div>
-          {/* Desktop table for ≥480px */}
+          {/* Desktop table for â‰¥480px */}
           <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
             <table className="w-full border-collapse text-left text-sm">
               <thead>
@@ -3272,7 +3272,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             </div>
           ))}
         </div>
-        {/* Desktop table for ≥480px */}
+        {/* Desktop table for â‰¥480px */}
         <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
@@ -3374,7 +3374,7 @@ export function HRContractSection({ data }: { data: MedicalRepPortalData }) {
 }
 
 // ---------------------------------------------------------------------------
-// Identity Card — replaces the old "Personal Overview / Good Morning" header
+// Identity Card â€” replaces the old "Personal Overview / Good Morning" header
 // Matches the exact design from the ChatGPT image reference
 // ---------------------------------------------------------------------------
 
@@ -3410,7 +3410,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
     .toUpperCase();
 
   return (
-    <div className="relative overflow-hidden rounded border border-white/80 bg-[linear-gradient(135deg,#ffffff_0%,#ffffff_48%,#f8fafc_100%)] px-5 py-5 shadow-[0_18px_48px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/70 lg:px-10 lg:py-8">
+    <div className="relative overflow-hidden rounded border border-white/80 bg-[linear-gradient(135deg,#ffffff_0%,#ffffff_48%,#f8fafc_100%)] px-5 py-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 lg:px-10 lg:py-8">
       <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
       <div className="absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.025)_1px,transparent_1px)] bg-[size:34px_34px] opacity-70 [mask-image:linear-gradient(110deg,rgba(0,0,0,0.85),transparent_76%)]" />
       
@@ -3448,7 +3448,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
             <p className="text-[13px] font-medium tabular-nums lg:text-[14px]">HR ID: {displayHrId}</p>
           </div>
 
-          {/* Line · Territory · Manager - Enhanced Grid */}
+          {/* Line Â· Territory Â· Manager - Enhanced Grid */}
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:mt-6">
             <div className="flex items-center gap-2.5 group/item">
               <div className="flex h-8 w-8 items-center justify-center rounded bg-white text-orange-500 shadow-sm ring-1 ring-slate-200 transition-colors group-hover/item:bg-orange-50">

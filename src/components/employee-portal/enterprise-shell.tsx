@@ -2,13 +2,46 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowUpRight, CircleDashed } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { cn } from "@/lib/utils";
+
+/* ------------------------------------------------------------------ */
+/*  Canonical cross-cutting stylesheet                                 */
+/*  Injected once per shell render so every employee-portal page       */
+/*  inherits print support and `prefers-reduced-motion` respect        */
+/*  without each page having to opt in.                                */
+/* ------------------------------------------------------------------ */
+
+const portalGlobalStyles = `
+@media print {
+  body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  nav, header, footer, button, [data-no-print] { display: none !important; }
+  .print\\:break-inside-avoid { break-inside: avoid; }
+  .print\\:shadow-none { box-shadow: none !important; }
+  * { border-color: #e2e8f0 !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin, .animate-pulse, .animate-bounce { animation: none !important; }
+  *, *::before, *::after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+  }
+}
+`;
 
 type EmployeePortalPageShellProps = {
   badge?: string;
   children: ReactNode;
   description: string;
   descriptionClassName?: string;
+  /**
+   * Opt-out for the rare page that needs to scope its own
+   * WorkspaceErrorBoundary (e.g. when a custom fallback must be shown
+   * for sub-regions instead of swallowing the whole page).
+   * Defaults to false — the shell wraps children automatically.
+   */
+  disableErrorBoundary?: boolean;
+  errorBoundaryTitle?: string;
   title: string;
 };
 
@@ -17,10 +50,24 @@ export function EmployeePortalPageShell({
   children,
   description,
   descriptionClassName,
+  disableErrorBoundary = false,
+  errorBoundaryTitle,
   title,
 }: EmployeePortalPageShellProps) {
+  const body = disableErrorBoundary ? (
+    children
+  ) : (
+    <WorkspaceErrorBoundary
+      fallbackTitle={errorBoundaryTitle ?? `${title} unavailable`}
+    >
+      {children}
+    </WorkspaceErrorBoundary>
+  );
+
   return (
-    <div className="mx-auto w-full space-y-5">
+    <div className="mx-auto w-full space-y-5" dir="auto">
+      {/* Portal-wide print + prefers-reduced-motion stylesheet (one inject per page) */}
+      <style dangerouslySetInnerHTML={{ __html: portalGlobalStyles }} />
       <section
         className="relative box-border w-full overflow-hidden rounded border border-slate-800 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] shadow-[0_8px_24px_rgba(15,23,42,0.20)]"
         style={{ boxSizing: "border-box" }}
@@ -49,7 +96,7 @@ export function EmployeePortalPageShell({
           </div>
         </div>
       </section>
-      <div className="space-y-6">{children}</div>
+      <div className="space-y-6">{body}</div>
     </div>
   );
 }

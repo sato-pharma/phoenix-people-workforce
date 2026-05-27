@@ -63,7 +63,8 @@
       "Bash(powershell -Command \"Get-ChildItem -Recurse -File -Include '*.sql','*.ts' -Path 'supabase','app\\\\api' -ErrorAction SilentlyContinue | Select-String -Pattern 'support_request|support_ticket|hr_ticket|hr_support' -List | Select-Object Filename, Line | Select-Object -First 20\")",
       "Bash(powershell -Command \"Get-ChildItem 'src\\\\lib' -Recurse -File -Filter '*.ts' | Select-String -Pattern 'supabaseRest|createSupabaseAdminClient' -List | Select-Object Filename -First 8\")",
       "Bash(powershell -Command \"Get-Content 'src\\\\lib\\\\supabase\\\\server.ts' | Select-Object -First 50\")",
-      "Bash(powershell -Command \"Select-String -Path 'src\\\\lib\\\\auth\\\\permissions.ts' -Pattern 'export function normalizeHrId|export const normalizeHrId' -List | Select-Object Line\")"
+      "Bash(powershell -Command \"Select-String -Path 'src\\\\lib\\\\auth\\\\permissions.ts' -Pattern 'export function normalizeHrId|export const normalizeHrId' -List | Select-Object Line\")",
+      "PowerShell(node --version)"
     ]
   }
 }

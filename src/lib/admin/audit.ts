@@ -11,7 +11,8 @@ export type AuditEntityType =
   | "sales_import_batch"
   | "source_of_sales_product"
   | "user"
-  | "vacation_request";
+  | "vacation_request"
+  | "workflow_registry";
 
 export type AuditLogInput = {
   actorLoginId?: string | null;

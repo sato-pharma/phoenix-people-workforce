@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -31,7 +31,7 @@ import type {
   MarketingValidationWorkspace as MarketingValidationWorkspacePayload,
 } from "@/lib/marketing-requests/types";
 
-/* ─────────────────────── Focus Trap Hook ─────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Focus Trap Hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function useFocusTrap(active: boolean) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -76,7 +76,7 @@ function useFocusTrap(active: boolean) {
   return containerRef;
 }
 
-/* ─────────────────────── Offline Queue ─────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Offline Queue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 type QueuedSubmission = {
   id: string;
@@ -86,12 +86,12 @@ type QueuedSubmission = {
 
 function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
   const [queue, setQueue] = useState<QueuedSubmission[]>([]);
-  // Always start `true` to match SSR output — sync real value in useEffect
+  // Always start `true` to match SSR output â€” sync real value in useEffect
   const [isOnline, setIsOnline] = useState(true);
   const replayingRef = useRef(false);
 
   useEffect(() => {
-    // Sync real browser state after hydration — must live in useEffect to avoid SSR mismatch
+    // Sync real browser state after hydration â€” must live in useEffect to avoid SSR mismatch
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsOnline(navigator.onLine);
 
@@ -122,7 +122,7 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
           await onReplay(item.payload);
           setQueue((current) => current.filter((q) => q.id !== item.id));
         } catch {
-          // Stop replaying on first failure — will retry next time online
+          // Stop replaying on first failure â€” will retry next time online
           break;
         }
       }
@@ -142,7 +142,7 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
   return { enqueue, isOnline, queueLength: queue.length };
 }
 
-/* ─────────────────────── Types ─────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 type CaptureState = {
   accuracy: number | null;
@@ -195,7 +195,7 @@ type ValidatedPharmacyDetail = {
   }>;
 };
 
-/* ─────────────────────── Constants ─────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 const customerTypes: Array<{ label: string; value: MarketingCustomerType }> = [
   { label: "Clinic", value: "clinic" },
@@ -204,7 +204,7 @@ const customerTypes: Array<{ label: string; value: MarketingCustomerType }> = [
   { label: "Other", value: "other" },
 ];
 
-/* ─────────────────────── Utility Helpers ─────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Utility Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 let keyCounter = 0;
 function stableKey(prefix: string) {
@@ -293,7 +293,7 @@ function buildValidatedPharmacyDetails(rows: MarketingValidationReportRow[]) {
   return Array.from(pharmacies.values());
 }
 
-/* ─────────────────────── Sub-components ─────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function Field({
   children,
@@ -860,7 +860,7 @@ function LiveCameraModal({
   );
 }
 
-/* ─────────────────────── Skeleton Loader ─────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Skeleton Loader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function MetricSkeleton() {
   return (
@@ -884,7 +884,7 @@ function TableSkeleton() {
   );
 }
 
-/* ─────────────────────── Main Exported Component ─────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Main Exported Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export function MarketingValidationWorkspace() {
   const [workspace, setWorkspace] = useState<MarketingValidationWorkspacePayload>(emptyWorkspace);
@@ -906,7 +906,7 @@ export function MarketingValidationWorkspace() {
   const [hasMounted, setHasMounted] = useState(false);
   useEffect(() => { setHasMounted(true); }, []);
 
-  // Offline queue — replay pending submissions when connectivity returns
+  // Offline queue â€” replay pending submissions when connectivity returns
   const replaySubmission = useCallback(async (payload: unknown) => {
     const response = await fetch("/api/marketing-requests/validation", {
       body: JSON.stringify(payload),
@@ -1190,7 +1190,7 @@ export function MarketingValidationWorkspace() {
 
     const submissionPayload = buildSubmissionPayload();
 
-    // Offline path — queue and optimistically update UI
+    // Offline path â€” queue and optimistically update UI
     if (!isOnline) {
       enqueue(submissionPayload);
       // Optimistic: increment pending count
@@ -1233,7 +1233,7 @@ export function MarketingValidationWorkspace() {
         setActiveTab("validated");
       }
     } catch {
-      // Network failure mid-request — queue for retry
+      // Network failure mid-request â€” queue for retry
       enqueue(submissionPayload);
       resetForm();
       setMessage("Network error. Submission queued for automatic retry.");
@@ -1254,7 +1254,7 @@ export function MarketingValidationWorkspace() {
   return (
     <WorkspaceErrorBoundary fallbackTitle="Validation workspace error">
     <div className="space-y-4" dir="auto">
-      {/* ─── Offline Indicator ─── */}
+      {/* â”€â”€â”€ Offline Indicator â”€â”€â”€ */}
       {hasMounted && (!isOnline || queueLength > 0) && (
         <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2 text-[12px] font-semibold text-amber-800">
           <WifiOff className="h-3.5 w-3.5 shrink-0" />
@@ -1264,7 +1264,7 @@ export function MarketingValidationWorkspace() {
         </div>
       )}
 
-      {/* ─── Summary Metrics ─── */}
+      {/* â”€â”€â”€ Summary Metrics â”€â”€â”€ */}
       <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="grid flex-1 grid-cols-2 gap-2 xs:grid-cols-4">
@@ -1322,7 +1322,7 @@ export function MarketingValidationWorkspace() {
         )}
       </div>
 
-      {/* ─── Tab Buttons ─── */}
+      {/* â”€â”€â”€ Tab Buttons â”€â”€â”€ */}
       <div className="flex gap-2 rounded-sm border border-slate-200 bg-white p-1.5">
         <TabButton active={activeTab === "validation"} onClick={() => setActiveTab("validation")}>
           Validate Customer
@@ -1332,14 +1332,14 @@ export function MarketingValidationWorkspace() {
         </TabButton>
       </div>
 
-      {/* ─── Alert Messages ─── */}
+      {/* â”€â”€â”€ Alert Messages â”€â”€â”€ */}
       {message ? (
         <div className={`rounded-sm border px-3.5 py-2.5 text-[13px] font-semibold ${message.includes("saved") || message.includes("success") ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
           {message}
         </div>
       ) : null}
 
-      {/* ─── Validation Form Tab ─── */}
+      {/* â”€â”€â”€ Validation Form Tab â”€â”€â”€ */}
       {activeTab === "validation" ? (
         <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-sm">
           <form onSubmit={submitValidation}>
@@ -1579,7 +1579,7 @@ export function MarketingValidationWorkspace() {
           </form>
         </Card>
       ) : (
-        /* ─── Validated Customers Tab ─── */
+        /* â”€â”€â”€ Validated Customers Tab â”€â”€â”€ */
         <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -1701,7 +1701,7 @@ export function MarketingValidationWorkspace() {
         </Card>
       )}
 
-      {/* ─── Modals ─── */}
+      {/* â”€â”€â”€ Modals â”€â”€â”€ */}
       {selectedValidatedGroup ? (
         <ValidatedPharmaciesModal
           group={selectedValidatedGroup}

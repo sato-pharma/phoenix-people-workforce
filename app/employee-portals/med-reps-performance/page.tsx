@@ -59,17 +59,8 @@ const statBorders: Record<string, string> = {
   "Eligible Reps": "border-l-sky-400",
 };
 
-/* ---------- print stylesheet ---------- */
-
-const printStyles = `
-@media print {
-  body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  nav, header, footer, button, [data-no-print] { display: none !important; }
-  .print\\:break-inside-avoid { break-inside: avoid; }
-  .print\\:shadow-none { box-shadow: none !important; }
-  * { border-color: #e2e8f0 !important; }
-}
-`;
+// Print stylesheet + dir="auto" + page-level error boundary are now
+// provided automatically by EmployeePortalPageShell.
 
 /* ---------- page ---------- */
 
@@ -143,15 +134,10 @@ export default async function MedRepsPerformancePage({
           ? `${teamMemberCount} medical reps in line`
           : "no available medical reps data"
       }.`}
+      errorBoundaryTitle="Medical Reps Performance unavailable"
       title="Medical Reps Performance"
     >
-      {/* Print stylesheet */}
-      <style dangerouslySetInnerHTML={{ __html: printStyles }} />
-
-      <div
-        className="max-w-full min-w-0 space-y-5 overflow-x-hidden text-slate-900 sm:space-y-7"
-        dir="auto"
-      >
+      <div className="max-w-full min-w-0 space-y-5 overflow-x-hidden text-slate-900 sm:space-y-7">
         {/* ── Line Snapshot Card ── */}
         <Card className="rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
           <div className="mb-4 grid gap-4 sm:mb-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">

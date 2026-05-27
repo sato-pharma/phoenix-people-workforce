@@ -25,17 +25,8 @@ import type { ProbationRow } from "@/lib/probation/types";
 
 export const dynamic = "force-dynamic";
 
-/* ---------- print stylesheet ---------- */
-
-const printStyles = `
-@media print {
-  body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  nav, header, footer, button, [data-no-print] { display: none !important; }
-  .print\\:break-inside-avoid { break-inside: avoid; }
-  .print\\:shadow-none { box-shadow: none !important; }
-  * { border-color: #e2e8f0 !important; }
-}
-`;
+// Print stylesheet + dir="auto" + page-level error boundary are now
+// provided automatically by EmployeePortalPageShell.
 
 /* ---------- error handling ---------- */
 
@@ -101,11 +92,9 @@ export default async function EmployeePortalProbationPage() {
     <EmployeePortalPageShell
       badge="People Operations"
       description="Track probation timelines and risk zones for your scoped team."
+      errorBoundaryTitle="Probation Tracker unavailable"
       title="Probation Tracker"
     >
-      {/* Print stylesheet */}
-      <style dangerouslySetInnerHTML={{ __html: printStyles }} />
-
       <EmployeeProbationDashboard
         canSubmitManagerFeedback={canSubmitManagerFeedback}
         initialData={initialData}

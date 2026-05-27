@@ -10,6 +10,7 @@ import {
 import { PayrollConflictError } from "@/lib/payroll/errors";
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
+import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -640,10 +641,11 @@ export async function getPayrollExpenseDashboardData(
 async function assertPayrollExpenseReportCanMutate(
   reportId: string,
   action: "deleted" | "replaced",
+  accessContext: AccessContext,
 ) {
   const { data, error } = await getSupabaseAdmin()
     .from("payroll_expenses")
-    .select("id,imported_payroll_batch_id,imported_to_payroll_at")
+    .select("id,hr_approved,imported_payroll_batch_id,imported_to_payroll_at,status")
     .eq("report_id", reportId);
 
   if (error) {
@@ -660,10 +662,22 @@ async function assertPayrollExpenseReportCanMutate(
   if (locked) {
     throw new PayrollExpenseReportLockedError(action);
   }
+
+  const workflowStatus = ((data ?? []) as Array<Record<string, unknown>>).some(
+    (row) => Boolean(row.hr_approved),
+  )
+    ? "approved"
+    : "pending";
+  await assertOutstationExpenseWorkflowTransition({
+    access: accessContext,
+    actionKey: "delete_before_payroll",
+    expectedNextStatus: "deleted",
+    status: workflowStatus,
+  });
 }
 
-export async function deletePayrollExpenseReport(reportId: string) {
-  await assertPayrollExpenseReportCanMutate(reportId, "deleted");
+export async function deletePayrollExpenseReport(reportId: string, accessContext: AccessContext) {
+  await assertPayrollExpenseReportCanMutate(reportId, "deleted", accessContext);
 
   const supabase = getSupabaseAdmin();
   const { error: rowsError } = await supabase
@@ -683,8 +697,8 @@ export async function deletePayrollExpenseReport(reportId: string) {
   return { success: true };
 }
 
-export async function clearPayrollExpenseReportRows(reportId: string) {
-  await assertPayrollExpenseReportCanMutate(reportId, "replaced");
+export async function clearPayrollExpenseReportRows(reportId: string, accessContext: AccessContext) {
+  await assertPayrollExpenseReportCanMutate(reportId, "replaced", accessContext);
 
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
@@ -748,6 +762,12 @@ export async function savePayrollExpenseApprovals(input: {
   const hasManualPayrollApprovals = input.records.some((record) => Boolean(record.hrApproved));
   if (hasManualPayrollApprovals) {
     await assertManualPayrollExpenseApprovalAccess(accessContext);
+    await assertOutstationExpenseWorkflowTransition({
+      access: accessContext,
+      actionKey: "approve",
+      expectedNextStatus: "approved",
+      status: "pending",
+    });
   }
 
   const approvedBy = resolveEmployeeIdentityId(accessContext) ?? accessContext.loginId ?? "system";
@@ -887,6 +907,14 @@ export async function importApprovedExpensesToPayroll(input: {
   }
 
   const savedExpenses = await listPayrollExpenses(input.month, input.year, undefined, accessContext);
+  if (savedExpenses.some((expense) => expense.hrApproved)) {
+    await assertOutstationExpenseWorkflowTransition({
+      access: accessContext,
+      actionKey: "add_to_payroll",
+      expectedNextStatus: "added_to_payroll",
+      status: "approved",
+    });
+  }
 
   const supabase = getSupabaseAdmin();
   const { data: importResult, error: importError } = await supabase.rpc(

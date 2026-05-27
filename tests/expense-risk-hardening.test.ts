@@ -35,14 +35,16 @@ export function runExpenseRiskHardeningTests() {
 
   const payrollExpenses = source("src/lib/payroll/expenses.ts");
   assert.match(payrollExpenses, /class PayrollExpenseReportLockedError/);
-  assert.match(payrollExpenses, /assertPayrollExpenseReportCanMutate\(reportId,\s*"deleted"\)/);
-  assert.match(payrollExpenses, /assertPayrollExpenseReportCanMutate\(reportId,\s*"replaced"\)/);
-  assert.match(payrollExpenses, /select\("id,imported_payroll_batch_id,imported_to_payroll_at"\)/);
+  assert.match(payrollExpenses, /assertPayrollExpenseReportCanMutate\(reportId,\s*"deleted",\s*accessContext\)/);
+  assert.match(payrollExpenses, /assertPayrollExpenseReportCanMutate\(reportId,\s*"replaced",\s*accessContext\)/);
+  assert.match(payrollExpenses, /select\("id,hr_approved,imported_payroll_batch_id,imported_to_payroll_at,status"\)/);
   assert.match(payrollExpenses, /row\.imported_payroll_batch_id != null \|\| row\.imported_to_payroll_at != null/);
   assert.match(payrollExpenses, /lockedExpenses: Number\(result\.locked_expenses \?\? 0\)/);
   assert.match(payrollExpenses, /manualPayrollExpenseApproverRoles/);
   assert.match(payrollExpenses, /"HR Specialist"/);
   assert.match(payrollExpenses, /assertManualPayrollExpenseApprovalAccess\(accessContext\)/);
+  assert.match(payrollExpenses, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "approve"/);
+  assert.match(payrollExpenses, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "add_to_payroll"/);
   assert.match(payrollExpenses, /Save manual HR\/admin expense approvals before importing/);
 
   const importRoute = source("app/api/payroll/expenses/import/route.ts");
