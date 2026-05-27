@@ -1159,7 +1159,7 @@ function MarketingRequestDraftWorkspaceInner() {
           {isLoading ? (
             <FormSkeleton />
           ) : (
-            <form onSubmit={submitDraft}>
+            <form aria-busy={isSaving} onSubmit={submitDraft}>
               {/* Form header */}
               <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/30 to-white px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">

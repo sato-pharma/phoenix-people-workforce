@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { EmployeeCoachingList } from "@/components/coaching/employee-coaching-list";
@@ -13,6 +14,12 @@ import { resolveEmployeeCoachingPortalMode } from "@/lib/coaching/portal-access"
 import { getMyCoachingReports, getTeamCoachingReports } from "@/lib/coaching/service";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Coaching Reports | Phoenix Workforce",
+  description:
+    "View and track field coaching reports, performance scores, zone distribution, and acknowledgment status for the medical team.",
+};
 
 export default async function EmployeeCoachingReportsPage() {
   const access = await resolveAccessContextFromPage();

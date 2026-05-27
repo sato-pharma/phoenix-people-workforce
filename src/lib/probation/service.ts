@@ -1,4 +1,5 @@
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { assertProbationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import {
   canSeeEmployee,
   normalizeHrId,
@@ -797,6 +798,12 @@ export async function createProbationEvaluation(input: CreateProbationEvaluation
     throw new Error("An open probation evaluation already exists for this employee.");
   }
 
+  await assertProbationWorkflowTransition({
+    access,
+    action: "create",
+    status: "new",
+  });
+
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("probation_evaluations")
@@ -848,6 +855,18 @@ export async function runProbationWorkflow(
   }
   assertWorkflowActionAllowed(access, current, action, employee, viewer, employees);
   validateWorkflowTransition(current, action, input);
+  const expectedNextStatusByAction: Record<ProbationWorkflowAction, string> = {
+    manager_feedback: "probation_manager_feedback",
+    pass: "probation_passed",
+    terminate: "probation_terminated",
+  };
+  await assertProbationWorkflowTransition({
+    access,
+    action,
+    decision: row.decision,
+    expectedNextStatus: expectedNextStatusByAction[action],
+    status: row.status,
+  });
 
   const now = new Date().toISOString();
   const note = cleanText(input.note);

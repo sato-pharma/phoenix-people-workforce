@@ -72,7 +72,7 @@ export async function POST(
     }
 
     const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
-    const result = await resignEmployeeAndOpenVacancy(hrId, payload.resignation, actor);
+    const result = await resignEmployeeAndOpenVacancy(hrId, payload.resignation, actor, access);
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {

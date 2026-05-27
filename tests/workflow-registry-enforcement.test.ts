@@ -10,6 +10,11 @@ export function runWorkflowRegistryEnforcementTests() {
   assert.match(registryService, /export class WorkflowRegistryTransitionError/);
   assert.match(registryService, /export async function assertWorkflowRegistryTransition/);
   assert.match(registryService, /Forbidden: Workflow Registry does not allow/);
+  assert.match(registryService, /to !== "deleted" && to !== "unchanged"/);
+
+  const registryRuntime = source("src/lib/workflow-registry/runtime.ts");
+  assert.match(registryRuntime, /assertWorkflowRegistryRuntimeTransition/);
+  assert.match(registryRuntime, /expected next status/);
 
   const outstationWorkflow = source("src/lib/outstation/workflow.ts");
   assert.match(outstationWorkflow, /outstationExpenseWorkflowModuleKey = "outstation_expenses"/);
@@ -20,7 +25,9 @@ export function runWorkflowRegistryEnforcementTests() {
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "submit"/);
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "approve"/);
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "reject"/);
+  assert.match(outstationService, /actionKey: "edit_before_payroll"/);
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "delete_before_payroll"/);
+  assert.match(outstationService, /already been added to payroll and cannot be edited/);
 
   const payrollRegistry = source("src/lib/payroll/workflow-registry.ts");
   assert.match(payrollRegistry, /payrollWorkflowRegistryModuleKey = "payroll_batches"/);
@@ -48,4 +55,68 @@ export function runWorkflowRegistryEnforcementTests() {
   assert.match(alignmentMigration, /where module_key = 'outstation_expenses'/);
   assert.match(alignmentMigration, /where module_key = 'payroll_batches'/);
   assert.match(alignmentMigration, /"key":"mark_review"/);
+
+  const liveModulesMigration = source("supabase/migrations/20260527091104_workflow_registry_live_modules.sql");
+  for (const moduleKey of [
+    "outstation_expenses",
+    "leave_requests",
+    "employee_lifecycle",
+    "marketing_requests",
+    "coaching_reports",
+  ]) {
+    assert.match(liveModulesMigration, new RegExp(`where module_key = '${moduleKey}'`));
+  }
+  assert.match(liveModulesMigration, /"key":"edit_before_payroll"/);
+  assert.match(liveModulesMigration, /"key":"resignation_submit"/);
+  assert.match(liveModulesMigration, /"key":"probation_manager_feedback"/);
+  assert.match(liveModulesMigration, /"key":"contract_renew"/);
+  assert.match(liveModulesMigration, /"key":"offer_hire_approve"/);
+  assert.match(liveModulesMigration, /"key":"create_validation_record"/);
+  assert.match(liveModulesMigration, /"key":"acknowledge"/);
+
+  const vacationWorkflow = source("src/lib/vacation/workflow.ts");
+  assert.match(vacationWorkflow, /leaveWorkflowRegistryModuleKey = "leave_requests"/);
+  assert.match(vacationWorkflow, /vacationDecisionAction/);
+  const vacationService = source("src/lib/vacation/service.ts");
+  assert.match(vacationService, /assertLeaveWorkflowTransition\(\{[\s\S]*actionKey: "submit"/);
+  assert.match(vacationService, /assertLeaveWorkflowTransition\(\{[\s\S]*actionKey: "admin_create"/);
+  assert.match(vacationService, /vacationDecisionAction/);
+
+  const lifecycleWorkflow = source("src/lib/employee-lifecycle/workflow.ts");
+  assert.match(lifecycleWorkflow, /employeeLifecycleWorkflowRegistryModuleKey = "employee_lifecycle"/);
+  assert.match(lifecycleWorkflow, /assertResignationWorkflowTransition/);
+  assert.match(lifecycleWorkflow, /assertProbationWorkflowTransition/);
+  assert.match(lifecycleWorkflow, /assertContractWorkflowTransition/);
+  assert.match(lifecycleWorkflow, /assertOfferWorkflowTransition/);
+
+  const resignationService = source("src/lib/resignations/service.ts");
+  assert.match(resignationService, /assertResignationWorkflowTransition\(\{[\s\S]*action: "submit"/);
+  assert.match(resignationService, /expectedNextStatusByAction/);
+  const probationService = source("src/lib/probation/service.ts");
+  assert.match(probationService, /assertProbationWorkflowTransition\(\{[\s\S]*action: "create"/);
+  assert.match(probationService, /assertProbationWorkflowTransition\(\{[\s\S]*expectedNextStatus: expectedNextStatusByAction\[action\]/);
+  const contractService = source("src/lib/contracts/service.ts");
+  assert.match(contractService, /assertContractWorkflowTransition\(\{[\s\S]*action: "create"/);
+  assert.match(contractService, /assertContractWorkflowTransition\(\{[\s\S]*expectedNextStatus: expectedNextStatusByAction\[action\]/);
+  const offerService = source("src/lib/offers/service.ts");
+  assert.match(offerService, /assertOfferWorkflowTransition\(\{[\s\S]*action: "create"/);
+  assert.match(offerService, /action: decision === "accepted" \? "candidate_accept" : "candidate_reject"/);
+  assert.match(offerService, /action: "hire_approve"/);
+
+  const marketingWorkflow = source("src/lib/marketing-requests/workflow.ts");
+  assert.match(marketingWorkflow, /marketingWorkflowRegistryModuleKey = "marketing_requests"/);
+  const marketingService = source("src/lib/marketing-requests/service.ts");
+  assert.match(marketingService, /assertMarketingWorkflowTransition\(\{[\s\S]*actionKey: "create_draft"/);
+  assert.match(marketingService, /assertMarketingWorkflowTransition\(\{[\s\S]*actionKey: "create_validation_record"/);
+  assert.match(marketingService, /assertMarketingWorkflowTransition\(\{[\s\S]*actionKey: "update_control_step"/);
+  assert.match(marketingService, /assertMarketingWorkflowTransition\(\{[\s\S]*actionKey: "upload_finance_evidence"/);
+
+  const coachingWorkflow = source("src/lib/coaching/workflow.ts");
+  assert.match(coachingWorkflow, /coachingWorkflowRegistryModuleKey = "coaching_reports"/);
+  const coachingService = source("src/lib/coaching/service.ts");
+  assert.match(coachingService, /assertCoachingWorkflowTransition\(\{[\s\S]*actionKey: "create_draft"/);
+  assert.match(coachingService, /assertCoachingWorkflowTransition\(\{[\s\S]*actionKey: "update_draft"/);
+  assert.match(coachingService, /assertCoachingWorkflowTransition\(\{[\s\S]*actionKey: "submit"/);
+  assert.match(coachingService, /assertCoachingWorkflowTransition\(\{[\s\S]*actionKey: "acknowledge"/);
+  assert.match(coachingService, /assertCoachingWorkflowTransition\(\{[\s\S]*actionKey: "lock"/);
 }

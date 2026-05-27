@@ -904,6 +904,8 @@ export function MarketingValidationWorkspace() {
   const [customerCapture, setCustomerCapture] = useState<CaptureState>(emptyCapture);
   const [pharmacies, setPharmacies] = useState<PharmacyLine[]>([newPharmacyLine()]);
   const [hasMounted, setHasMounted] = useState(false);
+  // Hydration flag — mount-only setState is the canonical React pattern.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setHasMounted(true); }, []);
 
   // Offline queue â€” replay pending submissions when connectivity returns
@@ -1342,7 +1344,7 @@ export function MarketingValidationWorkspace() {
       {/* â”€â”€â”€ Validation Form Tab â”€â”€â”€ */}
       {activeTab === "validation" ? (
         <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-sm">
-          <form onSubmit={submitValidation}>
+          <form aria-busy={isSaving} onSubmit={submitValidation}>
             <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/40 to-white px-4 py-4 sm:px-5">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-orange-50 text-orange-600 ring-1 ring-orange-100">

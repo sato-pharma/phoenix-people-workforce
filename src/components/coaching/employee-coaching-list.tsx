@@ -374,6 +374,9 @@ function OfflineBanner() {
     const goOffline = () => setOffline(true);
     const goOnline = () => setOffline(false);
 
+    // Initial offline status read — navigator.onLine is a browser API and
+    // cannot be evaluated server-side, so we sync it post-mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOffline(!navigator.onLine);
     window.addEventListener("offline", goOffline);
     window.addEventListener("online", goOnline);
@@ -402,7 +405,7 @@ function MetricCard({
   accentColor?: string; label: string; sub?: string; value: string | number;
 }) {
   return (
-    <div className="relative bg-white p-3 sm:p-4">
+    <div className="relative bg-white p-3 sm:p-4" role="group" aria-label={`${label}: ${value}`}>
       <div className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accentColor ?? "#e2e8f0" }} />
       <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
       <p className="mt-1 text-xl font-bold leading-tight text-slate-900 sm:text-2xl">{value}</p>
@@ -554,7 +557,7 @@ function PeriodFilterPanel({
         aria-expanded={open}
         aria-haspopup="dialog"
         className={cn(
-          "inline-flex items-center gap-2 border px-3 py-2 text-sm font-semibold transition",
+          "inline-flex min-h-[44px] items-center gap-2 border px-3 py-2 text-sm font-semibold transition sm:min-h-0",
           open ? "border-orange-300 bg-orange-50 text-orange-700" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
         )}
         onClick={() => setOpen(!open)}
@@ -572,7 +575,7 @@ function PeriodFilterPanel({
             {presets.map((p) => (
               <button
                 key={p.label}
-                className="border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                className="min-h-[44px] border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:min-h-0"
                 onClick={() => { p.fn(); setOpen(false); }}
                 type="button"
               >
@@ -608,8 +611,8 @@ function PeriodFilterPanel({
             </label>
           </div>
           <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
-            <button className="text-xs font-medium text-slate-500 hover:text-red-600" onClick={() => { onChange({ month: "", quarter: "", year: "" }); }} type="button">Clear all</button>
-            <button className="bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-orange-600" onClick={() => { setOpen(false); triggerRef.current?.focus(); }} type="button">Apply</button>
+            <button className="min-h-[44px] text-xs font-medium text-slate-500 hover:text-red-600 sm:min-h-0" onClick={() => { onChange({ month: "", quarter: "", year: "" }); }} type="button">Clear all</button>
+            <button className="min-h-[44px] bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-orange-600 sm:min-h-0" onClick={() => { setOpen(false); triggerRef.current?.focus(); }} type="button">Apply</button>
           </div>
         </div>
       ) : null}
@@ -853,6 +856,14 @@ const printStyles = `
   table { font-size: 10px; border-collapse: collapse; }
   th, td { border: 1px solid #e2e8f0 !important; padding: 4px 8px !important; }
 }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 `;
 
 /* ━━━━━━━━━━━━━━━━━━ Main Component ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
@@ -865,7 +876,10 @@ export function EmployeeCoachingList({ mode = "self", reports }: EmployeeCoachin
   const [hydrated, setHydrated] = useState(false);
   const [focusedRow, setFocusedRow] = useState(-1);
 
-  // Hydration guard for skeleton
+  // Hydration guard for skeleton — mount-only setState is the canonical
+  // React pattern for SSR-safe hydration. Disabling the rule here is
+  // intentional.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setHydrated(true); }, []);
 
   // URL-synced period filter
@@ -914,7 +928,9 @@ export function EmployeeCoachingList({ mode = "self", reports }: EmployeeCoachin
     return result;
   }, [reports, periodFilter, search]);
 
-  // Reset keyboard focus when filters change
+  // Reset keyboard focus when filters change — focus state is purely
+  // ephemeral UI state, not derived data, so a useEffect is appropriate.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setFocusedRow(-1); }, [filtered]);
 
   const analytics = useMemo(() => computeAnalytics(filtered), [filtered]);
@@ -1027,6 +1043,11 @@ export function EmployeeCoachingList({ mode = "self", reports }: EmployeeCoachin
           ) : null}
           {repComparison.length > 0 ? <RepComparisonChart data={repComparison} /> : null}
           {radarData.length > 0 && !repComparison.length ? <CoachingRadarChart data={radarData} /> : null}
+        </div>
+      ) : filtered.length > 0 ? (
+        <div className="border border-slate-200 bg-white px-4 py-6 text-center">
+          <p className="text-sm font-semibold text-slate-500">Not enough data for trend analysis</p>
+          <p className="mt-1 text-[11px] text-slate-400">Score trend charts require at least 2 scored reports across different periods.</p>
         </div>
       ) : null}
 

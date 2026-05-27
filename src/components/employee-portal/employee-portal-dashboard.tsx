@@ -2087,10 +2087,16 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
         subcategory?: string;
         subject?: string;
       };
+      // Hydration-safe restore: localStorage can only be read after mount
+      // on the client. The setState calls here are intentional and bounded
+      // to a single post-mount effect (draftRestoredRef ensures it runs
+      // only once). See React docs: "Restoring state on first render".
+      /* eslint-disable react-hooks/set-state-in-effect */
       if (draft.category) setCategory(draft.category);
       if (draft.subcategory) setSubcategory(draft.subcategory);
       if (draft.subject) setSubject(draft.subject);
       if (draft.description) setDescription(draft.description);
+      /* eslint-enable react-hooks/set-state-in-effect */
     } catch {
       // ignore corrupt draft
     } finally {
@@ -2123,12 +2129,15 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
     };
   }, []);
 
-  /* -------- Reset subcategory when category changes away from HR Request -------- */
-  useEffect(() => {
-    if (category !== "HR Request" && subcategory) {
+  /* Derived state: clear subcategory in the category change handler rather
+   * than inside a useEffect (avoids the react-hooks/set-state-in-effect
+   * lint rule + a cascading render). See handleCategoryChange below. */
+  const handleCategoryChange = (next: string) => {
+    setCategory(next);
+    if (next !== "HR Request" && subcategory) {
       setSubcategory("");
     }
-  }, [category, subcategory]);
+  };
 
   const handleFilesAdded = (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -2436,7 +2445,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               <select
                 aria-label="Support category"
                 className={inputClass}
-                onChange={(e) => setCategory(e.target.value)}
+                onChange={(e) => handleCategoryChange(e.target.value)}
                 required
                 value={category}
               >
@@ -2509,7 +2518,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               {descriptionOverSoftLimit && (
                 <p className="mt-1 text-[10px] font-semibold text-rose-600">
                   Tip: keep the description under {DESCRIPTION_SOFT_LIMIT} characters
-                  so it's easier to triage.
+                  so it&apos;s easier to triage.
                 </p>
               )}
             </label>

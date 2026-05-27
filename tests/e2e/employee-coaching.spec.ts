@@ -84,9 +84,11 @@ test.describe("Employee Coaching Reports", () => {
     const filterBtn = page.getByRole("button", { name: /All periods/i });
     if (await filterBtn.isVisible().catch(() => false)) {
       await filterBtn.click();
-      await expect(page.getByText("Year", { exact: false })).toBeVisible();
-      await expect(page.getByText("Quarter", { exact: false })).toBeVisible();
-      await expect(page.getByText("Month", { exact: false })).toBeVisible();
+      const dialog = page.getByRole("dialog", { name: /Period filter/i });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText("Year", { exact: true })).toBeVisible();
+      await expect(dialog.getByText("Quarter", { exact: true })).toBeVisible();
+      await expect(dialog.getByText("Month", { exact: true })).toBeVisible();
     }
   });
 
@@ -291,8 +293,9 @@ test.describe("Employee Coaching Reports", () => {
   });
 
   test("period filter button has aria-expanded", async ({ page }) => {
-    const filterBtn = page.locator("[aria-expanded]").first();
+    const filterBtn = page.getByRole("button", { name: /All periods|Q\d|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{4}/i }).first();
     await expect(filterBtn).toBeVisible();
+    await expect(filterBtn).toHaveAttribute("aria-expanded");
   });
 
   // ─── Offline Banner ──────────────────────────────────────────────
