@@ -9,6 +9,7 @@ import {
   type StructureKpiSummary,
 } from "../src/lib/reports/organogram-safety.ts";
 import { scopeOrganogramReportData } from "../src/lib/reports/organogram.ts";
+import { buildOrganogramLanes } from "../src/lib/reports/organogram-view-model.ts";
 import type { OrganogramReportRow, VacancyReportData } from "../src/lib/reports/vacancies.ts";
 
 function row(overrides: Partial<OrganogramReportRow>): OrganogramReportRow {
@@ -194,6 +195,51 @@ export function runOrganogramHardeningTests() {
   assert.equal(resignationVacancy[0]?.hrId, "VAC-RES-000000");
   assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-RES-123456");
 
+  const vacantDsmLaneKeepsPendingReports = buildOrganogramLanes([
+    row({
+      fullName: "Line NSM",
+      hrId: "NSM-1",
+      jobTitle: "National Sales Manager",
+      managerHrId: "AA",
+      positionId: 300,
+      positionTitle: "National Sales Manager",
+    }),
+    vacancy({
+      fullName: "Vacant",
+      hrId: "VAC-DSM-180",
+      jobTitle: "District Sales Manager",
+      managerHrId: "NSM-1",
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+      replacementForHrId: "B-180",
+      vacancyCode: "VAC-DSM-180",
+    }),
+    row({
+      areaName: "Heliopolis",
+      fullName: "Active Rep",
+      hrId: "MR-HELIO",
+      managerHrId: "NSM-1",
+      managerReplacementForHrId: "B-180",
+      positionTitle: "Medical Representative",
+    }),
+    vacancy({
+      areaName: "Cairo East 1",
+      hrId: "VAC-MR-EAST-1",
+      managerHrId: "NSM-1",
+      managerReplacementForHrId: "B-180",
+      positionTitle: "Medical Representative",
+      vacancyCode: "VAC-MR-EAST-1",
+    }),
+  ]);
+  const vacantDsmLane = vacantDsmLaneKeepsPendingReports.groups.find(
+    (group) => group.dsm?.replacementForHrId === "B-180",
+  );
+  assert.ok(vacantDsmLane, "Vacant DSM must render as its own lane.");
+  assert.deepEqual(
+    vacantDsmLane.members.map((member) => member.hrId).sort(),
+    ["MR-HELIO", "VAC-MR-EAST-1"],
+  );
+
   const kpis = calculateOrganogramStructureKpis([
     row({ hrId: "MR-3", positionTitle: "Medical Representative" }),
     vacancy({ vacancyCode: "vacancy_9", positionTitle: "Medical Representative" }),
@@ -343,6 +389,8 @@ export function runOrganogramHardeningTests() {
   const portalPageSource = readFileSync("app/employee-portals/organogram/page.tsx", "utf8");
   const adminPageSource = readFileSync("app/organogram/page.tsx", "utf8");
   const sharedViewModelSource = readFileSync("src/lib/reports/organogram-view-model.ts", "utf8");
+  const vacancyReportSource = readFileSync("src/lib/reports/vacancies.ts", "utf8");
+  const resignationServiceSource = readFileSync("src/lib/resignations/service.ts", "utf8");
 
   assert.match(componentSource, /\/api\/reports\/organogram/);
   assert.match(portalSource, /\/api\/reports\/organogram/);
@@ -353,6 +401,11 @@ export function runOrganogramHardeningTests() {
   assert.match(adminPageSource, /canAccessCompanyOrganogram/);
   assert.match(sharedViewModelSource, /export function buildOrganogramLanes/);
   assert.match(sharedViewModelSource, /organogramPositionSlotKey/);
+  assert.match(sharedViewModelSource, /reportsToVacantReplacementOwner/);
+  assert.match(vacancyReportSource, /manager_replacement_for_hr_id/);
+  assert.match(vacancyReportSource, /pending_manager_replacement_for_hr_id/);
+  assert.match(resignationServiceSource, /ensureResignationVacancyOwnership/);
+  assert.match(resignationServiceSource, /replacement_for_hr_id: employee\.hrId/);
   assert.match(componentSource, /Reports to NSM/);
   assert.match(componentSource, /childLanes/);
   assert.match(componentSource, /Medical Sales Representatives/);
