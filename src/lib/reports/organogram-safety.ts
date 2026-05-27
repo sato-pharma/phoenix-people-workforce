@@ -71,10 +71,8 @@ export function calculateOrganogramStructureKpis(rows: OrganogramReportRow[]) {
 
   rows.forEach((row, index) => {
     const level = classifyOrganogramStructureLevel(row);
-    const vacancySlotKey =
-      row.type === "vacancy" ? organogramPositionSlotKey(row) : null;
-    const key = row.type === "vacancy" && vacancySlotKey
-      ? `vacancy:${vacancySlotKey}`
+    const key = row.type === "vacancy"
+      ? `vacancy:${normalizeCode(row.vacancyCode ?? row.hrId)}:${row.sourceRowNumber ?? ""}:${index}`
       : `${row.type}:${normalizeCode(row.hrId)}:${row.vacancyCode ?? ""}:${row.sourceRowNumber ?? ""}:${index}`;
 
     if (!level || counted.has(key)) {
@@ -168,6 +166,38 @@ export function organogramPositionSlotKey(row: OrganogramReportRow) {
   ].join("|");
 }
 
+function exactEmployeeFilledSlotKey(row: OrganogramReportRow) {
+  const level = classifyOrganogramStructureLevel(row);
+  const slotKey = organogramPositionSlotKey(row);
+
+  if (!level || !slotKey) {
+    return null;
+  }
+
+  // Medical Representative headcount is not one natural slot per
+  // manager/area/team/title. Cairo teams can have several active reps plus
+  // valid open boxes with the same metadata, so suppressing by natural key
+  // hides real vacancies. Preserve those vacancies unless lifecycle status
+  // has explicitly closed/filled them.
+  if (level === "medicalRep") {
+    return null;
+  }
+
+  const hasTeamContext = Boolean(slotPart(row.teamId, row.teamName));
+  const broadArea =
+    isCairoMarketName(row.areaName) ||
+    normalizeText(row.areaName) === "greater cairo" ||
+    normalizeText(row.regionName) === "greater cairo";
+
+  // A broad Cairo manager slot without team context is not unique enough to
+  // prove that an active manager fills the exact vacancy box.
+  if (!hasTeamContext && broadArea) {
+    return null;
+  }
+
+  return slotKey;
+}
+
 export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
   const filledSlots = new Set<string>();
 
@@ -176,7 +206,7 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
     const level = classifyOrganogramStructureLevel(row);
     if (!level) continue;
 
-    const slotKey = organogramPositionSlotKey(row);
+    const slotKey = exactEmployeeFilledSlotKey(row);
     if (!slotKey) continue;
 
     filledSlots.add(slotKey);
@@ -192,12 +222,15 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
 
     if (normalizeText(row.status) && normalizeText(row.status) !== "open") return false;
 
-    const slotKey = organogramPositionSlotKey(row);
-    if (!slotKey) return true;
-    if (filledSlots.has(slotKey)) return false;
-    if (seenOpenVacancySlots.has(slotKey)) return false;
+    const slotKey = exactEmployeeFilledSlotKey(row);
+    if (slotKey && filledSlots.has(slotKey)) return false;
 
-    seenOpenVacancySlots.add(slotKey);
+    const vacancyCodeKey = normalizeCode(row.vacancyCode ?? row.hrId);
+    if (vacancyCodeKey) {
+      if (seenOpenVacancySlots.has(vacancyCodeKey)) return false;
+      seenOpenVacancySlots.add(vacancyCodeKey);
+    }
+
     return true;
   });
 }
@@ -247,7 +280,13 @@ const cairoAliases = new Set([
 
 export function isCairoMarketName(value: string | null | undefined) {
   const normalized = normalizeText(value);
-  return Boolean(normalized) && (cairoAliases.has(normalized) || normalized.includes("cairo"));
+  return Boolean(normalized) && (
+    cairoAliases.has(normalized) ||
+    normalized.includes("cairo") ||
+    normalized.includes("shoubra") ||
+    normalized.includes("shubra") ||
+    normalized.includes("downtown")
+  );
 }
 
 function broadCairoSlot(value: string | null | undefined) {

@@ -1,5 +1,6 @@
 import crypto from "crypto";
 
+import { systemIdentity } from "@/config/system-settings";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { enqueueInAppNotification } from "@/lib/notifications/in-app";
@@ -400,16 +401,16 @@ function internalMessageEmail(input: {
 <html>
   <body style="margin:0;background:#f8fafc;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#0f172a">
     <section style="max-width:640px;margin:0 auto;border:1px solid #e2e8f0;border-radius:18px;background:#ffffff;padding:24px">
-      <p style="margin:0 0 8px;color:#f97316;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">Phoenix Workforce</p>
+      <p style="margin:0 0 8px;color:#f97316;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">${escapeHtml(systemIdentity.appName)}</p>
       <h1 style="margin:0;color:#0f172a;font-size:22px;line-height:1.25">${escapeHtml(input.subject)}</h1>
       <p style="margin:18px 0 0;color:#475569;font-size:14px;line-height:1.7">Dear ${escapeHtml(input.recipientName)},</p>
       <div style="margin-top:14px;color:#0f172a;font-size:15px;line-height:1.75">${htmlBody}</div>
-      <p style="margin:22px 0 0;color:#475569;font-size:13px;line-height:1.6">Sent internally by ${escapeHtml(input.senderName)} through Phoenix Workforce.</p>
+      <p style="margin:22px 0 0;color:#475569;font-size:13px;line-height:1.6">Sent internally by ${escapeHtml(input.senderName)} through ${escapeHtml(systemIdentity.appName)}.</p>
     </section>
   </body>
 </html>`;
 
-  const text = `Phoenix Workforce\n\n${input.subject}\n\nDear ${input.recipientName},\n\n${input.body}\n\nSent internally by ${input.senderName}.`;
+  const text = `${systemIdentity.appName}\n\n${input.subject}\n\nDear ${input.recipientName},\n\n${input.body}\n\nSent internally by ${input.senderName}.`;
   return { html, text };
 }
 

@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 
+import { systemDocuments } from "@/config/system-settings";
 import { assertPermission, filterEmployeeDirectoryForAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -209,7 +210,7 @@ function styleWorksheet(
   sheet.properties.defaultRowHeight = 20;
   sheet.mergeCells(titleRowNumber, 1, titleRowNumber, columns.length);
   const titleCell = sheet.getCell(titleRowNumber, 1);
-  titleCell.value = "Phoenix Workforce - Active Employee Master Data";
+  titleCell.value = systemDocuments.titles.activeEmployeeMasterData;
   titleCell.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Aptos Display", size: 16 };
   titleCell.fill = { fgColor: { argb: "FF0F172A" }, pattern: "solid", type: "pattern" };
   titleCell.alignment = { horizontal: "left", vertical: "middle" };
@@ -432,11 +433,11 @@ export async function GET(request: Request) {
       ).sort((left, right) => left.localeCompare(right)),
     };
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = "Phoenix Workforce";
+    workbook.creator = systemDocuments.workbookCreator;
     workbook.created = new Date();
     workbook.modified = new Date();
     workbook.subject = "Active Employee Master Data";
-    workbook.title = "Phoenix Workforce Active Employee Master Data";
+    workbook.title = systemDocuments.titles.activeEmployeeMasterDataWorkbook;
 
     const sheet = workbook.addWorksheet("Active Employee Master");
     sheet.columns = columns.map((column) => ({

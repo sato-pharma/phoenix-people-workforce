@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 function source(path: string) {
   return readFileSync(path, "utf8");
@@ -8,9 +8,14 @@ function source(path: string) {
 export function runExpenseRiskHardeningTests() {
   const adminAccess = source("src/lib/outstation/admin-access.ts");
   assert.match(adminAccess, /"Super Admin"/);
+  assert.match(adminAccess, /"HR Specialist"/);
   assert.match(adminAccess, /"Finance Manager"/);
   assert.match(adminAccess, /"CEO"/);
   assert.match(adminAccess, /assertPermission\(access,\s*"outstation",\s*action\)/);
+
+  const permissions = source("src/lib/auth/permissions.ts");
+  assert.match(permissions, /"HR Specialist": \{[\s\S]*expenses: \["read", "approve", "update", "delete", "export"\]/);
+  assert.match(permissions, /"HR Specialist": \{[\s\S]*outstation: \["read", "approve", "update", "delete", "export"\]/);
 
   const adminOutstationSources = [
     "app/api/admin/outstation/requests/route.ts",
@@ -35,6 +40,14 @@ export function runExpenseRiskHardeningTests() {
   assert.match(payrollExpenses, /select\("id,imported_payroll_batch_id,imported_to_payroll_at"\)/);
   assert.match(payrollExpenses, /row\.imported_payroll_batch_id != null \|\| row\.imported_to_payroll_at != null/);
   assert.match(payrollExpenses, /lockedExpenses: Number\(result\.locked_expenses \?\? 0\)/);
+  assert.match(payrollExpenses, /manualPayrollExpenseApproverRoles/);
+  assert.match(payrollExpenses, /"HR Specialist"/);
+  assert.match(payrollExpenses, /assertManualPayrollExpenseApprovalAccess\(accessContext\)/);
+  assert.match(payrollExpenses, /Save manual HR\/admin expense approvals before importing/);
+
+  const importRoute = source("app/api/payroll/expenses/import/route.ts");
+  assert.doesNotMatch(importRoute, /body\.records/);
+  assert.doesNotMatch(importRoute, /records:/);
 
   const reportsRoute = source("app/api/payroll/expenses/reports/[id]/route.ts");
   assert.match(reportsRoute, /isPayrollExpenseReportLocked/);
@@ -51,9 +64,19 @@ export function runExpenseRiskHardeningTests() {
   assert.match(migration, /'locked_expenses'/i);
   assert.match(migration, /migration_backfill/i);
 
+  const manualApprovalMigrationName = readdirSync("supabase/migrations").find((name) =>
+    name.includes("manual_expense_approval_gate"),
+  );
+  assert.ok(manualApprovalMigrationName, "Manual expense approval gate migration must exist.");
+  const manualApprovalMigration = source(`supabase/migrations/${manualApprovalMigrationName}`);
+  assert.match(manualApprovalMigration, /approved_at is not null/i);
+  assert.match(manualApprovalMigration, /approved_by is not null/i);
+  assert.match(manualApprovalMigration, /revoke all on function public\.phx_import_approved_expenses_to_payroll/i);
+
   const outstationService = source("src/lib/outstation/service.ts");
   assert.match(outstationService, /assertOutstationAdminAccess\(access,\s*"delete"\)/);
   assert.match(outstationService, /select\("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id"\)/);
+  assert.match(outstationService, /if \(!input\.linkedPayroll\) return 0/);
   assert.match(outstationService, /const addedToPayroll = linkedRows\.some/);
   assert.match(outstationService, /\.from\("payroll_expenses"\)[\s\S]*\.delete\(\{ count: "exact" \}\)[\s\S]*\.eq\("trip_id", expenseTripId\)/);
   assert.match(outstationService, /already been added to payroll and cannot be deleted/);

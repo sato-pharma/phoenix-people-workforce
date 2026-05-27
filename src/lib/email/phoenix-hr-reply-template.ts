@@ -4,6 +4,7 @@ import {
   renderPhoenixEmailHtml,
   renderPhoenixEmailText,
 } from "../../emails/phoenix-email-layout.tsx";
+import { systemHrReplyEmailText, systemIdentity } from "@/config/system-settings";
 
 export type PhoenixHrEmailTone = "professional" | "warm" | "firm" | "concise";
 
@@ -38,22 +39,22 @@ const toneConfig: Record<
 > = {
   concise: {
     closing: "Please let us know if anything else is needed.",
-    preheader: "A concise HR reply from Phoenix Workforce.",
+    preheader: systemHrReplyEmailText.concisePreheader,
     title: "HR Reply",
   },
   firm: {
     closing: "Please follow the guidance above so we can proceed without delay.",
-    preheader: "An official HR response from Phoenix Workforce.",
+    preheader: systemHrReplyEmailText.firmPreheader,
     title: "Official HR Response",
   },
   professional: {
     closing: "If you need any further clarification, please let us know.",
-    preheader: "A professional HR reply from Phoenix Workforce.",
+    preheader: systemHrReplyEmailText.professionalPreheader,
     title: "Phoenix HR Response",
   },
   warm: {
     closing: "Thank you for your cooperation, and we are here if you need any support.",
-    preheader: "A supportive HR reply from Phoenix Workforce.",
+    preheader: systemHrReplyEmailText.warmPreheader,
     title: "Phoenix HR Support",
   },
 };
@@ -64,7 +65,7 @@ export function buildPhoenixHrReplyEmail(
   const tone = input.tone ?? "professional";
   const config = toneConfig[tone];
   const recipient = input.recipientName?.trim() || "there";
-  const sender = input.senderName?.trim() || "Phoenix HR Team";
+  const sender = input.senderName?.trim() || systemIdentity.hrSignatureName;
   const subject = input.subject.trim() || "HR Reply";
   const bodyText = input.replyMessage.trim() || "Write your reply message in the composer before sending this email.";
 

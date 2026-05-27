@@ -21,7 +21,6 @@ export async function POST(request: Request) {
     const fileName = String(body.fileName ?? "expenses-upload.xls");
     const month = Number(body.month);
     const year = Number(body.year);
-    const records = Array.isArray(body.records) ? body.records : [];
 
     if (body.month === undefined || body.month === null || body.month === "" || body.year === undefined || body.year === null || body.year === "") {
       return NextResponse.json(
@@ -45,7 +44,6 @@ export async function POST(request: Request) {
     const result = await importApprovedExpensesToPayroll({
       fileName,
       month,
-      records: records.length > 0 ? records : undefined,
       year,
     }, access);
 

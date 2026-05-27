@@ -144,11 +144,7 @@ export function ExpenseReport({
   analyzing: boolean;
   error: string | null;
   inputRef: RefObject<HTMLInputElement | null>;
-  onImportToPayroll: (
-    records: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>,
-    month: number,
-    year: number,
-  ) => void;
+  onImportToPayroll: (month: number, year: number) => void;
   onDeleteReport: (reportId: string) => void;
   onReplaceReport: (reportId: string, file: File | null) => void;
   onSaveApprovals: (records: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>) => void;
@@ -278,15 +274,7 @@ export function ExpenseReport({
   function importToPayroll() {
     if (!analysis) return;
 
-    onImportToPayroll(
-      analysis.records.map((record) => ({
-        ...record,
-        hrApproved: approvalFor(record).hrApproved,
-        hrComment: approvalFor(record).hrComment,
-      })),
-      Number(importMonth),
-      Number(importYear),
-    );
+    onImportToPayroll(Number(importMonth), Number(importYear));
   }
 
   function downloadFilteredExpenses() {
@@ -303,7 +291,7 @@ export function ExpenseReport({
       "Allowance",
       "Total",
       "Status",
-      "HR Approved",
+      "HR/Admin Approved",
       "Comment",
     ];
     const escapeCsv = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
@@ -393,7 +381,7 @@ export function ExpenseReport({
             ) : (
               <FileCheck2 className="mr-2 h-4 w-4" />
             )}
-            Save HR Approvals
+            Save HR/Admin Approvals
           </Button>
           </div>
         </div>
@@ -491,7 +479,7 @@ export function ExpenseReport({
               { label: "Specialists", tone: "bg-[#F8FAFC] text-[#0F172A]", value: formatNumber(analysis.summary.specialists) },
               { label: "Filtered Total", tone: "bg-orange-50 text-orange-800", value: formatEGP(filteredTotal) },
               { label: "Travel Cost", tone: "bg-amber-50 text-amber-800", value: formatEGP(analysis.summary.totalTravelCost) },
-              { label: "HR Approved", tone: "bg-emerald-50 text-emerald-800", value: formatEGP(approvedTotal) },
+              { label: "HR/Admin Approved", tone: "bg-emerald-50 text-emerald-800", value: formatEGP(approvedTotal) },
               { label: "Unmapped", tone: "bg-rose-50 text-rose-800", value: formatNumber(unmappedRecords.length) },
             ].map((metric) => (
               <div className={cn("rounded-2xl border border-[#E2E8F0] p-4", metric.tone)} key={metric.label}>
@@ -504,7 +492,7 @@ export function ExpenseReport({
           <div className="flex flex-wrap items-center gap-2 rounded-[28px] border border-[#D8E0EA] bg-white/90 p-4 shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
             <div className="mr-2">
               <p className="text-sm font-semibold text-[#0F172A]">Import to Payroll</p>
-              <p className="text-xs text-[#64748B]">Approved rows with HR ID only.</p>
+              <p className="text-xs text-[#64748B]">Saved HR/admin approved rows with HR ID only.</p>
             </div>
             <select
               className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-[#0F172A] focus:outline-none"
@@ -537,7 +525,7 @@ export function ExpenseReport({
               Import to Payroll
             </Button>
             <p className="text-xs text-text-secondary">
-              Select the payroll month that will receive the approved expenses.
+              Import uses only approvals already saved by HR/admin, not unsaved switches on this screen.
             </p>
           </div>
 
@@ -632,7 +620,7 @@ export function ExpenseReport({
                           <td className="px-3 py-3">
                             <Switch
                               checked={approvalFor(record).hrApproved}
-                              label="Approved by HR"
+                              label="Approved by HR/Admin"
                               onChange={(checked) =>
                                 setApprovals((current) => ({
                                   ...current,
@@ -656,7 +644,7 @@ export function ExpenseReport({
                                   },
                                 }))
                               }
-                              placeholder="HR comment"
+                              placeholder="HR/admin comment"
                               value={approvalFor(record).hrComment}
                             />
                           </td>

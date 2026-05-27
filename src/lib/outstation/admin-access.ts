@@ -7,6 +7,7 @@ import {
 
 const adminOutstationRoles = new Set<PhoenixRole>([
   "Super Admin",
+  "HR Specialist",
   "Finance Manager",
   "CEO",
 ]);
@@ -23,7 +24,7 @@ export async function assertOutstationAdminAccess(
 
   if (!canUseAdminOutstationWorkspace(access)) {
     throw new Error(
-      "Forbidden: only Account Admin, Finance Manager, or CEO can access admin outstation expenses.",
+      "Forbidden: only Account Admin, HR Manager, Finance Manager, or CEO can access admin outstation expenses.",
     );
   }
 }

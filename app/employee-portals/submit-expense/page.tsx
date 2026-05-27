@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { MobileOutstationWizard } from "@/components/outstation/mobile-outstation-wizard";
 import { Card } from "@/components/ui/card";
+import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
@@ -9,6 +10,18 @@ import { getDsmTeamPerformance, getEmployeePortalShellData } from "@/lib/employe
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertPermission, normalizeRole, resolveNavigationMode } from "@/lib/auth/permissions";
 import { getOutstationEmployeeContext } from "@/lib/outstation/service";
+
+/* ---------- print stylesheet ---------- */
+
+const printStyles = `
+@media print {
+  body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  nav, header, footer, button, [data-no-print] { display: none !important; }
+  .print\\:break-inside-avoid { break-inside: avoid; }
+  .print\\:shadow-none { box-shadow: none !important; }
+  * { border-color: #e2e8f0 !important; }
+}
+`;
 
 function buildResidenceSummary(residence: {
   residenceAddress: string | null;
@@ -85,15 +98,20 @@ export default async function EmployeePortalSubmitExpensePage() {
       description="Capture outstation travel from the employee portal without duplicating the full admin expense workspace."
       title="Submit Expense"
     >
-      <MobileOutstationWizard
-        employeeHrId={access.hrId ?? portalData.employee.hrId}
-        employeeName={employeeName}
-        employeeRole={employeeRole}
-        hasResidenceCoordinates={hasResidenceCoordinates}
-        medicalTripOptions={medicalTripOptions}
-        residenceSummary={residenceSummary}
-        showIntro={false}
-      />
+      <style dangerouslySetInnerHTML={{ __html: printStyles }} />
+      <div dir="auto">
+        <WorkspaceErrorBoundary fallbackTitle="Submit Expense unavailable">
+          <MobileOutstationWizard
+            employeeHrId={access.hrId ?? portalData.employee.hrId}
+            employeeName={employeeName}
+            employeeRole={employeeRole}
+            hasResidenceCoordinates={hasResidenceCoordinates}
+            medicalTripOptions={medicalTripOptions}
+            residenceSummary={residenceSummary}
+            showIntro={false}
+          />
+        </WorkspaceErrorBoundary>
+      </div>
     </EmployeePortalPageShell>
   );
 }

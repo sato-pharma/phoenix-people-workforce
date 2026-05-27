@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { systemDocuments } from "@/config/system-settings";
 import type { FingerprintReportData, FingerprintReportRow } from "@/lib/attendance/fingerprint-report";
 
 const phoenixOrange = "FFC2410C";
@@ -47,7 +48,7 @@ function rowValues(data: FingerprintReportData, row: FingerprintReportRow) {
 
 export async function generateFingerprintReportWorkbook(data: FingerprintReportData) {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Phoenix Workforce";
+  workbook.creator = systemDocuments.workbookCreator;
   workbook.created = new Date();
   workbook.modified = new Date();
 
@@ -58,7 +59,7 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
   const columnCount = data.columns.length;
   sheet.mergeCells(1, 1, 1, columnCount);
   styleTitle(sheet.getCell(1, 1));
-  sheet.getCell(1, 1).value = "Phoenix Workforce - Fingerprint Attendance Report";
+  sheet.getCell(1, 1).value = systemDocuments.titles.fingerprintAttendanceReport;
 
   sheet.mergeCells(2, 1, 2, columnCount);
   sheet.getCell(2, 1).value = `Period: ${data.filters.dateFrom} to ${data.filters.dateTo} | Rows: ${data.summary.rows} | Deduction Flags: ${data.summary.deductions}`;

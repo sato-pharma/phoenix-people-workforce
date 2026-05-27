@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { systemDocuments } from "@/config/system-settings";
 import { saveAttendanceDeviceUserMapping } from "@/lib/attendance/device-user-mapping";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -88,7 +89,7 @@ function styleBodyRow(row: ExcelJS.Row) {
 
 export async function generateDeviceMappingTemplateWorkbook() {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Phoenix Workforce";
+  workbook.creator = systemDocuments.workbookCreator;
   workbook.created = new Date();
   workbook.modified = new Date();
 
@@ -97,7 +98,7 @@ export async function generateDeviceMappingTemplateWorkbook() {
   });
 
   sheet.mergeCells("A1:E1");
-  sheet.getCell("A1").value = "Phoenix Workforce - Attendance Device User Mapping";
+  sheet.getCell("A1").value = systemDocuments.titles.attendanceDeviceUserMapping;
   sheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC2410C" } };
   sheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 15 };
   sheet.getCell("A1").alignment = { horizontal: "center" };

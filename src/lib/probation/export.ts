@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { systemDocuments } from "@/config/system-settings";
 import type { ProbationRow, TrafficStatus } from "@/lib/probation/types";
 
 const headerFill = "FFF97316";
@@ -29,10 +30,10 @@ function decisionLabel(value: string | null | undefined) {
 
 export async function generateProbationWorkbook(rows: ProbationRow[]) {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Phoenix Workforce";
-  workbook.company = "Phoenix Workforce";
+  workbook.creator = systemDocuments.workbookCreator;
+  workbook.company = systemDocuments.workbookCompany;
   workbook.subject = "Probation Export";
-  workbook.title = "Phoenix Workforce | Probation Export";
+  workbook.title = systemDocuments.titles.probationExport;
   workbook.created = new Date();
   workbook.modified = new Date();
 
@@ -138,7 +139,7 @@ function pdfLine(row: ProbationRow) {
 export function generateProbationPdf(rows: ProbationRow[]) {
   const generatedAt = new Date().toISOString().slice(0, 10);
   const lines = [
-    "Phoenix Workforce - Probation Export",
+    systemDocuments.titles.probationPdfExport,
     `Generated: ${generatedAt}`,
     `Records: ${rows.length}`,
     "",
