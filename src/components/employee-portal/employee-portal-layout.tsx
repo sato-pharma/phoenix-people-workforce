@@ -85,7 +85,7 @@ function sectionRailIcon(title: string): typeof Activity {
   if (title === "Leave Management") return CalendarDays;
   if (title === "Team Performance") return Users;
   if (title === "Team Operations") return BriefcaseBusiness;
-  if (title === "Outstation Expenses") return FileText;
+  if (title === "Expenses") return FileText;
   if (title === "Support") return Headphones;
   return Activity;
 }
@@ -169,7 +169,7 @@ function buildEmployeePortalSections({
       ],
     },
     {
-      title: "Outstation Expenses",
+      title: "Expenses",
       items: [
         ...(showMedicalRepExpensesTab ? [{ href: "/employee-portals/expenses", label: "My Outstation Expenses", icon: ReceiptText }] : []),
         ...(showManagementTab ? [{ href: "/employee-portals/expense-dashboard", label: "Expense Dashboard", icon: CircleDollarSign }] : []),

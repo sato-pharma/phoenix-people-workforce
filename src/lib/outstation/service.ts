@@ -1,5 +1,4 @@
 import {
-  assertPermission,
   normalizeHrIdForAccess,
   normalizeRole,
   resolveEmployeeIdentityId,
@@ -7,6 +6,7 @@ import {
 } from "@/lib/auth/permissions";
 import { randomUUID } from "node:crypto";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { validateLiveCarEvidence } from "@/lib/outstation/car-evidence";
 import {
   createOutstationCarEvidenceSignedUrl,
@@ -1678,6 +1678,8 @@ export async function approveOutstationRequestForPayroll(
   access: AccessContext,
   options: { comment?: string | null } = {},
 ) {
+  await assertOutstationAdminAccess(access, "approve");
+
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
   if (existing.status === "rejected") {
@@ -1848,7 +1850,7 @@ export async function createManagerExpenseAsAdmin(
   access: AccessContext,
   input: ManagerExpenseAdminInput,
 ): Promise<OutstationExpenseRequest> {
-  await assertPermission(access, "outstation", "approve");
+  await assertOutstationAdminAccess(access, "approve");
 
   const directory = await getEmployeeDirectory();
   const employee = directory.employees.find(
@@ -1988,7 +1990,7 @@ export async function updateManagerExpenseAsAdmin(
   access: AccessContext,
   input: Partial<ManagerExpenseAdminInput>,
 ): Promise<OutstationExpenseRequest> {
-  await assertPermission(access, "outstation", "approve");
+  await assertOutstationAdminAccess(access, "approve");
 
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
@@ -2132,7 +2134,7 @@ export async function rejectOutstationRequestAsAdmin(
   access: AccessContext,
   options: { comment: string },
 ): Promise<OutstationExpenseRequest> {
-  await assertPermission(access, "outstation", "approve");
+  await assertOutstationAdminAccess(access, "approve");
 
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
@@ -2191,7 +2193,7 @@ export async function deleteOutstationRequestAsAdmin(
   requestId: number,
   access: AccessContext,
 ) {
-  await assertPermission(access, "outstation", "delete");
+  await assertOutstationAdminAccess(access, "delete");
 
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");

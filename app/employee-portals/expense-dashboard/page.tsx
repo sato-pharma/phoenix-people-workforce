@@ -55,9 +55,9 @@ export default async function EmployeePortalExpenseDashboardPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Outstation Expenses"
+      badge="Expenses"
       description="Review workload, trip volume, and outstation expense movement using the same employee portal workspace design."
-      title="Outstation Dashboard"
+      title="Expense Dashboard"
     >
       <PersonalExpenseWorkloadDashboard
         adminKeyCards={adminCommandData ? {

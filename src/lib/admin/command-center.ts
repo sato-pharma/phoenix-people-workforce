@@ -3,9 +3,9 @@ import { getDataHealthStats, type DataHealthStats } from "@/lib/admin/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
-import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
 import { buildLifecycleRiskMetrics } from "@/lib/lifecycle-risk/metrics";
 import { getOperationalRecentActivity, type OperationalActivitySummary } from "@/lib/operations/events";
+import { getPayrollExpenseMetrics } from "@/lib/payroll/expenses";
 import { getPayrollDashboard } from "@/lib/payroll/service";
 import { getPlatformMetrics } from "@/lib/platform/metrics";
 import { getProbationRows } from "@/lib/probation/service";
@@ -329,42 +329,24 @@ async function fetchSalesSummary(accessContext: AccessContext): Promise<AdminCom
   }
 }
 
-async function fetchExpenseSummary(): Promise<{
+async function fetchExpenseSummary(accessContext: AccessContext): Promise<{
   approvedAmount: number;
   totalAmount: number;
   totalRows: number;
   reportCount: number;
   error: string | null;
 }> {
-  const supabase = getSupabaseAdmin();
   const empty = { approvedAmount: 0, totalAmount: 0, totalRows: 0, reportCount: 0, error: null };
 
   try {
-    // Fetch a capped set of expense rows — total and approved amounts
-    const { data: rows, error: rowErr } = await supabase
-      .from("payroll_expenses")
-      .select("total,hr_approved")
-      .limit(5000);
-    if (rowErr) throw rowErr;
-
-    const expenseRows = (rows ?? []).filter((row) => !isDisposableExpenseRow(row as Record<string, unknown>));
-    const totalAmount = expenseRows.reduce((s, r) => s + safeNumber(r.total), 0);
-    const approvedAmount = expenseRows
-      .filter((r) => r.hr_approved)
-      .reduce((s, r) => s + safeNumber(r.total), 0);
-
-    // Count expense reports separately
-    const { data: reports, error: reportErr } = await supabase
-      .from("payroll_expense_reports")
-      .select("file_name")
-      .limit(5000);
-    if (reportErr) throw reportErr;
+    // Use the same unified historical + live outstation expense metrics as the dashboard.
+    const metrics = await getPayrollExpenseMetrics(accessContext);
 
     return {
-      approvedAmount,
-      totalAmount,
-      totalRows: expenseRows.length,
-      reportCount: (reports ?? []).filter((row) => !isDisposableExpenseReportRow(row as Record<string, unknown>)).length,
+      approvedAmount: metrics.approvedAmount,
+      totalAmount: metrics.totalAmount,
+      totalRows: metrics.totalRows,
+      reportCount: metrics.reportCount,
       error: null,
     };
   } catch {
@@ -603,7 +585,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
       getEmployeeDirectory(),
       getDataHealthStats(),
       showFinancialModules
-        ? fetchExpenseSummary()
+        ? fetchExpenseSummary(accessContext)
         : Promise.resolve({ approvedAmount: 0, error: null, reportCount: 0, totalAmount: 0, totalRows: 0 }),
       fetchRecruitmentSummary(),
       fetchRiskSummary(accessContext),

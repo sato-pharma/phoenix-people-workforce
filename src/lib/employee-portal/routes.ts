@@ -5,7 +5,6 @@ export const employeePortalOwnedRoutePatterns = [
   "/leave-management/vacation-report",
   "/leave-management/vacation-control",
   "/payslips",
-  "/employee/outstation/new",
 ] as const;
 
 const exactEmployeePortalOwnedRoutes = new Set<string>([
@@ -14,7 +13,6 @@ const exactEmployeePortalOwnedRoutes = new Set<string>([
   "/leave-management/vacation-report",
   "/leave-management/vacation-control",
   "/payslips",
-  "/employee/outstation/new",
 ]);
 
 export function isEmployeePortalOwnedRoute(pathname: string | null | undefined) {

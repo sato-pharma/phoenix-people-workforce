@@ -47,6 +47,7 @@ import type { SalesDashboardData } from "@/lib/sales/types";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { canonicalSalesLine } from "@/lib/sales/others";
 import { getMarketingRequestDraftWorkspace } from "@/lib/marketing-requests/service";
+import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { getVacationReportData } from "@/lib/vacation/service";
 
 // ---------------------------------------------------------------------------
@@ -2655,84 +2656,8 @@ function isMissingOutstationTable(error: unknown) {
   );
 }
 
-function expenseTypeLabel(value: unknown) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "traveling") return "Traveling";
-  if (normalized === "meeting") return "Meeting";
-  if (normalized === "other") return "Other";
-  return "Other";
-}
-
-function statusLabelFromOutstation(value: unknown) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized.includes("approve") || normalized.includes("confirm")) return "Confirmed by HR";
-  if (normalized.includes("reject") || normalized.includes("decline")) return "Declined";
-  return "Pending";
-}
-
 function mapOutstationExpenseToPayrollApproval(row: Record<string, unknown>): PayrollExpenseApproval {
-  const status = statusLabelFromOutstation(row.status);
-  const requestType = expenseTypeLabel(row.expense_type);
-  const transportationType = String(row.transportation_type ?? "car").trim() || "car";
-  const expectedTotal = toNumber(row.expected_total_amount);
-  const claimedTotal = toNumber(row.claimed_total_amount);
-  const total = claimedTotal > 0 ? claimedTotal : expectedTotal;
-  const ticketAmount = toNumber(row.ticket_amount);
-  const fuelAmount = toNumber(row.fuel_amount);
-  const tripId = `OUTSTATION-${String(row.id ?? "").trim() || "request"}`;
-  const createdAt = String(row.created_at ?? "").trim();
-  const tripStartDate = String(row.trip_start_date ?? createdAt).trim();
-  const tripEndDate = String(row.trip_end_date ?? tripStartDate).trim();
-  const employeeHrId = String(row.employee_hr_id ?? "").trim();
-  const employeeName = String(row.employee_name ?? "").trim();
-  const destination =
-    String(row.to_label ?? "").trim() ||
-    [row.to_area, row.to_city].map((value) => String(value ?? "").trim()).filter(Boolean).join(", ");
-  const origin =
-    String(row.residence_address ?? "").trim() ||
-    [row.residence_area, row.residence_city].map((value) => String(value ?? "").trim()).filter(Boolean).join(", ");
-
-  return {
-    allowance: toNumber(row.allowance_amount),
-    amWorkload: 0,
-    approvedAt: null,
-    approvedBy: null,
-    date: tripStartDate,
-    description: String(row.notes ?? "").trim() || "Live outstation expense request",
-    from: origin,
-    hr: employeeName,
-    hrApproved: status === "Confirmed by HR",
-    hrComment: String(row.approval_reason ?? "").trim(),
-    hrId: employeeHrId,
-    hrNotes: String(row.eligibility_reason ?? "").trim(),
-    km: toNumber(row.distance_km ?? row.distance_from_residence_km),
-    location: destination,
-    meetingAmount: requestType === "Meeting" ? total : 0,
-    open: "",
-    payoutMonth: (() => {
-      const date = new Date(tripStartDate || createdAt);
-      return Number.isNaN(date.getTime()) ? 0 : date.getUTCMonth() + 1;
-    })(),
-    payoutYear: (() => {
-      const date = new Date(tripStartDate || createdAt);
-      return Number.isNaN(date.getTime()) ? 0 : date.getUTCFullYear();
-    })(),
-    pmWorkload: 0,
-    reportId: null,
-    requestType,
-    returnTicketAmount: 0,
-    row: Number(row.id ?? 0),
-    sourceFileName: "Outstation Requests",
-    specialist: employeeName,
-    status,
-    to: destination,
-    toDate: tripEndDate,
-    total,
-    transportationType,
-    travelCost: ticketAmount + fuelAmount,
-    tripId,
-    tripType: requestType === "Traveling" ? "Travel" : requestType,
-  } as PayrollExpenseApproval;
+  return mapOutstationRequestRowToPayrollApproval(row);
 }
 
 async function listOutstationExpensesForPortal(hrIds?: Array<string | null | undefined>) {

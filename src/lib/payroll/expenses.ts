@@ -64,6 +64,39 @@ export function isPayrollExpensesSchemaMissing(error: unknown) {
   );
 }
 
+export class PayrollExpenseLockSchemaError extends Error {
+  constructor() {
+    super(
+      "Historical outstation expense payroll locks are not ready. Apply the outstation expense payroll locks migration before deleting or replacing uploaded expense reports.",
+    );
+    this.name = "PayrollExpenseLockSchemaError";
+  }
+}
+
+export class PayrollExpenseReportLockedError extends Error {
+  constructor(action: "deleted" | "replaced") {
+    super(
+      `This historical outstation upload has already been added to payroll and cannot be ${action}.`,
+    );
+    this.name = "PayrollExpenseReportLockedError";
+  }
+}
+
+export function isPayrollExpenseLockSchemaMissing(error: unknown) {
+  if (error instanceof PayrollExpenseLockSchemaError) return true;
+  const message = expenseErrorMessage(error).toLowerCase();
+
+  return (
+    message.includes("imported_payroll_batch_id") ||
+    message.includes("imported_to_payroll_at") ||
+    message.includes("imported_to_payroll_by")
+  );
+}
+
+export function isPayrollExpenseReportLocked(error: unknown) {
+  return error instanceof PayrollExpenseReportLockedError;
+}
+
 function isOutstationRequestsSchemaMissing(error: unknown) {
   const message = expenseErrorMessage(error).toLowerCase();
 
@@ -581,7 +614,34 @@ export async function getPayrollExpenseDashboardData(
   };
 }
 
+async function assertPayrollExpenseReportCanMutate(
+  reportId: string,
+  action: "deleted" | "replaced",
+) {
+  const { data, error } = await getSupabaseAdmin()
+    .from("payroll_expenses")
+    .select("id,imported_payroll_batch_id,imported_to_payroll_at")
+    .eq("report_id", reportId);
+
+  if (error) {
+    if (isPayrollExpenseLockSchemaMissing(error)) {
+      throw new PayrollExpenseLockSchemaError();
+    }
+    throw error;
+  }
+
+  const locked = ((data ?? []) as Array<Record<string, unknown>>).some(
+    (row) => row.imported_payroll_batch_id != null || row.imported_to_payroll_at != null,
+  );
+
+  if (locked) {
+    throw new PayrollExpenseReportLockedError(action);
+  }
+}
+
 export async function deletePayrollExpenseReport(reportId: string) {
+  await assertPayrollExpenseReportCanMutate(reportId, "deleted");
+
   const supabase = getSupabaseAdmin();
   const { error: rowsError } = await supabase
     .from("payroll_expenses")
@@ -601,6 +661,8 @@ export async function deletePayrollExpenseReport(reportId: string) {
 }
 
 export async function clearPayrollExpenseReportRows(reportId: string) {
+  await assertPayrollExpenseReportCanMutate(reportId, "replaced");
+
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from("payroll_expenses")
@@ -817,6 +879,7 @@ export async function importApprovedExpensesToPayroll(input: {
   const result = (importResult ?? null) as {
     imported_employees?: number;
     imported_total?: number;
+    locked_expenses?: number;
     matched_employees?: string[];
     target_batch_id?: string | null;
     target_batch_month?: number | null;
@@ -827,6 +890,7 @@ export async function importApprovedExpensesToPayroll(input: {
     return {
       importedEmployees: 0,
       importedTotal: 0,
+      lockedExpenses: 0,
       matchedEmployees: [],
       saved: savedExpenses.length,
       targetBatch: null,
@@ -836,6 +900,7 @@ export async function importApprovedExpensesToPayroll(input: {
   return {
     importedEmployees: Number(result.imported_employees ?? 0),
     importedTotal: Number(result.imported_total ?? 0),
+    lockedExpenses: Number(result.locked_expenses ?? 0),
     matchedEmployees: Array.isArray(result.matched_employees) ? result.matched_employees.map(String) : [],
     saved: savedExpenses.length,
     targetBatch: {

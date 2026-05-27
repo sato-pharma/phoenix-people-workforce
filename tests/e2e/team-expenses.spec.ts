@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * E2E tests for the Team Outstation Expenses page (/employee-portals/team-expenses).
+ * E2E tests for the Team Expenses page (/employee-portals/team-expenses).
  *
  * Covers:
  * - Page load & hero header
@@ -21,22 +21,22 @@ import { test, expect } from "@playwright/test";
 
 const BASE_URL = "http://localhost:3000/employee-portals/team-expenses";
 
-test.describe("Team Outstation Expenses", () => {
+test.describe("Team Expenses", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(BASE_URL, { waitUntil: "networkidle" });
     await expect(
-      page.locator("h1").filter({ hasText: /Team Outstation Expenses/i }).first(),
+      page.locator("h1").filter({ hasText: /Team Expenses/i }).first(),
     ).toBeVisible({ timeout: 15_000 });
   });
 
   // ─── Page Load & Hero ─────────────────────────────────────────────
 
   test("page loads and displays hero header", async ({ page }) => {
-    await expect(page.locator("h1").filter({ hasText: /Team Outstation Expenses/i })).toBeVisible();
+    await expect(page.locator("h1").filter({ hasText: /Team Expenses/i })).toBeVisible();
   });
 
-  test("hero shows outstation expenses badge", async ({ page }) => {
-    const badge = page.locator("section p.text-orange-100").filter({ hasText: /Outstation Expenses/ });
+  test("hero shows expenses badge", async ({ page }) => {
+    const badge = page.locator("section p.text-orange-100").filter({ hasText: /Expenses/ });
     await expect(badge).toBeVisible();
   });
 
@@ -196,7 +196,7 @@ test.describe("Team Outstation Expenses", () => {
 
   test("page renders without crash (error boundary verification)", async ({ page }) => {
     await expect(
-      page.locator("h1").filter({ hasText: /Team Outstation Expenses/i }).first(),
+      page.locator("h1").filter({ hasText: /Team Expenses/i }).first(),
     ).toBeVisible();
   });
 });

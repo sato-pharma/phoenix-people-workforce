@@ -1,6 +1,10 @@
 ﻿import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 
-import { applyOrganogramMirrorSafety, publicVacancyLabel } from "@/lib/reports/organogram-safety";
+import {
+  applyOrganogramMirrorSafety,
+  classifyOrganogramStructureLevel,
+  publicVacancyLabel,
+} from "@/lib/reports/organogram-safety";
 import { dedupeVacancyReportRows } from "@/lib/reports/vacancy-report-safety";
 
 type LookupRow = {
@@ -328,6 +332,17 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
     vacancyCode: row.vacancy_code,
   })));
   const openRows = rows.filter((row) => row.status === "open");
+
+  // For organogram display, include manager-level vacancies (DSM/RSM/NSM)
+  // regardless of status. The status field may say "filled" even when no
+  // actual employee occupies the slot. suppressFilledVacancyRows() handles
+  // the real filtering by checking actual employee presence.
+  const organogramVacancyRows = rows.filter((row) => {
+    if (row.status === "open") return true;
+    const level = classifyOrganogramStructureLevel(row);
+    return level !== null && level !== "medicalRep";
+  });
+
   const employeeOrganogramRows: OrganogramReportRow[] =
     employeeDirectory.employees
       .filter((employee) =>
@@ -358,7 +373,7 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
         type: "employee",
         vacancyCode: null,
       }));
-  const vacancyOrganogramRows: OrganogramReportRow[] = openRows.map((row) => ({
+  const vacancyOrganogramRows: OrganogramReportRow[] = organogramVacancyRows.map((row) => ({
     areaId: row.areaId,
     areaName: row.areaName,
     departmentId: row.departmentId,

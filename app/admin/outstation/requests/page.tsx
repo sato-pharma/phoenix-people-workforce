@@ -1,14 +1,14 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { OutstationRequestsAdmin } from "@/components/outstation/outstation-requests-admin";
-import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { listOutstationRequests } from "@/lib/outstation/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminOutstationRequestsPage() {
   const access = await resolveAccessContextFromPage();
-  await assertPermission(access, "outstation", "read");
+  await assertOutstationAdminAccess(access, "approve");
   const requests = await listOutstationRequests({ includeCarEvidenceSignedUrls: true });
 
   return (
