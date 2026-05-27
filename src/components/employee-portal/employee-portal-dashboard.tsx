@@ -1968,66 +1968,269 @@ function TeamStructurePanel({ data }: { data: MedicalRepPortalData }) {
   );
 }
 
+type SupportRequestRow = {
+  attachments: { name: string; size: number; type: string }[];
+  category: string;
+  createdAt: string;
+  description: string;
+  employeeName: string;
+  hrId: string;
+  id: string;
+  status: string;
+  subcategory: string | null;
+  subject: string;
+};
+
+const SUPPORT_DRAFT_KEY = "phoenix:contact-hr-draft:v1";
+const DESCRIPTION_SOFT_LIMIT = 1000;
+
+const hrRequestSubcategories = [
+  "Profile change",
+  "Document request",
+  "Policy clarification",
+  "Leave dispute",
+] as const;
+
 export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }) {
   const employeeName = data.employee.fullName || data.employee.hrId || "your profile";
   const [category, setCategory] = useState("");
+  const [subcategory, setSubcategory] = useState("");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
-  const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [recentRequests, setRecentRequests] = useState<SupportRequestRow[]>([]);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(true);
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const draftRestoredRef = useRef(false);
 
-  const hrTeam: { id: string; name: string; role: string; summary: string; accent: string }[] = [
+  const hrTeam: {
+    id: string;
+    name: string;
+    role: string;
+    summary: string;
+    accent: string;
+    email: string;
+    whatsapp: string;
+  }[] = [
     {
       accent: "border-l-orange-400",
+      email: "hr-support@phoenix.local",
       id: "hr-support",
       name: "HR Support Desk",
       role: "General HR support",
       summary: "Policy questions, profile issues, and HR process support.",
+      whatsapp: "201000000001",
     },
     {
       accent: "border-l-sky-400",
+      email: "talent-support@phoenix.local",
       id: "talent-support",
       name: "Talent Support Desk",
       role: "Recruitment & onboarding",
       summary: "Onboarding status, hiring requests, and talent coordination.",
+      whatsapp: "201000000002",
     },
     {
       accent: "border-l-emerald-400",
+      email: "ops-support@phoenix.local",
       id: "ops-support",
       name: "Operations Support Desk",
       role: "Workplace & office support",
       summary: "Office coordination, workplace requests, and operational help.",
+      whatsapp: "201000000003",
     },
   ];
 
-  const recentRequests: {
-    id: string;
-    subject: string;
-    category: string;
-    status: string;
-    date: string;
-  }[] = [];
+  /* -------- Load recent requests on mount -------- */
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/support/requests?limit=25", {
+          headers: { "Content-Type": "application/json" },
+        });
+        if (!response.ok) {
+          if (!cancelled) setRecentRequests([]);
+          return;
+        }
+        const payload = (await response.json()) as { items?: SupportRequestRow[] };
+        if (!cancelled) setRecentRequests(payload.items ?? []);
+      } catch {
+        if (!cancelled) setRecentRequests([]);
+      } finally {
+        if (!cancelled) setIsLoadingRequests(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* -------- Restore draft from localStorage on first mount -------- */
+  useEffect(() => {
+    if (draftRestoredRef.current) return;
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(SUPPORT_DRAFT_KEY);
+      if (!raw) {
+        draftRestoredRef.current = true;
+        return;
+      }
+      const draft = JSON.parse(raw) as {
+        category?: string;
+        description?: string;
+        subcategory?: string;
+        subject?: string;
+      };
+      if (draft.category) setCategory(draft.category);
+      if (draft.subcategory) setSubcategory(draft.subcategory);
+      if (draft.subject) setSubject(draft.subject);
+      if (draft.description) setDescription(draft.description);
+    } catch {
+      // ignore corrupt draft
+    } finally {
+      draftRestoredRef.current = true;
+    }
+  }, []);
+
+  /* -------- Persist draft to localStorage (lightweight debounce via render) -------- */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!draftRestoredRef.current) return;
+    const hasAnything = category || subcategory || subject || description;
+    try {
+      if (hasAnything) {
+        window.localStorage.setItem(
+          SUPPORT_DRAFT_KEY,
+          JSON.stringify({ category, description, subcategory, subject }),
+        );
+      } else {
+        window.localStorage.removeItem(SUPPORT_DRAFT_KEY);
+      }
+    } catch {
+      // storage full / disabled — silently ignore
+    }
+  }, [category, subcategory, subject, description]);
 
   useEffect(() => {
     return () => {
-      if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
       if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
     };
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  /* -------- Reset subcategory when category changes away from HR Request -------- */
+  useEffect(() => {
+    if (category !== "HR Request" && subcategory) {
+      setSubcategory("");
+    }
+  }, [category, subcategory]);
+
+  const handleFilesAdded = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const incoming = Array.from(files);
+    setAttachments((existing) => {
+      const seen = new Set(existing.map((f) => `${f.name}:${f.size}`));
+      const merged = [...existing];
+      for (const file of incoming) {
+        const key = `${file.name}:${file.size}`;
+        if (!seen.has(key) && file.size <= 10 * 1024 * 1024) {
+          merged.push(file);
+          seen.add(key);
+        }
+      }
+      return merged.slice(0, 10);
+    });
+  };
+
+  const removeAttachment = (name: string, size: number) => {
+    setAttachments((existing) =>
+      existing.filter((f) => !(f.name === name && f.size === size)),
+    );
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const formatRequestDate = (iso: string) => {
+    if (!iso) return "—";
+    try {
+      return new Intl.DateTimeFormat("en-GB", {
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        month: "short",
+        year: "numeric",
+      }).format(new Date(iso));
+    } catch {
+      return iso;
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError(null);
     setIsSubmitting(true);
-    submitTimeoutRef.current = setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      const response = await fetch("/api/support/requests", {
+        body: JSON.stringify({
+          attachments: attachments.map((f) => ({
+            name: f.name,
+            size: f.size,
+            type: f.type,
+          })),
+          category,
+          description,
+          employeeName,
+          subcategory: subcategory || null,
+          subject,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        item?: SupportRequestRow;
+        message?: string;
+      };
+      if (!response.ok) {
+        throw new Error(
+          payload.message ?? "We couldn't submit your request. Try again.",
+        );
+      }
+      if (payload.item) {
+        setRecentRequests((prev) => [payload.item as SupportRequestRow, ...prev]);
+      }
       setShowSuccess(true);
       setCategory("");
+      setSubcategory("");
       setSubject("");
       setDescription("");
-      successTimeoutRef.current = setTimeout(() => setShowSuccess(false), 3000);
-    }, 1000);
+      setAttachments([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.removeItem(SUPPORT_DRAFT_KEY);
+        } catch {
+          // ignore
+        }
+      }
+      successTimeoutRef.current = setTimeout(() => setShowSuccess(false), 4000);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "We couldn't submit your request. Try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getStatusTone = (status: string) => {
@@ -2036,12 +2239,18 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
         return "bg-amber-50 text-amber-700";
       case "Resolved":
         return "bg-emerald-50 text-emerald-700";
-      case "Pending":
+      case "Closed":
         return "bg-slate-100 text-slate-600";
+      case "Pending":
+        return "bg-sky-50 text-sky-700";
       default:
         return "bg-slate-100 text-slate-600";
     }
   };
+
+  const lastTicket = recentRequests[0] ?? null;
+  const descriptionCount = description.length;
+  const descriptionOverSoftLimit = descriptionCount > DESCRIPTION_SOFT_LIMIT;
 
   const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.06)]";
   const inputClass =
@@ -2097,7 +2306,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             {hrTeam.length > 0 ? (
               hrTeam.map((member) => (
                 <div
-                  className={`flex flex-col gap-3 border-l-2 px-4 py-3 transition hover:bg-slate-50/60 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${member.accent}`}
+                  className={`border-l-2 px-4 py-3 transition hover:bg-slate-50/60 sm:px-5 ${member.accent}`}
                   key={member.id}
                 >
                   <div className="flex items-start gap-3">
@@ -2122,20 +2331,44 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                       <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
                         {member.summary}
                       </p>
+                      {/* Quick-action chips */}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <button
+                          aria-label={`Use support form for ${member.name}`}
+                          className="inline-flex h-7 items-center gap-1 rounded-md bg-orange-500 px-2 text-[11px] font-semibold text-white shadow-sm transition hover:bg-orange-600"
+                          onClick={() => {
+                            setCategory("HR Request");
+                            setSubject(`${member.name} request`);
+                          }}
+                          type="button"
+                        >
+                          <Send className="h-3 w-3" />
+                          Use form
+                        </button>
+                        <a
+                          aria-label={`Email ${member.name}`}
+                          className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
+                          href={`mailto:${member.email}?subject=${encodeURIComponent(
+                            `Phoenix Workforce — ${employeeName}`,
+                          )}`}
+                          rel="noopener noreferrer"
+                        >
+                          Email
+                        </a>
+                        <a
+                          aria-label={`WhatsApp ${member.name}`}
+                          className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50"
+                          href={`https://wa.me/${member.whatsapp}?text=${encodeURIComponent(
+                            `Hello ${member.name}, this is ${employeeName} (Phoenix Workforce).`,
+                          )}`}
+                          rel="noopener noreferrer"
+                          target="_blank"
+                        >
+                          WhatsApp
+                        </a>
+                      </div>
                     </div>
                   </div>
-                  <Button
-                    aria-label={`Use form for ${member.name}`}
-                    className="h-9 shrink-0 rounded-md px-3 text-[12px]"
-                    variant="secondary"
-                    onClick={() => {
-                      setCategory("HR Request");
-                      setSubject(`${member.name} request`);
-                    }}
-                  >
-                    <Send className="mr-1.5 h-3 w-3" />
-                    Use Form
-                  </Button>
                 </div>
               ))
             ) : (
@@ -2174,7 +2407,11 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             </span>
           </div>
 
-          <form className="space-y-4 px-4 py-4 sm:px-5 sm:py-5" onSubmit={handleSubmit}>
+          <form
+            aria-busy={isSubmitting}
+            className="space-y-4 px-4 py-4 sm:px-5 sm:py-5"
+            onSubmit={handleSubmit}
+          >
             {showSuccess && (
               <div
                 aria-live="polite"
@@ -2182,6 +2419,15 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 role="status"
               >
                 Request submitted successfully.
+              </div>
+            )}
+            {submitError && (
+              <div
+                aria-live="polite"
+                className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700"
+                role="status"
+              >
+                {submitError}
               </div>
             )}
 
@@ -2202,6 +2448,29 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               </select>
             </label>
 
+            {/* Conditional sub-category — only when "HR Request" is selected */}
+            {category === "HR Request" && (
+              <label className="block">
+                <span className={`mb-1.5 block ${labelClass}`}>
+                  HR Request type
+                </span>
+                <select
+                  aria-label="HR request subcategory"
+                  className={inputClass}
+                  onChange={(e) => setSubcategory(e.target.value)}
+                  required
+                  value={subcategory}
+                >
+                  <option value="">Select an HR request type</option>
+                  {hrRequestSubcategories.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
             <label className="block">
               <span className={`mb-1.5 block ${labelClass}`}>Subject</span>
               <input
@@ -2215,28 +2484,89 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             </label>
 
             <label className="block">
-              <span className={`mb-1.5 block ${labelClass}`}>Description</span>
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className={labelClass}>Description</span>
+                <span
+                  aria-live="polite"
+                  className={`text-[10px] font-semibold ${
+                    descriptionOverSoftLimit ? "text-rose-600" : "text-slate-400"
+                  }`}
+                >
+                  {descriptionCount} / {DESCRIPTION_SOFT_LIMIT}
+                </span>
+              </div>
               <textarea
                 aria-label="Support description"
-                className="w-full resize-none rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
+                className={`w-full resize-none rounded-md border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] ${
+                  descriptionOverSoftLimit ? "border-rose-300" : "border-gray-200"
+                }`}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe your issue or request in detail..."
                 required
                 rows={4}
                 value={description}
               />
+              {descriptionOverSoftLimit && (
+                <p className="mt-1 text-[10px] font-semibold text-rose-600">
+                  Tip: keep the description under {DESCRIPTION_SOFT_LIMIT} characters
+                  so it's easier to triage.
+                </p>
+              )}
             </label>
 
-            <label className="block">
-              <span className={`mb-1.5 block ${labelClass}`}>Attachments (optional)</span>
-              <div className="flex h-20 w-full cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-gray-300 bg-slate-50/40 text-center transition hover:border-orange-300 hover:bg-slate-50/80">
+            <div>
+              <span className={`mb-1.5 block ${labelClass}`}>
+                Attachments (optional)
+              </span>
+              <input
+                accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+                aria-label="Attachments"
+                className="sr-only"
+                multiple
+                onChange={(e) => handleFilesAdded(e.target.files)}
+                ref={fileInputRef}
+                type="file"
+              />
+              <button
+                aria-label="Choose files to attach"
+                className="flex w-full cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-gray-300 bg-slate-50/40 px-3 py-3 text-center transition hover:border-orange-300 hover:bg-slate-50/80"
+                onClick={() => fileInputRef.current?.click()}
+                type="button"
+              >
                 <Upload className="mb-1 h-4 w-4 text-slate-400" />
                 <p className="text-[11px] font-medium text-slate-600">
-                  Drag &amp; drop or click to upload
+                  Click to choose files or drop them here
                 </p>
-                <p className="text-[10px] text-slate-400">Max 10 MB (PDF, PNG, JPG)</p>
-              </div>
-            </label>
+                <p className="text-[10px] text-slate-400">
+                  Max 10 MB each &middot; up to 10 files &middot; PDF, PNG, JPG
+                </p>
+              </button>
+              {attachments.length > 0 && (
+                <ul className="mt-2 flex flex-wrap gap-1.5">
+                  {attachments.map((file) => (
+                    <li
+                      className="inline-flex items-center gap-1.5 rounded-md border border-orange-200 bg-orange-50 px-2 py-1 text-[11px] font-medium text-orange-800"
+                      key={`${file.name}-${file.size}`}
+                    >
+                      <span className="max-w-[160px] truncate" title={file.name}>
+                        {file.name}
+                      </span>
+                      <span className="text-[10px] text-orange-600">
+                        {formatFileSize(file.size)}
+                      </span>
+                      <button
+                        aria-label={`Remove ${file.name}`}
+                        className="text-orange-500 transition hover:text-orange-700"
+                        onClick={() => removeAttachment(file.name, file.size)}
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
             <Button
               aria-label="Submit support request"
@@ -2257,6 +2587,43 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
         </Card>
       </div>
 
+      {/* ---- Last Ticket (pinned) — only when at least one exists ---- */}
+      {lastTicket && (
+        <Card
+          className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-slate-50/40 px-4 py-2 sm:px-5">
+            <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+              Your latest ticket
+            </span>
+            <span
+              className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(lastTicket.status)}`}
+            >
+              {lastTicket.status}
+            </span>
+          </div>
+          <div className="border-l-2 border-l-orange-400 px-4 py-3 sm:px-5">
+            <p className="text-[13px] font-bold text-slate-900">
+              {lastTicket.subject}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              {lastTicket.category}
+              {lastTicket.subcategory ? ` · ${lastTicket.subcategory}` : ""} &middot;{" "}
+              {formatRequestDate(lastTicket.createdAt)}
+            </p>
+            <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-slate-600">
+              {lastTicket.description}
+            </p>
+            {lastTicket.attachments.length > 0 && (
+              <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                {lastTicket.attachments.length} attachment
+                {lastTicket.attachments.length === 1 ? "" : "s"}
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* ---- Recent Requests ---- */}
       <Card
         className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}
@@ -2266,18 +2633,25 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
             <div>
               <h2 className="text-sm font-bold text-slate-800">Recent Requests</h2>
-              <p className="mt-0.5 text-[11px] text-slate-500">Track your support history</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                Track your support history
+              </p>
             </div>
           </div>
-          <a
-            className="text-[11px] font-semibold text-orange-600 transition hover:text-orange-700"
-            href="#"
-          >
-            View all &rsaquo;
-          </a>
+          {recentRequests.length > 0 && (
+            <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+              {recentRequests.length}
+            </span>
+          )}
         </div>
 
-        {recentRequests.length === 0 ? (
+        {isLoadingRequests ? (
+          <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+            <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">
+              Loading…
+            </p>
+          </div>
+        ) : recentRequests.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
             <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">
               No recent requests
@@ -2308,9 +2682,6 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                     <th className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                       Date
                     </th>
-                    <th className="px-4 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                      Action
-                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -2319,14 +2690,15 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                       className="transition hover:bg-orange-50/30"
                       key={request.id}
                     >
-                      <td className="px-4 py-2.5 font-mono text-[11px] font-semibold text-slate-600">
-                        {request.id}
+                      <td className="px-4 py-2.5 font-mono text-[10px] font-semibold text-slate-600">
+                        {request.id.slice(0, 8)}
                       </td>
                       <td className="px-4 py-2.5 text-[12px] font-semibold text-slate-800">
                         {request.subject}
                       </td>
                       <td className="px-4 py-2.5 text-[12px] text-slate-600">
                         {request.category}
+                        {request.subcategory ? ` · ${request.subcategory}` : ""}
                       </td>
                       <td className="px-4 py-2.5">
                         <span
@@ -2336,15 +2708,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-[12px] text-slate-600">
-                        {request.date}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <Button
-                          className="h-7 rounded-md px-2 text-[11px]"
-                          variant="secondary"
-                        >
-                          View
-                        </Button>
+                        {formatRequestDate(request.createdAt)}
                       </td>
                     </tr>
                   ))}
@@ -2355,10 +2719,13 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             {/* Mobile stacked cards */}
             <div className="divide-y divide-gray-100 md:hidden">
               {recentRequests.map((request) => (
-                <div className="border-l-2 border-l-orange-400 px-4 py-3" key={request.id}>
+                <div
+                  className="border-l-2 border-l-orange-400 px-4 py-3"
+                  key={request.id}
+                >
                   <div className="flex items-start justify-between gap-2">
-                    <p className="font-mono text-[11px] font-semibold text-slate-600">
-                      {request.id}
+                    <p className="font-mono text-[10px] font-semibold text-slate-600">
+                      {request.id.slice(0, 8)}
                     </p>
                     <span
                       className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
@@ -2370,7 +2737,9 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                     {request.subject}
                   </p>
                   <p className="mt-0.5 text-[11px] text-slate-500">
-                    {request.category} &middot; {request.date}
+                    {request.category}
+                    {request.subcategory ? ` · ${request.subcategory}` : ""} &middot;{" "}
+                    {formatRequestDate(request.createdAt)}
                   </p>
                 </div>
               ))}
