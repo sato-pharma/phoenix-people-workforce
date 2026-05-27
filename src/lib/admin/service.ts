@@ -22,7 +22,8 @@ import {
 import { summarizeDeviceUserMappings } from "@/lib/attendance/metrics";
 import { buildVacationPlatformMetrics } from "@/lib/vacation/metrics";
 import { getWorkforceMetrics } from "@/lib/platform/metrics";
-import type { AccessContext } from "@/lib/auth/permissions";
+import { systemAccessContext, type AccessContext } from "@/lib/auth/permissions";
+import { getPayrollExpenseMetrics } from "@/lib/payroll/expenses";
 
 export type PhoenixAdminStats = {
   totalEmployees: number;
@@ -69,7 +70,10 @@ export async function getPhoenixAdminStats(): Promise<PhoenixAdminStats> {
     supabase.from("job_offers").select("*", { count: "exact", head: true }),
     supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(10)
   ]);
-  const dataHealthStats = await getDataHealthStats().catch(() => null);
+  const [dataHealthStats, expenseMetrics] = await Promise.all([
+    getDataHealthStats().catch(() => null),
+    getPayrollExpenseMetrics(systemAccessContext).catch(() => null),
+  ]);
 
   return {
     totalEmployees: dataHealthStats?.summary.totalEmployees ?? employees.count ?? 0,
@@ -77,7 +81,7 @@ export async function getPhoenixAdminStats(): Promise<PhoenixAdminStats> {
     payrollEligible: payrollEligible.count ?? 0,
     salaryRecords: salaryRecords.count ?? 0,
     salesRecords: salesRecords.count ?? 0,
-    expensesCount: expenses.count ?? 0,
+    expensesCount: expenseMetrics?.totalRows ?? expenses.count ?? 0,
     salaryFlags: salaryFlags.count ?? 0,
     dataHealthIssues: dataHealthStats?.summary.issuesCount ?? 0,
     vacancies: vacancies.count ?? 0,

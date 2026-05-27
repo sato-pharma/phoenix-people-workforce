@@ -332,7 +332,7 @@ export function MedicalRepExpensesWorkspace({
           type="button"
         >
           <ReceiptText className="h-4 w-4" />
-          Submit Outstation Expense
+          Submit Expense
         </button>
         <button
           className={tabButtonClassName(activeTab === "input")}
@@ -357,7 +357,7 @@ export function MedicalRepExpensesWorkspace({
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">
-                    Submit Outstation Expense
+                    Submit Expense
                   </p>
                   <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
                     Traveling request
@@ -510,7 +510,7 @@ export function MedicalRepExpensesWorkspace({
                 type="submit"
               >
                 {isSubmitting ? <LoadingSpinner className="text-white" /> : <Send className="h-4 w-4" />}
-                Submit Outstation Expense
+                Submit Expense
               </Button>
             </div>
           </form>

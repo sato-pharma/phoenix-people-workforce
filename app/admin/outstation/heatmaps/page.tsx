@@ -1,8 +1,8 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { ExpenseHeatmap } from "@/components/outstation/expense-heatmap";
-import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { getOutstationHeatmapData } from "@/lib/outstation/service";
 import type { ReactNode } from "react";
 
@@ -37,7 +37,7 @@ function egp(value: number) {
 
 export default async function AdminOutstationHeatmapsPage() {
   const access = await resolveAccessContextFromPage();
-  await assertPermission(access, "outstation", "read");
+  await assertOutstationAdminAccess(access, "approve");
   const data = await getOutstationHeatmapData();
 
   return (

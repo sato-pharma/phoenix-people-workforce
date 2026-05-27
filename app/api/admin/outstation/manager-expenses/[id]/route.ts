@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import {
   deleteOutstationRequestAsAdmin,
   updateManagerExpenseAsAdmin,
@@ -17,7 +17,7 @@ export async function PATCH(
 ) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "outstation", "approve");
+    await assertOutstationAdminAccess(access, "approve");
 
     const { id: rawId } = await params;
     const id = Number(rawId);
@@ -82,7 +82,7 @@ export async function DELETE(
 ) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "outstation", "delete");
+    await assertOutstationAdminAccess(access, "delete");
 
     const { id: rawId } = await params;
     const id = Number(rawId);

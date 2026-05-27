@@ -1,0 +1,91 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+function source(path: string) {
+  return readFileSync(path, "utf8");
+}
+
+export function runExpenseRiskHardeningTests() {
+  const adminAccess = source("src/lib/outstation/admin-access.ts");
+  assert.match(adminAccess, /"Super Admin"/);
+  assert.match(adminAccess, /"Finance Manager"/);
+  assert.match(adminAccess, /"CEO"/);
+  assert.match(adminAccess, /assertPermission\(access,\s*"outstation",\s*action\)/);
+
+  const adminOutstationSources = [
+    "app/api/admin/outstation/requests/route.ts",
+    "app/api/admin/outstation/[id]/route.ts",
+    "app/api/admin/outstation/manager-expenses/route.ts",
+    "app/api/admin/outstation/manager-expenses/[id]/route.ts",
+    "app/api/admin/outstation/heatmaps/route.ts",
+    "app/api/admin/outstation/calculate-manager-distance/route.ts",
+    "app/api/admin/outstation/places-autocomplete/route.ts",
+    "app/api/admin/outstation/place-details/route.ts",
+    "app/admin/outstation/requests/page.tsx",
+    "app/admin/outstation/heatmaps/page.tsx",
+  ].map(source).join("\n");
+  assert.doesNotMatch(adminOutstationSources, /assertPermission\(access,\s*"outstation",\s*"read"\)/);
+  assert.match(adminOutstationSources, /assertOutstationAdminAccess\(access,\s*"approve"\)/);
+  assert.match(adminOutstationSources, /assertOutstationAdminAccess\(access,\s*"delete"\)/);
+
+  const payrollExpenses = source("src/lib/payroll/expenses.ts");
+  assert.match(payrollExpenses, /class PayrollExpenseReportLockedError/);
+  assert.match(payrollExpenses, /assertPayrollExpenseReportCanMutate\(reportId,\s*"deleted"\)/);
+  assert.match(payrollExpenses, /assertPayrollExpenseReportCanMutate\(reportId,\s*"replaced"\)/);
+  assert.match(payrollExpenses, /select\("id,imported_payroll_batch_id,imported_to_payroll_at"\)/);
+  assert.match(payrollExpenses, /row\.imported_payroll_batch_id != null \|\| row\.imported_to_payroll_at != null/);
+  assert.match(payrollExpenses, /lockedExpenses: Number\(result\.locked_expenses \?\? 0\)/);
+
+  const reportsRoute = source("app/api/payroll/expenses/reports/[id]/route.ts");
+  assert.match(reportsRoute, /isPayrollExpenseReportLocked/);
+  assert.match(reportsRoute, /"expense_report_locked"/);
+  assert.match(reportsRoute, /status:\s*409/);
+  assert.match(reportsRoute, /"payroll_expense_lock_schema_not_ready"/);
+
+  const migration = source("supabase/migrations/20260527052440_outstation_expense_payroll_locks.sql");
+  assert.match(migration, /add column if not exists imported_payroll_batch_id uuid/i);
+  assert.match(migration, /add column if not exists imported_to_payroll_at timestamptz/i);
+  assert.match(migration, /payroll_expenses_imported_payroll_batch_id_fkey/i);
+  assert.match(migration, /create or replace function public\.phx_import_approved_expenses_to_payroll/i);
+  assert.match(migration, /marked_expenses as \(/i);
+  assert.match(migration, /'locked_expenses'/i);
+  assert.match(migration, /migration_backfill/i);
+
+  const outstationService = source("src/lib/outstation/service.ts");
+  assert.match(outstationService, /assertOutstationAdminAccess\(access,\s*"delete"\)/);
+  assert.match(outstationService, /const addedToPayroll = existing\.status === "approved" \|\| Boolean\(linkedPayrollRows\?\.length\)/);
+  assert.match(outstationService, /already been added to payroll and cannot be deleted/);
+
+  const employeePortalService = source("src/lib/employee-portal/service.ts");
+  assert.match(employeePortalService, /mapOutstationRequestRowToPayrollApproval/);
+  assert.match(employeePortalService, /return mapOutstationRequestRowToPayrollApproval\(row\)/);
+  assert.doesNotMatch(employeePortalService, /statusLabelFromOutstation/);
+  assert.doesNotMatch(employeePortalService, /Confirmed by HR/);
+  assert.doesNotMatch(employeePortalService, /function expenseTypeLabel/);
+
+  assert.match(payrollExpenses, /const requestTripIds = new Set/);
+  assert.match(payrollExpenses, /dedupedHistoricalExpenses/);
+
+  const commandCenter = source("src/lib/admin/command-center.ts");
+  assert.match(commandCenter, /getPayrollExpenseMetrics/);
+  assert.match(commandCenter, /fetchExpenseSummary\(accessContext\)/);
+  assert.doesNotMatch(commandCenter, /\.from\("payroll_expenses"\)[\s\S]*select\("total,hr_approved"\)/);
+
+  const adminService = source("src/lib/admin/service.ts");
+  assert.match(adminService, /getPayrollExpenseMetrics\(systemAccessContext\)/);
+  assert.match(adminService, /expensesCount: expenseMetrics\?\.totalRows \?\? expenses\.count \?\? 0/);
+
+  const sidebar = source("src/components/layout/sidebar.tsx");
+  assert.doesNotMatch(sidebar, /\/employee\/outstation\/new/);
+  assert.match(sidebar, /label: "Expense Dashboard"/);
+  assert.match(sidebar, /label: "Submit Expense"/);
+  assert.match(sidebar, /label: "Team Expenses"/);
+
+  const employeePortalRoutes = source("src/lib/employee-portal/routes.ts");
+  assert.doesNotMatch(employeePortalRoutes, /\/employee\/outstation\/new/);
+
+  const legacyEmployeeOutstation = source("app/employee/outstation/new/page.tsx");
+  assert.match(legacyEmployeeOutstation, /redirect\("\/employee-portals\/expenses"\)/);
+  assert.match(legacyEmployeeOutstation, /redirect\("\/employee-portals\/submit-expense"\)/);
+  assert.doesNotMatch(legacyEmployeeOutstation, /MobileOutstationWizard/);
+}

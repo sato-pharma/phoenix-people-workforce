@@ -5,6 +5,8 @@ import { analyzeExpenseWorkbook } from "@/lib/payroll/expense-import";
 import {
   clearPayrollExpenseReportRows,
   deletePayrollExpenseReport,
+  isPayrollExpenseLockSchemaMissing,
+  isPayrollExpenseReportLocked,
   isPayrollExpensesSchemaMissing,
   savePayrollExpenseApprovals,
 } from "@/lib/payroll/expenses";
@@ -39,6 +41,15 @@ export async function DELETE(_request: Request, { params }: Params) {
     const message = error instanceof Error ? error.message : "Unable to delete expense report.";
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
+    }
+    if (isPayrollExpenseReportLocked(error)) {
+      return NextResponse.json({ error: "expense_report_locked", message }, { status: 409 });
+    }
+    if (isPayrollExpenseLockSchemaMissing(error)) {
+      return NextResponse.json(
+        { error: "payroll_expense_lock_schema_not_ready", message },
+        { status: 503 },
+      );
     }
     return NextResponse.json(
       {
@@ -109,6 +120,15 @@ export async function PUT(request: Request, { params }: Params) {
     const message = error instanceof Error ? error.message : "Unable to replace expense report.";
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
+    }
+    if (isPayrollExpenseReportLocked(error)) {
+      return NextResponse.json({ error: "expense_report_locked", message }, { status: 409 });
+    }
+    if (isPayrollExpenseLockSchemaMissing(error)) {
+      return NextResponse.json(
+        { error: "payroll_expense_lock_schema_not_ready", message },
+        { status: 503 },
+      );
     }
     return NextResponse.json(
       {

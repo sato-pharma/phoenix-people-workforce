@@ -707,6 +707,36 @@ export function EmployeeOrganogramDashboard({
     [filteredRows],
   );
 
+  // Build a list of vacant area names for each structure role
+  // so we can display "Vacant: <area>, <area>" under each KPI card.
+  const vacantAreas = useMemo(() => {
+    const acc: { medicalRep: string[]; dsm: string[]; rsm: string[]; nsm: string[] } = {
+      dsm: [],
+      medicalRep: [],
+      nsm: [],
+      rsm: [],
+    };
+    for (const row of filteredRows) {
+      if (row.type !== "vacancy") continue;
+      const t = titleText(row);
+      const area = row.areaName?.trim() || row.regionName?.trim() || row.teamName?.trim() || "—";
+      if (t.includes("medical representative") || t.includes("medical rep")) {
+        acc.medicalRep.push(area);
+      } else if (
+        t.includes("district sales manager") ||
+        t.includes("district manager") ||
+        t === "dsm"
+      ) {
+        acc.dsm.push(area);
+      } else if (t.includes("regional sales manager") || t === "rsm") {
+        acc.rsm.push(area);
+      } else if (t.includes("national sales manager") || t === "nsm") {
+        acc.nsm.push(area);
+      }
+    }
+    return acc;
+  }, [filteredRows]);
+
   const lanes = useMemo(
     () => (effectiveLineFilter || normalizedSearch ? buildOrganogramLanes(filteredRows) : null),
     [effectiveLineFilter, filteredRows, normalizedSearch],
@@ -798,6 +828,83 @@ export function EmployeeOrganogramDashboard({
           })}
         </div>
       </Card>
+
+      {/* ---- Vacant Positions Block ---- */}
+      {structureKpis.total.vacant > 0 && (
+        <Card
+          className={`overflow-hidden rounded-lg border border-gray-100 p-4 sm:p-5 ${cardShadow}`}
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">
+                Vacant Positions
+              </h3>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                Open positions by role and area
+              </p>
+            </div>
+            <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+              {structureKpis.total.vacant} total
+            </span>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              {
+                accent: "border-l-sky-400",
+                areas: vacantAreas.dsm,
+                count: vacantAreas.dsm.length,
+                label: "DSM vacant",
+              },
+              {
+                accent: "border-l-amber-400",
+                areas: vacantAreas.rsm,
+                count: vacantAreas.rsm.length,
+                label: "RSM vacant",
+              },
+              {
+                accent: "border-l-orange-400",
+                areas: vacantAreas.nsm,
+                count: vacantAreas.nsm.length,
+                label: "NSM vacant",
+              },
+              {
+                accent: "border-l-emerald-400",
+                areas: vacantAreas.medicalRep,
+                count: vacantAreas.medicalRep.length,
+                label: "Medical Representative vacants",
+              },
+            ]
+              .filter((block) => block.count > 0)
+              .map((block) => (
+                <div
+                  className={`rounded-md border border-gray-100 border-l-2 bg-slate-50/60 px-3 py-2.5 ${block.accent}`}
+                  key={block.label}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      {block.label}
+                    </p>
+                    <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-bold text-orange-600">
+                      {block.count}
+                    </span>
+                  </div>
+                  <ul className="mt-2 space-y-1">
+                    {block.areas.map((area, idx) => (
+                      <li
+                        className="flex items-start gap-1.5 text-[11px] text-slate-700"
+                        key={`${block.label}-${idx}-${area}`}
+                      >
+                        <span className="mt-1 h-1 w-1 flex-shrink-0 rounded-sm bg-orange-400" />
+                        <span className="leading-snug">{area}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+          </div>
+        </Card>
+      )}
 
       {/* ---- Structure Completion Bar ---- */}
       <WorkspaceErrorBoundary fallbackTitle="Structure overview unavailable">
@@ -951,34 +1058,10 @@ export function EmployeeOrganogramDashboard({
 
             {/* Hierarchy & Lanes */}
             <div className="bg-slate-50/70 px-3 py-5 sm:px-5">
-              {/* Executive Hierarchy */}
+              {/* Executive Hierarchy — NSM only */}
               <div className="relative mb-6 flex flex-col items-center">
-                {/* CEO */}
-                <div className="w-full max-w-[200px] rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-center">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-400">
-                    {lanes.chiefExecutive
-                      ? lanes.chiefExecutive.positionTitle ?? lanes.chiefExecutive.jobTitle ?? "CEO"
-                      : "CEO"}
-                  </p>
-                  <p className="mt-0.5 text-xs font-bold text-white">
-                    {lanes.chiefExecutive
-                      ? formatEmployeeDisplayName(lanes.chiefExecutive.fullName)
-                      : "Executive Leadership"}
-                  </p>
-                </div>
-                <div className="h-5 w-px bg-slate-300" />
-
-                {/* Line */}
-                <div className="w-full max-w-[200px] rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-center">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-500">
-                    Line
-                  </p>
-                  <p className="mt-0.5 text-xs font-bold text-slate-800">{lineName}</p>
-                </div>
-                <div className="h-5 w-px bg-slate-300" />
-
                 {/* NSM / Line Leader */}
-                <div className="w-full max-w-[200px] rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5 text-center">
+                <div className="w-full max-w-[240px] rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5 text-center">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">
                     {lanes.lineLeader
                       ? lanes.lineLeader.positionTitle ?? lanes.lineLeader.jobTitle ?? "Line Leader"

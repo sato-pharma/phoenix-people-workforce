@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import {
   approveOutstationRequestForPayroll,
   deleteOutstationRequestAsAdmin,
@@ -18,7 +18,7 @@ export async function GET(
 ) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "outstation", "read");
+    await assertOutstationAdminAccess(access, "approve");
     const { id: rawId } = await params;
     const id = Number(rawId);
     if (!Number.isFinite(id)) {
@@ -50,7 +50,7 @@ export async function POST(
 ) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "outstation", "approve");
+    await assertOutstationAdminAccess(access, "approve");
     const { id: rawId } = await params;
     const id = Number(rawId);
     if (!Number.isFinite(id)) {
@@ -87,7 +87,7 @@ export async function PATCH(
 ) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "outstation", "approve");
+    await assertOutstationAdminAccess(access, "approve");
     const { id: rawId } = await params;
     const id = Number(rawId);
     if (!Number.isFinite(id)) {
@@ -128,7 +128,7 @@ export async function DELETE(
 ) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "outstation", "delete");
+    await assertOutstationAdminAccess(access, "delete");
     const { id: rawId } = await params;
     const id = Number(rawId);
     if (!Number.isFinite(id)) {

@@ -1781,7 +1781,7 @@ function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
 
 function QuickActionsPanel({ data }: { data: MedicalRepPortalData }) {
   const actions = [
-    { href: resolveExpenseActionHref(data), icon: ReceiptText, label: "Submit Outstation Expense" },
+    { href: resolveExpenseActionHref(data), icon: ReceiptText, label: "Submit Expense" },
     { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Submit Vacation Request" },
     { href: "/employee-portals/marketing-requests", icon: Megaphone, label: "Submit Marketing Request" },
   ].filter((item) => {
@@ -2291,7 +2291,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Outstation Expense Dashboard</h1>
+          <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Expense Dashboard</h1>
           <p className="mt-1 text-sm text-slate-500">Track workload, trips, and expense efficiency across AMs & PMs</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
