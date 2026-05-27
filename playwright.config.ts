@@ -14,6 +14,12 @@ export default defineConfig({
   forbidOnly: true,
   fullyParallel: false,
   outputDir: "output/playwright",
+  webServer: {
+    command: "npm run dev -- -p 3000",
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+    url: "http://localhost:3000/login",
+  },
   projects: [
     // Auth setup — runs first, saves authenticated browser state for Ali (NSM)
     {
