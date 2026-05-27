@@ -40,7 +40,11 @@
       "Bash(npm ls *)",
       "Bash(xargs grep -l \"vacation\\\\|leave-management\")",
       "Bash(xargs grep -l \"excuse\" -i)",
-      "mcp__Claude_in_Chrome__form_input"
+      "mcp__Claude_in_Chrome__form_input",
+      "Bash(xargs grep -l \"coaching\")",
+      "Bash(Get-ChildItem -Path \"F:\\\\Phoenix Workforce\\\\phoenix-workforce\\\\src\\\\app\" -Recurse -Directory)",
+      "Bash(Select-Object FullName)",
+      "Bash(npx playwright *)"
     ]
   }
 }

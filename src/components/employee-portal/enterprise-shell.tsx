@@ -22,7 +22,7 @@ export function EmployeePortalPageShell({
   return (
     <div className="mx-auto w-full space-y-5">
       <section
-        className="relative box-border w-full overflow-hidden rounded border border-slate-950 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] shadow-[0_22px_70px_rgba(15,23,42,0.32)]"
+        className="relative box-border w-full overflow-hidden rounded border border-slate-800 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] shadow-[0_8px_24px_rgba(15,23,42,0.20)]"
         style={{ boxSizing: "border-box" }}
       >
         <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:44px_44px]" />
