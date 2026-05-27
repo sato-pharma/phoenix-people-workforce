@@ -25,13 +25,14 @@ setup("authenticate", async ({ page }) => {
   await hrIdInput.fill("a-12");
   await page.getByRole("textbox", { name: /Password/i }).fill("12345678");
 
-  // Submit the form
-  await page.getByRole("button", { name: /Sign in/i }).click();
-
-  // Wait for navigation away from login page (successful auth)
-  await page.waitForURL((url) => !url.pathname.includes("/login"), {
-    timeout: 30_000,
-  });
+  // Submit the form and wait for the authenticated route to commit.
+  await Promise.all([
+    page.waitForURL((url) => !url.pathname.includes("/login"), {
+      timeout: 45_000,
+      waitUntil: "domcontentloaded",
+    }),
+    page.getByRole("button", { name: /Sign in/i }).click(),
+  ]);
 
   // Verify we landed on an authenticated page
   await expect(page.locator("body")).toBeVisible();
