@@ -15,7 +15,9 @@ export function ApprovalRecommendationBadge({
   value: OutstationApprovalRecommendation;
 }) {
   return (
-    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.14em] ring-1 ${tones[value]}`}>
+    <span
+      className={`inline-flex rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wider ring-1 ${tones[value]}`}
+    >
       {value.replace(/_/g, " ")}
     </span>
   );

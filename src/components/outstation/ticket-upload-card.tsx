@@ -25,16 +25,16 @@ export function TicketUploadCard({
         : "Attach any supporting document for this expense request.";
 
   return (
-    <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
-        Upload Attachment
-      </p>
-      <p className="mt-2 text-sm leading-6 text-slate-600">
-        {description}
-      </p>
-      <label className="mt-4 flex cursor-pointer items-center justify-center gap-3 rounded-2xl border border-dashed border-orange-300 bg-orange-50 px-4 py-5 text-sm font-semibold text-orange-700">
+    <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+      <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+        Upload attachment
+      </span>
+      <p className="mt-2 text-[13px] leading-relaxed text-slate-500">{description}</p>
+      <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-orange-300 bg-orange-50/50 px-3 py-4 text-[13px] font-semibold text-orange-700 transition hover:bg-orange-50">
         <Upload className="h-4 w-4" />
-        {attachmentCount > 0 ? `${attachmentCount} attachment(s) selected` : "Select attachment(s)"}
+        {attachmentCount > 0
+          ? `${attachmentCount} attachment(s) selected`
+          : "Select attachment(s)"}
         <input
           className="hidden"
           multiple
