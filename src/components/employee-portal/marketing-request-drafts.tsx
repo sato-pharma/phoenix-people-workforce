@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   useCallback,
@@ -41,9 +41,9 @@ import type {
   MarketingRequestType,
 } from "@/lib/marketing-requests/types";
 
-/* ═══════════════════════════════════════════════════════════════════ */
-/* ─── Types ────────────────────────────────────────────────────────── */
-/* ═══════════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 type DraftWorkspacePayload = {
   approvedRequests: MarketingApprovedRequestRow[];
@@ -67,9 +67,9 @@ type QueuedSubmission = {
   timestamp: number;
 };
 
-/* ═══════════════════════════════════════════════════════════════════ */
-/* ─── Focus Trap Hook (#1) ─────────────────────────────────────────── */
-/* ═══════════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* â”€â”€â”€ Focus Trap Hook (#1) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function useFocusTrap(active: boolean) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -111,9 +111,9 @@ function useFocusTrap(active: boolean) {
   return containerRef;
 }
 
-/* ═══════════════════════════════════════════════════════════════════ */
-/* ─── Offline Queue Hook (#3 + #4) ─────────────────────────────────── */
-/* ═══════════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* â”€â”€â”€ Offline Queue Hook (#3 + #4) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
   const [queue, setQueue] = useState<QueuedSubmission[]>([]);
@@ -153,7 +153,7 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
           await onReplay(item.payload);
           setQueue((current) => current.filter((q) => q.id !== item.id));
         } catch {
-          break; // Stop on first failure — will retry next online event
+          break; // Stop on first failure â€” will retry next online event
         }
       }
       replayingRef.current = false;
@@ -172,9 +172,9 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
   return { enqueue, isOnline, queueLength: queue.length };
 }
 
-/* ═══════════════════════════════════════════════════════════════════ */
-/* ─── Helpers ──────────────────────────────────────────────────────── */
-/* ═══════════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 const todayDate = new Date().toISOString().slice(0, 10);
 
@@ -204,10 +204,10 @@ function coverageGradient(pct: number): string {
   return "from-rose-600 to-rose-300";
 }
 
-/** #6 — Shorten product name for <select> on narrow screens */
+/** #6 â€” Shorten product name for <select> on narrow screens */
 function shortProductName(name: string, maxLen = 28): string {
   if (name.length <= maxLen) return name;
-  return `${name.slice(0, maxLen - 1)}…`;
+  return `${name.slice(0, maxLen - 1)}â€¦`;
 }
 
 function emptyPayload(): DraftWorkspacePayload {
@@ -222,9 +222,9 @@ function emptyPayload(): DraftWorkspacePayload {
   };
 }
 
-/* ═══════════════════════════════════════════════════════════════════ */
-/* ─── Skeleton Loaders ─────────────────────────────────────────────── */
-/* ═══════════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* â”€â”€â”€ Skeleton Loaders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function MetricSkeleton() {
   return (
@@ -276,12 +276,12 @@ function TableSkeleton({ cols, rows }: { cols: number; rows: number }) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════ */
-/* ─── Pure SVG Sparkline (#5) ──────────────────────────────────────── */
-/* ═══════════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* â”€â”€â”€ Pure SVG Sparkline (#5) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function CostSparkline({ drafts }: { drafts: MarketingRequest[] }) {
-  // Take latest 12 drafts sorted oldest→newest for a chronological sparkline
+  // Take latest 12 drafts sorted oldestâ†’newest for a chronological sparkline
   const points = useMemo(() => {
     const sorted = [...drafts]
       .sort(
@@ -356,9 +356,9 @@ function CostSparkline({ drafts }: { drafts: MarketingRequest[] }) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════ */
-/* ─── Sub-components ───────────────────────────────────────────────── */
-/* ═══════════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function MetricCard({
   accent,
@@ -494,7 +494,7 @@ function EvidenceUpload({
   );
 }
 
-/** Inline share bar in ROI table — gradient proportional to share % */
+/** Inline share bar in ROI table â€” gradient proportional to share % */
 function ShareBar({ pct }: { pct: number }) {
   return (
     <div className="flex items-center gap-2">
@@ -570,9 +570,9 @@ function DraftStatusBar({ drafts }: { drafts: MarketingRequest[] }) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════ */
-/* ─── Main Workspace ───────────────────────────────────────────────── */
-/* ═══════════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* â”€â”€â”€ Main Workspace â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function MarketingRequestDraftWorkspaceInner() {
   const [workspace, setWorkspace] =
@@ -600,18 +600,18 @@ function MarketingRequestDraftWorkspaceInner() {
   const [productLines, setProductLines] = useState<ProductLine[]>([
     { key: "line-1", productId: "", quantity: "" },
   ]);
-  // #2 — Optimistic UI: track newly saved draft id for highlight
+  // #2 â€” Optimistic UI: track newly saved draft id for highlight
   const [highlightDraftId, setHighlightDraftId] = useState<string | null>(
     null,
   );
-  // #7 — Approved requests search
+  // #7 â€” Approved requests search
   const [approvedSearch, setApprovedSearch] = useState("");
 
-  /* ── Focus trap for active tab panel (#1) ────────────────────────── */
+  /* â”€â”€ Focus trap for active tab panel (#1) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   const createPanelRef = useFocusTrap(activeView === "create");
   const approvedPanelRef = useFocusTrap(activeView === "approved");
 
-  /* ── Auto-dismiss timer ref ──────────────────────────────────────── */
+  /* â”€â”€ Auto-dismiss timer ref â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   const dismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showMessage = useCallback(
@@ -631,7 +631,7 @@ function MarketingRequestDraftWorkspaceInner() {
     };
   }, []);
 
-  /* ── Offline queue (#3) ──────────────────────────────────────────── */
+  /* â”€â”€ Offline queue (#3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const replayDraft = useCallback(
     async (payload: unknown) => {
@@ -654,7 +654,7 @@ function MarketingRequestDraftWorkspaceInner() {
 
   const { enqueue, isOnline, queueLength } = useOfflineQueue(replayDraft);
 
-  /* ── Data loading ────────────────────────────────────────────────── */
+  /* â”€â”€ Data loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const loadWorkspace = useCallback(async () => {
     try {
@@ -702,7 +702,7 @@ function MarketingRequestDraftWorkspaceInner() {
     return () => window.clearTimeout(timeout);
   }, [loadWorkspace]);
 
-  /* ── Memoised derived state ──────────────────────────────────────── */
+  /* â”€â”€ Memoised derived state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const selectedRequestType = useMemo(
     () =>
@@ -807,7 +807,7 @@ function MarketingRequestDraftWorkspaceInner() {
     (!selectedRequestType?.requiresDescription ||
       otherRequestType.trim().length > 0);
 
-  /* #7 — Filtered approved requests */
+  /* #7 â€” Filtered approved requests */
   const filteredApproved = useMemo(() => {
     if (!approvedSearch.trim()) return workspace.approvedRequests;
     const q = approvedSearch.toLowerCase();
@@ -821,7 +821,7 @@ function MarketingRequestDraftWorkspaceInner() {
     );
   }, [workspace.approvedRequests, approvedSearch]);
 
-  /* ── Actions ─────────────────────────────────────────────────────── */
+  /* â”€â”€ Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   function updateProductLine(key: string, patch: Partial<ProductLine>) {
     setProductLines((current) =>
@@ -872,7 +872,7 @@ function MarketingRequestDraftWorkspaceInner() {
       roiDurationMonths: Number(roiDurationMonths),
     };
 
-    // #3 — Offline: enqueue and show optimistic feedback
+    // #3 â€” Offline: enqueue and show optimistic feedback
     if (!isOnline) {
       enqueue(draftPayload);
       showMessage(
@@ -906,7 +906,7 @@ function MarketingRequestDraftWorkspaceInner() {
         drafts: [newDraft, ...current.drafts],
       }));
 
-      // #2 — Optimistic UI: highlight the new draft row
+      // #2 â€” Optimistic UI: highlight the new draft row
       setHighlightDraftId(newDraft.id);
       setTimeout(() => setHighlightDraftId(null), 3000);
 
@@ -973,7 +973,7 @@ function MarketingRequestDraftWorkspaceInner() {
     }
   }
 
-  /* ── Derived metrics ─────────────────────────────────────────────── */
+  /* â”€â”€ Derived metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const coveragePct = Math.min(
     Math.round(roiPreview.roiCoverageRatio * 100),
@@ -985,13 +985,13 @@ function MarketingRequestDraftWorkspaceInner() {
     [workspace.drafts],
   );
 
-  /* ═══════════════════════════════════════════════════════════════════ */
-  /* ─── Render ─────────────────────────────────────────────────────── */
-  /* ═══════════════════════════════════════════════════════════════════ */
+  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+  /* â”€â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
   return (
     <div className="space-y-3" dir="auto">
-      {/* ── Offline Banner (#3) ────────────────────────────────────── */}
+      {/* â”€â”€ Offline Banner (#3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {!isOnline && (
         <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-semibold text-amber-900">
           <WifiOff className="h-3.5 w-3.5 shrink-0" />
@@ -1004,7 +1004,7 @@ function MarketingRequestDraftWorkspaceInner() {
         </div>
       )}
 
-      {/* ── Metric Cards + Refresh ─────────────────────────────────── */}
+      {/* â”€â”€ Metric Cards + Refresh â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex items-start gap-2">
         <div className="grid flex-1 gap-2 grid-cols-2 xs:grid-cols-4">
           {isLoading ? (
@@ -1062,7 +1062,7 @@ function MarketingRequestDraftWorkspaceInner() {
         </button>
       </div>
 
-      {/* ── Draft ROI Health + Sparkline ────────────────────────────── */}
+      {/* â”€â”€ Draft ROI Health + Sparkline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {!isLoading && workspace.drafts.length > 0 && (
         <div className="rounded-sm border border-slate-200 bg-white px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
@@ -1074,14 +1074,14 @@ function MarketingRequestDraftWorkspaceInner() {
             </span>
           </div>
           <DraftStatusBar drafts={workspace.drafts} />
-          {/* #5 — Time-series sparkline */}
+          {/* #5 â€” Time-series sparkline */}
           {workspace.drafts.length >= 2 && (
             <CostSparkline drafts={workspace.drafts} />
           )}
         </div>
       )}
 
-      {/* ── Alert Messages ─────────────────────────────────────────── */}
+      {/* â”€â”€ Alert Messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {message ? (
         <div
           className={`flex items-center gap-2 rounded-sm border px-3 py-2 text-[13px] font-semibold transition-all ${
@@ -1097,7 +1097,7 @@ function MarketingRequestDraftWorkspaceInner() {
         </div>
       ) : null}
 
-      {/* ── Tab Switcher ───────────────────────────────────────────── */}
+      {/* â”€â”€ Tab Switcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex gap-1 rounded-sm border border-slate-200 bg-slate-50 p-1">
         <button
           className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-[13px] font-bold transition ${
@@ -1147,14 +1147,14 @@ function MarketingRequestDraftWorkspaceInner() {
         </button>
       </div>
 
-      {/* ════════════════════════════════════════════════════════════ */}
-      {/* ── CREATE REQUEST TAB  (#1 focus trap) ────────────────────── */}
-      {/* ════════════════════════════════════════════════════════════ */}
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* â”€â”€ CREATE REQUEST TAB  (#1 focus trap) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <div
         ref={createPanelRef}
         className={activeView === "create" ? "space-y-3" : "hidden"}
       >
-        {/* ── Draft Form Card ──────────────────────────────────────── */}
+        {/* â”€â”€ Draft Form Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           {isLoading ? (
             <FormSkeleton />
@@ -1289,7 +1289,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   </Field>
                 </div>
 
-                {/* ── Product Lines ─────────────────────────────────── */}
+                {/* â”€â”€ Product Lines â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 <div className="sm:col-span-6">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1403,7 +1403,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             </button>
                           </div>
 
-                          {/* Mobile layout (#6 — short product names) */}
+                          {/* Mobile layout (#6 â€” short product names) */}
                           <div className="block sm:hidden space-y-2">
                             <SelectField
                               disabled={visibleProducts.length === 0}
@@ -1488,7 +1488,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   </div>
                 </div>
 
-                {/* ── Notes ─────────────────────────────────────────── */}
+                {/* â”€â”€ Notes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 <div className="sm:col-span-6">
                   <Field label="Note">
                     <textarea
@@ -1526,7 +1526,7 @@ function MarketingRequestDraftWorkspaceInner() {
           )}
         </Card>
 
-        {/* ── ROI Preview Card ─────────────────────────────────────── */}
+        {/* â”€â”€ ROI Preview Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-orange-50 text-orange-600 ring-1 ring-orange-100">
@@ -1559,7 +1559,7 @@ function MarketingRequestDraftWorkspaceInner() {
             <RoiMetric label="Coverage" value={`${coveragePct}%`} />
           </div>
 
-          {/* Smart coverage bar — green/amber/red */}
+          {/* Smart coverage bar â€” green/amber/red */}
           <div className="mt-2 overflow-hidden rounded-sm bg-slate-100">
             <div className="flex h-2 w-full overflow-hidden">
               <div
@@ -1569,7 +1569,7 @@ function MarketingRequestDraftWorkspaceInner() {
             </div>
           </div>
 
-          {/* Product ROI table — Desktop */}
+          {/* Product ROI table â€” Desktop */}
           <div className="mt-3 hidden xs:block overflow-hidden rounded-sm border border-slate-200">
             {isLoading ? (
               <TableSkeleton cols={5} rows={3} />
@@ -1631,7 +1631,7 @@ function MarketingRequestDraftWorkspaceInner() {
             )}
           </div>
 
-          {/* Product ROI — Mobile cards */}
+          {/* Product ROI â€” Mobile cards */}
           <div className="mt-3 block xs:hidden space-y-2">
             {productLineMetrics.length === 0 ? (
               <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[11px] font-medium text-slate-400">
@@ -1691,7 +1691,7 @@ function MarketingRequestDraftWorkspaceInner() {
           </div>
         </Card>
 
-        {/* ── Draft Rows Card ──────────────────────────────────────── */}
+        {/* â”€â”€ Draft Rows Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-slate-100 text-slate-600 ring-1 ring-slate-200">
@@ -1774,9 +1774,9 @@ function MarketingRequestDraftWorkspaceInner() {
         </Card>
       </div>
 
-      {/* ════════════════════════════════════════════════════════════ */}
-      {/* ── APPROVED REQUESTS TAB  (#1 focus trap) ─────────────────── */}
-      {/* ════════════════════════════════════════════════════════════ */}
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* â”€â”€ APPROVED REQUESTS TAB  (#1 focus trap) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <div
         ref={approvedPanelRef}
         className={activeView === "approved" ? "space-y-3" : "hidden"}
@@ -1799,7 +1799,7 @@ function MarketingRequestDraftWorkspaceInner() {
               </Badge>
             </div>
 
-            {/* #7 — Search input */}
+            {/* #7 â€” Search input */}
             {workspace.approvedRequests.length > 0 && (
               <div className="relative mt-2">
                 <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -2023,7 +2023,7 @@ function MarketingRequestDraftWorkspaceInner() {
         </Card>
       </div>
 
-      {/* ── Empty-data hint ────────────────────────────────────────── */}
+      {/* â”€â”€ Empty-data hint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {!isLoading &&
         (workspace.customers.length === 0 ||
           workspace.products.length === 0) && (
@@ -2037,9 +2037,9 @@ function MarketingRequestDraftWorkspaceInner() {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════ */
-/* ─── Exported wrapper with error boundary ─────────────────────────── */
-/* ═══════════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* â”€â”€â”€ Exported wrapper with error boundary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 export function MarketingRequestDraftWorkspace() {
   return (

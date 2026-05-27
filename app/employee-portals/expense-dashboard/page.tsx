@@ -55,6 +55,7 @@ export default async function EmployeePortalExpenseDashboardPage() {
     <EmployeePortalPageShell
       badge="Expenses"
       description="Review workload, trip volume, and outstation expense movement using the same employee portal workspace design."
+      errorBoundaryTitle="Expense Dashboard unavailable"
       title="Expense Dashboard"
     >
       <PersonalExpenseWorkloadDashboard

@@ -22,6 +22,7 @@ import {
   mapOutstationRequestToPayrollExpenseRecord,
   outstationPayrollTripId,
 } from "@/lib/outstation/payroll-expense-mapping";
+import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
 import {
   validateMedicalRepSimpleExpenseInput,
   type MedicalRepSimpleExpenseInput,
@@ -1145,6 +1146,13 @@ export async function submitOutstationRequest(
     throw new Error(calculation.eligibilityReason);
   }
 
+  await assertOutstationExpenseWorkflowTransition({
+    access,
+    actionKey: "submit",
+    expectedNextStatus: "pending",
+    status: "draft",
+  });
+
   const identity = await getEmployeeIdentity(access);
   const residence = await getResidenceLocationForEmployee(identity.employeeHrId);
   const supabase = getSupabaseAdmin();
@@ -1525,6 +1533,13 @@ export async function submitMedicalRepSimpleExpenseRequest(
     throw new Error("Residence location is not configured for your employee profile. Please contact HR.");
   }
 
+  await assertOutstationExpenseWorkflowTransition({
+    access,
+    actionKey: "submit",
+    expectedNextStatus: "pending",
+    status: "draft",
+  });
+
   const now = new Date().toISOString();
   const requestDraftId = `medical-rep-${randomUUID()}`;
   let uploadedAttachments: OutstationTicketAttachmentMetadata[] = [];
@@ -1705,6 +1720,15 @@ export async function approveOutstationRequestForPayroll(
     throw new Error("This outstation expense has already been added to payroll and cannot be approved again.");
   }
 
+  if (existing.status !== "approved") {
+    await assertOutstationExpenseWorkflowTransition({
+      access,
+      actionKey: "approve",
+      expectedNextStatus: "approved",
+      status: existing.status,
+    });
+  }
+
   const now = new Date().toISOString();
   const approvedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
   const { data, error } = await getSupabaseAdmin()
@@ -1866,6 +1890,12 @@ export async function createManagerExpenseAsAdmin(
   input: ManagerExpenseAdminInput,
 ): Promise<OutstationExpenseRequest> {
   await assertOutstationAdminAccess(access, "approve");
+  await assertOutstationExpenseWorkflowTransition({
+    access,
+    actionKey: "submit",
+    expectedNextStatus: "pending",
+    status: "draft",
+  });
 
   const directory = await getEmployeeDirectory();
   const employee = directory.employees.find(
@@ -2164,6 +2194,15 @@ export async function rejectOutstationRequestAsAdmin(
     throw new Error("A rejection reason is required.");
   }
 
+  if (existing.status !== "rejected") {
+    await assertOutstationExpenseWorkflowTransition({
+      access,
+      actionKey: "reject",
+      expectedNextStatus: "rejected",
+      status: existing.status,
+    });
+  }
+
   const now = new Date().toISOString();
   const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
   const { data, error } = await getSupabaseAdmin()
@@ -2233,6 +2272,13 @@ export async function deleteOutstationRequestAsAdmin(
   if (addedToPayroll) {
     throw new Error("This outstation expense has already been added to payroll and cannot be deleted.");
   }
+
+  await assertOutstationExpenseWorkflowTransition({
+    access,
+    actionKey: "delete_before_payroll",
+    expectedNextStatus: "deleted",
+    status: existing.status,
+  });
 
   let deletedPayrollRows = 0;
   const linkedReportIds = Array.from(

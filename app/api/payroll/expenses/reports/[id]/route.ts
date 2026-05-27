@@ -34,7 +34,7 @@ export async function DELETE(_request: Request, { params }: Params) {
       );
     }
 
-    await deletePayrollExpenseReport(id);
+    await deletePayrollExpenseReport(id, access);
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -103,7 +103,7 @@ export async function PUT(request: Request, { params }: Params) {
 
     const analysis = await analyzeExpenseWorkbook(file);
 
-    await clearPayrollExpenseReportRows(id);
+    await clearPayrollExpenseReportRows(id, access);
     const expenses = await savePayrollExpenseApprovals({
       fileName: analysis.fileName,
       records: analysis.records,

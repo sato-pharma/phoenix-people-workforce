@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -501,8 +501,8 @@ export function CoachingReportsCenter({
 
         {reports.length === 0 ? (
           <div className="p-6">
-            <div className="rounded-[28px] border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-8 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-[#F97316] shadow-sm ring-1 ring-[#E2E8F0]">
+            <div className="rounded-lg border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-8 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-md bg-white text-[#F97316] shadow-sm ring-1 ring-[#E2E8F0]">
                 <Filter className="h-6 w-6" />
               </div>
               <h3 className="mt-4 text-xl font-black tracking-[-0.03em] text-[#0F172A]">

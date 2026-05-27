@@ -42,14 +42,6 @@ function achievementColor(pct: number): string {
   return "text-red-600";
 }
 
-/** Returns a Tailwind bg-color class for achievement zone indicators. */
-function achievementBg(pct: number): string {
-  if (pct >= 100) return "bg-emerald-500";
-  if (pct >= 90) return "bg-emerald-400";
-  if (pct >= 70) return "bg-amber-400";
-  return "bg-red-400";
-}
-
 /** Thin left-border color per stat context. */
 const statBorders: Record<string, string> = {
   "Line Target": "border-l-orange-400",
@@ -58,17 +50,8 @@ const statBorders: Record<string, string> = {
   "Eligible DSMs": "border-l-sky-400",
 };
 
-/* ---------- print stylesheet ---------- */
-
-const printStyles = `
-@media print {
-  body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  nav, header, footer, button, [data-no-print] { display: none !important; }
-  .print\\:break-inside-avoid { break-inside: avoid; }
-  .print\\:shadow-none { box-shadow: none !important; }
-  * { border-color: #e2e8f0 !important; }
-}
-`;
+// Print stylesheet + dir="auto" + page-level error boundary are now
+// provided automatically by EmployeePortalPageShell.
 
 /* ---------- page ---------- */
 
@@ -133,15 +116,10 @@ export default async function DsmsPerformancePage({
       description={`${validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"} across ${
         dsmCount > 0 ? `${dsmCount} district managers in line` : "no available district data"
       }.`}
+      errorBoundaryTitle="DSMs Performance unavailable"
       title="DSMs Performance"
     >
-      {/* Print stylesheet */}
-      <style dangerouslySetInnerHTML={{ __html: printStyles }} />
-
-      <div
-        className="max-w-full min-w-0 space-y-5 overflow-x-hidden text-slate-900 sm:space-y-7"
-        dir="auto"
-      >
+      <div className="max-w-full min-w-0 space-y-5 overflow-x-hidden text-slate-900 sm:space-y-7">
         {/* ── Line Snapshot Card ── */}
         <Card className="rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
           <div className="mb-4 grid gap-4 sm:mb-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">

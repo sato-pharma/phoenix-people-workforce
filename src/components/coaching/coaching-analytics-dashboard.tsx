@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -222,7 +222,7 @@ function KpiCard({
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#64748B]">{label}</p>
           <p className="mt-3 text-3xl font-black tracking-[-0.04em] text-[#0F172A]">{value}</p>
         </div>
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FFF7ED] text-[#F97316]">
+        <div className="flex h-11 w-11 items-center justify-center rounded-md bg-[#FFF7ED] text-[#F97316]">
           {icon}
         </div>
       </div>
@@ -484,8 +484,8 @@ export function CoachingAnalyticsDashboard({
 
       {data.reports.length === 0 ? (
         <Card className={cn(adminPanelClassName, "p-6")}>
-          <div className="rounded-[28px] border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-8 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-[#F97316] shadow-sm ring-1 ring-[#E2E8F0]">
+          <div className="rounded-lg border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-8 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-md bg-white text-[#F97316] shadow-sm ring-1 ring-[#E2E8F0]">
               <BarChart3 className="h-6 w-6" />
             </div>
             <h3 className="mt-4 text-xl font-black tracking-[-0.03em] text-[#0F172A]">

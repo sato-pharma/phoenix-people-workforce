@@ -56,7 +56,8 @@ export type PermissionResource =
   | "leave"
   | "admin"
   | "user_admin"
-  | "permission_admin";
+  | "permission_admin"
+  | "workflow_registry";
 
 export const permissionResources: PermissionResource[] = [
   "admin",
@@ -76,6 +77,7 @@ export const permissionResources: PermissionResource[] = [
   "communication",
   "user_admin",
   "permission_admin",
+  "workflow_registry",
   "employee_documents",
   "employee_profile",
   "vacancies",
@@ -156,6 +158,7 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: allActions,
     resignations: allActions,
     permission_admin: allActions,
+    workflow_registry: allActions,
     sales: allActions,
     team: allActions,
     user_admin: allActions,
@@ -176,6 +179,7 @@ const defaultPermissionMatrix: PermissionMap = {
     organogram: ["read", "export"],
     payroll: ["read", "export"],
     permission_admin: ["read"],
+    workflow_registry: ["read"],
     payslips: ["read", "export"],
     resignations: ["read", "approve", "export"],
     sales: ["read", "export"],
@@ -203,6 +207,7 @@ const defaultPermissionMatrix: PermissionMap = {
     resignations: allActions,
     team: ["read", "export"],
     vacancies: allActions,
+    workflow_registry: ["read"],
   },
   "Finance Manager": {
     employee_documents: ["read", "export"],
@@ -213,6 +218,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: allActions,
     payslips: ["read", "export"],
     sales: ["read", "export"],
+    workflow_registry: ["read"],
   },
   Employee: {
     overview: [],

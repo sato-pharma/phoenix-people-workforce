@@ -1826,7 +1826,7 @@ function PermissionPromptModal({
         {blocked ? (
           <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-800">
             Browser security can prevent the native prompt from appearing again after a permanent block.
-            The app can open settings as a shortcut, but you must switch this site's permission to Allow.
+            The app can open settings as a shortcut, but you must switch this site&apos;s permission to Allow.
           </p>
         ) : null}
         {blocked ? (
