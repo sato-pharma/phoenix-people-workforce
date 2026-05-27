@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 
@@ -39,6 +39,8 @@ export function TeamExpensesFilters({
   const [requestType, setRequestType] = useState(selectedRequestType);
   const [periodSelection, setPeriodSelection] = useState<string[]>(selectedPeriods);
   const [isPeriodMenuOpen, setIsPeriodMenuOpen] = useState(false);
+  const periodMenuRef = useRef<HTMLDivElement>(null);
+  const periodButtonRef = useRef<HTMLButtonElement>(null);
 
   const periodLabel = useMemo(() => {
     if (periodSelection.length === 0) return "All Periods";
@@ -72,17 +74,51 @@ export function TeamExpensesFilters({
     router.push(resolvedPath);
   }
 
+  /* Focus trap: close dropdown on Escape and outside click */
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isPeriodMenuOpen) {
+        setIsPeriodMenuOpen(false);
+        periodButtonRef.current?.focus();
+      }
+    },
+    [isPeriodMenuOpen],
+  );
+
+  useEffect(() => {
+    if (!isPeriodMenuOpen) return;
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isPeriodMenuOpen, handleKeyDown]);
+
+  /* Close on outside click */
+  useEffect(() => {
+    if (!isPeriodMenuOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (
+        periodMenuRef.current &&
+        !periodMenuRef.current.contains(e.target as Node) &&
+        periodButtonRef.current &&
+        !periodButtonRef.current.contains(e.target as Node)
+      ) {
+        setIsPeriodMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [isPeriodMenuOpen]);
+
   return (
     <div className={`grid gap-4 ${hideRequestType ? "xl:grid-cols-[1fr_1fr_auto]" : "xl:grid-cols-[1fr_1fr_1fr_auto]"}`}>
       <div>
         <label
-          className="mb-3 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500"
+          className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-slate-400"
           htmlFor="team-expenses-dsm"
         >
           DSM
         </label>
         <select
-          className="w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_4px_rgba(249,115,22,0.08)]"
+          className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
           id="team-expenses-dsm"
           onChange={(event) => setDsm(event.target.value)}
           value={dsm}
@@ -99,13 +135,13 @@ export function TeamExpensesFilters({
       {!hideRequestType ? (
         <div>
           <label
-            className="mb-3 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500"
+            className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-slate-400"
             htmlFor="team-expenses-request-type"
           >
             Request Type
           </label>
           <select
-            className="w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_4px_rgba(249,115,22,0.08)]"
+            className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
             id="team-expenses-request-type"
             onChange={(event) => setRequestType(event.target.value)}
             value={requestType}
@@ -121,33 +157,41 @@ export function TeamExpensesFilters({
       ) : null}
 
       <div className="relative">
-        <span className="mb-3 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+        <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
           Period
         </span>
         <button
-          className="flex w-full items-center justify-between rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 transition hover:border-slate-300"
+          ref={periodButtonRef}
+          aria-expanded={isPeriodMenuOpen}
+          aria-haspopup="listbox"
+          className="flex w-full items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-700 transition hover:border-slate-300 focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] focus:outline-none"
           onClick={() => setIsPeriodMenuOpen((current) => !current)}
           type="button"
         >
-          <span className="whitespace-nowrap">{periodLabel}</span>
-          <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+          <span className="break-words min-w-0">{periodLabel}</span>
+          <ChevronDown className={`ml-2 h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${isPeriodMenuOpen ? "rotate-180" : ""}`} />
         </button>
 
         {isPeriodMenuOpen ? (
-          <div className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded border border-slate-200 bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
-            <label className="flex cursor-pointer items-center gap-3 rounded px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+          <div
+            ref={periodMenuRef}
+            className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white p-1.5 shadow-[0_8px_24px_rgba(15,23,42,0.10)]"
+            role="listbox"
+            aria-label="Period selection"
+          >
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
               <input
                 checked={periodSelection.length === 0}
                 className="h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-400"
                 onChange={() => setPeriodSelection([])}
                 type="checkbox"
               />
-              <span>All Periods</span>
+              <span className="font-medium">All Periods</span>
             </label>
             {periods.map((period) => (
               <label
                 key={period}
-                className="flex cursor-pointer items-center gap-3 rounded px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                className="flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
               >
                 <input
                   checked={periodSelection.includes(period)}
@@ -158,20 +202,40 @@ export function TeamExpensesFilters({
                 <span>{toPeriodLabel(period)}</span>
               </label>
             ))}
+
+            {/* Apply / Clear inline actions */}
+            <div className="mt-1.5 flex items-center gap-2 border-t border-gray-100 pt-2 px-1">
+              <button
+                className="flex-1 rounded-md bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-600"
+                onClick={applyFilters}
+                type="button"
+              >
+                Apply
+              </button>
+              <button
+                className="flex-1 rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                onClick={() => {
+                  setPeriodSelection([]);
+                }}
+                type="button"
+              >
+                Clear all
+              </button>
+            </div>
           </div>
         ) : null}
       </div>
 
       <div className="flex items-end gap-2">
         <button
-          className="rounded bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+          className="rounded-md bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-600"
           onClick={applyFilters}
           type="button"
         >
-          Apply Filters
+          Apply
         </button>
         <button
-          className="rounded border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+          className="rounded-md border border-gray-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
           onClick={resetFilters}
           type="button"
         >
