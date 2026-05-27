@@ -2040,6 +2040,14 @@ export async function updateManagerExpenseAsAdmin(
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
   const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
+  if (linkedPayroll?.importedPayrollBatchId || linkedPayroll?.importedToPayrollAt) {
+    throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
+  }
+  await assertOutstationExpenseWorkflowTransition({
+    access,
+    actionKey: "edit_before_payroll",
+    status: existing.status,
+  });
 
   const now = new Date().toISOString();
   const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";

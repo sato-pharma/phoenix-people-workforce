@@ -83,10 +83,15 @@ export function runExpenseRiskHardeningTests() {
   assert.match(outstationService, /const addedToPayroll = linkedRows\.some/);
   assert.match(outstationService, /\.from\("payroll_expenses"\)[\s\S]*\.delete\(\{ count: "exact" \}\)[\s\S]*\.eq\("trip_id", expenseTripId\)/);
   assert.match(outstationService, /already been added to payroll and cannot be deleted/);
+  assert.match(outstationService, /already been added to payroll and cannot be edited/);
+  assert.match(outstationService, /actionKey: "edit_before_payroll"/);
 
   const adminOutstationRequestRoute = source("app/api/admin/outstation/[id]/route.ts");
   assert.match(adminOutstationRequestRoute, /isOutstationPayrollLockError/);
   assert.match(adminOutstationRequestRoute, /isOutstationPayrollLockError\(error\) \? 409 : 500/);
+
+  const managerExpenseRoute = source("app/api/admin/outstation/manager-expenses/[id]/route.ts");
+  assert.match(managerExpenseRoute, /isOutstationPayrollLockError\(error\) \? 409 : 500/);
 
   const employeePortalService = source("src/lib/employee-portal/service.ts");
   assert.match(employeePortalService, /mapOutstationRequestRowToPayrollApproval/);

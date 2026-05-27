@@ -192,7 +192,7 @@ function normalizeActions(value: unknown, statusKeys: Set<string>): WorkflowRegi
     const row = asRecord(item, `Action ${index + 1}`);
     const from = normalizeStringList(row.from, `Action ${index + 1} from`);
     const to = normalizeKey(row.to, `Action ${index + 1} to`);
-    if (to !== "deleted" && !statusKeys.has(to)) {
+    if (to !== "deleted" && to !== "unchanged" && !statusKeys.has(to)) {
       throw new Error(`Action ${index + 1} target status "${to}" is not defined.`);
     }
     for (const sourceStatus of from) {

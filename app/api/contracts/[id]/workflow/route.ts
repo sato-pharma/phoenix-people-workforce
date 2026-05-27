@@ -41,6 +41,7 @@ export async function POST(
 
     const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
     const data = await runContractRenewalWorkflow(id, action, actor, {
+      access,
       decisionReason: body.decisionReason ? String(body.decisionReason) : undefined,
       newContractDocumentName: body.newContractDocumentName ? String(body.newContractDocumentName) : undefined,
       newContractDocumentUrl: body.newContractDocumentUrl ? String(body.newContractDocumentUrl) : undefined,

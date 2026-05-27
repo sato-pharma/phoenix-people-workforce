@@ -28,6 +28,7 @@ export async function POST(request: Request) {
         workflowNotes: body.workflowNotes ? String(body.workflowNotes) : undefined,
       },
       actor,
+      access,
     );
 
     return NextResponse.json({

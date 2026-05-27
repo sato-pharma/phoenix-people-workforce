@@ -10,6 +10,7 @@ export type OutstationExpenseWorkflowActionKey =
   | "add_to_payroll"
   | "approve"
   | "delete_before_payroll"
+  | "edit_before_payroll"
   | "reject"
   | "submit";
 

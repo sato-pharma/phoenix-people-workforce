@@ -1,5 +1,7 @@
 import crypto from "crypto";
 
+import type { AccessContext } from "@/lib/auth/permissions";
+import { assertOfferWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { sendJobOfferEmail } from "@/lib/offers/email";
 import { getOfferTemplate } from "@/lib/offers/templates";
@@ -781,6 +783,11 @@ export async function expireOutstandingOffers() {
   });
   const expired = await supabaseRest<Array<{ id: string }>>(`job_offers?${params}`);
   if (expired.length === 0) return 0;
+  await assertOfferWorkflowTransition({
+    action: "expire",
+    expectedNextStatus: "offer_expired",
+    status: "sent",
+  });
 
   const updateParams = new URLSearchParams({
     expires_at: `lt.${now}`,
@@ -813,10 +820,16 @@ export async function getOfferDashboard(): Promise<OfferDashboardData> {
   };
 }
 
-export async function createOffer(input: OfferLifecycleInput) {
+export async function createOffer(input: OfferLifecycleInput, access?: Pick<AccessContext, "role">) {
   const token = createToken();
   const template = getOfferTemplate(input.templateKey);
   const expiresInDays = Math.max(1, Math.min(60, Number(input.expiresInDays ?? 7)));
+  await assertOfferWorkflowTransition({
+    access,
+    action: "create",
+    expectedNextStatus: "offer_sent",
+    status: "draft",
+  });
   const payload = {
     area_scope: compact(input.areaScope),
     area_id: numberOrNull(input.areaId),
@@ -908,6 +921,14 @@ export async function decideOffer(token: string, decision: "accepted" | "rejecte
   }
 
   if (offer.status === "expired" || new Date(offer.expires_at).getTime() < Date.now()) {
+    if (offer.status !== "expired") {
+      await assertOfferWorkflowTransition({
+        access: { role: "Employee" },
+        action: "expire",
+        expectedNextStatus: "offer_expired",
+        status: offer.status,
+      });
+    }
     const expiredOffer =
       offer.status === "expired"
         ? offer
@@ -922,6 +943,12 @@ export async function decideOffer(token: string, decision: "accepted" | "rejecte
   }
 
   const now = new Date().toISOString();
+  await assertOfferWorkflowTransition({
+    access: { role: "Employee" },
+    action: decision === "accepted" ? "candidate_accept" : "candidate_reject",
+    expectedNextStatus: decision === "accepted" ? "offer_accepted" : "offer_rejected",
+    status: offer.status,
+  });
   const updated = await updateOffer(offer.id, {
     accepted_at: decision === "accepted" ? now : null,
     onboarding_status: decision === "accepted" ? "pending_hr_approval" : "not_started",
@@ -1002,6 +1029,7 @@ export async function approveAcceptedOffer(
   id: string,
   approvedByHrId?: string | null,
   manualHrId?: string | null,
+  access?: Pick<AccessContext, "role">,
 ) {
   const params = new URLSearchParams({
     id: `eq.${id}`,
@@ -1012,6 +1040,13 @@ export async function approveAcceptedOffer(
 
   if (!offer) throw new Error("Offer not found.");
   if (offer.status !== "accepted") throw new Error("Only accepted offers can be approved.");
+  await assertOfferWorkflowTransition({
+    access,
+    action: "hire_approve",
+    expectedNextStatus: "offer_hired",
+    onboardingStatus: offer.onboarding_status,
+    status: offer.status,
+  });
 
   const template = getOfferTemplate(offer.template_key);
   const monthlyPackage = Number(offer.salary_amount ?? template?.monthlyPackage ?? 0);

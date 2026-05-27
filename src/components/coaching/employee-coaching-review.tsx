@@ -378,6 +378,9 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    // Hydration flag — mount-only setState is the canonical React pattern
+    // for safe hydration mismatch avoidance.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHydrated(true);
   }, []);
 

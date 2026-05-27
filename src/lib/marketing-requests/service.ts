@@ -8,6 +8,10 @@ import {
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
+import {
+  assertMarketingWorkflowTransition,
+  toMarketingRequestWorkflowStatus,
+} from "@/lib/marketing-requests/workflow";
 import type {
   MarketingDistributor,
   MarketingControlSetting,
@@ -1818,6 +1822,12 @@ export async function updateMarketingControlWorkflowStep(
   if ("stepName" in patch) update.step_name = parseRequiredTextPatch(patch.stepName, "Step name");
   if (Object.keys(update).length === 0) throw validationError("No workflow changes were provided.");
 
+  await assertMarketingWorkflowTransition({
+    access,
+    actionKey: "update_control_step",
+    status: "control_active",
+  });
+
   const supabase = getSupabaseAdmin();
   const result = await supabase
     .from("marketing_workflow_steps")
@@ -1835,6 +1845,11 @@ export async function createMarketingValidationRecord(
   options: CreateValidationOptions = {},
 ): Promise<MarketingValidationReportRow[]> {
   assertMarketingAccess(access);
+  await assertMarketingWorkflowTransition({
+    access,
+    actionKey: "create_validation_record",
+    status: "validation_pending",
+  });
 
   const supabase = options.supabase ?? getSupabaseAdmin();
   const employeeRows = options.employeeRows ?? await loadEmployeeDirectoryRows();
@@ -2097,6 +2112,12 @@ export async function createMarketingRequestDraft(
   options: CreateDraftOptions = {},
 ): Promise<MarketingRequestDraftDetail> {
   assertMarketingAccess(access);
+  await assertMarketingWorkflowTransition({
+    access,
+    actionKey: "create_draft",
+    expectedNextStatus: "draft",
+    status: "draft",
+  });
 
   const supabase = options.supabase ?? getSupabaseAdmin();
   const employeeRows = options.employeeRows ?? await loadEmployeeDirectoryRows();
@@ -2273,6 +2294,11 @@ export async function uploadMarketingFinanceEvidence(params: {
     evidenceType: params.evidenceType,
     employeeRows,
     request: requestRow,
+  });
+  await assertMarketingWorkflowTransition({
+    access: params.access,
+    actionKey: "upload_finance_evidence",
+    status: toMarketingRequestWorkflowStatus(requestRow.status),
   });
 
   const actorHrId = assertMarketingActor(params.access);

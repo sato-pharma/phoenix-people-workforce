@@ -3,6 +3,7 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { parseDateOnly, toDateOnlyString } from "@/lib/date-only";
+import { assertContractWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { daysUntilLifecycleDate, lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
@@ -352,7 +353,11 @@ function validateCreateInput(
   };
 }
 
-export async function createContractRenewalRequest(input: CreateContractRenewalInput, actor: string) {
+export async function createContractRenewalRequest(
+  input: CreateContractRenewalInput,
+  actor: string,
+  access?: Pick<AccessContext, "role">,
+) {
   const employeeHrId = cleanHrId(input.employeeHrId);
   if (!employeeHrId) throw new ContractRenewalValidationError("Employee HR ID is required.");
 
@@ -366,6 +371,12 @@ export async function createContractRenewalRequest(input: CreateContractRenewalI
   });
   const currentContract = contractsByHrId.get(employee.hrId.toUpperCase());
   const dates = validateCreateInput(employee, currentContract, input);
+  await assertContractWorkflowTransition({
+    access,
+    action: "create",
+    expectedNextStatus: "contract_requested",
+    status: "new",
+  });
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.rpc("phx_create_contract_renewal_request", {
     p_actor: actor,
@@ -424,6 +435,7 @@ export async function runContractRenewalWorkflow(
   action: ContractRenewalAction,
   actor: string,
   input: {
+    access?: Pick<AccessContext, "role">;
     decisionReason?: string | null;
     newContractDocumentName?: string | null;
     newContractDocumentUrl?: string | null;
@@ -452,6 +464,19 @@ export async function runContractRenewalWorkflow(
   if (action === "upload_signed" && !cleanText(input.signedContractUrl)) {
     throw new ContractRenewalValidationError("Signed contract URL is required.");
   }
+  const expectedNextStatusByAction: Partial<Record<ContractRenewalAction, string>> = {
+    cancel: "contract_cancelled",
+    hr_review: "contract_hr_review",
+    manager_review: "contract_manager_review",
+    not_renew: "contract_not_renewed",
+    renew: "contract_renewed",
+  };
+  await assertContractWorkflowTransition({
+    access: input.access,
+    action,
+    expectedNextStatus: expectedNextStatusByAction[action],
+    status: existing.status,
+  });
 
   const { data, error } = await supabase.rpc("phx_apply_contract_renewal_workflow", {
     p_action: action,

@@ -35,6 +35,10 @@ import {
 } from "@/lib/vacation/calculations";
 import { summarizeVacationRequests } from "@/lib/vacation/metrics";
 import {
+  assertLeaveWorkflowTransition,
+  vacationDecisionAction,
+} from "@/lib/vacation/workflow";
+import {
   buildVacationDecisionUrl,
   sendVacationDecisionResultEmail,
   sendVacationManagerDecisionEmail,
@@ -1354,6 +1358,12 @@ export async function getVacationRequestPageData(access: AccessContext) {
 
 export async function createVacationRequest(access: AccessContext, input: CreateVacationRequestInput, options: { baseUrl: string }) {
   await assertPermission(access, "leave", "create");
+  await assertLeaveWorkflowTransition({
+    access,
+    actionKey: "submit",
+    expectedNextStatus: "pending_manager",
+    status: "draft",
+  });
   const vacationType = normalizeVacationType(input.vacationType);
   const dayPart = normalizeVacationDayPart(input.dayPart);
   const startDate = toDateOnlyString(String(input.startDate ?? ""));
@@ -1613,6 +1623,11 @@ export async function createVacationRequestAsAdmin(access: AccessContext, input:
   const directory = await getEmployeeDirectory();
   const requestId = randomUUID();
   const { payload, status } = await buildAdminVacationMutationPayload({ access, directory, form: input });
+  await assertLeaveWorkflowTransition({
+    access,
+    actionKey: "admin_create",
+    status: "draft",
+  });
 
   const { data, error } = await getSupabaseAdmin()
     .from(vacationRequestsTable)
@@ -1650,6 +1665,11 @@ export async function updateVacationRequestAsAdmin(access: AccessContext, input:
 
   const directory = await getEmployeeDirectory();
   const { payload, status } = await buildAdminVacationMutationPayload({ access, directory, existing, form: input });
+  await assertLeaveWorkflowTransition({
+    access,
+    actionKey: "admin_update",
+    status: existing.status,
+  });
   const { data, error } = await getSupabaseAdmin()
     .from(vacationRequestsTable)
     .update(payload)
@@ -1684,6 +1704,12 @@ export async function deleteVacationRequestAsAdmin(access: AccessContext, reques
   await assertVacationAdminManagement(access, "delete");
   const existing = await fetchVacationRequestById(requestId);
   if (!existing) throw new Error("Vacation request was not found.");
+  await assertLeaveWorkflowTransition({
+    access,
+    actionKey: "admin_delete",
+    expectedNextStatus: "deleted",
+    status: existing.status,
+  });
 
   const { error } = await getSupabaseAdmin()
     .from(vacationRequestsTable)
@@ -1746,6 +1772,16 @@ async function applyVacationDecision(input: {
 
   const decisionValue = input.decision === "approve" ? "approved" : "rejected";
   const isHrFinalDecision = input.request.status === "pending_hr";
+  const workflowDecision = vacationDecisionAction({
+    decision: input.decision,
+    status: input.request.status,
+  });
+  await assertLeaveWorkflowTransition({
+    access: input.access ?? { role: "Manager" },
+    actionKey: workflowDecision.actionKey,
+    expectedNextStatus: workflowDecision.expectedNextStatus,
+    status: input.request.status,
+  });
   const now = new Date().toISOString();
   const updatePayload = isHrFinalDecision
     ? {
