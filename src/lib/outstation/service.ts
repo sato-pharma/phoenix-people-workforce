@@ -1627,6 +1627,8 @@ export async function submitMedicalRepSimpleExpenseRequest(
 
 type LinkedOutstationPayrollExpense = {
   id: string;
+  importedPayrollBatchId: string | null;
+  importedToPayrollAt: string | null;
   reportId: string | null;
   tripId: string;
 };
@@ -1636,7 +1638,7 @@ async function getLinkedOutstationPayrollExpense(
 ): Promise<LinkedOutstationPayrollExpense | null> {
   const { data, error } = await getSupabaseAdmin()
     .from("payroll_expenses")
-    .select("id,report_id,trip_id")
+    .select("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id")
     .eq("trip_id", outstationPayrollTripId(requestId))
     .maybeSingle();
 
@@ -1649,6 +1651,12 @@ async function getLinkedOutstationPayrollExpense(
 
   return {
     id: String(data.id),
+    importedPayrollBatchId: data.imported_payroll_batch_id
+      ? String(data.imported_payroll_batch_id)
+      : null,
+    importedToPayrollAt: data.imported_to_payroll_at
+      ? String(data.imported_to_payroll_at)
+      : null,
     reportId: data.report_id ? String(data.report_id) : null,
     tripId: String(data.trip_id),
   };
@@ -2204,16 +2212,55 @@ export async function deleteOutstationRequestAsAdmin(
 
   const { data: linkedPayrollRows, error: linkedPayrollError } = await supabase
     .from("payroll_expenses")
-    .select("trip_id")
+    .select("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id")
     .eq("trip_id", expenseTripId);
 
   if (linkedPayrollError && !isPayrollExpensesSchemaMissing(linkedPayrollError)) {
     throw new Error(linkedPayrollError.message);
   }
 
-  const addedToPayroll = existing.status === "approved" || Boolean(linkedPayrollRows?.length);
+  const linkedRows = (linkedPayrollRows ?? []) as Array<Record<string, unknown>>;
+  const addedToPayroll = linkedRows.some(
+    (row) => row.imported_payroll_batch_id != null || row.imported_to_payroll_at != null,
+  );
   if (addedToPayroll) {
     throw new Error("This outstation expense has already been added to payroll and cannot be deleted.");
+  }
+
+  let deletedPayrollRows = 0;
+  const linkedReportIds = Array.from(
+    new Set(
+      linkedRows
+        .map((row) => row.report_id ? String(row.report_id) : null)
+        .filter(Boolean),
+    ),
+  );
+
+  if (linkedRows.length > 0) {
+    const { count, error: deletePayrollError } = await supabase
+      .from("payroll_expenses")
+      .delete({ count: "exact" })
+      .eq("trip_id", expenseTripId);
+
+    if (deletePayrollError) throw new Error(deletePayrollError.message);
+    deletedPayrollRows = count ?? linkedRows.length;
+
+    for (const reportId of linkedReportIds) {
+      const { count: remainingRows, error: remainingRowsError } = await supabase
+        .from("payroll_expenses")
+        .select("id", { count: "exact", head: true })
+        .eq("report_id", reportId);
+
+      if (remainingRowsError) throw new Error(remainingRowsError.message);
+      if ((remainingRows ?? 0) > 0) continue;
+
+      const { error: deleteReportError } = await supabase
+        .from("payroll_expense_reports")
+        .delete()
+        .eq("id", reportId);
+
+      if (deleteReportError) throw new Error(deleteReportError.message);
+    }
   }
 
   await deleteOutstationCarEvidenceImage(existing.carEvidenceImagePath);
@@ -2243,7 +2290,7 @@ export async function deleteOutstationRequestAsAdmin(
 
   return {
     linkedPayroll: {
-      deletedRows: 0,
+      deletedRows: deletedPayrollRows,
       expenseTripId,
     },
     request: existing,

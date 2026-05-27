@@ -12,6 +12,10 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function isOutstationPayrollLockError(error: unknown) {
+  return error instanceof Error && error.message.toLowerCase().includes("already been added to payroll");
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -115,9 +119,10 @@ export async function PATCH(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to reject outstation request.";
+    const status = isForbiddenError(error) ? 403 : isOutstationPayrollLockError(error) ? 409 : 500;
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_rejection_failed", message, success: false },
-      { status: isForbiddenError(error) ? 403 : 500 },
+      { status },
     );
   }
 }
@@ -147,9 +152,10 @@ export async function DELETE(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to delete outstation request.";
+    const status = isForbiddenError(error) ? 403 : isOutstationPayrollLockError(error) ? 409 : 500;
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_delete_failed", message, success: false },
-      { status: isForbiddenError(error) ? 403 : 500 },
+      { status },
     );
   }
 }

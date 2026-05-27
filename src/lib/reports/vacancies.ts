@@ -303,7 +303,7 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
       loadEmployeeNames(textValues(vacancyRows, "manager_hr_id")),
     ]);
 
-  const rows = dedupeVacancyReportRows(vacancyRows.map((row): VacancyReportRow => ({
+  const mappedRows = vacancyRows.map((row): VacancyReportRow => ({
     areaId: row.area_id,
     areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
     createdAt: row.created_at,
@@ -330,14 +330,15 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
     teamId: row.team_id ?? null,
     teamName: row.team_id ? teamNames.get(row.team_id) ?? null : null,
     vacancyCode: row.vacancy_code,
-  })));
+  }));
+  const rows = dedupeVacancyReportRows(mappedRows);
   const openRows = rows.filter((row) => row.status === "open");
 
-  // For organogram display, include manager-level vacancies (DSM/RSM/NSM)
-  // regardless of status. The status field may say "filled" even when no
-  // actual employee occupies the slot. suppressFilledVacancyRows() handles
-  // the real filtering by checking actual employee presence.
-  const organogramVacancyRows = rows.filter((row) => {
+  // Organogram display uses raw vacancy rows and its own strict slot safety.
+  // Vacancy reporting can still de-duplicate broad seat buckets, but the
+  // Organogram must not collapse similar vacancies across lines, teams, or
+  // managers before exact slot matching runs.
+  const organogramVacancyRows = mappedRows.filter((row) => {
     if (row.status === "open") return true;
     const level = classifyOrganogramStructureLevel(row);
     return level !== null && level !== "medicalRep";

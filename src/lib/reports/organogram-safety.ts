@@ -101,14 +101,21 @@ export function publicVacancyLabel(vacancyCode: string | null | undefined) {
   const raw = String(vacancyCode ?? "").trim();
   const legacyResignationMatch = raw.match(/^resignation_([^_]+)_(\d{8,})$/i);
   const generatedResignationMatch = raw.match(/^resignation_vac_(\d{8,})(?:_([a-z0-9]+))?$/i);
-  const resignationEmployee = generatedResignationMatch?.[2] ?? legacyResignationMatch?.[1];
   const resignationStamp = generatedResignationMatch?.[1] ?? legacyResignationMatch?.[2];
 
-  if (resignationEmployee) {
-    return `VAC-${normalizeCode(resignationEmployee).replace(/[^A-Z0-9]+/g, "").slice(-6)}`;
-  }
   if (resignationStamp) {
-    return `VAC-${resignationStamp.slice(-4)}`;
+    return `VAC-RES-${resignationStamp.slice(-6)}`;
+  }
+
+  if (/^resignation/i.test(raw)) {
+    const compact = normalizeCode(raw).replace(/[^A-Z0-9]+/g, "");
+    let hash = 0;
+
+    for (const char of compact) {
+      hash = (hash * 31 + char.charCodeAt(0)) % 1000000;
+    }
+
+    return `VAC-RES-${String(hash).padStart(6, "0")}`;
   }
 
   const vacancyMatch = raw.match(/^vacancy_(?:vac_)?(\d+)/i);
@@ -133,68 +140,36 @@ function slotPart(id: string | number | null | undefined, label: string | null |
   return normalizedLabel ? `name:${normalizedLabel}` : "";
 }
 
-function managerMarketSlot(row: OrganogramReportRow) {
-  if (
-    isCairoMarketName(row.areaName) ||
-    isCairoMarketName(row.regionName) ||
-    isCairoMarketName(row.teamName)
-  ) {
-    return "market:cairo";
-  }
-
-  return (
-    slotPart(row.areaId, row.areaName) ||
-    normalizeText(row.regionName) ||
-    normalizeText(row.teamName)
-  );
+function areaSlot(row: OrganogramReportRow) {
+  return slotPart(row.areaId, row.areaName) || (normalizeText(row.regionName) ? `region:${normalizeText(row.regionName)}` : "");
 }
 
 export function organogramPositionSlotKey(row: OrganogramReportRow) {
   const level = classifyOrganogramStructureLevel(row);
   const manager = normalizeCode(row.managerHrId);
   const line = slotPart(row.lineId, row.lineName);
-  const area = level && level !== "medicalRep"
-    ? managerMarketSlot(row)
-    : slotPart(row.areaId, row.areaName);
+  const area = areaSlot(row);
   const team = slotPart(row.teamId, row.teamName);
   const position = slotPart(row.positionId, row.positionTitle ?? row.jobTitle);
   const department = slotPart(row.departmentId, row.departmentName);
-
-  if (level && level !== "medicalRep") {
-    if (!line || !area || !position) {
-      return null;
-    }
-
-    return [
-      `level:${level}`,
-      `line:${line}`,
-      `market:${area}`,
-      `position:${position}`,
-      department ? `department:${department}` : "department:none",
-    ].join("|");
-  }
 
   if (!manager || !line || !area || !position) {
     return null;
   }
 
   return [
+    level ? `level:${level}` : "level:other",
     `manager:${manager}`,
     `line:${line}`,
     `area:${area}`,
-    level && level !== "medicalRep"
-      ? "team:manager-scope"
-      : team
-        ? `team:${team}`
-        : "team:none",
+    team ? `team:${team}` : "team:none",
     `position:${position}`,
     department ? `department:${department}` : "department:none",
   ].join("|");
 }
 
 export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
-  const medRepFilledSlots = new Set<string>();
-  const managerFilledSlots = new Set<string>();
+  const filledSlots = new Set<string>();
 
   for (const row of rows) {
     if (row.type !== "employee") continue;
@@ -204,11 +179,7 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
     const slotKey = organogramPositionSlotKey(row);
     if (!slotKey) continue;
 
-    if (level === "medicalRep") {
-      medRepFilledSlots.add(slotKey);
-    } else {
-      managerFilledSlots.add(slotKey);
-    }
+    filledSlots.add(slotKey);
   }
 
   const seenOpenVacancySlots = new Set<string>();
@@ -217,26 +188,13 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
     if (row.type !== "vacancy") return true;
 
     const level = classifyOrganogramStructureLevel(row);
-    const isManagerRole = level && level !== "medicalRep";
+    if (!level) return true;
 
-    // For manager-level vacancies (DSM/RSM/NSM), check whether an actual
-    // employee occupies the same slot instead of trusting the status field.
-    // A vacancy record may say "filled" while no real employee exists.
-    if (isManagerRole) {
-      const slotKey = organogramPositionSlotKey(row);
-      if (!slotKey) return true;
-      if (managerFilledSlots.has(slotKey)) return false;
-      if (seenOpenVacancySlots.has(slotKey)) return false;
-      seenOpenVacancySlots.add(slotKey);
-      return true;
-    }
-
-    // For non-manager vacancies, filter by status
     if (normalizeText(row.status) && normalizeText(row.status) !== "open") return false;
 
     const slotKey = organogramPositionSlotKey(row);
     if (!slotKey) return true;
-    if (level === "medicalRep" && medRepFilledSlots.has(slotKey)) return false;
+    if (filledSlots.has(slotKey)) return false;
     if (seenOpenVacancySlots.has(slotKey)) return false;
 
     seenOpenVacancySlots.add(slotKey);

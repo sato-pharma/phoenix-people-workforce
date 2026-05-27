@@ -1,6 +1,7 @@
 "use client";
 
 import { RouteErrorState } from "@/components/ui/route-error-state";
+import { systemUiText } from "@/config/system-settings";
 
 export default function Error({
   error,
@@ -12,7 +13,7 @@ export default function Error({
   return (
     <main className="min-h-screen bg-bg-soft p-4 sm:p-6 lg:p-8">
       <RouteErrorState
-        description="Phoenix Workforce could not finish loading this workspace view. Retry the render before refreshing or changing routes."
+        description={systemUiText.routeErrorDescription}
         error={error}
         eyebrow="Application Error"
         reset={reset}

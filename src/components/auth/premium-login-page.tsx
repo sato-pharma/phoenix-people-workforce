@@ -12,6 +12,7 @@ import {
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import { systemAssets, systemIdentity, systemUiText } from "@/config/system-settings";
 import {
   clearSessionActivity,
   markSessionActivity,
@@ -23,7 +24,6 @@ const rememberedLoginIdKey = "phoenix_remembered_login_id";
 const loginIdRequiredMessage = "Enter your HR_ID or login ID.";
 const maxLoginIdLength = 120;
 const maxPasswordLength = 1024;
-const passwordLinkHelpMessage = "Need a password link? Ask your Phoenix admin to generate one from Users & Access.";
 const passwordRequiredMessage = "Enter your password.";
 
 const loginErrorMessages: Record<string, string> = {
@@ -41,23 +41,7 @@ const embers = Array.from({ length: 42 }, (_, index) => ({
   size: `${2 + (index % 5)}px`,
 }));
 
-const features = [
-  {
-    description: "Data-driven intelligence at your fingertips.",
-    icon: BarChart3,
-    title: "Performance Insights",
-  },
-  {
-    description: "Enterprise-grade security you can trust.",
-    icon: ShieldCheck,
-    title: "Secure & Reliable",
-  },
-  {
-    description: "Empowering teams to achieve more.",
-    icon: Zap,
-    title: "Built for Excellence",
-  },
-];
+const loginFeatureIcons = [BarChart3, ShieldCheck, Zap] as const;
 
 export function PremiumLoginPage() {
   const [error, setError] = useState<string | null>(null);
@@ -273,20 +257,20 @@ function BrandPanel() {
         <div className="mx-auto mt-4 flex w-full max-w-[660px] flex-1 flex-col items-center text-center lg:mt-5">
           <div className="login-logo-glow relative flex h-48 w-48 items-center justify-center sm:h-[300px] sm:w-[300px] lg:h-[260px] lg:w-[260px] xl:h-[300px] xl:w-[300px]">
             <Image
-              alt="Phoenix logo"
+              alt={`${systemIdentity.brandName} logo`}
               className="relative z-10 h-auto w-[112%] max-w-none object-contain drop-shadow-[0_0_32px_rgba(255,106,0,0.52)]"
               height={340}
               priority
-              src="/brand/phoenix-login-emblem.png"
+              src={systemAssets.loginEmblem}
               width={340}
             />
           </div>
 
           <h1 className="-mt-2 text-4xl font-black uppercase tracking-[0.20em] text-white drop-shadow-[0_0_18px_rgba(255,255,255,0.22)] sm:text-6xl lg:text-6xl xl:text-7xl">
-            PHOENI<span className="text-[#ff6a00]">X</span>
+            {systemIdentity.brandName.slice(0, -1).toUpperCase()}<span className="text-[#ff6a00]">{systemIdentity.brandName.slice(-1).toUpperCase()}</span>
           </h1>
           <p className="mt-2 text-[10px] font-black uppercase tracking-[0.20em] text-white/88 sm:mt-3 sm:text-sm sm:tracking-[0.28em]">
-            PEOPLE. PERFORMANCE. INTELLIGENCE.
+            {systemUiText.login.tagline}
           </p>
 
           <div className="relative mt-6 h-px w-full max-w-[320px] bg-gradient-to-r from-transparent via-[#ff6a00] to-transparent sm:mt-8 sm:max-w-[420px]">
@@ -294,27 +278,31 @@ function BrandPanel() {
           </div>
 
           <p className="mt-5 max-w-[620px] text-lg font-medium leading-7 text-white/92 sm:mt-7 sm:text-2xl sm:leading-8 lg:text-xl">
-            Phoenix is more than a system &mdash;
+            {systemUiText.login.statement} &mdash;
             <br />
-            it&apos;s your partner in performance and growth.
+            {systemUiText.login.statementSuffix}
           </p>
 
           <div className="mt-7 w-full max-w-[560px] space-y-4 text-left sm:mt-8 lg:space-y-3">
-            {features.map((feature) => (
-              <div className="flex items-center gap-4 sm:gap-5" key={feature.title}>
-                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border border-[#ff6a00]/80 bg-black/35 text-[#ff6a00] shadow-[0_0_24px_rgba(255,106,0,0.16)] sm:h-[62px] sm:w-[62px] sm:rounded-2xl">
-                  <feature.icon className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={2.3} />
-                </span>
-                <div>
-                  <h2 className="text-lg font-black text-white sm:text-2xl">{feature.title}</h2>
-                  <p className="mt-0.5 text-sm leading-5 text-white/68 sm:mt-1 sm:text-lg sm:leading-6">{feature.description}</p>
+            {systemUiText.login.features.map((feature, index) => {
+              const FeatureIcon = loginFeatureIcons[index] ?? Zap;
+
+              return (
+                <div className="flex items-center gap-4 sm:gap-5" key={feature.title}>
+                  <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border border-[#ff6a00]/80 bg-black/35 text-[#ff6a00] shadow-[0_0_24px_rgba(255,106,0,0.16)] sm:h-[62px] sm:w-[62px] sm:rounded-2xl">
+                    <FeatureIcon className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={2.3} />
+                  </span>
+                  <div>
+                    <h2 className="text-lg font-black text-white sm:text-2xl">{feature.title}</h2>
+                    <p className="mt-0.5 text-sm leading-5 text-white/68 sm:mt-1 sm:text-lg sm:leading-6">{feature.description}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <p className="mt-7 w-full max-w-[560px] text-left text-xl font-black text-[#ff7900] sm:mt-8 sm:text-3xl">
-            Rise. Learn. Rebuild.
+            {systemUiText.login.motto}
           </p>
         </div>
       </div>
@@ -452,7 +440,7 @@ function AccessPanel({
             Remember login ID
           </label>
           <p className="max-w-[260px] font-semibold leading-5 text-[#ff9a2f]/90 sm:text-right">
-            {passwordLinkHelpMessage}
+            {systemUiText.login.passwordLinkHelpMessage}
           </p>
         </div>
 

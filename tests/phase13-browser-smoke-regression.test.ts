@@ -19,5 +19,5 @@ export function runPhase13BrowserSmokeRegressionTests() {
 
   assert.match(portalExpensesSource, /redirect\("\/employee-portals\/expense-dashboard"\)/);
   assert.doesNotMatch(portalExpensesSource, /redirect\("\/employee-portals"\)/);
-  assert.match(portalLayoutSource, /href: "\/employee-portals\/expense-dashboard", label: "Workload & Expense"/);
+  assert.match(portalLayoutSource, /href: "\/employee-portals\/expense-dashboard", label: "Expense Dashboard"/);
 }

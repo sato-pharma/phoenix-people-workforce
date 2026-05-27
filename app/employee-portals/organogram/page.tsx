@@ -5,11 +5,15 @@ import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
-import { assertPermission, normalizeHrId, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
+  getOrganogramReport,
+  isPortalOrganogramRole,
+  resolveOrganogramLineForEmployee,
+} from "@/lib/reports/organogram";
+import {
   errorMessage,
-  getVacancyReport,
   isDatabaseSchemaMissing,
   isSupabaseEnvMissing,
   isSupabaseTimeout,
@@ -50,7 +54,7 @@ export default async function EmployeePortalOrganogramPage() {
     redirect("/overview");
   }
 
-  if (!access.role.toLowerCase().includes("national sales manager")) {
+  if (!isPortalOrganogramRole(access)) {
     redirect("/employee-portals");
   }
 
@@ -61,12 +65,12 @@ export default async function EmployeePortalOrganogramPage() {
   let fixedLine: string | null = null;
 
   try {
-    initialReport = await getVacancyReport();
-    const currentHrId = normalizeHrId(access.hrId);
-    const currentEmployee = (initialReport?.organogramRows ?? []).find(
-      (row) => row.type === "employee" && normalizeHrId(row.hrId) === currentHrId,
-    );
-    fixedLine = currentEmployee?.lineName ?? null;
+    fixedLine = await resolveOrganogramLineForEmployee(access);
+    if (!fixedLine) {
+      initialError = "Unable to resolve your Organogram line scope.";
+    } else {
+      initialReport = await getOrganogramReport(access, { lineName: fixedLine, mode: "line" });
+    }
   } catch (error) {
     initialError = organogramPageError(error);
   }

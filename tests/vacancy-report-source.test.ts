@@ -157,6 +157,6 @@ export function runVacancyReportSourceTests() {
       teamCode: null,
     }),
   );
-  assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-B180");
-  assert.equal(publicVacancyLabel("resignation_b-180_20260101000000"), "VAC-B180");
+  assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-RES-123456");
+  assert.equal(publicVacancyLabel("resignation_b-180_20260101000000"), "VAC-RES-000000");
 }

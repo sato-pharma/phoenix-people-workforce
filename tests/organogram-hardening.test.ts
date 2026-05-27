@@ -8,7 +8,8 @@ import {
   publicVacancyLabel,
   type StructureKpiSummary,
 } from "../src/lib/reports/organogram-safety.ts";
-import type { OrganogramReportRow } from "../src/lib/reports/vacancies.ts";
+import { scopeOrganogramReportData } from "../src/lib/reports/organogram.ts";
+import type { OrganogramReportRow, VacancyReportData } from "../src/lib/reports/vacancies.ts";
 
 function row(overrides: Partial<OrganogramReportRow>): OrganogramReportRow {
   return {
@@ -92,7 +93,7 @@ export function runOrganogramHardeningTests() {
       vacancyCode: "vacancy_dsm_2",
     }),
   ]);
-  assert.equal(sameCairoDsmAcrossChildAreas.length, 1);
+  assert.equal(sameCairoDsmAcrossChildAreas.length, 2);
 
   const sameLineTeamDifferentManager = applyOrganogramMirrorSafety([
     vacancy({ hrId: "vacancy_5", managerHrId: "DSM-1", vacancyCode: "vacancy_5" }),
@@ -106,7 +107,7 @@ export function runOrganogramHardeningTests() {
   ]);
   assert.deepEqual(exactFilledSlot.map((item) => item.type), ["employee"]);
 
-  const filledDsmSlotStillShowsManagerVacancy = applyOrganogramMirrorSafety([
+  const filledDsmSlotSuppressesManagerVacancy = applyOrganogramMirrorSafety([
     row({
       hrId: "DSM-FILLED",
       jobTitle: "District Sales Manager",
@@ -122,8 +123,8 @@ export function runOrganogramHardeningTests() {
     }),
   ]);
   assert.deepEqual(
-    filledDsmSlotStillShowsManagerVacancy.map((item) => item.type),
-    ["employee", "vacancy"],
+    filledDsmSlotSuppressesManagerVacancy.map((item) => item.type),
+    ["employee"],
   );
 
   const missingMetadata = applyOrganogramMirrorSafety([
@@ -141,8 +142,8 @@ export function runOrganogramHardeningTests() {
       vacancyCode: "resignation_b-180_20260101000000",
     }),
   ]);
-  assert.equal(resignationVacancy[0]?.hrId, "VAC-B180");
-  assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-B180");
+  assert.equal(resignationVacancy[0]?.hrId, "VAC-RES-000000");
+  assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-RES-123456");
 
   const kpis = calculateOrganogramStructureKpis([
     row({ hrId: "MR-3", positionTitle: "Medical Representative" }),
@@ -179,8 +180,76 @@ export function runOrganogramHardeningTests() {
       vacancyCode: "vacancy_dsm_4",
     }),
   ]);
-  expectKpi(duplicateDsmKpis, "dsm", { actual: 0, total: 1, vacant: 1 });
-  expectKpi(duplicateDsmKpis, "total", { actual: 0, total: 1, vacant: 1 });
+  expectKpi(duplicateDsmKpis, "dsm", { actual: 0, total: 2, vacant: 2 });
+  expectKpi(duplicateDsmKpis, "total", { actual: 0, total: 2, vacant: 2 });
+
+  const scoped = scopeOrganogramReportData(
+    {
+      organogramRows: [
+        row({ hrId: "PEDIA-1", lineName: "Pedia" }),
+        row({ hrId: "CNS-1", lineName: "CNS" }),
+        vacancy({ hrId: "PEDIA-VAC", lineName: "Pedia", managerHrId: "DSM-X", vacancyCode: "vacancy_pedia" }),
+        vacancy({ hrId: "CNS-VAC", lineName: "CNS", managerHrId: "DSM-Y", vacancyCode: "vacancy_cns" }),
+      ],
+      rows: [
+        {
+          areaId: 10,
+          areaName: "Cairo",
+          createdAt: "2026-01-01",
+          departmentId: 1,
+          departmentName: "Sales",
+          id: 1,
+          jobTitle: "Medical Representative",
+          lineId: 1,
+          lineName: "Pedia",
+          managerHrId: "DSM-1",
+          managerName: "DSM One",
+          note: null,
+          positionId: 100,
+          positionTitle: "Medical Representative",
+          regionName: "Cairo",
+          sourceRowNumber: null,
+          status: "open",
+          teamId: 20,
+          teamName: "New Cairo",
+          vacancyCode: "vacancy_pedia",
+        },
+        {
+          areaId: 11,
+          areaName: "Giza",
+          createdAt: "2026-01-01",
+          departmentId: 1,
+          departmentName: "Sales",
+          id: 2,
+          jobTitle: "Medical Representative",
+          lineId: 2,
+          lineName: "CNS",
+          managerHrId: "DSM-2",
+          managerName: "DSM Two",
+          note: null,
+          positionId: 100,
+          positionTitle: "Medical Representative",
+          regionName: "Giza",
+          sourceRowNumber: null,
+          status: "open",
+          teamId: 21,
+          teamName: "Giza",
+          vacancyCode: "vacancy_cns",
+        },
+      ],
+      summary: {
+        areasAffected: 2,
+        linesAffected: 2,
+        openVacancies: 2,
+        positionsAffected: 1,
+        totalVacancies: 2,
+      },
+    } satisfies VacancyReportData,
+    { lineName: "Pedia", mode: "line" },
+  );
+  assert.deepEqual(scoped.organogramRows.map((item) => item.lineName), ["Pedia", "Pedia"]);
+  assert.equal(scoped.summary.linesAffected, 1);
+  assert.equal(scoped.summary.openVacancies, 1);
 
   assert.equal(
     districtBucketMatches(
@@ -205,6 +274,22 @@ export function runOrganogramHardeningTests() {
   );
 
   const componentSource = readFileSync("src/components/reports/organogram-report.tsx", "utf8");
+  const portalSource = readFileSync("src/components/employee-portal/employee-organogram-dashboard.tsx", "utf8");
+  const organogramApiSource = readFileSync("app/api/reports/organogram/route.ts", "utf8");
+  const vacancyApiSource = readFileSync("app/api/reports/vacancies/route.ts", "utf8");
+  const portalPageSource = readFileSync("app/employee-portals/organogram/page.tsx", "utf8");
+  const adminPageSource = readFileSync("app/organogram/page.tsx", "utf8");
+  const sharedViewModelSource = readFileSync("src/lib/reports/organogram-view-model.ts", "utf8");
+
+  assert.match(componentSource, /\/api\/reports\/organogram/);
+  assert.match(portalSource, /\/api\/reports\/organogram/);
+  assert.match(organogramApiSource, /assertPermission\(access, "organogram", "read"\)/);
+  assert.match(vacancyApiSource, /assertPermission\(access, "vacancies", "read"\)/);
+  assert.match(portalPageSource, /resolveOrganogramLineForEmployee/);
+  assert.doesNotMatch(portalPageSource, /getVacancyReport/);
+  assert.match(adminPageSource, /canAccessCompanyOrganogram/);
+  assert.match(sharedViewModelSource, /export function buildOrganogramLanes/);
+  assert.match(sharedViewModelSource, /organogramPositionSlotKey/);
   assert.match(componentSource, /Reports to NSM/);
   assert.match(componentSource, /childLanes/);
   assert.match(componentSource, /Medical Sales Representatives/);

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Loader2, Mail, RefreshCw, Search, Send, XCircle } from "lucide-react";
 
+import { systemUiText } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
 
 type InternalEmailStatus = "failed" | "not_requested" | "pending" | "sent" | "skipped";
@@ -279,7 +280,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
           <section className="p-4">
             <p className={cn("text-sm font-black", isAdminMode ? "text-white" : "text-[#0F172A]")}>Send Message</p>
             <p className={cn("mt-1 text-xs", isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]")}>
-              Send inside Phoenix Workforce and optionally email the recipient.
+              {systemUiText.internalMessageComposerDescription}
             </p>
 
             <div className="mt-4 space-y-3">

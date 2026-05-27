@@ -29,8 +29,14 @@ import {
   calculateOrganogramStructureKpis,
   districtBucketMatches,
   isOrganogramSalesStructureRole,
+  organogramPositionSlotKey,
 } from "@/lib/reports/organogram-safety";
-import { vacancyReportSeatKey } from "@/lib/reports/vacancy-report-safety";
+import {
+  filterOrganogramRows as filterSharedOrganogramRows,
+  isOfficeLine as isSharedOfficeLine,
+  isOrganogramVisibleRow as isSharedOrganogramVisibleRow,
+  isSalesDepartment as isSharedSalesDepartment,
+} from "@/lib/reports/organogram-view-model";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
@@ -128,27 +134,6 @@ function titleText(row: OrganogramRow) {
   return `${row.positionTitle ?? row.jobTitle ?? ""}`.toLowerCase();
 }
 
-function isOfficeLine(row: OrganogramRow) {
-  return row.lineName?.trim().toLowerCase() === "office";
-}
-
-function isSalesDepartment(row: OrganogramRow) {
-  return row.departmentName?.trim().toLowerCase() === "sales";
-}
-
-function isMarketingDepartment(row: OrganogramRow) {
-  return row.departmentName?.trim().toLowerCase() === "marketing";
-}
-
-function isOrganogramVisibleRow(row: OrganogramRow) {
-  return (
-    isSalesDepartment(row) ||
-    isMarketingDepartment(row) ||
-    isOfficeLine(row) ||
-    isOrganogramSalesStructureRole(row)
-  );
-}
-
 function normalizeNameKey(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
 }
@@ -161,44 +146,13 @@ function normalizeSearchValue(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
 }
 
-function organogramSearchText(row: OrganogramRow) {
-  return [
-    row.hrId,
-    row.fullName,
-    row.managerHrId,
-    row.managerName,
-    row.jobTitle,
-    row.positionTitle,
-    row.departmentName,
-    row.lineName,
-    row.areaName,
-    row.regionName,
-    row.teamName,
-  ]
-    .map((value) => normalizeSearchValue(value))
-    .filter(Boolean)
-    .join(" ");
-}
-
-function rowMatchesOrganogramSearch(row: OrganogramRow, query: string) {
-  if (!query) return true;
-  const compactQuery = query.replace(/[^a-z0-9]/g, "");
-  const compactHrId = normalizeSearchValue(row.hrId).replace(/[^a-z0-9]/g, "");
-  const compactManagerHrId = normalizeSearchValue(row.managerHrId).replace(/[^a-z0-9]/g, "");
-
-  return (
-    organogramSearchText(row).includes(query) ||
-    Boolean(compactQuery && (compactHrId.includes(compactQuery) || compactManagerHrId.includes(compactQuery)))
-  );
-}
-
 function rowKey(row: OrganogramRow) {
   return `${row.type}-${row.hrId}-${row.sourceRowNumber ?? ""}`;
 }
 
 function managerIdentityKey(row: OrganogramRow) {
   if (row.type === "vacancy" && isManagerLevel(row)) {
-    const vacancySeatKey = vacancyReportSeatKey(row);
+    const vacancySeatKey = organogramPositionSlotKey(row);
     if (vacancySeatKey) return `vacancy-seat:${vacancySeatKey}`;
   }
 
@@ -1069,7 +1023,7 @@ export function OrganogramReport({
     setError(null);
 
     try {
-      const response = await fetch("/api/reports/vacancies", {
+      const response = await fetch("/api/reports/organogram", {
         cache: "no-store",
       });
       const payload = await response.json();
@@ -1090,7 +1044,7 @@ export function OrganogramReport({
   const rows = React.useMemo(
     () =>
       (report?.organogramRows ?? []).filter(
-        (row) => isOrganogramVisibleRow(row),
+        (row) => isSharedOrganogramVisibleRow(row),
       ),
     [report],
   );
@@ -1102,7 +1056,7 @@ export function OrganogramReport({
         continue;
       }
 
-      if (isSalesDepartment(row) || isOfficeLine(row) || isOrganogramSalesStructureRole(row)) {
+      if (isSharedSalesDepartment(row) || isSharedOfficeLine(row) || isOrganogramSalesStructureRole(row)) {
         options.add(row.lineName);
       }
     }
@@ -1116,139 +1070,10 @@ export function OrganogramReport({
     [lineOptions],
   );
   const filteredRows = React.useMemo(() => {
-    const managerHrIdsToKeep = new Set<string>();
-    const officeDescendantHrIdsToKeep = new Set<string>();
-    const isOfficeSelected = effectiveLineFilter.trim().toLowerCase() === "office";
-    const selectedLineRows = effectiveLineFilter
-      ? rows.filter((row) =>
-          isOfficeSelected
-            ? row.lineName === effectiveLineFilter
-            : row.lineName === effectiveLineFilter &&
-              (isSalesDepartment(row) || isOrganogramSalesStructureRole(row)),
-        )
-      : rows;
-
-    if (effectiveLineFilter) {
-      let frontier = selectedLineRows
-        .map((row) => row.managerHrId)
-        .filter((value): value is string => Boolean(value));
-
-      while (frontier.length > 0) {
-        const nextFrontier: string[] = [];
-
-        for (const managerHrId of frontier) {
-          if (managerHrIdsToKeep.has(managerHrId)) {
-            continue;
-          }
-
-          managerHrIdsToKeep.add(managerHrId);
-
-          const managerRow = rows.find((row) => row.hrId === managerHrId);
-
-          if (managerRow?.managerHrId) {
-            nextFrontier.push(managerRow.managerHrId);
-          }
-        }
-
-        frontier = nextFrontier;
-      }
-
-      if (isOfficeSelected) {
-        const officeManagerHrIds = new Set(
-          rows
-            .filter((row) => row.lineName === effectiveLineFilter && !isChiefExecutive(row))
-            .map((row) => row.hrId),
-        );
-
-        for (const row of rows) {
-          if (row.lineName === effectiveLineFilter || isChiefExecutive(row)) {
-            continue;
-          }
-
-          let managerHrId = row.managerHrId;
-          const visited = new Set<string>();
-
-          while (managerHrId) {
-            if (officeManagerHrIds.has(managerHrId)) {
-              officeDescendantHrIdsToKeep.add(row.hrId);
-              break;
-            }
-
-            if (visited.has(managerHrId)) {
-              break;
-            }
-
-            visited.add(managerHrId);
-            managerHrId = rows.find((candidate) => candidate.hrId === managerHrId)?.managerHrId ?? null;
-          }
-        }
-      }
-    }
-
-    const lineScopedRows = rows.filter((row) => {
-      const keepLeadershipChain =
-        Boolean(effectiveLineFilter) &&
-        (isChiefExecutive(row) ||
-          managerHrIdsToKeep.has(row.hrId) ||
-          officeDescendantHrIdsToKeep.has(row.hrId));
-      const matchesSelectedLine =
-        !effectiveLineFilter ||
-        (isOfficeSelected
-          ? row.lineName === effectiveLineFilter || officeDescendantHrIdsToKeep.has(row.hrId)
-          : row.lineName === effectiveLineFilter &&
-            (isSalesDepartment(row) || isOrganogramSalesStructureRole(row)));
-
-      if (keepLeadershipChain) {
-        return true;
-      }
-
-      return matchesSelectedLine;
-    });
-
-    if (!normalizedOrganogramSearch) {
-      return lineScopedRows;
-    }
-
-    const scopedKeys = new Set(lineScopedRows.map(rowKey));
-    const matchedRows = lineScopedRows.filter((row) =>
-      rowMatchesOrganogramSearch(row, normalizedOrganogramSearch),
-    );
-    const keepHrIds = new Set<string>();
-    const keepKeys = new Set<string>();
-
-    for (const match of matchedRows) {
-      keepKeys.add(rowKey(match));
-      keepHrIds.add(normalizeHrIdKey(match.hrId));
-
-      let managerHrId = normalizeHrIdKey(match.managerHrId);
-      const visited = new Set<string>();
-
-      while (managerHrId && !visited.has(managerHrId)) {
-        visited.add(managerHrId);
-        keepHrIds.add(managerHrId);
-        const managerRow = rows.find((row) => normalizeHrIdKey(row.hrId) === managerHrId);
-        managerHrId = normalizeHrIdKey(managerRow?.managerHrId);
-      }
-    }
-
-    for (const row of lineScopedRows) {
-      let managerHrId = normalizeHrIdKey(row.managerHrId);
-      const visited = new Set<string>();
-
-      while (managerHrId && !visited.has(managerHrId)) {
-        if (keepHrIds.has(managerHrId)) {
-          keepKeys.add(rowKey(row));
-          break;
-        }
-
-        visited.add(managerHrId);
-        managerHrId = normalizeHrIdKey(rows.find((candidate) => normalizeHrIdKey(candidate.hrId) === managerHrId)?.managerHrId);
-      }
-    }
-
-    return rows.filter((row) =>
-      scopedKeys.has(rowKey(row)) &&
-      (keepKeys.has(rowKey(row)) || keepHrIds.has(normalizeHrIdKey(row.hrId))),
+    return filterSharedOrganogramRows(
+      rows,
+      effectiveLineFilter,
+      normalizedOrganogramSearch,
     );
   }, [effectiveLineFilter, normalizedOrganogramSearch, rows]);
   const hasActiveFilters = (Boolean(effectiveLineFilter) && !fixedLine) || Boolean(normalizedOrganogramSearch);

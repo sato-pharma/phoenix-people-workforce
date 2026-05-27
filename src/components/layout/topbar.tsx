@@ -8,6 +8,7 @@ import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import { MobileSidebar } from "@/components/layout/sidebar";
+import { systemUiText } from "@/config/system-settings";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import type { ViewerIdentity } from "@/lib/auth/server";
@@ -78,7 +79,7 @@ export function Topbar({
                 ? "border-[#333333] bg-[#0B0B0B] text-[#F8FAFC] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] placeholder:text-[#64748B] focus:border-[#F97316]"
                 : "border-[#E2E8F0] bg-[#FCFDFE] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]"
             }`}
-            placeholder="Search employees, reports, pages..."
+            placeholder={systemUiText.globalSearchPlaceholder}
           />
         </div>
 
