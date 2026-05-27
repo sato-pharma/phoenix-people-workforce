@@ -2192,8 +2192,22 @@ export async function rejectOutstationRequestAsAdmin(
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
 
-  const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
-  if (existing.status === "approved" || linkedPayroll) {
+  const expenseTripId = outstationPayrollTripId(existing.id);
+  const supabase = getSupabaseAdmin();
+  const { data: linkedPayrollRows, error: linkedPayrollError } = await supabase
+    .from("payroll_expenses")
+    .select("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id")
+    .eq("trip_id", expenseTripId);
+
+  if (linkedPayrollError && !isPayrollExpensesSchemaMissing(linkedPayrollError)) {
+    throw new Error(linkedPayrollError.message);
+  }
+
+  const linkedRows = (linkedPayrollRows ?? []) as Array<Record<string, unknown>>;
+  const addedToPayroll = linkedRows.some(
+    (row) => row.imported_payroll_batch_id != null || row.imported_to_payroll_at != null,
+  );
+  if (addedToPayroll) {
     throw new Error("This outstation expense has already been added to payroll and cannot be rejected.");
   }
 
@@ -2205,7 +2219,7 @@ export async function rejectOutstationRequestAsAdmin(
   if (existing.status !== "rejected") {
     await assertOutstationExpenseWorkflowTransition({
       access,
-      actionKey: "reject",
+      actionKey: existing.status === "approved" ? "reject_before_payroll" : "reject",
       expectedNextStatus: "rejected",
       status: existing.status,
     });
@@ -2213,7 +2227,41 @@ export async function rejectOutstationRequestAsAdmin(
 
   const now = new Date().toISOString();
   const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-  const { data, error } = await getSupabaseAdmin()
+  const linkedReportIds = Array.from(
+    new Set(
+      linkedRows
+        .map((row) => row.report_id ? String(row.report_id) : null)
+        .filter(Boolean),
+    ),
+  );
+
+  if (existing.status === "approved" && linkedRows.length > 0) {
+    const { error: deletePayrollError } = await supabase
+      .from("payroll_expenses")
+      .delete()
+      .eq("trip_id", expenseTripId);
+
+    if (deletePayrollError) throw new Error(deletePayrollError.message);
+
+    for (const reportId of linkedReportIds) {
+      const { count: remainingRows, error: remainingRowsError } = await supabase
+        .from("payroll_expenses")
+        .select("id", { count: "exact", head: true })
+        .eq("report_id", reportId);
+
+      if (remainingRowsError) throw new Error(remainingRowsError.message);
+      if ((remainingRows ?? 0) > 0) continue;
+
+      const { error: deleteReportError } = await supabase
+        .from("payroll_expense_reports")
+        .delete()
+        .eq("id", reportId);
+
+      if (deleteReportError) throw new Error(deleteReportError.message);
+    }
+  }
+
+  const { data, error } = await supabase
     .from("outstation_expense_requests")
     .update({
       approval_reason: comment,
@@ -2223,7 +2271,7 @@ export async function rejectOutstationRequestAsAdmin(
       updated_at: now,
     })
     .eq("id", requestId)
-    .in("status", ["submitted", "rejected"])
+    .in("status", ["submitted", "approved", "rejected"])
     .select("*")
     .maybeSingle();
 
@@ -2240,6 +2288,7 @@ export async function rejectOutstationRequestAsAdmin(
     entityType: "outstation_request",
     newValues: {
       approvalReason: comment,
+      removedPayrollExpenseRows: existing.status === "approved" ? linkedRows.length : 0,
       status: rejected.status,
     },
     oldValues: {

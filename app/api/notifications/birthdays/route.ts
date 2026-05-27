@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { buildHrCalendarEvents } from "@/lib/hr-calendar/calendar-logic";
@@ -102,9 +103,24 @@ async function runBirthdayNotifications(request: Request) {
 }
 
 export async function GET(request: Request) {
+  // Only authorized cron runs are monitored, so unrelated pings don't record check-ins.
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: "unauthorized", message: "Birthday notification run is not authorized." }, { status: 401 });
+  }
   try {
-    return await runBirthdayNotifications(request);
+    // Sentry cron monitor: a missed or failed daily run raises an alert (email).
+    return await Sentry.withMonitor(
+      "birthday-notifications",
+      () => runBirthdayNotifications(request),
+      {
+        schedule: { type: "crontab", value: "0 4 * * *" },
+        checkinMargin: 60,
+        maxRuntime: 30,
+        timezone: "Etc/UTC",
+      },
+    );
   } catch (error) {
+    Sentry.captureException(error, { tags: { cron: "birthday-notifications" } });
     const message = error instanceof Error ? error.message : "Birthday notification run failed.";
     return NextResponse.json({ error: "birthday_notifications_failed", message }, { status: 500 });
   }

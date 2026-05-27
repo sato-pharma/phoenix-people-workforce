@@ -8,12 +8,19 @@ import {
   getOutstationRequestById,
   rejectOutstationRequestAsAdmin,
 } from "@/lib/outstation/service";
+import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function isOutstationPayrollLockError(error: unknown) {
   return error instanceof Error && error.message.toLowerCase().includes("already been added to payroll");
+}
+
+function outstationWorkflowStatus(error: unknown) {
+  if (isForbiddenError(error)) return 403;
+  if (isOutstationPayrollLockError(error) || isWorkflowRegistryTransitionError(error)) return 409;
+  return 500;
 }
 
 export async function GET(
@@ -80,7 +87,7 @@ export async function POST(
     const message = error instanceof Error ? error.message : "Unable to approve outstation request.";
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_approval_failed", message, success: false },
-      { status: isForbiddenError(error) ? 403 : 500 },
+      { status: outstationWorkflowStatus(error) },
     );
   }
 }
@@ -119,10 +126,9 @@ export async function PATCH(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to reject outstation request.";
-    const status = isForbiddenError(error) ? 403 : isOutstationPayrollLockError(error) ? 409 : 500;
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_rejection_failed", message, success: false },
-      { status },
+      { status: outstationWorkflowStatus(error) },
     );
   }
 }
@@ -152,10 +158,9 @@ export async function DELETE(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to delete outstation request.";
-    const status = isForbiddenError(error) ? 403 : isOutstationPayrollLockError(error) ? 409 : 500;
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_delete_failed", message, success: false },
-      { status },
+      { status: outstationWorkflowStatus(error) },
     );
   }
 }

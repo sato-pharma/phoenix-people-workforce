@@ -149,7 +149,7 @@ export const adminNavigationSections = [
       { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
       { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "communication" }] },
       { href: "/admin/email-templates", icon: BellRing, label: "Email Templates", permissions: [{ resource: "communication" }] },
-      { href: "/admin/workflow-registry", icon: Settings2, label: "Workflow Registry", permissions: [{ resource: "workflow_registry" }], roles: ["Super Admin"] },
+      { href: "/admin/workflow-control", icon: Settings2, label: "Workflow Control", permissions: [{ resource: "workflow_registry" }], roles: ["Super Admin"] },
     ],
     label: "Access & Communication",
   },

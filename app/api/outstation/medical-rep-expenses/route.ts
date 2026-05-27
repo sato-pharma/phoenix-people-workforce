@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { submitMedicalRepSimpleExpenseRequest } from "@/lib/outstation/service";
+import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ function isFormFile(value: FormDataEntryValue): value is File {
 
 function medicalRepExpenseStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
+  if (isWorkflowRegistryTransitionError(error)) return 409;
 
   const message = error instanceof Error ? error.message.toLowerCase() : "";
   if (

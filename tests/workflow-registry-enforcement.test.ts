@@ -24,7 +24,7 @@ export function runWorkflowRegistryEnforcementTests() {
   const outstationService = source("src/lib/outstation/service.ts");
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "submit"/);
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "approve"/);
-  assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "reject"/);
+  assert.match(outstationService, /actionKey: existing\.status === "approved" \? "reject_before_payroll" : "reject"/);
   assert.match(outstationService, /actionKey: "edit_before_payroll"/);
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "delete_before_payroll"/);
   assert.match(outstationService, /already been added to payroll and cannot be edited/);
@@ -60,13 +60,18 @@ export function runWorkflowRegistryEnforcementTests() {
   for (const moduleKey of [
     "outstation_expenses",
     "leave_requests",
-    "employee_lifecycle",
+    "resignations",
+    "probation",
+    "contracts",
+    "offers",
     "marketing_requests",
     "coaching_reports",
   ]) {
-    assert.match(liveModulesMigration, new RegExp(`where module_key = '${moduleKey}'`));
+    assert.match(liveModulesMigration, new RegExp(`'${moduleKey}'`));
   }
   assert.match(liveModulesMigration, /"key":"edit_before_payroll"/);
+  assert.match(liveModulesMigration, /"key":"reject_before_payroll"/);
+  assert.match(liveModulesMigration, /Deprecated combined registry module/);
   assert.match(liveModulesMigration, /"key":"resignation_submit"/);
   assert.match(liveModulesMigration, /"key":"probation_manager_feedback"/);
   assert.match(liveModulesMigration, /"key":"contract_renew"/);
@@ -83,7 +88,10 @@ export function runWorkflowRegistryEnforcementTests() {
   assert.match(vacationService, /vacationDecisionAction/);
 
   const lifecycleWorkflow = source("src/lib/employee-lifecycle/workflow.ts");
-  assert.match(lifecycleWorkflow, /employeeLifecycleWorkflowRegistryModuleKey = "employee_lifecycle"/);
+  assert.match(lifecycleWorkflow, /resignationWorkflowRegistryModuleKey = "resignations"/);
+  assert.match(lifecycleWorkflow, /probationWorkflowRegistryModuleKey = "probation"/);
+  assert.match(lifecycleWorkflow, /contractWorkflowRegistryModuleKey = "contracts"/);
+  assert.match(lifecycleWorkflow, /offerWorkflowRegistryModuleKey = "offers"/);
   assert.match(lifecycleWorkflow, /assertResignationWorkflowTransition/);
   assert.match(lifecycleWorkflow, /assertProbationWorkflowTransition/);
   assert.match(lifecycleWorkflow, /assertContractWorkflowTransition/);

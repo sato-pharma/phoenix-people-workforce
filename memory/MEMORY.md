@@ -1,0 +1,1 @@
+- [Email testing redirect mode](email-testing-redirect-mode.md) — all email intentionally routed to test addresses; flip `forceTestingDelivery` to false when testing ends

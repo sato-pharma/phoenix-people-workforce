@@ -5,8 +5,8 @@ const serviceSource = readFileSync(
   new URL("../src/lib/vacation/service.ts", import.meta.url),
   "utf8",
 );
-const sidebarSource = readFileSync(
-  new URL("../src/components/layout/sidebar.tsx", import.meta.url),
+const navigationSource = readFileSync(
+  new URL("../src/config/system-navigation.ts", import.meta.url),
   "utf8",
 );
 const migrationSource = readFileSync(
@@ -123,8 +123,8 @@ export function runVacationModuleTests() {
   assert.match(vacationRequestFormSource, /<table className=/);
   assert.match(vacationRequestFormSource, /Duration/);
   assert.match(vacationRequestFormSource, /function VacationDatePicker/);
-  assert.match(vacationRequestFormSource, /Fridays are marked in red/);
-  assert.match(vacationRequestFormSource, /Grey dates are outside the current vacation policy/);
+  assert.match(vacationRequestFormSource, /Fridays in red/);
+  assert.match(vacationRequestFormSource, /Grey dates outside current vacation policy/);
   assert.match(vacationRequestFormSource, /GlobeMed forms, do not qualify as Sick vacation documents/);
   assert.match(vacationReportSource, /Request ID/);
   assert.match(vacationReportSource, /formatDateTime/);
@@ -133,7 +133,7 @@ export function runVacationModuleTests() {
   assert.match(vacationReportSource, />HR ID</);
   assert.match(vacationReportSource, />From</);
   assert.match(vacationReportSource, />To</);
-  assert.match(vacationReportSource, /reportHeaderCellClass/);
+  assert.match(vacationReportSource, /SortableHeader/);
   assert.match(vacationReportSource, /requestId: initialData\?\.filters\.requestId/);
   assert.match(vacationReportSource, /Add Vacation/);
   assert.match(vacationReportSource, /Save Changes/);
@@ -145,11 +145,11 @@ export function runVacationModuleTests() {
   assert.match(typesSource, /VACATION_WEEKLY_OFF_MODES/);
   assert.doesNotMatch(typesSource, /Personal Vacation/);
 
-  assert.match(sidebarSource, /label: "Leave Management"/);
-  assert.match(sidebarSource, /label: "Vacation Request"/);
-  assert.match(sidebarSource, /label: "Vacation Report"/);
-  assert.match(sidebarSource, /label: "Vacation Control"/);
-  assert.doesNotMatch(sidebarSource, /Leave Policy|Entitlement|Approval Matrix|Workflow Builder/);
+  assert.match(navigationSource, /label: "Leave Management"/);
+  assert.match(navigationSource, /label: "Vacation Request"/);
+  assert.match(navigationSource, /label: "Vacation Report"/);
+  assert.match(navigationSource, /label: "Vacation Control"/);
+  assert.doesNotMatch(navigationSource, /Leave Policy|Entitlement|Approval Matrix|Workflow Builder/);
 
   assert.match(migrationSource, /create table if not exists public\.v2_vacation_requests/);
   assert.match(migrationSource, /create table if not exists public\.v2_vacation_email_tokens/);

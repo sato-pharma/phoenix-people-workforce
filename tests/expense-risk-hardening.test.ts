@@ -85,13 +85,17 @@ export function runExpenseRiskHardeningTests() {
   assert.match(outstationService, /already been added to payroll and cannot be deleted/);
   assert.match(outstationService, /already been added to payroll and cannot be edited/);
   assert.match(outstationService, /actionKey: "edit_before_payroll"/);
+  assert.match(outstationService, /actionKey: existing\.status === "approved" \? "reject_before_payroll" : "reject"/);
+  assert.match(outstationService, /removedPayrollExpenseRows/);
 
   const adminOutstationRequestRoute = source("app/api/admin/outstation/[id]/route.ts");
   assert.match(adminOutstationRequestRoute, /isOutstationPayrollLockError/);
-  assert.match(adminOutstationRequestRoute, /isOutstationPayrollLockError\(error\) \? 409 : 500/);
+  assert.match(adminOutstationRequestRoute, /isWorkflowRegistryTransitionError/);
+  assert.match(adminOutstationRequestRoute, /outstationWorkflowStatus/);
 
   const managerExpenseRoute = source("app/api/admin/outstation/manager-expenses/[id]/route.ts");
-  assert.match(managerExpenseRoute, /isOutstationPayrollLockError\(error\) \? 409 : 500/);
+  assert.match(managerExpenseRoute, /isWorkflowRegistryTransitionError/);
+  assert.match(managerExpenseRoute, /managerExpenseStatus/);
 
   const employeePortalService = source("src/lib/employee-portal/service.ts");
   assert.match(employeePortalService, /mapOutstationRequestRowToPayrollApproval/);

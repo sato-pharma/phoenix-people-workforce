@@ -12,6 +12,7 @@ export type OutstationExpenseWorkflowActionKey =
   | "delete_before_payroll"
   | "edit_before_payroll"
   | "reject"
+  | "reject_before_payroll"
   | "submit";
 
 export function toOutstationExpenseWorkflowStatus(
