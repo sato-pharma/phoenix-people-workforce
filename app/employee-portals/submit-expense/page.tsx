@@ -21,6 +21,15 @@ const printStyles = `
   .print\\:shadow-none { box-shadow: none !important; }
   * { border-color: #e2e8f0 !important; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin, .animate-pulse, .animate-bounce {
+    animation: none !important;
+  }
+  *, *::before, *::after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+  }
+}
 `;
 
 function buildResidenceSummary(residence: {
@@ -30,11 +39,25 @@ function buildResidenceSummary(residence: {
 } | null) {
   if (!residence) return "Not configured";
 
-  const parts = [residence.residenceAddress, residence.residenceCity, residence.residenceArea]
+  const parts = [residence.residenceAddress, residence.residenceArea, residence.residenceCity]
     .map((value) => String(value ?? "").trim())
     .filter(Boolean);
 
   return parts.length > 0 ? parts.join(" - ") : "Not configured";
+}
+
+function buildResidenceShortSummary(residence: {
+  residenceAddress: string | null;
+  residenceArea: string | null;
+  residenceCity: string | null;
+} | null) {
+  if (!residence) return "Not configured";
+
+  const parts = [residence.residenceArea, residence.residenceCity]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+
+  return parts.length > 0 ? parts.join(", ") : buildResidenceSummary(residence);
 }
 
 export default async function EmployeePortalSubmitExpensePage() {
@@ -79,6 +102,7 @@ export default async function EmployeePortalSubmitExpensePage() {
   const employeeName = outstationContext?.employeeName ?? portalData.employee.fullName;
   const employeeRole = outstationContext?.employeeRole ?? portalData.employee.roleLabel;
   const residenceSummary = buildResidenceSummary(outstationContext?.residence ?? null);
+  const residenceShortSummary = buildResidenceShortSummary(outstationContext?.residence ?? null);
   const hasResidenceCoordinates = outstationContext?.residence
     ? outstationContext.residence.residenceLatitude !== null && outstationContext.residence.residenceLongitude !== null
     : false;
@@ -107,6 +131,7 @@ export default async function EmployeePortalSubmitExpensePage() {
             employeeRole={employeeRole}
             hasResidenceCoordinates={hasResidenceCoordinates}
             medicalTripOptions={medicalTripOptions}
+            residenceShortSummary={residenceShortSummary}
             residenceSummary={residenceSummary}
             showIntro={false}
           />

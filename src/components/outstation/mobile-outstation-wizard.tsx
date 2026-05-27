@@ -9,10 +9,18 @@ import { OfflineSyncBanner } from "@/components/outstation/offline-sync-banner";
 import { OutstationCostBreakdown } from "@/components/outstation/outstation-cost-breakdown";
 import { RouteMapPreview } from "@/components/outstation/route-map-preview";
 import { TicketUploadCard } from "@/components/outstation/ticket-upload-card";
+import {
+  Field,
+  FieldValue,
+  Stat,
+  SummaryValue,
+  WizardStep,
+} from "@/components/outstation/wizard-primitives";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { PremiumTooltip } from "@/components/ui/premium-tooltip";
 import {
   isRestorableOutstationLocalDraft,
   outstationDraftStorageKey,
@@ -90,6 +98,62 @@ function getDurationSummary(start: string, end: string) {
     return "Overnight stay - 1 night";
   }
   return `Overnight stay - ${days} nights`;
+}
+
+function cleanLocationPart(value: string | null | undefined) {
+  return String(value ?? "").trim();
+}
+
+function withoutGovernorateSuffix(value: string | null | undefined) {
+  return cleanLocationPart(value).replace(/\s+governorate$/i, "");
+}
+
+function uniqueLocationParts(values: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  return values
+    .map(cleanLocationPart)
+    .filter((value) => {
+      if (!value) return false;
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function splitAddressLabel(label: string | null | undefined) {
+  return cleanLocationPart(label)
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function compactLocationLabel(area: string | null | undefined, city: string | null | undefined, fallback: string) {
+  const parts = uniqueLocationParts([area, withoutGovernorateSuffix(city)]);
+  return parts.length > 0 ? parts.join(", ") : fallback;
+}
+
+function capturedDestinationParts(captured: OutstationCaptureResult | null) {
+  if (!captured) {
+    return {
+      area: "Not captured yet",
+      fullAddress: "Tap To to capture current location",
+      governorate: "Not captured yet",
+      shortLabel: "Tap here to capture current location",
+    };
+  }
+
+  const addressParts = splitAddressLabel(captured.toLabel);
+  const area = cleanLocationPart(captured.toArea) || addressParts[0] || "Not detected";
+  const governorate = withoutGovernorateSuffix(captured.toCity) || addressParts[1] || "Not detected";
+  const fullAddress = cleanLocationPart(captured.toLabel) || compactLocationLabel(area, governorate, "Location captured");
+
+  return {
+    area,
+    fullAddress,
+    governorate,
+    shortLabel: compactLocationLabel(area, governorate, fullAddress),
+  };
 }
 
 function formatEvidenceDateTime(value: string) {
@@ -235,6 +299,7 @@ export function MobileOutstationWizard({
   employeeRole,
   hasResidenceCoordinates,
   medicalTripOptions,
+  residenceShortSummary,
   residenceSummary,
   showIntro = true,
 }: {
@@ -243,6 +308,7 @@ export function MobileOutstationWizard({
   employeeRole: string;
   hasResidenceCoordinates: boolean;
   medicalTripOptions: MedicalTripOption[];
+  residenceShortSummary?: string;
   residenceSummary: string;
   showIntro?: boolean;
 }) {
@@ -286,6 +352,8 @@ export function MobileOutstationWizard({
       ? "Return the same day"
       : `Overnight stay - ${calculation.overnightDays} ${calculation.overnightDays === 1 ? "night" : "nights"}`
     : getDurationSummary(tripStartDate, tripEndDate);
+  const fromShortLabel = cleanLocationPart(residenceShortSummary) || residenceSummary;
+  const destinationLocation = capturedDestinationParts(captured);
 
   const stopCarEvidenceCamera = useCallback(() => {
     if (carEvidenceStreamRef.current) {
@@ -941,7 +1009,7 @@ export function MobileOutstationWizard({
           <div className="mt-4 grid grid-cols-2 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-4">
             <Stat label="Employee" value={formatEmployeeDisplayName(employeeName)} />
             <Stat label="Role" value={employeeRole} />
-            <Stat label="From" value={residenceSummary} />
+            <Stat label="From" value={fromShortLabel} />
             <Stat
               label="Residence GPS"
               value={hasResidenceCoordinates ? "Ready" : "Missing"}
@@ -963,7 +1031,10 @@ export function MobileOutstationWizard({
         </div>
       </div>
 
-      <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+      <Card
+        aria-busy={isCalculating}
+        className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5"
+      >
         <div className="flex items-center justify-between gap-2">
           <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
             Request details
@@ -972,6 +1043,29 @@ export function MobileOutstationWizard({
         <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
           Fill the trip and let the system calculate the rest
         </h2>
+
+        {/* Conditional hint banner */}
+        {(!hasResidenceCoordinates || isOffline) && (
+          <div
+            className={`mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] ${
+              !hasResidenceCoordinates
+                ? "border-rose-200 bg-rose-50 text-rose-700"
+                : "border-amber-200 bg-amber-50 text-amber-800"
+            }`}
+            role="status"
+          >
+            <span
+              className={`mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-sm ${
+                !hasResidenceCoordinates ? "bg-rose-500" : "bg-amber-500"
+              }`}
+            />
+            <span>
+              {!hasResidenceCoordinates
+                ? "Residence GPS coordinates are missing. Ask HR to set your residence in your profile before submitting."
+                : "You are offline. The request will be saved locally and synced automatically when you reconnect."}
+            </span>
+          </div>
+        )}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Field label="Expense Type">
@@ -987,11 +1081,27 @@ export function MobileOutstationWizard({
           </Field>
 
           <Field label="From Date">
-            <Input onChange={(event) => setTripStartDate(event.target.value)} type="date" value={tripStartDate} />
+            <Input
+              aria-label="Trip start date"
+              lang="en-GB"
+              max={tripEndDate || undefined}
+              onChange={(event) => setTripStartDate(event.target.value)}
+              placeholder="YYYY-MM-DD"
+              type="date"
+              value={tripStartDate}
+            />
           </Field>
 
           <Field label="To Date">
-            <Input onChange={(event) => setTripEndDate(event.target.value)} type="date" value={tripEndDate} />
+            <Input
+              aria-label="Trip end date"
+              lang="en-GB"
+              min={tripStartDate || undefined}
+              onChange={(event) => setTripEndDate(event.target.value)}
+              placeholder="YYYY-MM-DD"
+              type="date"
+              value={tripEndDate}
+            />
           </Field>
 
           <Field label="Duration">
@@ -1001,30 +1111,71 @@ export function MobileOutstationWizard({
           </Field>
 
           <Field label="From">
-            <div className="flex min-h-11 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
-              {residenceSummary}
-            </div>
+            <PremiumTooltip
+              className="w-80"
+              content={<LocationTooltipContent label="Full residence address" value={residenceSummary} />}
+              triggerClassName="block"
+            >
+              <div
+                aria-label={`From residence: ${residenceSummary}`}
+                className="flex min-h-11 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800"
+                title={residenceSummary}
+              >
+                <span className="h-1.5 w-1.5 shrink-0 rounded-sm bg-orange-400" />
+                <span className="truncate">{fromShortLabel}</span>
+              </div>
+            </PremiumTooltip>
           </Field>
 
           <Field label="To">
-            <button
-              className="flex min-h-11 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-800 transition hover:border-orange-300 hover:bg-orange-50"
-              disabled={isCapturing}
-              onClick={() => void captureLocation()}
-              type="button"
+            <PremiumTooltip
+              className="w-80"
+              content={<LocationTooltipContent label="Full destination address" value={destinationLocation.fullAddress} />}
+              triggerClassName="block"
             >
-              <span className="truncate">
-                {isCapturing
-                  ? "Capturing destination..."
-                  : captured?.toLabel ?? "Tap here to capture current location"}
-              </span>
-              {isCapturing ? (
-                <LoadingSpinner />
-              ) : (
-                <MapPin className="h-4 w-4 shrink-0 text-orange-500" />
-              )}
-            </button>
+              <button
+                aria-label={`To destination: ${destinationLocation.fullAddress}`}
+                className="flex min-h-11 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-800 transition hover:border-orange-300 hover:bg-orange-50"
+                disabled={isCapturing}
+                onClick={() => void captureLocation()}
+                title={destinationLocation.fullAddress}
+                type="button"
+              >
+                <span className="truncate">
+                  {isCapturing ? "Capturing destination..." : destinationLocation.shortLabel}
+                </span>
+                {isCapturing ? (
+                  <LoadingSpinner />
+                ) : (
+                  <MapPin className="h-4 w-4 shrink-0 text-orange-500" />
+                )}
+              </button>
+            </PremiumTooltip>
           </Field>
+
+          {captured ? (
+            <>
+              <Field label="Area / Brick">
+                <LocationReadout value={destinationLocation.area} />
+              </Field>
+
+              <Field label="Governorate">
+                <LocationReadout value={destinationLocation.governorate} />
+              </Field>
+
+              <div className="sm:col-span-2 xl:col-span-2">
+                <Field label="Full Address">
+                  <PremiumTooltip
+                    className="w-96"
+                    content={<LocationTooltipContent label="Captured full address" value={destinationLocation.fullAddress} />}
+                    triggerClassName="block"
+                  >
+                    <LocationReadout value={destinationLocation.fullAddress} />
+                  </PremiumTooltip>
+                </Field>
+              </div>
+            </>
+          ) : null}
 
           <Field label="Transportation Type">
             <select
@@ -1324,38 +1475,73 @@ export function MobileOutstationWizard({
       <RouteMapPreview request={calculation} />
 
       {calculation ? (
-        <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
-                Step 3
-              </span>
-              <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
-                Submit request
-              </h2>
+        <>
+          {/* Desktop / tablet inline submit card */}
+          <Card className="hidden rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:block sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+                  Step 3
+                </span>
+                <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
+                  Submit request
+                </h2>
+              </div>
+              <ApprovalRecommendationBadge value={calculation.approvalRecommendation} />
             </div>
-            <ApprovalRecommendationBadge value={calculation.approvalRecommendation} />
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button
+                className="min-h-11 rounded-md bg-orange-500 px-5 text-sm font-semibold text-white shadow-sm hover:bg-orange-600 disabled:opacity-60"
+                disabled={
+                  isSubmitting ||
+                  calculation.eligibilityStatus === "not_eligible" ||
+                  (transportationType === "car" && !hasCarEvidence)
+                }
+                onClick={submit}
+                type="button"
+              >
+                {isSubmitting ? <LoadingSpinner className="text-white" /> : null}
+                {isSubmitting
+                  ? "Submitting..."
+                  : isOffline
+                    ? "Save & Sync Offline Request"
+                    : "Submit Request"}
+              </Button>
+            </div>
+          </Card>
+
+          {/* Mobile sticky footer (< sm). Includes a spacer above the
+              container so the last content row isn't hidden behind the
+              footer when the form is fully scrolled. */}
+          <div aria-hidden className="h-20 sm:hidden" />
+          <div
+            className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-100 bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] pt-2.5 shadow-[0_-2px_8px_rgba(15,23,42,0.06)] backdrop-blur sm:hidden print:hidden"
+            data-no-print
+            role="region"
+            aria-label="Submit expense action bar"
+          >
+            <div className="flex items-center gap-2">
+              <ApprovalRecommendationBadge value={calculation.approvalRecommendation} />
+              <Button
+                className="ml-auto min-h-11 flex-1 rounded-md bg-orange-500 px-4 text-sm font-semibold text-white shadow-sm hover:bg-orange-600 disabled:opacity-60"
+                disabled={
+                  isSubmitting ||
+                  calculation.eligibilityStatus === "not_eligible" ||
+                  (transportationType === "car" && !hasCarEvidence)
+                }
+                onClick={submit}
+                type="button"
+              >
+                {isSubmitting ? <LoadingSpinner className="text-white" /> : null}
+                {isSubmitting
+                  ? "Submitting..."
+                  : isOffline
+                    ? "Save offline"
+                    : "Submit Request"}
+              </Button>
+            </div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button
-              className="min-h-11 rounded-md bg-orange-500 px-5 text-sm font-semibold text-white shadow-sm hover:bg-orange-600 disabled:opacity-60"
-              disabled={
-                isSubmitting ||
-                calculation.eligibilityStatus === "not_eligible" ||
-                (transportationType === "car" && !hasCarEvidence)
-              }
-              onClick={submit}
-              type="button"
-            >
-              {isSubmitting ? <LoadingSpinner className="text-white" /> : null}
-              {isSubmitting
-                ? "Submitting..."
-                : isOffline
-                  ? "Save & Sync Offline Request"
-                  : "Submit Request"}
-            </Button>
-          </div>
-        </Card>
+        </>
       ) : null}
 
       {message ? (
@@ -1371,111 +1557,36 @@ export function MobileOutstationWizard({
   );
 }
 
-function WizardStep({
-  active,
-  index,
+function LocationTooltipContent({
   label,
+  value,
 }: {
-  active: boolean;
-  index: number;
   label: string;
+  value: string;
 }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+        {label}
+      </p>
+      <p className="break-words text-sm font-semibold leading-5 text-slate-900">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function LocationReadout({ value }: { value: string }) {
   return (
     <div
-      aria-current={active ? "step" : undefined}
-      className={`flex items-center gap-2.5 px-3 py-2.5 ${
-        active ? "border-l-2 border-orange-500 bg-orange-50/60" : "border-l-2 border-transparent"
-      }`}
+      className="flex min-h-11 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800"
+      title={value}
     >
-      <span
-        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-[11px] font-bold ${
-          active ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-500"
-        }`}
-      >
-        {index}
-      </span>
-      <span
-        className={`truncate text-[12px] font-semibold ${
-          active ? "text-slate-900" : "text-slate-500"
-        }`}
-      >
-        {label}
-      </span>
+      <span className="truncate">{value}</span>
     </div>
   );
 }
 
-function Field({
-  children,
-  label,
-}: {
-  children: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-        {label}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-function Stat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="px-3 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-        {label}
-      </p>
-      <p
-        className="mt-1 truncate text-[13px] font-semibold text-slate-800"
-        title={value}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function FieldValue({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="border-l-2 border-l-emerald-400 px-3 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-        {label}
-      </p>
-      <p className="mt-1 truncate text-[13px] font-semibold capitalize text-slate-800">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function SummaryValue({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="border-l-2 border-l-orange-400 px-3 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-        {label}
-      </p>
-      <p className="mt-1 truncate text-[15px] font-bold text-slate-900">{value}</p>
-    </div>
-  );
-}
+// WizardStep / Field / Stat / FieldValue / SummaryValue moved to
+// `src/components/outstation/wizard-primitives.tsx` so admin outstation
+// pages can reuse them.

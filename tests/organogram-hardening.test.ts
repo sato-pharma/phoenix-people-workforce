@@ -391,6 +391,10 @@ export function runOrganogramHardeningTests() {
   const sharedViewModelSource = readFileSync("src/lib/reports/organogram-view-model.ts", "utf8");
   const vacancyReportSource = readFileSync("src/lib/reports/vacancies.ts", "utf8");
   const resignationServiceSource = readFileSync("src/lib/resignations/service.ts", "utf8");
+  const terminalVacancyGuardMigration = readFileSync(
+    "supabase/migrations/20260527064308_terminal_employee_vacancy_guard.sql",
+    "utf8",
+  );
 
   assert.match(componentSource, /\/api\/reports\/organogram/);
   assert.match(portalSource, /\/api\/reports\/organogram/);
@@ -406,6 +410,16 @@ export function runOrganogramHardeningTests() {
   assert.match(vacancyReportSource, /pending_manager_replacement_for_hr_id/);
   assert.match(resignationServiceSource, /ensureResignationVacancyOwnership/);
   assert.match(resignationServiceSource, /replacement_for_hr_id: employee\.hrId/);
+  assert.match(terminalVacancyGuardMigration, /phx_ensure_terminal_employee_vacancy/);
+  assert.match(terminalVacancyGuardMigration, /phx_employee_terminal_vacancy_guard/);
+  assert.match(terminalVacancyGuardMigration, /replacement_for_hr_id = v_employee\.hr_id/);
+  assert.match(terminalVacancyGuardMigration, /area_id is not distinct from v_employee\.area_id/);
+  assert.match(terminalVacancyGuardMigration, /phx_release_terminal_manager_ownership/);
+  assert.doesNotMatch(
+    terminalVacancyGuardMigration,
+    /for r in[\s\S]*public\.employees[\s\S]*perform public\.phx_ensure_terminal_employee_vacancy/,
+    "Terminal vacancy guard must not backfill every historical terminal employee automatically.",
+  );
   assert.match(componentSource, /Reports to NSM/);
   assert.match(componentSource, /childLanes/);
   assert.match(componentSource, /Medical Sales Representatives/);

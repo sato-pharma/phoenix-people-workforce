@@ -19,27 +19,52 @@ export function OutstationCostBreakdown({
   if (!result) return null;
 
   return (
-    <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
-        Cost Breakdown
-      </p>
-      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Line label="Fuel Amount" value={egp(result.fuelAmount)} />
-        <Line label="Allowance" value={egp(result.allowanceAmount)} />
-        <Line label="Ticket Amount" value={egp(result.ticketAmount)} />
-        <Line label="Expected Total" value={egp(result.expectedTotalAmount)} />
-        <Line label="Claimed Total" value={egp(result.claimedTotalAmount)} />
-        <Line label="Variance" value={`${egp(result.varianceAmount)} (${result.variancePercent.toFixed(1)}%)`} />
-        <Line label="Same Day Trip" value={result.sameDayTrip ? "Yes" : "No"} />
-        <Line label="Overnight Days" value={String(result.overnightDays)} />
+    <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+      <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+        Cost breakdown
+      </span>
+      <div className="mt-3 grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-2 xl:grid-cols-4">
+        <Line accent="border-l-orange-400" label="Fuel Amount" value={egp(result.fuelAmount)} />
+        <Line accent="border-l-emerald-400" label="Allowance" value={egp(result.allowanceAmount)} />
+        <Line accent="border-l-sky-400" label="Ticket Amount" value={egp(result.ticketAmount)} />
+        <Line
+          accent="border-l-orange-500"
+          label="Expected Total"
+          value={egp(result.expectedTotalAmount)}
+        />
+        <Line
+          accent="border-l-slate-400"
+          label="Claimed Total"
+          value={egp(result.claimedTotalAmount)}
+        />
+        <Line
+          accent="border-l-amber-400"
+          label="Variance"
+          value={`${egp(result.varianceAmount)} (${result.variancePercent.toFixed(1)}%)`}
+        />
+        <Line
+          accent="border-l-emerald-300"
+          label="Same Day Trip"
+          value={result.sameDayTrip ? "Yes" : "No"}
+        />
+        <Line
+          accent="border-l-sky-300"
+          label="Overnight Days"
+          value={String(result.overnightDays)}
+        />
       </div>
-      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Allowance Breakdown</p>
-        <div className="mt-3 space-y-2">
+      <div className="mt-3 rounded-md border border-gray-100 bg-slate-50/60 p-3">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+          Allowance Breakdown
+        </p>
+        <div className="mt-2 divide-y divide-gray-100">
           {result.allowanceBreakdown.rows.map((row, index) => (
-            <div className="flex items-center justify-between gap-3 text-sm" key={`${row.type}-${index}`}>
-              <span className="font-semibold text-slate-700">{row.label}</span>
-              <span className="font-black text-slate-950">{egp(row.amount)}</span>
+            <div
+              className="flex items-center justify-between gap-3 py-1.5 text-[13px]"
+              key={`${row.type}-${index}`}
+            >
+              <span className="font-medium text-slate-600">{row.label}</span>
+              <span className="font-bold text-slate-800">{egp(row.amount)}</span>
             </div>
           ))}
         </div>
@@ -49,16 +74,22 @@ export function OutstationCostBreakdown({
 }
 
 function Line({
+  accent,
   label,
   value,
 }: {
+  accent: string;
   label: string;
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 text-sm font-semibold text-slate-900">{value}</p>
+    <div className={`border-l-2 ${accent} px-3 py-3`}>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        {label}
+      </p>
+      <p className="mt-1 truncate text-[13px] font-semibold text-slate-800" title={value}>
+        {value}
+      </p>
     </div>
   );
 }
