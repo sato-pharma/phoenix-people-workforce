@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Car, CheckCircle2, MapPin, ReceiptText, Route, TrainFront } from "lucide-react";
+import { Camera, MapPin } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { ApprovalRecommendationBadge } from "@/components/outstation/approval-recommendation-badge";
@@ -229,10 +229,6 @@ async function drawCarEvidenceWatermark(
   context.shadowBlur = 0;
 }
 
-function buildTransportIcon(type: OutstationTransportationType) {
-  return type === "car" ? Car : type === "train" || type === "bus" ? TrainFront : Route;
-}
-
 export function MobileOutstationWizard({
   employeeHrId,
   employeeName,
@@ -282,7 +278,8 @@ export function MobileOutstationWizard({
 
   const selectedMedicalTripName =
     medicalTripOptions.find((option) => option.hrId === medicalTripHrId)?.name ?? null;
-  const transportIcon = buildTransportIcon(transportationType);
+  // transportIcon was removed when WizardStep migrated from icon containers
+  // to numbered indices (visual polish — no logic change).
   const isTicketBased = transportationType === "train" || transportationType === "bus";
   const durationSummary = calculation
     ? calculation.sameDayTrip
@@ -929,45 +926,57 @@ export function MobileOutstationWizard({
       <OfflineSyncBanner visible={isOffline} />
 
       {showIntro ? (
-      <section className="overflow-hidden rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_46%,#f8fafc_100%)] p-6 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
-        <p className="text-xs font-black uppercase tracking-[0.2em] text-orange-500">
-          Outstation Expense
-        </p>
-        <h1 className="mt-2 text-3xl font-black tracking-[-0.05em] text-slate-950">
-          Smart expense entry
-        </h1>
-        <p className="mt-3 text-sm leading-7 text-slate-600">
-          From is locked to your registered residence. Tap To so Phoenix Workforce captures
-          your live destination, validates distance, detects fraud signals, and calculates the
-          request automatically on the server.
-        </p>
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Stat label="Employee" value={formatEmployeeDisplayName(employeeName)} />
-          <Stat label="Role" value={employeeRole} />
-          <Stat label="From" value={residenceSummary} />
-          <Stat label="Residence Coordinates" value={hasResidenceCoordinates ? "Ready" : "Missing"} />
-        </div>
-      </section>
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">
+            Outstation Expense
+          </p>
+          <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
+            Smart expense entry
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-500">
+            From is locked to your registered residence. Tap To so Phoenix Workforce captures
+            your live destination, validates distance, detects fraud signals, and calculates
+            the request automatically on the server.
+          </p>
+          <div className="mt-4 grid grid-cols-2 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-4">
+            <Stat label="Employee" value={formatEmployeeDisplayName(employeeName)} />
+            <Stat label="Role" value={employeeRole} />
+            <Stat label="From" value={residenceSummary} />
+            <Stat
+              label="Residence GPS"
+              value={hasResidenceCoordinates ? "Ready" : "Missing"}
+            />
+          </div>
+        </section>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <WizardStep active={step === 1} icon={ReceiptText} label="1. Trip details" />
-        <WizardStep active={step === 2} icon={transportIcon} label="2. Validate route" />
-        <WizardStep active={step === 3} icon={CheckCircle2} label="3. Review & submit" />
+      {/* Step indicator — flat thin pills, no oversized icon boxes */}
+      <div
+        aria-label="Submission progress"
+        className="overflow-hidden rounded-md border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)]"
+        role="group"
+      >
+        <div className="grid grid-cols-3 divide-x divide-gray-100">
+          <WizardStep active={step === 1} index={1} label="Trip details" />
+          <WizardStep active={step === 2} index={2} label="Validate route" />
+          <WizardStep active={step === 3} index={3} label="Review & submit" />
+        </div>
       </div>
 
-      <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
-          Request Details
-        </p>
-        <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-slate-950">
+      <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+            Request details
+          </span>
+        </div>
+        <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
           Fill the trip and let the system calculate the rest
         </h2>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Field label="Expense Type">
             <select
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+              className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
               onChange={(event) => setExpenseType(event.target.value as OutstationExpenseType)}
               value={expenseType}
             >
@@ -986,20 +995,20 @@ export function MobileOutstationWizard({
           </Field>
 
           <Field label="Duration">
-            <div className="flex min-h-11 items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
+            <div className="flex min-h-11 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
               {durationSummary}
             </div>
           </Field>
 
           <Field label="From">
-            <div className="flex min-h-11 items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
+            <div className="flex min-h-11 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
               {residenceSummary}
             </div>
           </Field>
 
           <Field label="To">
             <button
-              className="flex min-h-11 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-800 transition hover:border-orange-300 hover:bg-orange-50"
+              className="flex min-h-11 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-800 transition hover:border-orange-300 hover:bg-orange-50"
               disabled={isCapturing}
               onClick={() => void captureLocation()}
               type="button"
@@ -1019,7 +1028,7 @@ export function MobileOutstationWizard({
 
           <Field label="Transportation Type">
             <select
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+              className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
               onChange={(event) =>
                 handleTransportationTypeChange(event.target.value as OutstationTransportationType)
               }
@@ -1034,7 +1043,7 @@ export function MobileOutstationWizard({
 
           <Field label="Medical Representative">
             <select
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 disabled:bg-slate-50 disabled:text-slate-400"
+              className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 disabled:bg-slate-50 disabled:text-slate-400"
               disabled={medicalTripOptions.length === 0}
               onChange={(event) => setMedicalTripHrId(event.target.value)}
               value={medicalTripHrId}
@@ -1084,7 +1093,7 @@ export function MobileOutstationWizard({
 
           <Field label="Notes">
             <textarea
-              className="min-h-28 w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-orange-50"
+              className="min-h-28 w-full rounded-md border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-orange-50"
               onChange={(event) => setNotes(event.target.value)}
               placeholder="Add any trip note or explanation"
               value={notes}
@@ -1093,10 +1102,10 @@ export function MobileOutstationWizard({
         </div>
 
         <div className="mt-5">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
-            Auto Calculated Summary
-          </p>
-          <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+            Auto calculated summary
+          </span>
+          <div className="mt-3 grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-2 xl:grid-cols-3">
             <SummaryValue
               label="Allowance"
               value={calculation ? egp(calculation.allowanceAmount) : "Will appear automatically"}
@@ -1142,7 +1151,7 @@ export function MobileOutstationWizard({
           </div>
         </div>
 
-        <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <div className="mt-4 rounded-md border border-gray-100 bg-slate-50/60 px-3 py-2.5 text-[12px] text-slate-600">
           {isCalculating ? (
             <span className="inline-flex items-center gap-2 font-medium text-slate-800">
               <LoadingSpinner />
@@ -1162,7 +1171,7 @@ export function MobileOutstationWizard({
         </div>
 
         {calculation ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-5 grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-2 xl:grid-cols-3">
             <FieldValue
               label="Kilometer"
               value={
@@ -1189,31 +1198,25 @@ export function MobileOutstationWizard({
                   : "N/A"
               }
             />
-            <FieldValue
-              label="Amount"
-              value={egp(calculation.expectedTotalAmount)}
-            />
+            <FieldValue label="Amount" value={egp(calculation.expectedTotalAmount)} />
             <FieldValue
               label="Eligibility"
               value={calculation.eligibilityStatus.replace(/_/g, " ")}
             />
-            <FieldValue
-              label="Allowance"
-              value={egp(calculation.allowanceAmount)}
-            />
+            <FieldValue label="Allowance" value={egp(calculation.allowanceAmount)} />
           </div>
         ) : null}
       </Card>
 
       {transportationType === "car" ? (
-        <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
-            Car Live Evidence
-          </p>
-          <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-slate-950">
+        <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+          <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+            Car live evidence
+          </span>
+          <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
             Capture one live photo from device camera
           </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+          <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-slate-500">
             Car requests require one in-app camera photo with GPS and app-generated timestamp.
           </p>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -1222,7 +1225,7 @@ export function MobileOutstationWizard({
                 Live Camera Evidence
               </span>
               <button
-                className="flex min-h-12 w-full items-center justify-center gap-3 rounded-2xl bg-orange-500 px-5 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:bg-orange-300"
+                className="flex min-h-12 w-full items-center justify-center gap-3 rounded-md bg-orange-500 px-5 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:bg-orange-300"
                 disabled={isCapturingCarEvidence || isCarEvidenceCameraOpen}
                 onClick={() => void openCarEvidenceCamera()}
                 type="button"
@@ -1244,7 +1247,7 @@ export function MobileOutstationWizard({
                 )}
               </button>
             </label>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
               <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
                 Evidence status
               </p>
@@ -1259,7 +1262,7 @@ export function MobileOutstationWizard({
             </div>
           </div>
           {isCarEvidenceCameraOpen ? (
-            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950">
+            <div className="mt-5 overflow-hidden rounded-md border border-slate-200 bg-slate-950">
               <video
                 ref={videoRef}
                 autoPlay
@@ -1273,14 +1276,14 @@ export function MobileOutstationWizard({
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Button
-                    className="rounded-2xl border border-white/20 bg-transparent px-4 text-white hover:bg-white/10"
+                    className="rounded-md border border-white/20 bg-transparent px-4 text-white hover:bg-white/10"
                     onClick={stopCarEvidenceCamera}
                     type="button"
                   >
                     Cancel
                   </Button>
                   <Button
-                    className="rounded-2xl bg-orange-500 px-5 text-white hover:bg-orange-600"
+                    className="rounded-md bg-orange-500 px-5 text-white hover:bg-orange-600"
                     disabled={isCapturingCarEvidence}
                     onClick={() => void captureCarEvidence()}
                     type="button"
@@ -1293,7 +1296,7 @@ export function MobileOutstationWizard({
             </div>
           ) : null}
           {carEvidence?.imageDataUrl ? (
-            <div className="relative mt-4 overflow-hidden rounded-2xl border border-slate-200">
+            <div className="relative mt-4 overflow-hidden rounded-md border border-slate-200">
               {/* eslint-disable-next-line @next/next/no-img-element -- Local camera data URLs cannot be optimized by Next Image. */}
               <img
                 alt="Live car evidence preview"
@@ -1302,7 +1305,7 @@ export function MobileOutstationWizard({
               />
             </div>
           ) : carEvidence ? (
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
               Live evidence metadata is restored, but the image preview cannot be restored. Re-capture the photo before submitting if needed.
             </div>
           ) : null}
@@ -1321,21 +1324,21 @@ export function MobileOutstationWizard({
       <RouteMapPreview request={calculation} />
 
       {calculation ? (
-        <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+        <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
+              <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
                 Step 3
-              </p>
-              <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-slate-950">
+              </span>
+              <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
                 Submit request
               </h2>
             </div>
             <ApprovalRecommendationBadge value={calculation.approvalRecommendation} />
           </div>
-          <div className="mt-4 flex flex-wrap gap-3">
+          <div className="mt-4 flex flex-wrap gap-2">
             <Button
-              className="min-h-12 rounded-2xl bg-orange-500 px-5 text-white hover:bg-orange-600"
+              className="min-h-11 rounded-md bg-orange-500 px-5 text-sm font-semibold text-white shadow-sm hover:bg-orange-600 disabled:opacity-60"
               disabled={
                 isSubmitting ||
                 calculation.eligibilityStatus === "not_eligible" ||
@@ -1356,7 +1359,11 @@ export function MobileOutstationWizard({
       ) : null}
 
       {message ? (
-        <Card className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+        <Card
+          aria-live="polite"
+          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] font-medium text-amber-800"
+          role="status"
+        >
           {message}
         </Card>
       ) : null}
@@ -1366,27 +1373,34 @@ export function MobileOutstationWizard({
 
 function WizardStep({
   active,
-  icon: Icon,
+  index,
   label,
 }: {
   active: boolean;
-  icon: typeof MapPin;
+  index: number;
   label: string;
 }) {
   return (
     <div
-      className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
-        active ? "border-orange-200 bg-orange-50" : "border-slate-200 bg-white"
+      aria-current={active ? "step" : undefined}
+      className={`flex items-center gap-2.5 px-3 py-2.5 ${
+        active ? "border-l-2 border-orange-500 bg-orange-50/60" : "border-l-2 border-transparent"
       }`}
     >
       <span
-        className={`flex h-10 w-10 items-center justify-center rounded-2xl ${
-          active ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-600"
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-[11px] font-bold ${
+          active ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-500"
         }`}
       >
-        <Icon className="h-4 w-4" />
+        {index}
       </span>
-      <span className="text-sm font-bold text-slate-900">{label}</span>
+      <span
+        className={`truncate text-[12px] font-semibold ${
+          active ? "text-slate-900" : "text-slate-500"
+        }`}
+      >
+        {label}
+      </span>
     </div>
   );
 }
@@ -1400,7 +1414,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </span>
       {children}
@@ -1416,9 +1430,16 @@ function Stat({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 text-sm font-semibold text-slate-900">{value}</p>
+    <div className="px-3 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        {label}
+      </p>
+      <p
+        className="mt-1 truncate text-[13px] font-semibold text-slate-800"
+        title={value}
+      >
+        {value}
+      </p>
     </div>
   );
 }
@@ -1431,9 +1452,13 @@ function FieldValue({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 text-sm font-semibold capitalize text-slate-900">{value}</p>
+    <div className="border-l-2 border-l-emerald-400 px-3 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        {label}
+      </p>
+      <p className="mt-1 truncate text-[13px] font-semibold capitalize text-slate-800">
+        {value}
+      </p>
     </div>
   );
 }
@@ -1446,9 +1471,11 @@ function SummaryValue({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/70 bg-white/90 p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 text-xl font-black tracking-[-0.03em] text-slate-950">{value}</p>
+    <div className="border-l-2 border-l-orange-400 px-3 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        {label}
+      </p>
+      <p className="mt-1 truncate text-[15px] font-bold text-slate-900">{value}</p>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import crypto from "crypto";
 
 import bcrypt from "bcryptjs";
 
+import { systemAuthEmailText } from "@/config/system-settings";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
@@ -195,12 +196,12 @@ export async function sendPasswordSetupLink(input: {
           notificationType: purpose === "setup" ? "user_created" : "password_reset",
           recipients: user.email ? [user.email] : [],
           recipientMode: "candidate",
-          subject: purpose === "setup" ? "Phoenix Workforce account setup" : "Phoenix Workforce password reset",
+          subject: purpose === "setup" ? systemAuthEmailText.accountSetupSubject : systemAuthEmailText.passwordResetSubject,
           summary:
             purpose === "setup"
-              ? "Use this one-time link to create your Phoenix Workforce password. After that, sign in with your HR_ID and the password you choose."
-              : "Use this one-time link to reset your Phoenix Workforce password. After that, sign in with your HR_ID and the new password you choose.",
-          title: purpose === "setup" ? "Create your Phoenix Workforce password" : "Reset your Phoenix Workforce password",
+              ? systemAuthEmailText.accountSetupSummary
+              : systemAuthEmailText.passwordResetSummary,
+          title: purpose === "setup" ? systemAuthEmailText.accountSetupTitle : systemAuthEmailText.passwordResetTitle,
           tone: "warning",
         })
       : { skipped: true as const, reason: "Link generated for manual sharing." };

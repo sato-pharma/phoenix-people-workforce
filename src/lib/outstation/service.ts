@@ -1667,7 +1667,11 @@ async function syncLinkedOutstationPayrollExpense(input: {
   linkedPayroll: LinkedOutstationPayrollExpense | null;
   request: OutstationExpenseRequest;
 }) {
-  if (input.request.status !== "approved" && !input.linkedPayroll) return 0;
+  if (!input.linkedPayroll) return 0;
+  if (input.request.status !== "approved") return 0;
+  if (input.linkedPayroll.importedPayrollBatchId || input.linkedPayroll.importedToPayrollAt) {
+    throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
+  }
 
   const expenseRecord = mapOutstationRequestToPayrollExpenseRecord(input.request, {
     reportId: input.linkedPayroll?.reportId ?? null,
@@ -1696,6 +1700,10 @@ export async function approveOutstationRequestForPayroll(
   if (existing.eligibilityStatus === "not_eligible") {
     throw new Error("Not eligible outstation requests cannot be approved for payroll.");
   }
+  const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
+  if (linkedPayroll?.importedPayrollBatchId || linkedPayroll?.importedToPayrollAt) {
+    throw new Error("This outstation expense has already been added to payroll and cannot be approved again.");
+  }
 
   const now = new Date().toISOString();
   const approvedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
@@ -1718,7 +1726,6 @@ export async function approveOutstationRequestForPayroll(
   }
 
   const request = mapOutstationRequestRow(data as Record<string, unknown>);
-  const linkedPayroll = await getLinkedOutstationPayrollExpense(request.id);
   const expenseRecord = mapOutstationRequestToPayrollExpenseRecord(request, {
     reportId: linkedPayroll?.reportId ?? null,
   });

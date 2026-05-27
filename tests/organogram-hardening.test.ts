@@ -101,11 +101,30 @@ export function runOrganogramHardeningTests() {
   ]);
   assert.equal(sameLineTeamDifferentManager.length, 2);
 
-  const exactFilledSlot = applyOrganogramMirrorSafety([
+  const activeRepDoesNotHideOpenRepVacancy = applyOrganogramMirrorSafety([
     row({ hrId: "MR-1" }),
     vacancy({ vacancyCode: "vacancy_7" }),
   ]);
-  assert.deepEqual(exactFilledSlot.map((item) => item.type), ["employee"]);
+  assert.deepEqual(activeRepDoesNotHideOpenRepVacancy.map((item) => item.type), ["employee", "vacancy"]);
+
+  const sameCairoTeamRepVacanciesRemainVisible = applyOrganogramMirrorSafety([
+    row({ hrId: "MR-CAIRO-1", areaName: "Cairo", regionName: "Cairo", teamName: "New Cairo" }),
+    vacancy({
+      areaName: "Cairo",
+      hrId: "vacancy_mr_cairo_1",
+      regionName: "Cairo",
+      teamName: "New Cairo",
+      vacancyCode: "vacancy_mr_cairo_1",
+    }),
+    vacancy({
+      areaName: "Cairo",
+      hrId: "vacancy_mr_cairo_2",
+      regionName: "Cairo",
+      teamName: "New Cairo",
+      vacancyCode: "vacancy_mr_cairo_2",
+    }),
+  ]);
+  assert.equal(sameCairoTeamRepVacanciesRemainVisible.filter((item) => item.type === "vacancy").length, 2);
 
   const filledDsmSlotSuppressesManagerVacancy = applyOrganogramMirrorSafety([
     row({
@@ -125,6 +144,36 @@ export function runOrganogramHardeningTests() {
   assert.deepEqual(
     filledDsmSlotSuppressesManagerVacancy.map((item) => item.type),
     ["employee"],
+  );
+
+  const broadCairoDsmVacancyWithoutTeamIsPreserved = applyOrganogramMirrorSafety([
+    row({
+      areaId: null,
+      areaName: "Cairo",
+      hrId: "DSM-CAIRO-ACTIVE",
+      jobTitle: "District Sales Manager",
+      managerHrId: "NSM-1",
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+      teamId: null,
+      teamName: null,
+    }),
+    vacancy({
+      areaId: null,
+      areaName: "Cairo",
+      hrId: "vacancy_dsm_cairo",
+      jobTitle: "District Sales Manager",
+      managerHrId: "NSM-1",
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+      teamId: null,
+      teamName: null,
+      vacancyCode: "vacancy_dsm_cairo",
+    }),
+  ]);
+  assert.deepEqual(
+    broadCairoDsmVacancyWithoutTeamIsPreserved.map((item) => item.type),
+    ["employee", "vacancy"],
   );
 
   const missingMetadata = applyOrganogramMirrorSafety([
@@ -271,6 +320,20 @@ export function runOrganogramHardeningTests() {
       vacancy({ areaName: "Cairo", lineName: "Pedia", positionTitle: "District Sales Manager" }),
     ),
     false,
+  );
+  assert.equal(
+    districtBucketMatches(
+      vacancy({
+        areaId: 44,
+        areaName: "Downtown + shoubra Masr",
+        lineName: "Pedia",
+        positionTitle: "Medical Representative",
+        regionName: null,
+        teamName: null,
+      }),
+      vacancy({ areaName: "Cairo", lineName: "Pedia", positionTitle: "District Sales Manager" }),
+    ),
+    true,
   );
 
   const componentSource = readFileSync("src/components/reports/organogram-report.tsx", "utf8");

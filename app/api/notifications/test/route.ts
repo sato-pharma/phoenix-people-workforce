@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { systemIdentity } from "@/config/system-settings";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
@@ -38,8 +39,8 @@ export async function POST(request: Request) {
         { label: "Dashboard URL", value: process.env.NOTIFICATION_DASHBOARD_URL ?? "not configured" },
       ],
       recipients,
-      subject: "Phoenix email notifications test",
-      summary: "This is a live test email from the Phoenix Workforce notification system.",
+      subject: `${systemIdentity.brandName} email notifications test`,
+      summary: `This is a live test email from the ${systemIdentity.appName} notification system.`,
       title: "Email Notifications Are Online",
       tone: "success",
     });

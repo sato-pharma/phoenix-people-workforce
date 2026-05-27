@@ -627,7 +627,9 @@ export function PersonalExpenseWorkloadDashboard({
   const [density, setDensity] = useState<"compact" | "comfortable">("comfortable");
   // Page size — bumps to 25 automatically once dataset crosses 200 rows
   // so big histories paginate less without exploding DOM size on mobile.
-  const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(10);
+  const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(() =>
+    rows.length > 200 ? 25 : 10,
+  );
 
   /* -------- URL sync (filter state <-> ?period=...&from=...&to=...) -------- */
   useEffect(() => {
@@ -915,16 +917,6 @@ export function PersonalExpenseWorkloadDashboard({
   }, [destinationSummary, filteredTrips, totalKm, totalExpenses]);
 
   /* -------- pagination -------- */
-  // Auto-bump page size to 25 when dataset crosses 200 rows so users
-  // with years of history aren't stuck flipping 10 rows at a time.
-  // Only runs once per dataset growth (won't override manual selection
-  // because we only bump when pageSize is still the default 10).
-  useEffect(() => {
-    if (sortedTrips.length > 200 && pageSize === 10) {
-      setPageSize(25);
-    }
-  }, [sortedTrips.length, pageSize]);
-
   const totalPages = Math.max(1, Math.ceil(sortedTrips.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const pagedTrips = sortedTrips.slice((safePage - 1) * pageSize, safePage * pageSize);

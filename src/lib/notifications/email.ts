@@ -4,6 +4,11 @@ import {
   renderGeneralNotificationEmailHtml,
   renderGeneralNotificationEmailText,
 } from "@/emails/general-notification";
+import {
+  systemAuthEmailText,
+  systemIdentity,
+  systemNotificationEmailText,
+} from "@/config/system-settings";
 import { EMAIL_TEMPLATE_KEYS, sendTemplatedEmail } from "@/lib/email-templates/service";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
@@ -157,7 +162,7 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     template: {
       bodyText: "{summary}",
       closingText: "Please review and take the required action.",
-      greeting: "Dear Phoenix Team,",
+      greeting: systemNotificationEmailText.teamGreeting,
       previewText: "Probation review update from Phoenix Workforce.",
       subject: "{subject}",
       title: "{title}",
@@ -176,7 +181,7 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     template: {
       bodyText: "{summary}",
       closingText: "Please review the renewal status and proceed with the required action.",
-      greeting: "Dear Phoenix Team,",
+      greeting: systemNotificationEmailText.teamGreeting,
       previewText: "Contract renewal workflow update from Phoenix Workforce.",
       subject: "{subject}",
       title: "{title}",
@@ -214,7 +219,7 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     template: {
       bodyText: "{summary}",
       closingText: "Phoenix HR will continue the next steps according to the offer workflow.",
-      greeting: "Dear Phoenix Team,",
+      greeting: systemNotificationEmailText.teamGreeting,
       previewText: "Offer update from Phoenix Workforce.",
       subject: "{subject}",
       title: "{title}",
@@ -233,7 +238,7 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     template: {
       bodyText: "{summary}",
       closingText: "Please review the resignation workflow and complete the required action.",
-      greeting: "Dear Phoenix Team,",
+      greeting: systemNotificationEmailText.teamGreeting,
       previewText: "Resignation workflow update from Phoenix Workforce.",
       subject: "{subject}",
       title: "{title}",
@@ -252,8 +257,8 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     template: {
       bodyText: "{summary}",
       closingText: "If you did not request this action, please contact HR immediately.",
-      greeting: "Dear Phoenix User,",
-      previewText: "Phoenix Workforce password reset link.",
+      greeting: systemNotificationEmailText.userGreeting,
+      previewText: `${systemIdentity.appName} password reset link.`,
       subject: "{subject}",
       title: "{title}",
     },
@@ -271,15 +276,15 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     template: {
       bodyText: "{summary}",
       closingText: "Please complete setup before the link expires.",
-      greeting: "Dear Phoenix User,",
-      previewText: "Phoenix Workforce account setup link.",
+      greeting: systemNotificationEmailText.userGreeting,
+      previewText: `${systemIdentity.appName} account setup link.`,
       subject: "{subject}",
       title: "{title}",
     },
     type: "user_created",
   },
   {
-    description: "General Phoenix Workforce notifications routed to configured recipients.",
+    description: systemNotificationEmailText.generalDescription,
     enabled: true,
     includeHrInbox: false,
     label: "General",
@@ -290,8 +295,8 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     template: {
       bodyText: "{summary}",
       closingText: "Please review this update when available.",
-      greeting: "Dear Phoenix Team,",
-      previewText: "General Phoenix Workforce notification.",
+      greeting: systemNotificationEmailText.teamGreeting,
+      previewText: systemNotificationEmailText.generalPreviewText,
       subject: "{subject}",
       title: "{title}",
     },
@@ -665,7 +670,7 @@ function effectiveTemplate(input: NotificationEmailInput, policy?: EmailNotifica
   return {
     bodyText: templateValue(input, template?.bodyText || "{summary}"),
     closingText: templateValue(input, template?.closingText || "Please review this update."),
-    greeting: templateValue(input, template?.greeting || "Dear Phoenix Team,"),
+    greeting: templateValue(input, template?.greeting || systemNotificationEmailText.teamGreeting),
     previewText: templateValue(input, template?.previewText || input.summary),
     subject: templateValue(input, template?.subject || "{subject}"),
     title: templateValue(input, template?.title || "{title}"),
@@ -679,7 +684,7 @@ function renderText(input: NotificationEmailInput, policy?: EmailNotificationPol
     bodyText: template.bodyText,
     closingText: template.closingText,
     greeting: template.greeting,
-    signatureName: "Phoenix HR Team",
+    signatureName: systemIdentity.hrSignatureName,
     metadataRows: input.metrics,
     subject: template.subject,
     summary: template.bodyText,
@@ -696,7 +701,7 @@ function renderHtml(input: NotificationEmailInput, policy?: EmailNotificationPol
     greeting: template.greeting,
     metadataRows: input.metrics,
     previewText: template.previewText,
-    signatureName: "Phoenix HR Team",
+    signatureName: systemIdentity.hrSignatureName,
     subject: template.subject,
     summary: template.bodyText,
     title: template.title,
@@ -811,9 +816,9 @@ export function buildEmailNotificationPreview(type: EmailNotificationType, polic
       ],
       notificationType: "password_reset",
       recipientMode: "candidate",
-      subject: "Phoenix Workforce password reset",
-      summary: "Use this one-time link to reset your Phoenix Workforce password.",
-      title: "Reset your Phoenix Workforce password",
+      subject: systemAuthEmailText.passwordResetSubject,
+      summary: systemAuthEmailText.passwordResetSummary,
+      title: systemAuthEmailText.passwordResetTitle,
       tone: "warning",
     },
     user_created: {
@@ -826,19 +831,19 @@ export function buildEmailNotificationPreview(type: EmailNotificationType, polic
       ],
       notificationType: "user_created",
       recipientMode: "candidate",
-      subject: "Phoenix Workforce account setup",
-      summary: "Use this one-time link to create your Phoenix Workforce password.",
-      title: "Create your Phoenix Workforce password",
+      subject: systemAuthEmailText.accountSetupSubject,
+      summary: systemAuthEmailText.accountSetupSummary,
+      title: systemAuthEmailText.accountSetupTitle,
       tone: "warning",
     },
     general: {
       ctaHref: "/overview",
-      ctaLabel: "Open Phoenix Workforce",
-      metrics: [{ label: "Source", value: "Phoenix Workforce" }],
+      ctaLabel: systemNotificationEmailText.openAppCtaLabel,
+      metrics: [{ label: "Source", value: systemNotificationEmailText.sourceMetricValue }],
       notificationType: "general",
-      subject: "Phoenix Workforce notification",
-      summary: "General Phoenix Workforce notification requiring your attention.",
-      title: "Phoenix Workforce Notification",
+      subject: systemNotificationEmailText.generalSubject,
+      summary: systemNotificationEmailText.generalSummary,
+      title: systemNotificationEmailText.generalTitle,
       tone: "neutral",
     },
   };
@@ -1061,14 +1066,14 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
     return sendTemplatedEmail({
       candidateEmail: input.candidateEmail,
       context: {
-        ctaLabel: input.ctaLabel ?? "Open in Phoenix Workforce",
+        ctaLabel: input.ctaLabel ?? systemNotificationEmailText.openInAppCtaLabel,
         ctaUrl: input.ctaHref ? dashboardUrl(input.ctaHref) : "",
         date: metricValue(input, "Birthday") || metricValue(input, "Effective date") || metricValue(input, "Date") || new Date().toISOString().slice(0, 10),
         endDate: metricValue(input, "Renewal date"),
         employeeHrId: input.employeeHrId || metricValue(input, "HR_ID") || metricValue(input, "Login ID"),
         employeeName: employeeNameFromNotification(input),
         expiryText: metricValue(input, "Expires"),
-        recipientName: isAuthTemplateKey(migratedTemplateKey) ? "Phoenix User" : employeeNameFromNotification(input) || "Phoenix Team",
+        recipientName: isAuthTemplateKey(migratedTemplateKey) ? systemNotificationEmailText.userRecipientName : employeeNameFromNotification(input) || systemNotificationEmailText.teamRecipientName,
         startDate: metricValue(input, "Hire date"),
         status: notificationMetricStatus(input),
         subject: input.subject,

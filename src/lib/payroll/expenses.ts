@@ -14,6 +14,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  assertPermission,
   canAccess,
   getExpensesScope,
   resolveEmployeeIdentityId,
@@ -21,6 +22,7 @@ import {
   normalizeHrIdForAccess,
   normalizeLineName,
   type AccessContext,
+  type PhoenixRole,
 } from "@/lib/auth/permissions";
 import type {
   EmployeeDirectoryRow,
@@ -43,6 +45,27 @@ export type PayrollExpenseDashboardData = {
   reports: PayrollExpenseReport[];
   trend: PayrollExpenseTrendPoint[];
 };
+
+const manualPayrollExpenseApproverRoles = new Set<PhoenixRole>([
+  "Super Admin",
+  "HR Specialist",
+  "Finance Manager",
+  "CEO",
+]);
+
+export function canManuallyApprovePayrollExpenses(access: AccessContext) {
+  return access.scope === "system" || manualPayrollExpenseApproverRoles.has(access.role);
+}
+
+export async function assertManualPayrollExpenseApprovalAccess(access: AccessContext) {
+  await assertPermission(access, "expenses", "approve");
+
+  if (!canManuallyApprovePayrollExpenses(access)) {
+    throw new Error(
+      "Forbidden: only Account Admin, HR Manager, Finance Manager, or CEO can manually approve expenses for payroll.",
+    );
+  }
+}
 
 function expenseErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -722,6 +745,11 @@ export async function savePayrollExpenseApprovals(input: {
   }>;
   reportId?: string | null;
 }, accessContext: AccessContext) {
+  const hasManualPayrollApprovals = input.records.some((record) => Boolean(record.hrApproved));
+  if (hasManualPayrollApprovals) {
+    await assertManualPayrollExpenseApprovalAccess(accessContext);
+  }
+
   const approvedBy = resolveEmployeeIdentityId(accessContext) ?? accessContext.loginId ?? "system";
   const now = new Date().toISOString();
   const employeeByName = await employeeCodeBySpecialist();
@@ -852,12 +880,13 @@ export async function importApprovedExpensesToPayroll(input: {
   records?: Array<ExpenseTripRecord & { hrId?: string | null; hrApproved?: boolean; hrComment?: string }>;
   year: number;
 }, accessContext: AccessContext) {
-  const savedExpenses = input.records?.length
-    ? await savePayrollExpenseApprovals({
-        fileName: input.fileName,
-        records: input.records,
-      }, accessContext)
-    : await listPayrollExpenses(input.month, input.year, undefined, accessContext);
+  if (input.records?.length) {
+    throw new Error(
+      "Save manual HR/admin expense approvals before importing. Payroll import does not accept unsaved approval rows.",
+    );
+  }
+
+  const savedExpenses = await listPayrollExpenses(input.month, input.year, undefined, accessContext);
 
   const supabase = getSupabaseAdmin();
   const { data: importResult, error: importError } = await supabase.rpc(

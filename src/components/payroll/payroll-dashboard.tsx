@@ -3824,7 +3824,7 @@ export function PayrollDashboard({
         .reduce((sum, record) => sum + record.total, 0);
 
       setExpenseApprovalMessage(
-        `${payload.saved ?? recordsToSave.length} outstation expense rows saved. Approved total ${formatEGP(approvedTotal)} will appear in the next payroll month.`,
+        `${payload.saved ?? recordsToSave.length} outstation expense rows saved. Approved total ${formatEGP(approvedTotal)} is ready for payroll import after manual HR/admin approval is saved.`,
       );
     } catch (error) {
       setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to save outstation expense approvals."));
@@ -3833,11 +3833,7 @@ export function PayrollDashboard({
     }
   }
 
-  async function handleImportExpensesToPayroll(
-    recordsToImport: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>,
-    month: number,
-    year: number,
-  ) {
+  async function handleImportExpensesToPayroll(month: number, year: number) {
     if (!expenseAnalysis) return;
 
     setExpenseImportingToPayroll(true);
@@ -3845,23 +3841,10 @@ export function PayrollDashboard({
     setExpenseApprovalMessage(null);
 
     try {
-      const approvedRows = recordsToImport.filter((record) => record.hrApproved);
-      const approvedWithHrId = recordsToImport.filter(
-        (record) => record.hrApproved && record.hrId,
-      );
-
-      if (approvedRows.length > 0 && approvedWithHrId.length === 0) {
-        setExpenseAnalysisError(
-          "Choose approved outstation expenses mapped to HR ID before importing to payroll. If rows are not mapped, update the employee name/CRM username in Employee Management or upload an expenses sheet with an HR ID column.",
-        );
-        return;
-      }
-
       const response = await fetch("/api/payroll/expenses/import", {
         body: JSON.stringify({
           fileName: expenseAnalysis.fileName,
           month,
-          records: recordsToImport,
           year,
         }),
         headers: { "Content-Type": "application/json" },
@@ -4360,8 +4343,8 @@ export function PayrollDashboard({
                 importingToPayroll={expenseImportingToPayroll}
                 inputRef={expenseFileInputRef}
                 onDeleteReport={(reportId) => void handleDeleteExpenseReport(reportId)}
-                onImportToPayroll={(recordsToImport, month, year) =>
-                  void handleImportExpensesToPayroll(recordsToImport, month, year)
+                onImportToPayroll={(month, year) =>
+                  void handleImportExpensesToPayroll(month, year)
                 }
                 onReplaceReport={(reportId, file) => void handleReplaceExpenseReport(reportId, file)}
                 onSelectReport={(reportId) => {
