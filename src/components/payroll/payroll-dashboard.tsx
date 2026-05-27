@@ -3344,10 +3344,10 @@ export function PayrollDashboard({
     if (savedRecords.length > 0) {
       const reportName =
         reports.find((report) => report.id === targetReportId)?.fileName ??
-        "Saved payroll expenses";
+        "Saved outstation expenses";
       setExpenseAnalysis(buildExpenseAnalysis(reportName, savedRecords));
     } else if (targetReportId) {
-      setExpenseAnalysis(buildExpenseAnalysis("Saved payroll expenses", []));
+      setExpenseAnalysis(buildExpenseAnalysis("Saved outstation expenses", []));
     }
   }, []);
 
@@ -3670,7 +3670,7 @@ export function PayrollDashboard({
   async function handleDeleteExpenseReport(reportId: string) {
     const report = expenseReports.find((item) => item.id === reportId);
     const confirmed = window.confirm(
-      `Delete expense report "${report?.fileName ?? reportId}"? This removes the saved report and all expense rows inside it.`,
+      `Delete historical outstation upload "${report?.fileName ?? reportId}"? This removes the saved report and all expense rows inside it.`,
     );
 
     if (!confirmed) return;
@@ -3695,7 +3695,7 @@ export function PayrollDashboard({
         setSelectedExpenseReportId(null);
       }
 
-      setExpenseApprovalMessage("Expense report deleted.");
+      setExpenseApprovalMessage("Historical outstation upload deleted.");
       await loadSavedExpenseReport(
         selectedExpenseReportId === reportId ? undefined : selectedExpenseReportId ?? undefined,
       );
@@ -3711,7 +3711,7 @@ export function PayrollDashboard({
 
     const report = expenseReports.find((item) => item.id === reportId);
     const confirmed = window.confirm(
-      `Replace expense report "${report?.fileName ?? reportId}" with this file? Existing rows in this report will be removed.`,
+      `Replace historical outstation upload "${report?.fileName ?? reportId}" with this file? Existing rows in this report will be removed.`,
     );
 
     if (!confirmed) return;
@@ -3736,7 +3736,7 @@ export function PayrollDashboard({
       }
 
       setExpenseApprovalMessage(
-        `${payload.saved ?? 0} expense rows replaced and saved to the report.`,
+        `${payload.saved ?? 0} outstation expense rows replaced and saved to the report.`,
       );
       await loadSavedExpenseReport(reportId);
     } catch (error) {
@@ -3766,8 +3766,8 @@ export function PayrollDashboard({
       if (!response.ok) {
         setExpenseAnalysisError(
           payload.error === "payroll_expenses_schema_not_ready"
-            ? "Payroll expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
-            : payrollPayloadMessage(payload, "Expenses upload failed."),
+            ? "Outstation expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
+            : payrollPayloadMessage(payload, "Outstation expenses upload failed."),
         );
         return;
       }
@@ -3780,10 +3780,10 @@ export function PayrollDashboard({
         await loadSavedExpenseReport(uploadedReportId);
       }
       setExpenseApprovalMessage(
-        `${payload.saved ?? (payload.records?.length ?? 0)} expense rows uploaded and saved to the system. Review HR approvals, then import approved expenses to payroll.`,
+        `${payload.saved ?? (payload.records?.length ?? 0)} historical outstation expense rows uploaded and saved to the system. Review HR approvals, then import approved expenses to payroll.`,
       );
     } catch (error) {
-      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to upload expenses file."));
+      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to upload outstation expenses file."));
     } finally {
       setExpenseAnalyzing(false);
       if (expenseFileInputRef.current) expenseFileInputRef.current.value = "";
@@ -3813,8 +3813,8 @@ export function PayrollDashboard({
       if (!response.ok) {
         setExpenseAnalysisError(
           payload.error === "payroll_expenses_schema_not_ready"
-            ? "Payroll expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
-            : payrollPayloadMessage(payload, "Unable to save expense approvals."),
+            ? "Outstation expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
+            : payrollPayloadMessage(payload, "Unable to save outstation expense approvals."),
         );
         return;
       }
@@ -3824,10 +3824,10 @@ export function PayrollDashboard({
         .reduce((sum, record) => sum + record.total, 0);
 
       setExpenseApprovalMessage(
-        `${payload.saved ?? recordsToSave.length} expense rows saved. Approved total ${formatEGP(approvedTotal)} will appear in the next payroll month.`,
+        `${payload.saved ?? recordsToSave.length} outstation expense rows saved. Approved total ${formatEGP(approvedTotal)} will appear in the next payroll month.`,
       );
     } catch (error) {
-      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to save expense approvals."));
+      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to save outstation expense approvals."));
     } finally {
       setExpenseApprovalsSaving(false);
     }
@@ -3852,7 +3852,7 @@ export function PayrollDashboard({
 
       if (approvedRows.length > 0 && approvedWithHrId.length === 0) {
         setExpenseAnalysisError(
-          "Choose approved expenses mapped to HR ID before importing to payroll. If rows are not mapped, update the employee name/CRM username in Employee Management or upload an expenses sheet with an HR ID column.",
+          "Choose approved outstation expenses mapped to HR ID before importing to payroll. If rows are not mapped, update the employee name/CRM username in Employee Management or upload an expenses sheet with an HR ID column.",
         );
         return;
       }
@@ -3872,25 +3872,25 @@ export function PayrollDashboard({
       if (!response.ok) {
         setExpenseAnalysisError(
           payload.error === "payroll_expenses_schema_not_ready"
-            ? "Payroll expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
-            : payrollPayloadMessage(payload, "Unable to import expenses to payroll."),
+            ? "Outstation expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
+            : payrollPayloadMessage(payload, "Unable to import outstation expenses to payroll."),
         );
         return;
       }
 
       if (!payload.targetBatch) {
-        setExpenseAnalysisError(`No payroll sheet found for ${month}/${year}. Upload that payroll first, then import expenses.`);
+        setExpenseAnalysisError(`No payroll sheet found for ${month}/${year}. Upload that payroll first, then import outstation expenses.`);
         return;
       }
 
       setExpenseApprovalMessage(
-        `${payload.importedEmployees ?? 0} employees updated in payroll ${month}/${year}. Imported approved expenses ${formatEGP(payload.importedTotal ?? 0)}.`,
+        `${payload.importedEmployees ?? 0} employees updated in payroll ${month}/${year}. Imported approved outstation expenses ${formatEGP(payload.importedTotal ?? 0)}.`,
       );
       window.setTimeout(() => {
         window.location.href = `/payroll?batchId=${payload.targetBatch.id}`;
       }, 700);
     } catch (error) {
-      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to import expenses to payroll."));
+      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to import outstation expenses to payroll."));
     } finally {
       setExpenseImportingToPayroll(false);
     }
@@ -4064,11 +4064,11 @@ export function PayrollDashboard({
           )}
           description={payrollSheetTab === "salary"
             ? "Set the payroll period, download the working file, validate the upload, and move into batch review when the month is ready."
-            : "Upload expense files, review records, confirm approvals, and import approved rows into a payroll period."
+            : "Upload historical outstation expense files, review records, confirm approvals, and import approved rows into a payroll period."
           }
-          eyebrow={payrollSheetTab === "salary" ? "Payroll operations" : "Payroll expenses"}
+          eyebrow={payrollSheetTab === "salary" ? "Payroll operations" : "Outstation expenses"}
           icon={payrollSheetTab === "salary" ? <Upload className="h-3.5 w-3.5" /> : <FileCheck2 className="h-3.5 w-3.5" />}
-          title={payrollSheetTab === "salary" ? "Payroll upload and review" : "Expenses review and import"}
+          title={payrollSheetTab === "salary" ? "Payroll upload and review" : "Outstation expenses review and import"}
         />
 
         <SalaryUploadValidationSection
@@ -4145,7 +4145,7 @@ export function PayrollDashboard({
           badges={(
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B]">
-                {payrollSheetTab === "salary" ? "Scope: payroll operations" : "Scope: expenses workflow"}
+                {payrollSheetTab === "salary" ? "Scope: payroll operations" : "Scope: outstation expenses workflow"}
               </span>
               {!isAllTimeScope && payrollSheetTab === "salary" ? (
                 statusBadge(batch.status)
@@ -4157,12 +4157,12 @@ export function PayrollDashboard({
             </div>
           )}
           description={payrollSheetTab === "salary"
-            ? "Validate salary files, review payroll rows, track workflow status, and switch between salary and expenses from one compact workspace."
-            : "Review approved expense rows, confirm HR approvals, and import selected rows into the selected payroll period."
+            ? "Validate salary files, review payroll rows, track workflow status, and switch between salary and outstation expenses from one compact workspace."
+            : "Review approved outstation expense rows, confirm HR approvals, and import selected rows into the selected payroll period."
           }
-          eyebrow={payrollSheetTab === "salary" ? "Payroll operations" : "Payroll expenses"}
+          eyebrow={payrollSheetTab === "salary" ? "Payroll operations" : "Outstation expenses"}
           icon={payrollSheetTab === "salary" ? <Gauge className="h-3.5 w-3.5" /> : <FileCheck2 className="h-3.5 w-3.5" />}
-          title={payrollSheetTab === "salary" ? "Payroll report and monthly review" : "Payroll expenses operations"}
+          title={payrollSheetTab === "salary" ? "Payroll report and monthly review" : "Outstation expenses operations"}
         />
 
       {workflowMessage && (
@@ -4196,7 +4196,7 @@ export function PayrollDashboard({
       <div className={`${panelClassName} flex flex-wrap gap-2 p-2`}>
         {[
           { label: "Payroll Sheet", value: "salary" },
-          { label: "Expenses", value: "expenses" },
+          { label: "Outstation Expenses", value: "expenses" },
         ].map((tab) => (
           <Button
             className={cn(

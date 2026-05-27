@@ -64,8 +64,8 @@ export default async function TeamExpensesPage(
   if (!data) {
     return (
       <EmployeePortalEmptyState
-        message="Unable to load DSM expenses for your line at the moment."
-        title="Team Expenses Data Unavailable"
+        message="Unable to load DSM outstation expenses for your line at the moment."
+        title="Team Outstation Expenses Unavailable"
       />
     );
   }
@@ -89,9 +89,9 @@ export default async function TeamExpensesPage(
 
   return (
     <EmployeePortalPageShell
-      badge="Expense Management"
-      description={`${data.scopeLabel} · DSM expense workload only`}
-      title="Team Expenses"
+      badge="Outstation Expenses"
+      description={`${data.scopeLabel} - DSM outstation expense workload`}
+      title="Team Outstation Expenses"
     >
       {/* Print stylesheet */}
       <style dangerouslySetInnerHTML={{ __html: printStyles }} />

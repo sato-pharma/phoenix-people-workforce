@@ -47,17 +47,17 @@ export default async function EmployeePortalExpenseDashboardPage() {
   if (!data.workload?.expenseRows?.length) {
     return (
       <EmployeePortalEmptyState
-        message="No expense records are linked to your profile yet."
-        title="No expense records"
+        message="No outstation expense records are linked to your profile yet."
+        title="No outstation expense records"
       />
     );
   }
 
   return (
     <EmployeePortalPageShell
-      badge="Expenses"
-      description="Review workload, trip volume, and expense movement using the same employee portal workspace design."
-      title="Workload & Expense"
+      badge="Outstation Expenses"
+      description="Review workload, trip volume, and outstation expense movement using the same employee portal workspace design."
+      title="Outstation Dashboard"
     >
       <PersonalExpenseWorkloadDashboard
         adminKeyCards={adminCommandData ? {

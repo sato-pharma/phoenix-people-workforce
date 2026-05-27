@@ -37,6 +37,7 @@ import { runCoachingInAppNotificationTests } from "./coaching-in-app-notificatio
 import { runRlsGapClosureTests } from "./rls-gap-closure.test.ts";
 import { runOutstationCarEvidenceValidationTests } from "./outstation-car-evidence-validation.test.ts";
 import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
+import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
 import { runMedicalRepExpensesTests } from "./medical-rep-expenses.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
@@ -129,6 +130,7 @@ await runTest("workforce classification", runWorkforceClassificationTests);
 await runTest("workforce lifecycle seat", runWorkforceLifecycleSeatTests);
 await runTest("outstation car evidence validation", runOutstationCarEvidenceValidationTests);
 await runTest("outstation local draft", runOutstationLocalDraftTests);
+await runTest("outstation payroll expense mapping", runOutstationPayrollExpenseMappingTests);
 await runTest("outstation policy classification", runOutstationPolicyClassificationTests);
 await runTest("medical rep expenses", runMedicalRepExpensesTests);
 await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);

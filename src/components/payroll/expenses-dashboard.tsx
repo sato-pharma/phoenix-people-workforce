@@ -500,7 +500,7 @@ export function ExpensesDashboard({
     manager: "Manager",
     month: "Trip Month",
     payout: "Payout Month",
-    reportId: "Uploaded Report",
+    reportId: "Historical Upload",
     requestType: "Request Type",
     specialist: "Specialist",
     status: "Status",
@@ -555,12 +555,26 @@ export function ExpensesDashboard({
         actions={
           <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             {!portalMode && (
-              <Link href="/payroll/expenses">
-                <Button className="gap-2 rounded-xl">
-                  <FileSpreadsheet className="h-4 w-4" />
-                  Expense Upload Workflow
-                </Button>
-              </Link>
+              <>
+                <Link href="/admin/outstation/requests">
+                  <Button className="gap-2 rounded-xl">
+                    <MapPinned className="h-4 w-4" />
+                    Review Requests
+                  </Button>
+                </Link>
+                <Link href="/admin/outstation/requests?action=create-manager-expense">
+                  <Button className="gap-2 rounded-xl" variant="secondary">
+                    <ReceiptText className="h-4 w-4" />
+                    Add Manual
+                  </Button>
+                </Link>
+                <Link href="/payroll/expenses">
+                  <Button className="gap-2 rounded-xl" variant="secondary">
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Historical Upload
+                  </Button>
+                </Link>
+              </>
             )}
             <Button
               className="gap-2 rounded-xl"
@@ -574,19 +588,19 @@ export function ExpensesDashboard({
         }
         badges={(
           <div className="flex flex-wrap gap-2 text-xs">
-            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Reports: {formatNumber(initialReports.length)}</span>
+            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Historical uploads: {formatNumber(initialReports.length)}</span>
             <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Saved rows: {formatNumber(initialMetrics?.totalRows ?? initialExpenses.length)}</span>
             <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Filtered: {formatNumber(summary.trips)} trips</span>
             <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">{formatEGP(summary.total)} total</span>
           </div>
         )}
         description={portalMode
-          ? "Track your expense distribution across trip month, payout month, specialist, status, and transportation with refined dashboard views."
-          : "Use this dashboard to review uploaded expense performance by month, payout period, specialist, status, request type, and location in one compact surface."
+          ? "Track your outstation expense distribution across trip month, payout month, specialist, status, and transportation with refined dashboard views."
+          : "Use this dashboard to review historical uploads, employee outstation requests, manual entries, status, request type, and location in one compact surface."
         }
-        eyebrow={portalMode ? "Employee Expenses" : "Expense Intelligence"}
+        eyebrow={portalMode ? "Employee Outstation Expenses" : "Outstation Expense Intelligence"}
         icon={<BarChart3 className="h-3.5 w-3.5" />}
-        title={portalMode ? "My Expenses Dashboard" : "Expenses Dashboard"}
+        title={portalMode ? "My Outstation Expenses Dashboard" : "Outstation Expenses Dashboard"}
       />
 
       <AdminTableShell
@@ -614,7 +628,7 @@ export function ExpensesDashboard({
             <SelectFilter label="Request Type" onChange={(requestType) => setFilters((current) => ({ ...current, requestType }))} options={options.requestTypes} value={filters.requestType} />
             <SelectFilter label="Transportation" onChange={(transportationType) => setFilters((current) => ({ ...current, transportationType }))} options={options.transportationTypes} value={filters.transportationType} />
             <SelectFilter
-              label="Uploaded Report"
+              label="Historical Upload"
               onChange={(reportId) => setFilters((current) => ({ ...current, reportId }))}
               options={initialReports.map((report) => report.id)}
               value={filters.reportId}

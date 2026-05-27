@@ -61,7 +61,7 @@ export function PhoenixAdminDashboard({ stats }: PhoenixAdminDashboardProps) {
           <KPICard title="Payroll Eligible" value={stats.payrollEligible} icon={CreditCard} color="orange" />
           <KPICard title="Salary Records" value={stats.salaryRecords} icon={FileText} color="orange" />
           <KPICard title="Sales Records" value={stats.salesRecords} icon={TrendingUp} color="orange" />
-          <KPICard title="Total Expenses" value={stats.expensesCount} icon={Receipt} color="orange" />
+          <KPICard title="Outstation Expenses" value={stats.expensesCount} icon={Receipt} color="orange" />
         </div>
       </div>
 
@@ -123,9 +123,9 @@ export function PhoenixAdminDashboard({ stats }: PhoenixAdminDashboardProps) {
           icon={TrendingUp}
         />
         <ModuleCard 
-          title="Expenses" 
+          title="Outstation Expenses" 
           description="Claim approvals and reimbursements" 
-          href="/payroll/expenses" 
+          href="/payroll/expenses/dashboard" 
           stat={stats.expensesCount}
           icon={Receipt}
         />

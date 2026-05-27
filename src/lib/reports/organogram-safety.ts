@@ -193,25 +193,50 @@ export function organogramPositionSlotKey(row: OrganogramReportRow) {
 }
 
 export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
-  const filledSlots = new Set<string>();
+  const medRepFilledSlots = new Set<string>();
+  const managerFilledSlots = new Set<string>();
 
   for (const row of rows) {
     if (row.type !== "employee") continue;
-    if (classifyOrganogramStructureLevel(row) !== "medicalRep") continue;
+    const level = classifyOrganogramStructureLevel(row);
+    if (!level) continue;
 
     const slotKey = organogramPositionSlotKey(row);
-    if (slotKey) filledSlots.add(slotKey);
+    if (!slotKey) continue;
+
+    if (level === "medicalRep") {
+      medRepFilledSlots.add(slotKey);
+    } else {
+      managerFilledSlots.add(slotKey);
+    }
   }
 
   const seenOpenVacancySlots = new Set<string>();
 
   return rows.filter((row) => {
     if (row.type !== "vacancy") return true;
+
+    const level = classifyOrganogramStructureLevel(row);
+    const isManagerRole = level && level !== "medicalRep";
+
+    // For manager-level vacancies (DSM/RSM/NSM), check whether an actual
+    // employee occupies the same slot instead of trusting the status field.
+    // A vacancy record may say "filled" while no real employee exists.
+    if (isManagerRole) {
+      const slotKey = organogramPositionSlotKey(row);
+      if (!slotKey) return true;
+      if (managerFilledSlots.has(slotKey)) return false;
+      if (seenOpenVacancySlots.has(slotKey)) return false;
+      seenOpenVacancySlots.add(slotKey);
+      return true;
+    }
+
+    // For non-manager vacancies, filter by status
     if (normalizeText(row.status) && normalizeText(row.status) !== "open") return false;
 
     const slotKey = organogramPositionSlotKey(row);
     if (!slotKey) return true;
-    if (classifyOrganogramStructureLevel(row) === "medicalRep" && filledSlots.has(slotKey)) return false;
+    if (level === "medicalRep" && medRepFilledSlots.has(slotKey)) return false;
     if (seenOpenVacancySlots.has(slotKey)) return false;
 
     seenOpenVacancySlots.add(slotKey);
