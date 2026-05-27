@@ -26,12 +26,13 @@ export function EmployeePortalPageShell({
         style={{ boxSizing: "border-box" }}
       >
         <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:44px_44px]" />
-        <div className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-orange-500/20 blur-3xl" />
-        <div className="absolute -bottom-28 left-8 h-56 w-56 rounded-full bg-sky-500/10 blur-3xl" />
+        {/* Subtle decorative glow (hidden from a11y) */}
+        <div className="absolute -right-16 -top-24 h-64 w-64 rounded bg-orange-500/20 blur-3xl" aria-hidden="true" />
+        <div className="absolute -bottom-28 left-8 h-56 w-56 rounded bg-sky-500/10 blur-3xl" aria-hidden="true" />
         <div className="relative box-border grid w-full min-w-0 gap-5 p-5 sm:p-6 lg:grid-cols-12 lg:p-8">
           <div className="min-w-0 lg:col-span-12">
             <p className="inline-flex items-center gap-2 rounded border border-orange-400/25 bg-orange-500/10 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-orange-100">
-              <span className="h-1.5 w-1.5 rounded-full bg-orange-300" />
+              <span className="h-1.5 w-1.5 rounded-sm bg-orange-300" />
               {badge ?? "Employee Portal"}
             </p>
             <h1 className="mt-5 max-w-4xl text-[26px] font-black leading-[1.05] tracking-[-0.03em] text-white sm:text-[32px] lg:text-[36px]">

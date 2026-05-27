@@ -44,7 +44,10 @@
       "Bash(xargs grep -l \"coaching\")",
       "Bash(Get-ChildItem -Path \"F:\\\\Phoenix Workforce\\\\phoenix-workforce\\\\src\\\\app\" -Recurse -Directory)",
       "Bash(Select-Object FullName)",
-      "Bash(npx playwright *)"
+      "Bash(npx playwright *)",
+      "Bash(xargs grep -l \"med.*rep\\\\|MedRep\")",
+      "Bash(xargs grep -l \"med.*rep\\\\|MedRep\\\\|medrep\")",
+      "Bash(timeout 180 bash -c 'while [ ! -f \"C:\\\\Users\\\\satoh\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--Phoenix-Workforce-phoenix-workforce\\\\f3fc3dbc-b871-49f3-b738-9156fb6fa25d\\\\tasks\\\\b1hhogd55.done\" ]; do sleep 5; done; echo \"Done\"')"
     ]
   }
 }
