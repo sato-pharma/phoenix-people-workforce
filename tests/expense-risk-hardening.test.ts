@@ -53,8 +53,14 @@ export function runExpenseRiskHardeningTests() {
 
   const outstationService = source("src/lib/outstation/service.ts");
   assert.match(outstationService, /assertOutstationAdminAccess\(access,\s*"delete"\)/);
-  assert.match(outstationService, /const addedToPayroll = existing\.status === "approved" \|\| Boolean\(linkedPayrollRows\?\.length\)/);
+  assert.match(outstationService, /select\("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id"\)/);
+  assert.match(outstationService, /const addedToPayroll = linkedRows\.some/);
+  assert.match(outstationService, /\.from\("payroll_expenses"\)[\s\S]*\.delete\(\{ count: "exact" \}\)[\s\S]*\.eq\("trip_id", expenseTripId\)/);
   assert.match(outstationService, /already been added to payroll and cannot be deleted/);
+
+  const adminOutstationRequestRoute = source("app/api/admin/outstation/[id]/route.ts");
+  assert.match(adminOutstationRequestRoute, /isOutstationPayrollLockError/);
+  assert.match(adminOutstationRequestRoute, /isOutstationPayrollLockError\(error\) \? 409 : 500/);
 
   const employeePortalService = source("src/lib/employee-portal/service.ts");
   assert.match(employeePortalService, /mapOutstationRequestRowToPayrollApproval/);
@@ -76,10 +82,11 @@ export function runExpenseRiskHardeningTests() {
   assert.match(adminService, /expensesCount: expenseMetrics\?\.totalRows \?\? expenses\.count \?\? 0/);
 
   const sidebar = source("src/components/layout/sidebar.tsx");
-  assert.doesNotMatch(sidebar, /\/employee\/outstation\/new/);
-  assert.match(sidebar, /label: "Expense Dashboard"/);
-  assert.match(sidebar, /label: "Submit Expense"/);
-  assert.match(sidebar, /label: "Team Expenses"/);
+  const navigation = source("src/config/system-navigation.ts");
+  assert.doesNotMatch(`${sidebar}\n${navigation}`, /\/employee\/outstation\/new/);
+  assert.match(navigation, /label: "Expense Dashboard"/);
+  assert.match(navigation, /label: "Submit Expense"/);
+  assert.match(navigation, /label: "Team Expenses"/);
 
   const employeePortalRoutes = source("src/lib/employee-portal/routes.ts");
   assert.doesNotMatch(employeePortalRoutes, /\/employee\/outstation\/new/);
@@ -88,4 +95,10 @@ export function runExpenseRiskHardeningTests() {
   assert.match(legacyEmployeeOutstation, /redirect\("\/employee-portals\/expenses"\)/);
   assert.match(legacyEmployeeOutstation, /redirect\("\/employee-portals\/submit-expense"\)/);
   assert.doesNotMatch(legacyEmployeeOutstation, /MobileOutstationWizard/);
+
+  const expenseDashboardPage = source("app/employee-portals/expense-dashboard/page.tsx");
+  assert.match(expenseDashboardPage, /includePortalOverview: false/);
+  assert.match(expenseDashboardPage, /includeTeamRank: false/);
+  assert.match(expenseDashboardPage, /includeWorkforceSummary: false/);
+  assert.doesNotMatch(expenseDashboardPage, /getAdminCommandCenterData/);
 }

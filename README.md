@@ -41,6 +41,8 @@ Open [http://localhost:3000](http://localhost:3000).
 The repository defines a CI-style pipeline with the same checks expected locally:
 
 ```bash
+npm run check:edit
+npm run check:harden
 npm run lint
 npm run typecheck
 npm run test
@@ -49,6 +51,8 @@ npm run build
 
 Current status:
 
+- `check:edit` is the fast editing gate and currently runs TypeScript only
+- `check:harden` is the full pre-commit/pre-deploy gate
 - `lint` is wired and usable
 - `test` is wired with a Node test harness
 - `typecheck` is expected to pass before production changes are pushed
@@ -81,6 +85,7 @@ Short version:
 
 - [Current Operating State](F:/Phoenix%20Workforce/phoenix-workforce/docs/current-operating-state.md)
 - [Architecture](F:/Phoenix%20Workforce/phoenix-workforce/docs/architecture.md)
+- [Editing Guide](F:/Phoenix%20Workforce/phoenix-workforce/docs/editing-guide.md)
 - [I18n Plan](F:/Phoenix%20Workforce/phoenix-workforce/docs/i18n-plan.md)
 - [Security Audit](F:/Phoenix%20Workforce/phoenix-workforce/AUDIT-2026-05-09.md)
 

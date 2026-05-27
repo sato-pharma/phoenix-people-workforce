@@ -48,7 +48,11 @@
       "Bash(xargs grep -l \"med.*rep\\\\|MedRep\")",
       "Bash(xargs grep -l \"med.*rep\\\\|MedRep\\\\|medrep\")",
       "Bash(timeout 180 bash -c 'while [ ! -f \"C:\\\\Users\\\\satoh\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--Phoenix-Workforce-phoenix-workforce\\\\f3fc3dbc-b871-49f3-b738-9156fb6fa25d\\\\tasks\\\\b1hhogd55.done\" ]; do sleep 5; done; echo \"Done\"')",
-      "Bash(powershell -Command \"Get-Content 'src\\\\components\\\\employee-portal\\\\personal-expense-workload-dashboard.tsx' | Measure-Object -Line\")"
+      "Bash(powershell -Command \"Get-Content 'src\\\\components\\\\employee-portal\\\\personal-expense-workload-dashboard.tsx' | Measure-Object -Line\")",
+      "Bash(powershell -Command \"Get-Content package.json | Select-String -Pattern 'papaparse|react-virtual|tanstack' -SimpleMatch\")",
+      "Bash(powershell -Command \"if \\(-not \\(Test-Path 'src\\\\lib\\\\utils\\\\places.ts'\\)\\) { Write-Output 'will create' } else { Write-Output 'exists' }\")",
+      "Bash(powershell -Command \"if \\(-not \\(Test-Path 'src\\\\lib\\\\utils'\\)\\) { New-Item -ItemType Directory -Force -Path 'src\\\\lib\\\\utils' | Out-Null; Write-Output 'created' } else { Write-Output 'exists' }\")",
+      "Bash(powershell -Command \"Move-Item 'tests\\\\e2e\\\\expense-dashboard.data-bearing.spec.ts' 'tests\\\\e2e\\\\expense-dashboard.data-bearing.spec.ts.tmp'; Move-Item 'tests\\\\e2e\\\\expense-dashboard.data-bearing.spec.ts.tmp' 'tests\\\\e2e\\\\expense-dashboard.data-bearing.spec.ts'; Get-ChildItem 'tests\\\\e2e\\\\*.spec.ts' | Select-Object Name\")"
     ]
   }
 }

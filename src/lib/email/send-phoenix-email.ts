@@ -1,7 +1,7 @@
 import { phoenixEmailSignatureHostedUrl } from "@/emails/phoenix-email-layout";
+import { systemEmail, systemIdentity } from "@/config/system-settings";
 
 const resendEndpoint = "https://api.resend.com/emails";
-const testingRecipientFallback = ["omar.anwar@satopharma.com", "phoenix@satopharma.com"];
 
 export type SendPhoenixEmailInput = {
   bcc?: string[];
@@ -33,7 +33,7 @@ function resolveTestingRecipients() {
   const deliveryMode = String(process.env.PHOENIX_EMAIL_DELIVERY_MODE ?? "").trim().toLowerCase();
   const testRecipients = splitEmailList(process.env.PHOENIX_EMAIL_TEST_RECIPIENTS);
   if (deliveryMode !== "testing") return null;
-  return testRecipients.length > 0 ? Array.from(new Set(testRecipients)) : testingRecipientFallback;
+  return testRecipients.length > 0 ? Array.from(new Set(testRecipients)) : [...systemEmail.testingRecipientFallback];
 }
 
 export async function assertReachablePhoenixEmailImage(url = phoenixEmailSignatureHostedUrl) {
@@ -82,7 +82,7 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   }
 
   const apiKey = process.env.RESEND_API_KEY;
-  const from = input.from || process.env.NOTIFICATION_EMAIL_FROM || "Phoenix Workforce <phoenix@mail.satopharma.com>";
+  const from = input.from || process.env.NOTIFICATION_EMAIL_FROM || `${systemIdentity.appName} <${systemEmail.defaultFromEmail}>`;
 
   if (!apiKey) return { reason: "RESEND_API_KEY is missing.", skipped: true };
   if (!from) return { reason: "Email sender is missing.", skipped: true };
@@ -99,7 +99,7 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
       cc,
       from,
       html: input.html,
-      replyTo: process.env.NOTIFICATION_REPLY_TO || "phoenix@satopharma.com",
+      replyTo: process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo,
       subject: input.subject,
       text: input.text,
       to,

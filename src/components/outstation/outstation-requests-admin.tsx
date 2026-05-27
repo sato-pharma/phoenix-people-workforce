@@ -183,7 +183,6 @@ function RequestActionButtons({
   const deleting = busy && acting?.action === "delete";
   const rejecting = busy && acting?.action === "reject";
   const terminal = request.status === "approved" || request.status === "rejected";
-  const addedToPayroll = request.status === "approved";
 
   return (
     <div className="space-y-3">
@@ -208,9 +207,9 @@ function RequestActionButtons({
         </Button>
         <Button
           className="gap-2 rounded-xl border border-[#FECACA] bg-white px-4 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FEF2F2]"
-          disabled={busy || addedToPayroll}
+          disabled={busy}
           onClick={() => onDelete(request)}
-          title={addedToPayroll ? "This expense has already been added to payroll and cannot be deleted." : "Delete this expense before payroll."}
+          title="Delete this expense if it has not been imported into a payroll batch."
           type="button"
         >
           {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -218,7 +217,7 @@ function RequestActionButtons({
         </Button>
       </div>
       {request.status === "approved" ? (
-        <p className="text-xs font-black uppercase tracking-[0.12em] text-[#047857]">Added to payroll - delete locked</p>
+        <p className="text-xs font-black uppercase tracking-[0.12em] text-[#047857]">Approved - payroll import lock checked before delete</p>
       ) : null}
       {request.status === "rejected" ? (
         <p className="text-xs font-black uppercase tracking-[0.12em] text-[#B91C1C]">Rejected by admin review</p>
@@ -617,12 +616,8 @@ export function OutstationRequestsAdmin({
   }
 
   async function deleteRequest(request: OutstationExpenseRequest) {
-    if (request.status === "approved") {
-      setActionError("This outstation expense has already been added to payroll and cannot be deleted.");
-      return;
-    }
     const confirmed = window.confirm(
-      `Delete outstation expense ${request.id}? This permanently removes the request and stored evidence files. Expenses already added to payroll cannot be deleted.`,
+      `Delete outstation expense ${request.id}? This permanently removes the request, stored evidence files, and any linked expense row that has not been imported into payroll.`,
     );
     if (!confirmed) return;
 

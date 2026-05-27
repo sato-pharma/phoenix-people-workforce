@@ -3,6 +3,7 @@
 import { Lock, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 
+import { systemIdentity } from "@/config/system-settings";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 type Props = {
@@ -53,7 +54,7 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
     return (
       <main className="min-h-screen bg-[#020202] px-4 py-10 text-white">
         <section className="mx-auto max-w-xl rounded-[32px] border border-white/10 bg-[linear-gradient(145deg,rgba(19,22,27,0.92),rgba(5,6,8,0.98))] p-8 shadow-[0_30px_70px_rgba(0,0,0,0.55)]">
-          <p className="text-sm font-black uppercase tracking-[0.24em] text-[#ff7900]">Phoenix Workforce</p>
+          <p className="text-sm font-black uppercase tracking-[0.24em] text-[#ff7900]">{systemIdentity.appName}</p>
           <h1 className="mt-5 text-3xl font-black text-white">Password saved</h1>
           <p className="mt-3 text-base leading-7 text-white/72">
             Your password is ready. Sign in with <span className="font-semibold text-white">{displayLoginId}</span> and the password you just created.
@@ -72,7 +73,7 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
   return (
     <main className="min-h-screen bg-[#020202] px-4 py-10 text-white">
       <section className="mx-auto max-w-xl rounded-[32px] border border-white/10 bg-[linear-gradient(145deg,rgba(19,22,27,0.92),rgba(5,6,8,0.98))] p-8 shadow-[0_30px_70px_rgba(0,0,0,0.55)]">
-        <p className="text-sm font-black uppercase tracking-[0.24em] text-[#ff7900]">Phoenix Workforce</p>
+        <p className="text-sm font-black uppercase tracking-[0.24em] text-[#ff7900]">{systemIdentity.appName}</p>
         <h1 className="mt-5 text-3xl font-black text-white">
           {purpose === "setup" ? "Create your password" : "Reset your password"}
         </h1>

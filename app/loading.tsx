@@ -1,4 +1,5 @@
-﻿import { LoadingSpinner } from "@/components/ui/loading-state";
+import { LoadingSpinner } from "@/components/ui/loading-state";
+import { systemUiText } from "@/config/system-settings";
 
 export default function Loading() {
   return (
@@ -6,7 +7,7 @@ export default function Loading() {
       <div className="flex flex-col items-center gap-4">
         <LoadingSpinner className="h-10 w-10 text-orange-500" />
         <p className="text-sm font-medium text-slate-500 animate-pulse">
-          Loading Phoenix Workforce...
+          {systemUiText.loadingMessage}
         </p>
       </div>
     </div>

@@ -9,8 +9,8 @@ import {
   calculateOrganogramStructureKpis,
   districtBucketMatches,
   isOrganogramSalesStructureRole,
+  organogramPositionSlotKey,
 } from "@/lib/reports/organogram-safety";
-import { vacancyReportSeatKey } from "@/lib/reports/vacancy-report-safety";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 
@@ -135,7 +135,7 @@ function rowKey(row: OrganogramRow) {
 
 function managerIdentityKey(row: OrganogramRow) {
   if (row.type === "vacancy" && isManagerLevel(row)) {
-    const key = vacancyReportSeatKey(row);
+    const key = organogramPositionSlotKey(row);
     if (key) return `vacancy-seat:${key}`;
   }
   const hrId = normalizeHrIdKey(row.hrId);
@@ -673,7 +673,7 @@ export function EmployeeOrganogramDashboard({
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/reports/vacancies", { cache: "no-store" });
+      const response = await fetch("/api/reports/organogram", { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) {
         setError(payload.message ?? payload.error ?? "organogram_failed");

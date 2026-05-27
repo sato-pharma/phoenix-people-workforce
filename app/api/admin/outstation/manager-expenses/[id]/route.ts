@@ -11,6 +11,10 @@ import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function isOutstationPayrollLockError(error: unknown) {
+  return error instanceof Error && error.message.toLowerCase().includes("already been added to payroll");
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -102,13 +106,14 @@ export async function DELETE(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to delete outstation expense.";
+    const status = isForbiddenError(error) ? 403 : isOutstationPayrollLockError(error) ? 409 : 500;
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_expense_delete_failed",
         message,
         success: false,
       },
-      { status: isForbiddenError(error) ? 403 : 500 },
+      { status },
     );
   }
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Bell, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
+import { systemUiText } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
 
 type InAppNotificationView = {
@@ -102,7 +103,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
               <div>
                 <p className={cn("text-sm font-black", isAdminMode ? "text-white" : "text-[#0F172A]")}>Notifications</p>
                 <p className={cn("mt-0.5 text-xs", isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]")}>
-                  Latest Phoenix Workforce updates.
+                  {systemUiText.notificationsSubtitle}
                 </p>
               </div>
               {loading ? (

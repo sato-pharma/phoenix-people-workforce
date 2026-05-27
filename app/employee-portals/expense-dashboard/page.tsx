@@ -6,7 +6,6 @@ import {
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getAdminCommandCenterData } from "@/lib/admin/command-center";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 
@@ -24,15 +23,14 @@ export default async function EmployeePortalExpenseDashboardPage() {
   await assertPermission(access, "expenses", "read");
 
   let data = null;
-  let adminCommandData = null;
   try {
-    [data, adminCommandData] = await Promise.all([
-      getMedicalRepPortalData(access),
-      getAdminCommandCenterData(access).catch(() => null),
-    ]);
+    data = await getMedicalRepPortalData(access, {
+      includePortalOverview: false,
+      includeTeamRank: false,
+      includeWorkforceSummary: false,
+    });
   } catch {
     data = null;
-    adminCommandData = null;
   }
 
   if (!data || data.empty.profile) {
@@ -60,14 +58,7 @@ export default async function EmployeePortalExpenseDashboardPage() {
       title="Expense Dashboard"
     >
       <PersonalExpenseWorkloadDashboard
-        adminKeyCards={adminCommandData ? {
-          expenseClaimsAmount: adminCommandData.overview.expenses.approvedAmount,
-          expenseClaimsEntries: adminCommandData.overview.expenses.totalRows,
-          payrollBatchLabel: adminCommandData.overview.payroll.batchLabel,
-          payrollEligibleCount: adminCommandData.payrollEligibleCount,
-          totalSalesTarget: adminCommandData.overview.sales.targetValue,
-          totalSalesValue: adminCommandData.overview.sales.salesValue,
-        } : null}
+        adminKeyCards={null}
         data={data}
         showHero={false}
       />
