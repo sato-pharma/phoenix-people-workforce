@@ -60,7 +60,10 @@
       "Bash(powershell -Command \"Start-Sleep -Seconds 30; Get-Content 'C:\\\\Users\\\\satoh\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--Phoenix-Workforce-phoenix-workforce\\\\f3fc3dbc-b871-49f3-b738-9156fb6fa25d\\\\tasks\\\\box559m22.output' | Select-String -Pattern 'error|Error' -SimpleMatch | Select-Object -First 30\")",
       "Bash(powershell -Command \"Get-Content 'src\\\\components\\\\employee-portal\\\\employee-organogram-dashboard.tsx' | Measure-Object -Line\")",
       "Bash(powershell -Command \"Select-String -Path 'src\\\\lib\\\\utils.ts' -Pattern 'formatEmployeeDisplayName' -Context 0,15\")",
-      "Bash(powershell -Command \"Get-ChildItem -Recurse -File -Include '*.sql','*.ts' -Path 'supabase','app\\\\api' -ErrorAction SilentlyContinue | Select-String -Pattern 'support_request|support_ticket|hr_ticket|hr_support' -List | Select-Object Filename, Line | Select-Object -First 20\")"
+      "Bash(powershell -Command \"Get-ChildItem -Recurse -File -Include '*.sql','*.ts' -Path 'supabase','app\\\\api' -ErrorAction SilentlyContinue | Select-String -Pattern 'support_request|support_ticket|hr_ticket|hr_support' -List | Select-Object Filename, Line | Select-Object -First 20\")",
+      "Bash(powershell -Command \"Get-ChildItem 'src\\\\lib' -Recurse -File -Filter '*.ts' | Select-String -Pattern 'supabaseRest|createSupabaseAdminClient' -List | Select-Object Filename -First 8\")",
+      "Bash(powershell -Command \"Get-Content 'src\\\\lib\\\\supabase\\\\server.ts' | Select-Object -First 50\")",
+      "Bash(powershell -Command \"Select-String -Path 'src\\\\lib\\\\auth\\\\permissions.ts' -Pattern 'export function normalizeHrId|export const normalizeHrId' -List | Select-Object Line\")"
     ]
   }
 }
