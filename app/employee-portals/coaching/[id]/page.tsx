@@ -81,7 +81,7 @@ export default async function EmployeeCoachingReportDetailPage({ params }: PageP
       <EmployeePortalActionBar
         actions={
           <>
-            <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black text-orange-700 shadow-[0_10px_24px_rgba(249,115,22,0.08)]">
+            <span className="rounded border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black text-orange-700 shadow-[0_10px_24px_rgba(249,115,22,0.08)]">
               {report.report.report_number}
             </span>
             <EmployeePortalActionLink href="/employee-portals/coaching" label="Back to Reports" />
