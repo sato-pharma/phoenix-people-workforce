@@ -1,0 +1,3 @@
+-- Intentionally empty.
+-- supabase/config.toml enables db.seed with ./seed.sql, so this file keeps
+-- local Supabase resets deterministic without loading fixture data.

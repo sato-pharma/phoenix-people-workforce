@@ -419,7 +419,7 @@ function AccessPanel({
           </div>
         </div>
 
-        <div className="mt-4 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-4 text-sm">
           <label className="flex cursor-pointer items-center gap-3 text-white/82" htmlFor="remember-login">
             <input
               checked={remember}
@@ -439,9 +439,6 @@ function AccessPanel({
             </span>
             Remember login ID
           </label>
-          <p className="max-w-[260px] font-semibold leading-5 text-[#ff9a2f]/90 sm:text-right">
-            {systemUiText.login.passwordLinkHelpMessage}
-          </p>
         </div>
 
         {error && (

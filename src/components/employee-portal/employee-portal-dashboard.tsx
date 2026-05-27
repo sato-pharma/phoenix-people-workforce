@@ -1166,9 +1166,9 @@ function IncentiveSchemeDescriptionCard() {
   const tiers = [
     { range: "< 90%", payout: "0%", rate: "Not eligible", accent: "border-l-slate-300 bg-slate-50/50", badge: "border-slate-200 bg-slate-50 text-slate-500" },
     { range: "90%", payout: "50%", rate: "Threshold unlock", accent: "border-l-amber-400 bg-amber-50/30", badge: "border-amber-200 bg-amber-50 text-amber-700" },
-    { range: "91 â€“ 100%", payout: "55 â€“ 100%", rate: "+5% per 1%", accent: "border-l-orange-400 bg-orange-50/30", badge: "border-orange-200 bg-orange-50 text-orange-700" },
-    { range: "101 â€“ 120%", payout: "101.5 â€“ 130%", rate: "+1.5% per 1%", accent: "border-l-emerald-400 bg-emerald-50/30", badge: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-    { range: "121 â€“ 150%", payout: "133 â€“ 220%", rate: "+3% per 1%", accent: "border-l-sky-400 bg-sky-50/30", badge: "border-sky-200 bg-sky-50 text-sky-700" },
+    { range: "91 - 100%", payout: "55 - 100%", rate: "+5% per 1%", accent: "border-l-orange-400 bg-orange-50/30", badge: "border-orange-200 bg-orange-50 text-orange-700" },
+    { range: "101 - 120%", payout: "101.5 - 130%", rate: "+1.5% per 1%", accent: "border-l-emerald-400 bg-emerald-50/30", badge: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+    { range: "121 - 150%", payout: "133 - 220%", rate: "+3% per 1%", accent: "border-l-sky-400 bg-sky-50/30", badge: "border-sky-200 bg-sky-50 text-sky-700" },
   ];
 
   return (
@@ -1181,8 +1181,8 @@ function IncentiveSchemeDescriptionCard() {
       {/* Key formula */}
       <div className="mb-4 rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
         <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Semester Target</p>
-        <p className="mt-1 text-sm font-bold text-slate-800">Basic Salary Ã— 2 months</p>
-        <p className="mt-0.5 text-[11px] text-slate-500">2 payouts per year â€” paid each semester</p>
+        <p className="mt-1 text-sm font-bold text-slate-800">Basic Salary x 2 months</p>
+        <p className="mt-0.5 text-[11px] text-slate-500">2 payouts per year - paid each semester</p>
       </div>
 
       {/* Tiered bands */}
@@ -1245,7 +1245,7 @@ function IncentiveKpiCards({ data, isSalaryVisible }: { data: MedicalRepPortalDa
     {
       label: "Basic Salary",
       value: isSalaryVisible ? egp(salaryRef.basicSalary) : maskedMoneyValue,
-      note: "Base Ã— 70% â€” incentive basis",
+      note: "Base x 70% - incentive basis",
       accent: "purple",
     },
   ];
