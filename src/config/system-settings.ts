@@ -107,7 +107,6 @@ export const systemUiText = {
   notificationsSubtitle: "Latest Phoenix Workforce updates.",
   internalMessageComposerDescription: "Send inside Phoenix Workforce and optionally email the recipient.",
   login: {
-    passwordLinkHelpMessage: "Need a password link? Ask your Phoenix admin to generate one from Users & Access.",
     tagline: "People. Performance. Intelligence.",
     statement: "Phoenix is more than a system",
     statementSuffix: "it's your partner in performance and growth.",

@@ -17,7 +17,7 @@ export function runLoginPageHardeningTests() {
   assert.match(loginPage, /type LoginErrorField = "form" \| "loginId" \| "password"/);
   assert.match(loginPage, /aria-invalid=\{loginInvalid\}/);
   assert.match(loginPage, /aria-invalid=\{passwordInvalid\}/);
-  assert.match(loginPage, /systemUiText\.login\.passwordLinkHelpMessage/);
+  assert.doesNotMatch(loginPage, /passwordLinkHelpMessage/);
   assert.doesNotMatch(loginPage, /href="#"/);
   assert.doesNotMatch(loginPage, /onClick=\{\(event\) => event\.preventDefault\(\)\}/);
 
