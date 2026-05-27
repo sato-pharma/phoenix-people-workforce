@@ -246,9 +246,9 @@ function DetailPill({ label, value }: { label: string; value: string }) {
 
 function FeedbackBlock({ label, text }: { label: string; text: string | null }) {
   return (
-    <Card className="rounded border border-slate-200/80 bg-white p-5 shadow-sm">
+    <Card className="rounded border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">{label}</p>
-      <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+      <p className="mt-2 break-words whitespace-pre-wrap text-sm leading-7 text-slate-700 sm:mt-3">
         {text?.trim() || "No feedback was provided."}
       </p>
     </Card>
@@ -261,17 +261,17 @@ function ScoreItemNotes({ score }: { score: CoachingScoreItemRow | undefined }) 
   if (!area && !strength) return null;
 
   return (
-    <div className="mt-3 grid gap-2 md:grid-cols-2">
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">
       {area ? (
         <div className="rounded border border-orange-100 bg-orange-50/70 px-3 py-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-700">Area to be Improved</p>
-          <p className="mt-1 whitespace-pre-wrap text-xs font-semibold leading-5 text-orange-950">{area}</p>
+          <p className="mt-1 break-words whitespace-pre-wrap text-xs font-semibold leading-5 text-orange-950">{area}</p>
         </div>
       ) : null}
       {strength ? (
         <div className="rounded border border-emerald-100 bg-emerald-50/70 px-3 py-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Strength Point</p>
-          <p className="mt-1 whitespace-pre-wrap text-xs font-semibold leading-5 text-emerald-950">{strength}</p>
+          <p className="mt-1 break-words whitespace-pre-wrap text-xs font-semibold leading-5 text-emerald-950">{strength}</p>
         </div>
       ) : null}
     </div>
@@ -286,7 +286,7 @@ function ScoreDistributionBar({ scores }: { scores: CoachingScoreItemRow[] }) {
   const total = scores.length || 1;
 
   return (
-    <div>
+    <div aria-label={`Score distribution: ${distribution.filter((d) => d.count > 0).map((d) => `${d.score}/6: ${d.count}`).join(", ")}`} role="img">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Score distribution</p>
       <div className="mt-2 flex h-6 w-full overflow-hidden rounded">
         {distribution.map((d) =>
@@ -313,6 +313,57 @@ function ScoreDistributionBar({ scores }: { scores: CoachingScoreItemRow[] }) {
         )}
       </div>
     </div>
+  );
+}
+
+/* ━━━━━━━━━━━━━━━━━━ Hero Header ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+function ReviewHeroHeader({
+  coachHrId,
+  coachName,
+  coachRole,
+  coachingDate,
+  displayZone,
+  reportNumber,
+  status,
+}: {
+  coachHrId: string;
+  coachName: string | null | undefined;
+  coachRole: string | null;
+  coachingDate: string | null | undefined;
+  displayZone: string | null;
+  reportNumber: string;
+  status: string;
+}) {
+  return (
+    <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.08)]">
+      <div className="relative overflow-hidden bg-[linear-gradient(135deg,#0B0B0B_0%,#111827_58%,#3B2413_100%)] px-4 py-5 text-white sm:px-7 sm:py-6">
+        <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-orange-500/20 blur-3xl" />
+        <div className="relative grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div>
+            <p className="inline-flex rounded border border-orange-400/40 bg-orange-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-200">
+              {reportNumber}
+            </p>
+            <h2 className="mt-3 text-2xl font-black tracking-[-0.03em] text-white sm:mt-4 sm:text-3xl">
+              Field Coaching Review
+            </h2>
+            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-300 sm:mt-2">
+              Review the structured assessment and feedback submitted by your coach.
+            </p>
+          </div>
+          <div className={cn("rounded border px-4 py-2.5 text-sm font-bold", zoneClassName(displayZone))}>
+            {zoneLabel(displayZone)}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-2 p-4 sm:grid-cols-2 sm:gap-3 sm:p-6 lg:grid-cols-4">
+        <DetailPill label="Coaching date" value={formatDate(coachingDate)} />
+        <DetailPill label="Coach" value={formatEmployeeDisplayName(coachName, coachHrId)} />
+        <DetailPill label="Coach role" value={coachRole || "Coach"} />
+        <DetailPill label="Status" value={status.replace(/_/g, " ")} />
+      </div>
+    </Card>
   );
 }
 
@@ -378,43 +429,24 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
   if (!hydrated) return <CoachingReviewSkeleton />;
 
   return (
-    <div dir="auto" className="coaching-review-print space-y-5">
+    <div dir="auto" className="coaching-review-print space-y-3 sm:space-y-5">
       <style dangerouslySetInnerHTML={{ __html: printStyles }} />
 
       {/* ── Hero Header ────────────────────────────────────────────── */}
-      <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.08)]">
-        <div className="relative overflow-hidden bg-[linear-gradient(135deg,#0B0B0B_0%,#111827_58%,#3B2413_100%)] px-5 py-6 text-white sm:px-7">
-          <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-orange-500/20 blur-3xl" />
-          <div className="relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-            <div>
-              <p className="inline-flex rounded border border-orange-400/40 bg-orange-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-200">
-                {report.report_number}
-              </p>
-              <h2 className="mt-4 text-2xl font-black tracking-[-0.03em] text-white sm:text-3xl">
-                Field Coaching Review
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                Review the structured assessment and feedback submitted by your coach.
-              </p>
-            </div>
-            <div className={cn("rounded border px-4 py-2.5 text-sm font-bold", zoneClassName(displayZone))}>
-              {zoneLabel(displayZone)}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-4">
-          <DetailPill label="Coaching date" value={formatDate(report.coaching_date)} />
-          <DetailPill label="Coach" value={formatEmployeeDisplayName(summary?.coachName, report.coach_hr_id)} />
-          <DetailPill label="Coach role" value={report.coach_role || "Coach"} />
-          <DetailPill label="Status" value={report.status.replace(/_/g, " ")} />
-        </div>
-      </Card>
+      <ReviewHeroHeader
+        coachHrId={report.coach_hr_id}
+        coachName={summary?.coachName}
+        coachRole={report.coach_role}
+        coachingDate={report.coaching_date}
+        displayZone={displayZone}
+        reportNumber={report.report_number}
+        status={report.status}
+      />
 
       {/* ── Employee Context + Final Score ──────────────────────────── */}
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.7fr)]">
-        <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="grid gap-3 sm:gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.7fr)]">
+        <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">Employee context</p>
               <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-slate-900 sm:text-2xl">
@@ -426,15 +458,15 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
               <UserRound className="h-4 w-4" />
             </div>
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid gap-2 sm:mt-5 sm:gap-3 sm:grid-cols-3">
             <DetailPill label="Line" value={summary?.lineName || "Not assigned"} />
             <DetailPill label="Area" value={summary?.areaName || "Not assigned"} />
             <DetailPill label="Team" value={summary?.teamName || "Not assigned"} />
           </div>
         </Card>
 
-        <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
-          <div className="flex items-start justify-between gap-4">
+        <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
+          <div className="flex items-start justify-between gap-3 sm:gap-4">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">Final score</p>
               <p className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900 sm:text-4xl">
@@ -449,7 +481,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
             </div>
           </div>
           {detail.scoreResult ? (
-            <div className="mt-5 grid gap-3">
+            <div className="mt-4 grid gap-2 sm:mt-5 sm:gap-3">
               <DetailPill label="Strongest parameter" value={detail.scoreResult.strongestParameter.label} />
               <DetailPill label="Key development area" value={detail.scoreResult.keyDevelopmentArea.label} />
             </div>
@@ -460,9 +492,9 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
       {/* ── Category Performance Chart + Distribution ───────────────── */}
       {detail.scoreResult && radarData.length > 0 ? (
         <WorkspaceErrorBoundary fallbackTitle="Unable to render score charts">
-          <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.5fr)]">
-              <div>
+          <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
+            <div className="grid gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.5fr)]">
+              <div aria-label="Category performance radar chart showing percentage scores for each coaching parameter" role="img">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-orange-600" />
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">Category performance</p>
@@ -488,8 +520,8 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
       ) : null}
 
       {/* ── Structured Scoring ──────────────────────────────────────── */}
-      <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">Structured scoring</p>
             <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-slate-900 sm:text-2xl">
@@ -504,11 +536,11 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4">
+        <div className="mt-4 grid gap-3 sm:mt-6 sm:gap-4">
           {groupScoreItems().map((group) => {
             const catSub = detail.scoreResult?.categorySubtotals.find((item) => item.category === group.category);
             return (
-              <div className="rounded border border-slate-200/80 bg-slate-50/70 p-4" key={group.category}>
+              <div className="rounded border border-slate-200/80 bg-slate-50/70 p-3 sm:p-4" key={group.category}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <span className="flex h-7 w-7 items-center justify-center rounded bg-slate-900 text-xs font-bold text-orange-300">
@@ -532,7 +564,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
                     const score = scoreRow?.score;
                     return (
                       <div
-                        className="rounded border border-slate-200/70 bg-white px-4 py-3"
+                        className="rounded border border-slate-200/70 bg-white px-3 py-2.5 sm:px-4 sm:py-3"
                         key={item.key}
                       >
                         <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
@@ -559,15 +591,15 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
       </Card>
 
       {/* ── Feedback Blocks ────────────────────────────────────────── */}
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-3 sm:gap-4 lg:grid-cols-3">
         <FeedbackBlock label="Overall Area of Development" text={report.area_of_development} />
         <FeedbackBlock label="Overall Strength Points" text={report.strength_points} />
         <FeedbackBlock label="General Remarks" text={report.general_remarks} />
       </div>
 
       {/* ── Acknowledgment ─────────────────────────────────────────── */}
-      <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">Acknowledgment</p>
             <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-slate-900 sm:text-2xl">
