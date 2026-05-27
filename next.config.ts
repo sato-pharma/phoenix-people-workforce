@@ -71,14 +71,17 @@ const nextConfig: NextConfig = {
 };
 
 export default withSentryConfig(nextConfig, {
-  // Org/project are only needed for source-map upload at build time.
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
+  org: "phoenix-b7",
+  project: "phoenix-workspace",
   authToken: process.env.SENTRY_AUTH_TOKEN,
   // Only upload source maps when an auth token is configured; otherwise builds
   // (local, CI, and un-configured deploys) stay clean and require nothing extra.
   sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
   // Keep build output quiet unless running in CI.
   silent: !process.env.CI,
-  disableLogger: true,
+  webpack: {
+    treeshake: {
+      removeDebugLogging: true,
+    },
+  },
 });
