@@ -3,6 +3,7 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env.github-secrets
 coverage/
 *.log
 .playwright-mcp/
@@ -15,6 +16,7 @@ _junk/
 .sentryclirc
 .env.sentry-build-plugin
 .claude/worktrees/
+.claude/settings.local.json
 
 PHOENIX old/
 Phoenix Workforce/

@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - master
+      - codex/work-from-production
 
 jobs:
   validate:
@@ -26,6 +27,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Generate Next.js route types
+        run: npx next typegen
 
       - name: Typecheck
         run: npm run typecheck
