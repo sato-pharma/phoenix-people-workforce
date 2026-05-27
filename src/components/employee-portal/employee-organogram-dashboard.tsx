@@ -12,7 +12,6 @@ import {
   organogramPositionSlotKey,
 } from "@/lib/reports/organogram-safety";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
-import { formatEmployeeDisplayName } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -551,29 +550,41 @@ function TeamMemberCardUI({ row }: { row: OrganogramRow }) {
 
   return (
     <div
-      className={`border-l-[3px] px-2.5 py-2 ${
+      className={`relative border-l-[3px] px-3 py-2.5 transition ${
         isVacancy
-          ? "border-l-orange-400 bg-orange-50/50"
-          : "border-l-slate-200 bg-white"
+          ? "border-l-orange-400 bg-orange-50/40 hover:bg-orange-50/70"
+          : "border-l-slate-200 bg-white hover:bg-slate-50/60"
       }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold leading-tight text-slate-800">
-            {formatEmployeeDisplayName(row.fullName)}
+        <div className="min-w-0 flex-1">
+          <p className="break-words text-[12px] font-semibold leading-snug text-slate-800">
+            {row.fullName}
           </p>
-          <p className="mt-0.5 font-mono text-[10px] text-slate-400">{row.hrId}</p>
+          <p className="mt-0.5 font-mono text-[10px] tracking-wider text-slate-400">
+            {row.hrId}
+          </p>
         </div>
         {isVacancy && (
-          <span className="shrink-0 rounded-md bg-orange-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-orange-700">
+          <span className="shrink-0 rounded-md bg-orange-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-orange-700">
             Vacant
           </span>
         )}
       </div>
       {showRepFields && (
-        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-slate-500">
-          <span>Hired {formatDate(row.hireDate)}</span>
-          <span>{emptyText(row.areaName)}</span>
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+          {row.hireDate && (
+            <span className="inline-flex items-center gap-1 rounded-sm bg-slate-100/80 px-1.5 py-0.5">
+              <span aria-hidden className="h-1 w-1 rounded-sm bg-slate-400" />
+              {formatDate(row.hireDate)}
+            </span>
+          )}
+          {row.areaName && (
+            <span className="inline-flex items-center gap-1 rounded-sm bg-slate-100/80 px-1.5 py-0.5">
+              <span aria-hidden className="h-1 w-1 rounded-sm bg-orange-400" />
+              <span>{emptyText(row.areaName)}</span>
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -585,7 +596,7 @@ function TeamMemberNodeUI({ node }: { node: MemberNode }) {
     <div>
       <TeamMemberCardUI row={node.row} />
       {node.children.length > 0 && (
-        <div className="ml-3 space-y-px border-l border-orange-200 pl-1.5">
+        <div className="ml-3 divide-y divide-gray-100 border-l border-orange-200 pl-1.5">
           {node.children.map((child) => (
             <TeamMemberNodeUI key={child.key} node={child} />
           ))}
@@ -611,34 +622,62 @@ function ManagerLaneUI({
 
   return (
     <div
-      className={`overflow-hidden rounded-lg border border-gray-100 ${cardShadow}`}
+      className={`overflow-hidden rounded-lg border border-gray-100 bg-white ${cardShadow}`}
       key={groupKey}
     >
-      {/* Manager header */}
-      <div className="border-b border-gray-100 bg-slate-800 px-3 py-2.5 text-white">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-300">
-          {group.title}
-        </p>
-        <p className="mt-0.5 text-xs font-bold leading-snug">
-          {formatEmployeeDisplayName(group.name)}
-        </p>
-        {scope && (
-          <p className="mt-0.5 text-[10px] font-medium text-orange-300">{scope}</p>
-        )}
+      {/* Manager header — vacant DSM gets warm-orange tint, filled gets dark slate */}
+      <div
+        className={`border-b border-gray-100 px-3 py-2.5 ${
+          isVacantSeat
+            ? "bg-gradient-to-r from-orange-50 to-orange-50/40 text-slate-800"
+            : "bg-gradient-to-r from-slate-800 to-slate-700 text-white"
+        }`}
+      >
+        <div className="flex items-start gap-2">
+          <span
+            aria-hidden
+            className={`mt-0.5 h-1.5 w-1.5 shrink-0 rounded-sm ${
+              isVacantSeat ? "bg-orange-500" : "bg-orange-400"
+            }`}
+          />
+          <div className="min-w-0 flex-1">
+            <p
+              className={`text-[10px] font-bold uppercase tracking-wider ${
+                isVacantSeat ? "text-orange-700" : "text-slate-300"
+              }`}
+            >
+              {group.title}
+            </p>
+            <p className="mt-0.5 break-words text-[13px] font-bold leading-snug">
+              {group.name}
+            </p>
+            {scope && (
+              <p
+                className={`mt-0.5 break-words text-[10px] font-semibold ${
+                  isVacantSeat ? "text-orange-600" : "text-orange-300"
+                }`}
+              >
+                {scope}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Team summary */}
-      <div className="flex items-center justify-between border-b border-gray-100 bg-slate-50 px-3 py-1.5 text-[10px]">
-        <span className="text-slate-500">{group.members.length} team members</span>
+      <div className="flex items-center justify-between border-b border-gray-100 bg-slate-50/60 px-3 py-1.5 text-[10px]">
+        <span className="font-semibold text-slate-500">
+          {group.members.length} team members
+        </span>
         {groupVacancies > 0 ? (
-          <span className="font-semibold text-orange-600">{groupVacancies} vacant</span>
+          <span className="font-bold text-orange-600">{groupVacancies} vacant</span>
         ) : (
-          <span className="text-slate-400">Fully staffed</span>
+          <span className="font-semibold text-emerald-600">Fully staffed</span>
         )}
       </div>
 
-      {/* Team members */}
-      <div className="divide-y divide-gray-50 bg-white">
+      {/* Team members — visible dividers between cards */}
+      <div className="divide-y divide-gray-100 bg-white">
         {group.members.length === 0 ? (
           <div className="px-3 py-4 text-center text-[11px] text-slate-400">
             No team members assigned.
@@ -709,33 +748,68 @@ export function EmployeeOrganogramDashboard({
 
   // Build a list of vacant area names for each structure role
   // so we can display "Vacant: <area>, <area>" under each KPI card.
-  const vacantAreas = useMemo(() => {
-    const acc: { medicalRep: string[]; dsm: string[]; rsm: string[]; nsm: string[] } = {
-      dsm: [],
-      medicalRep: [],
-      nsm: [],
-      rsm: [],
-    };
+  type VacancyEntry = {
+    area: string;
+    code: string;
+    line: string;
+    manager: string;
+    role: "DSM" | "RSM" | "NSM" | "Medical Representative";
+  };
+  const vacantList = useMemo<VacancyEntry[]>(() => {
+    const list: VacancyEntry[] = [];
     for (const row of filteredRows) {
       if (row.type !== "vacancy") continue;
       const t = titleText(row);
-      const area = row.areaName?.trim() || row.regionName?.trim() || row.teamName?.trim() || "—";
+      const area =
+        row.areaName?.trim() || row.regionName?.trim() || row.teamName?.trim() || "—";
+      let role: VacancyEntry["role"] | null = null;
       if (t.includes("medical representative") || t.includes("medical rep")) {
-        acc.medicalRep.push(area);
+        role = "Medical Representative";
       } else if (
         t.includes("district sales manager") ||
         t.includes("district manager") ||
         t === "dsm"
       ) {
-        acc.dsm.push(area);
+        role = "DSM";
       } else if (t.includes("regional sales manager") || t === "rsm") {
-        acc.rsm.push(area);
+        role = "RSM";
       } else if (t.includes("national sales manager") || t === "nsm") {
-        acc.nsm.push(area);
+        role = "NSM";
       }
+      if (!role) continue;
+      list.push({
+        area,
+        code: row.vacancyCode ?? row.hrId ?? "—",
+        line: row.lineName ?? "—",
+        manager: row.managerName?.trim() || "Unassigned",
+        role,
+      });
     }
-    return acc;
+    // Sort: DSM/RSM/NSM first (manager roles), then Medical Rep
+    const rolePriority: Record<VacancyEntry["role"], number> = {
+      NSM: 0,
+      RSM: 1,
+      DSM: 2,
+      "Medical Representative": 3,
+    };
+    list.sort((a, b) => {
+      const r = rolePriority[a.role] - rolePriority[b.role];
+      if (r !== 0) return r;
+      return a.area.localeCompare(b.area);
+    });
+    return list;
   }, [filteredRows]);
+
+  const vacantCountByRole = useMemo(() => {
+    const counts = { dsm: 0, medicalRep: 0, nsm: 0, rsm: 0 };
+    for (const entry of vacantList) {
+      if (entry.role === "DSM") counts.dsm++;
+      else if (entry.role === "RSM") counts.rsm++;
+      else if (entry.role === "NSM") counts.nsm++;
+      else counts.medicalRep++;
+    }
+    return counts;
+  }, [vacantList]);
 
   const lanes = useMemo(
     () => (effectiveLineFilter || normalizedSearch ? buildOrganogramLanes(filteredRows) : null),
@@ -829,77 +903,69 @@ export function EmployeeOrganogramDashboard({
         </div>
       </Card>
 
-      {/* ---- Vacant Positions Block ---- */}
-      {structureKpis.total.vacant > 0 && (
+      {/* ---- Vacant Positions Block (one row per role) ---- */}
+      {vacantList.length > 0 && (
         <Card
-          className={`overflow-hidden rounded-lg border border-gray-100 p-4 sm:p-5 ${cardShadow}`}
+          className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}
         >
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-800">
-                Vacant Positions
-              </h3>
-              <p className="mt-0.5 text-[11px] text-slate-500">
-                Open positions by role and area
-              </p>
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 sm:px-5">
+            <div className="flex items-center gap-2">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
+              <h3 className="text-sm font-bold text-slate-800">Vacant Positions</h3>
             </div>
             <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
-              {structureKpis.total.vacant} total
+              {vacantList.length} total
             </span>
           </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              {
-                accent: "border-l-sky-400",
-                areas: vacantAreas.dsm,
-                count: vacantAreas.dsm.length,
-                label: "DSM vacant",
-              },
-              {
-                accent: "border-l-amber-400",
-                areas: vacantAreas.rsm,
-                count: vacantAreas.rsm.length,
-                label: "RSM vacant",
-              },
-              {
-                accent: "border-l-orange-400",
-                areas: vacantAreas.nsm,
-                count: vacantAreas.nsm.length,
-                label: "NSM vacant",
-              },
-              {
-                accent: "border-l-emerald-400",
-                areas: vacantAreas.medicalRep,
-                count: vacantAreas.medicalRep.length,
-                label: "Medical Representative vacants",
-              },
-            ]
-              .filter((block) => block.count > 0)
-              .map((block) => (
+          <div className="divide-y divide-gray-100">
+            {(
+              [
+                {
+                  accent: "border-l-orange-400",
+                  count: vacantCountByRole.nsm,
+                  items: vacantList.filter((v) => v.role === "NSM").map((v) => v.area),
+                  label: "NSM",
+                  tone: "bg-orange-50 text-orange-700",
+                },
+                {
+                  accent: "border-l-amber-400",
+                  count: vacantCountByRole.rsm,
+                  items: vacantList.filter((v) => v.role === "RSM").map((v) => v.area),
+                  label: "RSM",
+                  tone: "bg-amber-50 text-amber-700",
+                },
+                {
+                  accent: "border-l-sky-400",
+                  count: vacantCountByRole.dsm,
+                  items: vacantList.filter((v) => v.role === "DSM").map((v) => v.area),
+                  label: "DSM",
+                  tone: "bg-sky-50 text-sky-700",
+                },
+                {
+                  accent: "border-l-emerald-400",
+                  count: vacantCountByRole.medicalRep,
+                  items: vacantList
+                    .filter((v) => v.role === "Medical Representative")
+                    .map((v) => v.area),
+                  label: "Medical Reps",
+                  tone: "bg-emerald-50 text-emerald-700",
+                },
+              ] as const
+            )
+              .filter((row) => row.count > 0)
+              .map((row) => (
                 <div
-                  className={`rounded-md border border-gray-100 border-l-2 bg-slate-50/60 px-3 py-2.5 ${block.accent}`}
-                  key={block.label}
+                  className={`flex flex-wrap items-baseline gap-2 border-l-2 px-4 py-2.5 sm:px-5 ${row.accent}`}
+                  key={row.label}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                      {block.label}
-                    </p>
-                    <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-bold text-orange-600">
-                      {block.count}
-                    </span>
-                  </div>
-                  <ul className="mt-2 space-y-1">
-                    {block.areas.map((area, idx) => (
-                      <li
-                        className="flex items-start gap-1.5 text-[11px] text-slate-700"
-                        key={`${block.label}-${idx}-${area}`}
-                      >
-                        <span className="mt-1 h-1 w-1 flex-shrink-0 rounded-sm bg-orange-400" />
-                        <span className="leading-snug">{area}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  <span
+                    className={`inline-flex shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${row.tone}`}
+                  >
+                    {row.label} · {row.count}
+                  </span>
+                  <span className="text-[13px] text-slate-700">
+                    {row.items.join(" - ")}
+                  </span>
                 </div>
               ))}
           </div>
@@ -909,22 +975,37 @@ export function EmployeeOrganogramDashboard({
       {/* ---- Structure Completion Bar ---- */}
       <WorkspaceErrorBoundary fallbackTitle="Structure overview unavailable">
         <Card className={`rounded-lg border border-gray-100 p-4 sm:p-5 ${cardShadow}`}>
-          <div className="mb-3">
-            <h3 className="text-sm font-bold text-slate-800">Structure Completion</h3>
-            <p className="mt-0.5 text-[11px] text-slate-400">
-              {employees.length} employees across {effectiveLineFilter || "all lines"}
-            </p>
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-emerald-500" />
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Structure Completion</h3>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  {employees.length} employees across {effectiveLineFilter || "all lines"}
+                </p>
+              </div>
+            </div>
+            {structureKpis.total.total > 0 && (
+              <div className="text-right">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Filled
+                </p>
+                <p className="text-base font-bold text-slate-800">
+                  {completionPercent}%
+                </p>
+              </div>
+            )}
           </div>
           {structureKpis.total.total > 0 ? (
             <>
               <div
                 aria-label="Structure completion chart"
-                className="flex h-4 w-full overflow-hidden rounded-md"
+                className="flex h-3 w-full overflow-hidden rounded-sm bg-slate-100"
                 role="img"
               >
                 <div
                   aria-label={`Filled positions: ${completionPercent}%`}
-                  className="bg-emerald-500"
+                  className="bg-gradient-to-r from-emerald-500 to-emerald-400"
                   role="img"
                   style={{
                     width: `${completionPercent}%`,
@@ -933,7 +1014,7 @@ export function EmployeeOrganogramDashboard({
                 />
                 <div
                   aria-label={`Vacant positions: ${100 - completionPercent}%`}
-                  className="bg-orange-400"
+                  className="bg-gradient-to-r from-orange-400 to-orange-500"
                   role="img"
                   style={{
                     width: `${100 - completionPercent}%`,
@@ -941,19 +1022,33 @@ export function EmployeeOrganogramDashboard({
                   }}
                 />
               </div>
-              <div className="mt-2.5 flex flex-wrap gap-4 text-[11px] text-slate-500">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
-                  Filled {completionPercent}%
+              <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[11px]">
+                <span className="inline-flex items-center gap-1.5 text-slate-600">
+                  <span
+                    aria-hidden
+                    className="inline-block h-2 w-2 rounded-sm bg-emerald-500"
+                  />
+                  <span className="font-medium">
+                    Filled <strong className="font-bold">{structureKpis.total.actual}</strong>
+                  </span>
                 </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="inline-block h-2 w-2 rounded-sm bg-orange-400" />
-                  Vacant {100 - completionPercent}%
+                <span className="inline-flex items-center gap-1.5 text-slate-600">
+                  <span
+                    aria-hidden
+                    className="inline-block h-2 w-2 rounded-sm bg-orange-400"
+                  />
+                  <span className="font-medium">
+                    Vacant{" "}
+                    <strong className="font-bold">{structureKpis.total.vacant}</strong>
+                  </span>
+                </span>
+                <span className="ml-auto text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Total {structureKpis.total.total}
                 </span>
               </div>
             </>
           ) : (
-            <div className="flex h-4 w-full items-center justify-center rounded-md bg-slate-100">
+            <div className="flex h-3 w-full items-center justify-center rounded-sm bg-slate-100">
               <span className="text-[10px] text-slate-400">No data</span>
             </div>
           )}
@@ -981,13 +1076,15 @@ export function EmployeeOrganogramDashboard({
       {/* ---- Search & Info ---- */}
       {report && (
         <Card className={`rounded-lg border border-gray-100 p-4 sm:p-5 ${cardShadow}`}>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded-md bg-orange-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
-              Filters
-            </span>
-            <span className="text-[11px] text-slate-400">
-              {filteredRows.length} of {rows.length} positions shown
-            </span>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+                Filters
+              </span>
+              <span className="text-[11px] font-medium text-slate-500">
+                {filteredRows.length} of {rows.length} positions shown
+              </span>
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
             <label className="block">
@@ -1004,7 +1101,7 @@ export function EmployeeOrganogramDashboard({
               {organogramSearch && (
                 <button
                   aria-label="Clear search"
-                  className="rounded-md border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                  className="inline-flex h-10 items-center rounded-md border border-gray-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
                   onClick={() => setOrganogramSearch("")}
                   type="button"
                 >
@@ -1013,7 +1110,7 @@ export function EmployeeOrganogramDashboard({
               )}
               <button
                 aria-label="Refresh organogram data"
-                className="rounded-md bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:opacity-50"
+                className="inline-flex h-10 items-center rounded-md bg-orange-500 px-4 text-[12px] font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-50"
                 disabled={isLoading}
                 onClick={() => void loadReport()}
                 type="button"
@@ -1030,26 +1127,32 @@ export function EmployeeOrganogramDashboard({
         <WorkspaceErrorBoundary fallbackTitle="Organogram tree unavailable">
           <Card className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}>
             {/* Section header */}
-            <div className="border-b border-gray-100 px-4 py-4 sm:px-5">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800">
-                    {lineName} Structure
-                  </h3>
-                  <p className="mt-0.5 text-[11px] text-slate-400">
-                    Leadership, manager lanes, employees, and vacancies
-                  </p>
+            <div className="border-b border-gray-100 px-4 py-3 sm:px-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="h-1.5 w-1.5 rounded-sm bg-orange-500"
+                  />
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">
+                      {lineName} Structure
+                    </h3>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      Leadership, manager lanes, employees, and vacancies
+                    </p>
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                  <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
                     {employees.length} employees
                   </span>
                   {structureKpis.total.vacant > 0 && (
-                    <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-semibold text-orange-600">
+                    <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
                       {structureKpis.total.vacant} vacancies
                     </span>
                   )}
-                  <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                  <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
                     {lanes.groups.length} lanes
                   </span>
                 </div>
@@ -1058,25 +1161,54 @@ export function EmployeeOrganogramDashboard({
 
             {/* Hierarchy & Lanes */}
             <div className="bg-slate-50/70 px-3 py-5 sm:px-5">
-              {/* Executive Hierarchy — NSM only */}
+              {/* Executive Hierarchy — wide NSM banner (line leader) */}
               <div className="relative mb-6 flex flex-col items-center">
-                {/* NSM / Line Leader */}
-                <div className="w-full max-w-[240px] rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5 text-center">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">
-                    {lanes.lineLeader
-                      ? lanes.lineLeader.positionTitle ?? lanes.lineLeader.jobTitle ?? "Line Leader"
-                      : "Line Leadership"}
-                  </p>
-                  <p className="mt-0.5 text-xs font-bold text-slate-800">
-                    {lanes.lineLeader
-                      ? formatEmployeeDisplayName(lanes.lineLeader.fullName)
-                      : lineName}
-                  </p>
+                {/* NSM / Line Leader — wide banner to convey root authority */}
+                <div className="w-full max-w-3xl rounded-lg border border-orange-300 bg-gradient-to-r from-orange-50 via-orange-50/80 to-orange-50 px-4 py-3 shadow-[0_1px_3px_rgba(249,115,22,0.12)] sm:px-6 sm:py-3.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span
+                        aria-hidden
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-orange-500 text-[13px] font-bold text-white shadow-sm sm:h-10 sm:w-10 sm:text-sm"
+                      >
+                        {lanes.lineLeader?.fullName
+                          ? lanes.lineLeader.fullName
+                              .trim()
+                              .split(/\s+/)
+                              .slice(0, 2)
+                              .map((n) => n[0])
+                              .join("")
+                              .toUpperCase()
+                          : "NS"}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-orange-600">
+                          {lanes.lineLeader
+                            ? lanes.lineLeader.positionTitle ??
+                              lanes.lineLeader.jobTitle ??
+                              "National Sales Manager"
+                            : "National Sales Manager"}
+                        </p>
+                        <p className="mt-0.5 break-words text-sm font-bold text-slate-900 sm:text-base">
+                          {lanes.lineLeader ? lanes.lineLeader.fullName : lineName}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="hidden text-right text-[10px] sm:block">
+                      <p className="font-semibold uppercase tracking-wider text-slate-500">
+                        Line
+                      </p>
+                      <p className="mt-0.5 font-bold text-slate-700">{lineName}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="h-5 w-px bg-slate-300" />
+                <div aria-hidden className="h-5 w-px bg-slate-300" />
 
                 {/* Horizontal connector */}
-                <div className="relative hidden h-px w-[85%] bg-slate-300 sm:block">
+                <div
+                  aria-hidden
+                  className="relative hidden h-px w-[85%] bg-slate-300 sm:block"
+                >
                   <span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-sm bg-orange-500" />
                 </div>
               </div>
@@ -1088,92 +1220,164 @@ export function EmployeeOrganogramDashboard({
                 </div>
               ) : (
                 <div className="relative overflow-x-auto pb-2">
-                  {/* Desktop Grid */}
-                  <div className="hidden sm:block">
-                    <div
-                      className="grid min-w-max gap-3"
-                      style={{
-                        gridTemplateColumns: `repeat(${lanes.laneCount}, minmax(220px, 1fr))`,
-                      }}
-                    >
-                      {lanes.groups.map((group, gi) => {
-                        const childCount = Math.max(group.childLanes?.length ?? 1, 1);
-                        const gKey = group.dsm
-                          ? `mgr-${rowKey(group.dsm)}-${gi}`
-                          : group.rsm
-                            ? `rsm-${rowKey(group.rsm)}-${gi}`
-                            : `mgr-${group.name}-${gi}`;
+                  {/* Desktop Grid — split into TIERS: NSM-direct DSMs first, then each RSM with its DSMs below */}
+                  <div className="hidden space-y-6 sm:block">
+                    {(() => {
+                      const directDsms = lanes.groups.filter((g) => g.dsm && !g.rsm);
+                      const rsmGroups = lanes.groups.filter((g) => g.rsm);
+                      const otherGroups = lanes.groups.filter(
+                        (g) => !g.dsm && !g.rsm,
+                      );
+                      return (
+                        <>
+                          {/* TIER 1 — DSMs reporting directly to NSM */}
+                          {directDsms.length > 0 && (
+                            <div>
+                              <div className="mb-2 flex items-center gap-2">
+                                <span
+                                  aria-hidden
+                                  className="h-1.5 w-1.5 rounded-sm bg-slate-400"
+                                />
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                  Reports to NSM
+                                </p>
+                                <span className="text-[10px] text-slate-400">
+                                  · {directDsms.length}{" "}
+                                  {directDsms.length === 1 ? "lane" : "lanes"}
+                                </span>
+                              </div>
+                              <div
+                                className="grid min-w-max gap-3"
+                                style={{
+                                  gridTemplateColumns: `repeat(${directDsms.length}, minmax(220px, 1fr))`,
+                                }}
+                              >
+                                {directDsms.map((group, gi) => {
+                                  const gKey = group.dsm
+                                    ? `t1-mgr-${rowKey(group.dsm)}-${gi}`
+                                    : `t1-mgr-${group.name}-${gi}`;
+                                  return (
+                                    <ManagerLaneUI
+                                      group={group}
+                                      groupKey={gKey}
+                                      key={gKey}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
 
-                        if (group.rsm) {
-                          const groupVacancies =
-                            (group.childLanes ?? []).reduce(
+                          {/* TIER 2 — Each RSM banner + its child DSMs */}
+                          {rsmGroups.map((group, gi) => {
+                            const childCount = Math.max(
+                              group.childLanes?.length ?? 1,
+                              1,
+                            );
+                            const gKey = group.rsm
+                              ? `t2-rsm-${rowKey(group.rsm)}-${gi}`
+                              : `t2-mgr-${group.name}-${gi}`;
+                            const groupVacancies = (group.childLanes ?? []).reduce(
                               (t, l) =>
                                 t +
                                 l.members.filter((m) => m.type === "vacancy").length +
                                 (l.dsm?.type === "vacancy" ? 1 : 0),
                               0,
                             );
-
-                          return (
-                            <div
-                              className="min-w-[220px]"
-                              key={gKey}
-                              style={{ gridColumn: `span ${childCount}` }}
-                            >
-                              <div className={`overflow-hidden rounded-lg border border-orange-200 ${cardShadow}`}>
-                                {/* RSM header */}
-                                <div className="border-b border-orange-200 bg-orange-50 px-3 py-2.5 text-center">
-                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-700">
-                                    {group.title}
-                                  </p>
-                                  <p className="mt-0.5 text-xs font-bold text-slate-800">
-                                    {formatEmployeeDisplayName(group.name)}
-                                  </p>
-                                  <p className="mt-0.5 text-[10px] text-slate-500">
-                                    Reports to NSM:{" "}
-                                    {lanes.lineLeader
-                                      ? formatEmployeeDisplayName(lanes.lineLeader.fullName)
-                                      : lineName}
-                                  </p>
-                                  <p className="mt-1 text-[10px] font-semibold text-orange-600">
-                                    {group.childLanes?.length ?? 0} DSM lanes &middot; {groupVacancies} vacant
+                            return (
+                              <div className="relative" key={gKey}>
+                                {/* Connector line proving RSM reports to NSM */}
+                                <div className="mb-2 flex items-center gap-2 text-[10px]">
+                                  <span
+                                    aria-hidden
+                                    className="h-1.5 w-1.5 rounded-sm bg-orange-500"
+                                  />
+                                  <p className="break-words font-bold uppercase tracking-wider text-orange-700">
+                                    Reports to NSM ·{" "}
+                                    {lanes.lineLeader ? lanes.lineLeader.fullName : lineName}
                                   </p>
                                 </div>
-                                {/* Child DSM lanes */}
                                 <div
-                                  className="grid gap-2 bg-white p-2"
-                                  style={{
-                                    gridTemplateColumns: `repeat(${childCount}, minmax(220px, 1fr))`,
-                                  }}
+                                  className={`overflow-hidden rounded-lg border border-orange-200 bg-white ${cardShadow}`}
                                 >
-                                  {(group.childLanes ?? []).length > 0 ? (
-                                    group.childLanes?.map((lane, li) => (
-                                      <ManagerLaneUI
-                                        group={lane}
-                                        groupKey={`${gKey}-child-${li}`}
-                                        key={`${gKey}-child-${li}`}
-                                      />
-                                    ))
-                                  ) : (
-                                    <div className="p-4 text-center text-[11px] text-slate-400">
-                                      No DSM lanes under this regional manager.
+                                  {/* RSM header */}
+                                  <div className="border-b border-orange-200 bg-gradient-to-r from-orange-100/60 via-orange-50 to-orange-100/60 px-4 py-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2">
+                                        <span
+                                          aria-hidden
+                                          className="h-1.5 w-1.5 rounded-sm bg-orange-500"
+                                        />
+                                        <div>
+                                          <p className="text-[10px] font-bold uppercase tracking-wider text-orange-700">
+                                            {group.title}
+                                          </p>
+                                          <p className="mt-0.5 break-words text-[13px] font-bold text-slate-900">
+                                            {group.name}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 text-[10px]">
+                                        <span className="rounded-sm bg-white px-1.5 py-0.5 font-semibold text-slate-600">
+                                          {group.childLanes?.length ?? 0} DSM lanes
+                                        </span>
+                                        {groupVacancies > 0 && (
+                                          <span className="rounded-sm bg-orange-200/80 px-1.5 py-0.5 font-bold text-orange-700">
+                                            {groupVacancies} vacant
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
-                                  )}
+                                  </div>
+                                  {/* RSM's child DSM lanes */}
+                                  <div
+                                    className="grid min-w-max gap-2 bg-orange-50/20 p-2"
+                                    style={{
+                                      gridTemplateColumns: `repeat(${childCount}, minmax(220px, 1fr))`,
+                                    }}
+                                  >
+                                    {(group.childLanes ?? []).length > 0 ? (
+                                      group.childLanes?.map((lane, li) => (
+                                        <ManagerLaneUI
+                                          group={lane}
+                                          groupKey={`${gKey}-child-${li}`}
+                                          key={`${gKey}-child-${li}`}
+                                        />
+                                      ))
+                                    ) : (
+                                      <div className="p-4 text-center text-[11px] text-slate-400">
+                                        No DSM lanes under this regional manager.
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        }
+                            );
+                          })}
 
-                        return (
-                          <ManagerLaneUI
-                            group={group}
-                            groupKey={gKey}
-                            key={gKey}
-                          />
-                        );
-                      })}
-                    </div>
+                          {/* Any other (marketing / fallback) groups */}
+                          {otherGroups.length > 0 && (
+                            <div
+                              className="grid min-w-max gap-3"
+                              style={{
+                                gridTemplateColumns: `repeat(${otherGroups.length}, minmax(220px, 1fr))`,
+                              }}
+                            >
+                              {otherGroups.map((group, gi) => {
+                                const gKey = `other-${group.name}-${gi}`;
+                                return (
+                                  <ManagerLaneUI
+                                    group={group}
+                                    groupKey={gKey}
+                                    key={gKey}
+                                  />
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Mobile Card View */}
@@ -1204,8 +1408,8 @@ export function EmployeeOrganogramDashboard({
                               <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-700">
                                 {group.title}
                               </p>
-                              <p className="mt-0.5 text-xs font-bold text-slate-800">
-                                {formatEmployeeDisplayName(group.name)}
+                              <p className="mt-0.5 break-words text-xs font-bold text-slate-800">
+                                {group.name}
                               </p>
                               <div className="mt-1 flex gap-2 text-[10px]">
                                 <span className="text-slate-500">

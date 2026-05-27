@@ -1978,28 +1978,37 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
   const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const hrTeam: { id: string; name: string; role: string; summary: string }[] = [
+  const hrTeam: { id: string; name: string; role: string; summary: string; accent: string }[] = [
     {
+      accent: "border-l-orange-400",
       id: "hr-support",
       name: "HR Support Desk",
       role: "General HR support",
-      summary: "Use the request form for policy questions, profile issues, and HR process support.",
+      summary: "Policy questions, profile issues, and HR process support.",
     },
     {
+      accent: "border-l-sky-400",
       id: "talent-support",
       name: "Talent Support Desk",
-      role: "Recruitment and onboarding support",
-      summary: "Use this channel for onboarding status, hiring requests, and talent coordination.",
+      role: "Recruitment & onboarding",
+      summary: "Onboarding status, hiring requests, and talent coordination.",
     },
     {
+      accent: "border-l-emerald-400",
       id: "ops-support",
       name: "Operations Support Desk",
-      role: "Workplace and office support",
-      summary: "Use this channel for office coordination, workplace requests, and operational help.",
+      role: "Workplace & office support",
+      summary: "Office coordination, workplace requests, and operational help.",
     },
   ];
 
-  const recentRequests: { id: string; subject: string; category: string; status: string; date: string }[] = [];
+  const recentRequests: {
+    id: string;
+    subject: string;
+    category: string;
+    status: string;
+    date: string;
+  }[] = [];
 
   useEffect(() => {
     return () => {
@@ -2021,51 +2030,103 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
     }, 1000);
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusTone = (status: string) => {
     switch (status) {
-      case "In Progress": return "bg-amber-100 text-amber-700";
-      case "Resolved": return "bg-emerald-100 text-emerald-700";
-      case "Pending": return "bg-slate-100 text-slate-700";
-      default: return "bg-slate-100 text-slate-700";
+      case "In Progress":
+        return "bg-amber-50 text-amber-700";
+      case "Resolved":
+        return "bg-emerald-50 text-emerald-700";
+      case "Pending":
+        return "bg-slate-100 text-slate-600";
+      default:
+        return "bg-slate-100 text-slate-600";
     }
   };
 
+  const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.06)]";
+  const inputClass =
+    "h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
+  const labelClass = "text-[10px] font-semibold uppercase tracking-wider text-slate-500";
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold text-slate-900">Request Support</h1>
-        <p className="mt-1 text-sm text-slate-500">Submit a support request for {employeeName} or contact HR for assistance</p>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-          <div className="mb-4 flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-orange-500/80" />
-            <p className="text-lg font-semibold text-slate-900">Contact HR</p>
+    <div className="space-y-5" dir="auto">
+      {/* ---- Insights strip (response time / channels / hours) ---- */}
+      <Card
+        className={`overflow-hidden rounded-lg border border-gray-100 p-0 print:break-inside-avoid ${cardShadow}`}
+      >
+        <div className="grid grid-cols-1 divide-x divide-y divide-gray-100 sm:grid-cols-3">
+          <div className="border-l-2 border-l-emerald-400 px-4 py-3">
+            <p className={labelClass}>Avg response time</p>
+            <p className="mt-1 text-base font-bold text-slate-800">~ 4 hours</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">During office hours</p>
           </div>
-          <p className="mb-6 text-sm text-slate-600">Get in touch with the HR team for any inquiries</p>
+          <div className="border-l-2 border-l-sky-400 px-4 py-3">
+            <p className={labelClass}>Channels open</p>
+            <p className="mt-1 text-base font-bold text-slate-800">{hrTeam.length}</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">HR support desks</p>
+          </div>
+          <div className="border-l-2 border-l-orange-400 px-4 py-3">
+            <p className={labelClass}>Office hours</p>
+            <p className="mt-1 text-base font-bold text-slate-800">Sun&ndash;Thu</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">9:00 AM &mdash; 5:00 PM</p>
+          </div>
+        </div>
+      </Card>
 
-          <div className="space-y-4">
+      <div className="grid gap-5 lg:grid-cols-2">
+        {/* ---- HR Channels ---- */}
+        <Card
+          className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}
+        >
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 sm:px-5">
+            <div className="flex items-center gap-2">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
+              <div>
+                <h2 className="text-sm font-bold text-slate-800">HR Support Channels</h2>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  Pick the right desk for your request
+                </p>
+              </div>
+            </div>
+            <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+              {hrTeam.length}
+            </span>
+          </div>
+
+          <div className="divide-y divide-gray-100">
             {hrTeam.length > 0 ? (
               hrTeam.map((member) => (
-                <div key={member.id} className="flex items-center justify-between rounded border border-slate-100 bg-slate-50/70 px-4 py-3 transition hover:bg-slate-50">
+                <div
+                  className={`flex flex-col gap-3 border-l-2 px-4 py-3 transition hover:bg-slate-50/60 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${member.accent}`}
+                  key={member.id}
+                >
                   <div className="flex items-start gap-3">
-                    <div className="shrink-0 overflow-hidden rounded ring-2 ring-orange-100"
-                      style={{ width: "2cm", height: "3cm" }}>
-                      <div className="flex h-full w-full items-center justify-center bg-orange-100 text-sm font-semibold text-orange-700">
-                        {member.name.split(" ").map((n) => n[0]).join("")}
-                      </div>
+                    <span
+                      aria-hidden
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[11px] font-bold text-slate-700"
+                    >
+                      {member.name
+                        .split(" ")
+                        .slice(0, 2)
+                        .map((n) => n[0])
+                        .join("")
+                        .toUpperCase()}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold text-slate-900">
+                        {member.name}
+                      </p>
+                      <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                        {member.role}
+                      </p>
+                      <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                        {member.summary}
+                      </p>
                     </div>
-                    <div>
-                    <p className="text-sm font-semibold text-slate-900">{member.name}</p>
-                    <p className="text-xs text-slate-500">{member.role}</p>
-                    <div className="mt-1 flex flex-col gap-0.5">
-                      <p className="text-[10px] text-slate-400">{member.summary}</p>
-                    </div>
-                  </div>
                   </div>
                   <Button
-                    className="h-8 rounded text-xs"
+                    aria-label={`Use form for ${member.name}`}
+                    className="h-9 shrink-0 rounded-md px-3 text-[12px]"
                     variant="secondary"
                     onClick={() => {
                       setCategory("HR Request");
@@ -2078,50 +2139,60 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 </div>
               ))
             ) : (
-              <div className="flex flex-col items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50/50 py-8 text-center">
-                <Users className="mb-2 h-8 w-8 text-slate-300" />
-                <p className="text-sm font-medium text-slate-500">No HR contacts available</p>
-                <p className="text-xs text-slate-400">Please use the support form for inquiries</p>
+              <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+                <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">
+                  No HR contacts available
+                </p>
+                <p className="mt-1 text-[12px] text-slate-500">
+                  Please use the support form for inquiries.
+                </p>
               </div>
             )}
           </div>
 
-          <div className="mt-6 space-y-3 rounded border border-slate-100 bg-slate-50/70 p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded bg-orange-50 text-orange-600">
-                <CalendarClock className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-xs font-medium text-slate-500">Office Hours</p>
-                <p className="text-sm font-semibold text-slate-900">Sun - Thu (9:00 AM - 5:00 PM)</p>
-              </div>
-            </div>
+          <div className="border-t border-gray-100 bg-slate-50/60 px-4 py-2.5 text-[11px] text-slate-500 sm:px-5">
+            For urgent HR matters, use the support form so the request is tracked inside Phoenix Workforce.
           </div>
-
-          <p className="mt-4 text-xs text-slate-500 italic">For urgent HR matters, use the support form below so the request is tracked inside Phoenix Workforce.</p>
         </Card>
 
-        <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-          <div className="mb-4 flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-orange-500/80" />
-            <p className="text-lg font-semibold text-slate-900">Request Support</p>
-          </div>
-          <p className="mb-6 text-sm text-slate-600">Submit a request and our team will get back to you as soon as possible</p>
-
-          {showSuccess && (
-            <div className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-4 py-3">
-              <p className="text-sm font-medium text-emerald-800">Request submitted successfully!</p>
+        {/* ---- Request Form ---- */}
+        <Card
+          className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}
+        >
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 sm:px-5">
+            <div className="flex items-center gap-2">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
+              <div>
+                <h2 className="text-sm font-bold text-slate-800">Request Support</h2>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  We get back to you as soon as possible
+                </p>
+              </div>
             </div>
-          )}
+            <span className="hidden truncate rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 sm:inline-block">
+              {employeeName}
+            </span>
+          </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-700">Category</label>
+          <form className="space-y-4 px-4 py-4 sm:px-5 sm:py-5" onSubmit={handleSubmit}>
+            {showSuccess && (
+              <div
+                aria-live="polite"
+                className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-semibold text-emerald-800"
+                role="status"
+              >
+                Request submitted successfully.
+              </div>
+            )}
+
+            <label className="block">
+              <span className={`mb-1.5 block ${labelClass}`}>Category</span>
               <select
-                className="w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
-                value={category}
+                aria-label="Support category"
+                className={inputClass}
                 onChange={(e) => setCategory(e.target.value)}
                 required
+                value={category}
               >
                 <option value="">Select a category</option>
                 <option value="Payslip & Earnings">Payslip & Earnings</option>
@@ -2129,41 +2200,50 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 <option value="HR Request">HR Request</option>
                 <option value="Other">Other</option>
               </select>
-            </div>
+            </label>
 
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-700">Subject</label>
+            <label className="block">
+              <span className={`mb-1.5 block ${labelClass}`}>Subject</span>
               <input
-                className="w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
-                placeholder="Enter a short subject"
-                value={subject}
+                aria-label="Support subject"
+                className={inputClass}
                 onChange={(e) => setSubject(e.target.value)}
+                placeholder="Enter a short subject"
                 required
+                value={subject}
               />
-            </div>
+            </label>
 
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-700">Description</label>
+            <label className="block">
+              <span className={`mb-1.5 block ${labelClass}`}>Description</span>
               <textarea
-                className="w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] resize-none"
+                aria-label="Support description"
+                className="w-full resize-none rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
+                onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe your issue or request in detail..."
+                required
                 rows={4}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                required
               />
-            </div>
+            </label>
 
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-700">Attachments (Optional)</label>
-              <div className="flex h-24 w-full cursor-pointer flex-col items-center justify-center rounded border-2 border-dashed border-slate-200 bg-slate-50/50 transition hover:border-orange-300 hover:bg-slate-50">
-                <Upload className="mb-2 h-5 w-5 text-slate-400" />
-                <p className="text-xs text-slate-500">Drag and drop files here or click to upload</p>
-                <p className="text-[10px] text-slate-400">Max file size 10MB (PDF, PNG, JPG)</p>
+            <label className="block">
+              <span className={`mb-1.5 block ${labelClass}`}>Attachments (optional)</span>
+              <div className="flex h-20 w-full cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-gray-300 bg-slate-50/40 text-center transition hover:border-orange-300 hover:bg-slate-50/80">
+                <Upload className="mb-1 h-4 w-4 text-slate-400" />
+                <p className="text-[11px] font-medium text-slate-600">
+                  Drag &amp; drop or click to upload
+                </p>
+                <p className="text-[10px] text-slate-400">Max 10 MB (PDF, PNG, JPG)</p>
               </div>
-            </div>
+            </label>
 
-            <Button className="w-full rounded" disabled={isSubmitting} type="submit">
+            <Button
+              aria-label="Submit support request"
+              className="h-10 w-full rounded-md text-sm font-semibold"
+              disabled={isSubmitting}
+              type="submit"
+            >
               {isSubmitting ? (
                 "Submitting..."
               ) : (
@@ -2177,56 +2257,126 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
         </Card>
       </div>
 
-      <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        <div className="mb-4 flex items-center justify-between">
+      {/* ---- Recent Requests ---- */}
+      <Card
+        className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 sm:px-5">
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-orange-500/80" />
-            <p className="text-lg font-semibold text-slate-900">Your Recent Requests</p>
+            <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
+            <div>
+              <h2 className="text-sm font-bold text-slate-800">Recent Requests</h2>
+              <p className="mt-0.5 text-[11px] text-slate-500">Track your support history</p>
+            </div>
           </div>
-          <a className="text-xs font-medium text-orange-600 hover:text-orange-700" href="#">View All Requests &gt;</a>
+          <a
+            className="text-[11px] font-semibold text-orange-600 transition hover:text-orange-700"
+            href="#"
+          >
+            View all &rsaquo;
+          </a>
         </div>
-        <div className="overflow-x-auto rounded border border-slate-100">
-          <table className="w-full border-collapse text-left text-sm">
-            <thead>
-              <tr>
-                <th className={gridHeaderClass}>Request ID</th>
-                <th className={gridHeaderClass}>Subject</th>
-                <th className={gridHeaderClass}>Category</th>
-                <th className={gridHeaderClass}>Status</th>
-                <th className={gridHeaderClass}>Date</th>
-                <th className={gridHeaderClass}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentRequests.length > 0 ? (
-                recentRequests.map((request) => (
-                  <tr key={request.id} className="transition hover:bg-slate-50/60">
-                    <td className={`${gridCellClass} font-mono text-xs text-slate-600`}>{request.id}</td>
-                    <td className={`${gridCellClass} font-medium text-slate-900`}>{request.subject}</td>
-                    <td className={`${gridCellClass} text-slate-600`}>{request.category}</td>
-                    <td className={gridCellClass}>
-                      <Badge className={getStatusColor(request.status)}>{request.status}</Badge>
-                    </td>
-                    <td className={`${gridCellClass} text-slate-600`}>{request.date}</td>
-                    <td className={gridCellClass}>
-                      <Button className="h-7 rounded px-2 text-xs" variant="secondary">View</Button>
-                    </td>
+
+        {recentRequests.length === 0 ? (
+          <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+            <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">
+              No recent requests
+            </p>
+            <p className="mt-1 max-w-sm text-[12px] text-slate-500">
+              Your support history will appear here after your first request.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-gray-100 bg-slate-50/60">
+                  <tr>
+                    <th className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Request ID
+                    </th>
+                    <th className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Subject
+                    </th>
+                    <th className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Category
+                    </th>
+                    <th className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Status
+                    </th>
+                    <th className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Date
+                    </th>
+                    <th className="px-4 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Action
+                    </th>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td className="border border-slate-100 px-4 py-12 text-center text-slate-400" colSpan={6}>
-                    <div className="flex flex-col items-center justify-center">
-                      <HelpCircle className="mb-2 h-8 w-8 text-slate-200" />
-                      <p className="text-sm font-medium">No recent requests found</p>
-                      <p className="text-xs">Your support history will appear here</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {recentRequests.map((request) => (
+                    <tr
+                      className="transition hover:bg-orange-50/30"
+                      key={request.id}
+                    >
+                      <td className="px-4 py-2.5 font-mono text-[11px] font-semibold text-slate-600">
+                        {request.id}
+                      </td>
+                      <td className="px-4 py-2.5 text-[12px] font-semibold text-slate-800">
+                        {request.subject}
+                      </td>
+                      <td className="px-4 py-2.5 text-[12px] text-slate-600">
+                        {request.category}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span
+                          className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
+                        >
+                          {request.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-[12px] text-slate-600">
+                        {request.date}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <Button
+                          className="h-7 rounded-md px-2 text-[11px]"
+                          variant="secondary"
+                        >
+                          View
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile stacked cards */}
+            <div className="divide-y divide-gray-100 md:hidden">
+              {recentRequests.map((request) => (
+                <div className="border-l-2 border-l-orange-400 px-4 py-3" key={request.id}>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-mono text-[11px] font-semibold text-slate-600">
+                      {request.id}
+                    </p>
+                    <span
+                      className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
+                    >
+                      {request.status}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[13px] font-semibold text-slate-800">
+                    {request.subject}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    {request.category} &middot; {request.date}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </Card>
     </div>
   );
