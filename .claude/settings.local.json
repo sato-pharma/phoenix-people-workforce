@@ -55,7 +55,8 @@
       "Bash(powershell -Command \"Move-Item 'tests\\\\e2e\\\\expense-dashboard.data-bearing.spec.ts' 'tests\\\\e2e\\\\expense-dashboard.data-bearing.spec.ts.tmp'; Move-Item 'tests\\\\e2e\\\\expense-dashboard.data-bearing.spec.ts.tmp' 'tests\\\\e2e\\\\expense-dashboard.data-bearing.spec.ts'; Get-ChildItem 'tests\\\\e2e\\\\*.spec.ts' | Select-Object Name\")",
       "Bash(powershell -Command \"Get-Content 'src\\\\components\\\\outstation\\\\mobile-outstation-wizard.tsx' | Measure-Object -Line\")",
       "Bash(powershell -Command \"\\(Get-Content 'src\\\\components\\\\outstation\\\\mobile-outstation-wizard.tsx' -Raw\\) -replace 'rounded-3xl border border-slate-200 bg-white p-5 shadow-\\\\[0_18px_40px_rgba\\\\\\(15,23,42,0.06\\\\\\)\\\\]', 'rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba\\(15,23,42,0.06\\)] sm:p-5' | Set-Content 'src\\\\components\\\\outstation\\\\mobile-outstation-wizard.tsx' -NoNewline\")",
-      "Bash(powershell -Command \"\\(Get-Content 'src\\\\components\\\\outstation\\\\mobile-outstation-wizard.tsx' -Raw\\) -replace 'rounded-2xl', 'rounded-md' | Set-Content 'src\\\\components\\\\outstation\\\\mobile-outstation-wizard.tsx' -NoNewline\")"
+      "Bash(powershell -Command \"\\(Get-Content 'src\\\\components\\\\outstation\\\\mobile-outstation-wizard.tsx' -Raw\\) -replace 'rounded-2xl', 'rounded-md' | Set-Content 'src\\\\components\\\\outstation\\\\mobile-outstation-wizard.tsx' -NoNewline\")",
+      "Bash(powershell -Command \"Get-ChildItem 'src\\\\components\\\\outstation\\\\*.tsx' | Select-String -Pattern 'rounded-\\(3xl|2xl|\\\\[28px\\\\]|\\\\[24px\\\\]|\\\\[22px\\\\]|\\\\[30px\\\\]|full\\)' -List | Select-Object FileName\")"
     ]
   }
 }

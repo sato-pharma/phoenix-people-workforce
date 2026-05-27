@@ -190,6 +190,21 @@ function isSamePersonOrSlot(row: OrganogramRow, manager: OrganogramRow) {
   return Boolean(managerNameKey && rowManagerNameKey && managerNameKey === rowManagerNameKey);
 }
 
+function reportsToVacantReplacementOwner(row: OrganogramRow, managerSlot: OrganogramRow) {
+  if (managerSlot.type !== "vacancy") {
+    return false;
+  }
+
+  const managerReplacementHrId = normalizeHrIdKey(managerSlot.replacementForHrId);
+  const rowManagerReplacementHrId = normalizeHrIdKey(row.managerReplacementForHrId);
+
+  return Boolean(
+    managerReplacementHrId &&
+      rowManagerReplacementHrId &&
+      managerReplacementHrId === rowManagerReplacementHrId,
+  );
+}
+
 export function reportsUpTo(
   row: OrganogramRow,
   manager: OrganogramRow,
@@ -218,7 +233,11 @@ export function reportsUpTo(
 }
 
 function reportsToKnownManager(row: OrganogramRow, manager: OrganogramRow, rows: OrganogramRow[]) {
-  return isSamePersonOrSlot(row, manager) || reportsUpTo(row, manager, rows);
+  return (
+    isSamePersonOrSlot(row, manager) ||
+    reportsToVacantReplacementOwner(row, manager) ||
+    reportsUpTo(row, manager, rows)
+  );
 }
 
 function reportsToVacantManagerSlot(row: OrganogramRow, managerSlot: OrganogramRow) {

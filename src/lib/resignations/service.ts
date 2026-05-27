@@ -721,6 +721,51 @@ async function insertFallbackVacancy(
   return Number((minimalResult.data as { id: number }).id);
 }
 
+async function ensureResignationVacancyOwnership(
+  supabase: SupabaseClient,
+  employee: DirectoryEmployee,
+  vacancyCode: string,
+) {
+  const cleanVacancyCode = String(vacancyCode ?? "").trim();
+  if (!cleanVacancyCode) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const fullPayload = {
+    manager_hr_id: employee.managerHrId,
+    manager_name: employee.managerName ?? null,
+    replacement_for_hr_id: employee.hrId,
+    updated_at: now,
+  };
+
+  const fullResult = await supabase
+    .from("position_vacancies")
+    .update(fullPayload)
+    .eq("vacancy_code", cleanVacancyCode);
+
+  if (!fullResult.error) {
+    return;
+  }
+
+  if (!isMissingSchemaMessage(fullResult.error)) {
+    throw fullResult.error;
+  }
+
+  const fallbackResult = await supabase
+    .from("position_vacancies")
+    .update({
+      manager_hr_id: employee.managerHrId,
+      manager_name: employee.managerName ?? null,
+      updated_at: now,
+    })
+    .eq("vacancy_code", cleanVacancyCode);
+
+  if (fallbackResult.error && !isMissingSchemaMessage(fallbackResult.error)) {
+    throw fallbackResult.error;
+  }
+}
+
 async function updateEmployeeLifecycleFallback(
   supabase: SupabaseClient,
   employeeHrId: string,
@@ -1038,6 +1083,7 @@ export async function resignEmployeeAndOpenVacancy(
     reason: cleanText(input.reason),
     submittedDate,
   });
+  await ensureResignationVacancyOwnership(supabase, employee, result.vacancy_code ?? vacancyCode);
   await normalizeTerminalEmployeeLifecycleFlags(supabase, employeeHrId);
 
   const { data: existingAuditRows, error: auditLookupError } = await supabase

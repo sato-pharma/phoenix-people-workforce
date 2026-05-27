@@ -46,8 +46,9 @@ export function runExpenseRiskHardeningTests() {
   assert.match(payrollExpenses, /Save manual HR\/admin expense approvals before importing/);
 
   const importRoute = source("app/api/payroll/expenses/import/route.ts");
-  assert.doesNotMatch(importRoute, /body\.records/);
-  assert.doesNotMatch(importRoute, /records:/);
+  assert.match(importRoute, /unsaved_approval_rows_not_allowed/);
+  assert.match(importRoute, /Save manual HR\/admin expense approvals before importing to payroll/);
+  assert.doesNotMatch(importRoute, /records: rawRecords/);
 
   const reportsRoute = source("app/api/payroll/expenses/reports/[id]/route.ts");
   assert.match(reportsRoute, /isPayrollExpenseReportLocked/);
