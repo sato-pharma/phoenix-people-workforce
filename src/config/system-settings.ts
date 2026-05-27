@@ -37,7 +37,18 @@ export const systemEditingPolicy = {
 export const systemEmail = {
   defaultFromEmail: "phoenix@mail.satopharma.com",
   defaultReplyTo: "phoenix@satopharma.com",
-  testingRecipientFallback: ["omar.anwar@satopharma.com", "phoenix@satopharma.com"],
+  // ── EMAIL TESTING SAFETY SWITCH ──────────────────────────────────────────────
+  // While `true`, EVERY outgoing email (notifications, password-setup links, HR
+  // replies, internal messages, excuse decisions) is redirected ONLY to the
+  // `testingRecipientFallback` addresses below — real recipients receive nothing.
+  // Keep this `true` while you are still editing and testing.
+  // When you are ready to send to real recipients, change `true` to `false`.
+  forceTestingDelivery: true,
+  testingRecipientFallback: [
+    "omar.anwar@satopharma.com",
+    "achieverrr303@gmail.com",
+    "phoenix@satopharma.com",
+  ],
 } as const;
 
 export const systemDocuments = {

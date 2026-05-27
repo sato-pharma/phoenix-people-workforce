@@ -32,7 +32,10 @@ function splitEmailList(value: string | null | undefined) {
 function resolveTestingRecipients() {
   const deliveryMode = String(process.env.PHOENIX_EMAIL_DELIVERY_MODE ?? "").trim().toLowerCase();
   const testRecipients = splitEmailList(process.env.PHOENIX_EMAIL_TEST_RECIPIENTS);
-  if (deliveryMode !== "testing") return null;
+  // Redirect all mail to the testing recipients when the config safety switch is on
+  // (systemEmail.forceTestingDelivery) OR the env delivery mode is explicitly "testing".
+  const testingEnabled = systemEmail.forceTestingDelivery || deliveryMode === "testing";
+  if (!testingEnabled) return null;
   return testRecipients.length > 0 ? Array.from(new Set(testRecipients)) : [...systemEmail.testingRecipientFallback];
 }
 

@@ -7,12 +7,19 @@ import {
   updateManagerExpenseAsAdmin,
 } from "@/lib/outstation/service";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
+import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function isOutstationPayrollLockError(error: unknown) {
   return error instanceof Error && error.message.toLowerCase().includes("already been added to payroll");
+}
+
+function managerExpenseStatus(error: unknown) {
+  if (isForbiddenError(error)) return 403;
+  if (isOutstationPayrollLockError(error) || isWorkflowRegistryTransitionError(error)) return 409;
+  return 500;
 }
 
 export async function PATCH(
@@ -69,14 +76,13 @@ export async function PATCH(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update outstation expense.";
-    const status = isForbiddenError(error) ? 403 : isOutstationPayrollLockError(error) ? 409 : 500;
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_expense_update_failed",
         message,
         success: false,
       },
-      { status },
+      { status: managerExpenseStatus(error) },
     );
   }
 }
@@ -107,14 +113,13 @@ export async function DELETE(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to delete outstation expense.";
-    const status = isForbiddenError(error) ? 403 : isOutstationPayrollLockError(error) ? 409 : 500;
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_expense_delete_failed",
         message,
         success: false,
       },
-      { status },
+      { status: managerExpenseStatus(error) },
     );
   }
 }

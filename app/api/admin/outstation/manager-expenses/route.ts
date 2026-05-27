@@ -4,9 +4,16 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { createManagerExpenseAsAdmin } from "@/lib/outstation/service";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
+import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function managerExpenseCreateStatus(error: unknown) {
+  if (isForbiddenError(error)) return 403;
+  if (isWorkflowRegistryTransitionError(error)) return 409;
+  return 500;
+}
 
 export async function POST(request: Request) {
   try {
@@ -114,7 +121,7 @@ export async function POST(request: Request) {
         message,
         success: false,
       },
-      { status: isForbiddenError(error) ? 403 : 500 },
+      { status: managerExpenseCreateStatus(error) },
     );
   }
 }

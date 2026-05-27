@@ -6,7 +6,10 @@ import type { ProbationWorkflowAction } from "@/lib/probation/types";
 import type { ResignationStatus, ResignationWorkflowAction } from "@/lib/resignations/types";
 import { assertWorkflowRegistryRuntimeTransition } from "@/lib/workflow-registry/runtime";
 
-export const employeeLifecycleWorkflowRegistryModuleKey = "employee_lifecycle";
+export const resignationWorkflowRegistryModuleKey = "resignations";
+export const probationWorkflowRegistryModuleKey = "probation";
+export const contractWorkflowRegistryModuleKey = "contracts";
+export const offerWorkflowRegistryModuleKey = "offers";
 
 type LifecycleAccess = Pick<AccessContext, "role">;
 
@@ -29,7 +32,7 @@ export async function assertResignationWorkflowTransition(input: {
     access: input.access ?? systemAccessContext,
     actionKey: input.action === "submit" ? "resignation_submit" : resignationActionKey(input.action),
     expectedNextStatus: input.expectedNextStatus,
-    moduleKey: employeeLifecycleWorkflowRegistryModuleKey,
+    moduleKey: resignationWorkflowRegistryModuleKey,
     status: input.action === "submit" ? "resignation_new" : toResignationWorkflowStatus(input.status),
   });
 }
@@ -61,7 +64,7 @@ export async function assertProbationWorkflowTransition(input: {
     access: input.access,
     actionKey: input.action === "create" ? "probation_create" : `probation_${input.action}`,
     expectedNextStatus: input.expectedNextStatus,
-    moduleKey: employeeLifecycleWorkflowRegistryModuleKey,
+    moduleKey: probationWorkflowRegistryModuleKey,
     status: input.action === "create"
       ? "probation_new"
       : toProbationWorkflowStatus({ decision: input.decision, status: input.status }),
@@ -83,7 +86,7 @@ export async function assertContractWorkflowTransition(input: {
     access: input.access ?? systemAccessContext,
     actionKey: input.action === "create" ? "contract_create" : `contract_${input.action}`,
     expectedNextStatus: input.expectedNextStatus,
-    moduleKey: employeeLifecycleWorkflowRegistryModuleKey,
+    moduleKey: contractWorkflowRegistryModuleKey,
     status: input.action === "create" ? "contract_new" : toContractWorkflowStatus(input.status),
   });
 }
@@ -116,7 +119,7 @@ export async function assertOfferWorkflowTransition(input: {
     access: input.access ?? systemAccessContext,
     actionKey: `offer_${input.action}`,
     expectedNextStatus: input.expectedNextStatus,
-    moduleKey: employeeLifecycleWorkflowRegistryModuleKey,
+    moduleKey: offerWorkflowRegistryModuleKey,
     status: input.action === "create"
       ? "offer_draft"
       : toOfferWorkflowStatus({ onboardingStatus: input.onboardingStatus, status: input.status }),
