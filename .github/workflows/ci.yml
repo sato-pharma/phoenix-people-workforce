@@ -73,6 +73,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PHOENIX_AUTH_SECRET: ${{ secrets.PHOENIX_AUTH_SECRET || 'ci-only-phoenix-auth-secret-for-playwright-session-signing' }}
           PLAYWRIGHT_DATA_USER_HRID: ${{ secrets.PLAYWRIGHT_DATA_USER_HRID }}
           PLAYWRIGHT_DATA_USER_PASSWORD: ${{ secrets.PLAYWRIGHT_DATA_USER_PASSWORD }}
 
