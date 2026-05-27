@@ -5,6 +5,8 @@ node_modules/
 .env.*.local
 .env.github-secrets
 coverage/
+output/playwright/
+output/playwright-report/
 *.log
 .playwright-mcp/
 tests/e2e/.auth/
