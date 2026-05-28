@@ -28,7 +28,6 @@ import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-con
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
-import { normalizeHrId, normalizeHrIdForAccess } from "@/lib/auth/permissions";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { extractKnownPlace } from "@/lib/utils/places";
 
@@ -557,24 +556,8 @@ export function PersonalExpenseWorkloadDashboard({
   showHero?: boolean;
 }) {
   /* -------- data normalization (UNCHANGED LOGIC) -------- */
-  const currentEmployeeHrId = normalizeHrId(data.employee?.hrId);
-  const currentEmployeeCanonicalHrId = currentEmployeeHrId
-    ? normalizeHrIdForAccess(currentEmployeeHrId)
-    : null;
-
   const rows: ExpenseRow[] = useMemo(() => {
-    const source = (data.workload?.expenseRows ?? []).filter((expense) => {
-      if (!currentEmployeeHrId) return true;
-      const expenseHrId = normalizeHrId(expense.hrId);
-      if (!expenseHrId) return false;
-      if (expenseHrId === currentEmployeeHrId) return true;
-      const expenseCanonical = normalizeHrIdForAccess(expenseHrId);
-      return Boolean(
-        currentEmployeeCanonicalHrId &&
-          expenseCanonical &&
-          expenseCanonical === currentEmployeeCanonicalHrId,
-      );
-    });
+    const source = data.workload?.expenseRows ?? [];
 
     return source.map((expense) => ({
       hrId: normalizeString(expense.hrId),
@@ -599,7 +582,7 @@ export function PersonalExpenseWorkloadDashboard({
       description: normalizeString(expense.description),
       hrNotes: normalizeString(expense.hrNotes || expense.description),
     }));
-  }, [data.workload?.expenseRows, currentEmployeeCanonicalHrId, currentEmployeeHrId]);
+  }, [data.workload?.expenseRows]);
 
   /* -------- filter state -------- */
   // Initialize from URL search params (if any) so deep links + refresh
@@ -1030,7 +1013,7 @@ export function PersonalExpenseWorkloadDashboard({
   if (!rows.length) {
     return (
       <Card className={`overflow-hidden rounded-lg border border-gray-100 ${cardShadow}`}>
-        <EmptyState title="No expense records" message="No expense records are linked to your profile yet." />
+        <EmptyState title="No expense records" message="No visible expense records are available for your expense scope yet." />
       </Card>
     );
   }
@@ -1154,7 +1137,7 @@ export function PersonalExpenseWorkloadDashboard({
         </Card>
       )}
 
-      {/* ---- Filters Card with Smart Period ---- */}
+      {/* Filters Card */}
       <Card className={`overflow-hidden rounded-lg border border-gray-100 p-4 sm:p-5 print:hidden ${cardShadow}`}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">

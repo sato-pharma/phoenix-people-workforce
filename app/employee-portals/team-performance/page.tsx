@@ -4,7 +4,7 @@ import { Users, TrendingUp, Target, Award, BarChart3 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import {
@@ -39,7 +39,14 @@ export default async function EmployeePortalTeamPerformancePage({
     redirect("/overview");
   }
 
-  await assertPermission(access, "sales", "read");
+  if (!(await canAccess(access, "sales", "read"))) {
+    return (
+      <EmployeePortalEmptyState
+        message="Team performance is available for manager roles with sales access."
+        title="Team Performance Unavailable"
+      />
+    );
+  }
 
   const resolvedParams = await searchParams;
   const requestedPeriod = resolvedParams.period?.trim() ?? null;

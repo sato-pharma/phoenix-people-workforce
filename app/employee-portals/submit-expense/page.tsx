@@ -12,7 +12,7 @@ import { getOutstationEmployeeContext } from "@/lib/outstation/service";
 
 // NOTE: dir="auto", print stylesheet, prefers-reduced-motion, and a
 // page-level WorkspaceErrorBoundary are now provided automatically by
-// EmployeePortalPageShell — no need to wire them per-page.
+// EmployeePortalPageShell - no need to wire them per-page.
 
 function buildResidenceSummary(residence: {
   residenceAddress: string | null;

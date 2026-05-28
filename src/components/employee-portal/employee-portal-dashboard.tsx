@@ -28,7 +28,6 @@ import {
   Car,
   Eye,
   EyeOff,
-  HelpCircle,
   Info,
   MapPin,
   Megaphone,
@@ -41,6 +40,7 @@ import {
   Upload,
   UserRound,
   Users,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -437,7 +437,7 @@ export function LoadingSkeleton() {
   );
 }
 
-/* Chart Error Boundary â€” wraps Recharts rendering errors gracefully */
+/* Chart Error Boundary - wraps Recharts rendering errors gracefully */
 class ChartErrorBoundary extends Component<
   { children: ReactNode },
   { hasError: boolean }
@@ -665,20 +665,20 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
       </div>
       <div className="hidden mb-5 rounded border border-slate-200 bg-slate-50/60 px-4 py-3">
         <p className="text-base font-semibold text-slate-900">
-          {employee.fullName} <span className="text-slate-500">Â·</span> {employee.roleLabel}
+          {employee.fullName} <span className="text-slate-500">/</span> {employee.roleLabel}
         </p>
         <p className="mt-1 text-sm text-slate-600">
-          {employee.line ?? "Unassigned Line"} Line <span className="text-slate-400">Â·</span>{" "}
-          {employee.territory ?? "Unassigned Territory"} Territory <span className="text-slate-400">Â·</span>{" "}
+          {employee.line ?? "Unassigned Line"} Line <span className="text-slate-400">/</span>{" "}
+          {employee.territory ?? "Unassigned Territory"} Territory <span className="text-slate-400">/</span>{" "}
           Reports to {employee.manager ?? "Unassigned Manager"}
         </p>
         <p className="mt-1 text-sm text-slate-600">
-          HR ID: {displayHrId} <span className="text-slate-400">Â·</span>{" "}
+          HR ID: {displayHrId} <span className="text-slate-400">/</span>{" "}
           <span className="inline-flex items-center gap-1">
             {employee.status}
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
           </span>{" "}
-          <span className="text-slate-400">Â·</span> Hired {hiredLabel}
+          <span className="text-slate-400">/</span> Hired {hiredLabel}
         </p>
       </div>
       <div className="grid gap-6 xl:grid-cols-[0.82fr_1.38fr_0.85fr]">
@@ -1283,7 +1283,7 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
 
   return (
     <div className="space-y-5">
-      {/* KPI strip â€” Achievement + Base Salary + Basic Salary */}
+      {/* KPI strip - Achievement + Base Salary + Basic Salary */}
       <IncentiveKpiCards data={data} isSalaryVisible={isIncentiveSalaryVisible} />
 
       {/* Policy + Simulator side by side */}
@@ -1296,7 +1296,7 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
         />
       </div>
 
-      {/* Payout curve chart â€” standalone */}
+      {/* Payout curve chart - standalone */}
       <IncentivePayoutCurveChart data={data} />
     </div>
   );
@@ -1515,7 +1515,7 @@ function PerformanceChartTooltip({ active, payload, label }: { active?: boolean;
   const targetEntry = payload.find((p) => p.dataKey === "target");
   const sales = salesEntry?.value ?? 0;
   const target = targetEntry?.value ?? 0;
-  const achievement = target > 0 ? ((sales / target) * 100).toFixed(1) : "â€”";
+  const achievement = target > 0 ? ((sales / target) * 100).toFixed(1) : "-";
   const gap = sales - target;
   return (
     <div className="rounded border border-slate-200 bg-white px-4 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.18)]">
@@ -1673,7 +1673,7 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
               </SafeResponsiveContainer>
             </div>
 
-            {/* Achievement per period â€” horizontal bar indicators */}
+            {/* Achievement per period - horizontal bar indicators */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Monthly Achievement</p>
@@ -1848,7 +1848,7 @@ function EmployeesOnLeaveTodayPanel({ data }: { data: MedicalRepPortalData }) {
               <div className="min-w-0">
                 <p className="break-words text-sm font-medium text-slate-900">{row.employeeName}</p>
                 <p className="mt-1 break-words text-xs font-normal text-slate-500">
-                  {row.lineName ?? row.departmentName ?? "Phoenix"} â€¢ {prettyDate(row.startDate)} â€“ {prettyDate(row.endDate)}
+                  {row.lineName ?? row.departmentName ?? "Phoenix"} / {prettyDate(row.startDate)} - {prettyDate(row.endDate)}
                 </p>
               </div>
               <span className="shrink-0 rounded border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
@@ -2119,7 +2119,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
         window.localStorage.removeItem(SUPPORT_DRAFT_KEY);
       }
     } catch {
-      // storage full / disabled â€” silently ignore
+      // storage full / disabled - silently ignore
     }
   }, [category, subcategory, subject, description]);
 
@@ -2169,7 +2169,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
   };
 
   const formatRequestDate = (iso: string) => {
-    if (!iso) return "â€”";
+    if (!iso) return "-";
     try {
       return new Intl.DateTimeFormat("en-GB", {
         day: "2-digit",
@@ -2358,7 +2358,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                           aria-label={`Email ${member.name}`}
                           className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
                           href={`mailto:${member.email}?subject=${encodeURIComponent(
-                            `Phoenix Workforce â€” ${employeeName}`,
+                            `Phoenix Workforce - ${employeeName}`,
                           )}`}
                           rel="noopener noreferrer"
                         >
@@ -2457,7 +2457,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               </select>
             </label>
 
-            {/* Conditional sub-category â€” only when "HR Request" is selected */}
+            {/* Conditional sub-category - only when "HR Request" is selected */}
             {category === "HR Request" && (
               <label className="block">
                 <span className={`mb-1.5 block ${labelClass}`}>
@@ -2569,7 +2569,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                         onClick={() => removeAttachment(file.name, file.size)}
                         type="button"
                       >
-                        Ã—
+                        <X aria-hidden className="h-3.5 w-3.5" />
                       </button>
                     </li>
                   ))}
@@ -2596,7 +2596,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
         </Card>
       </div>
 
-      {/* ---- Last Ticket (pinned) â€” only when at least one exists ---- */}
+      {/* ---- Last Ticket (pinned) - only when at least one exists ---- */}
       {lastTicket && (
         <Card
           className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}
@@ -2617,7 +2617,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             </p>
             <p className="mt-0.5 text-[11px] text-slate-500">
               {lastTicket.category}
-              {lastTicket.subcategory ? ` Â· ${lastTicket.subcategory}` : ""} &middot;{" "}
+              {lastTicket.subcategory ? ` / ${lastTicket.subcategory}` : ""} /{" "}
               {formatRequestDate(lastTicket.createdAt)}
             </p>
             <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-slate-600">
@@ -2657,7 +2657,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
         {isLoadingRequests ? (
           <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
             <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">
-              Loadingâ€¦
+              Loading...
             </p>
           </div>
         ) : recentRequests.length === 0 ? (
@@ -2707,7 +2707,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                       </td>
                       <td className="px-4 py-2.5 text-[12px] text-slate-600">
                         {request.category}
-                        {request.subcategory ? ` Â· ${request.subcategory}` : ""}
+                        {request.subcategory ? ` / ${request.subcategory}` : ""}
                       </td>
                       <td className="px-4 py-2.5">
                         <span
@@ -2747,7 +2747,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                   </p>
                   <p className="mt-0.5 text-[11px] text-slate-500">
                     {request.category}
-                    {request.subcategory ? ` Â· ${request.subcategory}` : ""} &middot;{" "}
+                    {request.subcategory ? ` / ${request.subcategory}` : ""} /{" "}
                     {formatRequestDate(request.createdAt)}
                   </p>
                 </div>
@@ -3028,7 +3028,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             </div>
           ))}
         </div>
-        {/* Desktop table for â‰¥480px */}
+        {/* Desktop table for >=480px */}
         <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -3121,7 +3121,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             </div>
           ))}
         </div>
-        {/* Desktop table for â‰¥480px */}
+        {/* Desktop table for >=480px */}
         <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
@@ -3217,7 +3217,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               </div>
             ))}
           </div>
-          {/* Desktop table for â‰¥480px */}
+          {/* Desktop table for >=480px */}
           <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
             <table className="w-full border-collapse text-left text-sm">
               <thead>
@@ -3249,7 +3249,9 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
             <p className="text-lg font-semibold text-slate-900">Recent Trips</p>
           </div>
-          <a className="text-xs font-medium text-orange-600 hover:text-orange-700" href="#">View All Trips &gt;</a>
+          <span className="rounded border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-500">
+            {recentTrips.length} trip{recentTrips.length === 1 ? "" : "s"}
+          </span>
         </div>
         {/* Mobile card view for <480px */}
         <div className="space-y-2 xs:hidden">
@@ -3281,7 +3283,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             </div>
           ))}
         </div>
-        {/* Desktop table for â‰¥480px */}
+        {/* Desktop table for >=480px */}
         <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
@@ -3383,7 +3385,7 @@ export function HRContractSection({ data }: { data: MedicalRepPortalData }) {
 }
 
 // ---------------------------------------------------------------------------
-// Identity Card â€” replaces the old "Personal Overview / Good Morning" header
+// Identity Card - replaces the old "Personal Overview / Good Morning" header
 // Matches the exact design from the ChatGPT image reference
 // ---------------------------------------------------------------------------
 
@@ -3457,7 +3459,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
             <p className="text-[13px] font-medium tabular-nums lg:text-[14px]">HR ID: {displayHrId}</p>
           </div>
 
-          {/* Line Â· Territory Â· Manager - Enhanced Grid */}
+          {/* Line / Territory / Manager - Enhanced Grid */}
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:mt-6">
             <div className="flex items-center gap-2.5 group/item">
               <div className="flex h-8 w-8 items-center justify-center rounded bg-white text-orange-500 shadow-sm ring-1 ring-slate-200 transition-colors group-hover/item:bg-orange-50">

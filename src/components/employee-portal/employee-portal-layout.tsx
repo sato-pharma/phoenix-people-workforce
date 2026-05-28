@@ -347,20 +347,38 @@ export function EmployeePortalTopNav({
   visibility,
 }: EmployeePortalNavProps) {
   const currentPathname = usePathname();
+  const router = useRouter();
   const pathname = activePathOverride ?? currentPathname;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
-  const firstName = data.employee.fullName.split(/\s+/)[0] ?? "Employee";
-  const initials = data.employee.fullName
+  const employeeName = data.employee.fullName.trim();
+  const firstName = employeeName.split(/\s+/)[0] || "Employee";
+  const initials = employeeName
     .split(/\s+/)
     .slice(0, 2)
     .map((part) => part.charAt(0))
     .join("")
-    .toUpperCase();
+    .toUpperCase() || "EM";
 
   const menuSections = buildEmployeePortalSections(visibility);
+  const searchTerm = searchQuery.trim().toLowerCase();
+  const searchMatches = searchTerm
+    ? menuSections
+      .flatMap((section) =>
+        section.items.map((item) => ({
+          ...item,
+          section: section.title,
+        })),
+      )
+      .filter((item) =>
+        `${item.label} ${item.section}`.toLowerCase().includes(searchTerm),
+      )
+      .slice(0, 6)
+    : [];
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -379,6 +397,13 @@ export function EmployeePortalTopNav({
     } finally {
       window.location.href = "/login";
     }
+  };
+
+  const navigateToSearchResult = (href: string) => {
+    setSearchQuery("");
+    setSearchOpen(false);
+    dispatchEmployeePortalRoutePending(href);
+    router.push(href);
   };
 
   return (
@@ -409,16 +434,65 @@ export function EmployeePortalTopNav({
             <input
               aria-label="Search"
               className="h-9 w-full rounded border border-slate-200 bg-slate-50/80 pl-9 pr-3 text-sm font-medium text-slate-700 placeholder:text-slate-400 outline-none transition focus:border-orange-300 focus:bg-white focus:ring-1 focus:ring-orange-400/15"
-              placeholder="Search anything..."
+              onBlur={() => window.setTimeout(() => setSearchOpen(false), 120)}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setSearchOpen(true);
+              }}
+              onFocus={() => setSearchOpen(true)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setSearchOpen(false);
+                  return;
+                }
+                if (event.key === "Enter" && searchMatches[0]) {
+                  event.preventDefault();
+                  navigateToSearchResult(searchMatches[0].href);
+                }
+              }}
+              placeholder="Search portal pages..."
+              value={searchQuery}
               type="text"
             />
+            {searchOpen && searchQuery.trim().length > 0 ? (
+              <div
+                className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded border border-slate-200 bg-white shadow-[0_18px_46px_rgba(15,23,42,0.16)]"
+                role="listbox"
+              >
+                {searchMatches.length > 0 ? (
+                  searchMatches.map((item) => (
+                    <button
+                      aria-selected={false}
+                      className="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-left transition last:border-b-0 hover:bg-orange-50"
+                      key={`${item.section}-${item.href}`}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        navigateToSearchResult(item.href);
+                      }}
+                      role="option"
+                      type="button"
+                    >
+                      <item.icon className="h-4 w-4 shrink-0 text-orange-500" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-bold text-slate-800">{item.label}</span>
+                        <span className="block truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{item.section}</span>
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-3 text-sm font-semibold text-slate-500">
+                    No matching portal pages.
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
           <InAppNotificationsBell isAdminMode={false} />
           <InternalMessagesMenu isAdminMode={false} />
           <div className="hidden items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-500 lg:flex">
             <CalendarClock className="h-3 w-3 text-slate-400" />
             <span className="whitespace-nowrap">
-              {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
+              {new Date().toLocaleDateString("en-US", { day: "numeric", month: "short", timeZone: "Africa/Cairo", year: "numeric" })}
             </span>
           </div>
           {visibility.showMyPerformanceTab === false ? null : (
@@ -437,7 +511,7 @@ export function EmployeePortalTopNav({
               type="button"
             >
               <div className="flex h-7 w-7 items-center justify-center rounded bg-gradient-to-br from-orange-500 to-orange-600 text-[10px] font-bold text-white">
-                {initials || "EM"}
+                {initials}
               </div>
               <div className="hidden pr-0.5 text-left sm:block">
                 <p className="text-xs font-semibold text-slate-800 whitespace-nowrap">{firstName}</p>

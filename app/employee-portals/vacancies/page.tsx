@@ -5,7 +5,7 @@ import {
   EmployeePortalPageShell,
   EmployeePortalEmptyState,
 } from "@/components/employee-portal/enterprise-shell";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePortalVacancies } from "@/lib/employee-portal/service";
 
@@ -121,7 +121,14 @@ export default async function EmployeePortalVacanciesPage({
     redirect("/overview");
   }
 
-  await assertPermission(access, "vacancies", "read");
+  if (!(await canAccess(access, "vacancies", "read"))) {
+    return (
+      <EmployeePortalEmptyState
+        message="Vacancies are available for District Manager and National Sales Manager roles when vacancy scope can be resolved."
+        title="Vacancies Unavailable"
+      />
+    );
+  }
 
   const data = await getEmployeePortalVacancies(access);
 

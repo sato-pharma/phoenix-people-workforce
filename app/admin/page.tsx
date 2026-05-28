@@ -19,8 +19,27 @@ export default async function AdminCommandPage() {
     redirect("/employee-portals");
   }
 
-  if (!await canAccess(access, "admin", "read") && !await canAccess(access, "overview", "read")) {
-    redirect("/employee-portals");
+  const canReadAdmin = await canAccess(access, "admin", "read");
+  const canReadOverview = await canAccess(access, "overview", "read");
+
+  if (!canReadAdmin && !canReadOverview) {
+    if (await canAccess(access, "employee_profile", "read")) {
+      redirect("/employee-portals");
+    }
+
+    return (
+      <main className="min-h-screen bg-slate-50 px-4 py-10 text-slate-900">
+        <Card className="mx-auto max-w-xl border-amber-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center gap-3 text-amber-600">
+            <AlertCircle className="h-6 w-6" />
+            <h1 className="text-lg font-bold">Access unavailable</h1>
+          </div>
+          <p className="text-sm leading-6 text-slate-600">
+            Your account is signed in, but it is not authorized for the admin workspace or employee portal yet. Ask your Phoenix admin to review your role and HR ID setup.
+          </p>
+        </Card>
+      </main>
+    );
   }
 
   let data = null;
