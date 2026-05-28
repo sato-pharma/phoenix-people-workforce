@@ -1,9 +1,67 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
 import { resolveEmployeePortalNavVisibility } from "../src/lib/employee-portal/navigation.ts";
 
+function collectSourceFiles(root: string): string[] {
+  return readdirSync(root)
+    .flatMap((entry) => {
+      const filePath = join(root, entry);
+      if (statSync(filePath).isDirectory()) return collectSourceFiles(filePath);
+      return /\.(tsx?|jsx?)$/.test(entry) ? [filePath] : [];
+    });
+}
+
 export function runEmployeePortalNavigationTests() {
+  const employeePortalSource = [
+    ...collectSourceFiles("app/employee-portals"),
+    ...collectSourceFiles("app/leave-management"),
+    ...collectSourceFiles("src/components/employee-portal"),
+    ...collectSourceFiles("src/components/vacation"),
+    "app/payslips/page.tsx",
+  ]
+    .map((filePath) => `${filePath}\n${readFileSync(filePath, "utf8")}`)
+    .join("\n");
+  const dashboardSource = readFileSync("src/components/employee-portal/employee-portal-dashboard.tsx", "utf8");
+  const layoutSource = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
+  const marketingDraftsSource = readFileSync("src/components/employee-portal/marketing-request-drafts.tsx", "utf8");
+  const adminPageSource = readFileSync("app/admin/page.tsx", "utf8");
+  const vacanciesPageSource = readFileSync("app/employee-portals/vacancies/page.tsx", "utf8");
+  const teamPerformancePageSource = readFileSync("app/employee-portals/team-performance/page.tsx", "utf8");
+  const launchSmokeSource = readFileSync("scripts/employee-portal-launch-smoke.mjs", "utf8");
+
+  assert.doesNotMatch(
+    employeePortalSource,
+    /Ã|Â|â|�/,
+    "Employee portal source should not contain mojibake in UI text, comments, or fallback strings.",
+  );
+  assert.doesNotMatch(dashboardSource, /href="#"/, "Employee portal dashboard must not ship dead hash links.");
+  assert.match(dashboardSource, /Phoenix Workforce - \$\{employeeName\}/);
+  assert.match(dashboardSource, /Loading\.\.\./);
+  assert.match(layoutSource, /searchMatches/);
+  assert.match(layoutSource, /navigateToSearchResult/);
+  assert.match(layoutSource, /Search portal pages\.\.\./);
+  assert.match(layoutSource, /timeZone: "Africa\/Cairo"/);
+  assert.doesNotMatch(marketingDraftsSource, /â€¦/, "Marketing request drafts should not render mojibake ellipsis text.");
+  assert.match(marketingDraftsSource, /Math\.max\(0, maxLen - 3\)\)\}\.\.\./);
+  assert.match(adminPageSource, /canReadAdmin/);
+  assert.match(adminPageSource, /canReadOverview/);
+  assert.match(adminPageSource, /canAccess\(access, "employee_profile", "read"\)/);
+  assert.match(adminPageSource, /Access unavailable/);
+  assert.match(vacanciesPageSource, /canAccess\(access, "vacancies", "read"\)/);
+  assert.doesNotMatch(vacanciesPageSource, /assertPermission\(access, "vacancies", "read"\)/);
+  assert.match(teamPerformancePageSource, /canAccess\(access, "sales", "read"\)/);
+  assert.doesNotMatch(teamPerformancePageSource, /assertPermission\(access, "sales", "read"\)/);
+  assert.match(launchSmokeSource, /employeePortalStaticRoutes/);
+  assert.match(launchSmokeSource, /employeePortalReachableRoutes/);
+  assert.match(launchSmokeSource, /\/payslips/);
+  assert.match(launchSmokeSource, /\/leave-management\/vacation-request/);
+  assert.match(launchSmokeSource, /\/leave-management\/vacation-report/);
+  assert.match(launchSmokeSource, /runDirectRouteSweep/);
+  assert.match(launchSmokeSource, /portal error/);
+
   const medicalRep = resolveEmployeePortalNavVisibility("Medical Rep");
   assert.equal(medicalRep.showDashboardTab, true, "Medical Rep should see Dashboard");
   assert.equal(medicalRep.showMyPerformanceTab, true, "Medical Rep should see My Performance");

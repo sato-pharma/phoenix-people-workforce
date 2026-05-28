@@ -45,7 +45,7 @@ export default async function EmployeePortalExpenseDashboardPage() {
   if (!data.workload?.expenseRows?.length) {
     return (
       <EmployeePortalEmptyState
-        message="No outstation expense records are linked to your profile yet."
+        message="No visible outstation expense records are available for your expense scope yet."
         title="No outstation expense records"
       />
     );

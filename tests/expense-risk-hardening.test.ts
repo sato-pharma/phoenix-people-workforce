@@ -132,8 +132,12 @@ export function runExpenseRiskHardeningTests() {
   assert.doesNotMatch(legacyEmployeeOutstation, /MobileOutstationWizard/);
 
   const expenseDashboardPage = source("app/employee-portals/expense-dashboard/page.tsx");
+  const personalExpenseDashboard = source("src/components/employee-portal/personal-expense-workload-dashboard.tsx");
   assert.match(expenseDashboardPage, /includePortalOverview: false/);
   assert.match(expenseDashboardPage, /includeTeamRank: false/);
   assert.match(expenseDashboardPage, /includeWorkforceSummary: false/);
   assert.doesNotMatch(expenseDashboardPage, /getAdminCommandCenterData/);
+  assert.match(personalExpenseDashboard, /const source = data\.workload\?\.expenseRows \?\? \[\];/);
+  assert.doesNotMatch(personalExpenseDashboard, /currentEmployeeHrId/);
+  assert.doesNotMatch(`${expenseDashboardPage}\n${personalExpenseDashboard}`, /linked to your profile/);
 }
