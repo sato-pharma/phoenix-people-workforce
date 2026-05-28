@@ -59,6 +59,8 @@ export function runEmployeePortalNavigationTests() {
   assert.match(launchSmokeSource, /\/payslips/);
   assert.match(launchSmokeSource, /\/leave-management\/vacation-request/);
   assert.match(launchSmokeSource, /\/leave-management\/vacation-report/);
+  assert.match(launchSmokeSource, /PHOENIX_EMPLOYEE_PORTAL_SMOKE_USERS_JSON/);
+  assert.match(launchSmokeSource, /\/api\/auth\/login/);
   assert.match(launchSmokeSource, /runDirectRouteSweep/);
   assert.match(launchSmokeSource, /portal error/);
 

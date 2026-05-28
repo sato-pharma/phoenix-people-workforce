@@ -40,6 +40,40 @@ const employeePortalReachableRoutes = [
   "/leave-management/vacation-report",
 ];
 
+function roleEnvKey(role) {
+  return String(role ?? "").toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+}
+
+function smokeCredentialsForRole(role) {
+  const usersJson = process.env.PHOENIX_EMPLOYEE_PORTAL_SMOKE_USERS_JSON;
+  if (usersJson) {
+    const users = JSON.parse(usersJson);
+    const user = users?.[role] ?? users?.[roleEnvKey(role)];
+    if (user?.loginId && user?.password) return user;
+  }
+
+  const roleKey = roleEnvKey(role);
+  const roleLoginId = process.env[`PHOENIX_EMPLOYEE_PORTAL_${roleKey}_LOGIN_ID`];
+  const rolePassword = process.env[`PHOENIX_EMPLOYEE_PORTAL_${roleKey}_PASSWORD`];
+  if (roleLoginId && rolePassword) {
+    return {
+      hrId: process.env[`PHOENIX_EMPLOYEE_PORTAL_${roleKey}_HR_ID`],
+      loginId: roleLoginId,
+      password: rolePassword,
+    };
+  }
+
+  if (process.env.PHOENIX_EMPLOYEE_PORTAL_SMOKE_LOGIN_ID && process.env.PHOENIX_EMPLOYEE_PORTAL_SMOKE_PASSWORD) {
+    return {
+      hrId: process.env.PHOENIX_EMPLOYEE_PORTAL_SMOKE_HR_ID,
+      loginId: process.env.PHOENIX_EMPLOYEE_PORTAL_SMOKE_LOGIN_ID,
+      password: process.env.PHOENIX_EMPLOYEE_PORTAL_SMOKE_PASSWORD,
+    };
+  }
+
+  return null;
+}
+
 function normalizeWhitespace(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
@@ -49,6 +83,24 @@ async function bodyText(page) {
 }
 
 async function authenticate(context, role, hrId, next = "/employee-portals") {
+  const realUser = smokeCredentialsForRole(role);
+  if (realUser) {
+    const response = await context.request.post(`${baseUrl}/api/auth/login`, {
+      data: {
+        loginId: realUser.loginId,
+        password: realUser.password,
+        remember: false,
+      },
+      timeout: 30000,
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Real auth failed for ${role}; status ${response.status()}`);
+    }
+
+    return;
+  }
+
   const url = new URL("/api/dev-auth", baseUrl);
   url.searchParams.set("role", role);
   url.searchParams.set("loginId", `portal-smoke.${role.toLowerCase().replace(/[^a-z0-9]+/g, ".")}`);
@@ -59,7 +111,10 @@ async function authenticate(context, role, hrId, next = "/employee-portals") {
   const setCookie = response.headers()["set-cookie"] ?? "";
   const match = setCookie.match(/phoenix_dev_preview=([^;]+)/);
   if (!match) {
-    throw new Error(`Dev auth did not set a session cookie for ${role}; status ${response.status()}`);
+    throw new Error(
+      `Dev auth did not set a session cookie for ${role}; status ${response.status()}. ` +
+        "For public preview smoke, set PHOENIX_EMPLOYEE_PORTAL_SMOKE_USERS_JSON or role-specific login/password env vars.",
+    );
   }
 
   await context.addCookies([

@@ -39,7 +39,7 @@
     "ci": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
-    "@sentry/nextjs": "^10.54.0",
+    "@sentry/nextjs": "^10.55.0",
     "@supabase/supabase-js": "^2.105.1",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
