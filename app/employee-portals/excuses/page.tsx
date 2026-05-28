@@ -9,6 +9,7 @@ import {
   getExcuseWorkspace,
   isExcusesSchemaMissing,
 } from "@/lib/excuses/service";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,10 @@ export default async function EmployeeExcusesPage() {
   try {
     data = await getExcuseWorkspace(access);
   } catch (error) {
+    logPortalFailure(
+      { route: "/employee-portals/excuses", module: "excuses", role: access.role, hrId: access.hrId },
+      error,
+    );
     if (isExcusesSchemaMissing(error)) {
       errorMessage = "Excuse database tables are not deployed yet. Run the latest Supabase migration.";
     } else if (isForbiddenError(error) || excuseErrorMessage(error).toLowerCase().startsWith("forbidden:")) {

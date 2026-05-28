@@ -6,8 +6,9 @@ import {
   EmployeePortalPageShell,
   EmployeePortalEmptyState,
 } from "@/components/employee-portal/enterprise-shell";
+import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { Card } from "@/components/ui/card";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, isNationalSalesManager, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getNsmTeamExpenses } from "@/lib/employee-portal/service";
 
@@ -38,7 +39,7 @@ export default async function TeamExpensesPage(
     redirect("/overview");
   }
 
-  if (!access.role.toLowerCase().includes("national sales manager")) {
+  if (!isNationalSalesManager(access.role)) {
     redirect("/employee-portals");
   }
 
@@ -95,6 +96,10 @@ export default async function TeamExpensesPage(
     >
       {/* Print stylesheet */}
       <style dangerouslySetInnerHTML={{ __html: printStyles }} />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <ScopeBadge scope={access.scope} />
+      </div>
 
       <div
         className="max-w-full min-w-0 space-y-5 overflow-x-hidden text-slate-900 sm:space-y-7"

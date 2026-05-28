@@ -2,9 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { Card } from "@/components/ui/card";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, isNationalSalesManager, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { getNsmDsmPerformance } from "@/lib/employee-portal/service";
@@ -66,8 +67,7 @@ export default async function DsmsPerformancePage({
     redirect("/overview");
   }
 
-  // Only NSM should access this page
-  if (!access.role.toLowerCase().includes("national sales manager")) {
+  if (!isNationalSalesManager(access.role)) {
     redirect("/employee-portals");
   }
 
@@ -119,6 +119,9 @@ export default async function DsmsPerformancePage({
       errorBoundaryTitle="DSMs Performance unavailable"
       title="DSMs Performance"
     >
+      <div className="flex flex-wrap items-center gap-2">
+        <ScopeBadge scope={access.scope} />
+      </div>
       <div className="max-w-full min-w-0 space-y-5 overflow-x-hidden text-slate-900 sm:space-y-7">
         {/* ── Line Snapshot Card ── */}
         <Card className="rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">

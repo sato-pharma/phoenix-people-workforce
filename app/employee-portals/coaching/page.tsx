@@ -12,6 +12,7 @@ import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveEmployeeCoachingPortalMode } from "@/lib/coaching/portal-access";
 import { getMyCoachingReports, getTeamCoachingReports } from "@/lib/coaching/service";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,11 @@ export default async function EmployeeCoachingReportsPage() {
     reports = isMyReportsView
       ? await getMyCoachingReports(access)
       : await getTeamCoachingReports(access);
-  } catch {
+  } catch (error) {
+    logPortalFailure(
+      { route: "/employee-portals/coaching", module: "coaching", role: access.role, hrId: access.hrId },
+      error,
+    );
     reports = null;
   }
 

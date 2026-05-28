@@ -108,6 +108,7 @@ function buildEmployeePortalSections({
   showVacanciesTab = false,
   showProbationTab = false,
   showOrganogramTab = false,
+  showSupportTab = false,
   showMyCoachingTab = false,
   showTeamCoachingTab = false,
   showTrainingManagerCreateCoachingTab = false,
@@ -179,7 +180,7 @@ function buildEmployeePortalSections({
     {
       title: "Support",
       items: [
-        { href: "/employee-portals/contact-hr-support", label: "Request Support", icon: Headphones },
+        ...(showSupportTab ? [{ href: "/employee-portals/contact-hr-support", label: "Request Support", icon: Headphones }] : []),
       ],
     },
   ].filter((section) => section.items.length > 0);

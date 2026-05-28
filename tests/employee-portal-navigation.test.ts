@@ -116,4 +116,105 @@ export function runEmployeePortalNavigationTests() {
     "/admin/marketing-requests",
     "SFE Manager should land in the admin marketing request shell",
   );
+
+  // --- Workstream 4: Beta module launch navigation gating ----------------------
+  const previousBetaFlag = process.env.PHOENIX_PORTAL_SHOW_BETA_NAV;
+
+  // Default launch posture (flag unset): Beta modules are hidden from portal nav.
+  delete process.env.PHOENIX_PORTAL_SHOW_BETA_NAV;
+
+  const nsmDefault = resolveEmployeePortalNavVisibility("National Sales Manager");
+  assert.equal(nsmDefault.showMarketingRequestsTab, false, "NSM should not see Marketing Requests in nav by default");
+  assert.equal(nsmDefault.showSupportTab, false, "NSM should not see Contact HR Support in nav by default");
+
+  const sfeDefault = resolveEmployeePortalNavVisibility("SFE Manager");
+  assert.equal(sfeDefault.showMarketingControlTab, false, "SFE Manager should not see Marketing Control in nav by default");
+  assert.equal(sfeDefault.showMarketingRequestsTab, false, "SFE Manager should not see Marketing Requests in nav by default");
+
+  const superAdminDefault = resolveEmployeePortalNavVisibility("Super Admin");
+  assert.equal(superAdminDefault.showMarketingRequestsTab, false, "Super Admin should not see Marketing Requests in nav by default");
+  assert.equal(superAdminDefault.showMarketingControlTab, false, "Super Admin should not see Marketing Control in nav by default");
+  assert.equal(superAdminDefault.showMarketingCustomerDatabaseTab, false, "Super Admin should not see SCP / PH Database in nav by default");
+  assert.equal(superAdminDefault.showSupportTab, false, "Super Admin should not see Contact HR Support in nav by default");
+
+  // Core 8 launch modules stay visible for the correct roles regardless of the flag.
+  const medRepCore = resolveEmployeePortalNavVisibility("Medical Rep");
+  assert.equal(medRepCore.showDashboardTab, true, "Core: Medical Rep keeps Dashboard with beta nav off");
+  assert.equal(medRepCore.showMyPerformanceTab, true, "Core: Medical Rep keeps My Performance with beta nav off");
+  assert.equal(medRepCore.showIncentiveTab, true, "Core: Medical Rep keeps Incentive with beta nav off");
+  assert.equal(medRepCore.showMedicalRepExpensesTab, true, "Core: Medical Rep keeps outstation expenses with beta nav off");
+
+  const nsmCore = resolveEmployeePortalNavVisibility("National Sales Manager");
+  assert.equal(nsmCore.showMedRepsPerformanceTab, true, "Core: NSM keeps MRs Performance with beta nav off");
+  assert.equal(nsmCore.showDsmsPerformanceTab, true, "Core: NSM keeps DSMs Performance with beta nav off");
+  assert.equal(nsmCore.showTeamExpensesTab, true, "Core: NSM keeps Team Expenses with beta nav off");
+
+  // Beta flag enabled: Beta modules appear for already-authorized roles only.
+  process.env.PHOENIX_PORTAL_SHOW_BETA_NAV = "true";
+
+  const nsmBeta = resolveEmployeePortalNavVisibility("National Sales Manager");
+  assert.equal(nsmBeta.showMarketingRequestsTab, true, "NSM should see Marketing Requests when beta nav is enabled");
+  assert.equal(nsmBeta.showSupportTab, true, "Contact HR Support should appear when beta nav is enabled");
+
+  const sfeBeta = resolveEmployeePortalNavVisibility("SFE Manager");
+  assert.equal(sfeBeta.showMarketingControlTab, true, "SFE Manager should see Marketing Control when beta nav is enabled");
+  assert.equal(sfeBeta.showMarketingRequestsTab, true, "SFE Manager should see Marketing Requests when beta nav is enabled");
+
+  const superAdminBeta = resolveEmployeePortalNavVisibility("Super Admin");
+  assert.equal(superAdminBeta.showMarketingCustomerDatabaseTab, true, "Super Admin should see SCP / PH Database when beta nav is enabled");
+
+  // Enabling the flag must never grant Marketing to a role that was not authorized.
+  const trainingManagerBeta = resolveEmployeePortalNavVisibility("Training Manager");
+  assert.equal(trainingManagerBeta.showMarketingRequestsTab, false, "Beta flag must not grant Marketing Requests to an unauthorized role");
+  assert.equal(trainingManagerBeta.showMarketingControlTab, false, "Beta flag must not grant Marketing Control to an unauthorized role");
+  assert.equal(trainingManagerBeta.showSupportTab, true, "Contact HR Support returns for any portal role when beta nav is enabled");
+
+  // Restore the launch posture so the flag never leaks into other suites.
+  if (previousBetaFlag === undefined) {
+    delete process.env.PHOENIX_PORTAL_SHOW_BETA_NAV;
+  } else {
+    process.env.PHOENIX_PORTAL_SHOW_BETA_NAV = previousBetaFlag;
+  }
+
+  // buildEmployeePortalSections wires every Beta nav item behind its flag, and the
+  // flags default to false, so the launch nav hides them unless explicitly enabled.
+  assert.match(
+    layoutSource,
+    /showSupportTab = false/,
+    "Support nav flag must default to hidden in buildEmployeePortalSections",
+  );
+  assert.match(
+    layoutSource,
+    /showSupportTab \? \[\{ href: "\/employee-portals\/contact-hr-support"/,
+    "Contact HR Support nav item must be gated behind showSupportTab",
+  );
+  assert.match(
+    layoutSource,
+    /showMarketingRequestsTab \? \[\{ href: "\/employee-portals\/marketing-requests\/validation"/,
+    "HCP / PH Validation nav item must be gated behind showMarketingRequestsTab",
+  );
+  assert.match(
+    layoutSource,
+    /showMarketingControlTab \? \[\{ href: "\/employee-portals\/marketing-requests\/control"/,
+    "Marketing Control nav item must be gated behind showMarketingControlTab",
+  );
+  assert.match(
+    layoutSource,
+    /showMarketingCustomerDatabaseTab \? \[\{ href: "\/employee-portals\/marketing-requests\/customer-database"/,
+    "SCP / PH Database nav item must be gated behind showMarketingCustomerDatabaseTab",
+  );
+
+  // Page-level guards must remain unchanged: hiding nav never weakens direct-URL access.
+  const contactHrSupportPageSource = readFileSync("app/employee-portals/contact-hr-support/page.tsx", "utf8");
+  assert.match(
+    contactHrSupportPageSource,
+    /assertPermission\(access, "support_requests", "read"\)/,
+    "Contact HR Support page must keep its support_requests read guard",
+  );
+  const marketingRequestsPageSource = readFileSync("app/employee-portals/marketing-requests/page.tsx", "utf8");
+  assert.match(
+    marketingRequestsPageSource,
+    /assertEmployeePortalMarketingPageAccess/,
+    "Marketing Requests page must keep its page-level access guard",
+  );
 }
