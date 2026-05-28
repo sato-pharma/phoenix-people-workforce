@@ -1,0 +1,509 @@
+import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
+import { daysInMonth } from "@/lib/field-workforce-compliance/parser";
+import type {
+  FieldWorkforceCellStatus,
+  FieldWorkforceDayCell,
+  FieldWorkforceEmployeeReference,
+  FieldWorkforceEmployeeSummary,
+  FieldWorkforceHoliday,
+  FieldWorkforceParsedEmployeeRow,
+  FieldWorkforceParsedWorkbook,
+  FieldWorkforcePreviewResult,
+  FieldWorkforceReviewCandidate,
+  FieldWorkforceReviewCandidateType,
+  FieldWorkforceSeverity,
+  FieldWorkforceSourceCellValue,
+  FieldWorkforceValidationIssue,
+} from "@/lib/field-workforce-compliance/types";
+
+const severityOrder: Record<FieldWorkforceSeverity, number> = {
+  High: 4,
+  Review: 3,
+  Medium: 2,
+  Low: 1,
+};
+
+const statusMeaning: Record<FieldWorkforceCellStatus, string> = {
+  AV: "Vacation signal",
+  BLANK: "Blank",
+  CP: "Campaign activity",
+  F: "Friday/weekend",
+  N: "No activity candidate",
+  UNKNOWN: "Unknown value",
+  VISITS: "Numeric visits",
+};
+
+function dateAddDays(value: string, days: number) {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function dateRange(startDate: string, endDate: string) {
+  const dates: string[] = [];
+  for (let date = startDate; date <= endDate; date = dateAddDays(date, 1)) {
+    dates.push(date);
+  }
+  return dates;
+}
+
+function monthDates(year: number, month: number) {
+  const count = daysInMonth(year, month);
+  return Array.from({ length: count }, (_, index) => {
+    const day = index + 1;
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  });
+}
+
+function isFriday(dateIso: string) {
+  return new Date(`${dateIso}T00:00:00Z`).getUTCDay() === 5;
+}
+
+function normalizeRawValue(value: FieldWorkforceSourceCellValue) {
+  if (value === null) return "";
+  return String(value).replace(/\s+/g, " ").trim();
+}
+
+function classifyRawValue(value: FieldWorkforceSourceCellValue): {
+  status: FieldWorkforceCellStatus;
+  visitCount?: number;
+} {
+  if (value === null) return { status: "BLANK" };
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? { status: "VISITS", visitCount: value } : { status: "UNKNOWN" };
+  }
+  const raw = normalizeRawValue(value);
+  if (!raw) return { status: "BLANK" };
+  const normalized = raw.toUpperCase();
+  if (normalized === "N") return { status: "N" };
+  if (normalized === "AV") return { status: "AV" };
+  if (normalized === "CP") return { status: "CP" };
+  if (normalized === "F") return { status: "F" };
+  if (/^-?\d+(\.\d+)?$/.test(raw)) return { status: "VISITS", visitCount: Number(raw) };
+  return { status: "UNKNOWN" };
+}
+
+function emptySeverityCounts(): Record<FieldWorkforceSeverity, number> {
+  return {
+    High: 0,
+    Low: 0,
+    Medium: 0,
+    Review: 0,
+  };
+}
+
+function incrementSeverity(
+  counts: Record<FieldWorkforceSeverity, number>,
+  severity: FieldWorkforceSeverity | undefined,
+) {
+  if (severity) counts[severity] += 1;
+}
+
+function highestSeverity(values: Array<FieldWorkforceSeverity | undefined>) {
+  return values.reduce<FieldWorkforceSeverity | undefined>((current, next) => {
+    if (!next) return current;
+    if (!current || severityOrder[next] > severityOrder[current]) return next;
+    return current;
+  }, undefined);
+}
+
+function holidayMap(holidays: FieldWorkforceHoliday[]) {
+  const map = new Map<string, string>();
+  for (const holiday of holidays) {
+    const endDate = holiday.endDate ?? holiday.startDate;
+    for (const date of dateRange(holiday.startDate, endDate)) {
+      map.set(date, holiday.name);
+    }
+  }
+  return map;
+}
+
+function referenceLookup(employees: FieldWorkforceEmployeeReference[]) {
+  const map = new Map<string, FieldWorkforceEmployeeReference>();
+  for (const employee of employees) {
+    const key = canonicalHrIdKey(employee.hrId);
+    if (key) map.set(key, employee);
+  }
+  return map;
+}
+
+function explainCell(input: {
+  holidayName?: string;
+  ignoreReason?: string;
+  isFriday: boolean;
+  isPreHire: boolean;
+  isPublicHoliday: boolean;
+  status: FieldWorkforceCellStatus;
+  visitCount?: number;
+}) {
+  if (input.ignoreReason === "before_hiring_date") return "Ignored because before hiring date.";
+  if (input.ignoreReason === "friday") return "Excluded because Friday/weekend.";
+  if (input.status === "UNKNOWN") return "Review needed: unknown value in monthly file.";
+  if (input.status === "N" && input.isPublicHoliday) return "No activity entered on a public holiday; review as holiday context, not normal deduction.";
+  if (input.status === "AV" && input.isPublicHoliday) return "Vacation signal overlaps a public holiday; reconcile before any leave action.";
+  if (input.status === "CP" && input.isPublicHoliday) return "Campaign activity recorded on a public holiday; review context.";
+  if (input.status === "VISITS" && input.isPublicHoliday) return "Numeric visits recorded on a public holiday; review context.";
+  if (input.isPublicHoliday) return `Highlighted because public holiday${input.holidayName ? `: ${input.holidayName}` : ""}.`;
+  if (input.status === "VISITS") return `Worked day because ${input.visitCount ?? 0} numeric visits detected.`;
+  if (input.status === "CP") return "Campaign activity detected; counted as worked day, not numeric visits.";
+  if (input.status === "AV") return "Vacation signal detected; reconciliation review only.";
+  if (input.status === "N") return "No activity entered; review candidate only.";
+  if (input.status === "F") return "Friday/weekend marker.";
+  return "Blank cell in monthly timeline.";
+}
+
+function cellContext(cell: {
+  holidayName?: string;
+  ignored: boolean;
+  ignoreReason?: string;
+  isFriday: boolean;
+  isPreHire: boolean;
+  isPublicHoliday: boolean;
+  status: FieldWorkforceCellStatus;
+}) {
+  const context: string[] = [];
+  if (cell.isPreHire) context.push("Pre-hire");
+  if (cell.isFriday) context.push("Friday");
+  if (cell.isPublicHoliday) context.push(cell.holidayName ? `Public holiday: ${cell.holidayName}` : "Public holiday");
+  if (cell.status === "UNKNOWN") context.push("Unknown value");
+  if (cell.ignored) context.push("Ignored");
+  return context;
+}
+
+function candidateTypeForCell(cell: FieldWorkforceDayCell): FieldWorkforceReviewCandidateType | null {
+  if (cell.isPreHire && cell.rawValue !== null) return "pre_hire_activity";
+  if (cell.status === "UNKNOWN") return "unknown_value";
+  if (cell.isPublicHoliday && ["N", "AV", "CP", "VISITS"].includes(cell.status)) return "public_holiday_overlap";
+  if (cell.isFriday && !cell.isPreHire && !["F", "BLANK"].includes(cell.status)) return "friday_overlap";
+  if (cell.status === "N") return "no_activity";
+  if (cell.status === "AV") return "vacation_signal";
+  return null;
+}
+
+function candidateFromCell(cell: FieldWorkforceDayCell, employeeIndex: number): FieldWorkforceReviewCandidate | null {
+  const type = candidateTypeForCell(cell);
+  if (!type || !cell.severity) return null;
+  return {
+    context: cell.context,
+    dateIso: cell.dateIso,
+    dayNumber: cell.dayNumber,
+    employeeName: cell.employeeName,
+    explanation: cell.explanation,
+    holidayName: cell.holidayName,
+    hrId: cell.hrId,
+    id: `${employeeIndex}:${cell.dateIso}:${type}`,
+    normalizedMeaning: statusMeaning[cell.status],
+    rawValue: cell.rawValue,
+    severity: cell.severity,
+    type,
+  };
+}
+
+function updateNoActivitySeverity(cells: FieldWorkforceDayCell[]) {
+  const normalNoActivityCells = cells.filter((cell) =>
+    cell.status === "N" &&
+    !cell.isPreHire &&
+    !cell.isFriday &&
+    !cell.isPublicHoliday,
+  );
+  if (normalNoActivityCells.length === 0) return;
+
+  const runs = new Map<string, number>();
+  let currentRun: FieldWorkforceDayCell[] = [];
+  for (const cell of normalNoActivityCells) {
+    const previous = currentRun[currentRun.length - 1];
+    if (!previous || cell.dayNumber === previous.dayNumber + 1) {
+      currentRun.push(cell);
+    } else {
+      currentRun.forEach((runCell) => runs.set(runCell.dateIso, currentRun.length));
+      currentRun = [cell];
+    }
+  }
+  currentRun.forEach((runCell) => runs.set(runCell.dateIso, currentRun.length));
+
+  for (const cell of normalNoActivityCells) {
+    const runLength = runs.get(cell.dateIso) ?? 1;
+    cell.severity = runLength > 1 ? "High" : normalNoActivityCells.length > 1 ? "Medium" : "Low";
+  }
+}
+
+function buildEmployeeMatchCandidate(input: {
+  employee: FieldWorkforceParsedEmployeeRow;
+  employeeIndex: number;
+  type: "hiring_date" | "employee_match";
+  explanation: string;
+  severity: FieldWorkforceSeverity;
+}) {
+  return {
+    context: input.type === "employee_match" ? ["Unknown HR ID"] : ["Hiring date"],
+    dateIso: null,
+    dayNumber: null,
+    employeeName: input.employee.employeeName || input.employee.hrId || "Unknown employee",
+    explanation: input.explanation,
+    hrId: canonicalHrIdForDisplay(input.employee.hrId) ?? input.employee.hrId,
+    id: `${input.employeeIndex}:row:${input.type}`,
+    normalizedMeaning: input.type === "employee_match" ? "Employee match issue" : "Hiring date issue",
+    rawValue: input.type === "employee_match" ? input.employee.hrId : input.employee.rawHiringDate,
+    severity: input.severity,
+    type: input.type,
+  } satisfies FieldWorkforceReviewCandidate;
+}
+
+function warningFromCandidate(candidate: FieldWorkforceReviewCandidate): FieldWorkforceValidationIssue {
+  return {
+    code: candidate.type,
+    field: candidate.hrId,
+    message: candidate.explanation,
+    severity: candidate.severity === "High" ? "warning" : "warning",
+  };
+}
+
+function buildTimeline(input: {
+  employee: FieldWorkforceParsedEmployeeRow;
+  employeeName: string;
+  holidayByDate: Map<string, string>;
+  hrId: string;
+  month: number;
+  year: number;
+}) {
+  return monthDates(input.year, input.month).map((dateIso) => {
+    const rawValue = input.employee.rawDailyValues[dateIso] ?? null;
+    const { status, visitCount } = classifyRawValue(rawValue);
+    const friday = isFriday(dateIso);
+    const isPreHire = Boolean(input.employee.hiringDateIso && dateIso < input.employee.hiringDateIso);
+    const holidayName = input.holidayByDate.get(dateIso);
+    const isPublicHoliday = Boolean(holidayName);
+    const ignored = isPreHire || friday;
+    const ignoreReason = isPreHire ? "before_hiring_date" : friday ? "friday" : undefined;
+    const eligible = !ignored;
+    const countedAsWorkedDay = eligible && (status === "VISITS" || status === "CP");
+    const countedAsVisitTotal = eligible && status === "VISITS";
+    const countedAsNoActivityCandidate = eligible && status === "N";
+    let severity: FieldWorkforceSeverity | undefined;
+
+    if (isPreHire && rawValue !== null) severity = "High";
+    else if (status === "UNKNOWN") severity = "High";
+    else if (isPublicHoliday && ["N", "AV", "CP", "VISITS"].includes(status)) severity = "Review";
+    else if (friday && !["F", "BLANK"].includes(status)) severity = "Review";
+    else if (status === "AV") severity = "Review";
+
+    const cell = {
+      context: [],
+      countedAsNoActivityCandidate,
+      countedAsVisitTotal,
+      countedAsWorkedDay,
+      dateIso,
+      dayNumber: Number(dateIso.slice(8, 10)),
+      employeeName: input.employeeName,
+      explanation: explainCell({
+        holidayName,
+        ignoreReason,
+        isFriday: friday,
+        isPreHire,
+        isPublicHoliday,
+        status,
+        visitCount,
+      }),
+      holidayName,
+      hrId: input.hrId,
+      ignored,
+      ignoreReason,
+      isFriday: friday,
+      isPreHire,
+      isPublicHoliday,
+      rawValue,
+      severity,
+      status,
+      visitCount,
+    } satisfies FieldWorkforceDayCell;
+
+    return {
+      ...cell,
+      context: cellContext(cell),
+    };
+  });
+}
+
+function buildEmployeeSummary(input: {
+  employee: FieldWorkforceParsedEmployeeRow;
+  employeeIndex: number;
+  employeeReference: FieldWorkforceEmployeeReference | undefined;
+  holidayByDate: Map<string, string>;
+  month: number;
+  reviewCandidates: FieldWorkforceReviewCandidate[];
+  warnings: FieldWorkforceValidationIssue[];
+  year: number;
+}) {
+  const displayHrId = canonicalHrIdForDisplay(input.employee.hrId) ?? input.employee.hrId;
+  const officialHireDate = input.employeeReference?.hireDate?.slice(0, 10) ?? null;
+  const hiringDateIso = input.employee.hiringDateIso ?? officialHireDate;
+  const hiringDateSource = input.employee.hiringDateIso
+    ? "workbook"
+    : officialHireDate
+      ? "employee_directory"
+      : "missing";
+  const employeeName = input.employeeReference?.fullName ?? input.employee.employeeName ?? displayHrId;
+  const rowWithResolvedHireDate = {
+    ...input.employee,
+    hiringDateIso,
+  };
+
+  if (!input.employeeReference) {
+    const candidate = buildEmployeeMatchCandidate({
+      employee: input.employee,
+      employeeIndex: input.employeeIndex,
+      explanation: `Review needed: HR ID ${displayHrId || "(blank)"} was not found in the Phoenix employee directory.`,
+      severity: "High",
+      type: "employee_match",
+    });
+    input.reviewCandidates.push(candidate);
+    input.warnings.push(warningFromCandidate(candidate));
+  }
+
+  if (!hiringDateIso) {
+    const candidate = buildEmployeeMatchCandidate({
+      employee: input.employee,
+      employeeIndex: input.employeeIndex,
+      explanation: `Review needed: hiring date is missing or invalid for ${employeeName}.`,
+      severity: "High",
+      type: "hiring_date",
+    });
+    input.reviewCandidates.push(candidate);
+    input.warnings.push(warningFromCandidate(candidate));
+  } else if (officialHireDate && input.employee.hiringDateIso && officialHireDate !== input.employee.hiringDateIso) {
+    input.warnings.push({
+      code: "hiring_date_mismatch",
+      field: displayHrId,
+      message: `Workbook hiring date ${input.employee.hiringDateIso} differs from Phoenix hire date ${officialHireDate} for ${employeeName}. Workbook date was used for Phase 1 preview.`,
+      rowNumber: input.employee.sourceRowNumber,
+      severity: "warning",
+    });
+  }
+
+  const timeline = buildTimeline({
+    employee: rowWithResolvedHireDate,
+    employeeName,
+    holidayByDate: input.holidayByDate,
+    hrId: displayHrId,
+    month: input.month,
+    year: input.year,
+  });
+  updateNoActivitySeverity(timeline);
+
+  const severityCounts = emptySeverityCounts();
+  const candidates = timeline
+    .map((cell) => candidateFromCell(cell, input.employeeIndex))
+    .filter((candidate): candidate is FieldWorkforceReviewCandidate => Boolean(candidate));
+  input.reviewCandidates.push(...candidates);
+
+  for (const cell of timeline) {
+    incrementSeverity(severityCounts, cell.severity);
+  }
+
+  return {
+    campaignDays: timeline.filter((cell) => !cell.ignored && cell.status === "CP").length,
+    employeeName,
+    eligibleWorkingDays: timeline.filter((cell) => !cell.isPreHire && !cell.isFriday).length,
+    fridays: timeline.filter((cell) => !cell.isPreHire && cell.isFriday).length,
+    hiringDateIso,
+    hiringDateSource,
+    holidayWarnings: timeline.filter((cell) => cell.isPublicHoliday && ["N", "AV", "CP", "VISITS"].includes(cell.status)).length,
+    hrId: displayHrId,
+    matchedEmployeeName: input.employeeReference?.fullName ?? null,
+    matchedHrId: input.employeeReference?.hrId ?? null,
+    matchStatus: input.employeeReference ? "matched" : "unmatched",
+    noActivityCandidates: timeline.filter((cell) => cell.countedAsNoActivityCandidate).length,
+    preHireIgnoredValues: timeline.filter((cell) => cell.isPreHire && cell.rawValue !== null).length,
+    severityCounts,
+    sourceRowNumber: input.employee.sourceRowNumber,
+    timeline,
+    totalVisits: timeline.reduce((sum, cell) => sum + (cell.countedAsVisitTotal ? cell.visitCount ?? 0 : 0), 0),
+    unknownValues: timeline.filter((cell) => cell.status === "UNKNOWN").length,
+    vacationSignalDays: timeline.filter((cell) => !cell.ignored && cell.status === "AV").length,
+    workedDays: timeline.filter((cell) => cell.countedAsWorkedDay).length,
+  } satisfies FieldWorkforceEmployeeSummary;
+}
+
+function sortReviewCandidates(left: FieldWorkforceReviewCandidate, right: FieldWorkforceReviewCandidate) {
+  const severity = severityOrder[right.severity] - severityOrder[left.severity];
+  if (severity !== 0) return severity;
+  const leftDate = left.dateIso ?? "0000-00-00";
+  const rightDate = right.dateIso ?? "0000-00-00";
+  const date = leftDate.localeCompare(rightDate);
+  if (date !== 0) return date;
+  return left.employeeName.localeCompare(right.employeeName);
+}
+
+export function buildFieldWorkforceCompliancePreview(input: {
+  employeeReferences?: FieldWorkforceEmployeeReference[];
+  holidayConnected: boolean;
+  holidayMessage?: string | null;
+  holidaySourceLabel: string;
+  holidays?: FieldWorkforceHoliday[];
+  parsed: FieldWorkforceParsedWorkbook;
+}): FieldWorkforcePreviewResult {
+  const parsed = input.parsed;
+  const month = parsed.month ?? 1;
+  const year = parsed.year ?? new Date().getFullYear();
+  const holidayByDate = holidayMap(input.holidays ?? []);
+  const references = referenceLookup(input.employeeReferences ?? []);
+  const warnings = [...parsed.warnings];
+  const reviewCandidates: FieldWorkforceReviewCandidate[] = [];
+
+  const employees = parsed.rows.map((employee, employeeIndex) => {
+    const reference = canonicalHrIdKey(employee.hrId);
+    return buildEmployeeSummary({
+      employee,
+      employeeIndex,
+      employeeReference: reference ? references.get(reference) : undefined,
+      holidayByDate,
+      month,
+      reviewCandidates,
+      warnings,
+      year,
+    });
+  });
+
+  const severityCounts = emptySeverityCounts();
+  for (const candidate of reviewCandidates) {
+    incrementSeverity(severityCounts, candidate.severity);
+  }
+
+  const firstDate = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lastDate = `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth(year, month)).padStart(2, "0")}`;
+  const matchedEmployees = employees.filter((employee) => employee.matchStatus === "matched").length;
+  const highestIssue = highestSeverity(reviewCandidates.map((candidate) => candidate.severity));
+  if (highestIssue) {
+    warnings.push({
+      code: "review_candidates_generated",
+      message: `${reviewCandidates.length} review candidates were generated. Highest severity: ${highestIssue}.`,
+      severity: "warning",
+    });
+  }
+
+  return {
+    errors: parsed.errors,
+    employees,
+    metadata: {
+      dateRange: {
+        end: lastDate,
+        start: firstDate,
+      },
+      employeeCount: employees.length,
+      fileName: parsed.fileName,
+      holidayConnected: input.holidayConnected,
+      holidayMessage: input.holidayMessage ?? null,
+      holidaySourceLabel: input.holidaySourceLabel,
+      holidaysDetected: input.holidays?.length ?? 0,
+      matchedEmployees,
+      month,
+      monthLabel: parsed.monthLabel ?? `Month ${month}`,
+      sheetName: parsed.sheetName,
+      unmatchedEmployees: employees.length - matchedEmployees,
+      year,
+    },
+    reviewCandidates: reviewCandidates.sort(sortReviewCandidates),
+    severityCounts,
+    warnings,
+  };
+}
