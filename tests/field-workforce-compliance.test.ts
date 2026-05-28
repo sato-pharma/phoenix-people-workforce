@@ -82,11 +82,12 @@ export function runFieldWorkforceComplianceTests() {
   assert.equal(jan2.isFriday, true);
   assert.equal(jan2.ignored, true);
   assert.equal(jan2.countedAsWorkedDay, false);
+  assert.equal(jan2.severity, undefined);
 
   const jan3 = ahmed.timeline.find((cell) => cell.dateIso === "2026-01-03");
   const jan4 = ahmed.timeline.find((cell) => cell.dateIso === "2026-01-04");
-  assert.equal(jan3?.severity, "High");
-  assert.equal(jan4?.severity, "High");
+  assert.equal(jan3?.severity, "Medium");
+  assert.equal(jan4?.severity, "Medium");
 
   const jan5 = ahmed.timeline.find((cell) => cell.dateIso === "2026-01-05");
   assert.equal(jan5?.status, "CP");
@@ -109,6 +110,15 @@ export function runFieldWorkforceComplianceTests() {
     candidate.type === "employee_match" &&
     candidate.severity === "High" &&
     candidate.hrId === "ZZ-9"
+  ));
+  assert.ok(preview.reviewCandidates.some((candidate) =>
+    candidate.type === "pre_hire_activity" &&
+    candidate.severity === "High" &&
+    candidate.dateIso === "2026-01-01"
+  ));
+  assert.ok(!preview.reviewCandidates.some((candidate) =>
+    candidate.type === "pre_hire_activity" &&
+    candidate.dateIso === "2026-01-02"
   ));
   assert.ok(preview.reviewCandidates.some((candidate) =>
     candidate.type === "public_holiday_overlap" &&
