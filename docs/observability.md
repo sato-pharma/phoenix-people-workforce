@@ -35,13 +35,18 @@ Phoenix Workforce uses Sentry on the free Developer plan for production error vi
 | `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` | Browser performance trace sample rate. | `0.02` |
 | `SENTRY_ERROR_SAMPLE_RATE` | Server/edge error event sample rate. | `1` |
 | `NEXT_PUBLIC_SENTRY_ERROR_SAMPLE_RATE` | Browser error event sample rate. | `1` |
+| `NEXT_PUBLIC_SENTRY_REPLAY_ENABLED` | Enables browser Session Replay. Set only for Preview until masking is verified. | unset = disabled |
+| `NEXT_PUBLIC_SENTRY_REPLAY_SESSION_SAMPLE_RATE` | Normal session replay sample rate when Replay is enabled. | `0` |
+| `NEXT_PUBLIC_SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE` | Error-session replay sample rate when Replay is enabled. | `1` |
 | `SENTRY_AUTH_TOKEN` | Enables source-map upload during build. | unset = upload skipped |
 | `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload destination. | Phoenix defaults |
 
 ## Privacy Posture
 
 - `sendDefaultPii` is always `false`.
-- Session Replay is disabled.
+- Session Replay is disabled unless `NEXT_PUBLIC_SENTRY_REPLAY_ENABLED=true`.
+- Session Replay masks all text and blocks all media.
+- Normal Session Replay sampling defaults to 0%; error-session sampling defaults to 100% only in environments where Replay is explicitly enabled.
 - Console and input breadcrumbs are dropped.
 - Request bodies, cookies, query strings, auth headers, tokens, passwords, HR IDs, login IDs, emails, phone numbers, salaries, payroll fields, payslip fields, GPS/location fields, and image/evidence fields are scrubbed before events leave the app.
 - Source maps are deleted after upload and are uploaded only when the auth token is available.

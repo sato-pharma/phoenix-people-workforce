@@ -11,6 +11,7 @@ const contentSecurityPolicy = [
   "font-src 'self' data: https://fonts.gstatic.com",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://routes.googleapis.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io",
   "media-src 'self' blob:",
+  "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
