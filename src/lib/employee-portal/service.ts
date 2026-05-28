@@ -16,6 +16,7 @@ import {
   employeeMatchesPortalSalesScope,
   salesRecordMatchesPortalSalesScope,
 } from "@/lib/employee-portal/sales-scope";
+import { isEmployeePortalBetaNavEnabled } from "@/lib/employee-portal/navigation";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
   isDateWithinLifecycleRiskWindow,
@@ -2110,6 +2111,13 @@ export async function getEmployeePortalProfile(access: AccessContext) {
 }
 
 export type MedicalRepPortalData = {
+  /**
+   * Whether Beta employee-portal modules should be surfaced in the UI, resolved
+   * server-side from PHOENIX_PORTAL_SHOW_BETA_NAV. Mirrors the nav-layer gating
+   * so dashboard quick-actions for Beta modules (e.g. Marketing Requests) stay
+   * hidden by default. Optional: only populated for full dashboard payloads.
+   */
+  betaNavEnabled?: boolean;
   employee: {
     area: string | null;
     department: string | null;
@@ -3832,6 +3840,7 @@ export async function getMedicalRepPortalData(
   const activeExpenseDays = new Set(expenses.map((expense) => expense.date?.slice(0, 10)).filter(Boolean)).size;
 
   return {
+    betaNavEnabled: isEmployeePortalBetaNavEnabled(),
     employee: {
       area: employee.areaName,
       department: employee.departmentName,
