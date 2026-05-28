@@ -39,8 +39,18 @@ export function runLoginPageHardeningTests() {
     assert.match(source, /beforeBreadcrumb:\s*scrubSentryBreadcrumb/);
     assert.match(source, /tracesSampleRate:\s*parseSentrySampleRate/);
     assert.doesNotMatch(source, /enableLogs:\s*true/);
-    assert.doesNotMatch(source, /replayIntegration/);
   }
+
+  assert.match(browserSentry, /NEXT_PUBLIC_SENTRY_REPLAY_ENABLED === "true"/);
+  assert.match(browserSentry, /Sentry\.replayIntegration/);
+  assert.match(browserSentry, /blockAllMedia:\s*true/);
+  assert.match(browserSentry, /maskAllText:\s*true/);
+  assert.match(browserSentry, /replaysSessionSampleRate:\s*replayEnabled/);
+  assert.match(browserSentry, /NEXT_PUBLIC_SENTRY_REPLAY_SESSION_SAMPLE_RATE,\s*0/);
+  assert.match(browserSentry, /replaysOnErrorSampleRate:\s*replayEnabled/);
+  assert.match(browserSentry, /NEXT_PUBLIC_SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE,\s*1/);
+  assert.doesNotMatch(serverSentry, /replayIntegration/);
+  assert.doesNotMatch(edgeSentry, /replayIntegration/);
 
   assert.match(sentryHelper, /sensitiveKeyPattern/);
   assert.match(sentryHelper, /delete mutable\.user/);
@@ -50,6 +60,7 @@ export function runLoginPageHardeningTests() {
   assert.match(nextConfig, /telemetry:\s*false/);
   assert.match(nextConfig, /deleteSourcemapsAfterUpload:\s*true/);
   assert.match(nextConfig, /removeDebugLogging:\s*true/);
+  assert.match(nextConfig, /worker-src 'self' blob:/);
   assert.doesNotMatch(nextConfig, /disableLogger:\s*true/);
   assert.match(gitignore, /app\/api\/sentry-example-api\//);
   assert.match(gitignore, /app\/sentry-example-page\//);
