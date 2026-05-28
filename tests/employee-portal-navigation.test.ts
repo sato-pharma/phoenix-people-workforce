@@ -3,7 +3,10 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
-import { resolveEmployeePortalNavVisibility } from "../src/lib/employee-portal/navigation.ts";
+import {
+  resolveEmployeePortalNavVisibility,
+  shouldShowEmployeePortalMarketingQuickAction,
+} from "../src/lib/employee-portal/navigation.ts";
 
 function collectSourceFiles(root: string): string[] {
   return readdirSync(root)
@@ -217,4 +220,56 @@ export function runEmployeePortalNavigationTests() {
     /assertEmployeePortalMarketingPageAccess/,
     "Marketing Requests page must keep its page-level access guard",
   );
+
+  // --- Workstream 4 follow-up: dashboard Marketing quick-action gating ---------
+  // Hidden by default (beta flag unset/false), regardless of role authorization.
+  assert.equal(
+    shouldShowEmployeePortalMarketingQuickAction(undefined, "Medical Rep"),
+    false,
+    "Dashboard Marketing quick-action must be hidden when the beta flag is unset",
+  );
+  assert.equal(
+    shouldShowEmployeePortalMarketingQuickAction(false, "National Sales Manager"),
+    false,
+    "Dashboard Marketing quick-action must be hidden when the beta flag is false (even for authorized roles)",
+  );
+  assert.equal(
+    shouldShowEmployeePortalMarketingQuickAction(false, "Super Admin"),
+    false,
+    "Dashboard Marketing quick-action stays hidden for Super Admin when beta is off",
+  );
+
+  // Appears only when beta flag is true AND the role is already authorized.
+  assert.equal(
+    shouldShowEmployeePortalMarketingQuickAction(true, "Medical Rep"),
+    true,
+    "Dashboard Marketing quick-action appears for an authorized role when beta is enabled",
+  );
+  assert.equal(
+    shouldShowEmployeePortalMarketingQuickAction(true, "National Sales Manager"),
+    true,
+    "Dashboard Marketing quick-action appears for NSM when beta is enabled",
+  );
+
+  // Beta on must NOT surface it for roles not authorized for Marketing.
+  assert.equal(
+    shouldShowEmployeePortalMarketingQuickAction(true, "Employee"),
+    false,
+    "Beta flag must not surface the Marketing quick-action for an unauthorized Employee",
+  );
+  assert.equal(
+    shouldShowEmployeePortalMarketingQuickAction(true, "Training Manager"),
+    false,
+    "Beta flag must not surface the Marketing quick-action for Training Manager",
+  );
+
+  // The dashboard wires the quick-action through the gating helper, and Core 8
+  // quick-actions (Submit Expense, Submit Vacation Request) remain ungated.
+  assert.match(
+    dashboardSource,
+    /shouldShowEmployeePortalMarketingQuickAction\(data\.betaNavEnabled, data\.employee\.roleLabel\)/,
+    "Dashboard Marketing quick-action must be gated via shouldShowEmployeePortalMarketingQuickAction",
+  );
+  assert.match(dashboardSource, /label: "Submit Expense"/, "Core 8 Submit Expense quick-action must remain present");
+  assert.match(dashboardSource, /label: "Submit Vacation Request"/, "Core 8 Submit Vacation Request quick-action must remain present");
 }

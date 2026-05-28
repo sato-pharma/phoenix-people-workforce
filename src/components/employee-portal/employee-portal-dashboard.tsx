@@ -54,6 +54,7 @@ import { SalesPerformanceSection } from "@/components/employee-portal/dashboard/
 import { formatDateOnly } from "@/lib/date-only";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
+import { shouldShowEmployeePortalMarketingQuickAction } from "@/lib/employee-portal/navigation";
 import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 
@@ -1786,7 +1787,11 @@ function QuickActionsPanel({ data }: { data: MedicalRepPortalData }) {
     { href: "/employee-portals/marketing-requests", icon: Megaphone, label: "Submit Marketing Request" },
   ].filter((item) => {
     if (item.href === "/employee-portals/marketing-requests") {
-      return !isRole(data, "training manager");
+      // Marketing Requests is a Beta module: hidden by default, surfaced only
+      // when PHOENIX_PORTAL_SHOW_BETA_NAV is enabled (resolved server-side into
+      // data.betaNavEnabled) AND the role is already authorized for Marketing.
+      // Mirrors the sidebar nav gating in buildEmployeePortalSections.
+      return shouldShowEmployeePortalMarketingQuickAction(data.betaNavEnabled, data.employee.roleLabel);
     }
     return true;
   });

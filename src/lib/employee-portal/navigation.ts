@@ -85,6 +85,23 @@ export function canUseEmployeePortalMarketingControl(
   return role === "SFE Manager" || role === "Super Admin";
 }
 
+/**
+ * Whether the dashboard "Submit Marketing Request" quick-action should render.
+ *
+ * Marketing Requests is a Beta module: hidden by default, surfaced only when the
+ * beta flag is enabled AND the role is already authorized for Marketing. This
+ * mirrors the sidebar nav gating so the dashboard cannot leak a Beta module into
+ * the Core 8 launch surface. `betaNavEnabled` is resolved server-side from
+ * PHOENIX_PORTAL_SHOW_BETA_NAV and passed into the (client) dashboard.
+ */
+export function shouldShowEmployeePortalMarketingQuickAction(
+  betaNavEnabled: boolean | undefined,
+  roleLabel: string | null | undefined,
+  accessRole?: string | null | undefined,
+) {
+  return betaNavEnabled === true && canUseEmployeePortalMarketingRequests(roleLabel, accessRole);
+}
+
 export function canUseEmployeePortalMarketingCustomerDatabase(
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
