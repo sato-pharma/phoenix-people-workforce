@@ -71,6 +71,7 @@ export const adminNavigationSections = [
     id: "people-management",
     items: [
       { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }] },
+      { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Field Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
       { href: "/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies" }] },
