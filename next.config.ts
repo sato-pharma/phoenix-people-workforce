@@ -71,14 +71,21 @@ const nextConfig: NextConfig = {
 };
 
 export default withSentryConfig(nextConfig, {
-  org: "phoenix-b7",
-  project: "phoenix-workspace",
+  org: process.env.SENTRY_ORG ?? "phoenix-b7",
+  project: process.env.SENTRY_PROJECT ?? "phoenix-workspace",
   authToken: process.env.SENTRY_AUTH_TOKEN,
+  errorHandler: (error) => {
+    if (process.env.CI) {
+      console.warn(`Sentry source map upload skipped: ${error.message}`);
+    }
+  },
   // Only upload source maps when an auth token is configured; otherwise builds
   // (local, CI, and un-configured deploys) stay clean and require nothing extra.
-  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+  sourcemaps: { deleteSourcemapsAfterUpload: true, disable: !process.env.SENTRY_AUTH_TOKEN },
   // Keep build output quiet unless running in CI.
   silent: !process.env.CI,
+  telemetry: false,
+  widenClientFileUpload: false,
   webpack: {
     treeshake: {
       removeDebugLogging: true,
