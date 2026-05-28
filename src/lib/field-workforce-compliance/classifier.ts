@@ -171,8 +171,13 @@ function cellContext(cell: {
 }
 
 function candidateTypeForCell(cell: FieldWorkforceDayCell): FieldWorkforceReviewCandidateType | null {
-  if (cell.isPreHire && cell.rawValue !== null) return "pre_hire_activity";
   if (cell.status === "UNKNOWN") return "unknown_value";
+  if (cell.isPreHire) {
+    if (cell.status === "VISITS" || cell.status === "CP" || cell.status === "AV") {
+      return "pre_hire_activity";
+    }
+    return null;
+  }
   if (cell.isPublicHoliday && ["N", "AV", "CP", "VISITS"].includes(cell.status)) return "public_holiday_overlap";
   if (cell.isFriday && !cell.isPreHire && !["F", "BLANK"].includes(cell.status)) return "friday_overlap";
   if (cell.status === "N") return "no_activity";
@@ -223,7 +228,7 @@ function updateNoActivitySeverity(cells: FieldWorkforceDayCell[]) {
 
   for (const cell of normalNoActivityCells) {
     const runLength = runs.get(cell.dateIso) ?? 1;
-    cell.severity = runLength > 1 ? "High" : normalNoActivityCells.length > 1 ? "Medium" : "Low";
+    cell.severity = runLength > 1 || normalNoActivityCells.length > 1 ? "Medium" : "Low";
   }
 }
 
@@ -281,8 +286,9 @@ function buildTimeline(input: {
     const countedAsNoActivityCandidate = eligible && status === "N";
     let severity: FieldWorkforceSeverity | undefined;
 
-    if (isPreHire && rawValue !== null) severity = "High";
-    else if (status === "UNKNOWN") severity = "High";
+    if (status === "UNKNOWN") severity = "High";
+    else if (isPreHire && (status === "VISITS" || status === "CP")) severity = "High";
+    else if (isPreHire && status === "AV") severity = "Review";
     else if (isPublicHoliday && ["N", "AV", "CP", "VISITS"].includes(status)) severity = "Review";
     else if (friday && !["F", "BLANK"].includes(status)) severity = "Review";
     else if (status === "AV") severity = "Review";

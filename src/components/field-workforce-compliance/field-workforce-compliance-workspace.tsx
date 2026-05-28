@@ -4,7 +4,10 @@ import {
   AlertTriangle,
   BadgeCheck,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   FileSpreadsheet,
+  ListFilter,
   Loader2,
   Search,
   ShieldAlert,
@@ -41,8 +44,19 @@ type PreviewResponse = {
   warnings?: FieldWorkforceValidationIssue[];
 };
 
+type WorkspaceTab = "overview" | "timeline" | "queue" | "summary" | "diagnostics";
+
+const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "timeline", label: "Employee Timeline" },
+  { id: "queue", label: "Review Queue" },
+  { id: "summary", label: "Monthly Summary" },
+  { id: "diagnostics", label: "Diagnostics" },
+];
+
 const severityOptions: Array<"All" | FieldWorkforceSeverity> = ["All", "High", "Review", "Medium", "Low"];
 const statusOptions: Array<"All" | FieldWorkforceCellStatus> = ["All", "N", "AV", "CP", "VISITS", "F", "UNKNOWN"];
+const pageSizeOptions = [25, 50, 100];
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-US").format(value);
@@ -73,8 +87,7 @@ function weekday(value: string) {
 function severityBadge(severity: FieldWorkforceSeverity | undefined) {
   if (!severity) return <Badge variant="neutral">Clear</Badge>;
   if (severity === "High") return <Badge variant="danger">{severity}</Badge>;
-  if (severity === "Review") return <Badge variant="warning">{severity}</Badge>;
-  if (severity === "Medium") return <Badge variant="warning">{severity}</Badge>;
+  if (severity === "Review" || severity === "Medium") return <Badge variant="warning">{severity}</Badge>;
   return <Badge variant="neutral">{severity}</Badge>;
 }
 
@@ -178,7 +191,7 @@ function TimelineDayCell({
     <button
       aria-label={`${cell.employeeName} ${cell.dateIso}: ${cell.explanation}`}
       className={cn(
-        "relative flex h-10 w-11 items-center justify-center rounded-lg border text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-orange-300",
+        "relative flex h-10 w-11 shrink-0 items-center justify-center rounded-lg border text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-orange-300",
         statusCellClass(cell),
       )}
       title={cell.explanation}
@@ -237,100 +250,46 @@ function TimelineCellDetails({ cell }: { cell: FieldWorkforceDayCell | null }) {
   );
 }
 
-function EmployeeTimelineGrid({
-  employees,
-  onSelectCell,
-  selectedCell,
-}: {
-  employees: FieldWorkforceEmployeeSummary[];
-  onSelectCell: (cell: FieldWorkforceDayCell) => void;
-  selectedCell: FieldWorkforceDayCell | null;
-}) {
-  const dates = employees[0]?.timeline ?? [];
+function TimelineLegend() {
   return (
-    <div className="hidden md:block">
-      <div className="phoenix-horizontal-scroll max-h-[64vh] overflow-auto rounded-xl border border-slate-200 bg-white">
-        <table className="min-w-max border-separate border-spacing-0 text-left">
-          <thead className="sticky top-0 z-30 bg-slate-50 text-[10px] font-black uppercase tracking-[0.13em] text-slate-500">
-            <tr>
-              <th className="sticky left-0 z-40 w-72 min-w-72 border-b border-r border-slate-200 bg-slate-50 px-4 py-3">
-                Employee
-              </th>
-              {dates.map((cell) => (
-                <th
-                  className={cn(
-                    "w-14 min-w-14 border-b border-r border-slate-200 px-2 py-2 text-center",
-                    cell.isFriday ? "bg-slate-100" : "",
-                    cell.isPublicHoliday ? "bg-amber-50 text-amber-700" : "",
-                  )}
-                  key={cell.dateIso}
-                >
-                  <span className="block text-[11px] text-slate-900">{cell.dayNumber}</span>
-                  <span>{weekday(cell.dateIso)}</span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {employees.map((employee) => (
-              <tr className="group hover:bg-slate-50/70" key={employee.hrId}>
-                <td className="sticky left-0 z-20 w-72 min-w-72 border-b border-r border-slate-100 bg-white px-4 py-3 shadow-[10px_0_14px_-16px_rgba(15,23,42,0.55)] group-hover:bg-slate-50">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-black text-slate-950">{employee.employeeName}</p>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      <span className="font-mono text-xs font-bold text-slate-500">{employee.hrId}</span>
-                      <Badge variant={employee.matchStatus === "matched" ? "success" : "danger"}>
-                        {employee.matchStatus}
-                      </Badge>
-                    </div>
-                  </div>
-                </td>
-                {employee.timeline.map((cell) => (
-                  <td className="border-b border-r border-slate-100 px-1.5 py-2 text-center" key={`${employee.hrId}-${cell.dateIso}`}>
-                    <TimelineDayCell cell={cell} onSelect={onSelectCell} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="mt-4">
-        <TimelineCellDetails cell={selectedCell} />
-      </div>
+    <div className="flex flex-wrap gap-2">
+      <LegendChip className="border-rose-300 bg-rose-50 text-rose-800" label="No activity">N</LegendChip>
+      <LegendChip className="border-sky-300 bg-sky-50 text-sky-800" label="Vacation">AV</LegendChip>
+      <LegendChip className="border-violet-300 bg-violet-50 text-violet-800" label="Campaign">CP</LegendChip>
+      <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits">5</LegendChip>
+      <LegendChip className="border-slate-200 bg-slate-100 text-slate-500" label="Friday">F</LegendChip>
+      <LegendChip className="border-amber-300 bg-amber-50 text-amber-800 ring-2 ring-amber-300" label="Holiday">H</LegendChip>
     </div>
   );
 }
 
-function MobileTimeline({
-  employee,
-  onSelectCell,
-  selectedCell,
+function WorkspaceTabs({
+  activeTab,
+  onChange,
 }: {
-  employee: FieldWorkforceEmployeeSummary | null;
-  onSelectCell: (cell: FieldWorkforceDayCell) => void;
-  selectedCell: FieldWorkforceDayCell | null;
+  activeTab: WorkspaceTab;
+  onChange: (tab: WorkspaceTab) => void;
 }) {
-  if (!employee) {
-    return (
-      <Card className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 md:hidden">
-        No employee selected.
-      </Card>
-    );
-  }
-
   return (
-    <div className="space-y-4 md:hidden">
-      <Card className="rounded-xl border border-slate-200 bg-white p-4">
-        <p className="text-sm font-black text-slate-950">{employee.employeeName}</p>
-        <p className="mt-1 font-mono text-xs font-bold text-slate-500">{employee.hrId}</p>
-        <div className="mt-4 grid grid-cols-7 gap-1.5">
-          {employee.timeline.map((cell) => (
-            <TimelineDayCell cell={cell} key={cell.dateIso} onSelect={onSelectCell} />
-          ))}
-        </div>
-      </Card>
-      <TimelineCellDetails cell={selectedCell} />
+    <div className="phoenix-horizontal-scroll overflow-x-auto rounded-2xl border border-slate-200 bg-white/90 p-1.5 shadow-sm">
+      <div className="flex min-w-max gap-1.5">
+        {workspaceTabs.map((tab) => (
+          <button
+            aria-pressed={activeTab === tab.id}
+            className={cn(
+              "rounded-xl px-4 py-2 text-sm font-black transition",
+              activeTab === tab.id
+                ? "bg-slate-950 text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)]"
+                : "text-slate-600 hover:bg-orange-50 hover:text-orange-700",
+            )}
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -351,75 +310,366 @@ function ValidationIssues({
       <div className="min-w-0">
         <p className="font-semibold">{title}</p>
         <div className="mt-2 space-y-1 text-sm leading-6">
-          {issues.slice(0, 8).map((issue, index) => (
+          {issues.slice(0, 4).map((issue, index) => (
             <p key={`${issue.code}:${issue.rowNumber ?? "file"}:${index}`}>
               {issue.rowNumber ? `Row ${issue.rowNumber}: ` : ""}{issue.message}
             </p>
           ))}
-          {issues.length > 8 ? <p>{issues.length - 8} more issue(s) hidden in diagnostics.</p> : null}
+          {issues.length > 4 ? <p>{issues.length - 4} more issue(s) in Diagnostics.</p> : null}
         </div>
       </div>
     </AdminCallout>
   );
 }
 
+function OverviewPanel({
+  highCount,
+  holidayWarnings,
+  result,
+  totalCandidates,
+}: {
+  highCount: number;
+  holidayWarnings: number;
+  result: FieldWorkforcePreviewResult;
+  totalCandidates: number;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Employees" value={formatNumber(result.metadata.employeeCount)} />
+        <MetricCard label="Review Candidates" tone={totalCandidates ? "warning" : "success"} value={formatNumber(totalCandidates)} />
+        <MetricCard label="High Severity" tone={highCount ? "danger" : "success"} value={formatNumber(highCount)} />
+        <MetricCard label="Holiday Warnings" tone={holidayWarnings ? "warning" : "neutral"} value={formatNumber(holidayWarnings)} />
+        <MetricCard label="Matched HR IDs" tone={result.metadata.unmatchedEmployees ? "warning" : "success"} value={`${formatNumber(result.metadata.matchedEmployees)} / ${formatNumber(result.metadata.employeeCount)}`} />
+        <MetricCard label="Parsed Month" value={`${result.metadata.monthLabel} ${result.metadata.year}`} />
+        <MetricCard label="Read-only Status" tone="success" value="Preview only" />
+        <MetricCard label="Public Holidays" tone={result.metadata.holidayConnected ? "success" : "warning"} value={`${formatNumber(result.metadata.holidaysDetected)} detected`} />
+      </div>
+      <AdminCallout tone="neutral">
+        <ShieldAlert className="mt-0.5 h-4 w-4" />
+        <p>This workspace is still Phase 1: in-memory preview only. It does not save, approve, deduct payroll, or mutate leave balances.</p>
+      </AdminCallout>
+    </div>
+  );
+}
+
+function EmployeePicker({
+  employees,
+  employeeSearch,
+  onEmployeeSearchChange,
+  onSelectEmployee,
+  selectedEmployee,
+}: {
+  employees: FieldWorkforceEmployeeSummary[];
+  employeeSearch: string;
+  onEmployeeSearchChange: (value: string) => void;
+  onSelectEmployee: (hrId: string) => void;
+  selectedEmployee: FieldWorkforceEmployeeSummary | null;
+}) {
+  const selectedIndex = selectedEmployee
+    ? employees.findIndex((employee) => employee.hrId === selectedEmployee.hrId)
+    : -1;
+  const hasPrevious = selectedIndex > 0;
+  const hasNext = selectedIndex >= 0 && selectedIndex < employees.length - 1;
+
+  return (
+    <Card className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px_220px]">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            placeholder="Search employee or HR ID"
+            value={employeeSearch}
+            onChange={(event) => onEmployeeSearchChange(event.target.value)}
+          />
+        </div>
+        <select
+          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          value={selectedEmployee?.hrId ?? ""}
+          onChange={(event) => onSelectEmployee(event.target.value)}
+        >
+          {employees.map((employee) => (
+            <option key={employee.hrId} value={employee.hrId}>{employee.employeeName} / {employee.hrId}</option>
+          ))}
+        </select>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            className="gap-2"
+            disabled={!hasPrevious}
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              if (hasPrevious) onSelectEmployee(employees[selectedIndex - 1].hrId);
+            }}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </Button>
+          <Button
+            className="gap-2"
+            disabled={!hasNext}
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              if (hasNext) onSelectEmployee(employees[selectedIndex + 1].hrId);
+            }}
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      <p className="mt-2 text-xs font-semibold text-slate-500">
+        Showing {selectedIndex >= 0 ? selectedIndex + 1 : 0} of {formatNumber(employees.length)} matching employees.
+      </p>
+    </Card>
+  );
+}
+
+function EmployeeMiniSummary({ employee }: { employee: FieldWorkforceEmployeeSummary }) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <MetricCard label="Eligible Days" value={formatNumber(employee.eligibleWorkingDays)} />
+      <MetricCard label="Worked Days" tone="success" value={formatNumber(employee.workedDays)} />
+      <MetricCard label="N Candidates" tone={employee.noActivityCandidates ? "warning" : "success"} value={formatNumber(employee.noActivityCandidates)} />
+      <MetricCard label="Visits" tone="success" value={formatNumber(employee.totalVisits)} />
+      <MetricCard label="AV Signals" tone={employee.vacationSignalDays ? "warning" : "neutral"} value={formatNumber(employee.vacationSignalDays)} />
+      <MetricCard label="CP Signals" value={formatNumber(employee.campaignDays)} />
+      <MetricCard label="Holiday Warnings" tone={employee.holidayWarnings ? "warning" : "neutral"} value={formatNumber(employee.holidayWarnings)} />
+      <MetricCard label="Pre-hire Context" tone={employee.preHireIgnoredValues ? "warning" : "neutral"} value={formatNumber(employee.preHireIgnoredValues)} />
+    </div>
+  );
+}
+
+function SingleEmployeeTimeline({
+  employee,
+  onSelectCell,
+  selectedCell,
+}: {
+  employee: FieldWorkforceEmployeeSummary;
+  onSelectCell: (cell: FieldWorkforceDayCell) => void;
+  selectedCell: FieldWorkforceDayCell | null;
+}) {
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <Card className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+          <p className="text-sm font-black text-slate-950">{employee.employeeName}</p>
+          <p className="mt-1 font-mono text-xs font-bold text-slate-500">{employee.hrId} / Hire date {employee.hiringDateIso ?? "-"}</p>
+        </div>
+        <div className="phoenix-horizontal-scroll overflow-x-auto p-4">
+          <div className="min-w-max">
+            <div className="mb-2 flex gap-1.5">
+              {employee.timeline.map((cell) => (
+                <div
+                  className={cn(
+                    "w-11 shrink-0 rounded-md px-1 py-1 text-center text-[10px] font-black uppercase tracking-[0.08em] text-slate-500",
+                    cell.isFriday ? "bg-slate-100" : "",
+                    cell.isPublicHoliday ? "bg-amber-50 text-amber-700" : "",
+                  )}
+                  key={`${cell.dateIso}-header`}
+                >
+                  <span className="block text-[11px] text-slate-900">{cell.dayNumber}</span>
+                  <span>{weekday(cell.dateIso)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-1.5">
+              {employee.timeline.map((cell) => (
+                <TimelineDayCell cell={cell} key={cell.dateIso} onSelect={onSelectCell} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+      <TimelineCellDetails cell={selectedCell} />
+    </div>
+  );
+}
+
+function TimelinePanel({
+  employeeNotes,
+  employees,
+  employeeSearch,
+  onEmployeeSearchChange,
+  onSelectCell,
+  onSelectEmployee,
+  onUpdateEmployeeNote,
+  selectedCell,
+  selectedEmployee,
+}: {
+  employeeNotes: Record<string, string>;
+  employees: FieldWorkforceEmployeeSummary[];
+  employeeSearch: string;
+  onEmployeeSearchChange: (value: string) => void;
+  onSelectCell: (cell: FieldWorkforceDayCell) => void;
+  onSelectEmployee: (hrId: string) => void;
+  onUpdateEmployeeNote: (hrId: string, value: string) => void;
+  selectedCell: FieldWorkforceDayCell | null;
+  selectedEmployee: FieldWorkforceEmployeeSummary | null;
+}) {
+  if (!selectedEmployee) {
+    return (
+      <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
+        No employee matches the current filter.
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <EmployeePicker
+        employeeSearch={employeeSearch}
+        employees={employees}
+        selectedEmployee={selectedEmployee}
+        onEmployeeSearchChange={onEmployeeSearchChange}
+        onSelectEmployee={onSelectEmployee}
+      />
+      <TimelineLegend />
+      <EmployeeMiniSummary employee={selectedEmployee} />
+      <SingleEmployeeTimeline
+        employee={selectedEmployee}
+        selectedCell={selectedCell}
+        onSelectCell={onSelectCell}
+      />
+      <Card className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-sm font-black text-slate-950">Temporary HR review note</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">Session-only. Not saved, not approved, not sent to payroll or leave.</p>
+          </div>
+          <textarea
+            className="min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 lg:max-w-xl"
+            placeholder="Official conference, pending medical leave, field assignment, training day, device issue..."
+            value={employeeNotes[selectedEmployee.hrId] ?? ""}
+            onChange={(event) => onUpdateEmployeeNote(selectedEmployee.hrId, event.target.value)}
+          />
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function ReviewQueue({
   candidates,
-  employeeFilter,
 }: {
   candidates: FieldWorkforceReviewCandidate[];
-  employeeFilter: string;
 }) {
   const [severity, setSeverity] = useState<"All" | FieldWorkforceSeverity>("All");
   const [status, setStatus] = useState<"All" | FieldWorkforceCellStatus>("All");
+  const [employeeQuery, setEmployeeQuery] = useState("");
   const [holidayOnly, setHolidayOnly] = useState(false);
+  const [preHireOnly, setPreHireOnly] = useState(false);
+  const [pageSize, setPageSize] = useState(25);
+  const [page, setPage] = useState(1);
   const [notes, setNotes] = useState<Record<string, string>>({});
 
   const filtered = useMemo(() => candidates.filter((candidate) => {
     if (severity !== "All" && candidate.severity !== severity) return false;
     if (status !== "All" && !candidateMatchesStatus(candidate, status)) return false;
     if (holidayOnly && !candidate.context.some((item) => item.toLowerCase().includes("public holiday"))) return false;
-    if (employeeFilter.trim()) {
-      const needle = employeeFilter.trim().toLowerCase();
+    if (preHireOnly && candidate.type !== "pre_hire_activity") return false;
+    if (employeeQuery.trim()) {
+      const needle = employeeQuery.trim().toLowerCase();
       const haystack = `${candidate.employeeName} ${candidate.hrId}`.toLowerCase();
       if (!haystack.includes(needle)) return false;
     }
     return true;
-  }), [candidates, employeeFilter, holidayOnly, severity, status]);
+  }), [candidates, employeeQuery, holidayOnly, preHireOnly, severity, status]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const visibleRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  function resetPage() {
+    setPage(1);
+  }
 
   return (
     <AdminTableShell
       description="Review candidates are labels only. They do not approve, deduct, save, or mutate payroll/leave."
       title="Review Candidate Queue"
     >
-      <div className="grid gap-3 border-b border-slate-100 p-4 md:grid-cols-[180px_180px_1fr]">
+      <div className="grid gap-3 border-b border-slate-100 p-4 lg:grid-cols-[180px_180px_minmax(0,1fr)_180px]">
         <select
           className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={severity}
-          onChange={(event) => setSeverity(event.target.value as typeof severity)}
+          onChange={(event) => {
+            setSeverity(event.target.value as typeof severity);
+            resetPage();
+          }}
         >
           {severityOptions.map((option) => <option key={option} value={option}>{option} severity</option>)}
         </select>
         <select
           className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={status}
-          onChange={(event) => setStatus(event.target.value as typeof status)}
+          onChange={(event) => {
+            setStatus(event.target.value as typeof status);
+            resetPage();
+          }}
         >
           {statusOptions.map((option) => <option key={option} value={option}>{option === "All" ? "All statuses" : statusMeaning(option)}</option>)}
         </select>
-        <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            placeholder="Filter employee or HR ID"
+            value={employeeQuery}
+            onChange={(event) => {
+              setEmployeeQuery(event.target.value);
+              resetPage();
+            }}
+          />
+        </div>
+        <select
+          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          value={pageSize}
+          onChange={(event) => {
+            setPageSize(Number(event.target.value));
+            resetPage();
+          }}
+        >
+          {pageSizeOptions.map((option) => <option key={option} value={option}>{option} rows</option>)}
+        </select>
+        <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 lg:col-span-2">
           <input
             checked={holidayOnly}
             className="h-4 w-4 accent-orange-600"
             type="checkbox"
-            onChange={(event) => setHolidayOnly(event.target.checked)}
+            onChange={(event) => {
+              setHolidayOnly(event.target.checked);
+              resetPage();
+            }}
           />
           Public holiday warnings only
         </label>
+        <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 lg:col-span-2">
+          <input
+            checked={preHireOnly}
+            className="h-4 w-4 accent-orange-600"
+            type="checkbox"
+            onChange={(event) => {
+              setPreHireOnly(event.target.checked);
+              resetPage();
+            }}
+          />
+          Pre-hire anomalies only
+        </label>
       </div>
-      <div className="phoenix-horizontal-scroll overflow-x-auto">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold text-slate-500">
+        <span>Showing {visibleRows.length ? (safePage - 1) * pageSize + 1 : 0}-{Math.min(safePage * pageSize, filtered.length)} of {formatNumber(filtered.length)} candidates</span>
+        <div className="flex items-center gap-2">
+          <Button disabled={safePage <= 1} type="button" variant="secondary" onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button>
+          <span>Page {safePage} / {totalPages}</span>
+          <Button disabled={safePage >= totalPages} type="button" variant="secondary" onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next</Button>
+        </div>
+      </div>
+      <div className="phoenix-horizontal-scroll max-h-[52vh] overflow-auto">
         <table className="w-full min-w-[1180px] text-left text-sm">
-          <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
               <th className="px-4 py-3">Employee</th>
               <th className="px-4 py-3">Date</th>
@@ -432,7 +682,7 @@ function ReviewQueue({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filtered.slice(0, 250).map((candidate) => (
+            {visibleRows.map((candidate) => (
               <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={candidate.id}>
                 <td className="px-4 py-3">
                   <p className="font-black text-slate-950">{candidate.employeeName}</p>
@@ -463,7 +713,7 @@ function ReviewQueue({
                 </td>
               </tr>
             ))}
-            {filtered.length === 0 ? (
+            {visibleRows.length === 0 ? (
               <tr>
                 <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={8}>
                   No review candidates match the current filters.
@@ -473,24 +723,67 @@ function ReviewQueue({
           </tbody>
         </table>
       </div>
-      {filtered.length > 250 ? (
-        <div className="border-t border-slate-100 px-4 py-3 text-xs font-semibold text-slate-500">
-          Showing first 250 of {formatNumber(filtered.length)} candidates.
-        </div>
-      ) : null}
     </AdminTableShell>
   );
 }
 
 function MonthlySummaryTable({ employees }: { employees: FieldWorkforceEmployeeSummary[] }) {
+  const [query, setQuery] = useState("");
+  const [pageSize, setPageSize] = useState(25);
+  const [page, setPage] = useState(1);
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return employees;
+    return employees.filter((employee) =>
+      `${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle),
+    );
+  }, [employees, query]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const visibleRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
   return (
     <AdminTableShell
-      description="Employee-level totals for the uploaded file. Public holidays are warning overlays, not automatic calculation changes."
+      description="Compact employee-level totals. Public holidays are warning overlays, not automatic calculation changes."
       title="Monthly Employee Summary"
     >
-      <div className="phoenix-horizontal-scroll overflow-x-auto">
+      <div className="grid gap-3 border-b border-slate-100 p-4 md:grid-cols-[minmax(0,1fr)_180px]">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            placeholder="Search employee or HR ID"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+        <select
+          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          value={pageSize}
+          onChange={(event) => {
+            setPageSize(Number(event.target.value));
+            setPage(1);
+          }}
+        >
+          {pageSizeOptions.map((option) => <option key={option} value={option}>{option} rows</option>)}
+        </select>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold text-slate-500">
+        <span>Showing {visibleRows.length ? (safePage - 1) * pageSize + 1 : 0}-{Math.min(safePage * pageSize, filtered.length)} of {formatNumber(filtered.length)} employees</span>
+        <div className="flex items-center gap-2">
+          <Button disabled={safePage <= 1} type="button" variant="secondary" onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button>
+          <span>Page {safePage} / {totalPages}</span>
+          <Button disabled={safePage >= totalPages} type="button" variant="secondary" onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next</Button>
+        </div>
+      </div>
+      <div className="phoenix-horizontal-scroll max-h-[52vh] overflow-auto">
         <table className="w-full min-w-[1180px] text-left text-sm">
-          <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
               <th className="px-4 py-3">Employee</th>
               <th className="px-4 py-3">Hiring Date</th>
@@ -506,7 +799,7 @@ function MonthlySummaryTable({ employees }: { employees: FieldWorkforceEmployeeS
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {employees.map((employee) => (
+            {visibleRows.map((employee) => (
               <tr className="text-slate-700 hover:bg-slate-50/70" key={employee.hrId}>
                 <td className="px-4 py-3">
                   <p className="font-black text-slate-950">{employee.employeeName}</p>
@@ -531,6 +824,65 @@ function MonthlySummaryTable({ employees }: { employees: FieldWorkforceEmployeeS
   );
 }
 
+function DiagnosticsPanel({
+  errors,
+  result,
+  warnings,
+}: {
+  errors: FieldWorkforceValidationIssue[];
+  result: FieldWorkforcePreviewResult;
+  warnings: FieldWorkforceValidationIssue[];
+}) {
+  const preHireContext = result.employees.reduce((sum, employee) => sum + employee.preHireIgnoredValues, 0);
+  const unknownValues = result.employees.reduce((sum, employee) => sum + employee.unknownValues, 0);
+
+  return (
+    <AdminTableShell
+      description="Secondary parsing details. Collapsed by default to keep the review workspace compact."
+      title="Import Diagnostics"
+    >
+      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-5">
+        <MetricCard label="File" value={result.metadata.fileName} />
+        <MetricCard label="Sheet" value={result.metadata.sheetName} />
+        <MetricCard label="Date Range" value={`${displayDate(result.metadata.dateRange.start)} - ${displayDate(result.metadata.dateRange.end)}`} />
+        <MetricCard label="Warnings" tone={warnings.length ? "warning" : "success"} value={formatNumber(warnings.length)} />
+        <MetricCard label="Pre-hire Context" tone={preHireContext ? "warning" : "neutral"} value={formatNumber(preHireContext)} />
+        <MetricCard label="Unknown Values" tone={unknownValues ? "danger" : "success"} value={formatNumber(unknownValues)} />
+        <MetricCard
+          label="Public Holidays"
+          tone={result.metadata.holidayConnected ? "success" : "warning"}
+          value={`${formatNumber(result.metadata.holidaysDetected)} detected`}
+        />
+      </div>
+      <div className="space-y-3 border-t border-slate-100 p-4">
+        <details className="rounded-xl border border-slate-200 bg-white p-4">
+          <summary className="cursor-pointer text-sm font-black text-slate-900">Validation warnings and errors</summary>
+          <div className="mt-3 max-h-72 space-y-2 overflow-auto text-sm leading-6 text-slate-600">
+            {[...errors, ...warnings].length === 0 ? <p>No diagnostics reported.</p> : null}
+            {[...errors, ...warnings].map((issue, index) => (
+              <p key={`${issue.code}:${issue.rowNumber ?? "file"}:${index}`}>
+                <span className="font-black text-slate-900">{issue.code}</span>
+                {issue.rowNumber ? ` / Row ${issue.rowNumber}` : ""}: {issue.message}
+              </p>
+            ))}
+          </div>
+        </details>
+        <details className="rounded-xl border border-slate-200 bg-white p-4">
+          <summary className="cursor-pointer text-sm font-black text-slate-900">Phase 1 boundaries</summary>
+          <div className="mt-3 grid gap-2 text-sm leading-6 text-slate-600 sm:grid-cols-2">
+            <p>No database writes.</p>
+            <p>No upload archive.</p>
+            <p>No approval workflow.</p>
+            <p>No payroll action.</p>
+            <p>No leave mutation.</p>
+            <p>No notifications.</p>
+          </div>
+        </details>
+      </div>
+    </AdminTableShell>
+  );
+}
+
 export function FieldWorkforceComplianceWorkspace() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -539,6 +891,7 @@ export function FieldWorkforceComplianceWorkspace() {
   const [errors, setErrors] = useState<FieldWorkforceValidationIssue[]>([]);
   const [warnings, setWarnings] = useState<FieldWorkforceValidationIssue[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [selectedHrId, setSelectedHrId] = useState<string>("");
   const [selectedCell, setSelectedCell] = useState<FieldWorkforceDayCell | null>(null);
@@ -557,6 +910,10 @@ export function FieldWorkforceComplianceWorkspace() {
     filteredEmployees.find((employee) => employee.hrId === selectedHrId) ??
     filteredEmployees[0] ??
     null;
+  const effectiveSelectedCell =
+    selectedCell && selectedEmployee && selectedCell.hrId === selectedEmployee.hrId
+      ? selectedCell
+      : selectedEmployee?.timeline[0] ?? null;
 
   async function readPreviewResponse(response: Response): Promise<PreviewResponse> {
     const text = await response.text();
@@ -566,6 +923,12 @@ export function FieldWorkforceComplianceWorkspace() {
     } catch {
       return { success: false, message: text };
     }
+  }
+
+  function selectEmployee(hrId: string) {
+    const employee = filteredEmployees.find((row) => row.hrId === hrId) ?? result?.employees.find((row) => row.hrId === hrId);
+    setSelectedHrId(hrId);
+    setSelectedCell(employee?.timeline[0] ?? null);
   }
 
   async function handlePreview() {
@@ -592,9 +955,11 @@ export function FieldWorkforceComplianceWorkspace() {
         setResult(payload.data);
         setSelectedHrId(payload.data.employees[0]?.hrId ?? "");
         setSelectedCell(payload.data.employees[0]?.timeline[0] ?? null);
+        setActiveTab("timeline");
       } else {
         setSelectedHrId("");
         setSelectedCell(null);
+        setActiveTab("overview");
         setMessage(payload.message ?? payload.error ?? "Preview failed.");
       }
     } catch (error) {
@@ -606,7 +971,6 @@ export function FieldWorkforceComplianceWorkspace() {
 
   const totalCandidates = result?.reviewCandidates.length ?? 0;
   const highCount = result?.severityCounts.High ?? 0;
-  const reviewCount = result?.severityCounts.Review ?? 0;
   const holidayWarnings = result?.employees.reduce((sum, employee) => sum + employee.holidayWarnings, 0) ?? 0;
 
   return (
@@ -644,7 +1008,7 @@ export function FieldWorkforceComplianceWorkspace() {
         >
           <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <button
-              className="flex min-h-[118px] w-full items-center justify-between gap-4 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5 text-left text-sm shadow-sm transition hover:border-orange-400 hover:bg-orange-50/40"
+              className="flex min-h-[104px] w-full items-center justify-between gap-4 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-4 text-left text-sm shadow-sm transition hover:border-orange-400 hover:bg-orange-50/40"
               type="button"
               onClick={() => fileInputRef.current?.click()}
             >
@@ -689,6 +1053,7 @@ export function FieldWorkforceComplianceWorkspace() {
                   setErrors([]);
                   setWarnings([]);
                   setMessage(null);
+                  setActiveTab("overview");
                 }}
               />
             </Card>
@@ -706,110 +1071,42 @@ export function FieldWorkforceComplianceWorkspace() {
 
         {result ? (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <MetricCard label="Employees" value={formatNumber(result.metadata.employeeCount)} />
-              <MetricCard label="Review Candidates" tone={totalCandidates ? "warning" : "success"} value={formatNumber(totalCandidates)} />
-              <MetricCard label="High Severity" tone={highCount ? "danger" : "success"} value={formatNumber(highCount)} />
-              <MetricCard label="Holiday Warnings" tone={holidayWarnings ? "warning" : "neutral"} value={formatNumber(holidayWarnings)} />
-              <MetricCard label="Matched HR IDs" tone={result.metadata.unmatchedEmployees ? "warning" : "success"} value={`${formatNumber(result.metadata.matchedEmployees)} / ${formatNumber(result.metadata.employeeCount)}`} />
-            </div>
-
-            <AdminTableShell
-              description="The timeline is the primary review surface for monthly field activity."
-              title="Employee Timeline Review"
-            >
-              <div className="space-y-4 p-4">
-                <div className="sticky top-0 z-30 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
-                    <div className="flex flex-wrap gap-2">
-                      <LegendChip className="border-rose-300 bg-rose-50 text-rose-800" label="No activity">N</LegendChip>
-                      <LegendChip className="border-sky-300 bg-sky-50 text-sky-800" label="Vacation">AV</LegendChip>
-                      <LegendChip className="border-violet-300 bg-violet-50 text-violet-800" label="Campaign">CP</LegendChip>
-                      <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits">5</LegendChip>
-                      <LegendChip className="border-slate-200 bg-slate-100 text-slate-500" label="Friday">F</LegendChip>
-                      <LegendChip className="border-amber-300 bg-amber-50 text-amber-800 ring-2 ring-amber-300" label="Holiday">H</LegendChip>
-                    </div>
-                    <div className="relative">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                      <input
-                        className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                        placeholder="Filter employee or HR ID"
-                        value={employeeSearch}
-                        onChange={(event) => setEmployeeSearch(event.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-3 grid gap-3 md:hidden">
-                    <select
-                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                      value={selectedEmployee?.hrId ?? ""}
-                      onChange={(event) => setSelectedHrId(event.target.value)}
-                    >
-                      {filteredEmployees.map((employee) => (
-                        <option key={employee.hrId} value={employee.hrId}>{employee.employeeName} / {employee.hrId}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <EmployeeTimelineGrid
-                  employees={filteredEmployees}
-                  selectedCell={selectedCell}
-                  onSelectCell={setSelectedCell}
-                />
-                <MobileTimeline
-                  employee={selectedEmployee}
-                  selectedCell={selectedCell}
-                  onSelectCell={setSelectedCell}
-                />
-
-                {selectedEmployee ? (
-                  <Card className="rounded-xl border border-slate-200 bg-white p-4">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <p className="text-sm font-black text-slate-950">Temporary HR review note</p>
-                        <p className="mt-1 text-xs font-semibold text-slate-500">Session-only. Not saved, not approved, not sent to payroll or leave.</p>
-                      </div>
-                      <textarea
-                        className="min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 lg:max-w-xl"
-                        placeholder="Official conference, pending medical leave, field assignment, training day, device issue..."
-                        value={employeeNotes[selectedEmployee.hrId] ?? ""}
-                        onChange={(event) => setEmployeeNotes((current) => ({
-                          ...current,
-                          [selectedEmployee.hrId]: event.target.value,
-                        }))}
-                      />
-                    </div>
-                  </Card>
-                ) : null}
-              </div>
-            </AdminTableShell>
-
-            {reviewCount > 0 && !result.metadata.holidayConnected ? (
+            <WorkspaceTabs activeTab={activeTab} onChange={setActiveTab} />
+            {activeTab === "overview" ? (
+              <OverviewPanel
+                highCount={highCount}
+                holidayWarnings={holidayWarnings}
+                result={result}
+                totalCandidates={totalCandidates}
+              />
+            ) : null}
+            {activeTab === "timeline" ? (
+              <TimelinePanel
+                employeeNotes={employeeNotes}
+                employeeSearch={employeeSearch}
+                employees={filteredEmployees}
+                selectedCell={effectiveSelectedCell}
+                selectedEmployee={selectedEmployee}
+                onEmployeeSearchChange={setEmployeeSearch}
+                onSelectCell={setSelectedCell}
+                onSelectEmployee={selectEmployee}
+                onUpdateEmployeeNote={(hrId, value) => setEmployeeNotes((current) => ({
+                  ...current,
+                  [hrId]: value,
+                }))}
+              />
+            ) : null}
+            {activeTab === "queue" ? <ReviewQueue candidates={result.reviewCandidates} /> : null}
+            {activeTab === "summary" ? <MonthlySummaryTable employees={result.employees} /> : null}
+            {activeTab === "diagnostics" ? (
+              <DiagnosticsPanel errors={errors} result={result} warnings={warnings} />
+            ) : null}
+            {result.severityCounts.Review > 0 && !result.metadata.holidayConnected ? (
               <AdminCallout tone="warning">
                 <CalendarDays className="mt-0.5 h-4 w-4" />
                 <p>{result.metadata.holidayMessage ?? "Public holiday overlay could not be loaded for this preview."}</p>
               </AdminCallout>
             ) : null}
-
-            <ReviewQueue candidates={result.reviewCandidates} employeeFilter={employeeSearch} />
-            <MonthlySummaryTable employees={result.employees} />
-
-            <AdminTableShell
-              description="Technical parsing details for support and validation."
-              title="Import Diagnostics"
-            >
-              <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
-                <MetricCard label="File" value={result.metadata.fileName} />
-                <MetricCard label="Sheet" value={result.metadata.sheetName} />
-                <MetricCard label="Date Range" value={`${displayDate(result.metadata.dateRange.start)} - ${displayDate(result.metadata.dateRange.end)}`} />
-                <MetricCard
-                  label="Public Holidays"
-                  tone={result.metadata.holidayConnected ? "success" : "warning"}
-                  value={`${formatNumber(result.metadata.holidaysDetected)} detected`}
-                />
-              </div>
-            </AdminTableShell>
           </>
         ) : (
           <Card className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
@@ -820,6 +1117,10 @@ export function FieldWorkforceComplianceWorkspace() {
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
               Upload a monthly workbook to review normalized activity, severity labels, public holiday overlays, and employee timelines.
             </p>
+            <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+              <ListFilter className="h-3.5 w-3.5" />
+              Compact tabbed workspace
+            </div>
           </Card>
         )}
       </div>
