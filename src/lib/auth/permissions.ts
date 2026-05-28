@@ -505,6 +505,9 @@ export function resolveEmployeeIdentityId(context: Partial<Pick<AccessContext, "
 }
 
 export function resolveNavigationMode(context: AccessContext): NavigationMode {
+  if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) {
+    return "employee-portal";
+  }
   return portalNavigationRoles.has(context.role) ? "employee-portal" : "admin";
 }
 
@@ -660,7 +663,9 @@ export async function canAccess(
   action: PermissionAction = "read",
 ) {
   if (context.scope === "system") return true;
-  if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) return false;
+  if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) {
+    return resource === "employee_profile" && (action === "read" || action === "update");
+  }
   const matrix = await resolvePermissionMatrix();
   return matrix[context.role][resource]?.includes(action) ?? false;
 }

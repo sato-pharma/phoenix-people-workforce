@@ -2,14 +2,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  canAccess,
   canSeeEmployee,
   createAccessContext,
   getExpensesScope,
   getPayrollScope,
   getSalesScope,
+  resolveNavigationMode,
 } from "../src/lib/auth/permissions.ts";
 
-export function runPhase22RoleMatrixSecurityTests() {
+export async function runPhase22RoleMatrixSecurityTests() {
   const phase22Smoke = readFileSync("scripts/phase22-role-matrix-security-smoke.ts", "utf8");
   const permissionsSource = readFileSync("src/lib/auth/permissions.ts", "utf8");
 
@@ -38,11 +40,19 @@ export function runPhase22RoleMatrixSecurityTests() {
   const employee = createAccessContext({ hrId: "E-1", role: "Employee" });
   const medicalRep = createAccessContext({ hrId: "MR-1", role: "Medical Rep" });
   const districtManager = createAccessContext({ hrId: "DSM-1", role: "District Manager" });
+  const nonDesignatedHrSpecialist = createAccessContext({ hrId: "PHASE23-HR", role: "HR Specialist" });
 
   assert.equal(canSeeEmployee(employee, { hrId: "E-1", managerHrId: "DSM-1" }), true);
   assert.equal(canSeeEmployee(employee, { hrId: "E-2", managerHrId: "E-1" }), false);
   assert.equal(canSeeEmployee(medicalRep, { hrId: "MR-2", managerHrId: "MR-1" }), false);
   assert.equal(canSeeEmployee(districtManager, { hrId: "MR-2", managerHrId: "DSM-1" }), true);
+  assert.equal(nonDesignatedHrSpecialist.scope, "self");
+  assert.equal(resolveNavigationMode(nonDesignatedHrSpecialist), "employee-portal");
+  assert.equal(await canAccess(nonDesignatedHrSpecialist, "employee_profile", "read"), true);
+  assert.equal(await canAccess(nonDesignatedHrSpecialist, "employee_profile", "update"), true);
+  assert.equal(await canAccess(nonDesignatedHrSpecialist, "employees", "read"), false);
+  assert.equal(await canAccess(nonDesignatedHrSpecialist, "admin", "read"), false);
+  assert.equal(await canAccess(nonDesignatedHrSpecialist, "user_admin", "read"), false);
 
   assert.equal(getPayrollScope(employee), "SELF");
   assert.equal(getPayrollScope(districtManager), "SELF");
