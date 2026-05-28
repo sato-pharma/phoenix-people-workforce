@@ -5,6 +5,7 @@ import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
+import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import {
   assertPermission,
   resolveNavigationMode,
@@ -95,6 +96,9 @@ export default async function EmployeePortalProbationPage() {
       errorBoundaryTitle="Probation Tracker unavailable"
       title="Probation Tracker"
     >
+      <div className="flex flex-wrap items-center gap-2">
+        <ScopeBadge scope={access.scope} />
+      </div>
       <EmployeeProbationDashboard
         canSubmitManagerFeedback={canSubmitManagerFeedback}
         initialData={initialData}

@@ -57,6 +57,7 @@ export type PermissionResource =
   | "admin"
   | "user_admin"
   | "permission_admin"
+  | "support_requests"
   | "workflow_registry";
 
 export const permissionResources: PermissionResource[] = [
@@ -86,6 +87,7 @@ export const permissionResources: PermissionResource[] = [
   "payslips",
   "outstation",
   "leave",
+  "support_requests",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -160,6 +162,7 @@ const defaultPermissionMatrix: PermissionMap = {
     permission_admin: allActions,
     workflow_registry: allActions,
     sales: allActions,
+    support_requests: allActions,
     team: allActions,
     user_admin: allActions,
     vacancies: allActions,
@@ -183,6 +186,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     resignations: ["read", "approve", "export"],
     sales: ["read", "export"],
+    support_requests: ["read", "export"],
     team: ["read", "export"],
     user_admin: ["read"],
     vacancies: ["read", "export"],
@@ -205,6 +209,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: allActions,
     resignations: allActions,
+    support_requests: ["read", "create", "update", "approve", "export"],
     team: ["read", "export"],
     vacancies: allActions,
     workflow_registry: ["read"],
@@ -218,6 +223,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: allActions,
     payslips: ["read", "export"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
     workflow_registry: ["read"],
   },
   Employee: {
@@ -232,6 +238,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
   },
   "Medical Rep": {
     overview: [],
@@ -245,6 +252,7 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read"],
     sales: ["read", "export"],
     payslips: ["read", "export"],
+    support_requests: ["read", "create"],
   },
   "District Manager": {
     overview: [],
@@ -259,6 +267,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read", "export"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
   },
@@ -275,6 +284,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
     team: ["read", "export"],
   },
   "National Sales Manager": {
@@ -289,6 +299,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
     team: ["read", "export"],
     organogram: ["read"],
     vacancies: ["read", "export"],
@@ -304,6 +315,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
   },
   "Group Product Manager": {
     overview: [],
@@ -316,6 +328,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
   },
   "SFE Manager": {
     overview: ["read"],
@@ -328,6 +341,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: allActions,
+    support_requests: ["read", "create"],
   },
   "Training Manager": {
     overview: [],
@@ -341,6 +355,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     probation: ["read", "export"],
+    support_requests: ["read", "create"],
     team: ["read"],
   },
   "Marketing Manager": {
@@ -354,6 +369,7 @@ const defaultPermissionMatrix: PermissionMap = {
     offers: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
+    support_requests: ["read", "create"],
   },
   Manager: {
     overview: [],
@@ -368,6 +384,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
     team: ["read", "export"],
   },
 };
@@ -453,6 +470,10 @@ export function parseRoleStrict(value: string | null | undefined): PhoenixRole {
     throw new Error(`Invalid role "${String(value ?? "").trim()}".`);
   }
   return parsed;
+}
+
+export function isNationalSalesManager(value: string | null | undefined): boolean {
+  return normalizeRole(value) === "National Sales Manager";
 }
 
 export function getRolePrivilegeRank(role: PhoenixRole) {

@@ -5,6 +5,7 @@ import {
   EmployeePortalPageShell,
   EmployeePortalEmptyState,
 } from "@/components/employee-portal/enterprise-shell";
+import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePortalVacancies } from "@/lib/employee-portal/service";
@@ -213,6 +214,10 @@ export default async function EmployeePortalVacanciesPage({
     >
       {/* Print stylesheet */}
       <style dangerouslySetInnerHTML={{ __html: printStyles }} />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <ScopeBadge scope={access.scope} />
+      </div>
 
       <div
         className="max-w-full min-w-0 space-y-5 overflow-x-hidden text-slate-900 sm:space-y-7"

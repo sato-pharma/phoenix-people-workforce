@@ -3,6 +3,7 @@ import { EmployeePortalEmptyState } from "@/components/employee-portal/enterpris
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 type EmployeePortalServerShellProps = {
   access: AccessContext;
@@ -24,7 +25,11 @@ export async function EmployeePortalServerShell({
   let data = null;
   try {
     data = await getEmployeePortalShellData(access);
-  } catch {
+  } catch (error) {
+    logPortalFailure(
+      { route: "/employee-portals", module: "employee-portal-shell", role: access.role, hrId: access.hrId },
+      error,
+    );
     data = null;
   }
 

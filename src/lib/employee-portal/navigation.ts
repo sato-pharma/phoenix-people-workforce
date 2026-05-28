@@ -18,6 +18,7 @@ export type EmployeePortalNavVisibility = {
   showVacanciesTab?: boolean;
   showProbationTab?: boolean;
   showOrganogramTab?: boolean;
+  showSupportTab?: boolean;
   showMyCoachingTab?: boolean;
   showTeamCoachingTab?: boolean;
   showTrainingManagerCreateCoachingTab?: boolean;
@@ -38,6 +39,22 @@ function resolvePortalRole(
   } catch {}
 
   return normalizeRole(accessRole ?? roleLabel);
+}
+
+/**
+ * Launch posture flag for Beta employee-portal modules.
+ *
+ * For the Core 8 launch, Beta modules (Marketing Requests and Contact HR Support)
+ * are hidden from the employee-portal navigation by default. Pages stay reachable
+ * by direct URL and keep their own page-level permission guards — this flag only
+ * controls navigation visibility.
+ *
+ * Set PHOENIX_PORTAL_SHOW_BETA_NAV=true (server env) to surface Beta modules in the
+ * nav for roles that are already authorized for them. Read at call time so the
+ * launch posture can change without a rebuild and so tests can toggle it.
+ */
+export function isEmployeePortalBetaNavEnabled(): boolean {
+  return String(process.env.PHOENIX_PORTAL_SHOW_BETA_NAV ?? "").trim().toLowerCase() === "true";
 }
 
 const marketingRequestRoles = new Set<PhoenixRole>([
@@ -101,9 +118,13 @@ export function resolveEmployeePortalNavVisibility(
   const showTeamPerformanceTab = isDistrictManager;
   const showMedRepsPerformanceTab = isNationalSalesManager;
   const showExpenseActionTab = isDistrictManager || isNationalSalesManager;
-  const showMarketingRequestsTab = canUseEmployeePortalMarketingRequests(resolvedRole);
-  const showMarketingCustomerDatabaseTab = canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
-  const showMarketingControlTab = canUseEmployeePortalMarketingControl(resolvedRole);
+  // Beta modules are hidden from launch nav unless the beta flag is enabled. The
+  // role checks still apply on top, so enabling the flag never grants a module to
+  // a role that was not already authorized for it.
+  const betaNavEnabled = isEmployeePortalBetaNavEnabled();
+  const showMarketingRequestsTab = betaNavEnabled && canUseEmployeePortalMarketingRequests(resolvedRole);
+  const showMarketingCustomerDatabaseTab = betaNavEnabled && canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
+  const showMarketingControlTab = betaNavEnabled && canUseEmployeePortalMarketingControl(resolvedRole);
   const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
 
   return {
@@ -122,6 +143,7 @@ export function resolveEmployeePortalNavVisibility(
     showMyCoachingTab: isMedicalRep,
     showOrganogramTab: showMedRepsPerformanceTab,
     showProbationTab: showTeamPerformanceTab || showMedRepsPerformanceTab,
+    showSupportTab: betaNavEnabled,
     showTeamCoachingTab,
     showTeamExpensesTab: isNationalSalesManager,
     showTeamPerformanceTab,

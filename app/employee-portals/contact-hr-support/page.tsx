@@ -8,6 +8,7 @@ import {
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const dynamic = "force-dynamic";
 
@@ -20,12 +21,16 @@ export default async function EmployeePortalContactHRSupportPage() {
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/overview");
   }
-  await assertPermission(access, "employee_profile", "read");
+  await assertPermission(access, "support_requests", "read");
 
   let data = null;
   try {
     data = await getEmployeePortalShellData(access);
-  } catch {
+  } catch (error) {
+    logPortalFailure(
+      { route: "/employee-portals/contact-hr-support", module: "contact-hr-support", role: access.role, hrId: access.hrId },
+      error,
+    );
     data = null;
   }
 

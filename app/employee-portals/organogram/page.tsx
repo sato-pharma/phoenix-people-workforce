@@ -5,6 +5,7 @@ import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
+import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
@@ -82,6 +83,9 @@ export default async function EmployeePortalOrganogramPage() {
       errorBoundaryTitle="Organogram unavailable"
       title="Organogram"
     >
+      <div className="flex flex-wrap items-center gap-2">
+        <ScopeBadge scope={access.scope} />
+      </div>
       <EmployeeOrganogramDashboard
         fixedLine={fixedLine}
         initialError={initialError}
