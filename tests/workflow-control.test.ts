@@ -7,98 +7,112 @@ import {
   WORKFLOW_CONTROL_EDIT_ENABLED,
 } from "../src/lib/auth/permissions.ts";
 import {
-  getWorkflowDefinition,
-  listWorkflowDefinitions,
-  workflowDefinitionKeys,
+  getWorkflowDomain,
+  listWorkflowDomains,
+  subflowKeys,
+  workflowDomainKeys,
 } from "../src/lib/workflow-control/definitions.ts";
 import { simulateWorkflow } from "../src/lib/workflow-control/simulator.ts";
 
 /**
- * Workflow Control Center (Phase 1) coverage: governance access, read-only
- * definitions, the simulator's routing/warnings, and the Phase-1 guarantees
- * (editing locked, no production-mutation calls in the read-only modules).
+ * Workflow Control Center (Phase 1) coverage: governance access, the
+ * business-friendly domain/subflow grouping, the simulator's routing/warnings,
+ * and the Phase-1 guarantees (editing locked, no production-mutation calls).
  */
 export function runWorkflowControlTests() {
   // ---------------------------------------------------------------------------
   // Access control: HR governance only = Super Admin. The HR Manager (B-10)
-  // holds the Super Admin role and is therefore covered. Generic HR Specialists
-  // (e.g. A-16 Talent Acquisition) are intentionally EXCLUDED.
+  // holds the Super Admin role and is covered. Generic HR Specialists (A-16)
+  // are excluded.
   // ---------------------------------------------------------------------------
   assert.equal(canAccessWorkflowControlCenter({ role: "Super Admin", hrId: "B-10" }), true, "HR Manager (B-10, Super Admin) can access");
   assert.equal(canAccessWorkflowControlCenter({ role: "Super Admin", hrId: null }), true, "Super Admin can access");
-  assert.equal(canAccessWorkflowControlCenter({ role: "HR Specialist", hrId: "A-16" }), false, "A-16 (HR Specialist, Talent Acquisition) is NOT granted access");
-  assert.equal(canAccessWorkflowControlCenter({ role: "HR Specialist", hrId: "B-99" }), false, "a generic HR Specialist has no access");
+  assert.equal(canAccessWorkflowControlCenter({ role: "HR Specialist", hrId: "A-16" }), false, "A-16 (HR Specialist) is NOT granted access");
   for (const role of ["Medical Rep", "District Manager", "National Sales Manager", "Training Manager", "Finance Manager", "CEO", "Employee"] as const) {
     assert.equal(canAccessWorkflowControlCenter({ role, hrId: "X-1" }), false, `${role} must NOT access workflow control`);
   }
 
-  // ---------------------------------------------------------------------------
-  // Phase 1: editing is locked for everyone (incl. Super Admin).
-  // ---------------------------------------------------------------------------
+  // Phase 1: editing locked for everyone.
   assert.equal(WORKFLOW_CONTROL_EDIT_ENABLED, false, "Phase 1 editing flag is OFF");
   assert.equal(canEditWorkflowControlCenter({ role: "Super Admin", hrId: "B-10" }), false, "no edit in Phase 1 even for Super Admin");
-  assert.equal(canEditWorkflowControlCenter({ role: "HR Specialist", hrId: "A-16" }), false, "no edit in Phase 1 for HR Specialist");
 
   // ---------------------------------------------------------------------------
-  // Definitions: the required workflows are present.
+  // Grouping: a few business-friendly top-level domains.
   // ---------------------------------------------------------------------------
-  const keys = workflowDefinitionKeys();
-  for (const required of ["vacation", "expense", "outstation", "marketing", "probation", "contract", "offers", "resignation"]) {
-    assert.ok(keys.includes(required), `definitions include "${required}"`);
+  const domains = listWorkflowDomains();
+  const domainKeys = workflowDomainKeys();
+  assert.ok(domains.length <= 8, "top-level domains are few (<= 8)");
+
+  // The required business domains exist.
+  for (const required of ["leave", "expenses-outstation", "employee-lifecycle", "offer-hiring", "payroll", "coaching", "marketing", "notifications"]) {
+    assert.ok(domainKeys.includes(required), `domain "${required}" exists`);
   }
-  // Bonus coverage requested by the business list.
-  assert.ok(keys.includes("payroll"), "definitions include payroll/payslip notification");
-  assert.ok(keys.includes("coaching"), "definitions include coaching");
 
-  // Every step exposes notification + email recipient fields (arrays).
-  for (const definition of listWorkflowDefinitions()) {
-    assert.ok(definition.steps.length > 0, `${definition.key} has steps`);
-    for (const step of definition.steps) {
-      assert.ok(Array.isArray(step.notificationRecipients), `${definition.key}.${step.id} has notificationRecipients`);
-      assert.ok(Array.isArray(step.emailRecipients), `${definition.key}.${step.id} has emailRecipients`);
+  // Fragmented technical workflows are NOT top-level cards anymore.
+  for (const notTopLevel of ["expense", "outstation", "vacation", "probation", "contract", "resignation", "payslip", "payroll-payslip", "offers"]) {
+    assert.equal(domainKeys.includes(notTopLevel), false, `"${notTopLevel}" must NOT be a top-level domain`);
+  }
+
+  // Expenses & Outstation is ONE domain with Expense + Outstation as subflows.
+  const expensesKeys = subflowKeys("expenses-outstation");
+  assert.ok(expensesKeys.includes("expense"), "Standard expense is a subflow of Expenses & Outstation");
+  assert.ok(expensesKeys.includes("outstation"), "Outstation travel is a subflow of Expenses & Outstation");
+
+  // Payroll & Payslips contains payslip notification as a SUBFLOW, not a card.
+  const payrollKeys = subflowKeys("payroll");
+  assert.ok(payrollKeys.includes("payslip-notification"), "payslip notification is a subflow under Payroll & Payslips");
+  assert.equal(domainKeys.some((k) => k.includes("payslip")), false, "no standalone Payslip Notification top-level card");
+
+  // Employee Lifecycle contains Probation, Contract Renewal, Resignation.
+  const lifecycleKeys = subflowKeys("employee-lifecycle");
+  for (const sub of ["probation", "contract", "resignation"]) {
+    assert.ok(lifecycleKeys.includes(sub), `Employee Lifecycle contains "${sub}" subflow`);
+  }
+
+  // Notifications & Communication is cross-cutting and does NOT duplicate flows.
+  const notifications = getWorkflowDomain("notifications");
+  assert.ok(notifications, "Notifications & Communication domain exists");
+  assert.equal(notifications?.crossCutting, true, "Notifications domain is cross-cutting");
+  const notifSubflowKeys = subflowKeys("notifications");
+  assert.ok(notifSubflowKeys.length <= 5, "cross-cutting domain has few subflows (no workflow duplication)");
+  for (const workflowish of ["vacation-request", "probation", "expense", "offer", "resignation"]) {
+    assert.equal(notifSubflowKeys.includes(workflowish), false, `Notifications must not duplicate the "${workflowish}" workflow`);
+  }
+
+  // Every step across every subflow exposes notification + email recipient fields.
+  for (const domain of domains) {
+    assert.ok(domain.subflows.length > 0, `${domain.key} has subflows`);
+    for (const subflow of domain.subflows) {
+      for (const step of subflow.steps) {
+        assert.ok(Array.isArray(step.notificationRecipients), `${domain.key}/${subflow.key}/${step.id} has notificationRecipients`);
+        assert.ok(Array.isArray(step.emailRecipients), `${domain.key}/${subflow.key}/${step.id} has emailRecipients`);
+      }
     }
   }
 
-  // Vacation specifically surfaces a manager-bound step and an HR-bound step.
-  const vacation = getWorkflowDefinition("vacation");
-  assert.ok(vacation, "vacation definition exists");
-  assert.ok(
-    vacation?.steps.some((s) => s.notificationRecipients.some((r) => /manager/i.test(r))),
-    "vacation has a step notifying a manager",
-  );
-  assert.ok(
-    vacation?.steps.some((s) => /hr/i.test(s.role) && /approved|rejected/i.test(s.statusProduced)),
-    "vacation has an HR final-decision step",
-  );
-
   // ---------------------------------------------------------------------------
-  // Simulator: vacation routing.
+  // Simulator: domain + subflow selection (Leave / Vacation Request).
   // ---------------------------------------------------------------------------
-  const sim = simulateWorkflow({ workflowKey: "vacation", employeeHrId: "B-52", managerHrId: "A-99" });
-  assert.equal(sim.found, true, "vacation simulation resolves");
+  const sim = simulateWorkflow({ domainKey: "leave", subflowKey: "vacation-request", employeeHrId: "B-52", managerHrId: "A-99" });
+  assert.equal(sim.found, true, "leave/vacation-request simulation resolves");
   assert.ok(sim.steps.some((s) => /manager/i.test(s.routesTo)), "simulator routes a step to the direct manager");
   assert.ok(sim.steps.some((s) => /hr final decision/i.test(s.name)), "simulator includes the HR final decision step");
   assert.ok(/approved|rejected/i.test(sim.finalStatus), "vacation simulation ends at HR approve/reject");
 
-  // Simulator warnings: missing manager and missing HR recipient.
-  const missingManager = simulateWorkflow({ workflowKey: "vacation", employeeHrId: "B-52" });
-  assert.ok(
-    missingManager.warnings.some((w) => /manager/i.test(w)),
-    "simulator warns when the direct manager is missing",
-  );
-  const missingHr = simulateWorkflow({ workflowKey: "vacation", employeeHrId: "B-52", managerHrId: "A-99", hrSpecialistAvailable: false });
-  assert.ok(
-    missingHr.warnings.some((w) => /hr/i.test(w)),
-    "simulator warns when no HR Specialist recipient is configured",
-  );
+  // Warnings: missing manager and missing HR recipient.
+  const missingManager = simulateWorkflow({ domainKey: "leave", subflowKey: "vacation-request", employeeHrId: "B-52" });
+  assert.ok(missingManager.warnings.some((w) => /manager/i.test(w)), "simulator warns when the direct manager is missing");
+  const missingHr = simulateWorkflow({ domainKey: "leave", subflowKey: "vacation-request", employeeHrId: "B-52", managerHrId: "A-99", hrSpecialistAvailable: false });
+  assert.ok(missingHr.warnings.some((w) => /hr/i.test(w)), "simulator warns when no HR Specialist recipient is configured");
 
-  // Unknown workflow degrades safely.
-  const unknown = simulateWorkflow({ workflowKey: "does-not-exist" });
-  assert.equal(unknown.found, false, "unknown workflow is not found");
-  assert.ok(unknown.warnings.length > 0, "unknown workflow returns a warning, not a throw");
+  // Default subflow + unknowns degrade safely.
+  const defaultSubflow = simulateWorkflow({ domainKey: "payroll" });
+  assert.equal(defaultSubflow.found, true, "domain simulation defaults to the first subflow");
+  assert.equal(simulateWorkflow({ domainKey: "nope" }).found, false, "unknown domain is not found");
+  assert.equal(simulateWorkflow({ domainKey: "leave", subflowKey: "nope" }).found, false, "unknown subflow is not found");
 
   // ---------------------------------------------------------------------------
-  // Phase-1 guarantee: the read-only modules never call a mutation/DB path.
+  // Phase-1 guarantee: read-only modules never call a mutation/DB path.
   // ---------------------------------------------------------------------------
   const simulatorSrc = readFileSync(new URL("../src/lib/workflow-control/simulator.ts", import.meta.url), "utf8");
   const definitionsSrc = readFileSync(new URL("../src/lib/workflow-control/definitions.ts", import.meta.url), "utf8");

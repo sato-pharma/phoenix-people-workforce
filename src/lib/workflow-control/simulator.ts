@@ -1,24 +1,26 @@
 /**
  * Workflow Control Center — Phase 1 READ-ONLY simulator.
  *
- * Given a workflow and a hypothetical request context, this returns the steps a
- * request WOULD pass through, who would be notified/emailed, the final status,
- * side effects, and warnings (e.g. a missing manager/HR recipient).
+ * Given a domain + subflow and a hypothetical request context, this returns the
+ * steps a request WOULD pass through, who would be notified/emailed, the final
+ * status, side effects, and warnings (e.g. a missing manager/HR recipient).
  *
- * It is a PURE function over the static definitions — it performs NO database
- * access, calls NO services, and creates NO real requests. It never imports a
- * server-only module. This guarantees the simulator cannot mutate production
- * data. Phase 2 may layer live directory resolution on top read-only.
+ * It is a PURE function over the static definitions — NO database access, NO
+ * service calls, NO real requests, and NO server-only imports. This guarantees
+ * the simulator cannot mutate production data.
  */
 
 import {
-  getWorkflowDefinition,
-  type WorkflowControlDefinition,
+  getWorkflowDomain,
+  getWorkflowSubflow,
   type WorkflowControlStep,
+  type WorkflowSubflow,
 } from "@/lib/workflow-control/definitions";
 
 export type WorkflowSimulationInput = {
-  workflowKey: string;
+  domainKey: string;
+  /** Defaults to the domain's first subflow when omitted. */
+  subflowKey?: string;
   employeeHrId?: string;
   requestType?: string;
   amount?: number;
@@ -36,7 +38,6 @@ export type SimulatedWorkflowStep = {
   id: string;
   index: number;
   name: string;
-  /** Resolved actor/owner this step routes to. */
   routesTo: string;
   role: string;
   statusProduced: string;
@@ -48,8 +49,10 @@ export type SimulatedWorkflowStep = {
 };
 
 export type WorkflowSimulationResult = {
-  workflowKey: string;
-  workflowName: string;
+  domainKey: string;
+  domainName: string;
+  subflowKey: string;
+  subflowName: string;
   found: boolean;
   steps: SimulatedWorkflowStep[];
   finalStatus: string;
@@ -69,21 +72,12 @@ function resolvedManagerOfManager(input: WorkflowSimulationInput): string {
   return trimmed(input.managerOfManagerName) || trimmed(input.managerOfManagerHrId);
 }
 
-/**
- * Resolve a recipient placeholder against the simulation context, pushing a
- * warning when a required manager/HR recipient cannot be resolved.
- */
-function resolveRecipient(
-  raw: string,
-  input: WorkflowSimulationInput,
-  warnings: string[],
-): string | null {
+function resolveRecipient(raw: string, input: WorkflowSimulationInput, warnings: string[]): string | null {
   const text = raw.trim();
   const lower = text.toLowerCase();
 
   if (lower.includes("manager-of-manager")) {
     const mom = resolvedManagerOfManager(input);
-    // Conditional recipient — omit silently when there is no manager-of-manager.
     return mom ? `Manager-of-manager: ${mom}` : null;
   }
 
@@ -103,7 +97,7 @@ function resolveRecipient(
     return employee ? `${text} [${employee}]` : text;
   }
 
-  if (lower.includes("hr specialist") || lower === "hr" || lower.includes("hr ")) {
+  if (lower.includes("hr specialist") || lower === "hr" || lower.startsWith("hr ")) {
     if (input.hrSpecialistAvailable === false) {
       warnings.push("No HR Specialist (A-16) recipient is configured — the HR step cannot notify HR.");
     }
@@ -113,11 +107,7 @@ function resolveRecipient(
   return text;
 }
 
-function resolveList(
-  list: readonly string[],
-  input: WorkflowSimulationInput,
-  warnings: string[],
-): string[] {
+function resolveList(list: readonly string[], input: WorkflowSimulationInput, warnings: string[]): string[] {
   const out: string[] = [];
   for (const entry of list) {
     const resolved = resolveRecipient(entry, input, warnings);
@@ -140,30 +130,48 @@ function routeFor(step: WorkflowControlStep, input: WorkflowSimulationInput): st
   return step.actor;
 }
 
-/** Run a read-only simulation of a workflow for a hypothetical request context. */
+/** Run a read-only simulation of a domain subflow for a hypothetical context. */
 export function simulateWorkflow(input: WorkflowSimulationInput): WorkflowSimulationResult {
-  const definition: WorkflowControlDefinition | undefined = getWorkflowDefinition(input.workflowKey);
-
-  if (!definition) {
+  const domain = getWorkflowDomain(input.domainKey);
+  if (!domain) {
     return {
-      workflowKey: input.workflowKey,
-      workflowName: input.workflowKey,
+      domainKey: input.domainKey,
+      domainName: input.domainKey,
+      subflowKey: input.subflowKey ?? "",
+      subflowName: input.subflowKey ?? "",
       found: false,
       steps: [],
       finalStatus: "unknown",
       sideEffects: [],
-      warnings: [`Unknown workflow: "${input.workflowKey}".`],
+      warnings: [`Unknown workflow domain: "${input.domainKey}".`],
+    };
+  }
+
+  const subflow: WorkflowSubflow | undefined = input.subflowKey
+    ? getWorkflowSubflow(domain.key, input.subflowKey)
+    : domain.subflows[0];
+
+  if (!subflow) {
+    return {
+      domainKey: domain.key,
+      domainName: domain.name,
+      subflowKey: input.subflowKey ?? "",
+      subflowName: input.subflowKey ?? "",
+      found: false,
+      steps: [],
+      finalStatus: "unknown",
+      sideEffects: [],
+      warnings: [`Unknown subflow "${input.subflowKey}" in domain "${domain.name}".`],
     };
   }
 
   const warnings: string[] = [];
   const sideEffects: string[] = [];
 
-  const steps: SimulatedWorkflowStep[] = definition.steps.map((step, index) => {
+  const steps: SimulatedWorkflowStep[] = subflow.steps.map((step, index) => {
     const stepWarnings: string[] = [];
     const notificationRecipients = resolveList(step.notificationRecipients, input, stepWarnings);
     const emailRecipients = resolveList(step.emailRecipients, input, stepWarnings);
-
     if (step.sideEffects) sideEffects.push(`${step.name}: ${step.sideEffects}`);
     warnings.push(...stepWarnings);
 
@@ -182,23 +190,21 @@ export function simulateWorkflow(input: WorkflowSimulationInput): WorkflowSimula
     };
   });
 
-  // Amount context note for expense/outstation (read-only — no policy mutation).
   if (typeof input.amount === "number" && Number.isFinite(input.amount)) {
     sideEffects.push(`Simulated amount: ${input.amount} (read-only; no payroll record created).`);
   }
 
   const finalStatus = steps.length > 0 ? steps[steps.length - 1].statusProduced : "unknown";
 
-  // De-duplicate warnings while preserving order.
-  const dedupedWarnings = Array.from(new Set(warnings));
-
   return {
-    workflowKey: definition.key,
-    workflowName: definition.name,
+    domainKey: domain.key,
+    domainName: domain.name,
+    subflowKey: subflow.key,
+    subflowName: subflow.name,
     found: true,
     steps,
     finalStatus,
     sideEffects,
-    warnings: dedupedWarnings,
+    warnings: Array.from(new Set(warnings)),
   };
 }
