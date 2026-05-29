@@ -34,6 +34,7 @@ import { runSalaryAllowancePolicyTests } from "./salary-allowance-policy.test.ts
 import { runWorkforceClassificationTests } from "./workforce-classification.test.ts";
 import { runWorkforceLifecycleSeatTests } from "./workforce-lifecycle-seat.test.ts";
 import { runWorkforceHierarchyContinuityTests } from "./workforce-hierarchy-continuity.test.ts";
+import { runPayrollLifecycleScopeTests } from "./payroll-lifecycle-scope.test.ts";
 import { runEmployeePortalSalesScopeTests } from "./employee-portal-sales-scope.test.ts";
 import { runCoachingPermissionTests } from "./coaching-permissions.test.ts";
 import { runCoachingInAppNotificationTests } from "./coaching-in-app-notifications.test.ts";
@@ -138,6 +139,7 @@ await runTest("salary allowance policy", runSalaryAllowancePolicyTests);
 await runTest("workforce classification", runWorkforceClassificationTests);
 await runTest("workforce lifecycle seat", runWorkforceLifecycleSeatTests);
 await runTest("workforce hierarchy continuity", runWorkforceHierarchyContinuityTests);
+await runTest("payroll lifecycle scope", runPayrollLifecycleScopeTests);
 await runTest("outstation car evidence validation", runOutstationCarEvidenceValidationTests);
 await runTest("outstation local draft", runOutstationLocalDraftTests);
 await runTest("outstation payroll expense mapping", runOutstationPayrollExpenseMappingTests);

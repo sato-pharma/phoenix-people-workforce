@@ -2,7 +2,8 @@ import { isDevelopment } from "@/lib/env";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { isPayrollIneligibleEmployee } from "@/lib/payroll/eligibility";
 import { isDisposablePayrollBatchRow } from "@/lib/fixture-hygiene";
 import {
   getPayrollScope,
@@ -289,10 +290,43 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
   };
 }
 
-type PayrollAccessFilter = {
+type PayrollScopeFilter = {
   all: boolean;
   allowedHrIds: Set<string>;
 };
+
+type PayrollAccessFilter = PayrollScopeFilter & {
+  // Lifecycle/eligibility blocklist (normalized + canonical HR_IDs) applied to
+  // records and flags IN ADDITION to scope, even for COMPANY/system viewers, so
+  // resigned/terminated/inactive/payroll-ineligible employees never appear in
+  // payroll dashboards or exports. See buildPayrollIneligibleHrIdSet.
+  ineligibleHrIds: Set<string>;
+};
+
+/**
+ * Builds the set of HR_IDs that must be excluded from payroll read views because
+ * the employee is terminal (resigned/terminated/inactive/…) or explicitly
+ * payroll-ineligible. Loaded from the FULL roster (including inactive) so it is a
+ * precise blocklist of known-bad employees — records with no directory match are
+ * left untouched (never hidden). Fail-open (empty set) on roster error: this is
+ * an additive guard on top of access scope, so an outage must not blank payroll.
+ */
+async function buildPayrollIneligibleHrIdSet(): Promise<Set<string>> {
+  const ineligible = new Set<string>();
+  try {
+    const roster = await getEmployeeDirectoryRows({ includeInactive: true });
+    roster.forEach((employee) => {
+      if (!isPayrollIneligibleEmployee(employee)) return;
+      const normalized = normalizeHrId(employee.hrId);
+      const canonical = normalizeHrIdForAccess(employee.hrId);
+      if (normalized) ineligible.add(normalized);
+      if (canonical) ineligible.add(canonical);
+    });
+  } catch {
+    return new Set<string>();
+  }
+  return ineligible;
+}
 
 function buildManagerMap(directory: Awaited<ReturnType<typeof getEmployeeDirectory>>) {
   const managerMap = new Map<string, string[]>();
@@ -379,6 +413,24 @@ function isPayrollFlagInScope(flag: SalaryFlag, allowedHrIds: Set<string>) {
 async function resolvePayrollAccessFilter(
   accessContext: AccessContext,
 ): Promise<PayrollAccessFilter> {
+  // SELF-scope carve-out: self-service reads (e.g. My Payslips) must keep access
+  // to the viewer's OWN published payslips even when payroll_eligible=false. The
+  // SELF scope already restricts records to the viewer's own HR_ID, so skipping
+  // the eligibility blocklist here cannot expose anyone else. Resigned/terminated
+  // employees are blocked earlier by WP-3 session lifecycle governance. Company,
+  // admin, and system views keep the blocklist intact.
+  const isSelfScopeRead =
+    accessContext.scope !== "system" && getPayrollScope(accessContext) === "SELF";
+  const [scope, ineligibleHrIds] = await Promise.all([
+    resolvePayrollScopeFilter(accessContext),
+    isSelfScopeRead ? Promise.resolve(new Set<string>()) : buildPayrollIneligibleHrIdSet(),
+  ]);
+  return { ...scope, ineligibleHrIds };
+}
+
+async function resolvePayrollScopeFilter(
+  accessContext: AccessContext,
+): Promise<PayrollScopeFilter> {
   if (accessContext.scope === "system") {
     return { all: true, allowedHrIds: new Set() };
   }
@@ -520,22 +572,41 @@ function filterPayrollQueryByAllowedHrIds<T extends { or: (value: string) => T; 
   return query.or(conditions.join(","));
 }
 
+function isPayrollRecordIneligible(row: Record<string, unknown>, ineligibleHrIds: Set<string>) {
+  if (ineligibleHrIds.size === 0) return false;
+  return isPayrollRecordInScope(row, ineligibleHrIds);
+}
+
+function isPayrollFlagIneligible(flag: SalaryFlag, ineligibleHrIds: Set<string>) {
+  if (ineligibleHrIds.size === 0 || !flag.hrId) return false;
+  const normalized = normalizeHrId(flag.hrId);
+  const canonical = normalizeHrIdForAccess(flag.hrId);
+  return Boolean((normalized && ineligibleHrIds.has(normalized)) || (canonical && ineligibleHrIds.has(canonical)));
+}
+
 function filterPayrollRowsByAccess<T extends Record<string, unknown>>(
   rows: T[],
   accessFilter: PayrollAccessFilter,
 ) {
-  if (accessFilter.all) return rows;
-  if (accessFilter.allowedHrIds.size === 0) return [];
-  return rows.filter((row) => isPayrollRecordInScope(row, accessFilter.allowedHrIds));
+  const scoped = accessFilter.all
+    ? rows
+    : accessFilter.allowedHrIds.size === 0
+      ? []
+      : rows.filter((row) => isPayrollRecordInScope(row, accessFilter.allowedHrIds));
+  // Lifecycle/eligibility blocklist applies on top of scope (incl. COMPANY/system).
+  return scoped.filter((row) => !isPayrollRecordIneligible(row, accessFilter.ineligibleHrIds));
 }
 
 function filterPayrollFlagsByAccess(
   rows: SalaryFlag[],
   accessFilter: PayrollAccessFilter,
 ) {
-  if (accessFilter.all) return rows;
-  if (accessFilter.allowedHrIds.size === 0) return [];
-  return rows.filter((row) => isPayrollFlagInScope(row, accessFilter.allowedHrIds));
+  const scoped = accessFilter.all
+    ? rows
+    : accessFilter.allowedHrIds.size === 0
+      ? []
+      : rows.filter((row) => isPayrollFlagInScope(row, accessFilter.allowedHrIds));
+  return scoped.filter((row) => !isPayrollFlagIneligible(row, accessFilter.ineligibleHrIds));
 }
 
 function isNonEmptyString(value: string | null | undefined): value is string {
