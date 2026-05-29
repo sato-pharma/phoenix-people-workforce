@@ -116,18 +116,35 @@ function resolveList(list: readonly string[], input: WorkflowSimulationInput, wa
   return out;
 }
 
+function withManager(text: string, input: WorkflowSimulationInput): string {
+  if (!/direct manager/i.test(text)) return text;
+  const manager = resolvedManager(input);
+  return manager ? text.replace(/direct manager/i, `Direct manager (${manager})`) : text;
+}
+
+/**
+ * Where a step routes / who acts on it, in business-friendly terms.
+ * Prefers EXPLICIT step.routesTo metadata; otherwise describes the step's
+ * performer from the actor — without falsely inferring "Direct manager" just
+ * because a submit step's role list happens to contain the word "Manager".
+ */
 function routeFor(step: WorkflowControlStep, input: WorkflowSimulationInput): string {
-  const lower = step.actor.toLowerCase();
-  if (lower.includes("manager")) {
+  const explicit = step.routesTo?.trim();
+  if (explicit) return withManager(explicit, input);
+
+  const actor = step.actor.trim();
+  const lower = actor.toLowerCase();
+  // Only treat as a manager destination when the actor IS specifically a manager.
+  if (lower.startsWith("direct manager") || lower === "manager") {
     const manager = resolvedManager(input);
     return manager ? `Direct manager (${manager})` : "Direct manager";
   }
-  if (lower.includes("hr")) return "HR Specialist";
-  if (lower.includes("employee") || lower.includes("candidate") || lower.includes("rep")) {
+  if (lower.startsWith("hr")) return "HR Specialist";
+  if (lower.startsWith("employee") || lower.startsWith("candidate") || lower.startsWith("medical rep")) {
     const employee = trimmed(input.employeeHrId);
-    return employee ? `${step.actor} (${employee})` : step.actor;
+    return employee ? `${actor} (${employee})` : actor;
   }
-  return step.actor;
+  return actor;
 }
 
 /** Run a read-only simulation of a domain subflow for a hypothetical context. */

@@ -24,6 +24,13 @@ export type WorkflowControlStep = {
   emailRecipients: string[];
   fallbackEscalation?: string;
   sideEffects?: string;
+  /**
+   * Explicit, business-friendly destination for this step ("where it routes
+   * next / who acts"). Set this whenever the actor text would be ambiguous —
+   * the simulator prefers it over any heuristic. Supports the "Direct manager"
+   * token, which the simulator resolves to the provided manager.
+   */
+  routesTo?: string;
 };
 
 export type WorkflowSubflow = {
@@ -77,6 +84,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             actor: "Employee",
             role: "Employee",
             statusProduced: "pending_manager",
+            routesTo: "Direct manager",
             notificationRecipients: n("Direct manager", "Manager-of-manager (if exists)", "HR Specialists (A-16)"),
             emailRecipients: n("Direct manager"),
             fallbackEscalation: "Submission fails if the employee has no direct manager (no auto-escalation).",
@@ -167,6 +175,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             actor: "Employee / Medical Rep / Manager",
             role: "Most submitting roles",
             statusProduced: "pending",
+            routesTo: "Approvers (Finance / HR / Super Admin)",
             notificationRecipients: n("Approvers (Super Admin / HR Specialist / Finance Manager / CEO)"),
             emailRecipients: [],
             sideEffects: "Creates request capturing amount, eligibility and fraud flags.",
@@ -197,6 +206,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             actor: "Employee (field)",
             role: "Any user with outstation permission",
             statusProduced: "submitted (pending)",
+            routesTo: "Finance admin (after validation)",
             notificationRecipients: [],
             emailRecipients: [],
             sideEffects: "Uploads car evidence / tickets; writes location audit with fraud flags.",
