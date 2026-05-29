@@ -8,14 +8,17 @@ import { systemUiText } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
 
 type InAppNotificationView = {
+  actionLabel?: string;
   category: string;
   details?: Array<{ label: string; value: string }>;
   href: string | null;
   id: string;
   message: string;
+  primaryText?: string;
   scheduledFor: string | null;
   sentAt: string | null;
   status: string;
+  statusLabel?: string;
   title: string;
 };
 
@@ -37,9 +40,13 @@ function formatNotificationTime(value: string | null) {
   }).format(date);
 }
 
-/** A notification needs action when it links somewhere actionable or is pending. */
+/** A notification needs action when it has an action, links somewhere, or is pending. */
 function isActionRequired(notification: InAppNotificationView) {
-  return Boolean(notification.href) || pendingStatuses.has(String(notification.status ?? "").toLowerCase());
+  return (
+    Boolean(notification.actionLabel) ||
+    Boolean(notification.href) ||
+    pendingStatuses.has(String(notification.status ?? "").toLowerCase())
+  );
 }
 
 export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }) {
@@ -195,7 +202,18 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                       <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#F97316]" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
-                          <p className={cn("text-sm font-black", panelText.title)}>{notification.title}</p>
+                          {notification.primaryText ? (
+                            <div className="min-w-0">
+                              <p className={cn("truncate text-sm font-black", panelText.title)}>
+                                {notification.primaryText}
+                              </p>
+                              <p className={cn("mt-0.5 text-xs font-bold leading-5", panelText.body)}>
+                                {notification.title}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className={cn("text-sm font-black", panelText.title)}>{notification.title}</p>
+                          )}
                           {notification.href ? (
                             <ChevronRight className={cn("mt-0.5 h-4 w-4 shrink-0", panelText.muted)} />
                           ) : null}
@@ -223,6 +241,11 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                           <span className="rounded bg-[#FFF7ED] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#C2410C]">
                             {notification.category.replace(/_/g, " ")}
                           </span>
+                          {notification.statusLabel ? (
+                            <span className={cn("rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", panelText.chip)}>
+                              {notification.statusLabel}
+                            </span>
+                          ) : null}
                           {actionRequired ? (
                             <span className="rounded bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#B91C1C]">
                               Action required
