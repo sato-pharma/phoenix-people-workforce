@@ -216,7 +216,7 @@ export function mapInAppNotificationRows(rows: InAppNotificationMetricRow[], emp
       const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
         ? row.metadata
         : {};
-      const details = notificationDetails(metadata);
+      const details = notificationDetails(metadata, String(row.category ?? "general"));
 
       return {
         category: String(row.category ?? "general"),
@@ -247,7 +247,47 @@ function detailValue(value: unknown) {
   return String(value).trim();
 }
 
-function notificationDetails(metadata: Record<string, unknown>): InAppNotificationDetail[] {
+// --- Render-time polish (applies to EXISTING notifications too, no data change) ---
+
+const NOTIFICATION_STATUS_LABELS: Record<string, string> = {
+  pending_manager: "Pending manager decision",
+  pending_hr: "Pending HR final decision",
+  pending: "Pending",
+  approved: "Approved",
+  rejected: "Rejected",
+  sent: "Sent",
+  feedback_required: "Feedback required",
+};
+
+/** Turn a raw status token (e.g. "pending_hr") into a readable label. */
+function humanizeNotificationStatus(value: string): string {
+  const raw = value.trim();
+  if (!raw) return "";
+  return (
+    NOTIFICATION_STATUS_LABELS[raw.toLowerCase()] ??
+    raw.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
+/** Derive a clear next-action label from category + status (best-effort, read-time). */
+function deriveNotificationAction(category: string, status: string): string {
+  const c = category.trim().toLowerCase();
+  const s = status.trim().toLowerCase();
+  if (c === "vacation_request") {
+    if (s === "pending_manager") return "Review request";
+    if (s === "pending_hr") return "Complete HR decision";
+  }
+  if (c === "probation") return "Submit feedback";
+  if (c === "excuse" && s.includes("pending")) return "Review excuse";
+  return "";
+}
+
+/** UUIDs are internal identifiers and must never be shown as a useful detail row. */
+function isUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+function notificationDetails(metadata: Record<string, unknown>, category = ""): InAppNotificationDetail[] {
   // Explicit producer-provided detail rows take precedence: clean, ordered, and
   // already shaped (Employee / Type / Period / Status / Action). Sensitive labels
   // are still dropped defensively.
@@ -266,10 +306,13 @@ function notificationDetails(metadata: Record<string, unknown>): InAppNotificati
 
   const preferred: Array<[string, string[]]> = [
     ["Order", ["orderId", "order_id", "orderNo", "order_no", "orderNumber", "order_number"]],
-    ["Request", ["requestId", "request_id", "requestNo", "request_no"]],
-    ["Employee", ["employee", "employeeName", "employee_name", "employeeHrId", "employee_hr_id"]],
+    ["Request", ["requestNo", "request_no"]],
+    ["Employee", ["employee", "employeeName", "employee_name"]],
+    ["Manager", ["manager", "managerName", "manager_name"]],
+    ["Type", ["type", "vacationType", "vacation_type", "expenseType", "expense_type"]],
+    ["Period", ["period", "dateRange", "date_range"]],
     ["Status", ["status", "workflowStatus", "workflow_status"]],
-    ["Amount", ["amount", "total", "value"]],
+    ["Amount", ["amount", "total"]],
     ["Date", ["date", "createdAt", "created_at", "submittedAt", "submitted_at"]],
   ];
   const details: InAppNotificationDetail[] = [];
@@ -278,8 +321,18 @@ function notificationDetails(metadata: Record<string, unknown>): InAppNotificati
   for (const [label, keys] of preferred) {
     const key = keys.find((candidate) => detailValue(metadata[candidate]));
     if (!key) continue;
+    let value = detailValue(metadata[key]);
+    if (isUuidLike(value)) { used.add(key); continue; } // never show raw UUIDs
+    if (label === "Status") value = humanizeNotificationStatus(value); // render-time polish
     used.add(key);
-    details.push({ label, value: detailValue(metadata[key]) });
+    details.push({ label, value });
+  }
+
+  // Render-time polish: append a clear Action derived from category + status, so
+  // even EXISTING (pre-change) notifications show what to do next.
+  const derivedAction = deriveNotificationAction(category, detailValue(metadata.status ?? metadata.workflowStatus));
+  if (derivedAction && !details.some((detail) => detail.label === "Action")) {
+    details.push({ label: "Action", value: derivedAction });
   }
 
   const metrics = metadata.metrics;
@@ -299,7 +352,7 @@ function notificationDetails(metadata: Record<string, unknown>): InAppNotificati
     // Never surface sensitive raw metadata (tokens, passwords, emails, etc.).
     if (isSensitiveMetadataKey(key)) continue;
     const text = detailValue(value);
-    if (!text) continue;
+    if (!text || isUuidLike(text)) continue; // skip empty + raw UUID identifiers
     details.push({
       label: key.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2"),
       value: text,
