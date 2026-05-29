@@ -3,7 +3,7 @@
 Start:
 
 ```powershell
-cd "F:\Phoenix Workforce\phoenix-workforce\local-attendance-agent"
+cd local-attendance-agent
 .\start-agent.ps1
 ```
 
@@ -41,7 +41,7 @@ Open `http://localhost:3000/attendance/device-user-mapping` and click `Run Local
 Windows automatic setup:
 
 ```powershell
-cd "F:\Phoenix Workforce\phoenix-workforce\local-attendance-agent"
+cd local-attendance-agent
 .\install-startup-shortcut.ps1
 .\install-scheduled-tasks.ps1
 ```
@@ -75,7 +75,7 @@ local-attendance-agent\logs\scheduled-sync.log
 To remove the scheduled tasks:
 
 ```powershell
-cd "F:\Phoenix Workforce\phoenix-workforce\local-attendance-agent"
+cd local-attendance-agent
 .\uninstall-scheduled-tasks.ps1
 .\uninstall-startup-shortcut.ps1
 ```

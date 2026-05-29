@@ -108,7 +108,7 @@ If the answer is unclear, close the old workflow first.
 
 ## Current Delivery Guardrail
 
-Current branch and deployment state is documented in [Current Operating State](F:/Phoenix%20Workforce/phoenix-workforce/docs/current-operating-state.md).
+Current branch and deployment state is documented in [Current Operating State](current-operating-state.md).
 
 New production work must follow this flow:
 
