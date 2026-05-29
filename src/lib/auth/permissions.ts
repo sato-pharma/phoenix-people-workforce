@@ -899,3 +899,31 @@ export async function assertAttendanceSetupPermission(
     throw new Error(`Forbidden: ${context.role} cannot ${action} attendance setup.`);
   }
 }
+
+/**
+ * Workflow Control Center (Admin / Governance) access design.
+ *
+ * Phase 1 is a READ-ONLY workflow map + simulator. Access is restricted to
+ * HR governance: Super Admin and HR Specialist (HR Admin / HR Manager
+ * equivalent). All other roles — including Medical Rep, District/National Sales
+ * Manager, Training Manager, Finance Manager and CEO — have no access.
+ *
+ * Editing is globally disabled in Phase 1 via WORKFLOW_CONTROL_EDIT_ENABLED.
+ * The edit-role design is already encoded for Phase 2 (versioning / draft /
+ * publish / rollback) but stays locked while the flag is false.
+ */
+export const WORKFLOW_CONTROL_ACCESS_ROLES: readonly PhoenixRole[] = ["Super Admin", "HR Specialist"];
+
+/** Phase 1: workflow editing is disabled for everyone. Flipped on in Phase 2. */
+export const WORKFLOW_CONTROL_EDIT_ENABLED = false;
+
+export function canAccessWorkflowControlCenter(context: Pick<AccessContext, "role">): boolean {
+  return WORKFLOW_CONTROL_ACCESS_ROLES.includes(context.role);
+}
+
+export function canEditWorkflowControlCenter(context: Pick<AccessContext, "role">): boolean {
+  // Phase 2 design: only Super Admin / HR Specialist may edit — but it stays
+  // locked until WORKFLOW_CONTROL_EDIT_ENABLED is turned on.
+  if (!WORKFLOW_CONTROL_EDIT_ENABLED) return false;
+  return WORKFLOW_CONTROL_ACCESS_ROLES.includes(context.role);
+}
