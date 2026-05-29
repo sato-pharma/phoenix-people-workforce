@@ -1,13 +1,14 @@
 /**
- * Workflow Control Center — Phase 1 READ-ONLY simulator.
+ * Workflow Control Center — Phase 1.5 READ-ONLY simulator.
  *
  * Given a domain + subflow and a hypothetical request context, this returns the
- * steps a request WOULD pass through, who would be notified/emailed, the final
- * status, side effects, and warnings (e.g. a missing manager/HR recipient).
+ * route path, step sequence, responsible person/approver, notification + email
+ * recipients (with action-required vs FYI), final status, side effects, and
+ * warnings (missing manager/HR, unimplemented notification producers, read-only
+ * domains, and the Phase-1 runtime-edit lock).
  *
- * It is a PURE function over the static definitions — NO database access, NO
- * service calls, NO real requests, and NO server-only imports. This guarantees
- * the simulator cannot mutate production data.
+ * PURE function over the static definitions — NO database access, NO service
+ * calls, NO real requests, NO server-only imports. It cannot mutate data.
  */
 
 import {
@@ -43,8 +44,12 @@ export type SimulatedWorkflowStep = {
   statusProduced: string;
   notificationRecipients: string[];
   emailRecipients: string[];
+  actionRequiredRecipients: string[];
+  fyiRecipients: string[];
+  notificationGap: boolean;
   fallbackEscalation?: string;
   sideEffects?: string;
+  knownGap?: string;
   warnings: string[];
 };
 
@@ -54,6 +59,8 @@ export type WorkflowSimulationResult = {
   subflowKey: string;
   subflowName: string;
   found: boolean;
+  /** Ordered list of "where each step routes" — the route path. */
+  routePath: string[];
   steps: SimulatedWorkflowStep[];
   finalStatus: string;
   sideEffects: string[];
@@ -85,7 +92,7 @@ function resolveRecipient(raw: string, input: WorkflowSimulationInput, warnings:
     const manager = resolvedManager(input);
     if (!manager) {
       warnings.push(
-        `Direct manager not resolved${input.employeeHrId ? ` for ${input.employeeHrId}` : ""} — this step cannot reach a manager.`,
+        `Missing direct manager${input.employeeHrId ? ` for ${input.employeeHrId}` : ""} — this step cannot reach a manager.`,
       );
       return text;
     }
@@ -99,7 +106,7 @@ function resolveRecipient(raw: string, input: WorkflowSimulationInput, warnings:
 
   if (lower.includes("hr specialist") || lower === "hr" || lower.startsWith("hr ")) {
     if (input.hrSpecialistAvailable === false) {
-      warnings.push("No HR Specialist (A-16) recipient is configured — the HR step cannot notify HR.");
+      warnings.push("Missing HR Specialist (A-16) recipient — the HR step cannot notify HR.");
     }
     return text;
   }
@@ -123,10 +130,9 @@ function withManager(text: string, input: WorkflowSimulationInput): string {
 }
 
 /**
- * Where a step routes / who acts on it, in business-friendly terms.
- * Prefers EXPLICIT step.routesTo metadata; otherwise describes the step's
- * performer from the actor — without falsely inferring "Direct manager" just
- * because a submit step's role list happens to contain the word "Manager".
+ * Where a step routes / who acts on it, in business-friendly terms. Prefers
+ * EXPLICIT step.routesTo; otherwise describes the performer from the actor —
+ * without falsely inferring "Direct manager" from a role list.
  */
 function routeFor(step: WorkflowControlStep, input: WorkflowSimulationInput): string {
   const explicit = step.routesTo?.trim();
@@ -134,7 +140,6 @@ function routeFor(step: WorkflowControlStep, input: WorkflowSimulationInput): st
 
   const actor = step.actor.trim();
   const lower = actor.toLowerCase();
-  // Only treat as a manager destination when the actor IS specifically a manager.
   if (lower.startsWith("direct manager") || lower === "manager") {
     const manager = resolvedManager(input);
     return manager ? `Direct manager (${manager})` : "Direct manager";
@@ -157,6 +162,7 @@ export function simulateWorkflow(input: WorkflowSimulationInput): WorkflowSimula
       subflowKey: input.subflowKey ?? "",
       subflowName: input.subflowKey ?? "",
       found: false,
+      routePath: [],
       steps: [],
       finalStatus: "unknown",
       sideEffects: [],
@@ -175,6 +181,7 @@ export function simulateWorkflow(input: WorkflowSimulationInput): WorkflowSimula
       subflowKey: input.subflowKey ?? "",
       subflowName: input.subflowKey ?? "",
       found: false,
+      routePath: [],
       steps: [],
       finalStatus: "unknown",
       sideEffects: [],
@@ -189,6 +196,12 @@ export function simulateWorkflow(input: WorkflowSimulationInput): WorkflowSimula
     const stepWarnings: string[] = [];
     const notificationRecipients = resolveList(step.notificationRecipients, input, stepWarnings);
     const emailRecipients = resolveList(step.emailRecipients, input, stepWarnings);
+    const actionRequiredRecipients = resolveList(step.actionRequiredRecipients ?? [], input, stepWarnings);
+    const fyiRecipients = resolveList(step.fyiRecipients ?? [], input, stepWarnings);
+
+    if (step.notificationGap) {
+      stepWarnings.push(`No in-app notification producer for "${step.name}" (declared, not implemented).`);
+    }
     if (step.sideEffects) sideEffects.push(`${step.name}: ${step.sideEffects}`);
     warnings.push(...stepWarnings);
 
@@ -201,8 +214,12 @@ export function simulateWorkflow(input: WorkflowSimulationInput): WorkflowSimula
       statusProduced: step.statusProduced,
       notificationRecipients,
       emailRecipients,
+      actionRequiredRecipients,
+      fyiRecipients,
+      notificationGap: Boolean(step.notificationGap),
       fallbackEscalation: step.fallbackEscalation,
       sideEffects: step.sideEffects,
+      knownGap: step.knownGap,
       warnings: stepWarnings,
     };
   });
@@ -211,6 +228,16 @@ export function simulateWorkflow(input: WorkflowSimulationInput): WorkflowSimula
     sideEffects.push(`Simulated amount: ${input.amount} (read-only; no payroll record created).`);
   }
 
+  // Domain-level informational warnings.
+  if (domain.status === "Read-only map" || domain.crossCutting) {
+    warnings.push("This domain is a read-only map only — it has no live request flow to simulate.");
+  }
+  if (domain.beta) {
+    warnings.push("This domain is Beta — some declared steps are not fully wired up.");
+  }
+  warnings.push("Runtime editing is disabled in Phase 1 (no live workflow behavior is changed).");
+
+  const routePath = steps.map((s) => s.routesTo);
   const finalStatus = steps.length > 0 ? steps[steps.length - 1].statusProduced : "unknown";
 
   return {
@@ -219,6 +246,7 @@ export function simulateWorkflow(input: WorkflowSimulationInput): WorkflowSimula
     subflowKey: subflow.key,
     subflowName: subflow.name,
     found: true,
+    routePath,
     steps,
     finalStatus,
     sideEffects,

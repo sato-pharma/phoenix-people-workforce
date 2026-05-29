@@ -1,14 +1,15 @@
 "use client";
 
-import { ArrowDown } from "lucide-react";
+import { ArrowDown, BellOff } from "lucide-react";
 
 import type { WorkflowControlStep } from "@/lib/workflow-control/definitions";
 
-function FieldList({ label, values }: { label: string; values: string[] }) {
+function FieldList({ label, values, tone = "default" }: { label: string; values: string[]; tone?: "default" | "action" | "muted" }) {
   if (!values.length) return null;
+  const labelColor = tone === "action" ? "text-[#B91C1C]" : tone === "muted" ? "text-[#94A3B8]" : "text-[#F97316]";
   return (
     <div className="min-w-0">
-      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#F97316]">{label}</p>
+      <p className={`text-[10px] font-black uppercase tracking-[0.12em] ${labelColor}`}>{label}</p>
       <ul className="mt-0.5 space-y-0.5">
         {values.map((value) => (
           <li key={value} className="text-[12px] leading-5 text-[#334155]">
@@ -22,8 +23,8 @@ function FieldList({ label, values }: { label: string; values: string[] }) {
 
 /**
  * Read-only boxes-and-arrows map of a subflow. Each node surfaces the step
- * actor/role, the status it produces, notification + email recipients,
- * fallback/escalation and module side effects.
+ * actor/role, status produced, in-app + email recipients (action-required vs
+ * FYI), fallback/escalation, side effects, and any notification gap / known gap.
  */
 export function WorkflowMap({ steps }: { steps: readonly WorkflowControlStep[] }) {
   if (!steps.length) {
@@ -44,14 +45,22 @@ export function WorkflowMap({ steps }: { steps: readonly WorkflowControlStep[] }
               </span>
             </div>
 
+            {step.notificationGap ? (
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.10em] text-[#B91C1C]">
+                <BellOff className="h-3 w-3" /> Notification gap: not implemented yet
+              </div>
+            ) : null}
+
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#F97316]">Actor / Role</p>
                 <p className="mt-0.5 text-[12px] font-semibold leading-5 text-[#0F172A]">{step.actor}</p>
                 <p className="text-[12px] leading-5 text-[#64748B]">{step.role}</p>
               </div>
-              <FieldList label="Notifications" values={step.notificationRecipients} />
-              <FieldList label="Emails" values={step.emailRecipients} />
+              <FieldList label="In-app" values={step.notificationRecipients} />
+              <FieldList label="Action required" values={step.actionRequiredRecipients ?? []} tone="action" />
+              <FieldList label="FYI" values={step.fyiRecipients ?? []} tone="muted" />
+              <FieldList label="Email" values={step.emailRecipients} />
               {step.fallbackEscalation ? (
                 <div className="min-w-0">
                   <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#F97316]">Fallback / escalation</p>
@@ -64,6 +73,13 @@ export function WorkflowMap({ steps }: { steps: readonly WorkflowControlStep[] }
               <div className="mt-3 rounded-lg bg-[#F8FAFC] px-3 py-2">
                 <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Side effects</p>
                 <p className="mt-0.5 text-[12px] leading-5 text-[#475569]">{step.sideEffects}</p>
+              </div>
+            ) : null}
+
+            {step.knownGap ? (
+              <div className="mt-2 rounded-lg border border-[#FEE2E2] bg-[#FEF2F2] px-3 py-2">
+                <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#B91C1C]">Known gap</p>
+                <p className="mt-0.5 text-[12px] leading-5 text-[#991B1B]">{step.knownGap}</p>
               </div>
             ) : null}
           </div>
