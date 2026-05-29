@@ -5,15 +5,19 @@ import {
   buildVacantSeatKey,
   formatVacantSeatLabel,
   isHeldByVacantSeat,
+  isWithinManagerHierarchy,
   lineScopeIncludesEmployee,
+  reportsToManagerSeat,
   resolveReportingSeatHrId,
   resolveSeatGrouping,
   sameWorkforceDepartment,
   sameWorkforceLine,
   selectVacantManagerSeat,
   type ResolvedVacantSeat,
+  type SeatContinuitySubject,
 } from "../src/lib/workforce/hierarchy-resolver.ts";
 import { buildSalesManagerPerformanceGroups } from "../src/lib/sales/metrics.ts";
+import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
 
 /**
  * Regression coverage for the workforce hierarchy / seat-continuity bug:
@@ -268,6 +272,84 @@ export function runWorkforceHierarchyContinuityTests() {
     "vacant seat label falls back without a district",
   );
 
+  // ===========================================================================
+  // WP-1: seat-continuity-aware TEAM / HIERARCHY helpers (vacation scope).
+  // ===========================================================================
+  const canon = (value: string | null | undefined) => canonicalHrIdKey(value);
+  const RM = "RM-1";
+  const DSM_OTHER = "DSM-ALX";
+
+  // Active chain: MR -> DSM -> NSM -> RM.
+  const nsmNode: SeatContinuitySubject = { managerHrId: RM, pendingManagerReplacementForHrId: null };
+  const dsmNode: SeatContinuitySubject = { managerHrId: NSM, pendingManagerReplacementForHrId: null };
+  const rmNode: SeatContinuitySubject = { managerHrId: null, pendingManagerReplacementForHrId: null };
+  const mrUnderActiveDsm: SeatContinuitySubject = { managerHrId: DSM, pendingManagerReplacementForHrId: null };
+  // After the Cairo DSM resigns: MR reassigned UP to the NSM, vacant seat = DSM.
+  const mrOrphanedToNsm: SeatContinuitySubject = { managerHrId: NSM, pendingManagerReplacementForHrId: DSM };
+
+  const byCanon = new Map<string, SeatContinuitySubject>([
+    [canon(NSM)!, nsmNode],
+    [canon(DSM)!, dsmNode],
+    [canon(RM)!, rmNode],
+  ]);
+
+  // TEAM: DSM sees their report BEFORE resignation (current manager edge).
+  assert.equal(
+    reportsToManagerSeat({ employee: mrUnderActiveDsm, viewerCanonicalHrId: canon(DSM)!, canonicalize: canon }),
+    true,
+    "DSM sees own direct report before resignation",
+  );
+  // TEAM: DSM still owns the report AFTER resignation via the vacant-seat marker.
+  assert.equal(
+    reportsToManagerSeat({ employee: mrOrphanedToNsm, viewerCanonicalHrId: canon(DSM)!, canonicalize: canon }),
+    true,
+    "vacant DSM seat still owns the orphaned report after resignation",
+  );
+  // TEAM: an unrelated DSM never sees the report.
+  assert.equal(
+    reportsToManagerSeat({ employee: mrOrphanedToNsm, viewerCanonicalHrId: canon(DSM_OTHER)!, canonicalize: canon }),
+    false,
+    "an unrelated DSM does not see the orphaned report",
+  );
+
+  // HIERARCHY: RM sees the report both before and after the DSM resignation.
+  assert.equal(
+    isWithinManagerHierarchy({ employee: mrUnderActiveDsm, byCanonicalHrId: byCanon, viewerCanonicalHrId: canon(RM)!, canonicalize: canon }),
+    true,
+    "RM sees report via full chain before resignation",
+  );
+  assert.equal(
+    isWithinManagerHierarchy({ employee: mrOrphanedToNsm, byCanonicalHrId: byCanon, viewerCanonicalHrId: canon(RM)!, canonicalize: canon }),
+    true,
+    "RM still sees report after DSM resignation (climb via reassigned manager edge)",
+  );
+  // HIERARCHY: NSM (intermediate) sees the orphaned report.
+  assert.equal(
+    isWithinManagerHierarchy({ employee: mrOrphanedToNsm, byCanonicalHrId: byCanon, viewerCanonicalHrId: canon(NSM)!, canonicalize: canon }),
+    true,
+    "NSM sees the report reassigned directly under them",
+  );
+  // HIERARCHY: the departed DSM owns the report via the vacant-seat marker at level 0.
+  assert.equal(
+    isWithinManagerHierarchy({ employee: mrOrphanedToNsm, byCanonicalHrId: byCanon, viewerCanonicalHrId: canon(DSM)!, canonicalize: canon }),
+    true,
+    "vacant DSM seat owner reachable via continuity marker",
+  );
+  // HIERARCHY: an unrelated RM does NOT climb into this chain (no leak past seats).
+  assert.equal(
+    isWithinManagerHierarchy({ employee: mrOrphanedToNsm, byCanonicalHrId: byCanon, viewerCanonicalHrId: canon("RM-OTHER")!, canonicalize: canon }),
+    false,
+    "unrelated manager does not see the report (no cross-branch leak)",
+  );
+  // HIERARCHY: cycle safety — self-referential manager does not infinite-loop.
+  const cyclic: SeatContinuitySubject = { managerHrId: "CYC", pendingManagerReplacementForHrId: null };
+  const cyclicMap = new Map<string, SeatContinuitySubject>([[canon("CYC")!, cyclic]]);
+  assert.equal(
+    isWithinManagerHierarchy({ employee: cyclic, byCanonicalHrId: cyclicMap, viewerCanonicalHrId: canon("NOPE")!, canonicalize: canon }),
+    false,
+    "cyclic manager chain terminates safely",
+  );
+
   // -- Wiring assertions (the service modules cannot be imported under the test
   //    runner because they pull in env-bound Supabase clients, so we lock the
   //    integration points via source text — mirroring tests/vacation-module).
@@ -306,6 +388,24 @@ export function runWorkforceHierarchyContinuityTests() {
     vacationServiceSource,
     /employeeLineMatches\(employee, currentEmployee\) &&\s*sameWorkforceDepartment\(currentEmployee, employee\)/,
     "LINE scope must be department-safe",
+  );
+  // WP-1: TEAM/HIERARCHY must route through the canonical seat-continuity helpers.
+  assert.match(
+    vacationServiceSource,
+    /reportsToManagerSeat\(\{/,
+    "Vacation TEAM scope must use the seat-continuity helper",
+  );
+  assert.match(
+    vacationServiceSource,
+    /isWithinManagerHierarchy\(\{/,
+    "Vacation HIERARCHY scope must use the seat-continuity helper",
+  );
+  // WP-1: canSeeVacation secondary gate must restrict the manager-chain fallback
+  // to management scopes so LINE/SELF cannot bypass the department-safe set.
+  assert.match(
+    vacationServiceSource,
+    /scope === "TEAM" \|\| scope === "HIERARCHY"/,
+    "canSeeVacation must gate the manager fallback to management scopes",
   );
 
   const directorySource = readFileSync(
