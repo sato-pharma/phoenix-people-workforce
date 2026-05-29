@@ -9,6 +9,11 @@ import {
 } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
+  isWithinManagerHierarchy,
+  lineScopeIncludesEmployee,
+  reportsToManagerSeat,
+} from "@/lib/workforce/hierarchy-resolver";
+import {
   buildCoachingScoreAnalytics,
   emptyCoachingScoreAnalytics,
   type CoachingScoreAnalyticsInputRow,
@@ -151,32 +156,13 @@ function findEmployee(rows: EmployeeDirectoryRow[], hrId: string) {
   return rows.find((row) => idsMatch(row.hrId, hrId)) ?? null;
 }
 
-function buildManagerGraph(rows: EmployeeDirectoryRow[]) {
-  const reports = new Map<string, string[]>();
+function buildCanonicalDirectory(rows: EmployeeDirectoryRow[]) {
+  const byCanonicalHrId = new Map<string, EmployeeDirectoryRow>();
   for (const row of rows) {
-    const manager = normalizeHrId(row.managerHrId);
-    const employee = normalizeHrId(row.hrId);
-    if (!manager || !employee) continue;
-    reports.set(manager, [...(reports.get(manager) ?? []), employee]);
+    const key = normalizeHrId(row.hrId);
+    if (key) byCanonicalHrId.set(key, row);
   }
-  return reports;
-}
-
-function isInHierarchy(rows: EmployeeDirectoryRow[], managerHrId: string, employeeHrId: string) {
-  const reports = buildManagerGraph(rows);
-  const target = normalizeHrId(employeeHrId);
-  const stack = [...(reports.get(normalizeHrId(managerHrId) ?? "") ?? [])];
-  const visited = new Set<string>();
-
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current || visited.has(current)) continue;
-    if (current === target) return true;
-    visited.add(current);
-    stack.push(...(reports.get(current) ?? []));
-  }
-
-  return false;
+  return byCanonicalHrId;
 }
 
 export function canAccessCoachingEmployee(
@@ -192,13 +178,26 @@ export function canAccessCoachingEmployee(
     return Boolean(coach && idsMatch(currentHrId, coach.hrId));
   }
   if (idsMatch(currentHrId, employee.hrId)) return true;
-  if (idsMatch(currentHrId, employee.managerHrId)) return true;
+  // TEAM (direct report): seat-continuity aware so a manager keeps their team
+  // after a sub-manager resignation (vacant-seat marker), staying consistent with
+  // the organogram. See src/lib/workforce/hierarchy-resolver.ts.
+  if (reportsToManagerSeat({ employee, viewerCanonicalHrId: currentHrId, canonicalize: normalizeHrId })) {
+    return true;
+  }
   if (access.role === "Regional Manager" || access.role === "Manager") {
-    return isInHierarchy(directory, currentHrId, employee.hrId);
+    // HIERARCHY: seat-continuity aware management-chain membership.
+    return isWithinManagerHierarchy({
+      employee,
+      byCanonicalHrId: buildCanonicalDirectory(directory),
+      viewerCanonicalHrId: currentHrId,
+      canonicalize: normalizeHrId,
+    });
   }
   if (lineRoles.has(access.role)) {
     const accessor = findEmployee(directory, currentHrId);
-    return Boolean(accessor?.lineId && employee.lineId && accessor.lineId === employee.lineId);
+    // Department-safe LINE scope: same line AND same department only, so a Sales
+    // line role never sees Marketing/Product employees on a shared product line.
+    return Boolean(accessor && lineScopeIncludesEmployee(accessor, employee));
   }
   return false;
 }
