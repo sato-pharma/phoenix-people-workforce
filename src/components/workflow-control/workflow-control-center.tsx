@@ -225,6 +225,7 @@ export function WorkflowControlCenter({
                 <div>
                   <p className="mb-2 text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Simulator</p>
                   <WorkflowSimulatorPanel
+                    key={`sim-${selectedDomain.key}-${selectedSubflow.key}`}
                     domainKey={selectedDomain.key}
                     domainName={selectedDomain.name}
                     subflows={selectedDomain.subflows}

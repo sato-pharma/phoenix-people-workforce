@@ -111,6 +111,16 @@ export function runWorkflowControlTests() {
   assert.equal(simulateWorkflow({ domainKey: "nope" }).found, false, "unknown domain is not found");
   assert.equal(simulateWorkflow({ domainKey: "leave", subflowKey: "nope" }).found, false, "unknown subflow is not found");
 
+  // Routing copy fix: Expense submit must NOT be mislabeled "routes to Direct
+  // manager" (it routes to approvers). Vacation submit DOES route to a manager.
+  const expSim = simulateWorkflow({ domainKey: "expenses-outstation", subflowKey: "expense", employeeHrId: "B-52" });
+  const expSubmit = expSim.steps.find((s) => s.id === "submit");
+  assert.ok(expSubmit, "expense submit step simulated");
+  assert.equal(/direct manager/i.test(expSubmit?.routesTo ?? ""), false, "expense submit is NOT mislabeled as routing to Direct manager");
+  assert.match(expSubmit?.routesTo ?? "", /approver/i, "expense submit routes to approvers (business-friendly copy)");
+  const vacSubmit = sim.steps.find((s) => s.id === "submit");
+  assert.match(vacSubmit?.routesTo ?? "", /direct manager/i, "vacation submit correctly routes to the direct manager");
+
   // ---------------------------------------------------------------------------
   // Phase-1 guarantee: read-only modules never call a mutation/DB path.
   // ---------------------------------------------------------------------------
@@ -131,6 +141,24 @@ export function runWorkflowControlTests() {
   const centerSrc = readFileSync(new URL("../src/components/workflow-control/workflow-control-center.tsx", import.meta.url), "utf8");
   assert.match(centerSrc, /Phase 2/, "edit panel communicates Phase 2 locking");
   assert.match(centerSrc, /read-only workflow map and simulator/i, "governance warning is present");
+
+  // Stale-result fix: the simulator panel is keyed by domain + subflow so it
+  // remounts (and clears any previous result) whenever the selection changes.
+  assert.match(centerSrc, /key=\{`sim-/, "simulator panel is keyed by domain + subflow");
+
+  // Responsive / no desktop-only width.
+  assert.match(centerSrc, /grid-cols-1[^"]*sm:grid-cols-2[^"]*lg:grid-cols-3/, "domain grid uses responsive columns");
+  assert.match(centerSrc, /flex-wrap/, "subflow chips / badges wrap");
+  assert.match(centerSrc, /lg:grid-cols-2/, "map + simulator stack to one column on small screens");
+  assert.match(centerSrc, /max-w-6xl/, "center uses a responsive max width, not a fixed desktop width");
+  assert.equal(/w-\[\d{3,}px\]/.test(centerSrc), false, "center has no fixed 3+ digit px width");
+
+  const simPanelSrc = readFileSync(new URL("../src/components/workflow-control/workflow-simulator-panel.tsx", import.meta.url), "utf8");
+  assert.match(simPanelSrc, /sm:grid-cols-2/, "simulator inputs use a responsive grid");
+  assert.equal(/w-\[\d{3,}px\]/.test(simPanelSrc), false, "simulator panel has no fixed desktop-only width");
+
+  const mapSrcResponsive = readFileSync(new URL("../src/components/workflow-control/workflow-map.tsx", import.meta.url), "utf8");
+  assert.equal(/w-\[\d{3,}px\]/.test(mapSrcResponsive), false, "map has no fixed desktop-only width");
 
   const pageSrc = readFileSync(new URL("../app/admin/workflow-control/page.tsx", import.meta.url), "utf8");
   assert.match(pageSrc, /canAccessWorkflowControlCenter/, "page enforces the workflow-control access gate");
