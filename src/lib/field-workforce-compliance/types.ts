@@ -172,3 +172,30 @@ export type FieldWorkforcePreviewResult = {
   severityCounts: Record<FieldWorkforceSeverity, number>;
   warnings: FieldWorkforceValidationIssue[];
 };
+
+export type FieldWorkforceArchiveImportStatus = "archived" | "superseded";
+
+export type FieldWorkforceArchiveListItem = {
+  employeeCount: number;
+  highSeverityCount: number;
+  id: string;
+  month: number;
+  monthKey: string;
+  reviewCandidateCount: number;
+  sheetName: string;
+  sourceFilename: string;
+  status: FieldWorkforceArchiveImportStatus;
+  uploadedAt: string;
+  uploadedBy: string;
+  year: number;
+};
+
+export type FieldWorkforceArchiveDetail = {
+  archive: FieldWorkforceArchiveListItem;
+  preview: FieldWorkforcePreviewResult;
+};
+
+export type FieldWorkforceArchiveDuplicate = {
+  existing: FieldWorkforceArchiveListItem;
+  monthKey: string;
+};

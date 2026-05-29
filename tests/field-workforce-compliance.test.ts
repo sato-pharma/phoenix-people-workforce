@@ -4,8 +4,20 @@ import {
   buildFieldWorkforceCompliancePreview,
 } from "../src/lib/field-workforce-compliance/classifier.ts";
 import {
+  fieldWorkforceArchiveRowsFromPreview,
+  fieldWorkforceMonthKey,
+  fieldWorkforcePreviewFromArchiveRows,
+  findFieldWorkforceArchiveDuplicate,
+} from "../src/lib/field-workforce-compliance/archive.ts";
+import {
   parseFieldWorkforceComplianceMatrix,
 } from "../src/lib/field-workforce-compliance/parser.ts";
+
+function collectObjectKeys(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  if (Array.isArray(value)) return value.flatMap((item) => collectObjectKeys(item));
+  return Object.entries(value).flatMap(([key, nested]) => [key, ...collectObjectKeys(nested)]);
+}
 
 export function runFieldWorkforceComplianceTests() {
   const parsed = parseFieldWorkforceComplianceMatrix({
@@ -128,5 +140,53 @@ export function runFieldWorkforceComplianceTests() {
   assert.ok(preview.reviewCandidates.every((candidate) =>
     !candidate.explanation.toLowerCase().includes("deduct automatically") &&
     !candidate.explanation.toLowerCase().includes("leave balance updated")
+  ));
+
+  const archiveRows = fieldWorkforceArchiveRowsFromPreview(preview, "test-admin");
+  assert.equal(fieldWorkforceMonthKey(2026, 1), "2026-01");
+  assert.equal(archiveRows.importRow.month_key, "2026-01");
+  assert.equal(archiveRows.importRow.employee_count, 2);
+  assert.equal(archiveRows.importRow.review_candidate_count, preview.reviewCandidates.length);
+  assert.equal(archiveRows.importRow.high_severity_count, preview.severityCounts.High);
+  assert.equal(archiveRows.dayRows.length, preview.employees.length * 31);
+  assert.equal(archiveRows.summaryRows.length, preview.employees.length);
+
+  const duplicate = findFieldWorkforceArchiveDuplicate([
+    {
+      employeeCount: 2,
+      highSeverityCount: preview.severityCounts.High,
+      id: "archive-1",
+      month: 1,
+      monthKey: "2026-01",
+      reviewCandidateCount: preview.reviewCandidates.length,
+      sheetName: "iReport",
+      sourceFilename: "Jan 2026 team calendar.xlsx",
+      status: "archived",
+      uploadedAt: "2026-01-31T00:00:00Z",
+      uploadedBy: "test-admin",
+      year: 2026,
+    },
+  ], "2026-01");
+  assert.equal(duplicate?.id, "archive-1");
+
+  const restored = fieldWorkforcePreviewFromArchiveRows({
+    dayRows: archiveRows.dayRows,
+    importRow: {
+      ...archiveRows.importRow,
+      id: "archive-1",
+      uploaded_at: "2026-01-31T00:00:00Z",
+    },
+    summaryRows: archiveRows.summaryRows,
+  });
+  assert.equal(restored.archive.monthKey, "2026-01");
+  assert.equal(restored.preview.metadata.employeeCount, preview.metadata.employeeCount);
+  assert.equal(restored.preview.reviewCandidates.length, preview.reviewCandidates.length);
+  assert.equal(restored.preview.employees.find((employee) => employee.hrId === "A-1")?.timeline.length, 31);
+
+  const archiveKeys = collectObjectKeys(archiveRows).map((key) => key.toLowerCase());
+  assert.ok(archiveKeys.every((key) =>
+    !key.includes("payroll") &&
+    !key.includes("leave_balance") &&
+    !key.includes("approval")
   ));
 }

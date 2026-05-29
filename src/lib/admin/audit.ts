@@ -6,6 +6,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type AuditEntityType =
   | "auth_session"
   | "employee_resignation"
+  | "field_workforce_compliance_import"
   | "outstation_request"
   | "payroll_batch"
   | "permission_override"

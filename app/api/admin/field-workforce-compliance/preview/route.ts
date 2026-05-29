@@ -1,88 +1,19 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { writeAuditLog } from "@/lib/admin/audit";
+import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import {
-  buildFieldWorkforceCompliancePreview,
-} from "@/lib/field-workforce-compliance/classifier";
+  buildFieldWorkforceCompliancePreviewFromWorkbook,
+  FieldWorkforcePreviewError,
+} from "@/lib/field-workforce-compliance/preview";
 import {
-  findUsableFieldWorkforceWorksheet,
-  parseFieldWorkforceComplianceWorksheet,
-} from "@/lib/field-workforce-compliance/parser";
-import type {
-  FieldWorkforceEmployeeReference,
-  FieldWorkforceHoliday,
-  FieldWorkforceValidationIssue,
-} from "@/lib/field-workforce-compliance/types";
-import {
-  loadExcelWorkbook,
-} from "@/lib/uploads/exceljs-rows";
+  fieldWorkforceMonthKey,
+} from "@/lib/field-workforce-compliance/archive";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
-import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-async function loadEmployeeReferences(): Promise<{
-  references: FieldWorkforceEmployeeReference[];
-  warning: FieldWorkforceValidationIssue | null;
-}> {
-  try {
-    const employees = await getEmployeeDirectoryRows({ includeInactive: true });
-    return {
-      references: employees.map((employee) => ({
-        departmentName: employee.departmentName,
-        fullName: employee.fullName,
-        hireDate: employee.hireDate,
-        hrId: employee.hrId,
-        jobTitle: employee.jobTitle,
-        lineName: employee.lineName,
-        managerName: employee.managerName,
-      })),
-      warning: null,
-    };
-  } catch (error) {
-    return {
-      references: [],
-      warning: {
-        code: "employee_directory_unavailable",
-        message: error instanceof Error
-          ? `Employee matching is unavailable: ${error.message}`
-          : "Employee matching is unavailable.",
-        severity: "warning",
-      },
-    };
-  }
-}
-
-async function loadHolidays(month: number, year: number): Promise<{
-  connected: boolean;
-  holidays: FieldWorkforceHoliday[];
-  message: string | null;
-  sourceLabel: string;
-}> {
-  try {
-    const result = await getEgyptianNationalHolidays({ month, year });
-    return {
-      connected: result.connected,
-      holidays: result.holidays.map((holiday) => ({
-        endDate: holiday.endDate,
-        name: holiday.name,
-        startDate: holiday.startDate,
-      })),
-      message: result.message,
-      sourceLabel: result.sourceLabel,
-    };
-  } catch (error) {
-    return {
-      connected: false,
-      holidays: [],
-      message: error instanceof Error ? error.message : "National holiday lookup failed.",
-      sourceLabel: "Egypt public holidays",
-    };
-  }
-}
 
 export async function POST(request: Request) {
   try {
@@ -118,63 +49,23 @@ export async function POST(request: Request) {
       }, { status: fileValidation.status });
     }
 
-    let workbook;
-    try {
-      workbook = await loadExcelWorkbook(await file.arrayBuffer());
-    } catch {
-      return NextResponse.json({
-        error: "invalid_excel_file",
-        message: "The workbook could not be read as a valid .xlsx file.",
-        success: false,
-      }, { status: 400 });
-    }
-
-    const worksheet = findUsableFieldWorkforceWorksheet(workbook);
-    if (!worksheet) {
-      return NextResponse.json({
-        error: "empty_workbook",
-        message: "No usable worksheet was found in the workbook.",
-        success: false,
-      }, { status: 400 });
-    }
-
-    const parsed = parseFieldWorkforceComplianceWorksheet({
+    const preview = await buildFieldWorkforceCompliancePreviewFromWorkbook({
+      arrayBuffer: await file.arrayBuffer(),
       fileName: file.name,
-      worksheet,
     });
-
-    if (parsed.errors.length > 0 || !parsed.month || !parsed.year) {
-      return NextResponse.json({
-        errors: parsed.errors,
-        message: "The workbook structure must be corrected before preview.",
-        success: false,
-        warnings: parsed.warnings,
-      }, { status: 400 });
-    }
-
-    const [employeeReferences, holidays] = await Promise.all([
-      loadEmployeeReferences(),
-      loadHolidays(parsed.month, parsed.year),
-    ]);
-
-    if (employeeReferences.warning) {
-      parsed.warnings.push(employeeReferences.warning);
-    }
-    if (!holidays.connected && holidays.message) {
-      parsed.warnings.push({
-        code: "public_holiday_lookup_unavailable",
-        message: `Public holiday overlay is unavailable: ${holidays.message}`,
-        severity: "warning",
-      });
-    }
-
-    const preview = buildFieldWorkforceCompliancePreview({
-      employeeReferences: employeeReferences.references,
-      holidayConnected: holidays.connected,
-      holidayMessage: holidays.message,
-      holidaySourceLabel: holidays.sourceLabel,
-      holidays: holidays.holidays,
-      parsed,
+    const monthKey = fieldWorkforceMonthKey(preview.metadata.year, preview.metadata.month);
+    await writeAuditLog({
+      actorLoginId: resolveEmployeeIdentityId(access) ?? access.loginId ?? "system",
+      entityId: monthKey,
+      entityType: "field_workforce_compliance_import",
+      newValues: {
+        employeeCount: preview.metadata.employeeCount,
+        highSeverityCount: preview.severityCounts.High,
+        monthKey,
+        reviewCandidateCount: preview.reviewCandidates.length,
+        sourceFilename: preview.metadata.fileName,
+      },
+      summary: "Field Workforce Compliance preview generated.",
     });
 
     return NextResponse.json({
@@ -188,6 +79,16 @@ export async function POST(request: Request) {
         message: "You do not have access to preview Field Workforce Compliance uploads.",
         success: false,
       }, { status: 403 });
+    }
+
+    if (error instanceof FieldWorkforcePreviewError) {
+      return NextResponse.json({
+        error: error.code,
+        errors: error.errors,
+        message: error.message,
+        success: false,
+        warnings: error.warnings,
+      }, { status: error.status });
     }
 
     return NextResponse.json({
