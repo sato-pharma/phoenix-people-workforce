@@ -262,3 +262,85 @@ export function lineScopeIncludesEmployee(
 ): boolean {
   return sameWorkforceLine(viewer, employee) && sameWorkforceDepartment(viewer, employee);
 }
+
+/**
+ * Canonical, seat-continuity-aware manager-hierarchy membership.
+ *
+ * These helpers are the single source of truth for "does this report belong to a
+ * given manager's team / management chain", honoring vacant-seat continuity so
+ * reporting/scope views stay aligned with the organogram. They are pure: the
+ * caller injects its own HR_ID canonicalization (e.g. canonicalHrIdKey) so the
+ * resolver does not depend on any HR_ID dialect.
+ *
+ * Design note: the resignation trigger reassigns a departed manager's reports
+ * UPWARD (their `manager_hr_id` becomes the grandparent) AND stamps
+ * `pending_manager_replacement_for_hr_id` with the departed manager's HR_ID. So
+ * the *manager* edge stays connected to active nodes (good for climbing), while
+ * the *pending* marker records the vacant seat the report is held for. Both
+ * helpers therefore (a) climb via `manager_hr_id` to keep the chain connected and
+ * (b) ALSO match the viewer against the vacant-seat marker. They are strictly
+ * additive vs a raw `manager_hr_id` walk: they never remove reachability, they
+ * only also recognize the owner of the vacant seat.
+ */
+
+type CanonicalizeHrId = (hrId: string | null | undefined) => string | null;
+
+function matchesViewer(
+  value: string | null | undefined,
+  viewerCanonicalHrId: string,
+  canonicalize: CanonicalizeHrId,
+): boolean {
+  const canonical = canonicalize(value);
+  return canonical !== null && canonical === viewerCanonicalHrId;
+}
+
+/**
+ * Does `employee` report DIRECTLY to the viewer's seat — either via the current
+ * `manager_hr_id` or via the vacant-seat continuity marker? Use for TEAM scope.
+ */
+export function reportsToManagerSeat(input: {
+  employee: SeatContinuitySubject;
+  viewerCanonicalHrId: string;
+  canonicalize: CanonicalizeHrId;
+}): boolean {
+  const { employee, viewerCanonicalHrId, canonicalize } = input;
+  return (
+    matchesViewer(employee.managerHrId, viewerCanonicalHrId, canonicalize) ||
+    matchesViewer(employee.pendingManagerReplacementForHrId, viewerCanonicalHrId, canonicalize)
+  );
+}
+
+/**
+ * Is `employee` anywhere in the viewer's management chain, seat-continuity aware?
+ * Climbs `manager_hr_id` (the connected edge after upward reassignment) and at
+ * every level also matches the viewer against the vacant-seat marker, so a viewer
+ * who owns a vacant seat above the report still sees it. Use for HIERARCHY scope.
+ *
+ * `byCanonicalHrId` must be keyed by `canonicalize(hrId)`.
+ */
+export function isWithinManagerHierarchy(input: {
+  employee: SeatContinuitySubject;
+  byCanonicalHrId: ReadonlyMap<string, SeatContinuitySubject>;
+  viewerCanonicalHrId: string;
+  canonicalize: CanonicalizeHrId;
+}): boolean {
+  const { byCanonicalHrId, viewerCanonicalHrId, canonicalize } = input;
+  let node: SeatContinuitySubject | undefined = input.employee;
+  const visited = new Set<string>();
+
+  while (node) {
+    if (
+      matchesViewer(node.managerHrId, viewerCanonicalHrId, canonicalize) ||
+      matchesViewer(node.pendingManagerReplacementForHrId, viewerCanonicalHrId, canonicalize)
+    ) {
+      return true;
+    }
+
+    const nextKey = canonicalize(node.managerHrId);
+    if (!nextKey || visited.has(nextKey)) break;
+    visited.add(nextKey);
+    node = byCanonicalHrId.get(nextKey);
+  }
+
+  return false;
+}

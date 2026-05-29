@@ -18,7 +18,11 @@ import {
 } from "@/lib/employees/employee-directory";
 import { enqueueInAppNotification } from "@/lib/notifications/in-app";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { sameWorkforceDepartment } from "@/lib/workforce/hierarchy-resolver";
+import {
+  isWithinManagerHierarchy,
+  reportsToManagerSeat,
+  sameWorkforceDepartment,
+} from "@/lib/workforce/hierarchy-resolver";
 import { addDaysToDateOnly, daysBetweenDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
 import { getEgyptianNationalHolidays, type EgyptianNationalHoliday } from "@/lib/vacation/national-holidays";
 import {
@@ -351,23 +355,6 @@ function employeeLineMatches(left: EmployeeDirectoryRow, right: EmployeeDirector
   return Boolean(leftLine && rightLine && leftLine === rightLine);
 }
 
-function isEmployeeInManagerHierarchy(input: {
-  employee: EmployeeDirectoryRow;
-  employeeByHrId: Map<string, EmployeeDirectoryRow>;
-  viewerHrId: string;
-}) {
-  let managerHrId = canonicalHrId(input.employee.managerHrId);
-  const visited = new Set<string>();
-
-  while (managerHrId && !visited.has(managerHrId)) {
-    if (managerHrId === input.viewerHrId) return true;
-    visited.add(managerHrId);
-    managerHrId = canonicalHrId(input.employeeByHrId.get(managerHrId)?.managerHrId);
-  }
-
-  return false;
-}
-
 function filterVacationEmployeesForAccess(access: AccessContext, employees: EmployeeDirectoryRow[]) {
   const scope = getVacationVisibilityScope(access);
   if (scope === "COMPANY") return employees;
@@ -393,11 +380,24 @@ function filterVacationEmployeesForAccess(access: AccessContext, employees: Empl
     if (employeeHrId === viewerHrId) return true;
 
     if (scope === "TEAM") {
-      return hrIdsMatch(currentEmployee.hrId, employee.managerHrId);
+      // Seat-continuity-aware: a report belongs to this manager's team via the
+      // current manager edge OR the vacant-seat continuity marker, so the team
+      // stays consistent with the organogram across a manager resignation.
+      return reportsToManagerSeat({
+        employee,
+        viewerCanonicalHrId: viewerHrId,
+        canonicalize: canonicalHrId,
+      });
     }
 
     if (scope === "HIERARCHY") {
-      return isEmployeeInManagerHierarchy({ employee, employeeByHrId, viewerHrId });
+      // Seat-continuity-aware management-chain climb (see hierarchy-resolver.ts).
+      return isWithinManagerHierarchy({
+        employee,
+        byCanonicalHrId: employeeByHrId,
+        viewerCanonicalHrId: viewerHrId,
+        canonicalize: canonicalHrId,
+      });
     }
 
     if (scope === "LINE") {
@@ -869,11 +869,23 @@ function canSeeVacation(access: AccessContext, request: VacationRequestRecord, v
   const employeeHrId = canonicalHrId(request.employeeHrId);
   if (employeeHrId && visibleEmployeeHrIds?.has(employeeHrId)) return true;
 
-  return (
-    accessMatchesHrId(access, request.employeeHrId) ||
-    accessMatchesHrId(access, request.managerHrId) ||
-    accessMatchesHrId(access, request.managerOfManagerHrId)
-  );
+  // Own request is always visible.
+  if (accessMatchesHrId(access, request.employeeHrId)) return true;
+
+  // Management-chain fallback (stored manager / manager-of-manager on the request)
+  // is allowed ONLY for management scopes (TEAM / HIERARCHY). LINE and SELF scopes
+  // must rely solely on the department-safe `visibleEmployeeHrIds` set above, so a
+  // LINE-scoped viewer (e.g. a Sales NSM) cannot use a stale stored manager field
+  // to reach a request outside their department boundary.
+  const scope = getVacationVisibilityScope(access);
+  if (scope === "TEAM" || scope === "HIERARCHY") {
+    return (
+      accessMatchesHrId(access, request.managerHrId) ||
+      accessMatchesHrId(access, request.managerOfManagerHrId)
+    );
+  }
+
+  return false;
 }
 
 async function insertVacationEvent(input: {
