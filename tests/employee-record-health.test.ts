@@ -37,6 +37,7 @@ const completeEmployee: EmployeeDirectoryRow = {
   lineName: "Line A",
   managerHrId: "MGR-1",
   managerName: "Manager One",
+  pendingManagerReplacementForHrId: null,
   medicalInsurance: 50,
   medicalInsuranceNumber: "MED-1",
   medicalInsuranceStatus: "yes",

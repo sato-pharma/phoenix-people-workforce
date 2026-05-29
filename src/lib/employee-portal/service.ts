@@ -26,6 +26,12 @@ import {
 } from "@/lib/lifecycle-risk/metrics";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { salesRecordMatchesSeatContinuity } from "@/lib/workforce/seat-lifecycle";
+import {
+  formatVacantSeatLabel,
+  resolveSeatGrouping,
+  selectVacantManagerSeat,
+  type ResolvedVacantSeat,
+} from "@/lib/workforce/hierarchy-resolver";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import {
   buildPayrollExpenseDsmSummaries,
@@ -1819,6 +1825,7 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     lineName: null,
     managerHrId: null,
     managerName: null,
+    pendingManagerReplacementForHrId: null,
     medicalInsurance: null,
     medicalInsuranceStatus: null,
     medicalInsuranceNumber: null,
@@ -4065,6 +4072,42 @@ export type DsmTeamPerformanceData = {
   teamTotalTarget: number;
 };
 
+/**
+ * Resolve the single, unambiguous vacant DSM seat under a given NSM for a line,
+ * derived from the open vacancies the directory already loaded (no extra query).
+ *
+ * Used as the FALLBACK seat-continuity signal when an orphaned medical rep has
+ * lost its `pending_manager_replacement_for_hr_id` marker but the org clearly has
+ * exactly one open DSM seat under this NSM/line. If zero or more than one open
+ * DSM seat exists, no seat is returned (we never guess across districts).
+ */
+function resolveNsmVacantDsmSeat(
+  directory: EmployeeDirectoryData,
+  lineScope: ReturnType<typeof createPortalSalesLineScope>,
+  nsmCanonicalHrId: string | null,
+): { seat: ResolvedVacantSeat | null; ambiguous: boolean } {
+  if (!nsmCanonicalHrId) return { seat: null, ambiguous: false };
+
+  const candidates = directory.lookups.workforceVacancies
+    .filter(
+      (vac) =>
+        isDistrictManagerVacancyTitle(vac.jobTitle, vac.positionTitle) &&
+        employeeMatchesPortalSalesScope(
+          { lineId: vac.lineId, lineName: vac.lineName },
+          lineScope,
+        ) &&
+        toCanonicalPortalHrId(vac.managerHrId) === nsmCanonicalHrId,
+    )
+    .map((vac) => ({
+      vacancyId: vac.vacancyId,
+      vacancyCode: vac.vacancyCode,
+      areaName: vac.areaName,
+      lineName: vac.lineName,
+    }));
+
+  return selectVacantManagerSeat(candidates, "DSM seat");
+}
+
 export async function getDsmTeamPerformance(
   access: AccessContext,
   options: { period?: string | null } = {},
@@ -4105,6 +4148,18 @@ export async function getDsmTeamPerformance(
         .map((emp) => toCanonicalPortalHrId(emp.hrId))
         .filter((hrId): hrId is string => Boolean(hrId)),
     );
+
+    // Fallback seat-continuity: the single open DSM seat under this NSM/line (if
+    // exactly one), used to group orphaned reps whose continuity marker was lost.
+    const vacantDsmSeat = isNsm
+      ? resolveNsmVacantDsmSeat(directory, lineScope, dsmCanonical)
+      : { seat: null, ambiguous: false };
+    if (vacantDsmSeat.ambiguous) {
+      logPortalDebug(
+        "med-reps-performance: multiple open DSM seats; orphaned reps left under NSM (canonical seat field needed)",
+        { nsm: dsmCanonical },
+      );
+    }
 
     // Find target employees based on role
     // NSM sees all Med Reps in their line
@@ -4255,12 +4310,28 @@ export async function getDsmTeamPerformance(
     medRepRows.forEach((emp) => {
       const canonical = toCanonicalPortalHrId(emp.hrId);
       if (!canonical) return;
+      // Seat-continuity-aware grouping: when this rep's DSM resigned and has not
+      // been replaced, group them under the vacant DSM seat instead of under the
+      // upward-reassigned NSM — first via the pending-replacement marker, then via
+      // the single open DSM vacancy fallback. Otherwise grouping is unchanged.
+      // See src/lib/workforce/hierarchy-resolver.ts.
+      const grouping = resolveSeatGrouping(emp, {
+        vacantSeatTitle: "DSM seat",
+        orphanFallback: {
+          isOrphanToNsm: isNsm && toCanonicalPortalHrId(emp.managerHrId) === dsmCanonical,
+          vacantSeat: vacantDsmSeat.seat,
+        },
+      });
+      const seatHrId =
+        grouping.isVacant && !grouping.seatKeyIsSynthetic
+          ? toCanonicalPortalHrId(grouping.seatHrId) ?? grouping.seatHrId
+          : grouping.seatHrId;
       membersMap.set(canonical, {
         achievementPercent: 0,
         hrId: canonical,
         name: emp.fullName,
-        managerHrId: emp.managerHrId ?? null,
-        managerName: emp.managerName ?? null,
+        managerHrId: seatHrId,
+        managerName: grouping.seatName,
         position: 0,
         products: [],
         totalSales: 0,
@@ -4682,14 +4753,56 @@ export async function getNsmDsmPerformance(
     });
     const dsmCanonicalIds = new Set(dsmHrIdToCanonical.values());
 
+    const nsmCanonical = toCanonicalPortalHrId(currentUser.hrId);
+    // Fallback seat-continuity: the single open DSM seat under this NSM/line, used
+    // when an orphaned rep's continuity marker was lost.
+    const vacantDsmSeat = resolveNsmVacantDsmSeat(directory, lineScope, nsmCanonical);
+    if (vacantDsmSeat.ambiguous) {
+      logPortalDebug(
+        "dsms-performance: multiple open DSM seats; orphaned reps left unattributed (canonical seat field needed)",
+        { nsm: nsmCanonical },
+      );
+    }
+
+    // Seat-continuity-aware med-rep -> DSM mapping. Reps whose DSM resigned and
+    // has not yet been replaced are attributed to the vacant DSM seat (via the
+    // pending marker first, then the single open DSM vacancy fallback) rather than
+    // dropped or rolled up to the NSM, so their district still appears in the
+    // DSMs performance view. See src/lib/workforce/hierarchy-resolver.ts.
     const medRepToDsmCanonical = new Map<string, string>();
+    const vacantSeatLabelByCanonical = new Map<string, string>();
     directory.employees.forEach((emp) => {
       if (!isMedicalRepDirectoryEmployee(emp)) return;
       if (!employeeMatchesPortalSalesScope(emp, lineScope)) return;
 
       const repCanonical = toCanonicalPortalHrId(emp.hrId);
+      if (!repCanonical) return;
+
+      const grouping = resolveSeatGrouping(emp, {
+        vacantSeatTitle: "DSM seat",
+        orphanFallback: {
+          isOrphanToNsm: toCanonicalPortalHrId(emp.managerHrId) === nsmCanonical,
+          vacantSeat: vacantDsmSeat.seat,
+        },
+      });
+
+      if (grouping.isVacant && grouping.seatHrId) {
+        const seatKey = grouping.seatKeyIsSynthetic
+          ? grouping.seatHrId
+          : toCanonicalPortalHrId(grouping.seatHrId) ?? grouping.seatHrId;
+        medRepToDsmCanonical.set(repCanonical, seatKey);
+        dsmCanonicalIds.add(seatKey);
+        if (!vacantSeatLabelByCanonical.has(seatKey)) {
+          vacantSeatLabelByCanonical.set(
+            seatKey,
+            grouping.seatName ?? formatVacantSeatLabel(emp, "DSM seat"),
+          );
+        }
+        return;
+      }
+
       const managerCanonical = toCanonicalPortalHrId(emp.managerHrId);
-      if (!repCanonical || !managerCanonical || !dsmCanonicalIds.has(managerCanonical)) return;
+      if (!managerCanonical || !dsmCanonicalIds.has(managerCanonical)) return;
       medRepToDsmCanonical.set(repCanonical, managerCanonical);
     });
 
@@ -4794,6 +4907,23 @@ export async function getNsmDsmPerformance(
         achievementPercent: 0,
         hrId: canonical,
         name: emp.fullName,
+        managerHrId: null, // NSM is the manager
+        managerName: currentUser.name,
+        position: 0,
+        products: [],
+        totalSales: 0,
+        totalTarget: 0,
+      });
+    });
+
+    // Surface vacant DSM seats as their own district node so the reps attributed
+    // to them above are not silently dropped from the line view.
+    vacantSeatLabelByCanonical.forEach((label, seatCanonical) => {
+      if (dsmsMap.has(seatCanonical)) return;
+      dsmsMap.set(seatCanonical, {
+        achievementPercent: 0,
+        hrId: seatCanonical,
+        name: label,
         managerHrId: null, // NSM is the manager
         managerName: currentUser.name,
         position: 0,
