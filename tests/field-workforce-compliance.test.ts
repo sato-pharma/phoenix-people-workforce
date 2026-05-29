@@ -10,7 +10,11 @@ import {
   findFieldWorkforceArchiveDuplicate,
 } from "../src/lib/field-workforce-compliance/archive.ts";
 import {
+  assertFieldWorkforceDecisionStatusAllowed,
+  assertNoFieldWorkforceApprovedDecisionConflict,
   buildFieldWorkforceRecommendationsReportFromArchive,
+  FieldWorkforceConflictingDecisionError,
+  FieldWorkforceInvalidDecisionStatusError,
 } from "../src/lib/field-workforce-compliance/recommendations.ts";
 import {
   parseFieldWorkforceComplianceMatrix,
@@ -189,18 +193,20 @@ export function runFieldWorkforceComplianceTests() {
   const recommendations = buildFieldWorkforceRecommendationsReportFromArchive(restored);
   assert.equal(recommendations.integrationStatus.leaveSource, "not_connected");
   assert.equal(recommendations.integrationStatus.payrollAmount, "requires_calculation");
-  assert.ok(recommendations.leaveRecommendations.some((recommendation) =>
+  const avRecommendation = recommendations.leaveRecommendations.find((recommendation) =>
     recommendation.sourceType === "calendar_av" &&
     recommendation.employeeCode === "A-1" &&
     recommendation.dates.includes("2026-01-06") &&
     recommendation.existingCoverageStatus === "leave_source_not_connected"
-  ));
-  assert.ok(recommendations.leaveRecommendations.some((recommendation) =>
+  );
+  assert.ok(avRecommendation);
+  const nLeaveRecommendation = recommendations.leaveRecommendations.find((recommendation) =>
     recommendation.sourceType === "n_retroactive_candidate" &&
     recommendation.employeeCode === "A-1" &&
     recommendation.dates.includes("2026-01-03") &&
     recommendation.dates.includes("2026-01-04")
-  ));
+  );
+  assert.ok(nLeaveRecommendation);
   const payrollRecommendation = recommendations.payrollRecommendations.find((recommendation) =>
     recommendation.employeeCode === "A-1" &&
     recommendation.sourceType === "no_activity_candidate"
@@ -208,6 +214,47 @@ export function runFieldWorkforceComplianceTests() {
   assert.ok(payrollRecommendation);
   assert.equal(payrollRecommendation.estimatedAmount, null);
   assert.equal(payrollRecommendation.existingCoverageStatus, "payroll_calculation_required");
+  assert.doesNotThrow(() => assertFieldWorkforceDecisionStatusAllowed({
+    decisionStatus: "Approved for Leave Adjustment Report",
+    recommendationType: avRecommendation.recommendationType,
+  }));
+  assert.doesNotThrow(() => assertFieldWorkforceDecisionStatusAllowed({
+    decisionStatus: "Approved for Payroll Deduction Report",
+    recommendationType: payrollRecommendation.recommendationType,
+  }));
+  assert.throws(() => assertFieldWorkforceDecisionStatusAllowed({
+    decisionStatus: "Approved for Leave Adjustment Report",
+    recommendationType: payrollRecommendation.recommendationType,
+  }), FieldWorkforceInvalidDecisionStatusError);
+  assert.throws(() => assertFieldWorkforceDecisionStatusAllowed({
+    decisionStatus: "Approved for Payroll Deduction Report",
+    recommendationType: avRecommendation.recommendationType,
+  }), FieldWorkforceInvalidDecisionStatusError);
+
+  assert.throws(() => assertNoFieldWorkforceApprovedDecisionConflict({
+    decisionStatus: "Approved for Payroll Deduction Report",
+    existingRows: [{
+      dates: nLeaveRecommendation.dates,
+      days_count: nLeaveRecommendation.daysCount,
+      decided_at: "2026-01-31T09:00:00Z",
+      decided_by: "hr-admin",
+      decision_status: "Approved for Leave Adjustment Report",
+      employee_code: nLeaveRecommendation.employeeCode,
+      employee_name: nLeaveRecommendation.employeeName,
+      estimated_amount: null,
+      existing_coverage_status: nLeaveRecommendation.existingCoverageStatus,
+      hr_note: "Approved as leave report.",
+      id: "leave-decision-1",
+      import_id: nLeaveRecommendation.importId,
+      month_key: nLeaveRecommendation.monthKey,
+      recommendation_key: nLeaveRecommendation.recommendationKey,
+      recommendation_reason: nLeaveRecommendation.recommendationReason,
+      recommendation_type: nLeaveRecommendation.recommendationType,
+      severity: nLeaveRecommendation.severity,
+      source_type: nLeaveRecommendation.sourceType,
+    }],
+    recommendation: payrollRecommendation,
+  }), FieldWorkforceConflictingDecisionError);
 
   const decidedReport = buildFieldWorkforceRecommendationsReportFromArchive(restored, [{
     dates: payrollRecommendation.dates,
@@ -232,6 +279,52 @@ export function runFieldWorkforceComplianceTests() {
   assert.equal(decidedReport.finalActions.length, 1);
   assert.equal(decidedReport.finalActions[0].actionType, "Payroll Deduction");
   assert.equal(decidedReport.finalActions[0].pushStatus, "Export only");
+
+  const validLeaveReport = buildFieldWorkforceRecommendationsReportFromArchive(restored, [{
+    dates: avRecommendation.dates,
+    days_count: avRecommendation.daysCount,
+    decided_at: "2026-01-31T11:00:00Z",
+    decided_by: "hr-admin",
+    decision_status: "Approved for Leave Adjustment Report",
+    employee_code: avRecommendation.employeeCode,
+    employee_name: avRecommendation.employeeName,
+    estimated_amount: null,
+    existing_coverage_status: avRecommendation.existingCoverageStatus,
+    hr_note: "Confirmed for leave reconciliation report.",
+    id: "leave-decision-2",
+    import_id: avRecommendation.importId,
+    month_key: avRecommendation.monthKey,
+    recommendation_key: avRecommendation.recommendationKey,
+    recommendation_reason: avRecommendation.recommendationReason,
+    recommendation_type: avRecommendation.recommendationType,
+    severity: avRecommendation.severity,
+    source_type: avRecommendation.sourceType,
+  }]);
+  assert.equal(validLeaveReport.finalActions.length, 1);
+  assert.equal(validLeaveReport.finalActions[0].actionType, "Leave Balance Adjustment");
+  assert.equal(validLeaveReport.finalActions[0].pushStatus, "Export only");
+
+  const mismatchedDecisionReport = buildFieldWorkforceRecommendationsReportFromArchive(restored, [{
+    dates: payrollRecommendation.dates,
+    days_count: payrollRecommendation.daysCount,
+    decided_at: "2026-01-31T12:00:00Z",
+    decided_by: "hr-admin",
+    decision_status: "Approved for Leave Adjustment Report",
+    employee_code: payrollRecommendation.employeeCode,
+    employee_name: payrollRecommendation.employeeName,
+    estimated_amount: null,
+    existing_coverage_status: payrollRecommendation.existingCoverageStatus,
+    hr_note: "Invalid historical mismatch.",
+    id: "bad-decision-1",
+    import_id: payrollRecommendation.importId,
+    month_key: payrollRecommendation.monthKey,
+    recommendation_key: payrollRecommendation.recommendationKey,
+    recommendation_reason: payrollRecommendation.recommendationReason,
+    recommendation_type: payrollRecommendation.recommendationType,
+    severity: payrollRecommendation.severity,
+    source_type: payrollRecommendation.sourceType,
+  }]);
+  assert.equal(mismatchedDecisionReport.finalActions.length, 0);
 
   const holidayAndPreHireParsed = parseFieldWorkforceComplianceMatrix({
     fileName: "Jan 2026 team calendar.xlsx",

@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
+  FieldWorkforceConflictingDecisionError,
+  FieldWorkforceInvalidDecisionStatusError,
   FieldWorkforceRecommendationNotFoundError,
   fieldWorkforceDecisionStatuses,
   getFieldWorkforceRecommendationsReport,
@@ -130,6 +132,17 @@ export async function PATCH(request: Request, context: RouteContext) {
         message: error.message,
         success: false,
       }, { status: 404 });
+    }
+
+    if (
+      error instanceof FieldWorkforceInvalidDecisionStatusError ||
+      error instanceof FieldWorkforceConflictingDecisionError
+    ) {
+      return NextResponse.json({
+        error: "invalid_decision",
+        message: error.message,
+        success: false,
+      }, { status: 400 });
     }
 
     return NextResponse.json({

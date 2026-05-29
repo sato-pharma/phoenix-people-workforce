@@ -112,6 +112,29 @@ const decisionStatusOptions: FieldWorkforceDecisionStatus[] = [
   "Cancelled",
 ];
 
+function decisionStatusOptionsForRecommendation(
+  recommendation: FieldWorkforceRecommendation,
+): FieldWorkforceDecisionStatus[] {
+  const common: FieldWorkforceDecisionStatus[] = [
+    "Pending",
+    "Do Not Take Action",
+    "Needs Follow-up",
+    "Cancelled",
+  ];
+  if (recommendation.recommendationType === "leave_reconciliation") {
+    return [
+      "Pending",
+      "Approved for Leave Adjustment Report",
+      ...common.slice(1),
+    ];
+  }
+  return [
+    "Pending",
+    "Approved for Payroll Deduction Report",
+    ...common.slice(1),
+  ];
+}
+
 async function readJsonResponse<T extends { message?: string; success: boolean }>(response: Response): Promise<T> {
   const text = await response.text();
   if (!text) return { message: response.statusText, success: response.ok } as T;
@@ -1175,6 +1198,7 @@ function RecommendationRows({
             {visibleRows.map((recommendation) => {
               const status = draftStatuses[recommendation.recommendationKey] ?? recommendation.decisionStatus;
               const note = draftNotes[recommendation.recommendationKey] ?? recommendation.hrNote;
+              const rowDecisionStatusOptions = decisionStatusOptionsForRecommendation(recommendation);
               return (
                 <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={recommendation.recommendationKey}>
                   <td className="px-4 py-3">
@@ -1204,7 +1228,7 @@ function RecommendationRows({
                           [recommendation.recommendationKey]: event.target.value as FieldWorkforceDecisionStatus,
                         }))}
                       >
-                        {decisionStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                        {rowDecisionStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                       </select>
                     </div>
                   </td>
@@ -1228,7 +1252,7 @@ function RecommendationRows({
                       onClick={() => onSaveDecision(recommendation, status, note)}
                     >
                       {isSavingDecisionKey === recommendation.recommendationKey ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                      Save
+                      Save Decision
                     </Button>
                   </td>
                 </tr>
