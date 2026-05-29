@@ -24,6 +24,36 @@ export const fieldWorkforceDecisionStatuses: FieldWorkforceDecisionStatus[] = [
   "Cancelled",
 ];
 
+const commonDecisionStatuses: FieldWorkforceDecisionStatus[] = [
+  "Pending",
+  "Do Not Take Action",
+  "Needs Follow-up",
+  "Cancelled",
+];
+
+const approvedFinalActionStatuses = new Set<FieldWorkforceDecisionStatus>([
+  "Approved for Leave Adjustment Report",
+  "Approved for Payroll Deduction Report",
+]);
+
+export function fieldWorkforceDecisionStatusesForRecommendationType(
+  recommendationType: FieldWorkforceRecommendationType,
+): FieldWorkforceDecisionStatus[] {
+  if (recommendationType === "leave_reconciliation") {
+    return [
+      "Pending",
+      "Approved for Leave Adjustment Report",
+      ...commonDecisionStatuses.slice(1),
+    ];
+  }
+
+  return [
+    "Pending",
+    "Approved for Payroll Deduction Report",
+    ...commonDecisionStatuses.slice(1),
+  ];
+}
+
 export type FieldWorkforceDecisionRow = {
   created_at?: string;
   dates: string[];
@@ -54,8 +84,30 @@ export class FieldWorkforceRecommendationNotFoundError extends Error {
   }
 }
 
+export class FieldWorkforceInvalidDecisionStatusError extends Error {
+  constructor(message = "This HR decision status is not valid for the recommendation type.") {
+    super(message);
+    this.name = "FieldWorkforceInvalidDecisionStatusError";
+  }
+}
+
+export class FieldWorkforceConflictingDecisionError extends Error {
+  constructor() {
+    super("These dates already have an approved report decision for another action type.");
+    this.name = "FieldWorkforceConflictingDecisionError";
+  }
+}
+
 function dateKey(dates: string[]) {
   return dates.join("_");
+}
+
+function normalizedDateKey(dates: string[]) {
+  return [...dates].sort().join("|");
+}
+
+function isApprovedFinalActionStatus(status: FieldWorkforceDecisionStatus) {
+  return approvedFinalActionStatuses.has(status);
 }
 
 function sourceLabel(sourceType: FieldWorkforceRecommendationSourceType) {
@@ -219,7 +271,10 @@ function generatedRecommendations(
 
 function finalActionsFromRecommendations(recommendations: FieldWorkforceRecommendation[]): FieldWorkforceFinalAction[] {
   return recommendations.flatMap<FieldWorkforceFinalAction>((recommendation) => {
-    if (recommendation.decisionStatus === "Approved for Leave Adjustment Report") {
+    if (
+      recommendation.decisionStatus === "Approved for Leave Adjustment Report" &&
+      recommendation.recommendationType === "leave_reconciliation"
+    ) {
       return [{
         actionType: "Leave Balance Adjustment",
         amount: null,
@@ -235,7 +290,10 @@ function finalActionsFromRecommendations(recommendations: FieldWorkforceRecommen
         recommendationKey: recommendation.recommendationKey,
       } satisfies FieldWorkforceFinalAction];
     }
-    if (recommendation.decisionStatus === "Approved for Payroll Deduction Report") {
+    if (
+      recommendation.decisionStatus === "Approved for Payroll Deduction Report" &&
+      recommendation.recommendationType === "payroll_deduction"
+    ) {
       return [{
         actionType: "Payroll Deduction",
         amount: recommendation.estimatedAmount,
@@ -253,6 +311,35 @@ function finalActionsFromRecommendations(recommendations: FieldWorkforceRecommen
     }
     return [];
   });
+}
+
+export function assertFieldWorkforceDecisionStatusAllowed(input: {
+  decisionStatus: FieldWorkforceDecisionStatus;
+  recommendationType: FieldWorkforceRecommendationType;
+}) {
+  const allowed = fieldWorkforceDecisionStatusesForRecommendationType(input.recommendationType);
+  if (!allowed.includes(input.decisionStatus)) {
+    throw new FieldWorkforceInvalidDecisionStatusError();
+  }
+}
+
+export function assertNoFieldWorkforceApprovedDecisionConflict(input: {
+  decisionStatus: FieldWorkforceDecisionStatus;
+  existingRows: FieldWorkforceDecisionRow[];
+  recommendation: FieldWorkforceRecommendation;
+}) {
+  if (!isApprovedFinalActionStatus(input.decisionStatus)) return;
+
+  const candidateDateKey = normalizedDateKey(input.recommendation.dates);
+  const conflict = input.existingRows.some((row) =>
+    row.import_id === input.recommendation.importId &&
+    row.employee_code === input.recommendation.employeeCode &&
+    row.recommendation_key !== input.recommendation.recommendationKey &&
+    isApprovedFinalActionStatus(row.decision_status) &&
+    normalizedDateKey(row.dates) === candidateDateKey,
+  );
+
+  if (conflict) throw new FieldWorkforceConflictingDecisionError();
 }
 
 async function loadDecisionRows(importId: string) {
@@ -350,8 +437,17 @@ export async function saveFieldWorkforceRecommendationDecision(input: {
   ];
   const recommendation = recommendations.find((item) => item.recommendationKey === input.recommendationKey);
   if (!recommendation) throw new FieldWorkforceRecommendationNotFoundError(input.recommendationKey);
+  assertFieldWorkforceDecisionStatusAllowed({
+    decisionStatus: input.decisionStatus,
+    recommendationType: recommendation.recommendationType,
+  });
 
   const existingRows = await loadDecisionRows(input.archiveId);
+  assertNoFieldWorkforceApprovedDecisionConflict({
+    decisionStatus: input.decisionStatus,
+    existingRows,
+    recommendation,
+  });
   const existing = existingRows.find((row) => row.recommendation_key === input.recommendationKey) ?? null;
   const hasDecision = input.decisionStatus !== "Pending";
   const payload = {
