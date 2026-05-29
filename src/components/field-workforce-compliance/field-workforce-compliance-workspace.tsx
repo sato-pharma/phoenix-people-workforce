@@ -33,8 +33,12 @@ import type {
   FieldWorkforceArchiveListItem,
   FieldWorkforceCellStatus,
   FieldWorkforceDayCell,
+  FieldWorkforceDecisionStatus,
   FieldWorkforceEmployeeSummary,
+  FieldWorkforceFinalAction,
   FieldWorkforcePreviewResult,
+  FieldWorkforceRecommendation,
+  FieldWorkforceRecommendationsReport,
   FieldWorkforceReviewCandidate,
   FieldWorkforceSeverity,
   FieldWorkforceValidationIssue,
@@ -72,7 +76,14 @@ type ArchiveSaveResponse = {
   success: boolean;
 };
 
-type WorkspaceTab = "overview" | "timeline" | "queue" | "summary" | "diagnostics" | "archives";
+type RecommendationsResponse = {
+  data?: FieldWorkforceRecommendationsReport;
+  error?: string;
+  message?: string;
+  success: boolean;
+};
+
+type WorkspaceTab = "overview" | "timeline" | "queue" | "summary" | "diagnostics" | "archives" | "recommendations";
 
 const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -84,10 +95,22 @@ const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
 ];
 
 const reviewWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = workspaceTabs.filter((tab) => tab.id !== "archives");
+const archiveWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
+  ...reviewWorkspaceTabs,
+  { id: "recommendations", label: "Recommendations" },
+];
 
 const severityOptions: Array<"All" | FieldWorkforceSeverity> = ["All", "High", "Review", "Medium", "Low"];
 const statusOptions: Array<"All" | FieldWorkforceCellStatus> = ["All", "N", "AV", "CP", "VISITS", "F", "UNKNOWN"];
 const pageSizeOptions = [25, 50, 100];
+const decisionStatusOptions: FieldWorkforceDecisionStatus[] = [
+  "Pending",
+  "Approved for Leave Adjustment Report",
+  "Approved for Payroll Deduction Report",
+  "Do Not Take Action",
+  "Needs Follow-up",
+  "Cancelled",
+];
 
 async function readJsonResponse<T extends { message?: string; success: boolean }>(response: Response): Promise<T> {
   const text = await response.text();
@@ -162,6 +185,30 @@ function statusMeaning(status: FieldWorkforceCellStatus) {
     VISITS: "Visits",
   };
   return labels[status];
+}
+
+function coverageLabel(value: FieldWorkforceRecommendation["existingCoverageStatus"]) {
+  const labels: Record<FieldWorkforceRecommendation["existingCoverageStatus"], string> = {
+    already_covered: "Already covered",
+    leave_source_not_connected: "Leave source not connected yet",
+    needs_reconciliation: "Needs reconciliation",
+    not_applicable: "Not applicable",
+    payroll_calculation_required: "Amount requires payroll calculation",
+  };
+  return labels[value];
+}
+
+function decisionBadge(status: FieldWorkforceDecisionStatus) {
+  if (status.includes("Approved")) return <Badge variant="success">{status}</Badge>;
+  if (status === "Do Not Take Action" || status === "Cancelled") return <Badge variant="neutral">{status}</Badge>;
+  if (status === "Needs Follow-up") return <Badge variant="warning">{status}</Badge>;
+  return <Badge variant="neutral">{status}</Badge>;
+}
+
+function formatDates(dates: string[]) {
+  if (dates.length === 0) return "-";
+  if (dates.length <= 3) return dates.map((date) => displayDate(date)).join(", ");
+  return `${dates.slice(0, 3).map((date) => displayDate(date)).join(", ")} +${dates.length - 3}`;
 }
 
 function candidateMatchesStatus(candidate: FieldWorkforceReviewCandidate, status: FieldWorkforceCellStatus) {
@@ -1019,24 +1066,355 @@ function ReviewWorkspacePanels({
   return null;
 }
 
+function RecommendationRows({
+  isSavingDecisionKey,
+  onSaveDecision,
+  recommendations,
+}: {
+  isSavingDecisionKey: string | null;
+  onSaveDecision: (recommendation: FieldWorkforceRecommendation, status: FieldWorkforceDecisionStatus, note: string) => void;
+  recommendations: FieldWorkforceRecommendation[];
+}) {
+  const [query, setQuery] = useState("");
+  const [severity, setSeverity] = useState<"All" | FieldWorkforceSeverity>("All");
+  const [decisionStatus, setDecisionStatus] = useState<"All" | FieldWorkforceDecisionStatus>("All");
+  const [pageSize, setPageSize] = useState(25);
+  const [page, setPage] = useState(1);
+  const [draftStatuses, setDraftStatuses] = useState<Record<string, FieldWorkforceDecisionStatus>>({});
+  const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return recommendations.filter((recommendation) => {
+      if (severity !== "All" && recommendation.severity !== severity) return false;
+      if (decisionStatus !== "All" && recommendation.decisionStatus !== decisionStatus) return false;
+      if (!needle) return true;
+      return `${recommendation.employeeName} ${recommendation.employeeCode} ${recommendation.sourceLabel}`.toLowerCase().includes(needle);
+    });
+  }, [decisionStatus, query, recommendations, severity]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const visibleRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  function resetPage() {
+    setPage(1);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 border-b border-slate-100 p-4 lg:grid-cols-[minmax(0,1fr)_170px_230px_160px]">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            placeholder="Filter employee, code, or source"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              resetPage();
+            }}
+          />
+        </div>
+        <select
+          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          value={severity}
+          onChange={(event) => {
+            setSeverity(event.target.value as typeof severity);
+            resetPage();
+          }}
+        >
+          {severityOptions.map((option) => <option key={option} value={option}>{option} severity</option>)}
+        </select>
+        <select
+          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          value={decisionStatus}
+          onChange={(event) => {
+            setDecisionStatus(event.target.value as typeof decisionStatus);
+            resetPage();
+          }}
+        >
+          <option value="All">All decisions</option>
+          {decisionStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+        <select
+          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          value={pageSize}
+          onChange={(event) => {
+            setPageSize(Number(event.target.value));
+            resetPage();
+          }}
+        >
+          {pageSizeOptions.map((option) => <option key={option} value={option}>{option} rows</option>)}
+        </select>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold text-slate-500">
+        <span>Showing {visibleRows.length ? (safePage - 1) * pageSize + 1 : 0}-{Math.min(safePage * pageSize, filtered.length)} of {formatNumber(filtered.length)} recommendations</span>
+        <div className="flex items-center gap-2">
+          <Button disabled={safePage <= 1} type="button" variant="secondary" onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button>
+          <span>Page {safePage} / {totalPages}</span>
+          <Button disabled={safePage >= totalPages} type="button" variant="secondary" onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next</Button>
+        </div>
+      </div>
+      <div className="phoenix-horizontal-scroll max-h-[56vh] overflow-auto">
+        <table className="w-full min-w-[1320px] text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Employee</th>
+              <th className="px-4 py-3">Dates</th>
+              <th className="px-4 py-3">Source</th>
+              <th className="px-4 py-3">Days</th>
+              <th className="px-4 py-3">Coverage / Amount</th>
+              <th className="px-4 py-3">Recommendation</th>
+              <th className="px-4 py-3">Severity</th>
+              <th className="px-4 py-3">Decision</th>
+              <th className="px-4 py-3">HR Note</th>
+              <th className="px-4 py-3">Save</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {visibleRows.map((recommendation) => {
+              const status = draftStatuses[recommendation.recommendationKey] ?? recommendation.decisionStatus;
+              const note = draftNotes[recommendation.recommendationKey] ?? recommendation.hrNote;
+              return (
+                <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={recommendation.recommendationKey}>
+                  <td className="px-4 py-3">
+                    <p className="font-black text-slate-950">{recommendation.employeeName}</p>
+                    <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{recommendation.employeeCode}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-slate-900">{formatDates(recommendation.dates)}</p>
+                    <p className="mt-1 text-xs text-slate-500">{recommendation.monthKey}</p>
+                  </td>
+                  <td className="px-4 py-3">{recommendation.sourceLabel}</td>
+                  <td className="px-4 py-3">{formatNumber(recommendation.daysCount)}</td>
+                  <td className="px-4 py-3">
+                    <p>{coverageLabel(recommendation.existingCoverageStatus)}</p>
+                    <p className="mt-1 text-xs text-slate-500">Amount: {recommendation.estimatedAmount === null ? "Requires payroll calculation" : formatNumber(recommendation.estimatedAmount)}</p>
+                  </td>
+                  <td className="max-w-[360px] px-4 py-3 leading-6">{recommendation.recommendation}</td>
+                  <td className="px-4 py-3">{severityBadge(recommendation.severity)}</td>
+                  <td className="px-4 py-3">
+                    <div className="space-y-2">
+                      {decisionBadge(recommendation.decisionStatus)}
+                      <select
+                        className="h-9 w-64 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                        value={status}
+                        onChange={(event) => setDraftStatuses((current) => ({
+                          ...current,
+                          [recommendation.recommendationKey]: event.target.value as FieldWorkforceDecisionStatus,
+                        }))}
+                      >
+                        {decisionStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                      </select>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <input
+                      className="h-9 w-64 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                      placeholder="HR decision note"
+                      value={note}
+                      onChange={(event) => setDraftNotes((current) => ({
+                        ...current,
+                        [recommendation.recommendationKey]: event.target.value,
+                      }))}
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <Button
+                      className="gap-2"
+                      disabled={isSavingDecisionKey === recommendation.recommendationKey}
+                      type="button"
+                      variant="secondary"
+                      onClick={() => onSaveDecision(recommendation, status, note)}
+                    >
+                      {isSavingDecisionKey === recommendation.recommendationKey ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      Save
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+            {visibleRows.length === 0 ? (
+              <tr>
+                <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={10}>
+                  No recommendations match the current filters.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function FinalActionsTable({ actions }: { actions: FieldWorkforceFinalAction[] }) {
+  return (
+    <div className="phoenix-horizontal-scroll max-h-[52vh] overflow-auto">
+      <table className="w-full min-w-[1120px] text-left text-sm">
+        <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          <tr>
+            <th className="px-4 py-3">Employee</th>
+            <th className="px-4 py-3">Action Type</th>
+            <th className="px-4 py-3">Approved Dates</th>
+            <th className="px-4 py-3">Days</th>
+            <th className="px-4 py-3">Amount</th>
+            <th className="px-4 py-3">Approved By</th>
+            <th className="px-4 py-3">Approved At</th>
+            <th className="px-4 py-3">HR Note</th>
+            <th className="px-4 py-3">Push Status</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {actions.map((action) => (
+            <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={action.recommendationKey}>
+              <td className="px-4 py-3">
+                <p className="font-black text-slate-950">{action.employeeName}</p>
+                <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{action.employeeCode}</p>
+              </td>
+              <td className="px-4 py-3">{action.actionType}</td>
+              <td className="px-4 py-3">{formatDates(action.approvedDates)}</td>
+              <td className="px-4 py-3">{formatNumber(action.approvedDaysCount)}</td>
+              <td className="px-4 py-3">{action.amount === null ? "-" : formatNumber(action.amount)}</td>
+              <td className="px-4 py-3">{action.approvedBy ?? "-"}</td>
+              <td className="px-4 py-3">{displayDateTime(action.approvedAt)}</td>
+              <td className="max-w-[300px] px-4 py-3 leading-6">{action.hrNote || "-"}</td>
+              <td className="px-4 py-3"><Badge variant="neutral">{action.pushStatus}</Badge></td>
+            </tr>
+          ))}
+          {actions.length === 0 ? (
+            <tr>
+              <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={9}>
+                No approved report actions yet.
+              </td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RecommendationsPanel({
+  isLoading,
+  isSavingDecisionKey,
+  onRefresh,
+  onSaveDecision,
+  report,
+}: {
+  isLoading: boolean;
+  isSavingDecisionKey: string | null;
+  onRefresh: (auditFinalReportView?: boolean) => void;
+  onSaveDecision: (recommendation: FieldWorkforceRecommendation, status: FieldWorkforceDecisionStatus, note: string) => void;
+  report: FieldWorkforceRecommendationsReport | null;
+}) {
+  const [recommendationTab, setRecommendationTab] = useState<"final" | "leave" | "payroll">("leave");
+
+  if (!report) {
+    return (
+      <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p>Load recommendations for this archived month.</p>
+          <Button className="gap-2" disabled={isLoading} type="button" variant="secondary" onClick={() => onRefresh(false)}>
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Load Recommendations
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <AdminTableShell
+      description="Decision-support reports only. These decisions do not push to payroll or mutate leave balances."
+      title="Recommendations"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
+        <div className="flex flex-wrap gap-2">
+          {([
+            ["leave", "Leave Recommendations"],
+            ["payroll", "Payroll Recommendations"],
+            ["final", "Final Actions"],
+          ] as const).map(([id, label]) => (
+            <button
+              aria-pressed={recommendationTab === id}
+              className={cn(
+                "rounded-xl px-3 py-2 text-xs font-black transition",
+                recommendationTab === id ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-orange-50 hover:text-orange-700",
+              )}
+              key={id}
+              type="button"
+              onClick={() => {
+                setRecommendationTab(id);
+                if (id === "final") onRefresh(true);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <Button className="gap-2" disabled={isLoading} type="button" variant="secondary" onClick={() => onRefresh(recommendationTab === "final")}>
+          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          Refresh
+        </Button>
+      </div>
+      <div className="grid gap-3 border-b border-slate-100 p-4 md:grid-cols-2">
+        <AdminCallout tone="warning">
+          <CalendarDays className="mt-0.5 h-4 w-4" />
+          <p>{report.integrationStatus.leaveSourceMessage}</p>
+        </AdminCallout>
+        <AdminCallout tone="warning">
+          <ShieldAlert className="mt-0.5 h-4 w-4" />
+          <p>{report.integrationStatus.payrollAmountMessage}</p>
+        </AdminCallout>
+      </div>
+      {recommendationTab === "leave" ? (
+        <RecommendationRows
+          isSavingDecisionKey={isSavingDecisionKey}
+          recommendations={report.leaveRecommendations}
+          onSaveDecision={onSaveDecision}
+        />
+      ) : null}
+      {recommendationTab === "payroll" ? (
+        <RecommendationRows
+          isSavingDecisionKey={isSavingDecisionKey}
+          recommendations={report.payrollRecommendations}
+          onSaveDecision={onSaveDecision}
+        />
+      ) : null}
+      {recommendationTab === "final" ? <FinalActionsTable actions={report.finalActions} /> : null}
+    </AdminTableShell>
+  );
+}
+
 function ArchivedMonthsPanel({
   archiveActiveTab,
   archiveDetail,
   archives,
   isLoadingArchives,
+  isLoadingRecommendations,
   isOpeningArchiveId,
+  isSavingDecisionKey,
   onArchiveTabChange,
   onOpenArchive,
   onRefresh,
+  onRefreshRecommendations,
+  onSaveDecision,
+  recommendationsReport,
 }: {
   archiveActiveTab: WorkspaceTab;
   archiveDetail: FieldWorkforceArchiveDetail | null;
   archives: FieldWorkforceArchiveListItem[];
   isLoadingArchives: boolean;
+  isLoadingRecommendations: boolean;
   isOpeningArchiveId: string | null;
+  isSavingDecisionKey: string | null;
   onArchiveTabChange: (tab: WorkspaceTab) => void;
   onOpenArchive: (archive: FieldWorkforceArchiveListItem) => void;
   onRefresh: () => void;
+  onRefreshRecommendations: (auditFinalReportView?: boolean) => void;
+  onSaveDecision: (recommendation: FieldWorkforceRecommendation, status: FieldWorkforceDecisionStatus, note: string) => void;
+  recommendationsReport: FieldWorkforceRecommendationsReport | null;
 }) {
   return (
     <div className="space-y-4">
@@ -1138,14 +1516,24 @@ function ArchivedMonthsPanel({
               </div>
             </div>
           </Card>
-          <WorkspaceTabs activeTab={archiveActiveTab} tabs={reviewWorkspaceTabs} onChange={onArchiveTabChange} />
-          <ReviewWorkspacePanels
-            activeTab={archiveActiveTab}
-            errors={archiveDetail.preview.errors}
-            key={archiveDetail.archive.id}
-            result={archiveDetail.preview}
-            warnings={archiveDetail.preview.warnings}
-          />
+          <WorkspaceTabs activeTab={archiveActiveTab} tabs={archiveWorkspaceTabs} onChange={onArchiveTabChange} />
+          {archiveActiveTab === "recommendations" ? (
+            <RecommendationsPanel
+              isLoading={isLoadingRecommendations}
+              isSavingDecisionKey={isSavingDecisionKey}
+              report={recommendationsReport}
+              onRefresh={onRefreshRecommendations}
+              onSaveDecision={onSaveDecision}
+            />
+          ) : (
+            <ReviewWorkspacePanels
+              activeTab={archiveActiveTab}
+              errors={archiveDetail.preview.errors}
+              key={archiveDetail.archive.id}
+              result={archiveDetail.preview}
+              warnings={archiveDetail.preview.warnings}
+            />
+          )}
         </div>
       ) : (
         <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
@@ -1162,15 +1550,20 @@ export function FieldWorkforceComplianceWorkspace() {
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isSavingArchive, setIsSavingArchive] = useState(false);
   const [isLoadingArchives, setIsLoadingArchives] = useState(false);
+  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
   const [isOpeningArchiveId, setIsOpeningArchiveId] = useState<string | null>(null);
+  const [isSavingDecisionKey, setIsSavingDecisionKey] = useState<string | null>(null);
   const [result, setResult] = useState<FieldWorkforcePreviewResult | null>(null);
   const [archives, setArchives] = useState<FieldWorkforceArchiveListItem[]>([]);
   const [archiveDetail, setArchiveDetail] = useState<FieldWorkforceArchiveDetail | null>(null);
+  const [recommendationsReport, setRecommendationsReport] = useState<FieldWorkforceRecommendationsReport | null>(null);
   const [errors, setErrors] = useState<FieldWorkforceValidationIssue[]>([]);
   const [warnings, setWarnings] = useState<FieldWorkforceValidationIssue[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [archiveMessage, setArchiveMessage] = useState<string | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [recommendationsMessage, setRecommendationsMessage] = useState<string | null>(null);
+  const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
   const [archiveActiveTab, setArchiveActiveTab] = useState<WorkspaceTab>("timeline");
 
@@ -1198,6 +1591,26 @@ export function FieldWorkforceComplianceWorkspace() {
     setActiveTab(tab);
     if (tab === "archives" && archives.length === 0 && !isLoadingArchives) {
       void loadArchives();
+    }
+  }
+
+  async function loadRecommendations(archiveId: string, auditFinalReportView = false) {
+    setIsLoadingRecommendations(true);
+    setRecommendationsError(null);
+    try {
+      const response = await fetch(`/api/admin/field-workforce-compliance/archive/${archiveId}/recommendations${auditFinalReportView ? "?report=final" : ""}`, {
+        method: "GET",
+      });
+      const payload = await readJsonResponse<RecommendationsResponse>(response);
+      if (payload.success && payload.data) {
+        setRecommendationsReport(payload.data);
+      } else {
+        setRecommendationsError(payload.message ?? payload.error ?? "Recommendations could not be loaded.");
+      }
+    } catch (error) {
+      setRecommendationsError(error instanceof Error ? error.message : "Recommendations could not be loaded.");
+    } finally {
+      setIsLoadingRecommendations(false);
     }
   }
 
@@ -1253,10 +1666,12 @@ export function FieldWorkforceComplianceWorkspace() {
       const payload = await readJsonResponse<ArchiveSaveResponse>(response);
       if (payload.success && payload.data) {
         setArchiveDetail(payload.data);
+        setRecommendationsReport(null);
         setArchiveActiveTab("timeline");
         setActiveTab("archives");
         setArchiveMessage(`${payload.data.archive.monthKey} was saved as an archived review snapshot. No payroll or leave action was taken.`);
         await loadArchives();
+        await loadRecommendations(payload.data.archive.id);
       } else if (payload.duplicate) {
         setArchiveError(payload.message ?? `${payload.duplicate.monthKey} is already archived. Duplicate month archives are blocked in Phase 2.`);
         setActiveTab("archives");
@@ -1282,7 +1697,9 @@ export function FieldWorkforceComplianceWorkspace() {
       const payload = await readJsonResponse<ArchiveDetailResponse>(response);
       if (payload.success && payload.data) {
         setArchiveDetail(payload.data);
+        setRecommendationsReport(null);
         setArchiveActiveTab("timeline");
+        await loadRecommendations(payload.data.archive.id);
       } else {
         setArchiveError(payload.message ?? payload.error ?? "Archived month could not be opened.");
       }
@@ -1290,6 +1707,38 @@ export function FieldWorkforceComplianceWorkspace() {
       setArchiveError(error instanceof Error ? error.message : "Archived month could not be opened.");
     } finally {
       setIsOpeningArchiveId(null);
+    }
+  }
+
+  async function handleSaveDecision(
+    recommendation: FieldWorkforceRecommendation,
+    decisionStatus: FieldWorkforceDecisionStatus,
+    hrNote: string,
+  ) {
+    setIsSavingDecisionKey(recommendation.recommendationKey);
+    setRecommendationsMessage(null);
+    setRecommendationsError(null);
+    try {
+      const response = await fetch(`/api/admin/field-workforce-compliance/archive/${recommendation.importId}/recommendations`, {
+        body: JSON.stringify({
+          decisionStatus,
+          hrNote,
+          recommendationKey: recommendation.recommendationKey,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      });
+      const payload = await readJsonResponse<RecommendationsResponse>(response);
+      if (payload.success && payload.data) {
+        setRecommendationsReport(payload.data);
+        setRecommendationsMessage("HR decision saved for the recommendation report only. No payroll or leave action was executed.");
+      } else {
+        setRecommendationsError(payload.message ?? payload.error ?? "Decision update failed.");
+      }
+    } catch (error) {
+      setRecommendationsError(error instanceof Error ? error.message : "Decision update failed.");
+    } finally {
+      setIsSavingDecisionKey(null);
     }
   }
 
@@ -1408,6 +1857,18 @@ export function FieldWorkforceComplianceWorkspace() {
             <p>{archiveError}</p>
           </AdminCallout>
         ) : null}
+        {recommendationsMessage ? (
+          <AdminCallout tone="success">
+            <BadgeCheck className="mt-0.5 h-4 w-4" />
+            <p>{recommendationsMessage}</p>
+          </AdminCallout>
+        ) : null}
+        {recommendationsError ? (
+          <AdminCallout tone="warning">
+            <AlertTriangle className="mt-0.5 h-4 w-4" />
+            <p>{recommendationsError}</p>
+          </AdminCallout>
+        ) : null}
         <ValidationIssues issues={errors} title="Preview blocked" tone="danger" />
         <ValidationIssues issues={warnings} title="Preview warnings" tone="warning" />
 
@@ -1418,10 +1879,17 @@ export function FieldWorkforceComplianceWorkspace() {
             archiveDetail={archiveDetail}
             archives={archives}
             isLoadingArchives={isLoadingArchives}
+            isLoadingRecommendations={isLoadingRecommendations}
             isOpeningArchiveId={isOpeningArchiveId}
+            isSavingDecisionKey={isSavingDecisionKey}
             onArchiveTabChange={setArchiveActiveTab}
             onOpenArchive={(archive) => void handleOpenArchive(archive)}
             onRefresh={() => void loadArchives()}
+            onRefreshRecommendations={(auditFinalReportView) => {
+              if (archiveDetail) void loadRecommendations(archiveDetail.archive.id, auditFinalReportView);
+            }}
+            onSaveDecision={(recommendation, decisionStatus, hrNote) => void handleSaveDecision(recommendation, decisionStatus, hrNote)}
+            recommendationsReport={recommendationsReport}
           />
         ) : result ? (
           <>

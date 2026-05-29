@@ -10,6 +10,9 @@ import {
   findFieldWorkforceArchiveDuplicate,
 } from "../src/lib/field-workforce-compliance/archive.ts";
 import {
+  buildFieldWorkforceRecommendationsReportFromArchive,
+} from "../src/lib/field-workforce-compliance/recommendations.ts";
+import {
   parseFieldWorkforceComplianceMatrix,
 } from "../src/lib/field-workforce-compliance/parser.ts";
 
@@ -182,6 +185,92 @@ export function runFieldWorkforceComplianceTests() {
   assert.equal(restored.preview.metadata.employeeCount, preview.metadata.employeeCount);
   assert.equal(restored.preview.reviewCandidates.length, preview.reviewCandidates.length);
   assert.equal(restored.preview.employees.find((employee) => employee.hrId === "A-1")?.timeline.length, 31);
+
+  const recommendations = buildFieldWorkforceRecommendationsReportFromArchive(restored);
+  assert.equal(recommendations.integrationStatus.leaveSource, "not_connected");
+  assert.equal(recommendations.integrationStatus.payrollAmount, "requires_calculation");
+  assert.ok(recommendations.leaveRecommendations.some((recommendation) =>
+    recommendation.sourceType === "calendar_av" &&
+    recommendation.employeeCode === "A-1" &&
+    recommendation.dates.includes("2026-01-06") &&
+    recommendation.existingCoverageStatus === "leave_source_not_connected"
+  ));
+  assert.ok(recommendations.leaveRecommendations.some((recommendation) =>
+    recommendation.sourceType === "n_retroactive_candidate" &&
+    recommendation.employeeCode === "A-1" &&
+    recommendation.dates.includes("2026-01-03") &&
+    recommendation.dates.includes("2026-01-04")
+  ));
+  const payrollRecommendation = recommendations.payrollRecommendations.find((recommendation) =>
+    recommendation.employeeCode === "A-1" &&
+    recommendation.sourceType === "no_activity_candidate"
+  );
+  assert.ok(payrollRecommendation);
+  assert.equal(payrollRecommendation.estimatedAmount, null);
+  assert.equal(payrollRecommendation.existingCoverageStatus, "payroll_calculation_required");
+
+  const decidedReport = buildFieldWorkforceRecommendationsReportFromArchive(restored, [{
+    dates: payrollRecommendation.dates,
+    days_count: payrollRecommendation.daysCount,
+    decided_at: "2026-01-31T10:00:00Z",
+    decided_by: "hr-admin",
+    decision_status: "Approved for Payroll Deduction Report",
+    employee_code: payrollRecommendation.employeeCode,
+    employee_name: payrollRecommendation.employeeName,
+    estimated_amount: null,
+    existing_coverage_status: payrollRecommendation.existingCoverageStatus,
+    hr_note: "Confirmed no activity after HR review.",
+    id: "decision-1",
+    import_id: payrollRecommendation.importId,
+    month_key: payrollRecommendation.monthKey,
+    recommendation_key: payrollRecommendation.recommendationKey,
+    recommendation_reason: payrollRecommendation.recommendationReason,
+    recommendation_type: payrollRecommendation.recommendationType,
+    severity: payrollRecommendation.severity,
+    source_type: payrollRecommendation.sourceType,
+  }]);
+  assert.equal(decidedReport.finalActions.length, 1);
+  assert.equal(decidedReport.finalActions[0].actionType, "Payroll Deduction");
+  assert.equal(decidedReport.finalActions[0].pushStatus, "Export only");
+
+  const holidayAndPreHireParsed = parseFieldWorkforceComplianceMatrix({
+    fileName: "Jan 2026 team calendar.xlsx",
+    matrix: [
+      ["TM", "HR ID", "Hiring Date", "Month", "Year", "1-Jan-2026", "2-Jan-2026", "7-Jan-2026"],
+      ["Holiday N", "H-1", "1-Jan-2026", "Jan", 2026, null, "F", "N"],
+      ["Prehire N", "P-1", "8-Jan-2026", "Jan", 2026, "N", "F", null],
+    ],
+    sheetName: "iReport",
+  });
+  const holidayAndPreHirePreview = buildFieldWorkforceCompliancePreview({
+    employeeReferences: [
+      { fullName: "Holiday N", hireDate: "2026-01-01", hrId: "H-1" },
+      { fullName: "Prehire N", hireDate: "2026-01-08", hrId: "P-1" },
+    ],
+    holidayConnected: true,
+    holidaySourceLabel: "Egypt public holidays",
+    holidays: [{ name: "Coptic Christmas Day", startDate: "2026-01-07" }],
+    parsed: holidayAndPreHireParsed,
+  });
+  const holidayArchiveRows = fieldWorkforceArchiveRowsFromPreview(holidayAndPreHirePreview, "test-admin");
+  const holidayArchive = fieldWorkforcePreviewFromArchiveRows({
+    dayRows: holidayArchiveRows.dayRows,
+    importRow: {
+      ...holidayArchiveRows.importRow,
+      id: "holiday-archive",
+      uploaded_at: "2026-01-31T00:00:00Z",
+    },
+    summaryRows: holidayArchiveRows.summaryRows,
+  });
+  const holidayRecommendations = buildFieldWorkforceRecommendationsReportFromArchive(holidayArchive);
+  assert.ok(!holidayRecommendations.payrollRecommendations.some((recommendation) =>
+    recommendation.employeeCode === "H-1" &&
+    recommendation.dates.includes("2026-01-07")
+  ));
+  assert.ok(!holidayRecommendations.payrollRecommendations.some((recommendation) =>
+    recommendation.employeeCode === "P-1" &&
+    recommendation.dates.includes("2026-01-01")
+  ));
 
   const archiveKeys = collectObjectKeys(archiveRows).map((key) => key.toLowerCase());
   assert.ok(archiveKeys.every((key) =>
