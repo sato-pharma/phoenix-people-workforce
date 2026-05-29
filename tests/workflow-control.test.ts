@@ -186,6 +186,7 @@ export function runWorkflowControlTests() {
   assert.match(centerSrc, /draft.*publish.*rollback/i, "Phase 2 teaser mentions draft/publish/rollback");
   assert.match(centerSrc, /not changed/i, "Phase 2 teaser states runtime execution is not changed in Phase 1");
   assert.match(centerSrc, /cannot accidentally change live workflow/i, "Phase 2 teaser reassures no accidental live changes");
+  assert.match(centerSrc, /editing is coming in Phase 2/i, "Phase 2 teaser explicitly states editing is coming in Phase 2");
   // Domain cards surface modules + notification/email coverage + gaps.
   assert.match(centerSrc, /domainNotificationCount|domainEmailCount/, "cards show notification/email coverage");
   assert.match(centerSrc, /modules/, "cards show modules-affected count");
@@ -205,6 +206,11 @@ export function runWorkflowControlTests() {
   const simPanelSrc = readFileSync(new URL("../src/components/workflow-control/workflow-simulator-panel.tsx", import.meta.url), "utf8");
   assert.match(simPanelSrc, /sm:grid-cols-2/, "simulator inputs use a responsive grid");
   assert.equal(/w-\[\d{3,}px\]/.test(simPanelSrc), false, "simulator panel has no fixed desktop-only width");
+  // Simulator result shows domain + subflow, route path, and side effects.
+  assert.match(simPanelSrc, /result\.domainName/, "simulator result shows the selected domain");
+  assert.match(simPanelSrc, /result\.subflowName/, "simulator result shows the selected subflow");
+  assert.match(simPanelSrc, /result\.routePath/, "simulator result shows the route path");
+  assert.match(simPanelSrc, /result\.sideEffects/, "simulator result shows side effects");
 
   const mapSrcResponsive = readFileSync(new URL("../src/components/workflow-control/workflow-map.tsx", import.meta.url), "utf8");
   assert.equal(/w-\[\d{3,}px\]/.test(mapSrcResponsive), false, "map has no fixed desktop-only width");

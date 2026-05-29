@@ -200,6 +200,7 @@ export function WorkflowControlCenter({
                   ) : (
                     <div className="min-w-0">
                       <p className="text-[13px] font-black text-[#0F172A]">Workflow editing is locked in Phase 1</p>
+                      <p className="mt-0.5 text-[12px] leading-5 text-[#475569]">This view is read-only — editing is coming in Phase 2.</p>
                       <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] leading-5 text-[#475569]">
                         <li>Phase 2 will support <span className="font-bold">draft → edit → publish → rollback</span> with versioning.</li>
                         <li>Runtime workflow execution is <span className="font-bold">not changed</span> in Phase 1.</li>
