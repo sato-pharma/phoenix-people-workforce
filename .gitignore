@@ -25,3 +25,36 @@ app/sentry-example-page/
 
 PHOENIX old/
 Phoenix Workforce/
+
+# Data files (store in cloud, not git)
+*.xlsx
+*.csv
+!.env.*.example
+
+# Generated output
+output/
+supabase-export/
+
+# Local tool screenshots
+.codex-artifacts/
+
+# Local development tool artifacts
+trae/
+.trae/
+memory/
+skills-lock.json
+ChatGPT*
+
+# OS files
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Editor temp files
+*.swp
+*.swo
+*~
+*.bak
+
+# JetBrains IDE
+.idea/
