@@ -17,6 +17,29 @@ export function normalizeNotificationHrId(value: string | null | undefined): str
 }
 
 /**
+ * Categories produced by the CURRENT notification code and shown in the personal
+ * bell. Legacy/orphaned categories (e.g. "leave", superseded by "vacation_request")
+ * are intentionally excluded so stale rows with mis-assigned recipients can never
+ * surface — even though they are otherwise correctly recipient-matched. This is a
+ * read-path allowlist only; it does not mutate or delete any data.
+ */
+export const PERSONAL_BELL_CATEGORIES = [
+  "vacation_request",
+  "probation",
+  "coaching_report",
+  "general",
+  "internal_message",
+  "excuse",
+] as const;
+
+const personalBellCategorySet = new Set<string>(PERSONAL_BELL_CATEGORIES);
+
+/** True when a notification category is a current/supported personal-bell category. */
+export function isPersonalBellCategory(category: string | null | undefined): boolean {
+  return personalBellCategorySet.has(String(category ?? "").trim().toLowerCase());
+}
+
+/**
  * True only for a usable HR_ID recipient token: non-empty, not an email address,
  * and not a disposable phase/fixture placeholder. These guards stop legacy rows
  * (e.g. recipients stored as emails, or "PHASE17_..." fixture ids) from being

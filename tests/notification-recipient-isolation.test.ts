@@ -3,8 +3,10 @@ import { readFileSync } from "node:fs";
 
 import {
   canViewerSeeNotification,
+  isPersonalBellCategory,
   isValidRecipientHrId,
   normalizeNotificationHrId,
+  PERSONAL_BELL_CATEGORIES,
 } from "../src/lib/notifications/recipients.ts";
 import { mapInAppNotificationRows } from "../src/lib/communication/metrics.ts";
 
@@ -162,6 +164,30 @@ export function runNotificationRecipientIsolationTests() {
     /\$\{vacationTypeLabel\(input\.request\.vacationType\)\} \(\$\{input\.request\.startDate\} to \$\{input\.request\.endDate\}\) was/,
     "vacation HR-decision message must include type and period",
   );
+
+  // ===========================================================================
+  // Personal-bell category allowlist: legacy/orphaned categories are hidden even
+  // when correctly recipient-matched (B-175 legacy "leave" leak fix).
+  // ===========================================================================
+  assert.equal(isPersonalBellCategory("vacation_request"), true, "current vacation category is shown");
+  assert.equal(isPersonalBellCategory("probation"), true, "probation category is shown");
+  assert.equal(isPersonalBellCategory("coaching_report"), true, "coaching category is shown");
+  assert.equal(isPersonalBellCategory("general"), true, "general category is shown");
+  assert.equal(isPersonalBellCategory("internal_message"), true, "internal message category is shown");
+  assert.equal(isPersonalBellCategory("excuse"), true, "excuse category is shown");
+  assert.equal(isPersonalBellCategory("LEAVE"), false, "legacy 'leave' category is hidden (case-insensitive)");
+  assert.equal(isPersonalBellCategory("leave"), false, "legacy 'leave' category is hidden");
+  assert.equal(isPersonalBellCategory(null), false, "missing category is hidden");
+  assert.equal((PERSONAL_BELL_CATEGORIES as readonly string[]).includes("leave"), false, "allowlist must not contain the legacy category");
+  // A legacy 'leave' row addressed to B-175 is recipient-matched but must be hidden by category.
+  assert.equal(
+    canViewerSeeNotification("B-175", { employeeHrId: "B-175", recipients: ["B-175"] }) && !isPersonalBellCategory("leave"),
+    true,
+    "B-175's legacy 'leave' row is recipient-matched yet excluded by the category allowlist",
+  );
+  // The in-app read path must filter on the category allowlist (SQL + post-query).
+  assert.match(inAppSource, /isPersonalBellCategory\(row\.category\)/, "in-app must drop non-allowlisted categories post-query");
+  assert.match(inAppSource, /\.in\("category", allowedCategories\)/, "in-app SQL must restrict to allowlisted categories");
 
   const probationSource = readFileSync(new URL("../src/lib/probation/service.ts", import.meta.url), "utf8");
   assert.match(probationSource, /Submit manager probation feedback\./, "probation reminder must state the required action");
