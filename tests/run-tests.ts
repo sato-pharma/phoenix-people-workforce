@@ -37,6 +37,7 @@ import { runWorkforceHierarchyContinuityTests } from "./workforce-hierarchy-cont
 import { runPayrollLifecycleScopeTests } from "./payroll-lifecycle-scope.test.ts";
 import { runOfferVacancyMatchingTests } from "./offer-vacancy-matching.test.ts";
 import { runNotificationRecipientIsolationTests } from "./notification-recipient-isolation.test.ts";
+import { runWorkflowControlTests } from "./workflow-control.test.ts";
 import { runEmployeePortalSalesScopeTests } from "./employee-portal-sales-scope.test.ts";
 import { runCoachingPermissionTests } from "./coaching-permissions.test.ts";
 import { runCoachingInAppNotificationTests } from "./coaching-in-app-notifications.test.ts";
@@ -144,6 +145,7 @@ await runTest("workforce hierarchy continuity", runWorkforceHierarchyContinuityT
 await runTest("payroll lifecycle scope", runPayrollLifecycleScopeTests);
 await runTest("offer vacancy matching", runOfferVacancyMatchingTests);
 await runTest("notification recipient isolation", runNotificationRecipientIsolationTests);
+await runTest("workflow control center", runWorkflowControlTests);
 await runTest("outstation car evidence validation", runOutstationCarEvidenceValidationTests);
 await runTest("outstation local draft", runOutstationLocalDraftTests);
 await runTest("outstation payroll expense mapping", runOutstationPayrollExpenseMappingTests);
