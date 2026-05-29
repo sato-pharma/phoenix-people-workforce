@@ -1,3 +1,5 @@
+import { canViewerSeeNotification } from "@/lib/notifications/recipients";
+
 export type CommunicationTemplateMetricRow = {
   bodyHtml?: string | null;
   bodyText?: string | null;
@@ -41,6 +43,7 @@ export type EmailDeliveryEventMetricRow = {
 
 export type InAppNotificationMetricRow = {
   category?: string | null;
+  employeeHrId?: string | null;
   id?: string | number | null;
   metadata?: Record<string, unknown> | null;
   recipients?: unknown[] | null;
@@ -198,14 +201,17 @@ export function buildCommunicationMetrics(input: {
 }
 
 export function mapInAppNotificationRows(rows: InAppNotificationMetricRow[], employeeHrId: string | null) {
-  const normalizedEmployeeHrId = String(employeeHrId ?? "").trim().toUpperCase();
-
   return rows
-    .filter((row) => {
-      if (String(row.category ?? "").toLowerCase() !== "probation") return true;
-      const recipients = Array.isArray(row.recipients) ? row.recipients : [];
-      return recipients.some((recipient) => String(recipient ?? "").trim().toUpperCase() === normalizedEmployeeHrId);
-    })
+    // Fail-closed recipient isolation for EVERY category: a viewer only sees a
+    // notification where they are the employee subject or an explicit, valid
+    // recipient. Invalid/fixture recipients are ignored. See
+    // src/lib/notifications/recipients.ts.
+    .filter((row) =>
+      canViewerSeeNotification(employeeHrId, {
+        employeeHrId: row.employeeHrId,
+        recipients: row.recipients,
+      }),
+    )
     .map((row) => {
       const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
         ? row.metadata
@@ -224,6 +230,14 @@ export function mapInAppNotificationRows(rows: InAppNotificationMetricRow[], emp
         title: typeof metadata.title === "string" ? metadata.title : String(row.subject ?? "Notification"),
       };
     });
+}
+
+const sensitiveMetadataKeyPattern =
+  /(token|password|secret|otp|passcode|api[_-]?key|authorization|cookie|session|hash|signature|credential|ssn|national[_-]?id|bank|iban|email|recipients?|salary|net[_-]?pay|gross|compensation|wage|payslip|pay[_-]?slip)/i;
+
+/** True for metadata keys that must never be rendered in the notification card. */
+function isSensitiveMetadataKey(key: string): boolean {
+  return sensitiveMetadataKeyPattern.test(key);
 }
 
 function detailValue(value: unknown) {
@@ -266,6 +280,8 @@ function notificationDetails(metadata: Record<string, unknown>): InAppNotificati
   for (const [key, value] of Object.entries(metadata)) {
     if (details.length >= 8) break;
     if (used.has(key) || ["href", "message", "metrics", "title"].includes(key)) continue;
+    // Never surface sensitive raw metadata (tokens, passwords, emails, etc.).
+    if (isSensitiveMetadataKey(key)) continue;
     const text = detailValue(value);
     if (!text) continue;
     details.push({

@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { mapInAppNotificationRows, type InAppNotificationDetail } from "@/lib/communication/metrics";
+import { canViewerSeeNotification } from "@/lib/notifications/recipients";
 
 export type InAppNotificationCategory = "coaching_report" | "general" | "internal_message";
 
@@ -34,6 +35,7 @@ export type InAppNotificationView = {
 type InAppNotificationEventRow = {
   category?: string | null;
   created_at?: string | null;
+  employee_hr_id?: string | null;
   id?: string | number | null;
   metadata?: unknown;
   recipients?: unknown;
@@ -128,7 +130,7 @@ export async function listInAppNotificationsForViewer(
   try {
     const supabase = getSupabaseAdmin();
     const boundedLimit = Math.max(1, Math.min(limit, 20));
-    const selectColumns = "id,category,subject,scheduled_for,sent_at,status,metadata,recipients,created_at";
+    const selectColumns = "id,category,subject,scheduled_for,sent_at,status,metadata,recipients,employee_hr_id,created_at";
 
     const employeeResult = await supabase
       .from("notification_events")
@@ -160,6 +162,14 @@ export async function listInAppNotificationsForViewer(
     }
 
     const rows = Array.from(rowsById.values())
+      // Fail-closed recipient isolation applied AFTER the DB query — never rely on
+      // the SQL employee/overlap filters alone. See src/lib/notifications/recipients.ts.
+      .filter((row) =>
+        canViewerSeeNotification(employeeHrId, {
+          employeeHrId: row.employee_hr_id,
+          recipients: Array.isArray(row.recipients) ? row.recipients : [],
+        }),
+      )
       .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))
       .slice(0, boundedLimit);
 
@@ -170,6 +180,7 @@ export async function listInAppNotificationsForViewer(
 
       return {
         category: String(row.category ?? "general"),
+        employeeHrId: row.employee_hr_id ?? null,
         id: String(row.id ?? ""),
         metadata,
         recipients: Array.isArray(row.recipients) ? row.recipients : [],

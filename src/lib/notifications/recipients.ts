@@ -1,0 +1,65 @@
+/**
+ * Canonical, fail-closed recipient visibility for in-app notifications.
+ *
+ * A viewer may see a notification ONLY if they are the notification's employee
+ * subject, OR they appear in its explicit recipients list. Everything else is
+ * DENIED by default. Invalid recipient tokens — empty values, email addresses,
+ * and disposable PHASE/fixture identifiers — are ignored so legacy/fixture rows
+ * can never leak to a real viewer (and never accidentally broadcast).
+ *
+ * This module is pure (string comparisons only) so it is trivially unit-testable
+ * and safe to import from any layer. It is the single source of truth for "can
+ * this viewer see this notification".
+ */
+
+export function normalizeNotificationHrId(value: string | null | undefined): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+/**
+ * True only for a usable HR_ID recipient token: non-empty, not an email address,
+ * and not a disposable phase/fixture placeholder. These guards stop legacy rows
+ * (e.g. recipients stored as emails, or "PHASE17_..." fixture ids) from being
+ * treated as real recipients.
+ */
+export function isValidRecipientHrId(value: string | null | undefined): boolean {
+  const normalized = normalizeNotificationHrId(value);
+  if (!normalized) return false;
+  if (normalized.includes("@")) return false; // email address, not an HR_ID
+  if (normalized.startsWith("PHASE")) return false; // disposable phase fixture id
+  if (normalized.includes("FIXTURE")) return false; // fixture marker
+  return true;
+}
+
+export type NotificationRecipientRow = {
+  employeeHrId?: string | null;
+  recipients?: unknown;
+};
+
+/**
+ * Fail-closed visibility decision. Visible iff the viewer is the notification's
+ * employee subject OR a valid explicit recipient. No implicit role/company
+ * broadcast: an admin/Super Admin only sees a notification here if they are the
+ * subject or an explicit recipient (a personal bell, not an everyone-feed).
+ */
+export function canViewerSeeNotification(
+  viewerHrId: string | null | undefined,
+  row: NotificationRecipientRow,
+): boolean {
+  const viewer = normalizeNotificationHrId(viewerHrId);
+  if (!viewer) return false;
+
+  if (
+    isValidRecipientHrId(row.employeeHrId) &&
+    normalizeNotificationHrId(row.employeeHrId) === viewer
+  ) {
+    return true;
+  }
+
+  const recipients = Array.isArray(row.recipients) ? row.recipients : [];
+  return recipients.some(
+    (recipient) =>
+      isValidRecipientHrId(recipient as string | null | undefined) &&
+      normalizeNotificationHrId(recipient as string | null | undefined) === viewer,
+  );
+}
