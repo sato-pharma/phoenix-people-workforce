@@ -188,6 +188,225 @@ export function runNotificationRecipientIsolationTests() {
   );
   assert.equal(polishedBlob.includes("b2f92a6b"), false, "raw request UUID is not shown for old rows");
 
+  // ===========================================================================
+  // WP-N2B: subject-first display model via read-time requestId enrichment.
+  // OLD vacation rows must render the EMPLOYEE NAME as the prominent primaryText
+  // (not the generic stored subject), with Employee/Type/Period/Status/Action.
+  // ===========================================================================
+  const REQUEST_UUID = "b2f92a6b-9dde-495e-9c10-542ca0fcf0dd";
+  const vacationEnrichment = new Map([
+    [
+      REQUEST_UUID,
+      {
+        employeeHrId: "B-52",
+        employeeName: "Fiby Wagdy Luka",
+        endDate: "2026-05-24",
+        startDate: "2026-05-22",
+        status: "pending_hr",
+        typeLabel: "Annual Vacation",
+      },
+    ],
+  ]);
+
+  const oldVacationRow = {
+    category: "vacation_request",
+    employeeHrId: A,
+    id: "old-vac",
+    metadata: {
+      managerDecision: "approved",
+      message: "Taha Mohamed Taha approved Fiby Wagdy Luka's vacation request. HR final decision is required.",
+      requestId: REQUEST_UUID,
+      status: "pending_hr",
+      title: "Vacation request pending HR final decision",
+    },
+    recipients: [A],
+    status: "sent",
+    subject: "Vacation request pending HR final decision",
+  };
+
+  const enrichedView = mapInAppNotificationRows([oldVacationRow], A, vacationEnrichment)[0];
+  assert.ok(enrichedView, "enriched vacation row is visible to its recipient");
+  // Employee name is the prominent primaryText, NOT the generic stored subject.
+  assert.equal(enrichedView?.primaryText, "Fiby Wagdy Luka", "enriched row uses employee name as primaryText");
+  assert.notEqual(enrichedView?.primaryText, oldVacationRow.subject, "primaryText is not the generic stored subject");
+  assert.equal(enrichedView?.title, "Vacation request pending HR final decision", "title is the human-readable event");
+  assert.equal(enrichedView?.statusLabel, "Pending HR final decision", "statusLabel humanized from enrichment");
+  assert.equal(enrichedView?.actionLabel, "Complete HR decision", "actionLabel derived from category + status");
+  const enrichedDetails = enrichedView?.details ?? [];
+  assert.deepEqual(
+    enrichedDetails.map((d) => d.label),
+    ["Employee", "Type", "Period", "Status", "Action"],
+    "enriched details include Employee, Type, Period, Status, Action",
+  );
+  assert.equal(enrichedDetails[0]?.value, "Fiby Wagdy Luka (B-52)", "Employee detail shows name + HR_ID");
+  assert.equal(enrichedDetails[1]?.value, "Annual Vacation", "Type detail comes from the resolved record");
+  assert.equal(enrichedDetails[2]?.value, "2026-05-22 → 2026-05-24", "Period detail comes from the resolved record");
+  assert.equal(enrichedDetails[3]?.value, "Pending HR final decision", "Status detail is humanized");
+  assert.equal(enrichedDetails[4]?.value, "Complete HR decision", "Action detail is the next step");
+  const enrichedBlob = JSON.stringify(enrichedView);
+  assert.equal(enrichedBlob.includes(REQUEST_UUID), false, "raw request UUID never appears in the enriched view");
+  // Enrichment only carries non-sensitive fields (name/type/dates/status); the
+  // privacy guarantee is enforced structurally on the enrichment source below.
+
+  // pending_manager enrichment -> manager-decision title + review action.
+  const pendingManagerView = mapInAppNotificationRows(
+    [{ ...oldVacationRow, id: "old-vac-2", metadata: { ...oldVacationRow.metadata, status: "pending_manager" } }],
+    A,
+    new Map([[REQUEST_UUID, { ...vacationEnrichment.get(REQUEST_UUID)!, status: "pending_manager" }]]),
+  )[0];
+  assert.equal(pendingManagerView?.title, "Vacation request pending manager decision", "pending_manager title");
+  assert.equal(pendingManagerView?.statusLabel, "Pending manager decision", "pending_manager status humanized");
+  assert.equal(pendingManagerView?.actionLabel, "Review request", "pending_manager action is Review request");
+
+  // New-style notification (producer details[], no requestId/enrichment) still
+  // renders details AND derives primaryText from the structured Employee row.
+  const newStyleView = mapInAppNotificationRows(
+    [
+      {
+        category: "vacation_request",
+        employeeHrId: A,
+        id: "new-vac",
+        metadata: {
+          details: [
+            { label: "Employee", value: "Mariam Adel (C-7)" },
+            { label: "Type", value: "Annual Vacation" },
+            { label: "Period", value: "2026-06-01 → 2026-06-03" },
+            { label: "Status", value: "Pending manager decision" },
+            { label: "Action", value: "Review request" },
+          ],
+          message: "Mariam Adel submitted a vacation request.",
+          status: "pending_manager",
+          title: "Mariam Adel submitted a vacation request",
+        },
+        recipients: [A],
+        status: "sent",
+        subject: "Mariam Adel submitted a vacation request",
+      },
+    ],
+    A,
+  )[0];
+  assert.equal(newStyleView?.primaryText, "Mariam Adel", "new-style primaryText derived from Employee detail row");
+  assert.deepEqual(
+    (newStyleView?.details ?? []).map((d) => d.label),
+    ["Employee", "Type", "Period", "Status", "Action"],
+    "new-style producer details[] still render in order",
+  );
+
+  // Fallback A: requestId present but NO enrichment record found, and the message
+  // leads with "{Name} submitted ..." -> conservative name parse populates primaryText.
+  const fallbackSubmitted = mapInAppNotificationRows(
+    [
+      {
+        category: "vacation_request",
+        employeeHrId: A,
+        id: "fb-1",
+        metadata: {
+          message: "Mariam Adel submitted Annual Vacation for 3 day(s).",
+          requestId: "11111111-2222-3333-4444-555555555555",
+          status: "pending_manager",
+          title: "Vacation request submitted",
+        },
+        recipients: [A],
+        status: "sent",
+        subject: "Vacation request submitted",
+      },
+    ],
+    A,
+    new Map(), // no enrichment resolved
+  )[0];
+  assert.equal(fallbackSubmitted?.primaryText, "Mariam Adel", "fallback parses employee name from a 'submitted' message");
+  assert.equal(fallbackSubmitted?.title, "Vacation request pending manager decision", "fallback still derives event title from status");
+  assert.equal(JSON.stringify(fallbackSubmitted).includes("11111111-2222"), false, "fallback never shows the raw requestId");
+
+  // Fallback B: no enrichment, possessive "{Actor} approved {Employee}'s vacation
+  // request" -> primaryText is the EMPLOYEE (the request owner), not the actor.
+  const fallbackApproverPossessive = mapInAppNotificationRows(
+    [
+      {
+        category: "vacation_request",
+        employeeHrId: A,
+        id: "fb-2",
+        metadata: {
+          message: "Taha Mohamed Taha approved Fiby Wagdy Luka's vacation request. HR final decision is required.",
+          requestId: "99999999-8888-7777-6666-555555555555",
+          status: "pending_hr",
+          title: "Vacation request pending HR final decision",
+        },
+        recipients: [A],
+        status: "sent",
+        subject: "Vacation request pending HR final decision",
+      },
+    ],
+    A,
+    new Map(),
+  )[0];
+  assert.equal(
+    fallbackApproverPossessive?.primaryText,
+    "Fiby Wagdy Luka",
+    "possessive message resolves the EMPLOYEE (request owner), not the acting manager",
+  );
+  assert.equal(fallbackApproverPossessive?.title, "Vacation request pending HR final decision", "fallback title still derives from status");
+  assert.equal(JSON.stringify(fallbackApproverPossessive).includes("99999999-8888"), false, "possessive fallback never shows the raw requestId");
+
+  // Fallback C: "{Employee}'s vacation request was approved" -> employee name.
+  const fallbackDecisionPossessive = mapInAppNotificationRows(
+    [
+      {
+        category: "vacation_request",
+        employeeHrId: A,
+        id: "fb-3",
+        metadata: {
+          message: "Fiby Wagdy Luka's vacation request was approved.",
+          requestId: "77777777-6666-5555-4444-333333333333",
+          status: "approved",
+          title: "Vacation request approved",
+        },
+        recipients: [A],
+        status: "sent",
+        subject: "Vacation request approved",
+      },
+    ],
+    A,
+    new Map(),
+  )[0];
+  assert.equal(fallbackDecisionPossessive?.primaryText, "Fiby Wagdy Luka", "decision message resolves the employee name");
+  assert.equal(fallbackDecisionPossessive?.title, "Vacation request approved", "approved fallback title derives from status");
+
+  // Wiring: the read path resolves enrichment and passes it to the mapper.
+  const n2bInAppSource = readFileSync(new URL("../src/lib/notifications/in-app.ts", import.meta.url), "utf8");
+  assert.match(n2bInAppSource, /fetchVacationNotificationEnrichments/, "in-app must resolve vacation enrichment");
+  assert.match(
+    n2bInAppSource,
+    /mapInAppNotificationRows\(mappedRows, employeeHrId, enrichmentByRequestId\)/,
+    "in-app must pass the enrichment map to the mapper",
+  );
+  const n2bMetricsSource = readFileSync(new URL("../src/lib/communication/metrics.ts", import.meta.url), "utf8");
+  assert.match(n2bMetricsSource, /buildNotificationDisplay/, "mapper must build a normalized display model");
+  assert.match(n2bMetricsSource, /resolvePrimaryText/, "mapper must resolve a subject-first primaryText");
+  assert.match(n2bMetricsSource, /primaryText/, "mapper output must include primaryText");
+
+  // Wiring: the enrichment source is read-only, non-sensitive, and cycle-free.
+  const enrichmentSource = readFileSync(new URL("../src/lib/vacation/notification-enrichment.ts", import.meta.url), "utf8");
+  assert.match(enrichmentSource, /v2_vacation_requests/, "enrichment reads the vacation requests table");
+  assert.match(enrichmentSource, /employee_name,employee_hr_id,vacation_type,start_date,end_date,status/, "enrichment selects only non-sensitive columns");
+  const enrichmentSelect = enrichmentSource.match(/\.select\("([^"]+)"\)/)?.[1] ?? "";
+  assert.ok(enrichmentSelect.length > 0, "enrichment must have a bounded column select (no select *)");
+  assert.equal(
+    /salary|bank|national|balance|notes|net_?pay|gross|iban|attachment/i.test(enrichmentSelect),
+    false,
+    "enrichment select must not include sensitive columns",
+  );
+  assert.equal(
+    /from\s+"@\/lib\/notifications\/in-app"/.test(enrichmentSource),
+    false,
+    "enrichment must not import in-app (no circular dependency)",
+  );
+
+  // Wiring: the bell renders the subject-first model.
+  const n2bBellSource = readFileSync(new URL("../src/components/layout/in-app-notifications-bell.tsx", import.meta.url), "utf8");
+  assert.match(n2bBellSource, /notification\.primaryText/, "bell renders primaryText as the prominent line");
+  assert.match(n2bBellSource, /notification\.statusLabel/, "bell renders the status badge");
+
   // Wiring: the query path selects employee_hr_id and applies the canonical filter.
   const inAppSource = readFileSync(new URL("../src/lib/notifications/in-app.ts", import.meta.url), "utf8");
   assert.match(inAppSource, /employee_hr_id/, "in-app query must select employee_hr_id");

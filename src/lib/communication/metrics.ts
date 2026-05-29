@@ -58,6 +58,40 @@ export type InAppNotificationDetail = {
   value: string;
 };
 
+/**
+ * Non-sensitive, render-time enrichment for a notification (keyed by requestId).
+ * Resolved read-only from the source record so OLD notifications can display the
+ * employee subject / type / period even though their stored metadata is sparse.
+ */
+export type NotificationEnrichmentRecord = {
+  employeeHrId?: string;
+  employeeName?: string;
+  endDate?: string;
+  startDate?: string;
+  status?: string;
+  typeLabel?: string;
+};
+
+/**
+ * Normalized display model used by the bell for BOTH old and new notifications.
+ * `primaryText` (the employee/request subject) is shown prominently; `title` is
+ * the human-readable event; the stored subject is only ever a fallback.
+ */
+export type NormalizedNotificationDisplay = {
+  actionLabel?: string;
+  category: string;
+  details: InAppNotificationDetail[];
+  href: string | null;
+  id: string;
+  message: string;
+  primaryText?: string;
+  scheduledFor: string | null;
+  sentAt: string | null;
+  status: string;
+  statusLabel?: string;
+  title: string;
+};
+
 const deliveryStatuses = ["bounced", "complained", "delivered", "failed", "sent", "suppressed", "unknown"] as const;
 
 export function splitCommunicationEmailList(value: unknown): string[] {
@@ -200,7 +234,11 @@ export function buildCommunicationMetrics(input: {
   };
 }
 
-export function mapInAppNotificationRows(rows: InAppNotificationMetricRow[], employeeHrId: string | null) {
+export function mapInAppNotificationRows(
+  rows: InAppNotificationMetricRow[],
+  employeeHrId: string | null,
+  enrichmentByRequestId?: ReadonlyMap<string, NotificationEnrichmentRecord>,
+): NormalizedNotificationDisplay[] {
   return rows
     // Fail-closed recipient isolation for EVERY category: a viewer only sees a
     // notification where they are the employee subject or an explicit, valid
@@ -216,18 +254,27 @@ export function mapInAppNotificationRows(rows: InAppNotificationMetricRow[], emp
       const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
         ? row.metadata
         : {};
-      const details = notificationDetails(metadata, String(row.category ?? "general"));
+      const category = String(row.category ?? "general");
+      const subject = String(row.subject ?? "Notification");
+
+      const requestId = detailValue(metadata.requestId);
+      const enrichment = requestId ? enrichmentByRequestId?.get(requestId) : undefined;
+
+      const display = buildNotificationDisplay({ category, enrichment, metadata, subject });
 
       return {
-        category: String(row.category ?? "general"),
-        details,
+        actionLabel: display.actionLabel,
+        category,
+        details: display.details,
         href: typeof metadata.href === "string" ? metadata.href : null,
         id: String(row.id ?? ""),
-        message: typeof metadata.message === "string" ? metadata.message : String(row.subject ?? "Notification"),
+        message: display.message,
+        primaryText: display.primaryText,
         scheduledFor: row.scheduledFor ? new Date(String(row.scheduledFor)).toISOString() : null,
         sentAt: row.sentAt ? new Date(String(row.sentAt)).toISOString() : null,
         status: String(row.status ?? "pending"),
-        title: typeof metadata.title === "string" ? metadata.title : String(row.subject ?? "Notification"),
+        statusLabel: display.statusLabel,
+        title: display.title,
       };
     });
 }
@@ -285,6 +332,165 @@ function deriveNotificationAction(category: string, status: string): string {
 /** UUIDs are internal identifiers and must never be shown as a useful detail row. */
 function isUuidLike(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+// --- Subject-first display model (used for OLD + NEW notifications) ----------
+
+const VACATION_TITLE_BY_STATUS: Record<string, string> = {
+  pending_manager: "Vacation request pending manager decision",
+  pending_hr: "Vacation request pending HR final decision",
+  approved: "Vacation request approved",
+  rejected: "Vacation request rejected",
+};
+
+/** Status-based, name-free EVENT title for a vacation notification. */
+function vacationTitleForStatus(status: string): string {
+  return VACATION_TITLE_BY_STATUS[status.trim().toLowerCase()] ?? "";
+}
+
+/** "2026-05-22 → 2026-05-24" from start/end (matches the live producers). */
+function formatNotificationPeriod(start: string, end: string): string {
+  const from = start.trim();
+  const to = end.trim();
+  if (from && to) return `${from} → ${to}`;
+  return from || to;
+}
+
+/** Pull the employee name from a producer "Employee" detail row ("Name (HR-ID)"). */
+function employeeNameFromDetails(details: unknown): string {
+  if (!Array.isArray(details)) return "";
+  for (const entry of details) {
+    if (!entry || typeof entry !== "object") continue;
+    const label = detailValue((entry as { label?: unknown }).label);
+    if (label.toLowerCase() !== "employee") continue;
+    const value = detailValue((entry as { value?: unknown }).value);
+    return value.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  }
+  return "";
+}
+
+/**
+ * CONSERVATIVE employee-name extraction from a vacation message — used ONLY as a
+ * fallback when requestId enrichment is unavailable (e.g. the underlying request
+ * was deleted). It relies on the deterministic shapes the vacation producers
+ * emit and never guesses:
+ *   - "{Employee}'s vacation request ..."            (possessive owns the request)
+ *   - "{Actor} approved {Employee}'s vacation request"
+ *   - "{Employee} submitted ..."
+ * The possessive form identifies the EMPLOYEE (the request's owner) regardless of
+ * who acted, so it is reliable rather than a wrong-person guess.
+ */
+function employeeNameFromVacationMessage(message: string): string {
+  const text = message.trim();
+  if (!text || text.length > 160) return "";
+  // Highest priority: the employee owns the "vacation request" (possessive).
+  const possessive = text.match(
+    /([\p{Lu}][\p{L}.'’-]*(?:\s+[\p{Lu}][\p{L}.'’-]*){0,3})['’]s\s+vacation\s+request/u,
+  );
+  if (possessive?.[1]) return possessive[1].trim();
+  // Otherwise the leading name in a "{Employee} submitted ..." sentence.
+  const submitted = text.match(/^([\p{Lu}][\p{L}.'’-]*(?:\s+[\p{Lu}][\p{L}.'’-]*){0,3})\s+submitted\b/u);
+  if (submitted?.[1]) return submitted[1].trim();
+  return "";
+}
+
+/** Resolve the prominent subject name (producer → enrichment → details → message). */
+function resolvePrimaryText(
+  metadata: Record<string, unknown>,
+  category: string,
+  enrichment: NotificationEnrichmentRecord | undefined,
+  message: string,
+): string {
+  // 1. Producer-provided subject name takes precedence.
+  const explicit = detailValue(metadata.primaryText) || detailValue(metadata.subjectEmployeeName);
+  if (explicit) return explicit;
+  // 2. Authoritative enrichment from the source record.
+  const enriched = detailValue(enrichment?.employeeName);
+  if (enriched) return enriched;
+  // 3. Structured producer details[] (new-style notifications).
+  const fromDetails = employeeNameFromDetails(metadata.details);
+  if (fromDetails) return fromDetails;
+  // 4. Conservative message parse (vacation only) — clearly marked fallback.
+  if (category.trim().toLowerCase() === "vacation_request") {
+    return employeeNameFromVacationMessage(message);
+  }
+  return "";
+}
+
+/** Authoritative vacation detail rows built from the resolved request record. */
+function buildEnrichedVacationDetails(
+  enrichment: NotificationEnrichmentRecord,
+  statusLabel: string,
+  actionLabel: string,
+): InAppNotificationDetail[] {
+  const rows: InAppNotificationDetail[] = [];
+  const name = detailValue(enrichment.employeeName);
+  const hrId = detailValue(enrichment.employeeHrId);
+  if (name) rows.push({ label: "Employee", value: hrId ? `${name} (${hrId})` : name });
+  const type = detailValue(enrichment.typeLabel);
+  if (type) rows.push({ label: "Type", value: type });
+  const period = formatNotificationPeriod(detailValue(enrichment.startDate), detailValue(enrichment.endDate));
+  if (period) rows.push({ label: "Period", value: period });
+  if (statusLabel) rows.push({ label: "Status", value: statusLabel });
+  if (actionLabel) rows.push({ label: "Action", value: actionLabel });
+  return rows;
+}
+
+/**
+ * Build the normalized, subject-first display for one notification. Works for
+ * BOTH old (sparse metadata + requestId enrichment) and new (rich producer
+ * details[]) notifications. Never renders raw UUIDs or sensitive fields.
+ */
+function buildNotificationDisplay(input: {
+  category: string;
+  enrichment: NotificationEnrichmentRecord | undefined;
+  metadata: Record<string, unknown>;
+  subject: string;
+}): {
+  actionLabel?: string;
+  details: InAppNotificationDetail[];
+  message: string;
+  primaryText?: string;
+  statusLabel?: string;
+  title: string;
+} {
+  const { category, enrichment, metadata, subject } = input;
+  const categoryLc = category.trim().toLowerCase();
+
+  const message = typeof metadata.message === "string" && metadata.message.trim()
+    ? metadata.message
+    : subject;
+
+  const rawStatus =
+    detailValue(enrichment?.status) ||
+    detailValue(metadata.status) ||
+    detailValue(metadata.workflowStatus);
+  const statusLabel = rawStatus ? humanizeNotificationStatus(rawStatus) : "";
+  const actionLabel = deriveNotificationAction(category, rawStatus);
+
+  const primaryText = resolvePrimaryText(metadata, category, enrichment, message);
+
+  let title = typeof metadata.title === "string" && metadata.title.trim() ? metadata.title : subject;
+  if (categoryLc === "vacation_request") {
+    // Title is the name-free EVENT; the employee name lives in primaryText.
+    const eventTitle = vacationTitleForStatus(rawStatus);
+    if (eventTitle) title = eventTitle;
+  }
+
+  // Details: prefer authoritative enrichment for vacation rows; otherwise reuse
+  // the existing render-time builder (producer details[] + status/action polish).
+  const details = enrichment
+    ? buildEnrichedVacationDetails(enrichment, statusLabel, actionLabel)
+    : notificationDetails(metadata, category);
+
+  return {
+    actionLabel: actionLabel || undefined,
+    details,
+    message,
+    primaryText: primaryText || undefined,
+    statusLabel: statusLabel || undefined,
+    title,
+  };
 }
 
 function notificationDetails(metadata: Record<string, unknown>, category = ""): InAppNotificationDetail[] {
