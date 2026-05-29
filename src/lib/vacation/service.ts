@@ -18,6 +18,7 @@ import {
 } from "@/lib/employees/employee-directory";
 import { enqueueInAppNotification } from "@/lib/notifications/in-app";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { sameWorkforceDepartment } from "@/lib/workforce/hierarchy-resolver";
 import { addDaysToDateOnly, daysBetweenDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
 import { getEgyptianNationalHolidays, type EgyptianNationalHoliday } from "@/lib/vacation/national-holidays";
 import {
@@ -400,7 +401,16 @@ function filterVacationEmployeesForAccess(access: AccessContext, employees: Empl
     }
 
     if (scope === "LINE") {
-      return employeeLineMatches(employee, currentEmployee);
+      // Department-safe LINE scope: a LINE-scoped viewer (e.g. National Sales
+      // Manager, Product Manager) sees colleagues in the SAME line AND the SAME
+      // department only. This stops a Sales NSM from seeing Marketing employees
+      // who merely share the same product line, and symmetrically keeps Marketing
+      // roles within their own department. See
+      // src/lib/workforce/hierarchy-resolver.ts.
+      return (
+        employeeLineMatches(employee, currentEmployee) &&
+        sameWorkforceDepartment(currentEmployee, employee)
+      );
     }
 
     return false;
