@@ -112,6 +112,13 @@ export function WorkflowSimulatorPanel({
 
       {result ? (
         <div className="mt-4 border-t border-[#E2E8F0] pt-4">
+          <p className="mb-3 text-[12px] text-[#475569]">
+            <span className="font-black uppercase tracking-[0.10em] text-[#94A3B8]">Simulating</span>{" "}
+            <span className="font-bold text-[#0F172A]">{result.domainName}</span>
+            {" → "}
+            <span className="font-bold text-[#0F172A]">{result.subflowName}</span>
+          </p>
+
           {result.warnings.length ? (
             <div className="mb-3 rounded-lg border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2">
               <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.10em] text-[#C2410C]">
@@ -162,6 +169,17 @@ export function WorkflowSimulatorPanel({
           <p className="mt-3 text-[13px] font-black text-[#0F172A]">
             Final status: <span className="text-[#C2410C]">{result.finalStatus}</span>
           </p>
+
+          {result.sideEffects.length ? (
+            <div className="mt-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Side effects</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                {result.sideEffects.map((effect) => (
+                  <li key={effect} className="text-[12px] leading-5 text-[#475569]">{effect}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
