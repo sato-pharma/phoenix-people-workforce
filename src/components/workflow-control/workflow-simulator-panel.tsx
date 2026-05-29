@@ -125,6 +125,13 @@ export function WorkflowSimulatorPanel({
             </div>
           ) : null}
 
+          {result.routePath.length ? (
+            <p className="mb-3 text-[12px] text-[#475569]">
+              <span className="font-black uppercase tracking-[0.10em] text-[#94A3B8]">Route path</span>{" "}
+              {result.routePath.join(" → ")}
+            </p>
+          ) : null}
+
           <ol className="space-y-2">
             {result.steps.map((step) => (
               <li key={step.id} className="rounded-lg bg-[#F8FAFC] px-3 py-2">
@@ -133,11 +140,20 @@ export function WorkflowSimulatorPanel({
                   <span className="font-semibold text-[#64748B]">→ routes to {step.routesTo}</span>
                 </p>
                 <p className="text-[12px] text-[#475569]">Status produced: {step.statusProduced}</p>
+                {step.actionRequiredRecipients.length ? (
+                  <p className="text-[12px] text-[#B91C1C]">Action required: {step.actionRequiredRecipients.join(", ")}</p>
+                ) : null}
+                {step.fyiRecipients.length ? (
+                  <p className="text-[12px] text-[#475569]">FYI: {step.fyiRecipients.join(", ")}</p>
+                ) : null}
                 {step.notificationRecipients.length ? (
-                  <p className="text-[12px] text-[#475569]">Notifies: {step.notificationRecipients.join(", ")}</p>
+                  <p className="text-[12px] text-[#475569]">In-app: {step.notificationRecipients.join(", ")}</p>
                 ) : null}
                 {step.emailRecipients.length ? (
                   <p className="text-[12px] text-[#475569]">Emails: {step.emailRecipients.join(", ")}</p>
+                ) : null}
+                {step.notificationGap ? (
+                  <p className="text-[12px] font-semibold text-[#B91C1C]">Notification gap: not implemented yet</p>
                 ) : null}
               </li>
             ))}

@@ -1,13 +1,14 @@
 /**
- * Workflow Control Center — Phase 1 static, READ-ONLY workflow map.
+ * Workflow Control Center — Phase 1.5 static, READ-ONLY workflow map.
  *
  * Business-friendly grouping: a SMALL set of top-level DOMAINS, each containing
  * named SUBFLOWS. Every subflow is a faithful, code-derived mini-flow of boxes
- * (steps) with actors, statuses, notification + email recipients, fallback and
- * side effects.
+ * (steps). Each step records actor, responsible role, status produced, in-app
+ * notification recipients (split into action-required vs FYI where meaningful),
+ * email recipients, fallback/escalation, side effects, and any known gap —
+ * including an explicit "notification not implemented yet" flag.
  *
- * This is PURE DATA: no database access, no service calls, no server-only
- * imports. Safe to import from server pages, client components and tests.
+ * PURE DATA: no database access, no service calls, no server-only imports.
  * Phase 1 does NOT change runtime workflow execution or approval logic.
  */
 
@@ -20,17 +21,24 @@ export type WorkflowControlStep = {
   actor: string;
   role: string;
   statusProduced: string;
+  /** In-app notification recipients (full audience). */
   notificationRecipients: string[];
+  /** Email recipients. */
   emailRecipients: string[];
+  /** Subset of recipients who must ACT (action-required alert). */
+  actionRequiredRecipients?: string[];
+  /** Subset of recipients notified for awareness only (FYI). */
+  fyiRecipients?: string[];
+  /** True when NO notification producer is implemented for this step yet. */
+  notificationGap?: boolean;
+  /** Fallback / escalation behavior, if any. */
   fallbackEscalation?: string;
-  sideEffects?: string;
-  /**
-   * Explicit, business-friendly destination for this step ("where it routes
-   * next / who acts"). Set this whenever the actor text would be ambiguous —
-   * the simulator prefers it over any heuristic. Supports the "Direct manager"
-   * token, which the simulator resolves to the provided manager.
-   */
+  /** Module side effects this step triggers. */
+  sideEffects: string;
+  /** Where this step routes next / who acts (explicit, business-friendly). */
   routesTo?: string;
+  /** A known gap specific to this step, surfaced read-only. */
+  knownGap?: string;
 };
 
 export type WorkflowSubflow = {
@@ -69,7 +77,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
     status: "Active",
     riskLevel: "Medium",
     summary: "Employee leave: request, manager approval, HR final decision, and report impact.",
-    modulesAffected: n("v2_vacation_requests", "vacation balance", "in-app notifications", "emails", "audit_logs"),
+    modulesAffected: n("v2_vacation_requests", "v2_vacation_request_events", "vacation balance", "in-app notifications", "audit_logs"),
     subflows: [
       {
         key: "vacation-request",
@@ -86,9 +94,11 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             statusProduced: "pending_manager",
             routesTo: "Direct manager",
             notificationRecipients: n("Direct manager", "Manager-of-manager (if exists)", "HR Specialists (A-16)"),
+            actionRequiredRecipients: n("Direct manager"),
+            fyiRecipients: n("Manager-of-manager (if exists)", "HR Specialists (A-16)"),
             emailRecipients: n("Direct manager"),
             fallbackEscalation: "Submission fails if the employee has no direct manager (no auto-escalation).",
-            sideEffects: "Creates request with computed paid/unpaid balance; generates manager email token (14-day TTL).",
+            sideEffects: "Creates request with computed paid/unpaid balance; generates manager email token (14-day TTL); writes event + audit log.",
           },
           {
             id: "manager_decision",
@@ -96,9 +106,12 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             actor: "Direct manager",
             role: "District Manager / Manager / Regional Manager / NSM / Super Admin",
             statusProduced: "pending_hr",
+            routesTo: "HR Specialist",
             notificationRecipients: n("Employee", "Manager-of-manager (if exists)", "HR Specialists (A-16)"),
+            actionRequiredRecipients: n("HR Specialists (A-16)"),
+            fyiRecipients: n("Employee", "Manager-of-manager (if exists)"),
             emailRecipients: [],
-            sideEffects: "Records manager decision; transitions to pending_hr; writes event + audit log.",
+            sideEffects: "Records manager decision + timestamp; transitions to pending_hr; writes event + audit log.",
           },
           {
             id: "hr_decision",
@@ -107,8 +120,9 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Super Admin / HR Specialist / CEO",
             statusProduced: "approved | rejected",
             notificationRecipients: n("Employee", "Manager-of-manager (if exists)", "HR Specialists (A-16)"),
+            fyiRecipients: n("Employee", "Manager-of-manager (if exists)", "HR Specialists (A-16)"),
             emailRecipients: n("Employee", "CC: HR Specialists + manager-of-manager"),
-            sideEffects: "On approval recalculates and consumes balance; writes event + audit log.",
+            sideEffects: "On approval recalculates and consumes balance; writes event + audit log; marks email token used.",
           },
         ],
         gaps: ["No manager-of-manager escalation when the direct manager is missing — submission simply fails."],
@@ -177,8 +191,11 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             statusProduced: "pending",
             routesTo: "Approvers (Finance / HR / Super Admin)",
             notificationRecipients: n("Approvers (Super Admin / HR Specialist / Finance Manager / CEO)"),
+            actionRequiredRecipients: n("Approvers (Super Admin / HR Specialist / Finance Manager / CEO)"),
             emailRecipients: [],
+            notificationGap: true,
             sideEffects: "Creates request capturing amount, eligibility and fraud flags.",
+            knownGap: "Declared 'notify approvers' is not actually sent — no producer wired in the service.",
           },
           {
             id: "decision",
@@ -187,8 +204,11 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Super Admin / HR Specialist / Finance Manager / CEO",
             statusProduced: "approved | rejected",
             notificationRecipients: n("Employee (submitter)"),
+            fyiRecipients: n("Employee (submitter)"),
             emailRecipients: [],
+            notificationGap: true,
             sideEffects: "Approval makes the expense eligible for manual payroll import.",
+            knownGap: "Declared employee notification is not actually sent.",
           },
         ],
         gaps: ["Notification/email producers are declared in the registry but NOT yet called by the service."],
@@ -209,7 +229,9 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             routesTo: "Finance admin (after validation)",
             notificationRecipients: [],
             emailRecipients: [],
+            notificationGap: true,
             sideEffects: "Uploads car evidence / tickets; writes location audit with fraud flags.",
+            knownGap: "No alert is sent to a manager or finance reviewer on submission.",
           },
           {
             id: "admin_review",
@@ -219,6 +241,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             statusProduced: "approved | rejected",
             notificationRecipients: [],
             emailRecipients: [],
+            notificationGap: true,
             fallbackEscalation: "Rejection blocked once imported to payroll.",
             sideEffects: "On approve creates/updates the linked payroll expense.",
           },
@@ -271,7 +294,9 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Super Admin / HR Specialist / Finance Manager",
             statusProduced: "approved",
             notificationRecipients: n("Employee (submitter)"),
+            fyiRecipients: n("Employee (submitter)"),
             emailRecipients: [],
+            notificationGap: true,
             sideEffects: "Creates/updates the linked payroll_expenses row.",
           },
         ],
@@ -289,6 +314,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             statusProduced: "added_to_payroll",
             notificationRecipients: n("(optional) payroll completion"),
             emailRecipients: [],
+            notificationGap: true,
             fallbackEscalation: "Only from 'approved'; locks the expense once imported.",
             sideEffects: "Links the expense to a payroll run and locks edit/delete.",
           },
@@ -307,7 +333,9 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             statusProduced: "(no status change)",
             notificationRecipients: n("Approvers", "Employee (submitter)"),
             emailRecipients: [],
+            notificationGap: true,
             sideEffects: "Declared in the registry; producers are not yet wired up.",
+            knownGap: "No alerts are actually sent today (declared-only).",
           },
         ],
         gaps: ["No alerts are actually sent today (declared-only)."],
@@ -339,6 +367,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Super Admin / HR Specialist / system",
             statusProduced: "evaluation_requested",
             notificationRecipients: n("Direct manager", "Manager-of-manager", "HR", "Training Manager"),
+            actionRequiredRecipients: n("Direct manager"),
+            fyiRecipients: n("Manager-of-manager", "HR", "Training Manager"),
             emailRecipients: n("probation_alert"),
             sideEffects: "Creates evaluation + history; schedules reminder events.",
           },
@@ -349,6 +379,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Manager / HR Specialist / Super Admin",
             statusProduced: "manager_feedback",
             notificationRecipients: n("Direct manager", "HR", "Training Manager"),
+            actionRequiredRecipients: n("HR"),
+            fyiRecipients: n("Direct manager", "Training Manager"),
             emailRecipients: n("probation_alert"),
             sideEffects: "Records manager feedback + reviewer.",
           },
@@ -359,6 +391,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "HR Specialist / Super Admin",
             statusProduced: "probation_passed | probation_terminated",
             notificationRecipients: n("Direct manager", "HR", "Training Manager"),
+            fyiRecipients: n("Direct manager", "HR", "Training Manager"),
             emailRecipients: n("probation_alert"),
             fallbackEscalation: "Terminate triggers the resignation flow (opens vacancy, deactivates access).",
             sideEffects: "Pass activates the employee (payroll-eligible, organogram-visible).",
@@ -379,8 +412,10 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Super Admin / HR Specialist",
             statusProduced: "requested",
             notificationRecipients: n("Employee"),
+            fyiRecipients: n("Employee"),
             emailRecipients: n("Manager chain (fallback HR inbox)"),
             sideEffects: "Enforces one active renewal per employee.",
+            knownGap: "In-app notification goes only to the employee; manager/HR reviewers get email only.",
           },
           {
             id: "review",
@@ -399,6 +434,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Super Admin / HR Specialist / CEO",
             statusProduced: "renewed | not_renewed | cancelled",
             notificationRecipients: n("Employee (on renew)", "Stakeholders"),
+            fyiRecipients: n("Employee (on renew)", "Stakeholders"),
             emailRecipients: n("Employee (renew)", "Stakeholders"),
             sideEffects: "On renew: expires old contract, creates new active contract.",
           },
@@ -418,7 +454,9 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             statusProduced: "resignation_submitted",
             notificationRecipients: [],
             emailRecipients: n("Manager chain of the resigning employee"),
+            notificationGap: true,
             sideEffects: "Terminal employment status; hides from organogram; deactivates access; optionally opens vacancy.",
+            knownGap: "No in-app notification — resignation is not in the personal-bell allowlist (email only).",
           },
           {
             id: "review_approve_complete",
@@ -428,6 +466,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             statusProduced: "under_review → approved → completed",
             notificationRecipients: [],
             emailRecipients: n("Manager chain"),
+            notificationGap: true,
             fallbackEscalation: "Reject / Reopen / Cancel available from earlier states.",
             sideEffects: "Marks the employee fully separated.",
           },
@@ -448,6 +487,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             notificationRecipients: [],
             emailRecipients: [],
             sideEffects: "Placeholder: requires a schema migration and is out of Phase-1 scope.",
+            knownGap: "Contract non-renewal terminal lifecycle is not implemented (Phase-2 / migration required).",
           },
         ],
         gaps: ["Contract non-renewal terminal lifecycle is not implemented (Phase-2 / migration required)."],
@@ -530,6 +570,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "HR Specialist / Super Admin",
             statusProduced: "offer_sent",
             notificationRecipients: n("Candidate (via email)"),
+            actionRequiredRecipients: n("Candidate (via email)"),
             emailRecipients: n("Candidate"),
             sideEffects: "Creates offer with secure token + expiry; emails accept/reject links.",
           },
@@ -540,6 +581,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Candidate",
             statusProduced: "offer_accepted | offer_rejected",
             notificationRecipients: n("HR team", "Candidate (confirmation)"),
+            actionRequiredRecipients: n("HR team"),
+            fyiRecipients: n("Candidate (confirmation)"),
             emailRecipients: n("HR team", "Candidate"),
             fallbackEscalation: "Expires automatically after the expiry date.",
             sideEffects: "On accept sets onboarding_status = pending_hr_approval.",
@@ -551,6 +594,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "HR Specialist / Super Admin",
             statusProduced: "offer_hired",
             notificationRecipients: n("HR team"),
+            fyiRecipients: n("HR team"),
             emailRecipients: n("HR team"),
             sideEffects: "Creates the employee; closes/fills the matching vacancy; provisions access.",
           },
@@ -569,6 +613,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Candidate",
             statusProduced: "offer_accepted",
             notificationRecipients: n("HR team", "Candidate"),
+            actionRequiredRecipients: n("HR team"),
+            fyiRecipients: n("Candidate"),
             emailRecipients: n("HR team", "Candidate"),
             sideEffects: "Moves the record into the hired pipeline (pending HR approval).",
           },
@@ -586,6 +632,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "HR Specialist / Super Admin",
             statusProduced: "offer_hired",
             notificationRecipients: n("HR team"),
+            fyiRecipients: n("HR team"),
             emailRecipients: n("HR team"),
             sideEffects: "Generates the employee_hr_id and provisions system access.",
           },
@@ -653,6 +700,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Super Admin / HR Specialist / Finance Manager",
             statusProduced: "part1_ready",
             notificationRecipients: n("Payroll admins"),
+            fyiRecipients: n("Payroll admins"),
             emailRecipients: [],
             sideEffects: "Freezes the initial upload for review.",
           },
@@ -663,6 +711,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Super Admin / HR Specialist / Finance Manager",
             statusProduced: "under_review → approved",
             notificationRecipients: n("Approvers", "Payroll owner"),
+            actionRequiredRecipients: n("Approvers"),
+            fyiRecipients: n("Payroll owner"),
             emailRecipients: [],
             sideEffects: "Moves the batch through final review to approved.",
           },
@@ -673,6 +723,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Super Admin / Finance Manager",
             statusProduced: "locked",
             notificationRecipients: n("Payroll admins"),
+            fyiRecipients: n("Payroll admins"),
             emailRecipients: [],
             sideEffects: "Locks payroll edits; payslips become available.",
           },
@@ -690,9 +741,12 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "System",
             statusProduced: "(payslips available)",
             notificationRecipients: n("Employees (declared — payslip ready)"),
+            actionRequiredRecipients: n("Employees (declared — payslip ready)"),
             emailRecipients: [],
+            notificationGap: true,
             fallbackEscalation: "No fallback for failed payslip-notification delivery.",
             sideEffects: "The lock step declares an employee payslip notification.",
+            knownGap: "No payslip-notification producer or cron exists yet — the declared notice is not sent.",
           },
         ],
         gaps: [
@@ -738,6 +792,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Training Manager / Super Admin",
             statusProduced: "submitted",
             notificationRecipients: n("Medical Rep (the coached employee)"),
+            actionRequiredRecipients: n("Medical Rep (the coached employee)"),
             emailRecipients: [],
             sideEffects: "Computes score/zone; enqueues an in-app notification to the rep.",
           },
@@ -748,6 +803,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Employee (must match the coached rep)",
             statusProduced: "reviewed_by_employee",
             notificationRecipients: n("Training Manager"),
+            fyiRecipients: n("Training Manager"),
             emailRecipients: [],
             fallbackEscalation: "No manager/HR escalation if the rep never acknowledges.",
             sideEffects: "Records acknowledgement (one per report).",
@@ -800,6 +856,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Marketing creator roles",
             statusProduced: "draft → pending_validation",
             notificationRecipients: n("Requester", "Manager (if assigned)"),
+            actionRequiredRecipients: n("Manager (if assigned)"),
+            fyiRecipients: n("Requester"),
             emailRecipients: n("Requester", "Manager (if assigned)"),
             sideEffects: "Creates request; computes ROI preview; validates products/pharmacy codes.",
           },
@@ -816,6 +874,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "SFE Manager / Super Admin",
             statusProduced: "pending_approval",
             notificationRecipients: n("Requester"),
+            fyiRecipients: n("Requester"),
             emailRecipients: n("Requester"),
             sideEffects: "Updates validation state on customers/pharmacies.",
           },
@@ -832,6 +891,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             role: "Finance Manager / Super Admin / assigned role",
             statusProduced: "approved | rejected | returned",
             notificationRecipients: n("Requester", "Manager"),
+            fyiRecipients: n("Requester", "Manager"),
             emailRecipients: n("Requester"),
             sideEffects: "On approval creates the finance requirement (invoice/deadline).",
           },
@@ -850,9 +910,12 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             statusProduced: "(no status change)",
             notificationRecipients: n("Requester", "Manager"),
             emailRecipients: n("Requester", "Manager"),
+            notificationGap: true,
             sideEffects: "request_submitted / approved / rejected events.",
+            knownGap: "No notification trigger code is wired in the marketing-requests service (Beta).",
           },
         ],
+        gaps: ["No notification trigger code identified in the marketing-requests module (Beta)."],
       },
     ],
   },
@@ -935,6 +998,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             emailRecipients: n("Manager chain"),
             fallbackEscalation: "Probation reminders (30/15/7 days); contract-renewal daily cron.",
             sideEffects: "Two daily Vercel crons; outbox + probation reminders piggyback the renewal cron.",
+            knownGap: "Several flows lack manager-of-manager / HR escalation when a primary recipient is missing.",
           },
         ],
         gaps: ["Several flows lack manager-of-manager / HR escalation when a primary recipient is missing."],
@@ -970,4 +1034,34 @@ export function subflowKeys(domainKey: string): string[] {
 /** Total step count across all subflows of a domain (for the library card). */
 export function domainStepCount(domain: WorkflowControlDomain): number {
   return domain.subflows.reduce((sum, subflow) => sum + subflow.steps.length, 0);
+}
+
+/** Number of in-app notifications wired across a domain's steps. */
+export function domainNotificationCount(domain: WorkflowControlDomain): number {
+  return domain.subflows.reduce(
+    (sum, s) => sum + s.steps.filter((st) => st.notificationRecipients.length > 0 && !st.notificationGap).length,
+    0,
+  );
+}
+
+/** Number of email touchpoints across a domain's steps. */
+export function domainEmailCount(domain: WorkflowControlDomain): number {
+  return domain.subflows.reduce((sum, s) => sum + s.steps.filter((st) => st.emailRecipients.length > 0).length, 0);
+}
+
+/** All known gaps for a domain: subflow-level gaps + per-step notification gaps. */
+export function domainGaps(domain: WorkflowControlDomain): string[] {
+  const gaps: string[] = [];
+  for (const subflow of domain.subflows) {
+    if (subflow.gaps) gaps.push(...subflow.gaps);
+    for (const step of subflow.steps) {
+      if (step.knownGap) gaps.push(step.knownGap);
+    }
+  }
+  return Array.from(new Set(gaps));
+}
+
+/** True when any step in the domain has an unimplemented notification producer. */
+export function domainHasNotificationGap(domain: WorkflowControlDomain): boolean {
+  return domain.subflows.some((s) => s.steps.some((st) => st.notificationGap));
 }

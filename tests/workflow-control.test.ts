@@ -7,7 +7,10 @@ import {
   WORKFLOW_CONTROL_EDIT_ENABLED,
 } from "../src/lib/auth/permissions.ts";
 import {
+  domainGaps,
+  domainHasNotificationGap,
   getWorkflowDomain,
+  getWorkflowSubflow,
   listWorkflowDomains,
   subflowKeys,
   workflowDomainKeys,
@@ -79,16 +82,38 @@ export function runWorkflowControlTests() {
     assert.equal(notifSubflowKeys.includes(workflowish), false, `Notifications must not duplicate the "${workflowish}" workflow`);
   }
 
-  // Every step across every subflow exposes notification + email recipient fields.
+  // Every step is fully detailed: actor, role, status, recipient arrays, side effects.
   for (const domain of domains) {
     assert.ok(domain.subflows.length > 0, `${domain.key} has subflows`);
     for (const subflow of domain.subflows) {
+      assert.ok(subflow.steps.length > 0, `${domain.key}/${subflow.key} has at least one step`);
       for (const step of subflow.steps) {
-        assert.ok(Array.isArray(step.notificationRecipients), `${domain.key}/${subflow.key}/${step.id} has notificationRecipients`);
-        assert.ok(Array.isArray(step.emailRecipients), `${domain.key}/${subflow.key}/${step.id} has emailRecipients`);
+        const where = `${domain.key}/${subflow.key}/${step.id}`;
+        assert.ok(step.actor && step.actor.length > 0, `${where} has an actor`);
+        assert.ok(step.role && step.role.length > 0, `${where} has a responsible role`);
+        assert.ok(step.statusProduced && step.statusProduced.length > 0, `${where} has a status produced`);
+        assert.ok(Array.isArray(step.notificationRecipients), `${where} has notificationRecipients`);
+        assert.ok(Array.isArray(step.emailRecipients), `${where} has emailRecipients`);
+        assert.ok(step.sideEffects && step.sideEffects.length > 0, `${where} has side effects`);
       }
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Phase 1.5: notification gaps are surfaced where producers are missing.
+  // ---------------------------------------------------------------------------
+  const expenseSubmitStep = getWorkflowSubflow("expenses-outstation", "expense")?.steps.find((s) => s.id === "submit");
+  assert.equal(expenseSubmitStep?.notificationGap, true, "expense submit is flagged as a notification gap");
+  const payslipStep = getWorkflowSubflow("payroll", "payslip-notification")?.steps.find((s) => s.id === "publish");
+  assert.equal(payslipStep?.notificationGap, true, "payslip publish is flagged as a notification gap");
+  assert.equal(domainHasNotificationGap(getWorkflowDomain("expenses-outstation")!), true, "expenses domain has a notification gap");
+  assert.equal(domainHasNotificationGap(getWorkflowDomain("leave")!), false, "leave domain has no notification gap (producers wired)");
+  assert.ok(domainGaps(getWorkflowDomain("payroll")!).length > 0, "payroll domain surfaces open gaps");
+  // The map renders the notification-gap and the action-required grouping.
+  const mapGapSrc = readFileSync(new URL("../src/components/workflow-control/workflow-map.tsx", import.meta.url), "utf8");
+  assert.match(mapGapSrc, /Notification gap: not implemented yet/, "map renders the notification-gap label");
+  assert.match(mapGapSrc, /Action required/, "map renders the action-required recipient group");
+  assert.match(mapGapSrc, /FYI/, "map renders the FYI recipient group");
 
   // ---------------------------------------------------------------------------
   // Simulator: domain + subflow selection (Leave / Vacation Request).
@@ -121,6 +146,21 @@ export function runWorkflowControlTests() {
   const vacSubmit = sim.steps.find((s) => s.id === "submit");
   assert.match(vacSubmit?.routesTo ?? "", /direct manager/i, "vacation submit correctly routes to the direct manager");
 
+  // Phase 1.5 simulator output: route path, action-required recipients, and the
+  // new warning classes (notification gap, read-only domain, runtime-edit lock).
+  assert.equal(sim.routePath.length, sim.steps.length, "simulator returns a route path for every step");
+  assert.ok(sim.routePath.some((r) => /manager/i.test(r)), "route path includes the manager hop");
+  assert.ok((vacSubmit?.actionRequiredRecipients ?? []).some((r) => /manager/i.test(r)), "vacation submit action-required goes to the manager");
+  assert.ok(sim.steps.some((s) => s.emailRecipients.length > 0), "simulator returns email recipients");
+  assert.ok(sim.steps.some((s) => s.notificationRecipients.length > 0), "simulator returns in-app notification recipients");
+  assert.ok(sim.warnings.some((w) => /runtime editing is disabled in phase 1/i.test(w)), "simulator warns runtime editing is disabled in Phase 1");
+
+  const gapSim = simulateWorkflow({ domainKey: "expenses-outstation", subflowKey: "expense", employeeHrId: "B-52" });
+  assert.ok(gapSim.warnings.some((w) => /no in-app notification producer/i.test(w)), "simulator warns about a missing notification producer");
+
+  const readOnlySim = simulateWorkflow({ domainKey: "notifications", subflowKey: "recipient-resolver" });
+  assert.ok(readOnlySim.warnings.some((w) => /read-only map only/i.test(w)), "simulator warns a cross-cutting domain is read-only map only");
+
   // ---------------------------------------------------------------------------
   // Phase-1 guarantee: read-only modules never call a mutation/DB path.
   // ---------------------------------------------------------------------------
@@ -141,6 +181,15 @@ export function runWorkflowControlTests() {
   const centerSrc = readFileSync(new URL("../src/components/workflow-control/workflow-control-center.tsx", import.meta.url), "utf8");
   assert.match(centerSrc, /Phase 2/, "edit panel communicates Phase 2 locking");
   assert.match(centerSrc, /read-only workflow map and simulator/i, "governance warning is present");
+
+  // Phase 2 teaser content: draft/publish/rollback + runtime-safety reassurance.
+  assert.match(centerSrc, /draft.*publish.*rollback/i, "Phase 2 teaser mentions draft/publish/rollback");
+  assert.match(centerSrc, /not changed/i, "Phase 2 teaser states runtime execution is not changed in Phase 1");
+  assert.match(centerSrc, /cannot accidentally change live workflow/i, "Phase 2 teaser reassures no accidental live changes");
+  // Domain cards surface modules + notification/email coverage + gaps.
+  assert.match(centerSrc, /domainNotificationCount|domainEmailCount/, "cards show notification/email coverage");
+  assert.match(centerSrc, /modules/, "cards show modules-affected count");
+  assert.match(centerSrc, /open gap/, "cards surface open gap counts");
 
   // Stale-result fix: the simulator panel is keyed by domain + subflow so it
   // remounts (and clears any previous result) whenever the selection changes.

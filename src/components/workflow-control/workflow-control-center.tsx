@@ -4,6 +4,10 @@ import { useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, Info, Lock, Map as MapIcon, Settings2, ShieldCheck } from "lucide-react";
 
 import {
+  domainEmailCount,
+  domainGaps,
+  domainHasNotificationGap,
+  domainNotificationCount,
   domainStepCount,
   listWorkflowDomains,
   type WorkflowControlDomain,
@@ -141,6 +145,22 @@ export function WorkflowControlCenter({
                     <span className="rounded bg-[#F1F5F9] px-2 py-0.5 text-[10px] font-bold text-[#475569]">
                       {domainStepCount(domain)} steps
                     </span>
+                    <span className="rounded bg-[#F1F5F9] px-2 py-0.5 text-[10px] font-bold text-[#475569]">
+                      {domain.modulesAffected.length} modules
+                    </span>
+                    <span className="rounded bg-[#F1F5F9] px-2 py-0.5 text-[10px] font-bold text-[#475569]">
+                      {domainNotificationCount(domain)} in-app · {domainEmailCount(domain)} email
+                    </span>
+                    {domainHasNotificationGap(domain) ? (
+                      <span className="rounded bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-[#B91C1C]">
+                        Notif gap
+                      </span>
+                    ) : null}
+                    {domainGaps(domain).length ? (
+                      <span className="rounded bg-[#FFF7ED] px-2 py-0.5 text-[10px] font-bold text-[#C2410C]">
+                        {domainGaps(domain).length} open gap{domainGaps(domain).length === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
                   </div>
                 </button>
               );
@@ -175,11 +195,18 @@ export function WorkflowControlCenter({
               {editPanelOpen ? (
                 <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
                   <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]" />
-                  <p className="text-[13px] leading-5 text-[#475569]">
-                    {canEdit
-                      ? "Editing is enabled for your role."
-                      : "Workflow editing will be enabled in Phase 2 with versioning, draft, publish, and rollback. This Phase 1 view is read-only."}
-                  </p>
+                  {canEdit ? (
+                    <p className="text-[13px] leading-5 text-[#475569]">Editing is enabled for your role.</p>
+                  ) : (
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-black text-[#0F172A]">Workflow editing is locked in Phase 1</p>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] leading-5 text-[#475569]">
+                        <li>Phase 2 will support <span className="font-bold">draft → edit → publish → rollback</span> with versioning.</li>
+                        <li>Runtime workflow execution is <span className="font-bold">not changed</span> in Phase 1.</li>
+                        <li>Admins <span className="font-bold">cannot accidentally change live workflow behavior</span> from this read-only view.</li>
+                      </ul>
+                    </div>
+                  )}
                 </div>
               ) : null}
 
