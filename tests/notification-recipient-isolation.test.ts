@@ -122,6 +122,39 @@ export function runNotificationRecipientIsolationTests() {
   assert.equal(detailBlob.includes("123456"), false, "gross salary must not appear in details");
   assert.ok(details.some((d) => d.label === "Order"), "non-sensitive details (Order) still render");
 
+  // Explicit producer-provided details[] render verbatim, in order, sensitive dropped.
+  const explicitRows = mapInAppNotificationRows(
+    [
+      {
+        category: "vacation_request",
+        employeeHrId: A,
+        id: "v1",
+        metadata: {
+          title: "X submitted a vacation request",
+          message: "m",
+          details: [
+            { label: "Employee", value: "Fiby Wagdy Luka (B-52)" },
+            { label: "Type", value: "Annual" },
+            { label: "Period", value: "2026-06-01 → 2026-06-05" },
+            { label: "Status", value: "Pending manager decision" },
+            { label: "Action", value: "Review request" },
+            { label: "Net Salary", value: "99999" },
+          ],
+        },
+        recipients: [A],
+        status: "sent",
+        subject: "X submitted a vacation request",
+      },
+    ],
+    A,
+  )[0]?.details ?? [];
+  assert.deepEqual(
+    explicitRows.map((d) => d.label),
+    ["Employee", "Type", "Period", "Status", "Action"],
+    "explicit details render in order with the sensitive 'Net Salary' row dropped",
+  );
+  assert.equal(explicitRows[0]?.value, "Fiby Wagdy Luka (B-52)", "employee detail value preserved");
+
   // Wiring: the query path selects employee_hr_id and applies the canonical filter.
   const inAppSource = readFileSync(new URL("../src/lib/notifications/in-app.ts", import.meta.url), "utf8");
   assert.match(inAppSource, /employee_hr_id/, "in-app query must select employee_hr_id");
@@ -130,6 +163,7 @@ export function runNotificationRecipientIsolationTests() {
   const metricsSource = readFileSync(new URL("../src/lib/communication/metrics.ts", import.meta.url), "utf8");
   assert.match(metricsSource, /canViewerSeeNotification\(employeeHrId/, "mapper must use the canonical recipient rule");
   assert.match(metricsSource, /isSensitiveMetadataKey/, "mapper must screen sensitive metadata keys");
+  assert.match(metricsSource, /const explicit = metadata\.details/, "mapper must support explicit producer-provided detail rows");
 
   // Wiring: the bell UI premium states + recipient clarity.
   const bellSource = readFileSync(new URL("../src/components/layout/in-app-notifications-bell.tsx", import.meta.url), "utf8");
@@ -164,6 +198,28 @@ export function runNotificationRecipientIsolationTests() {
     /\$\{vacationTypeLabel\(input\.request\.vacationType\)\} \(\$\{input\.request\.startDate\} to \$\{input\.request\.endDate\}\) was/,
     "vacation HR-decision message must include type and period",
   );
+  // WP-N2: titles must LEAD with the employee name.
+  assert.match(
+    vacationSource,
+    /title: `\$\{input\.request\.employeeName\} submitted a vacation request`/,
+    "vacation submitted title must start with the employee name",
+  );
+  assert.match(
+    vacationSource,
+    /title: `\$\{input\.request\.employeeName\}'s vacation request needs HR final decision`/,
+    "vacation manager-review title must lead with the employee name",
+  );
+  assert.match(
+    vacationSource,
+    /title: `\$\{input\.request\.employeeName\}'s vacation request was \$\{input\.decision === "approve" \? "approved" : "rejected"\}`/,
+    "vacation HR-decision title must lead with the employee name",
+  );
+  // WP-N2: structured details rows (Status + Action) present on vacation producers.
+  assert.match(vacationSource, /label: "Status", value: "Pending manager decision"/, "submitted details include manager-pending status");
+  assert.match(vacationSource, /label: "Action", value: "Review request"/, "submitted details include the review action");
+  assert.match(vacationSource, /label: "Status", value: "Pending HR final decision"/, "manager-review details include HR-pending status");
+  assert.match(vacationSource, /label: "Action", value: "Complete HR decision"/, "manager-review details include the HR action");
+  assert.match(vacationSource, /label: "Manager"/, "manager-review details include the manager");
 
   // ===========================================================================
   // Personal-bell category allowlist: legacy/orphaned categories are hidden even
@@ -191,7 +247,13 @@ export function runNotificationRecipientIsolationTests() {
 
   const probationSource = readFileSync(new URL("../src/lib/probation/service.ts", import.meta.url), "utf8");
   assert.match(probationSource, /Submit manager probation feedback\./, "probation reminder must state the required action");
-  assert.match(probationSource, /Probation feedback due: \$\{employee\.fullName\}/, "probation reminder title must name the employee and the due action");
+  assert.match(
+    probationSource,
+    /title: `\$\{employee\.fullName\}'s probation feedback is due`/,
+    "probation reminder title must lead with the employee name",
+  );
+  assert.match(probationSource, /label: "Action", value: "Submit feedback"/, "probation details include the submit-feedback action");
+  assert.match(probationSource, /label: "Status", value: "Feedback required"/, "probation details include the feedback-required status");
 
   // Defensive: salary terms are in the sensitive-key denylist (payslip privacy).
   assert.match(metricsSource, /sensitiveMetadataKeyPattern[\s\S]*salary/, "sensitive-key denylist must cover salary terms");

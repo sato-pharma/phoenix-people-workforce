@@ -203,7 +203,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                         <p className={cn("mt-0.5 text-xs leading-5", panelText.body)}>{notification.message}</p>
                         {notification.details?.length ? (
                           <div className="mt-2 grid gap-1">
-                            {notification.details.slice(0, 4).map((detail) => (
+                            {notification.details.slice(0, 6).map((detail) => (
                               <div
                                 className={cn(
                                   "flex items-center justify-between gap-3 rounded px-2 py-1 text-[11px]",

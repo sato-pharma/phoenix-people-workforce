@@ -561,18 +561,24 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
     metadata: {
       href: "/probation",
       message: `${employee.fullName} has ${reminder.daysRemaining} days remaining in the 90-day probation period. Submit manager probation feedback.`,
-      title: `Probation feedback due: ${employee.fullName}`,
+      title: `${employee.fullName}'s probation feedback is due`,
       days_after_hire: reminder.daysAfterHire,
       days_remaining: reminder.daysRemaining,
       hire_date: employee.hireDate,
       recipient_emails: recipientEmails,
       recipient_roles: recipients.map((recipient) => ({ hr_id: recipient.hrId, role: recipient.role })),
       reminder_type: reminder.reminderType,
+      details: [
+        { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
+        { label: "Days remaining", value: `${reminder.daysRemaining}` },
+        { label: "Status", value: "Feedback required" },
+        { label: "Action", value: "Submit feedback" },
+      ],
     },
     recipients: recipientHrIds,
     scheduled_for: reminder.scheduledFor,
     status: "pending",
-    subject: `Probation feedback due: ${employee.fullName}`,
+    subject: `${employee.fullName}'s probation feedback is due`,
     updated_at: now,
   }));
 
