@@ -155,6 +155,39 @@ export function runNotificationRecipientIsolationTests() {
   );
   assert.equal(explicitRows[0]?.value, "Fiby Wagdy Luka (B-52)", "employee detail value preserved");
 
+  // Render-time polish for EXISTING (old-style) rows: humanized status + derived
+  // action + no raw UUID, with NO producer/data change (metadata has no details[]).
+  const polished = mapInAppNotificationRows(
+    [
+      {
+        category: "vacation_request",
+        employeeHrId: A,
+        id: "old1",
+        metadata: {
+          title: "Vacation request pending HR final decision",
+          message: "Taha approved Fiby's vacation request. HR final decision is required.",
+          status: "pending_hr",
+          requestId: "b2f92a6b-9dde-495e-9c10-542ca0fcf0dd",
+          managerDecision: "approved",
+        },
+        recipients: [A],
+        status: "sent",
+        subject: "Vacation request pending HR final decision",
+      },
+    ],
+    A,
+  )[0]?.details ?? [];
+  const polishedBlob = JSON.stringify(polished);
+  assert.ok(
+    polished.some((d) => d.label === "Status" && d.value === "Pending HR final decision"),
+    "old-row status is humanized at render time",
+  );
+  assert.ok(
+    polished.some((d) => d.label === "Action" && d.value === "Complete HR decision"),
+    "old-row gets a derived action at render time",
+  );
+  assert.equal(polishedBlob.includes("b2f92a6b"), false, "raw request UUID is not shown for old rows");
+
   // Wiring: the query path selects employee_hr_id and applies the canonical filter.
   const inAppSource = readFileSync(new URL("../src/lib/notifications/in-app.ts", import.meta.url), "utf8");
   assert.match(inAppSource, /employee_hr_id/, "in-app query must select employee_hr_id");
@@ -164,6 +197,8 @@ export function runNotificationRecipientIsolationTests() {
   assert.match(metricsSource, /canViewerSeeNotification\(employeeHrId/, "mapper must use the canonical recipient rule");
   assert.match(metricsSource, /isSensitiveMetadataKey/, "mapper must screen sensitive metadata keys");
   assert.match(metricsSource, /const explicit = metadata\.details/, "mapper must support explicit producer-provided detail rows");
+  assert.match(metricsSource, /humanizeNotificationStatus|deriveNotificationAction/, "mapper must polish status/action for existing rows at render time");
+  assert.match(metricsSource, /isUuidLike/, "mapper must suppress raw UUID identifiers from details");
 
   // Wiring: the bell UI premium states + recipient clarity.
   const bellSource = readFileSync(new URL("../src/components/layout/in-app-notifications-bell.tsx", import.meta.url), "utf8");
