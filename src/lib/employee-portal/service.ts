@@ -28,6 +28,8 @@ import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { salesRecordMatchesSeatContinuity } from "@/lib/workforce/seat-lifecycle";
 import {
   formatVacantSeatLabel,
+  lineScopeIncludesEmployee,
+  reportsToManagerSeat,
   resolveSeatGrouping,
   selectVacantManagerSeat,
   type ResolvedVacantSeat,
@@ -5007,26 +5009,25 @@ export async function getNsmTeamExpenses(
     );
     if (!viewer) return null;
 
-    const directDsms = directory.employees.filter((employee) => {
-      const managerCanonical = normalizeHrIdForAccess(employee.managerHrId);
-      return (
+    const directDsms = directory.employees.filter(
+      (employee) =>
         isDistrictManagerEmployee(employee) &&
-        Boolean(viewerCanonicalHrId) &&
-        managerCanonical === viewerCanonicalHrId
-      );
-    });
+        viewerCanonicalHrId !== null &&
+        // Seat-continuity aware: a DSM held under this NSM via the vacant-seat
+        // marker still counts as a direct report, consistent with the organogram.
+        reportsToManagerSeat({
+          employee,
+          viewerCanonicalHrId,
+          canonicalize: normalizeHrIdForAccess,
+        }),
+    );
 
-    const lineDsms = directory.employees.filter((employee) => {
-      if (!isDistrictManagerEmployee(employee)) {
-        return false;
-      }
-
-      if (typeof viewer.lineId === "number" && typeof employee.lineId === "number") {
-        return employee.lineId === viewer.lineId;
-      }
-
-      return normalizeLineName(employee.lineName) === normalizeLineName(viewer.lineName);
-    });
+    const lineDsms = directory.employees.filter(
+      (employee) =>
+        // Department-safe LINE scope: same line AND same department only, so an
+        // NSM never picks up DSMs from another department on a shared line.
+        isDistrictManagerEmployee(employee) && lineScopeIncludesEmployee(viewer, employee),
+    );
 
     const scopedDsms = directDsms.length > 0 ? directDsms : lineDsms;
     if (scopedDsms.length === 0) return null;

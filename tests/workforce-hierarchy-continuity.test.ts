@@ -417,4 +417,58 @@ export function runWorkforceHierarchyContinuityTests() {
     /loadPendingManagerReplacementByHrId/,
     "directory must expose pending_manager_replacement_for_hr_id defensively",
   );
+
+  // ===========================================================================
+  // WP-2: Coaching + Expenses parity (seat-continuity + department-safe LINE).
+  // ===========================================================================
+
+  // -- Behavioural: the rules the coaching/expenses services now delegate to.
+  // Coaching/expenses LINE roles (Sales NSM) must exclude same-line Marketing.
+  const salesLineRole = { departmentId: 1, departmentName: "Sales", lineId: 2, lineName: "Pedia" };
+  const sameLineSalesDsm = { departmentId: 1, departmentName: "Sales", lineId: 2, lineName: "Pedia" };
+  const sameLineMarketing = { departmentId: 2, departmentName: "Marketing", lineId: 2, lineName: "Pedia" };
+  assert.equal(
+    lineScopeIncludesEmployee(salesLineRole, sameLineSalesDsm),
+    true,
+    "coaching/expenses: Sales line role includes same-line Sales colleague",
+  );
+  assert.equal(
+    lineScopeIncludesEmployee(salesLineRole, sameLineMarketing),
+    false,
+    "coaching/expenses: Sales line role excludes same-line Marketing colleague",
+  );
+  // Coaching/expenses team membership survives a sub-manager resignation: a report
+  // orphaned up to the NSM is still owned by the vacant DSM seat.
+  assert.equal(
+    reportsToManagerSeat({ employee: mrOrphanedToNsm, viewerCanonicalHrId: canon(DSM)!, canonicalize: canon }),
+    true,
+    "coaching/expenses: vacant DSM seat keeps its team after resignation",
+  );
+
+  // -- Wiring: coaching service routes through the canonical helpers and no longer
+  //    uses the raw line-id-only comparison.
+  const coachingSource = readFileSync(
+    new URL("../src/lib/coaching/service.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(coachingSource, /reportsToManagerSeat\(\{/, "coaching TEAM must use the seat-continuity helper");
+  assert.match(coachingSource, /isWithinManagerHierarchy\(\{/, "coaching HIERARCHY must use the seat-continuity helper");
+  assert.match(coachingSource, /lineScopeIncludesEmployee\(accessor, employee\)/, "coaching LINE scope must be department-safe");
+  assert.doesNotMatch(
+    coachingSource,
+    /accessor\?\.lineId && employee\.lineId && accessor\.lineId === employee\.lineId/,
+    "coaching must not fall back to raw line-id-only matching",
+  );
+
+  // -- Wiring: NSM team expenses route through the canonical helpers.
+  assert.match(
+    portalServiceSource,
+    /reportsToManagerSeat\(\{[\s\S]*canonicalize: normalizeHrIdForAccess/,
+    "NSM team expenses must use the seat-continuity helper for direct DSMs",
+  );
+  assert.match(
+    portalServiceSource,
+    /isDistrictManagerEmployee\(employee\) && lineScopeIncludesEmployee\(viewer, employee\)/,
+    "NSM team expenses line scope must be department-safe",
+  );
 }
