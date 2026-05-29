@@ -903,27 +903,38 @@ export async function assertAttendanceSetupPermission(
 /**
  * Workflow Control Center (Admin / Governance) access design.
  *
- * Phase 1 is a READ-ONLY workflow map + simulator. Access is restricted to
- * HR governance: Super Admin and HR Specialist (HR Admin / HR Manager
- * equivalent). All other roles — including Medical Rep, District/National Sales
- * Manager, Training Manager, Finance Manager and CEO — have no access.
+ * Phase 1 is a READ-ONLY workflow map + simulator. Access is restricted to HR
+ * governance: Super Admin only. In Phoenix there is no distinct "HR Manager" /
+ * "HR Admin" role — the HR Manager (HR_ID B-10) holds the Super Admin role and
+ * is therefore covered. Generic HR Specialists (e.g. A-16, Talent Acquisition)
+ * are intentionally EXCLUDED, as are CEO, Finance Manager, all Sales roles,
+ * Training Manager and Employees.
+ *
+ * If a future non-Super-Admin HR governance user must be granted access, add
+ * their (normalized) HR_ID to WORKFLOW_CONTROL_GOVERNANCE_HR_IDS rather than
+ * widening the role set.
  *
  * Editing is globally disabled in Phase 1 via WORKFLOW_CONTROL_EDIT_ENABLED.
- * The edit-role design is already encoded for Phase 2 (versioning / draft /
- * publish / rollback) but stays locked while the flag is false.
+ * The edit design is reserved for Phase 2 (versioning / draft / publish /
+ * rollback) but stays locked while the flag is false.
  */
-export const WORKFLOW_CONTROL_ACCESS_ROLES: readonly PhoenixRole[] = ["Super Admin", "HR Specialist"];
+export const WORKFLOW_CONTROL_ACCESS_ROLES: readonly PhoenixRole[] = ["Super Admin"];
+
+/** Extra non-Super-Admin HR governance accounts (normalized HR_IDs). None today. */
+export const WORKFLOW_CONTROL_GOVERNANCE_HR_IDS: readonly string[] = [];
 
 /** Phase 1: workflow editing is disabled for everyone. Flipped on in Phase 2. */
 export const WORKFLOW_CONTROL_EDIT_ENABLED = false;
 
-export function canAccessWorkflowControlCenter(context: Pick<AccessContext, "role">): boolean {
-  return WORKFLOW_CONTROL_ACCESS_ROLES.includes(context.role);
+export function canAccessWorkflowControlCenter(context: Pick<AccessContext, "role" | "hrId">): boolean {
+  if (WORKFLOW_CONTROL_ACCESS_ROLES.includes(context.role)) return true;
+  const normalized = normalizeHrIdForAccess(context.hrId);
+  return normalized != null && WORKFLOW_CONTROL_GOVERNANCE_HR_IDS.some((id) => normalizeHrIdForAccess(id) === normalized);
 }
 
-export function canEditWorkflowControlCenter(context: Pick<AccessContext, "role">): boolean {
-  // Phase 2 design: only Super Admin / HR Specialist may edit — but it stays
-  // locked until WORKFLOW_CONTROL_EDIT_ENABLED is turned on.
+export function canEditWorkflowControlCenter(context: Pick<AccessContext, "role" | "hrId">): boolean {
+  // Phase 2 design: edit follows the same access set — but stays locked until
+  // WORKFLOW_CONTROL_EDIT_ENABLED is turned on.
   if (!WORKFLOW_CONTROL_EDIT_ENABLED) return false;
-  return WORKFLOW_CONTROL_ACCESS_ROLES.includes(context.role);
+  return canAccessWorkflowControlCenter(context);
 }

@@ -20,20 +20,24 @@ import { simulateWorkflow } from "../src/lib/workflow-control/simulator.ts";
  */
 export function runWorkflowControlTests() {
   // ---------------------------------------------------------------------------
-  // Access control: only Super Admin + HR Specialist (HR governance).
+  // Access control: HR governance only = Super Admin. The HR Manager (B-10)
+  // holds the Super Admin role and is therefore covered. Generic HR Specialists
+  // (e.g. A-16 Talent Acquisition) are intentionally EXCLUDED.
   // ---------------------------------------------------------------------------
-  assert.equal(canAccessWorkflowControlCenter({ role: "Super Admin" }), true, "Super Admin can access");
-  assert.equal(canAccessWorkflowControlCenter({ role: "HR Specialist" }), true, "HR Specialist can access");
+  assert.equal(canAccessWorkflowControlCenter({ role: "Super Admin", hrId: "B-10" }), true, "HR Manager (B-10, Super Admin) can access");
+  assert.equal(canAccessWorkflowControlCenter({ role: "Super Admin", hrId: null }), true, "Super Admin can access");
+  assert.equal(canAccessWorkflowControlCenter({ role: "HR Specialist", hrId: "A-16" }), false, "A-16 (HR Specialist, Talent Acquisition) is NOT granted access");
+  assert.equal(canAccessWorkflowControlCenter({ role: "HR Specialist", hrId: "B-99" }), false, "a generic HR Specialist has no access");
   for (const role of ["Medical Rep", "District Manager", "National Sales Manager", "Training Manager", "Finance Manager", "CEO", "Employee"] as const) {
-    assert.equal(canAccessWorkflowControlCenter({ role }), false, `${role} must NOT access workflow control`);
+    assert.equal(canAccessWorkflowControlCenter({ role, hrId: "X-1" }), false, `${role} must NOT access workflow control`);
   }
 
   // ---------------------------------------------------------------------------
   // Phase 1: editing is locked for everyone (incl. Super Admin).
   // ---------------------------------------------------------------------------
   assert.equal(WORKFLOW_CONTROL_EDIT_ENABLED, false, "Phase 1 editing flag is OFF");
-  assert.equal(canEditWorkflowControlCenter({ role: "Super Admin" }), false, "no edit in Phase 1 even for Super Admin");
-  assert.equal(canEditWorkflowControlCenter({ role: "HR Specialist" }), false, "no edit in Phase 1 for HR Specialist");
+  assert.equal(canEditWorkflowControlCenter({ role: "Super Admin", hrId: "B-10" }), false, "no edit in Phase 1 even for Super Admin");
+  assert.equal(canEditWorkflowControlCenter({ role: "HR Specialist", hrId: "A-16" }), false, "no edit in Phase 1 for HR Specialist");
 
   // ---------------------------------------------------------------------------
   // Definitions: the required workflows are present.
