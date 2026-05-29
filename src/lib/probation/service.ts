@@ -560,8 +560,8 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
     event_key: `${employee.hrId}:probation:${reminder.reminderType}:${reminder.scheduledFor}`,
     metadata: {
       href: "/probation",
-      message: `${employee.fullName} has ${reminder.daysRemaining} days remaining in the fixed 90-day probation period.`,
-      title: `Probation reminder: ${employee.fullName}`,
+      message: `${employee.fullName} has ${reminder.daysRemaining} days remaining in the 90-day probation period. Submit manager probation feedback.`,
+      title: `Probation feedback due: ${employee.fullName}`,
       days_after_hire: reminder.daysAfterHire,
       days_remaining: reminder.daysRemaining,
       hire_date: employee.hireDate,
@@ -572,7 +572,7 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
     recipients: recipientHrIds,
     scheduled_for: reminder.scheduledFor,
     status: "pending",
-    subject: `Probation reminder: ${employee.fullName}`,
+    subject: `Probation feedback due: ${employee.fullName}`,
     updated_at: now,
   }));
 

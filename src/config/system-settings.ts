@@ -104,7 +104,7 @@ export const systemUiText = {
   sidebarSearchPlaceholder: "Search modules...",
   loadingMessage: "Loading Phoenix Workforce...",
   routeErrorDescription: "Phoenix Workforce could not finish loading this workspace view. Retry the render before refreshing or changing routes.",
-  notificationsSubtitle: "Latest Phoenix Workforce updates.",
+  notificationsSubtitle: "Only updates assigned to you.",
   internalMessageComposerDescription: "Send inside Phoenix Workforce and optionally email the recipient.",
   login: {
     tagline: "People. Performance. Intelligence.",

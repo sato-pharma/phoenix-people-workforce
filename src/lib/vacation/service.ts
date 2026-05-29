@@ -991,7 +991,7 @@ async function dispatchVacationSubmitted(input: {
   const policyWarningText = (input.policyWarnings ?? []).join(" ");
   await notifyRecipients({
     href: reportHref,
-    message: `${input.request.employeeName} submitted ${vacationTypeLabel(input.request.vacationType)} for ${input.request.durationDays} day(s).${policyWarningText ? ` Policy review: ${policyWarningText}` : ""}`,
+    message: `${input.request.employeeName} submitted ${vacationTypeLabel(input.request.vacationType)} from ${input.request.startDate} to ${input.request.endDate} (${input.request.durationDays} day(s)). Review is pending your decision.${policyWarningText ? ` Policy review: ${policyWarningText}` : ""}`,
     metadata: { policyWarnings: input.policyWarnings ?? [], requestId: input.request.id, status: input.request.status },
     recipients: [
       input.request.managerHrId,
@@ -1037,7 +1037,7 @@ async function dispatchVacationManagerReview(input: {
   const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
   await notifyRecipients({
     href: reportHref,
-    message: `${input.request.managerName ?? "Direct manager"} ${input.decision === "approve" ? "approved" : "rejected"} ${input.request.employeeName}'s vacation request. HR final decision is required.`,
+    message: `${input.request.managerName ?? "Direct manager"} ${input.decision === "approve" ? "approved" : "rejected"} ${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}). HR final decision is required.`,
     metadata: { managerDecision: input.request.managerDecision, requestId: input.request.id, status: input.request.status },
     recipients: [
       input.request.employeeHrId,
@@ -1059,7 +1059,7 @@ async function dispatchVacationDecision(input: {
   const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
   await notifyRecipients({
     href: reportHref,
-    message: `${input.request.employeeName}'s vacation request was ${input.decision === "approve" ? "approved" : "rejected"} by HR final review.`,
+    message: `${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}) was ${input.decision === "approve" ? "approved" : "rejected"} by HR final review.`,
     metadata: { requestId: input.request.id, status: input.request.status },
     recipients: [
       input.request.employeeHrId,
