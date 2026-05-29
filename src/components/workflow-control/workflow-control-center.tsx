@@ -1,9 +1,15 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { Info, Lock, Map as MapIcon, Settings2, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Info, Lock, Map as MapIcon, Settings2, ShieldCheck } from "lucide-react";
 
-import { listWorkflowDefinitions, type WorkflowControlDefinition, type WorkflowControlRisk, type WorkflowControlStatus } from "@/lib/workflow-control/definitions";
+import {
+  domainStepCount,
+  listWorkflowDomains,
+  type WorkflowControlDomain,
+  type WorkflowControlRisk,
+  type WorkflowControlStatus,
+} from "@/lib/workflow-control/definitions";
 import { cn } from "@/lib/utils";
 
 import { WorkflowMap } from "./workflow-map";
@@ -32,20 +38,28 @@ export function WorkflowControlCenter({
   /** The existing Workflow Registry Manager, shown under the Advanced tab. */
   registrySlot: ReactNode;
 }) {
-  const definitions = useMemo(() => listWorkflowDefinitions(), []);
+  const domains = useMemo(() => listWorkflowDomains(), []);
   const [tab, setTab] = useState<Tab>("center");
-  const [selectedKey, setSelectedKey] = useState<string>(definitions[0]?.key ?? "");
+  const [selectedDomainKey, setSelectedDomainKey] = useState<string>(domains[0]?.key ?? "");
+  const [selectedSubflowKey, setSelectedSubflowKey] = useState<string>(domains[0]?.subflows[0]?.key ?? "");
   const [editPanelOpen, setEditPanelOpen] = useState(false);
 
-  const selected: WorkflowControlDefinition | undefined =
-    definitions.find((d) => d.key === selectedKey) ?? definitions[0];
+  const selectedDomain: WorkflowControlDomain | undefined =
+    domains.find((d) => d.key === selectedDomainKey) ?? domains[0];
+  const selectedSubflow =
+    selectedDomain?.subflows.find((s) => s.key === selectedSubflowKey) ?? selectedDomain?.subflows[0];
+
+  function selectDomain(domain: WorkflowControlDomain) {
+    setSelectedDomainKey(domain.key);
+    setSelectedSubflowKey(domain.subflows[0]?.key ?? "");
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-black text-[#0F172A]">Workflow Control Center</h1>
         <p className="text-sm text-[#64748B]">
-          Visual map and read-only simulator for every Phoenix approval workflow.
+          A business-friendly map and read-only simulator for every Phoenix workflow domain.
         </p>
       </div>
 
@@ -86,39 +100,46 @@ export function WorkflowControlCenter({
         <div className="mt-4">{registrySlot}</div>
       ) : (
         <div className="mt-4">
-          {/* Workflow library */}
+          {/* Domain library (few, business-friendly cards) */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {definitions.map((definition) => {
-              const active = definition.key === selected?.key;
+            {domains.map((domain) => {
+              const active = domain.key === selectedDomain?.key;
               return (
                 <button
-                  key={definition.key}
+                  key={domain.key}
                   className={cn(
                     "rounded-xl border p-4 text-left transition",
                     active ? "border-[#F97316] bg-[#FFF7ED]" : "border-[#E2E8F0] bg-white hover:border-[#CBD5E1]",
                   )}
-                  onClick={() => setSelectedKey(definition.key)}
+                  onClick={() => selectDomain(domain)}
                   type="button"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-black text-[#0F172A]">{definition.name}</p>
-                    <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em]", RISK_BADGE[definition.riskLevel])}>
-                      {definition.riskLevel}
+                    <p className="text-sm font-black text-[#0F172A]">{domain.name}</p>
+                    <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em]", RISK_BADGE[domain.riskLevel])}>
+                      {domain.riskLevel}
                     </span>
                   </div>
-                  <p className="mt-1 text-[12px] leading-5 text-[#64748B]">{definition.summary}</p>
+                  <p className="mt-1 text-[12px] leading-5 text-[#64748B]">{domain.summary}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className={cn("rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em]", STATUS_BADGE[definition.status])}>
-                      {definition.status}
+                    <span className={cn("rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em]", STATUS_BADGE[domain.status])}>
+                      {domain.status}
+                    </span>
+                    {domain.crossCutting ? (
+                      <span className="rounded bg-[#EEF2FF] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-[#4338CA]">
+                        Cross-cutting
+                      </span>
+                    ) : null}
+                    {domain.beta ? (
+                      <span className="rounded bg-[#FEF9C3] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-[#854D0E]">
+                        Beta
+                      </span>
+                    ) : null}
+                    <span className="rounded bg-[#F1F5F9] px-2 py-0.5 text-[10px] font-bold text-[#475569]">
+                      {domain.subflows.length} subflows
                     </span>
                     <span className="rounded bg-[#F1F5F9] px-2 py-0.5 text-[10px] font-bold text-[#475569]">
-                      {definition.steps.length} steps
-                    </span>
-                    <span className="rounded bg-[#F1F5F9] px-2 py-0.5 text-[10px] font-bold text-[#475569]">
-                      {definition.modulesAffected.length} modules
-                    </span>
-                    <span className="rounded bg-[#F1F5F9] px-2 py-0.5 text-[10px] font-bold text-[#475569]">
-                      {definition.notificationsInvolved.length} notif · {definition.emailsInvolved.length} email
+                      {domainStepCount(domain)} steps
                     </span>
                   </div>
                 </button>
@@ -126,16 +147,12 @@ export function WorkflowControlCenter({
             })}
           </div>
 
-          {selected ? (
+          {selectedDomain && selectedSubflow ? (
             <div className="mt-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-black text-[#0F172A]">{selected.name}</h2>
-                  <p className="text-xs text-[#64748B]">
-                    {selected.governedByRegistry
-                      ? `Governed by workflow registry${selected.registryModuleKey ? ` · ${selected.registryModuleKey}` : ""}`
-                      : "Not governed by the workflow registry"}
-                  </p>
+                  <h2 className="text-lg font-black text-[#0F172A]">{selectedDomain.name}</h2>
+                  <p className="text-xs text-[#64748B]">{selectedDomain.summary}</p>
                 </div>
                 <button
                   className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm font-bold text-[#64748B] transition hover:bg-[#F8FAFC]"
@@ -145,6 +162,15 @@ export function WorkflowControlCenter({
                   <Lock className="h-4 w-4" /> Edit Workflow
                 </button>
               </div>
+
+              {selectedDomain.beta ? (
+                <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#FDE68A] bg-[#FEF9C3] px-4 py-3">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#854D0E]" />
+                  <p className="text-[13px] leading-5 text-[#854D0E]">
+                    <span className="font-black">Beta:</span> this domain is still being implemented; some steps are declared but not fully wired up.
+                  </p>
+                </div>
+              ) : null}
 
               {editPanelOpen ? (
                 <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
@@ -157,13 +183,32 @@ export function WorkflowControlCenter({
                 </div>
               ) : null}
 
-              {selected.gaps.length ? (
+              {/* Subflow selector */}
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {selectedDomain.subflows.map((subflow) => (
+                  <button
+                    key={subflow.key}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-xs font-bold transition",
+                      subflow.key === selectedSubflow.key
+                        ? "border-[#F97316] bg-[#FFF7ED] text-[#C2410C]"
+                        : "border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#CBD5E1]",
+                    )}
+                    onClick={() => setSelectedSubflowKey(subflow.key)}
+                    type="button"
+                  >
+                    {subflow.name}
+                  </button>
+                ))}
+              </div>
+
+              {selectedSubflow.gaps?.length ? (
                 <div className="mt-3 rounded-xl border border-[#FEE2E2] bg-[#FEF2F2] px-4 py-3">
                   <p className="text-[11px] font-black uppercase tracking-[0.10em] text-[#B91C1C]">
                     Known gaps (read-only — not changed in Phase 1)
                   </p>
                   <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                    {selected.gaps.map((gap) => (
+                    {selectedSubflow.gaps.map((gap) => (
                       <li key={gap} className="text-[12px] leading-5 text-[#991B1B]">{gap}</li>
                     ))}
                   </ul>
@@ -172,12 +217,20 @@ export function WorkflowControlCenter({
 
               <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-2">
                 <div>
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Workflow map</p>
-                  <WorkflowMap definition={selected} />
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">
+                    {selectedSubflow.name} — map
+                  </p>
+                  <WorkflowMap steps={selectedSubflow.steps} />
                 </div>
                 <div>
                   <p className="mb-2 text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Simulator</p>
-                  <WorkflowSimulatorPanel workflowKey={selected.key} workflowName={selected.name} />
+                  <WorkflowSimulatorPanel
+                    domainKey={selectedDomain.key}
+                    domainName={selectedDomain.name}
+                    subflows={selectedDomain.subflows}
+                    subflowKey={selectedSubflow.key}
+                    onSubflowChange={setSelectedSubflowKey}
+                  />
                 </div>
               </div>
             </div>

@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { AlertTriangle, Play } from "lucide-react";
 
+import type { WorkflowSubflow } from "@/lib/workflow-control/definitions";
 import { simulateWorkflow, type WorkflowSimulationResult } from "@/lib/workflow-control/simulator";
 
 const inputClass =
@@ -10,10 +11,23 @@ const inputClass =
 const labelClass = "text-[11px] font-black uppercase tracking-[0.10em] text-[#64748B]";
 
 /**
- * Read-only workflow simulator. Runs entirely client-side over the static
- * definitions — it never creates a request or writes to the database.
+ * Read-only workflow simulator with domain + subflow selection. Runs entirely
+ * client-side over the static definitions — it never creates a request or writes
+ * to the database.
  */
-export function WorkflowSimulatorPanel({ workflowKey, workflowName }: { workflowKey: string; workflowName: string }) {
+export function WorkflowSimulatorPanel({
+  domainKey,
+  domainName,
+  subflows,
+  subflowKey,
+  onSubflowChange,
+}: {
+  domainKey: string;
+  domainName: string;
+  subflows: readonly WorkflowSubflow[];
+  subflowKey: string;
+  onSubflowChange: (key: string) => void;
+}) {
   const [employeeHrId, setEmployeeHrId] = useState("");
   const [requestType, setRequestType] = useState("");
   const [amount, setAmount] = useState("");
@@ -22,13 +36,12 @@ export function WorkflowSimulatorPanel({ workflowKey, workflowName }: { workflow
   const [hrAvailable, setHrAvailable] = useState(true);
   const [result, setResult] = useState<WorkflowSimulationResult | null>(null);
 
-  const headline = useMemo(() => `Simulate: ${workflowName}`, [workflowName]);
-
   function run() {
     const parsedAmount = amount.trim() ? Number(amount) : undefined;
     setResult(
       simulateWorkflow({
-        workflowKey,
+        domainKey,
+        subflowKey,
         employeeHrId: employeeHrId.trim() || undefined,
         requestType: requestType.trim() || undefined,
         amount: Number.isFinite(parsedAmount) ? parsedAmount : undefined,
@@ -41,17 +54,34 @@ export function WorkflowSimulatorPanel({ workflowKey, workflowName }: { workflow
 
   return (
     <div className="rounded-xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
-      <p className="text-sm font-black text-[#0F172A]">{headline}</p>
+      <p className="text-sm font-black text-[#0F172A]">Simulate: {domainName}</p>
       <p className="mt-0.5 text-xs text-[#64748B]">Read-only — no request is created and nothing is written.</p>
 
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block sm:col-span-2">
+          <span className={labelClass}>Subflow</span>
+          <select
+            className={inputClass}
+            value={subflowKey}
+            onChange={(e) => {
+              onSubflowChange(e.target.value);
+              setResult(null);
+            }}
+          >
+            {subflows.map((subflow) => (
+              <option key={subflow.key} value={subflow.key}>
+                {subflow.name}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="block">
           <span className={labelClass}>Employee HR_ID</span>
           <input className={inputClass} value={employeeHrId} onChange={(e) => setEmployeeHrId(e.target.value)} placeholder="e.g. B-52" />
         </label>
         <label className="block">
           <span className={labelClass}>Direct manager HR_ID</span>
-          <input className={inputClass} value={managerHrId} onChange={(e) => setManagerHrId(e.target.value)} placeholder="leave blank to test missing manager" />
+          <input className={inputClass} value={managerHrId} onChange={(e) => setManagerHrId(e.target.value)} placeholder="blank = test missing manager" />
         </label>
         <label className="block">
           <span className={labelClass}>Request type (optional)</span>
