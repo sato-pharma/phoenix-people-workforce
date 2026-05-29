@@ -501,6 +501,7 @@ export async function archiveFieldWorkforceCompliancePreview(input: {
 
 export async function loadFieldWorkforceComplianceArchive(input: {
   actorLoginId: string;
+  auditView?: boolean;
   id: string;
 }): Promise<FieldWorkforceArchiveDetail | null> {
   const supabase = getSupabaseAdmin();
@@ -527,17 +528,19 @@ export async function loadFieldWorkforceComplianceArchive(input: {
     summaryRows: (summaryResult.data ?? []) as FieldWorkforceSummaryRow[],
   });
 
-  await writeAuditLog({
-    actorLoginId: input.actorLoginId,
-    entityId: input.id,
-    entityType: "field_workforce_compliance_import",
-    newValues: {
-      monthKey: detail.archive.monthKey,
-      sourceFilename: detail.archive.sourceFilename,
-      status: detail.archive.status,
-    },
-    summary: "Field Workforce Compliance archived month viewed.",
-  });
+  if (input.auditView ?? true) {
+    await writeAuditLog({
+      actorLoginId: input.actorLoginId,
+      entityId: input.id,
+      entityType: "field_workforce_compliance_import",
+      newValues: {
+        monthKey: detail.archive.monthKey,
+        sourceFilename: detail.archive.sourceFilename,
+        status: detail.archive.status,
+      },
+      summary: "Field Workforce Compliance archived month viewed.",
+    });
+  }
 
   return detail;
 }

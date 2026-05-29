@@ -199,3 +199,79 @@ export type FieldWorkforceArchiveDuplicate = {
   existing: FieldWorkforceArchiveListItem;
   monthKey: string;
 };
+
+export type FieldWorkforceRecommendationType =
+  | "leave_reconciliation"
+  | "payroll_deduction";
+
+export type FieldWorkforceRecommendationSourceType =
+  | "calendar_av"
+  | "n_retroactive_candidate"
+  | "no_activity_candidate";
+
+export type FieldWorkforceDecisionStatus =
+  | "Pending"
+  | "Approved for Leave Adjustment Report"
+  | "Approved for Payroll Deduction Report"
+  | "Do Not Take Action"
+  | "Needs Follow-up"
+  | "Cancelled";
+
+export type FieldWorkforceCoverageStatus =
+  | "already_covered"
+  | "leave_source_not_connected"
+  | "needs_reconciliation"
+  | "not_applicable"
+  | "payroll_calculation_required";
+
+export type FieldWorkforceRecommendation = {
+  dates: string[];
+  daysCount: number;
+  decisionId: string | null;
+  decisionStatus: FieldWorkforceDecisionStatus;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  employeeCode: string;
+  employeeName: string;
+  estimatedAmount: number | null;
+  existingCoverageStatus: FieldWorkforceCoverageStatus;
+  holidayContext: string | null;
+  hrNote: string;
+  importId: string;
+  monthKey: string;
+  recommendation: string;
+  recommendationKey: string;
+  recommendationReason: string;
+  recommendationType: FieldWorkforceRecommendationType;
+  severity: FieldWorkforceSeverity;
+  sourceLabel: string;
+  sourceType: FieldWorkforceRecommendationSourceType;
+};
+
+export type FieldWorkforceFinalAction = {
+  actionType: "Leave Balance Adjustment" | "Payroll Deduction" | "No Action";
+  amount: number | null;
+  approvedAt: string | null;
+  approvedBy: string | null;
+  approvedDates: string[];
+  approvedDaysCount: number;
+  employeeCode: string;
+  employeeName: string;
+  hrNote: string;
+  monthKey: string;
+  pushStatus: "Export only" | "Not pushed" | "Pending integration";
+  recommendationKey: string;
+};
+
+export type FieldWorkforceRecommendationsReport = {
+  archive: FieldWorkforceArchiveListItem;
+  finalActions: FieldWorkforceFinalAction[];
+  integrationStatus: {
+    leaveSource: "connected" | "not_connected";
+    leaveSourceMessage: string;
+    payrollAmount: "available" | "requires_calculation";
+    payrollAmountMessage: string;
+  };
+  leaveRecommendations: FieldWorkforceRecommendation[];
+  payrollRecommendations: FieldWorkforceRecommendation[];
+};
