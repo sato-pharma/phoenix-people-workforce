@@ -992,14 +992,25 @@ async function dispatchVacationSubmitted(input: {
   await notifyRecipients({
     href: reportHref,
     message: `${input.request.employeeName} submitted ${vacationTypeLabel(input.request.vacationType)} from ${input.request.startDate} to ${input.request.endDate} (${input.request.durationDays} day(s)). Review is pending your decision.${policyWarningText ? ` Policy review: ${policyWarningText}` : ""}`,
-    metadata: { policyWarnings: input.policyWarnings ?? [], requestId: input.request.id, status: input.request.status },
+    metadata: {
+      policyWarnings: input.policyWarnings ?? [],
+      requestId: input.request.id,
+      status: input.request.status,
+      details: [
+        { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
+        { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
+        { label: "Period", value: `${input.request.startDate} → ${input.request.endDate}` },
+        { label: "Status", value: "Pending manager decision" },
+        { label: "Action", value: "Review request" },
+      ],
+    },
     recipients: [
       input.request.managerHrId,
       input.request.managerOfManagerHrId,
       ...hrRecipients.map((recipient) => recipient.hrId),
     ],
     requestId: input.request.id,
-    title: "Vacation request submitted",
+    title: `${input.request.employeeName} submitted a vacation request`,
     type: "submitted",
   });
 
@@ -1038,14 +1049,26 @@ async function dispatchVacationManagerReview(input: {
   await notifyRecipients({
     href: reportHref,
     message: `${input.request.managerName ?? "Direct manager"} ${input.decision === "approve" ? "approved" : "rejected"} ${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}). HR final decision is required.`,
-    metadata: { managerDecision: input.request.managerDecision, requestId: input.request.id, status: input.request.status },
+    metadata: {
+      managerDecision: input.request.managerDecision,
+      requestId: input.request.id,
+      status: input.request.status,
+      details: [
+        { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
+        { label: "Manager", value: input.request.managerName ?? "Direct manager" },
+        { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
+        { label: "Period", value: `${input.request.startDate} → ${input.request.endDate}` },
+        { label: "Status", value: "Pending HR final decision" },
+        { label: "Action", value: "Complete HR decision" },
+      ],
+    },
     recipients: [
       input.request.employeeHrId,
       input.request.managerOfManagerHrId,
       ...hrRecipients.map((recipient) => recipient.hrId),
     ],
     requestId: input.request.id,
-    title: "Vacation request pending HR final decision",
+    title: `${input.request.employeeName}'s vacation request needs HR final decision`,
     type: `manager_review:${input.decision}`,
   });
 }
@@ -1060,14 +1083,23 @@ async function dispatchVacationDecision(input: {
   await notifyRecipients({
     href: reportHref,
     message: `${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}) was ${input.decision === "approve" ? "approved" : "rejected"} by HR final review.`,
-    metadata: { requestId: input.request.id, status: input.request.status },
+    metadata: {
+      requestId: input.request.id,
+      status: input.request.status,
+      details: [
+        { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
+        { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
+        { label: "Period", value: `${input.request.startDate} → ${input.request.endDate}` },
+        { label: "Status", value: input.decision === "approve" ? "Approved" : "Rejected" },
+      ],
+    },
     recipients: [
       input.request.employeeHrId,
       input.request.managerOfManagerHrId,
       ...hrRecipients.map((recipient) => recipient.hrId),
     ],
     requestId: input.request.id,
-    title: `Vacation request ${input.decision === "approve" ? "approved" : "rejected"} by HR`,
+    title: `${input.request.employeeName}'s vacation request was ${input.decision === "approve" ? "approved" : "rejected"}`,
     type: `decision:${input.decision}`,
   });
 

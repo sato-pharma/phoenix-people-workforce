@@ -248,6 +248,22 @@ function detailValue(value: unknown) {
 }
 
 function notificationDetails(metadata: Record<string, unknown>): InAppNotificationDetail[] {
+  // Explicit producer-provided detail rows take precedence: clean, ordered, and
+  // already shaped (Employee / Type / Period / Status / Action). Sensitive labels
+  // are still dropped defensively.
+  const explicit = metadata.details;
+  if (Array.isArray(explicit)) {
+    const rows: InAppNotificationDetail[] = [];
+    for (const entry of explicit) {
+      if (!entry || typeof entry !== "object") continue;
+      const label = detailValue((entry as { label?: unknown }).label);
+      const value = detailValue((entry as { value?: unknown }).value);
+      if (!label || !value || isSensitiveMetadataKey(label)) continue;
+      rows.push({ label, value });
+    }
+    if (rows.length > 0) return rows.slice(0, 8);
+  }
+
   const preferred: Array<[string, string[]]> = [
     ["Order", ["orderId", "order_id", "orderNo", "order_no", "orderNumber", "order_number"]],
     ["Request", ["requestId", "request_id", "requestNo", "request_no"]],
@@ -279,7 +295,7 @@ function notificationDetails(metadata: Record<string, unknown>): InAppNotificati
 
   for (const [key, value] of Object.entries(metadata)) {
     if (details.length >= 8) break;
-    if (used.has(key) || ["href", "message", "metrics", "title"].includes(key)) continue;
+    if (used.has(key) || ["href", "message", "metrics", "title", "details"].includes(key)) continue;
     // Never surface sensitive raw metadata (tokens, passwords, emails, etc.).
     if (isSensitiveMetadataKey(key)) continue;
     const text = detailValue(value);
