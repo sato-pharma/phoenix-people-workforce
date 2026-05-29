@@ -1973,6 +1973,7 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
       : null;
     const closedVacancy = await closeVacancyForOffer({
       area_id: payload.area_id,
+      department_id: payload.department_id,
       filled_by_hr_id: payload.hr_id,
       line_id: payload.line_id,
       manager_name: managerName,

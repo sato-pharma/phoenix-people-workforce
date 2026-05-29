@@ -5,6 +5,7 @@ import { assertOfferWorkflowTransition } from "@/lib/employee-lifecycle/workflow
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { sendJobOfferEmail } from "@/lib/offers/email";
 import { getOfferTemplate } from "@/lib/offers/templates";
+import { pickDepartmentSafeVacancy } from "@/lib/offers/vacancy-matching";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { summarizeOfferLifecycleRows } from "@/lib/recruitment/onboarding-metrics";
 
@@ -461,6 +462,7 @@ export async function getOpenMedicalRepVacancies(): Promise<VacancyLookupRow[]> 
 
 export async function closeVacancyForOffer(input: {
   area_id?: number | null;
+  department_id?: number | null;
   filled_by_hr_id?: string | null;
   line_id?: number | null;
   manager_name?: string | null;
@@ -478,6 +480,7 @@ export async function closeVacancyForOffer(input: {
 
   type VacancyCloseMatch = {
     id: number;
+    department_id?: number | null;
     manager_hr_id?: string | null;
     manager_name?: string | null;
     replacement_for_hr_id?: string | null;
@@ -492,6 +495,9 @@ export async function closeVacancyForOffer(input: {
       select,
       status: "eq.open",
     });
+
+  // Department-safe selection is delegated to the pure helper in
+  // src/lib/offers/vacancy-matching.ts (see pickDepartmentSafeVacancy below).
 
   const findMatches = async (params: URLSearchParams) => {
     try {
@@ -510,7 +516,7 @@ export async function closeVacancyForOffer(input: {
 
   let matches: VacancyCloseMatch[] = [];
   if (compactManagerHrId) {
-    const params = baseMatchParams("id,replacement_for_hr_id");
+    const params = baseMatchParams("id,replacement_for_hr_id,department_id");
     params.set("manager_hr_id", `eq.${compactManagerHrId}`);
     matches = await findMatches(params);
   }
@@ -520,7 +526,7 @@ export async function closeVacancyForOffer(input: {
     normalizeManagerName(await loadEmployeeFullName(compactManagerHrId));
 
   if (matches.length === 0 && resolvedManagerName) {
-    const params = baseMatchParams("id,replacement_for_hr_id,manager_hr_id,manager_name");
+    const params = baseMatchParams("id,replacement_for_hr_id,department_id,manager_hr_id,manager_name");
     params.set("manager_hr_id", "is.null");
     const managerNameMatches = await findMatches(params);
     matches = managerNameMatches.filter(
@@ -529,7 +535,7 @@ export async function closeVacancyForOffer(input: {
   }
 
   if (matches.length === 0 && compactManagerHrId === null) {
-    const params = baseMatchParams("id,replacement_for_hr_id,manager_hr_id,manager_name");
+    const params = baseMatchParams("id,replacement_for_hr_id,department_id,manager_hr_id,manager_name");
     params.set("manager_hr_id", "is.null");
     const unmatchedSeatVacancies = await findMatches(params);
     if (unmatchedSeatVacancies.length === 1 && !compact(unmatchedSeatVacancies[0]?.manager_name)) {
@@ -537,7 +543,7 @@ export async function closeVacancyForOffer(input: {
     }
   }
 
-  const vacancy = matches[0];
+  const vacancy = pickDepartmentSafeVacancy(matches, input.department_id);
   const vacancyId = vacancy?.id;
   if (!vacancyId) {
     return null;
@@ -550,6 +556,9 @@ export async function closeVacancyForOffer(input: {
     note: filledByHrId
       ? `Auto-closed after employee creation for ${filledByHrId}.`
       : "Auto-closed after employee creation.",
+    // A filled seat is no longer pending replacement; clear the marker so it is
+    // never read as both filled and vacant by downstream seat-continuity logic.
+    replacement_for_hr_id: null,
     status: "filled",
   };
 
@@ -563,7 +572,12 @@ export async function closeVacancyForOffer(input: {
     });
   } catch (error) {
     const message = offerErrorMessage(error).toLowerCase();
-    if (!message.includes("filled_by_hr_id") && !message.includes("filled_at") && !message.includes("schema cache")) {
+    if (
+      !message.includes("filled_by_hr_id") &&
+      !message.includes("filled_at") &&
+      !message.includes("replacement_for_hr_id") &&
+      !message.includes("schema cache")
+    ) {
       throw error;
     }
     await supabaseRest(
@@ -1071,6 +1085,7 @@ export async function approveAcceptedOffer(
   const employeeHrId = String(rpcResult.employee_hr_id);
   await closeVacancyForOffer({
     area_id: offer.area_id,
+    department_id: offer.department_id,
     filled_by_hr_id: employeeHrId,
     line_id: offer.line_id,
     manager_hr_id: offer.manager_hr_id,
