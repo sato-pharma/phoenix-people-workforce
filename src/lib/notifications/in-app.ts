@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { mapInAppNotificationRows, type InAppNotificationDetail } from "@/lib/communication/metrics";
-import { canViewerSeeNotification } from "@/lib/notifications/recipients";
+import { canViewerSeeNotification, isPersonalBellCategory, PERSONAL_BELL_CATEGORIES } from "@/lib/notifications/recipients";
 
 export type InAppNotificationCategory = "coaching_report" | "general" | "internal_message";
 
@@ -132,10 +132,13 @@ export async function listInAppNotificationsForViewer(
     const boundedLimit = Math.max(1, Math.min(limit, 20));
     const selectColumns = "id,category,subject,scheduled_for,sent_at,status,metadata,recipients,employee_hr_id,created_at";
 
+    const allowedCategories = Array.from(PERSONAL_BELL_CATEGORIES);
+
     const employeeResult = await supabase
       .from("notification_events")
       .select(selectColumns)
       .ilike("employee_hr_id", employeeHrId)
+      .in("category", allowedCategories)
       .order("created_at", { ascending: false })
       .limit(boundedLimit);
 
@@ -151,6 +154,7 @@ export async function listInAppNotificationsForViewer(
       .from("notification_events")
       .select(selectColumns)
       .overlaps("recipients", [employeeHrId])
+      .in("category", allowedCategories)
       .order("created_at", { ascending: false })
       .limit(boundedLimit);
 
@@ -162,6 +166,10 @@ export async function listInAppNotificationsForViewer(
     }
 
     const rows = Array.from(rowsById.values())
+      // Personal-bell category allowlist: hide legacy/orphaned categories (e.g.
+      // "leave") that may carry mis-assigned recipients. Defense-in-depth on top
+      // of the SQL .in("category", ...) filter. See src/lib/notifications/recipients.ts.
+      .filter((row) => isPersonalBellCategory(row.category))
       // Fail-closed recipient isolation applied AFTER the DB query — never rely on
       // the SQL employee/overlap filters alone. See src/lib/notifications/recipients.ts.
       .filter((row) =>
