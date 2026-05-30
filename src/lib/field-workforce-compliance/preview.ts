@@ -45,13 +45,17 @@ async function loadEmployeeReferences(): Promise<{
     const employees = await getEmployeeDirectoryRows({ includeInactive: true });
     return {
       references: employees.map((employee) => ({
+        areaName: employee.areaName,
         departmentName: employee.departmentName,
+        employmentStatus: employee.employmentStatus,
         fullName: employee.fullName,
         hireDate: employee.hireDate,
         hrId: employee.hrId,
         jobTitle: employee.jobTitle,
         lineName: employee.lineName,
         managerName: employee.managerName,
+        roleName: employee.positionTitle ?? employee.jobTitle,
+        teamName: employee.teamName,
       })),
       warning: null,
     };

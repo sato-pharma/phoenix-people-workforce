@@ -10,12 +10,16 @@ import {
   findFieldWorkforceArchiveDuplicate,
 } from "../src/lib/field-workforce-compliance/archive.ts";
 import {
+  assertFieldWorkforceDecisionReasonAllowed,
   assertFieldWorkforceDecisionStatusAllowed,
   assertNoFieldWorkforceApprovedDecisionConflict,
+  buildFieldWorkforceLeaveCoverageFromApprovedRequests,
   buildFieldWorkforceRecommendationsReportFromArchive,
   FieldWorkforceConflictingDecisionError,
+  FieldWorkforceDecisionReasonError,
   FieldWorkforceInvalidDecisionStatusError,
 } from "../src/lib/field-workforce-compliance/recommendations.ts";
+import { generateFieldWorkforceFinalActionsWorkbook } from "../src/lib/field-workforce-compliance/export.ts";
 import {
   parseFieldWorkforceComplianceMatrix,
 } from "../src/lib/field-workforce-compliance/parser.ts";
@@ -26,7 +30,7 @@ function collectObjectKeys(value: unknown): string[] {
   return Object.entries(value).flatMap(([key, nested]) => [key, ...collectObjectKeys(nested)]);
 }
 
-export function runFieldWorkforceComplianceTests() {
+export async function runFieldWorkforceComplianceTests() {
   const parsed = parseFieldWorkforceComplianceMatrix({
     fileName: "Jan 2026 team calendar.xlsx",
     matrix: [
@@ -57,8 +61,14 @@ export function runFieldWorkforceComplianceTests() {
     employeeReferences: [
       {
         fullName: "Ahmed Official",
+        areaName: "Cairo",
+        employmentStatus: "active",
         hireDate: "2026-01-03",
         hrId: "A-1",
+        lineName: "Line A",
+        managerName: "Manager One",
+        roleName: "Medical Rep",
+        teamName: "Team A",
       },
     ],
     holidayConnected: true,
@@ -85,6 +95,10 @@ export function runFieldWorkforceComplianceTests() {
   assert.equal(ahmed.campaignDays, 1);
   assert.equal(ahmed.totalVisits, 5);
   assert.equal(ahmed.noActivityCandidates, 2);
+  assert.equal(ahmed.compliancePercent, 8);
+  assert.equal(ahmed.managerName, "Manager One");
+  assert.equal(ahmed.noActivityPattern.longestStreak, 2);
+  assert.equal(ahmed.noActivityPattern.hasTwoDayStreak, true);
   assert.equal(ahmed.vacationSignalDays, 1);
   assert.equal(ahmed.preHireIgnoredValues, 2);
 
@@ -214,6 +228,26 @@ export function runFieldWorkforceComplianceTests() {
   assert.ok(payrollRecommendation);
   assert.equal(payrollRecommendation.estimatedAmount, null);
   assert.equal(payrollRecommendation.existingCoverageStatus, "payroll_calculation_required");
+  assert.doesNotThrow(() => assertFieldWorkforceDecisionReasonAllowed({
+    decisionReason: "Already covered",
+    decisionStatus: "Approved for Leave Adjustment Report",
+    hrNote: "",
+  }));
+  assert.doesNotThrow(() => assertFieldWorkforceDecisionReasonAllowed({
+    decisionReason: "",
+    decisionStatus: "Pending",
+    hrNote: "",
+  }));
+  assert.throws(() => assertFieldWorkforceDecisionReasonAllowed({
+    decisionReason: "",
+    decisionStatus: "Needs Follow-up",
+    hrNote: "",
+  }), FieldWorkforceDecisionReasonError);
+  assert.throws(() => assertFieldWorkforceDecisionReasonAllowed({
+    decisionReason: "Other",
+    decisionStatus: "Disputed",
+    hrNote: "",
+  }), FieldWorkforceDecisionReasonError);
   assert.doesNotThrow(() => assertFieldWorkforceDecisionStatusAllowed({
     decisionStatus: "Approved for Leave Adjustment Report",
     recommendationType: avRecommendation.recommendationType,
@@ -268,6 +302,7 @@ export function runFieldWorkforceComplianceTests() {
     existing_coverage_status: payrollRecommendation.existingCoverageStatus,
     hr_note: "Confirmed no activity after HR review.",
     id: "decision-1",
+    decision_reason: "Manager approved field exception",
     import_id: payrollRecommendation.importId,
     month_key: payrollRecommendation.monthKey,
     recommendation_key: payrollRecommendation.recommendationKey,
@@ -279,6 +314,12 @@ export function runFieldWorkforceComplianceTests() {
   assert.equal(decidedReport.finalActions.length, 1);
   assert.equal(decidedReport.finalActions[0].actionType, "Payroll Deduction");
   assert.equal(decidedReport.finalActions[0].pushStatus, "Export only");
+  assert.equal(decidedReport.finalActions[0].decisionReason, "Manager approved field exception");
+
+  const workbook = generateFieldWorkforceFinalActionsWorkbook(decidedReport);
+  const workbookBuffer = await workbook.xlsx.writeBuffer();
+  assert.ok(workbookBuffer.byteLength > 0);
+  assert.equal(workbook.getWorksheet("Final Actions")?.getCell(2, 1).value, "This export does not execute payroll or leave changes.");
 
   const validLeaveReport = buildFieldWorkforceRecommendationsReportFromArchive(restored, [{
     dates: avRecommendation.dates,
@@ -292,6 +333,7 @@ export function runFieldWorkforceComplianceTests() {
     existing_coverage_status: avRecommendation.existingCoverageStatus,
     hr_note: "Confirmed for leave reconciliation report.",
     id: "leave-decision-2",
+    decision_reason: "Already covered",
     import_id: avRecommendation.importId,
     month_key: avRecommendation.monthKey,
     recommendation_key: avRecommendation.recommendationKey,
@@ -303,6 +345,23 @@ export function runFieldWorkforceComplianceTests() {
   assert.equal(validLeaveReport.finalActions.length, 1);
   assert.equal(validLeaveReport.finalActions[0].actionType, "Leave Balance Adjustment");
   assert.equal(validLeaveReport.finalActions[0].pushStatus, "Export only");
+
+  const leaveCoverage = buildFieldWorkforceLeaveCoverageFromApprovedRequests({
+    monthEnd: "2026-01-31",
+    monthStart: "2026-01-01",
+    rows: [{
+      employee_hr_id: "A-1",
+      end_date: "2026-01-06",
+      start_date: "2026-01-06",
+      status: "approved",
+    }],
+  });
+  const coveredLeaveReport = buildFieldWorkforceRecommendationsReportFromArchive(restored, [], leaveCoverage);
+  assert.equal(coveredLeaveReport.integrationStatus.leaveSource, "connected");
+  assert.ok(coveredLeaveReport.leaveRecommendations.some((recommendation) =>
+    recommendation.sourceType === "calendar_av" &&
+    recommendation.existingCoverageStatus === "already_covered"
+  ));
 
   const mismatchedDecisionReport = buildFieldWorkforceRecommendationsReportFromArchive(restored, [{
     dates: payrollRecommendation.dates,
@@ -316,6 +375,7 @@ export function runFieldWorkforceComplianceTests() {
     existing_coverage_status: payrollRecommendation.existingCoverageStatus,
     hr_note: "Invalid historical mismatch.",
     id: "bad-decision-1",
+    decision_reason: "Already covered",
     import_id: payrollRecommendation.importId,
     month_key: payrollRecommendation.monthKey,
     recommendation_key: payrollRecommendation.recommendationKey,

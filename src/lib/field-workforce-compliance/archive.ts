@@ -1,4 +1,5 @@
 import { writeAuditLog } from "@/lib/admin/audit";
+import { buildFieldWorkforceNoActivityPattern } from "@/lib/field-workforce-compliance/classifier";
 import { daysInMonth } from "@/lib/field-workforce-compliance/parser";
 import type {
   FieldWorkforceArchiveDetail,
@@ -6,8 +7,10 @@ import type {
   FieldWorkforceArchiveImportStatus,
   FieldWorkforceArchiveListItem,
   FieldWorkforceCellStatus,
+  FieldWorkforceComparisonReport,
   FieldWorkforceDayCell,
   FieldWorkforceEmployeeSummary,
+  FieldWorkforceNoActivityPattern,
   FieldWorkforcePreviewResult,
   FieldWorkforceReviewCandidate,
   FieldWorkforceSeverity,
@@ -62,21 +65,28 @@ export type FieldWorkforceArchiveDayInsert = {
 };
 
 export type FieldWorkforceArchiveSummaryInsert = {
+  area_name: string | null;
   campaign_days: number;
   compliance_percent: number;
   employee_code: string;
   employee_eligible_working_days: number;
   employee_name: string;
+  employment_status: string | null;
   fridays: number;
   high_severity_count: number;
   hiring_date: string | null;
   import_id?: string;
+  line_name: string | null;
+  manager_name: string | null;
   month_key: string;
+  no_activity_pattern: FieldWorkforceNoActivityPattern;
   month_working_days: number;
   no_activity_dates: string[];
   no_activity_days: number;
   public_holiday_warning_count: number;
   review_candidate_count: number;
+  role_name: string | null;
+  team_name: string | null;
   total_visits: number;
   vacation_days: number;
   worked_days: number;
@@ -137,6 +147,23 @@ function asReviewCandidates(value: unknown): FieldWorkforceReviewCandidate[] {
 
 function asValidationIssues(value: unknown): FieldWorkforceValidationIssue[] {
   return Array.isArray(value) ? value as FieldWorkforceValidationIssue[] : [];
+}
+
+function asNoActivityPattern(value: unknown, timeline: FieldWorkforceDayCell[]): FieldWorkforceNoActivityPattern {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const pattern = value as Partial<FieldWorkforceNoActivityPattern>;
+    return {
+      adjacentToFridayDates: Array.isArray(pattern.adjacentToFridayDates) ? pattern.adjacentToFridayDates.map(String) : [],
+      adjacentToPublicHolidayDates: Array.isArray(pattern.adjacentToPublicHolidayDates) ? pattern.adjacentToPublicHolidayDates.map(String) : [],
+      consecutiveSignalCount: asNumber(pattern.consecutiveSignalCount),
+      hasThreeDayStreak: Boolean(pattern.hasThreeDayStreak),
+      hasTwoDayStreak: Boolean(pattern.hasTwoDayStreak),
+      highMonthlyCount: Boolean(pattern.highMonthlyCount),
+      longestStreak: asNumber(pattern.longestStreak),
+      summary: typeof pattern.summary === "string" ? pattern.summary : "No consecutive N pattern detected.",
+    };
+  }
+  return buildFieldWorkforceNoActivityPattern(timeline);
 }
 
 function archiveCellContext(cell: {
@@ -258,22 +285,29 @@ export function fieldWorkforceArchiveRowsFromPreview(
     const eligibleDays = employee.eligibleWorkingDays;
     const compliancePercent = eligibleDays > 0 ? roundPercent((employee.workedDays / eligibleDays) * 100) : 0;
     return {
+      area_name: employee.areaName,
       campaign_days: employee.campaignDays,
       compliance_percent: compliancePercent,
       employee_code: employee.hrId,
       employee_eligible_working_days: eligibleDays,
       employee_name: employee.employeeName,
+      employment_status: employee.employmentStatus,
       fridays: employee.fridays,
       high_severity_count: employee.severityCounts.High,
       hiring_date: employee.hiringDateIso,
+      line_name: employee.lineName,
+      manager_name: employee.managerName,
       month_key: monthKey,
       month_working_days: workingDays,
+      no_activity_pattern: employee.noActivityPattern,
       no_activity_dates: employee.timeline
         .filter((cell) => cell.countedAsNoActivityCandidate)
         .map((cell) => cell.dateIso),
       no_activity_days: employee.noActivityCandidates,
       public_holiday_warning_count: employee.holidayWarnings,
       review_candidate_count: reviewCountsByEmployee.get(employee.hrId) ?? 0,
+      role_name: employee.roleName,
+      team_name: employee.teamName,
       total_visits: employee.totalVisits,
       vacation_days: employee.vacationSignalDays,
       worked_days: employee.workedDays,
@@ -337,21 +371,29 @@ export function fieldWorkforcePreviewFromArchiveRows(input: {
       visitCount: row.visit_count === null ? undefined : asNumber(row.visit_count),
     } satisfies FieldWorkforceDayCell));
     const highSeverityCount = asNumber(summaryRow.high_severity_count);
+    const noActivityPattern = asNoActivityPattern(summaryRow.no_activity_pattern, timeline);
 
     return {
+      areaName: summaryRow.area_name ?? null,
       campaignDays: asNumber(summaryRow.campaign_days),
+      compliancePercent: asNumber(summaryRow.compliance_percent),
       employeeName: String(summaryRow.employee_name),
+      employmentStatus: summaryRow.employment_status ?? null,
       eligibleWorkingDays: asNumber(summaryRow.employee_eligible_working_days),
       fridays: asNumber(summaryRow.fridays),
       hiringDateIso: summaryRow.hiring_date ?? null,
       hiringDateSource: summaryRow.hiring_date ? "workbook" : "missing",
       holidayWarnings: asNumber(summaryRow.public_holiday_warning_count),
       hrId: employeeCode,
+      lineName: summaryRow.line_name ?? null,
+      managerName: summaryRow.manager_name ?? null,
       matchedEmployeeName: String(summaryRow.employee_name),
       matchedHrId: employeeCode,
       matchStatus: "matched",
       noActivityCandidates: asNumber(summaryRow.no_activity_days),
+      noActivityPattern,
       preHireIgnoredValues: timeline.filter((cell) => cell.isPreHire && cell.rawValue !== null).length,
+      roleName: summaryRow.role_name ?? null,
       severityCounts: {
         High: highSeverityCount,
         Low: timeline.filter((cell) => cell.severity === "Low").length,
@@ -359,6 +401,7 @@ export function fieldWorkforcePreviewFromArchiveRows(input: {
         Review: timeline.filter((cell) => cell.severity === "Review").length,
       },
       sourceRowNumber: index + 1,
+      teamName: summaryRow.team_name ?? null,
       timeline,
       totalVisits: asNumber(summaryRow.total_visits),
       unknownValues: timeline.filter((cell) => cell.status === "UNKNOWN").length,
@@ -543,4 +586,79 @@ export async function loadFieldWorkforceComplianceArchive(input: {
   }
 
   return detail;
+}
+
+export async function getFieldWorkforceComplianceComparison(input: {
+  actorLoginId: string;
+}): Promise<FieldWorkforceComparisonReport> {
+  const archives = await listFieldWorkforceComplianceArchives();
+  if (archives.length < 2) {
+    if (archives.length > 0) {
+      await writeAuditLog({
+        actorLoginId: input.actorLoginId,
+        entityId: "field-workforce-comparison",
+        entityType: "field_workforce_compliance_import",
+        newValues: {
+          archiveCount: archives.length,
+        },
+        summary: "Field Workforce Compliance comparison view opened.",
+      });
+    }
+    return {
+      archiveCount: archives.length,
+      hierarchyAvailable: false,
+      rows: [],
+    };
+  }
+
+  const archiveById = new Map(archives.map((archive) => [archive.id, archive]));
+  const { data, error } = await getSupabaseAdmin()
+    .from(monthlySummaryTable)
+    .select("*")
+    .in("import_id", archives.map((archive) => archive.id))
+    .order("month_key", { ascending: false })
+    .order("employee_name", { ascending: true });
+
+  if (error) throw error;
+
+  const rows = ((data ?? []) as FieldWorkforceSummaryRow[]).map((row) => {
+    const archive = archiveById.get(String(row.import_id));
+    return {
+      areaName: row.area_name ?? null,
+      campaignDays: asNumber(row.campaign_days),
+      compliancePercent: asNumber(row.compliance_percent),
+      employeeCode: String(row.employee_code),
+      employeeName: String(row.employee_name),
+      employmentStatus: row.employment_status ?? null,
+      importId: String(row.import_id),
+      lineName: row.line_name ?? null,
+      managerName: row.manager_name ?? null,
+      monthKey: archive?.monthKey ?? String(row.month_key),
+      noActivityDays: asNumber(row.no_activity_days),
+      roleName: row.role_name ?? null,
+      teamName: row.team_name ?? null,
+      totalVisits: asNumber(row.total_visits),
+      vacationDays: asNumber(row.vacation_days),
+      workedDays: asNumber(row.worked_days),
+    };
+  });
+
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: "field-workforce-comparison",
+    entityType: "field_workforce_compliance_import",
+    newValues: {
+      archiveCount: archives.length,
+      rowCount: rows.length,
+    },
+    summary: "Field Workforce Compliance comparison view opened.",
+  });
+
+  return {
+    archiveCount: archives.length,
+    hierarchyAvailable: rows.some((row) =>
+      Boolean(row.managerName || row.lineName || row.areaName || row.teamName || row.roleName || row.employmentStatus),
+    ),
+    rows,
+  };
 }
