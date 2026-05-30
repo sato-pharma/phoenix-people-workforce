@@ -11,6 +11,7 @@ import {
 import {
   applyDraftToStep,
   applyDraftToSteps,
+  diffDraftSteps,
   validateWorkflowDraft,
   WORKFLOW_DRAFT_FORBIDDEN_FIELDS,
 } from "../src/lib/workflow-control/draft.ts";
@@ -284,9 +285,48 @@ export function runWorkflowControlTests() {
   // Editor UI: Phase 2A title, runtime-safety banner, Save + Publish disabled.
   assert.match(editorSrc, /Draft Editor — Phase 2A/, "editor titled Draft Editor — Phase 2A");
   assert.match(editorSrc, /does not change live workflow behavior/i, "editor states runtime is unchanged");
-  assert.match(editorSrc, /Persistence comes in Phase 3/, "Save Draft is local-only / Phase 3");
-  assert.match(editorSrc, /Publishing requires Phase 3 versioning and approval/, "Publish disabled with Phase 3 message");
+  assert.match(editorSrc, /Phase 3 persistence required/, "Save Draft labelled Phase 3 persistence required");
+  assert.match(editorSrc, /Phase 3 versioning \+ approval required/, "Publish labelled Phase 3 versioning + approval required");
   assert.match(editorSrc, /disabled/, "disabled controls present (Save/Publish)");
+
+  // ===========================================================================
+  // Phase 2B: draft comparison, change count, reset, draft-only simulation.
+  // ===========================================================================
+  const p2bSteps = getWorkflowSubflow("leave", "vacation-request")?.steps ?? [];
+  const p2bSubmit = p2bSteps.find((s) => s.id === "submit");
+  assert.ok(p2bSubmit, "submit step exists for Phase 2B diff");
+  // No draft -> zero changes.
+  assert.equal(diffDraftSteps(p2bSteps, {}).changeCount, 0, "empty draft reports zero changes");
+  // Renaming a step produces a counted, listed change.
+  const renamedDiff = diffDraftSteps(p2bSteps, { [p2bSubmit!.id]: { name: "Employee files leave" } });
+  assert.equal(renamedDiff.changeCount, 1, "one change counted for a rename");
+  assert.ok(renamedDiff.changes.some((c) => c.field === "Display name" && c.draft === "Employee files leave"), "diff lists the changed Display name field");
+  assert.deepEqual(renamedDiff.changedStepNames, [p2bSubmit!.name], "changed step is listed by name");
+  // A blank override that keeps the current value is NOT a change.
+  assert.equal(diffDraftSteps(p2bSteps, { [p2bSubmit!.id]: { name: "  " } }).changeCount, 0, "blank-keep override is not a change");
+  // Toggling email/notification counts as a change.
+  assert.ok(diffDraftSteps(p2bSteps, { [p2bSubmit!.id]: { emailEnabled: false } }).changeCount >= 1, "disabling email is a counted change");
+
+  // Enhanced validation: missing email recipient, notification gap, publish-blocked.
+  const mgrDecisionId = p2bSteps.find((s) => s.id === "manager_decision")?.id ?? "manager_decision";
+  const vEmail = validateWorkflowDraft(p2bSteps, { [mgrDecisionId]: { emailEnabled: true } });
+  assert.ok(vEmail.warnings.some((w) => /email enabled but no email recipients/i.test(w)), "missing email recipient warning fires");
+  assert.equal(typeof vEmail.publishBlocked, "string", "validation surfaces a publish-blocked message");
+  assert.match(vEmail.publishBlocked, /Phase 3/, "publish-blocked references Phase 3");
+  const expenseGapSteps = getWorkflowSubflow("expenses-outstation", "expense")?.steps ?? [];
+  const expSubmitId = expenseGapSteps.find((s) => s.id === "submit")?.id ?? "submit";
+  const vGap = validateWorkflowDraft(expenseGapSteps, { [expSubmitId]: { description: "edit" } });
+  assert.ok(vGap.warnings.some((w) => /notification producer is not implemented/i.test(w)), "validation surfaces a notification gap warning on an edited gap step");
+
+  // Editor UX: comparison summary, Reset Draft, draft-only label, local-preview note.
+  assert.match(editorSrc, /Current vs Draft/, "editor shows a Current vs Draft summary");
+  assert.match(editorSrc, /diffDraftSteps/, "editor computes the draft diff");
+  assert.match(editorSrc, /changeCount/, "editor shows a change count");
+  assert.match(editorSrc, /Reset Draft/, "editor has a Reset Draft control");
+  assert.match(editorSrc, /function resetDraft/, "Reset clears local draft state");
+  assert.match(editorSrc, /setDraft\(\{\}\)/, "Reset clears the draft to empty (local-only)");
+  assert.match(editorSrc, /Draft simulation only/, "draft simulation is labelled draft-only");
+  assert.match(editorSrc, /local preview only/i, "editor states changes are local preview only");
   // Editor must NOT expose forbidden runtime fields as editable inputs.
   assert.equal(/setField\(step\.id, "(actor|role|statusProduced)"/.test(editorSrc), false, "editor does not expose actor/role/status as editable");
 

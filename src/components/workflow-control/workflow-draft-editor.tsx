@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, Lock, Play, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Lock, Play, RotateCcw, ShieldCheck, X } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import type { WorkflowControlStep } from "@/lib/workflow-control/definitions";
 import {
   applyDraftToSteps,
+  changedFieldKeys,
+  diffDraftSteps,
   validateWorkflowDraft,
   type WorkflowDraft,
   type WorkflowDraftValidation,
@@ -13,17 +16,18 @@ import {
 } from "@/lib/workflow-control/draft";
 import { simulateWorkflow, type WorkflowSimulationResult } from "@/lib/workflow-control/simulator";
 
-const input = "w-full rounded-lg border border-[#E2E8F0] bg-white px-2.5 py-1.5 text-[13px] text-[#0F172A] outline-none focus:border-[#F97316]";
+const inputBase = "w-full rounded-lg border bg-white px-2.5 py-1.5 text-[13px] text-[#0F172A] outline-none focus:border-[#F97316]";
 const label = "text-[10px] font-black uppercase tracking-[0.10em] text-[#64748B]";
-const current = "mt-0.5 text-[11px] text-[#94A3B8]";
+const currentNote = "mt-0.5 text-[11px] text-[#94A3B8]";
 
 /**
- * Phase 2A Controlled Draft Editor (CLIENT-ONLY).
+ * Phase 2A/2B Controlled Draft Editor (CLIENT-ONLY).
  *
  * Edits SAFE display/config fields of a subflow's steps in local React state,
- * shows Current vs Draft, validates, and simulates the draft read-only. It does
- * NOT persist, call any API, change runtime behavior, or publish. Save/Publish
- * are intentionally disabled (Phase 3).
+ * shows Current vs Draft (changed fields highlighted, change count), validates,
+ * and simulates the draft read-only ("Draft simulation only"). It does NOT
+ * persist, call any API, change runtime behavior, or publish. Save/Publish are
+ * intentionally disabled (Phase 3).
  */
 export function WorkflowDraftEditor({
   domainKey,
@@ -46,8 +50,20 @@ export function WorkflowDraftEditor({
   const [employeeHrId, setEmployeeHrId] = useState("");
   const [managerHrId, setManagerHrId] = useState("");
 
+  const diff = diffDraftSteps(steps, draft);
+  const changedKeys = changedFieldKeys(diff);
+  const isChanged = (stepId: string, field: string) => changedKeys.has(`${stepId}::${field}`);
+  const fieldCls = (stepId: string, field: string) =>
+    cn(inputBase, isChanged(stepId, field) ? "border-[#F97316] bg-[#FFF7ED]" : "border-[#E2E8F0]");
+
   function setField<K extends keyof WorkflowStepDraftOverride>(stepId: string, key: K, value: WorkflowStepDraftOverride[K]) {
     setDraft((d) => ({ ...d, [stepId]: { ...d[stepId], [key]: value } }));
+    setValidation(null);
+    setSimResult(null);
+  }
+
+  function resetDraft() {
+    setDraft({});
     setValidation(null);
     setSimResult(null);
   }
@@ -89,9 +105,23 @@ export function WorkflowDraftEditor({
         <div className="mx-5 mt-4 flex items-start gap-2 rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-4 py-3">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#C2410C]" />
           <p className="text-[13px] leading-5 text-[#9A3412]">
-            <span className="font-black">This draft does not change live workflow behavior.</span> Edits stay in your
-            browser only — no data is saved and nothing runs.
+            <span className="font-black">This draft does not change live workflow behavior.</span> Current changes are a
+            local preview only — nothing is saved, published, or run.
           </p>
+        </div>
+
+        {/* Current vs Draft comparison summary */}
+        <div className="mx-5 mt-3 rounded-xl border border-[#E2E8F0] px-4 py-2.5">
+          <p className="text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Current vs Draft</p>
+          {diff.changeCount === 0 ? (
+            <p className="mt-0.5 text-[12px] text-[#64748B]">No changes yet — edit a field below to start a draft.</p>
+          ) : (
+            <p className="mt-0.5 text-[12px] text-[#334155]">
+              <span className="font-black text-[#C2410C]">{diff.changeCount}</span> change{diff.changeCount === 1 ? "" : "s"} across{" "}
+              <span className="font-black">{diff.changedStepNames.length}</span> step{diff.changedStepNames.length === 1 ? "" : "s"}
+              : <span className="text-[#64748B]">{diff.changedStepNames.join(", ")}</span>
+            </p>
+          )}
         </div>
 
         {/* Actions */}
@@ -102,24 +132,20 @@ export function WorkflowDraftEditor({
           <button className="inline-flex items-center gap-1.5 rounded-lg bg-[#F97316] px-3 py-2 text-sm font-black text-white hover:bg-[#EA580C]" onClick={runSimulate} type="button">
             <Play className="h-4 w-4" /> Simulate Draft
           </button>
-          <button
-            className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#94A3B8]"
-            disabled
-            title="Persistence comes in Phase 3"
-            type="button"
-          >
-            <Lock className="h-4 w-4" /> Save Draft <span className="font-normal">(Persistence comes in Phase 3)</span>
+          <button className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm font-bold text-[#64748B] hover:bg-[#F8FAFC] disabled:opacity-50" disabled={diff.changeCount === 0} onClick={resetDraft} type="button">
+            <RotateCcw className="h-4 w-4" /> Reset Draft
           </button>
-          <button
-            className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#94A3B8]"
-            disabled
-            title="Publishing requires Phase 3 versioning and approval."
-            type="button"
-          >
+          <button className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#94A3B8]" disabled title="Phase 3 persistence required" type="button">
+            <Lock className="h-4 w-4" /> Save Draft <span className="font-normal">(Phase 3 persistence required)</span>
+          </button>
+          <button className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#94A3B8]" disabled title="Phase 3 versioning + approval required" type="button">
             <Lock className="h-4 w-4" /> Publish
           </button>
         </div>
-        <p className="px-5 pt-1.5 text-[11px] text-[#94A3B8]">Publishing requires Phase 3 versioning and approval.</p>
+        <p className="px-5 pt-1.5 text-[11px] text-[#94A3B8]">
+          Reset clears your local draft only. Save Draft → <span className="font-bold">Phase 3 persistence required</span>. Publish →{" "}
+          <span className="font-bold">Phase 3 versioning + approval required</span>.
+        </p>
 
         {/* Validation result */}
         {validation ? (
@@ -138,19 +164,44 @@ export function WorkflowDraftEditor({
             )}
             <p className="mt-2 text-[10px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Blocked fields (not editable in Phase 2A)</p>
             <p className="mt-0.5 text-[11px] leading-5 text-[#64748B]">{validation.blockedFields.join(" · ")}</p>
+            <p className="mt-1.5 text-[11px] font-semibold text-[#B91C1C]">Publish blocked: {validation.publishBlocked}</p>
           </div>
         ) : null}
 
         {/* Draft simulation result */}
         {simResult ? (
-          <div className="mx-5 mt-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">
-              Draft simulation · {simResult.domainName} → {simResult.subflowName}
+          <div className="mx-5 mt-3 rounded-xl border border-[#FED7AA] bg-[#FFF7ED] p-3">
+            <p className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.10em] text-[#C2410C]">
+              Draft simulation only
+            </p>
+            <p className="mt-1.5 text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">
+              {simResult.domainName} → {simResult.subflowName}
             </p>
             {simResult.routePath.length ? (
               <p className="mt-1 text-[12px] text-[#475569]"><span className="font-bold">Route path</span> {simResult.routePath.join(" → ")}</p>
             ) : null}
-            <p className="mt-1 text-[12px] font-black text-[#0F172A]">Final status: <span className="text-[#C2410C]">{simResult.finalStatus}</span></p>
+            {diff.changedStepNames.length ? (
+              <p className="mt-1 text-[12px] text-[#475569]"><span className="font-bold">Affected steps</span> {diff.changedStepNames.join(", ")}</p>
+            ) : null}
+            <ol className="mt-1.5 space-y-1">
+              {simResult.steps.map((s) => (
+                <li key={s.id} className="rounded-lg bg-white px-2.5 py-1.5">
+                  <p className="text-[12px] font-bold text-[#0F172A]">Step {s.index + 1}: {s.name} <span className="font-semibold text-[#64748B]">→ {s.routesTo}</span></p>
+                  {s.notificationRecipients.length ? <p className="text-[11px] text-[#475569]">In-app: {s.notificationRecipients.join(", ")}</p> : null}
+                  {s.emailRecipients.length ? <p className="text-[11px] text-[#475569]">Emails: {s.emailRecipients.join(", ")}</p> : null}
+                  {s.notificationGap ? <p className="text-[11px] font-semibold text-[#B91C1C]">Notification gap: not implemented yet</p> : null}
+                </li>
+              ))}
+            </ol>
+            <p className="mt-1.5 text-[12px] font-black text-[#0F172A]">Final status: <span className="text-[#C2410C]">{simResult.finalStatus}</span></p>
+            {simResult.sideEffects.length ? (
+              <div className="mt-1">
+                <p className="text-[10px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Side effects</p>
+                <ul className="mt-0.5 list-disc space-y-0.5 pl-5">
+                  {simResult.sideEffects.map((e) => <li key={e} className="text-[11px] leading-5 text-[#475569]">{e}</li>)}
+                </ul>
+              </div>
+            ) : null}
             {simResult.warnings.length ? (
               <div className="mt-1 flex items-start gap-1.5">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#C2410C]" />
@@ -164,63 +215,65 @@ export function WorkflowDraftEditor({
         <div className="grid grid-cols-1 gap-3 px-5 pt-3 sm:grid-cols-2">
           <label className="block">
             <span className={label}>Employee HR_ID (for draft simulation)</span>
-            <input className={input} value={employeeHrId} onChange={(e) => setEmployeeHrId(e.target.value)} placeholder="e.g. B-52" />
+            <input className={cn(inputBase, "border-[#E2E8F0]")} value={employeeHrId} onChange={(e) => setEmployeeHrId(e.target.value)} placeholder="e.g. B-52" />
           </label>
           <label className="block">
             <span className={label}>Direct manager HR_ID</span>
-            <input className={input} value={managerHrId} onChange={(e) => setManagerHrId(e.target.value)} placeholder="blank = test missing manager" />
+            <input className={cn(inputBase, "border-[#E2E8F0]")} value={managerHrId} onChange={(e) => setManagerHrId(e.target.value)} placeholder="blank = test missing manager" />
           </label>
         </div>
 
-        {/* Editable step list */}
+        {/* Editable step list (changed fields highlighted) */}
         <div className="space-y-3 p-5">
           <p className="text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Editable steps (safe fields only)</p>
           {steps.map((step, index) => {
             const o = draft[step.id] ?? {};
             const notifEnabled = o.notificationEnabled ?? step.notificationRecipients.length > 0;
             const emailEnabled = o.emailEnabled ?? step.emailRecipients.length > 0;
+            const stepChanged = diff.changedStepIds.includes(step.id);
             return (
-              <div key={step.id} className="rounded-xl border border-[#E2E8F0] p-3">
+              <div key={step.id} className={cn("rounded-xl border p-3", stepChanged ? "border-[#FED7AA] bg-[#FFFBEB]" : "border-[#E2E8F0]")}>
                 <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">
                   Step {index + 1} · <span className="text-[#475569]">{step.actor} / {step.role}</span> · → {step.statusProduced}
+                  {stepChanged ? <span className="ml-1.5 rounded bg-[#FFF7ED] px-1.5 py-0.5 text-[9px] font-black text-[#C2410C]">CHANGED</span> : null}
                 </p>
 
                 <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className="block">
                     <span className={label}>Display name</span>
-                    <input className={input} value={o.name ?? step.name} onChange={(e) => setField(step.id, "name", e.target.value)} />
+                    <input className={fieldCls(step.id, "Display name")} value={o.name ?? step.name} onChange={(e) => setField(step.id, "name", e.target.value)} />
                   </label>
                   <label className="block">
                     <span className={label}>Description</span>
-                    <input className={input} value={o.description ?? ""} onChange={(e) => setField(step.id, "description", e.target.value)} placeholder="optional" />
+                    <input className={fieldCls(step.id, "Description")} value={o.description ?? ""} onChange={(e) => setField(step.id, "description", e.target.value)} placeholder="optional" />
                   </label>
                   <label className="block">
                     <span className={label}>Action label</span>
-                    <input className={input} value={o.actionLabel ?? ""} onChange={(e) => setField(step.id, "actionLabel", e.target.value)} placeholder="e.g. Review request" />
+                    <input className={fieldCls(step.id, "Action label")} value={o.actionLabel ?? ""} onChange={(e) => setField(step.id, "actionLabel", e.target.value)} placeholder="e.g. Review request" />
                   </label>
                   <label className="block">
                     <span className={label}>Reminder days</span>
-                    <input className={input} value={o.reminderDays ?? ""} onChange={(e) => setField(step.id, "reminderDays", e.target.value)} placeholder="e.g. 7" inputMode="numeric" />
+                    <input className={fieldCls(step.id, "Reminder days")} value={o.reminderDays ?? ""} onChange={(e) => setField(step.id, "reminderDays", e.target.value)} placeholder="e.g. 7" inputMode="numeric" />
                   </label>
                   <label className="block">
                     <span className={label}>Action-required recipients label</span>
-                    <input className={input} value={o.actionRequiredLabel ?? ""} onChange={(e) => setField(step.id, "actionRequiredLabel", e.target.value)} placeholder="label only" />
-                    {step.actionRequiredRecipients?.length ? <p className={current}>Current: {step.actionRequiredRecipients.join(", ")}</p> : null}
+                    <input className={fieldCls(step.id, "Action-required recipients")} value={o.actionRequiredLabel ?? ""} onChange={(e) => setField(step.id, "actionRequiredLabel", e.target.value)} placeholder="label only" />
+                    {step.actionRequiredRecipients?.length ? <p className={currentNote}>Current: {step.actionRequiredRecipients.join(", ")}</p> : null}
                   </label>
                   <label className="block">
                     <span className={label}>FYI recipients label</span>
-                    <input className={input} value={o.fyiLabel ?? ""} onChange={(e) => setField(step.id, "fyiLabel", e.target.value)} placeholder="label only" />
-                    {step.fyiRecipients?.length ? <p className={current}>Current: {step.fyiRecipients.join(", ")}</p> : null}
+                    <input className={fieldCls(step.id, "FYI recipients")} value={o.fyiLabel ?? ""} onChange={(e) => setField(step.id, "fyiLabel", e.target.value)} placeholder="label only" />
+                    {step.fyiRecipients?.length ? <p className={currentNote}>Current: {step.fyiRecipients.join(", ")}</p> : null}
                   </label>
                   <label className="block">
                     <span className={label}>Escalation / fallback label</span>
-                    <input className={input} value={o.escalationLabel ?? ""} onChange={(e) => setField(step.id, "escalationLabel", e.target.value)} placeholder="label only" />
-                    {step.fallbackEscalation ? <p className={current}>Current: {step.fallbackEscalation}</p> : null}
+                    <input className={fieldCls(step.id, "Escalation / fallback")} value={o.escalationLabel ?? ""} onChange={(e) => setField(step.id, "escalationLabel", e.target.value)} placeholder="label only" />
+                    {step.fallbackEscalation ? <p className={currentNote}>Current: {step.fallbackEscalation}</p> : null}
                   </label>
                   <label className="block">
                     <span className={label}>Known gap note</span>
-                    <input className={input} value={o.knownGap ?? ""} onChange={(e) => setField(step.id, "knownGap", e.target.value)} placeholder="optional" />
-                    {step.knownGap ? <p className={current}>Current: {step.knownGap}</p> : null}
+                    <input className={fieldCls(step.id, "Known gap")} value={o.knownGap ?? ""} onChange={(e) => setField(step.id, "knownGap", e.target.value)} placeholder="optional" />
+                    {step.knownGap ? <p className={currentNote}>Current: {step.knownGap}</p> : null}
                   </label>
                 </div>
 
@@ -242,7 +295,7 @@ export function WorkflowDraftEditor({
             );
           })}
           <p className="text-[11px] leading-5 text-[#94A3B8]">
-            Approval roles, runtime execution, payroll, security/RLS, access and data changes are <span className="font-bold">not editable</span> here — Phase 2A is display/config only.
+            Approval roles, runtime execution, payroll, security/RLS, access and data changes are <span className="font-bold">not editable</span> here — Phase 2 is display/config only.
           </p>
         </div>
       </div>
