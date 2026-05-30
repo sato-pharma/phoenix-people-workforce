@@ -42,6 +42,7 @@ export type PermissionResource =
   | "sales"
   | "payroll"
   | "payslips"
+  | "deductions"
   | "expenses"
   | "vacancies"
   | "organogram"
@@ -67,6 +68,7 @@ export const permissionResources: PermissionResource[] = [
   "imports",
   "sales",
   "payroll",
+  "deductions",
   "expenses",
   "employees",
   "team",
@@ -157,6 +159,7 @@ const defaultPermissionMatrix: PermissionMap = {
     offers: allActions,
     payroll: allActions,
     payslips: allActions,
+    deductions: allActions,
     probation: allActions,
     resignations: allActions,
     permission_admin: allActions,
@@ -184,6 +187,7 @@ const defaultPermissionMatrix: PermissionMap = {
     permission_admin: ["read"],
     workflow_registry: ["read"],
     payslips: ["read", "export"],
+    deductions: ["read", "approve", "export"],
     resignations: ["read", "approve", "export"],
     sales: ["read", "export"],
     support_requests: ["read", "export"],
@@ -207,6 +211,7 @@ const defaultPermissionMatrix: PermissionMap = {
     outstation: ["read", "approve", "update", "delete", "export"],
     offers: allActions,
     payslips: ["read", "export"],
+    deductions: ["read", "create", "update", "approve", "export", "import"],
     probation: allActions,
     resignations: allActions,
     support_requests: ["read", "create", "update", "approve", "export"],
@@ -222,6 +227,7 @@ const defaultPermissionMatrix: PermissionMap = {
     leave: ["read", "approve", "export", "update"],
     payroll: allActions,
     payslips: ["read", "export"],
+    deductions: ["read", "approve", "export"],
     sales: ["read", "export"],
     support_requests: ["read", "create"],
     workflow_registry: ["read"],
@@ -528,6 +534,11 @@ export function resolveEmployeeIdentityId(context: Partial<Pick<AccessContext, "
 export function resolveNavigationMode(context: AccessContext): NavigationMode {
   if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) {
     return "employee-portal";
+  }
+  // The CEO is an executive Admin account: it uses the existing admin shell and
+  // navigation (landing on /admin/ceo-command-center), never the employee portal.
+  if (context.role === "CEO") {
+    return "admin";
   }
   return portalNavigationRoles.has(context.role) ? "employee-portal" : "admin";
 }
