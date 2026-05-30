@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, Info, Lock, Map as MapIcon, Settings2, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Info, Lock, Map as MapIcon, PencilLine, Settings2, ShieldCheck } from "lucide-react";
 
 import {
   domainEmailCount,
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 
 import { WorkflowMap } from "./workflow-map";
 import { WorkflowSimulatorPanel } from "./workflow-simulator-panel";
+import { WorkflowDraftEditor } from "./workflow-draft-editor";
 
 const RISK_BADGE: Record<WorkflowControlRisk, string> = {
   Low: "bg-[#ECFDF5] text-[#047857]",
@@ -35,10 +36,13 @@ type Tab = "center" | "registry";
 
 export function WorkflowControlCenter({
   canEdit,
+  canDraftEdit = false,
   registrySlot,
 }: {
-  /** Phase 1: always false (editing disabled). Drives the locked Edit panel. */
+  /** Phase 1: always false (real runtime editing/publish disabled). */
   canEdit: boolean;
+  /** Phase 2A: client-only Draft Editor available (Super Admin). */
+  canDraftEdit?: boolean;
   /** The existing Workflow Registry Manager, shown under the Advanced tab. */
   registrySlot: ReactNode;
 }) {
@@ -47,6 +51,7 @@ export function WorkflowControlCenter({
   const [selectedDomainKey, setSelectedDomainKey] = useState<string>(domains[0]?.key ?? "");
   const [selectedSubflowKey, setSelectedSubflowKey] = useState<string>(domains[0]?.subflows[0]?.key ?? "");
   const [editPanelOpen, setEditPanelOpen] = useState(false);
+  const [draftEditorOpen, setDraftEditorOpen] = useState(false);
 
   const selectedDomain: WorkflowControlDomain | undefined =
     domains.find((d) => d.key === selectedDomainKey) ?? domains[0];
@@ -175,11 +180,16 @@ export function WorkflowControlCenter({
                   <p className="text-xs text-[#64748B]">{selectedDomain.summary}</p>
                 </div>
                 <button
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm font-bold text-[#64748B] transition hover:bg-[#F8FAFC]"
-                  onClick={() => setEditPanelOpen((v) => !v)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-bold transition",
+                    canDraftEdit
+                      ? "border-[#F97316] bg-[#FFF7ED] text-[#C2410C] hover:bg-[#FFEDD5]"
+                      : "border-[#E2E8F0] bg-white text-[#64748B] hover:bg-[#F8FAFC]",
+                  )}
+                  onClick={() => (canDraftEdit ? setDraftEditorOpen(true) : setEditPanelOpen((v) => !v))}
                   type="button"
                 >
-                  <Lock className="h-4 w-4" /> Edit Workflow
+                  {canDraftEdit ? <PencilLine className="h-4 w-4" /> : <Lock className="h-4 w-4" />} Edit Workflow
                 </button>
               </div>
 
@@ -266,6 +276,17 @@ export function WorkflowControlCenter({
           ) : null}
         </div>
       )}
+
+      {draftEditorOpen && canDraftEdit && selectedDomain && selectedSubflow ? (
+        <WorkflowDraftEditor
+          domainKey={selectedDomain.key}
+          domainName={selectedDomain.name}
+          subflowKey={selectedSubflow.key}
+          subflowName={selectedSubflow.name}
+          steps={selectedSubflow.steps}
+          onClose={() => setDraftEditorOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

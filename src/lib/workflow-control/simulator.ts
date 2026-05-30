@@ -33,6 +33,11 @@ export type WorkflowSimulationInput = {
   managerOfManagerHrId?: string;
   /** Whether a designated HR Specialist (A-16) recipient exists. Defaults true. */
   hrSpecialistAvailable?: boolean;
+  /**
+   * Phase 2A: simulate a DRAFT step list (display/config overrides applied)
+   * instead of the canonical subflow steps. Read-only — never persisted.
+   */
+  overrideSteps?: WorkflowControlStep[];
 };
 
 export type SimulatedWorkflowStep = {
@@ -192,7 +197,11 @@ export function simulateWorkflow(input: WorkflowSimulationInput): WorkflowSimula
   const warnings: string[] = [];
   const sideEffects: string[] = [];
 
-  const steps: SimulatedWorkflowStep[] = subflow.steps.map((step, index) => {
+  // Phase 2A draft simulation uses the supplied override steps; otherwise the
+  // canonical subflow steps. Either way this is pure and read-only.
+  const baseSteps = input.overrideSteps ?? subflow.steps;
+
+  const steps: SimulatedWorkflowStep[] = baseSteps.map((step, index) => {
     const stepWarnings: string[] = [];
     const notificationRecipients = resolveList(step.notificationRecipients, input, stepWarnings);
     const emailRecipients = resolveList(step.emailRecipients, input, stepWarnings);
