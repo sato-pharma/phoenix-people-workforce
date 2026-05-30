@@ -24,6 +24,9 @@ export default async function AdminDeductionsGovernancePage() {
 
   // Phase C is read-only. Decision editing is deferred to Phase C2.
   const canEditDecisions = false;
+  // Phase D: allow the Sync-from-Field-Workforce-Compliance action only for
+  // roles that hold deductions/import in the permission matrix.
+  const canSync = await canAccess(access, "deductions", "import");
 
   // Server-side initial load. Failures are surfaced as empty initial state;
   // the workspace also exposes a Refresh control that re-queries the API.
@@ -72,6 +75,7 @@ export default async function AdminDeductionsGovernancePage() {
     <AppShell navigationMode="admin">
       <DeductionsGovernanceWorkspace
         canEditDecisions={canEditDecisions}
+        canSync={canSync}
         initialAudit={initialAudit}
         initialByEmployee={initialByEmployee}
         initialBySource={initialBySource}

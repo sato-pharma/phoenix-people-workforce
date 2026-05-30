@@ -75,6 +75,7 @@ type ApiPayload = {
 
 export type DeductionsGovernanceWorkspaceProps = {
   canEditDecisions: boolean;
+  canSync?: boolean;
   initialAudit: DeductionAuditEvent[] | null;
   initialByEmployee: DeductionEmployeeGroup[] | null;
   initialBySource: DeductionSourceGroup[] | null;
@@ -576,6 +577,12 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
   const [audit, setAudit] = useState<DeductionAuditEvent[] | null>(props.initialAudit);
   const [error, setError] = useState<string | null>(props.initialError);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncStatus, setSyncStatus] = useState<
+    | { kind: "success"; created: number; skippedExisting: number; sourceTotal: number; warnings: number }
+    | { kind: "error"; message: string }
+    | null
+  >(null);
 
   const totalPages = useMemo(() => {
     if (!inbox || inbox.pageSize <= 0) return 1;
@@ -609,6 +616,65 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
     }
   }, [filters, page, pageSize]);
 
+  const syncFromFieldWorkforce = useCallback(async () => {
+    const monthKeyForSync = filters.monthKey;
+    if (!monthKeyForSync) {
+      setSyncStatus({
+        kind: "error",
+        message: "Select a monthKey filter before syncing approved Field Workforce Compliance decisions.",
+      });
+      return;
+    }
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Sync approved Field Workforce Compliance decisions for current view? This will not modify payroll or leave balances.",
+      );
+      if (!confirmed) return;
+    }
+    setIsSyncing(true);
+    setSyncStatus(null);
+    try {
+      const response = await fetch(
+        "/api/admin/deductions-governance/sync/field-workforce-compliance",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ monthKey: monthKeyForSync }),
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        message?: string;
+        sourceTotal?: number;
+        created?: number;
+        skippedExisting?: number;
+        warnings?: string[];
+      };
+      if (!response.ok || !payload.success) {
+        setSyncStatus({
+          kind: "error",
+          message: payload.message ?? "Field Workforce Compliance sync failed.",
+        });
+        return;
+      }
+      setSyncStatus({
+        kind: "success",
+        created: payload.created ?? 0,
+        skippedExisting: payload.skippedExisting ?? 0,
+        sourceTotal: payload.sourceTotal ?? 0,
+        warnings: Array.isArray(payload.warnings) ? payload.warnings.length : 0,
+      });
+      await refresh(1, pageSize);
+    } catch (caught) {
+      setSyncStatus({
+        kind: "error",
+        message: caught instanceof Error ? caught.message : "Field Workforce Compliance sync failed.",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [filters.monthKey, refresh, pageSize]);
+
   const inboxRows = inbox?.rows ?? [];
   const safeKpis = kpis ?? {
     total: 0,
@@ -628,11 +694,46 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
   return (
     <div className="min-w-0 space-y-4 sm:space-y-5">
       <AdminPageHero
+        actions={
+          props.canSync ? (
+            <Button
+              disabled={isSyncing || isLoading}
+              onClick={() => {
+                void syncFromFieldWorkforce();
+              }}
+              title="Imports approved Field Workforce Compliance report decisions as deduction candidates. Does not execute payroll or modify leave balances."
+              type="button"
+              variant="secondary"
+            >
+              {isSyncing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              <span className="ml-2">Sync from Field Workforce Compliance</span>
+            </Button>
+          ) : null
+        }
         description="HR governance workspace for deduction candidates from operational sources. Read-only in Phase C. No payroll execution, no leave-balance mutation."
         eyebrow="Workforce Governance"
         icon={<ShieldCheck className="h-3.5 w-3.5" />}
         title="Deductions Governance Center"
       />
+
+      {syncStatus ? (
+        <AdminCallout tone={syncStatus.kind === "success" ? "success" : "danger"}>
+          {syncStatus.kind === "success" ? (
+            <ShieldCheck className="mt-0.5 h-4 w-4" />
+          ) : (
+            <AlertTriangle className="mt-0.5 h-4 w-4" />
+          )}
+          <p>
+            {syncStatus.kind === "success"
+              ? `Synced ${formatNumber(syncStatus.created)} new candidate(s). Skipped ${formatNumber(syncStatus.skippedExisting)} existing. Source rows: ${formatNumber(syncStatus.sourceTotal)}. Warnings: ${formatNumber(syncStatus.warnings)}.`
+              : `Sync failed: ${syncStatus.message}`}
+          </p>
+        </AdminCallout>
+      ) : null}
 
       <AdminCallout tone="neutral">
         <ShieldAlert className="mt-0.5 h-4 w-4" />
