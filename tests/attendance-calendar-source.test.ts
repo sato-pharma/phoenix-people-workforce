@@ -7,6 +7,7 @@ import {
   resolveActiveAttendancePolicy,
   resolveAttendanceStatus,
   resolveDeviceMappingStatus,
+  resolvePolicyAttendanceStatus,
   summarizeAttendancePolicies,
   summarizeDeviceUserMappings,
   summarizeFingerprintRows,
@@ -54,6 +55,92 @@ export function runAttendanceCalendarSourceTests() {
     deductionValue: "0",
     recommendedAction: "No action",
     status: "Complete",
+  });
+  const standardPolicy = {
+    effective_from: "2026-01-01",
+    effective_to: null,
+    grace_minutes: 10,
+    is_active: true,
+    scheduled_end: "17:00",
+    scheduled_start: "09:00",
+    target_type: "default",
+    target_value: null,
+  };
+  const lateRules = [
+    {
+      deduction_days: "0.25",
+      deduction_value: null,
+      event_type: "late",
+      from_minutes: 16,
+      is_active: true,
+      recommended_action: "Deduct quarter day",
+      sort_order: 1,
+      to_minutes: 30,
+    },
+  ];
+  assert.deepEqual(resolvePolicyAttendanceStatus({
+    baseSalary: 15000,
+    durationMinutes: 470,
+    firstPunchMinutes: 9 * 60,
+    lastPunchMinutes: 16 * 60 + 50,
+    policy: standardPolicy,
+    rules: lateRules,
+    visiblePunchCount: 2,
+  }), {
+    deductionDays: "0",
+    deductionValue: "0",
+    earlyLeaveMinutes: "",
+    lateMinutes: "",
+    recommendedAction: "No action",
+    status: "Complete",
+  });
+  assert.deepEqual(resolvePolicyAttendanceStatus({
+    baseSalary: 15000,
+    durationMinutes: 470,
+    firstPunchMinutes: 9 * 60 + 10,
+    lastPunchMinutes: 17 * 60,
+    policy: standardPolicy,
+    rules: lateRules,
+    visiblePunchCount: 2,
+  }), {
+    deductionDays: "0",
+    deductionValue: "0",
+    earlyLeaveMinutes: "",
+    lateMinutes: "",
+    recommendedAction: "No action",
+    status: "Complete",
+  });
+  assert.deepEqual(resolvePolicyAttendanceStatus({
+    baseSalary: 15000,
+    durationMinutes: 460,
+    firstPunchMinutes: 9 * 60 + 10,
+    lastPunchMinutes: 16 * 60 + 50,
+    policy: standardPolicy,
+    rules: lateRules,
+    visiblePunchCount: 2,
+  }), {
+    deductionDays: "0.25",
+    deductionValue: "125.00",
+    earlyLeaveMinutes: "",
+    lateMinutes: "20",
+    recommendedAction: "Deduct quarter day",
+    status: "Late",
+  });
+  assert.deepEqual(resolvePolicyAttendanceStatus({
+    baseSalary: 15000,
+    durationMinutes: 468,
+    firstPunchMinutes: 9 * 60 + 12,
+    lastPunchMinutes: 17 * 60,
+    policy: standardPolicy,
+    rules: lateRules,
+    visiblePunchCount: 2,
+  }), {
+    deductionDays: "",
+    deductionValue: "",
+    earlyLeaveMinutes: "",
+    lateMinutes: "12",
+    recommendedAction: "Missing deduction rule: Review late arrival",
+    status: "Late",
   });
   assert.deepEqual(summarizeFingerprintRows([
     { recommendedAction: "No action", status: "Complete" },
@@ -145,7 +232,7 @@ export function runAttendanceCalendarSourceTests() {
   );
 
   const fingerprintSource = readFileSync("src/lib/attendance/fingerprint-report.ts", "utf8");
-  assert.match(fingerprintSource, /resolveAttendanceStatus/);
+  assert.match(fingerprintSource, /resolvePolicyAttendanceStatus/);
   assert.match(fingerprintSource, /resolveActiveAttendancePolicy/);
   assert.match(fingerprintSource, /summarizeFingerprintRows/);
 
@@ -157,9 +244,15 @@ export function runAttendanceCalendarSourceTests() {
   assert.match(policySource, /summarizeAttendancePolicies/);
   assert.match(policySource, /deleteAttendancePolicy/);
   assert.match(policySource, /"exception"/);
+  assert.match(policySource, /validatePolicyRules/);
   const policyManagerSource = readFileSync("src/components/attendance/attendance-policies-manager.tsx", "utf8");
   assert.match(policyManagerSource, /Add exception/);
   assert.match(policyManagerSource, /Delete rule/);
+  assert.match(policyManagerSource, /Rule Preview/);
+  assert.match(policyManagerSource, /Late brackets/);
+  assert.match(policyManagerSource, /overlap/);
+  assert.match(policyManagerSource, /Day fraction/);
+  assert.match(policyManagerSource, /9-5 \+ 10 min grace/);
   assert.match(policyManagerSource, /scrollIntoView/);
 
   const calendarPageSource = readFileSync("app/hr-calendar/page.tsx", "utf8");

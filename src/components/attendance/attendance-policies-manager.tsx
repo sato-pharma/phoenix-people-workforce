@@ -17,6 +17,7 @@ import type {
   AttendancePolicyGroup,
   AttendancePolicyTargetType,
 } from "@/lib/attendance/policies";
+import { resolvePolicyAttendanceStatus } from "@/lib/attendance/metrics";
 
 type Props = {
   canUpdate: boolean;
@@ -58,6 +59,12 @@ const blankRule: RuleForm = {
   toMinutes: "",
 };
 
+const standardLateRules: RuleForm[] = [
+  { ...blankRule, deductionDays: "0.25", eventType: "late", fromMinutes: "16", recommendedAction: "Deduct quarter day", toMinutes: "30" },
+  { ...blankRule, deductionDays: "0.5", eventType: "late", fromMinutes: "31", recommendedAction: "Deduct half day", toMinutes: "45" },
+  { ...blankRule, deductionDays: "1", eventType: "late", fromMinutes: "46", recommendedAction: "Deduct full day", toMinutes: "" },
+];
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -66,15 +73,13 @@ function blankPolicy(): PolicyForm {
   return {
     effectiveFrom: today(),
     effectiveTo: "",
-    graceMinutes: "15",
+    graceMinutes: "10",
     id: null,
     isActive: true,
     policyName: "Default Attendance Policy",
-    rules: [
-      { ...blankRule, fromMinutes: "15", recommendedAction: "Review late arrival", toMinutes: "30" },
-    ],
-    scheduledEnd: "17:30",
-    scheduledStart: "09:30",
+    rules: standardLateRules.map((rule) => ({ ...rule })),
+    scheduledEnd: "17:00",
+    scheduledStart: "09:00",
     targetType: "default",
     targetValue: "",
   };
@@ -121,6 +126,115 @@ function eventLabel(value: AttendancePolicyEventType) {
   return value.replace("_", " ");
 }
 
+function ruleSummary(rule: AttendancePolicyGroup["rules"][number]) {
+  const range = rule.fromMinutes || rule.toMinutes
+    ? `${rule.fromMinutes || "0"}-${rule.toMinutes || "open"} min`
+    : "any duration";
+  const deduction = rule.deductionDays ? ` -> ${rule.deductionDays} day` : "";
+  return `${eventLabel(rule.eventType)} ${range}${deduction}: ${rule.recommendedAction}`;
+}
+
+function numberOrNull(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function minutesFromTime(value: string) {
+  const [hourText, minuteText] = value.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  return Number.isInteger(hour) && Number.isInteger(minute) ? hour * 60 + minute : null;
+}
+
+function validateRuleDrafts(rules: RuleForm[]) {
+  const issues: string[] = [];
+  const activeRules = rules
+    .map((rule, index) => ({ ...rule, index }))
+    .filter((rule) => rule.isActive);
+
+  for (const rule of activeRules) {
+    const from = numberOrNull(rule.fromMinutes);
+    const to = numberOrNull(rule.toMinutes);
+    if (!rule.recommendedAction.trim()) issues.push(`Rule ${rule.index + 1}: recommended action is required.`);
+    if (from != null && to != null && to < from) issues.push(`Rule ${rule.index + 1}: To minutes cannot be before From minutes.`);
+    if (numberOrNull(rule.deductionDays) == null && rule.eventType !== "exception") {
+      issues.push(`Rule ${rule.index + 1}: deduction day fraction is missing.`);
+    }
+  }
+
+  for (let leftIndex = 0; leftIndex < activeRules.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < activeRules.length; rightIndex += 1) {
+      const left = activeRules[leftIndex];
+      const right = activeRules[rightIndex];
+      if (left.eventType !== right.eventType) continue;
+      const leftFrom = numberOrNull(left.fromMinutes) ?? 0;
+      const leftTo = numberOrNull(left.toMinutes) ?? Number.POSITIVE_INFINITY;
+      const rightFrom = numberOrNull(right.fromMinutes) ?? 0;
+      const rightTo = numberOrNull(right.toMinutes) ?? Number.POSITIVE_INFINITY;
+      if (leftFrom <= rightTo && rightFrom <= leftTo) {
+        issues.push(`Rules ${left.index + 1} and ${right.index + 1} overlap for ${eventLabel(left.eventType)}.`);
+      }
+    }
+  }
+
+  return issues;
+}
+
+function previewRows(form: PolicyForm) {
+  const startMinutes = minutesFromTime(form.scheduledStart) ?? 9 * 60;
+  const endMinutes = minutesFromTime(form.scheduledEnd) ?? 17 * 60;
+  const dailyMinutes = endMinutes >= startMinutes ? endMinutes - startMinutes : endMinutes + 1440 - startMinutes;
+  const policy = {
+    effective_from: form.effectiveFrom,
+    effective_to: form.effectiveTo || null,
+    grace_minutes: numberOrNull(form.graceMinutes) ?? 0,
+    is_active: form.isActive,
+    scheduled_end: form.scheduledEnd,
+    scheduled_start: form.scheduledStart,
+    target_type: form.targetType,
+    target_value: form.targetValue || null,
+  };
+  const rules = form.rules.map((rule, index) => ({
+    deduction_days: numberOrNull(rule.deductionDays) == null ? null : rule.deductionDays,
+    deduction_value: null,
+    event_type: rule.eventType,
+    from_minutes: numberOrNull(rule.fromMinutes),
+    is_active: rule.isActive,
+    recommended_action: rule.recommendedAction,
+    sort_order: index + 1,
+    to_minutes: numberOrNull(rule.toMinutes),
+  }));
+  const samples = [
+    { label: "On time, leaves 10 min early", first: startMinutes, last: endMinutes - 10 },
+    { label: "Uses 10 min morning grace", first: startMinutes + 10, last: endMinutes },
+    { label: "Uses 20 min total", first: startMinutes + 10, last: endMinutes - 10 },
+    { label: "Late 35 min", first: startMinutes + 35, last: endMinutes },
+  ];
+
+  return samples.map((sample) => {
+    const status = resolvePolicyAttendanceStatus({
+      baseSalary: 15000,
+      durationMinutes: Math.max(0, sample.last - sample.first),
+      firstPunchMinutes: sample.first,
+      lastPunchMinutes: sample.last,
+      policy,
+      rules,
+      visiblePunchCount: 2,
+    });
+    return {
+      ...sample,
+      amount: status.deductionValue,
+      deductionDays: status.deductionDays,
+      result: status.recommendedAction,
+      status: status.status,
+      time: `${Math.floor(sample.first / 60).toString().padStart(2, "0")}:${(sample.first % 60).toString().padStart(2, "0")} - ${Math.floor(sample.last / 60).toString().padStart(2, "0")}:${(sample.last % 60).toString().padStart(2, "0")}`,
+      worked: dailyMinutes,
+    };
+  });
+}
+
 export function AttendancePoliciesManager({ canUpdate, initialData, initialError }: Props) {
   const formRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState(initialData);
@@ -135,6 +249,8 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
     employees: data?.employees ?? [],
     jobTitles: data?.jobTitles ?? [],
   }), [data?.employees, data?.jobTitles]);
+  const ruleIssues = useMemo(() => validateRuleDrafts(form.rules), [form.rules]);
+  const previews = useMemo(() => previewRows(form), [form]);
 
   async function load() {
     setRefreshing(true);
@@ -152,6 +268,10 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
   }
 
   async function savePolicy() {
+    if (ruleIssues.length > 0) {
+      setError(`Fix rule validation first: ${ruleIssues[0]}`);
+      return;
+    }
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -218,6 +338,41 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
     }));
   }
 
+  function applyStandardSchedule() {
+    setForm((current) => ({
+      ...current,
+      graceMinutes: "10",
+      scheduledEnd: "17:00",
+      scheduledStart: "09:00",
+    }));
+  }
+
+  function applyStandardLateRules() {
+    setForm((current) => ({
+      ...current,
+      rules: standardLateRules.map((rule) => ({ ...rule })),
+    }));
+  }
+
+  function addNoDeductionWindow() {
+    setForm((current) => ({
+      ...current,
+      rules: [
+        ...current.rules,
+        { ...blankRule, deductionDays: "0", eventType: "late", fromMinutes: "11", recommendedAction: "No deduction, HR visibility only", toMinutes: "15" },
+      ],
+    }));
+  }
+
+  function applyShortSchedule() {
+    setForm((current) => ({
+      ...current,
+      graceMinutes: "0",
+      scheduledEnd: "16:00",
+      scheduledStart: "10:00",
+    }));
+  }
+
   function updateRule(index: number, patch: Partial<RuleForm>) {
     setForm((current) => ({
       ...current,
@@ -259,7 +414,7 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
       {!canUpdate ? <AdminCallout tone="warning">You can review policies, but this account cannot update them.</AdminCallout> : null}
       <AdminCallout tone="neutral">
-        These policies are configuration only for now. They do not modify payroll until the deduction calculation and approval workflow are explicitly connected.
+        Grace minutes are a daily budget shared between late arrival and early leave. Deduction rules store day fractions, and reports estimate the amount from base salary.
       </AdminCallout>
 
       <div ref={formRef}>
@@ -314,7 +469,7 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
             <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" type="time" value={form.scheduledEnd} onChange={(event) => setForm({ ...form, scheduledEnd: event.target.value })} />
           </label>
           <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Grace Minutes</span>
+            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Daily Grace</span>
             <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" min="0" type="number" value={form.graceMinutes} onChange={(event) => setForm({ ...form, graceMinutes: event.target.value })} />
           </label>
           <label className="space-y-1">
@@ -329,6 +484,10 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
             <input checked={form.isActive} className="mb-3 h-4 w-4" type="checkbox" onChange={(event) => setForm({ ...form, isActive: event.target.checked })} />
             <span className="mb-2">Active</span>
           </label>
+          <div className="flex items-end gap-2 lg:col-span-2">
+            <Button variant="secondary" type="button" onClick={applyStandardSchedule}>9-5 + 10 min grace</Button>
+            <Button variant="secondary" type="button" onClick={applyShortSchedule}>10-4 special</Button>
+          </div>
         </div>
 
         <div className="border-t border-slate-100 p-4">
@@ -338,6 +497,12 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
               <Button variant="secondary" type="button" onClick={() => addRule()}>
                 <Plus className="h-4 w-4" />
                 Add rule
+              </Button>
+              <Button variant="secondary" type="button" onClick={applyStandardLateRules}>
+                Late brackets
+              </Button>
+              <Button variant="secondary" type="button" onClick={addNoDeductionWindow}>
+                11-15 no deduction
               </Button>
               <Button
                 variant="secondary"
@@ -354,9 +519,14 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
               No rules in this policy. Add a rule above, or save the policy with no rule brackets.
             </div>
           ) : null}
+          {ruleIssues.length > 0 ? (
+            <div className="mb-3 space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+              {ruleIssues.slice(0, 4).map((issue) => <p key={issue}>{issue}</p>)}
+            </div>
+          ) : null}
           <div className="space-y-3">
             {form.rules.map((rule, index) => (
-              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 lg:grid-cols-9" key={index}>
+              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 lg:grid-cols-8" key={index}>
                 <select className="h-10 rounded-lg border border-slate-200 px-3 text-sm" value={rule.eventType} onChange={(event) => updateRule(index, { eventType: event.target.value as AttendancePolicyEventType })}>
                   <option value="late">Late</option>
                   <option value="early_leave">Early leave</option>
@@ -367,8 +537,7 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                 <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="From min" type="number" value={rule.fromMinutes} onChange={(event) => updateRule(index, { fromMinutes: event.target.value })} />
                 <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="To min" type="number" value={rule.toMinutes} onChange={(event) => updateRule(index, { toMinutes: event.target.value })} />
                 <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm lg:col-span-2" placeholder="Recommended action" value={rule.recommendedAction} onChange={(event) => updateRule(index, { recommendedAction: event.target.value })} />
-                <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="Days" type="number" value={rule.deductionDays} onChange={(event) => updateRule(index, { deductionDays: event.target.value })} />
-                <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="Value" type="number" value={rule.deductionValue} onChange={(event) => updateRule(index, { deductionValue: event.target.value })} />
+                <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" list="attendance-deduction-day-options" placeholder="Day fraction" step="0.25" type="number" value={rule.deductionDays} onChange={(event) => updateRule(index, { deductionDays: event.target.value, deductionValue: "" })} />
                 <label className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
                   <input checked={rule.isActive} className="h-4 w-4" type="checkbox" onChange={(event) => updateRule(index, { isActive: event.target.checked })} />
                   Active
@@ -377,6 +546,31 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                   <Trash2 className="h-4 w-4" />
                   Delete rule
                 </Button>
+              </div>
+            ))}
+          </div>
+          <datalist id="attendance-deduction-day-options">
+            <option value="0" />
+            <option value="0.25" />
+            <option value="0.5" />
+            <option value="1" />
+          </datalist>
+        </div>
+
+        <div className="border-t border-slate-100 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-sm font-black text-slate-900">Rule Preview</p>
+            <p className="text-xs font-semibold text-slate-500">Example base salary: 15,000</p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {previews.map((preview) => (
+              <div className="rounded-lg border border-slate-200 bg-white p-3" key={preview.label}>
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{preview.label}</p>
+                <p className="mt-1 text-sm font-black text-slate-900">{preview.time}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-700">{preview.status}: {preview.result}</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  {preview.deductionDays || "0"} day / {preview.amount || "0"}
+                </p>
               </div>
             ))}
           </div>
@@ -423,10 +617,10 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">{policy.scheduledStart} - {policy.scheduledEnd}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">{policy.graceMinutes} min</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">{policy.graceMinutes} min daily</td>
                   <td className="px-4 py-3 text-sm text-slate-700">
                     {policy.rules.length === 0 ? "No rules" : policy.rules.slice(0, 3).map((rule) => (
-                      <div key={rule.id}>{eventLabel(rule.eventType)}: {rule.recommendedAction}</div>
+                      <div key={rule.id}>{ruleSummary(rule)}</div>
                     ))}
                   </td>
                   <td className="px-4 py-3">{policy.isActive ? <Badge variant="success">Active</Badge> : <Badge variant="neutral">Inactive</Badge>}</td>

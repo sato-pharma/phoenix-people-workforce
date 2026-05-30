@@ -103,7 +103,7 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
     "Department",
     "Scheduled Start",
     "Scheduled End",
-    "Grace Minutes",
+    "Daily Grace",
     "Policy",
     "Effective From",
     "Effective To",
@@ -133,8 +133,8 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
   notesSheet.addRows([
     ["Note", "Details"],
     ["Source", "Rows are calculated from attendance_raw_punches after active device user mappings resolve to employee HR_ID."],
-    ["Deduction Days / Value", "Reserved for the attendance policy engine. Current report does not mutate payroll."],
-    ["Scheduled Times", "Shown separately in the Policy Details sheet."],
+    ["Deduction Days / Amount", "Deduction amount is estimated from employee base salary / 30 * deduction day fraction. Current report does not mutate payroll."],
+    ["Scheduled Times", "Daily rows use the active policy resolved by HR_ID, then job title, then default policy. Grace minutes are a daily budget shared between late arrival and early leave."],
   ]);
   styleHeader(notesSheet.getRow(1));
   for (let row = 2; row <= notesSheet.rowCount; row += 1) {
