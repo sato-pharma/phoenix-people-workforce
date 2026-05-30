@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { WorkflowRegistryManager } from "@/components/admin/workflow-registry-manager";
 import { WorkflowControlCenter } from "@/components/workflow-control/workflow-control-center";
 import { AppShell } from "@/components/layout/app-shell";
-import { canAccess, canAccessWorkflowControlCenter, canEditWorkflowControlCenter } from "@/lib/auth/permissions";
+import { canAccess, canAccessWorkflowControlCenter, canEditWorkflowControlCenter, canUseWorkflowDraftEditor } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getWorkflowRegistryDashboard } from "@/lib/workflow-registry/service";
 
@@ -32,6 +32,7 @@ export default async function AdminWorkflowControlPage() {
     <AppShell navigationMode="admin">
       <WorkflowControlCenter
         canEdit={canEditWorkflowControlCenter(access)}
+        canDraftEdit={canUseWorkflowDraftEditor(access)}
         registrySlot={
           <WorkflowRegistryManager
             canManage={canManageRegistry}

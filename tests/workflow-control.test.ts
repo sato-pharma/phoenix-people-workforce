@@ -4,8 +4,16 @@ import { readFileSync } from "node:fs";
 import {
   canAccessWorkflowControlCenter,
   canEditWorkflowControlCenter,
+  canUseWorkflowDraftEditor,
+  WORKFLOW_CONTROL_DRAFT_EDITOR_ENABLED,
   WORKFLOW_CONTROL_EDIT_ENABLED,
 } from "../src/lib/auth/permissions.ts";
+import {
+  applyDraftToStep,
+  applyDraftToSteps,
+  validateWorkflowDraft,
+  WORKFLOW_DRAFT_FORBIDDEN_FIELDS,
+} from "../src/lib/workflow-control/draft.ts";
 import {
   domainGaps,
   domainHasNotificationGap,
@@ -218,4 +226,72 @@ export function runWorkflowControlTests() {
   const pageSrc = readFileSync(new URL("../app/admin/workflow-control/page.tsx", import.meta.url), "utf8");
   assert.match(pageSrc, /canAccessWorkflowControlCenter/, "page enforces the workflow-control access gate");
   assert.match(pageSrc, /redirect\("\/employee-portals"\)/, "page redirects unauthorized roles");
+
+  // ===========================================================================
+  // Phase 2A: Controlled Draft Editor (client-only; no runtime / publish / DB).
+  // ===========================================================================
+  assert.equal(WORKFLOW_CONTROL_DRAFT_EDITOR_ENABLED, true, "Phase 2A draft editor flag is ON");
+  assert.equal(canUseWorkflowDraftEditor({ role: "Super Admin", hrId: "B-10" }), true, "Super Admin can use the draft editor");
+  assert.equal(canUseWorkflowDraftEditor({ role: "HR Specialist", hrId: "A-16" }), false, "A-16 cannot use the draft editor");
+  for (const role of ["CEO", "Finance Manager", "National Sales Manager", "Medical Rep", "Training Manager", "Employee"] as const) {
+    assert.equal(canUseWorkflowDraftEditor({ role, hrId: "X-1" }), false, `${role} cannot use the draft editor`);
+  }
+  // Real runtime editing / publish stays OFF even though the draft editor is on.
+  assert.equal(WORKFLOW_CONTROL_EDIT_ENABLED, false, "real runtime edit/publish stays disabled in Phase 2A");
+  assert.equal(canEditWorkflowControlCenter({ role: "Super Admin", hrId: "B-10" }), false, "real publish/runtime edit remains locked");
+
+  // Draft layer: only SAFE display/config fields change; runtime fields preserved.
+  const draftSteps0 = getWorkflowSubflow("leave", "vacation-request")?.steps ?? [];
+  const submit0 = draftSteps0.find((s) => s.id === "submit");
+  assert.ok(submit0, "vacation submit step exists for draft tests");
+  const edited = applyDraftToStep(submit0!, {
+    name: "Employee files leave (draft)",
+    notificationEnabled: false,
+    actionRequiredLabel: "Line manager (draft)",
+    escalationLabel: "Escalate to HRBP (draft)",
+  });
+  assert.equal(edited.name, "Employee files leave (draft)", "draft renames the step display name");
+  assert.deepEqual(edited.notificationRecipients, [], "disabling notifications clears in-app recipients");
+  assert.deepEqual(edited.actionRequiredRecipients, ["Line manager (draft)"], "action-required label is applied");
+  assert.match(edited.fallbackEscalation ?? "", /Escalate to HRBP \(draft\)/, "escalation label is applied");
+  // Runtime / approval / data fields are NEVER changed by a draft.
+  assert.equal(edited.actor, submit0!.actor, "draft does not change the actor");
+  assert.equal(edited.role, submit0!.role, "draft does not change the responsible role");
+  assert.equal(edited.statusProduced, submit0!.statusProduced, "draft does not change the status produced");
+  assert.equal(edited.sideEffects, submit0!.sideEffects, "draft does not change side effects");
+
+  // Validation: blank name / bad reminder days warn; forbidden list is surfaced.
+  const v = validateWorkflowDraft(draftSteps0, { [submit0!.id]: { name: "  ", reminderDays: "abc" } });
+  assert.equal(v.status, "warnings", "blank name + bad reminder days yields warnings");
+  assert.ok(v.warnings.length >= 2, "two validation warnings raised");
+  assert.ok((WORKFLOW_DRAFT_FORBIDDEN_FIELDS as readonly string[]).includes("Publish to production"), "forbidden fields include publish to production");
+  assert.ok((v.blockedFields as readonly string[]).includes("Runtime execution logic"), "validation surfaces blocked runtime fields");
+  assert.equal(validateWorkflowDraft(draftSteps0, { [submit0!.id]: { name: "Renamed" } }).status, "valid", "a clean rename validates");
+
+  // Draft simulation: pure, uses override steps, reflects the draft edit.
+  const draftApplied = applyDraftToSteps(draftSteps0, { [submit0!.id]: { name: "DRAFT submit step" } });
+  const draftSim = simulateWorkflow({ domainKey: "leave", subflowKey: "vacation-request", overrideSteps: draftApplied, managerHrId: "A-99" });
+  assert.equal(draftSim.found, true, "draft simulation resolves");
+  assert.ok(draftSim.steps.some((s) => s.name === "DRAFT submit step"), "draft simulation reflects the edited step name");
+
+  // No mutation / no server in the draft layer or editor.
+  const draftSrc = readFileSync(new URL("../src/lib/workflow-control/draft.ts", import.meta.url), "utf8");
+  const editorSrc = readFileSync(new URL("../src/components/workflow-control/workflow-draft-editor.tsx", import.meta.url), "utf8");
+  for (const src of [draftSrc, editorSrc]) {
+    assert.equal(/fetch\(|\/api\/|getSupabaseAdmin|@\/lib\/supabase|\.insert\(|\.update\(|\.delete\(/.test(src), false, "draft layer/editor must not call any API/DB/mutation");
+  }
+
+  // Editor UI: Phase 2A title, runtime-safety banner, Save + Publish disabled.
+  assert.match(editorSrc, /Draft Editor — Phase 2A/, "editor titled Draft Editor — Phase 2A");
+  assert.match(editorSrc, /does not change live workflow behavior/i, "editor states runtime is unchanged");
+  assert.match(editorSrc, /Persistence comes in Phase 3/, "Save Draft is local-only / Phase 3");
+  assert.match(editorSrc, /Publishing requires Phase 3 versioning and approval/, "Publish disabled with Phase 3 message");
+  assert.match(editorSrc, /disabled/, "disabled controls present (Save/Publish)");
+  // Editor must NOT expose forbidden runtime fields as editable inputs.
+  assert.equal(/setField\(step\.id, "(actor|role|statusProduced)"/.test(editorSrc), false, "editor does not expose actor/role/status as editable");
+
+  // Center wiring: Edit Workflow opens the draft editor when allowed.
+  assert.match(centerSrc, /WorkflowDraftEditor/, "center renders the draft editor");
+  assert.match(centerSrc, /canDraftEdit \? setDraftEditorOpen\(true\)/, "Edit Workflow opens the draft editor for allowed users");
+  assert.match(pageSrc, /canUseWorkflowDraftEditor/, "page passes the draft-editor access gate");
 }

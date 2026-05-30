@@ -938,3 +938,17 @@ export function canEditWorkflowControlCenter(context: Pick<AccessContext, "role"
   if (!WORKFLOW_CONTROL_EDIT_ENABLED) return false;
   return canAccessWorkflowControlCenter(context);
 }
+
+/**
+ * Phase 2A: a SAFE, client-only Draft Editor (display/config fields, local
+ * state, no persistence, no runtime/publish). Available to the same governance
+ * set as access (Super Admin only). This is distinct from
+ * WORKFLOW_CONTROL_EDIT_ENABLED, which gates REAL runtime editing/publish and
+ * remains OFF.
+ */
+export const WORKFLOW_CONTROL_DRAFT_EDITOR_ENABLED = true;
+
+export function canUseWorkflowDraftEditor(context: Pick<AccessContext, "role" | "hrId">): boolean {
+  if (!WORKFLOW_CONTROL_DRAFT_EDITOR_ENABLED) return false;
+  return canAccessWorkflowControlCenter(context);
+}
