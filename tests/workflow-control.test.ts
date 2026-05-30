@@ -382,4 +382,57 @@ export function runWorkflowControlTests() {
   assert.match(editorSrc, /buildDraftMapSteps/, "editor builds the draft map from order + visibility + overrides");
   assert.match(editorSrc, /Order changed/, "impact summary shows order-changed state");
   assert.match(editorSrc, /Hidden in draft map/, "impact summary lists hidden steps");
+
+  // ===========================================================================
+  // Phase 3E: persistence/status panel (disabled UI, no API/DB).
+  // ===========================================================================
+  const panelSrc = readFileSync(new URL("../src/components/workflow-control/persistence-status-panel.tsx", import.meta.url), "utf8");
+
+  // 1. Persistence Status Panel content + values reflect disabled flags.
+  assert.match(panelSrc, /Phase 3 persistence status/, "panel has the persistence status header");
+  for (const row of ["Persistence", "Publish", "Rollback", "Migration", "Runtime workflow execution", "Phase 3 storage"]) {
+    assert.match(panelSrc, new RegExp(`label:\\s*"${row}"`), `panel includes the "${row}" status row`);
+  }
+  // Migration shows "Not applied"; runtime is "Static definitions only"; storage "Not active yet".
+  assert.match(panelSrc, /Not applied/, "panel shows Migration: Not applied");
+  assert.match(panelSrc, /Static definitions only/, "panel shows Runtime workflow execution: Static definitions only");
+  assert.match(panelSrc, /Not active yet/, "panel shows Phase 3 storage: Not active yet");
+
+  // 2. Version History placeholder (locked) + persisted-drafts empty state.
+  assert.match(panelSrc, /Version History/, "panel surfaces Version History");
+  assert.match(panelSrc, /Version history will become available after Phase 3 persistence migration/, "Version History placeholder copy present");
+  assert.match(panelSrc, /Persisted Drafts/, "Persisted Drafts empty-state present");
+  assert.match(panelSrc, /Saved drafts unavailable until persistence is enabled/, "persisted-drafts empty-state copy present");
+
+  // 3-4. Safety note for publish + Save/Load/Publish/Rollback clarity in editor.
+  assert.match(panelSrc, /Publishing will never change live workflows without validation, audit log, and explicit approval/, "publish safety note present");
+  assert.match(editorSrc, /Phase 3 persistence required/, "Save Draft clarifies Phase 3 persistence required");
+  assert.match(editorSrc, /Saved drafts unavailable until persistence is enabled/, "Load Draft clarifies persistence is required");
+  assert.match(editorSrc, /Requires Phase 3 versioning \+ approval/, "Publish clarifies Phase 3 versioning + approval");
+  assert.match(editorSrc, /Rollback requires published versions/, "Rollback clarifies it requires published versions");
+  assert.match(editorSrc, /<PersistenceStatusPanel/, "editor renders the PersistenceStatusPanel");
+
+  // 5. Governance checklist items (all six).
+  for (const item of [
+    "Migration drafted",
+    "RLS planned",
+    "Service-role only",
+    "Feature flags disabled",
+    "Runtime adoption deferred to Phase 4",
+    "Audit log planned",
+  ]) {
+    assert.match(panelSrc, new RegExp(`label:\\s*"${item}"`), `governance checklist includes "${item}"`);
+  }
+
+  // 7. Phase 3E adds no API calls: editor + panel must not call fetch / supabase / api routes.
+  for (const src of [panelSrc, editorSrc]) {
+    assert.equal(/fetch\s*\(/.test(src), false, "no fetch() call in Phase 3E UI");
+    assert.equal(/from\s+["']@\/lib\/supabase\b/.test(src), false, "no @/lib/supabase import in Phase 3E UI");
+    assert.equal(/\bgetSupabaseAdmin\s*\(/.test(src), false, "no getSupabaseAdmin() call in Phase 3E UI");
+    assert.equal(/\/api\/admin\/workflow-control\//.test(src), false, "no workflow-control API path referenced in Phase 3E UI");
+    assert.equal(/\.from\s*\(\s*["'`]/.test(src), false, "no DB table query in Phase 3E UI");
+  }
+
+  // 6. Phase 2 features remain intact (anchored by existing assertions above).
+  // 12+13. Super Admin access remains unchanged (asserted earlier in this suite).
 }
