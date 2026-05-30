@@ -22,6 +22,7 @@ import {
 import { simulateWorkflow, type WorkflowSimulationResult } from "@/lib/workflow-control/simulator";
 
 import { WorkflowMap } from "./workflow-map";
+import { PersistenceStatusPanel } from "./persistence-status-panel";
 
 const inputBase = "w-full rounded-lg border bg-white px-2.5 py-1.5 text-[13px] text-[#0F172A] outline-none focus:border-[#F97316]";
 const label = "text-[10px] font-black uppercase tracking-[0.10em] text-[#64748B]";
@@ -130,6 +131,9 @@ export function WorkflowDraftEditor({
           </p>
         </div>
 
+        {/* Phase 3E persistence/status panel (read-only; reflects disabled flags). */}
+        <PersistenceStatusPanel />
+
         {/* Draft impact summary (Current vs Draft) */}
         <div className="mx-5 mt-3 rounded-xl border border-[#E2E8F0] px-4 py-2.5">
           <p className="text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Draft impact (Current vs Draft)</p>
@@ -164,13 +168,19 @@ export function WorkflowDraftEditor({
           <button className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#94A3B8]" disabled title="Phase 3 persistence required" type="button">
             <Lock className="h-4 w-4" /> Save Draft <span className="font-normal">(Phase 3 persistence required)</span>
           </button>
-          <button className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#94A3B8]" disabled title="Phase 3 versioning + approval required" type="button">
-            <Lock className="h-4 w-4" /> Publish
+          <button className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#94A3B8]" disabled title="Saved drafts unavailable until persistence is enabled" type="button">
+            <Lock className="h-4 w-4" /> Load Draft <span className="font-normal">(Saved drafts unavailable until persistence is enabled)</span>
+          </button>
+          <button className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#94A3B8]" disabled title="Requires Phase 3 versioning + approval" type="button">
+            <Lock className="h-4 w-4" /> Publish <span className="font-normal">(Requires Phase 3 versioning + approval)</span>
+          </button>
+          <button className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#94A3B8]" disabled title="Rollback requires published versions" type="button">
+            <Lock className="h-4 w-4" /> Rollback <span className="font-normal">(Rollback requires published versions)</span>
           </button>
         </div>
         <p className="px-5 pt-1.5 text-[11px] text-[#94A3B8]">
           Reorder/visibility/edits are <span className="font-bold">draft preview only</span>. Save Draft →{" "}
-          <span className="font-bold">Phase 3 persistence required</span>. Publish → <span className="font-bold">Phase 3 versioning + approval required</span>.
+          <span className="font-bold">Phase 3 persistence required</span>. Publish → <span className="font-bold">Phase 3 versioning + approval required</span>. Rollback → <span className="font-bold">Rollback requires published versions</span>.
         </p>
 
         {/* Draft map preview */}
