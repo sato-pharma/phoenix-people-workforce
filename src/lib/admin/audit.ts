@@ -18,6 +18,8 @@ export type AuditEntityType =
   | "source_of_sales_product"
   | "user"
   | "vacation_request"
+  | "weekly_plan"
+  | "weekly_plan_day"
   | "workflow_registry";
 
 export type AuditLogInput = {
