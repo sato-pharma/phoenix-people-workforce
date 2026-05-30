@@ -1,9 +1,11 @@
 # Employee Portal — Launch-Readiness Remediation Plan
 
+> **⚠️ ARCHIVED — historical record.** This is a completed, point-in-time planning and verification artifact from 2026-05-28. It is retained for reference only and is not a current operating document. Branch names, deployment URLs, and verification notes reflect the state at that time.
+
 > **Status:** Reviewed and corrected against the local checkout **and** live Supabase + Vercel state on 2026-05-28.
 > **Nature of this document:** Planning + verification only. It changes no code, SQL, RLS, navigation, or deployment. Nothing here has been applied.
 > **Evidence tags:** every claim is tagged **[repo]** (local checkout), **[github-cli]** (GitHub API via authenticated `gh` CLI), **[supabase]** (live Phoenix HR project `ozucdzovmcqvepbozvqf`), **[vercel]** (project `phoenix-workforce`), or **[unknown]** (could not verify).
-> **GitHub MCP is NOT connected** this session. As an equivalent fallback, the **`gh` CLI is authenticated** (account `Phoenix-HR`, scopes `repo`/`workflow`/`read:org`) and is used for GitHub API facts — tagged **[github-cli]**. To enable the MCP proper, register a `github` server in Claude Code settings and restart; it is not required for this plan.
+> **GitHub facts** in this document were gathered via the authenticated **`gh` CLI** (account `Phoenix-HR`, scopes `repo`/`workflow`/`read:org`) and are tagged **[github-cli]**.
 
 ---
 
@@ -61,16 +63,16 @@
 | F10 | Contact HR Support launch conflict | "Keep CTA to support" | Support is **deferred** Beta; the "Support" section in `buildEmployeePortalSections` (`employee-portal-layout.tsx:180-184`) is **always shown** (no visibility flag). Profile CTA currently deep-links into it. | **[repo]** | Resolve via Workstream 2 Option A vs B (recommendation below). | P1 |
 | F11 | Marketing Requests beta status | "Gate via `launchStatus`" | Portal Marketing visibility is controlled by `showMarketingRequestsTab` / `showMarketingControlTab` / `showMarketingCustomerDatabaseTab` flags in `navigation.ts`, **not** `launchStatus`. **[supabase]**: 11 `marketing_*` tables have RLS enabled but **no policies** (deny-by-default; module data layer unfinished). | **[repo]** + **[supabase]** | Gate via the visibility flags; keep Marketing Beta. | P1 |
 | F12 | Workload/expense-dashboard "admin leak" | "Blocker" | **False.** `expense-dashboard/page.tsx` passes `adminKeyCards={null}`; rendered conditionally. | **[repo]** | Removed from scope. | none |
-| F13 | Vercel deployment readiness | (not in original) | All 14 recent deployments `READY`; prod = `main@3ab7d4ec`; preview = `codex/work-from-production@da83e067` ("Close employee portal launch security gaps"); preview wired to **read-only production data**. | **[vercel]** | Use preview (read-only data) for WS7 QA; verify public alias post-promote. | info |
+| F13 | Vercel deployment readiness | (not in original) | All 14 recent deployments `READY`; prod = `main@3ab7d4ec`; preview = working branch `@da83e067` ("Close employee portal launch security gaps"); preview wired to **read-only production data**. | **[vercel]** | Use preview (read-only data) for WS7 QA; verify public alias post-promote. | info |
 | F14 | Extra advisor ERROR | (not in original) | `public.v_unified_audit_logs` is a `SECURITY DEFINER` view (advisor **ERROR**, non-portal). ~15 `current_access_*` definer functions are RPC-callable by `authenticated` (WARN). | **[supabase]** | Out of portal scope; track separately so the §10 "zero critical errors" gate isn't surprised. | P3 (separate) |
 
 ---
 
-## 2a. MCP Verification Log (read-only, 2026-05-28)
+## 2a. Verification Log (read-only, 2026-05-28)
 
 No migrations, DDL, deployments, or data mutations were performed.
 
-**Connectivity:** **[supabase]** connected (two projects in org: `Phoenix HR`=`ozucdzovmcqvepbozvqf` used here, and `sato.hr2@hotmail.com`=`oaifhavixhdtwmseshff`). **[vercel]** connected (`phoenix-workforce`, repo `Phoenix-HR/phoenix-people-workforce`). **GitHub MCP not connected — `gh` CLI used instead [github-cli].**
+**Connectivity:** **[supabase]** verified (two projects in org: `Phoenix HR`=`ozucdzovmcqvepbozvqf` used here, and `sato.hr2@hotmail.com`=`oaifhavixhdtwmseshff`). **[vercel]** verified (`phoenix-workforce`, repo `Phoenix-HR/phoenix-people-workforce`). **GitHub facts via authenticated `gh` CLI [github-cli].**
 
 **GitHub (via `gh` [github-cli]):** repo `Phoenix-HR/phoenix-people-workforce` (PRIVATE, default branch `main`). Only **one open PR**: #14 (dependabot `tmp` bump → `main`) — **no employee-portal launch PR exists yet**. **CI is green on the preview branch HEAD:** the latest `CI` run on `codex/work-from-production@da83e067` ("Close employee portal launch security gaps") concluded **success** (along with the preceding 5 commits). One older run failed (`e7ee39e`, e2e stabilization) and one was cancelled, both superseded by later green runs.
 
@@ -103,7 +105,7 @@ During an earlier session, edits were applied to the working tree (uncommitted) 
 ## 3. Workstream 1 — Portal RLS & Support Security Closure
 
 > **Status (2026-05-28): DRAFTED, NOT APPLIED.** Migration file created in the repo at
-> `supabase/migrations/20260528093000_employee_support_requests_rls.sql`. Re-verified read-only via Supabase MCP on the `Phoenix HR` project (`ozucdzovmcqvepbozvqf`): `employee_support_requests` RLS **off**, **0** policies, advisor **ERROR** `rls_disabled_in_public` present. **Not applied to any project; no production data mutated; not committed; not deployed.** Apply on a Supabase branch/preview only after confirming the production project binding via `NEXT_PUBLIC_SUPABASE_URL`.
+> `supabase/migrations/20260528093000_employee_support_requests_rls.sql`. Re-verified read-only against the `Phoenix HR` project (`ozucdzovmcqvepbozvqf`): `employee_support_requests` RLS **off**, **0** policies, advisor **ERROR** `rls_disabled_in_public` present. **Not applied to any project; no production data mutated; not committed; not deployed.** Apply on a Supabase branch/preview only after confirming the production project binding via `NEXT_PUBLIC_SUPABASE_URL`.
 
 **Goal:** close the single hard blocker without weakening any boundary. **No production SQL is executed by this plan** — it drafts the migration and prescribes branch/preview testing.
 
@@ -261,7 +263,7 @@ Drive via dev-auth (`GET /api/dev-auth?role=...`, `NODE_ENV=development`). Use t
 
 - **[supabase]** advisors: zero **new** critical RLS errors; `employee_support_requests` ERROR cleared. (Pre-existing `v_unified_audit_logs` ERROR tracked separately — F14.)
 - Direct JWT probes pass (WS1).
-- **[github-cli]** GitHub CI: green on `codex/work-from-production` HEAD today; re-confirm `gh run list --branch codex/work-from-production` is `success` on the commit that carries the launch changes before promote.
+- **[github-cli]** GitHub CI: green on the working-branch HEAD today; re-confirm `gh run list --branch <working-branch>` is `success` on the commit that carries the launch changes before promote.
 - `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`. **[repo]** `npm run check:harden` exists (lint+typecheck+test+build) — run it; if it were missing, define it as that chain.
 - **[vercel]** preview smoke (all recent builds `READY`); if a build fails, pull Vercel build logs.
 - Production alias smoke **only after promotion** — verify `https://phoenix-workforce.vercel.app` directly.
@@ -270,7 +272,7 @@ Drive via dev-auth (`GET /api/dev-auth?role=...`, `NODE_ENV=development`). Use t
 
 ## 11. Implementation Order
 
-- **Phase A — Verification-only inventory** (GitHub/Supabase/Vercel). *GitHub MCP unavailable → use authenticated `gh` CLI [github-cli] for PR/CI; local repo for files.* Confirm production Supabase project binding.
+- **Phase A — Verification-only inventory** (GitHub/Supabase/Vercel). *Use authenticated `gh` CLI [github-cli] for PR/CI; local repo for files.* Confirm production Supabase project binding.
 - **Phase B — RLS / Support closure** (WS1) on a Supabase branch/preview; JWT probes.
 - **Phase C — Profile + Navigation + Role helpers** (WS2, WS4, WS3) — incl. reverting the wrong-layer nav edit.
 - **Phase D — Logging + Scope badges** (WS5, WS6).
@@ -305,14 +307,14 @@ Drive via dev-auth (`GET /api/dev-auth?role=...`, `NODE_ENV=development`). Use t
 
 > All prompts: no commit/deploy without explicit approval; verify files via repo before editing; Supabase changes via branch/preview + read-only checks first; Vercel read-only unless told to deploy.
 
-1. **RLS / Support closure — Codex + Supabase MCP (branch/read-only first):** "Confirm the production Supabase project via `NEXT_PUBLIC_SUPABASE_URL`. Draft `supabase/migrations/<ts>_employee_support_requests_rls.sql` enabling RLS + a single `service_role` deny-by-default policy (mirror `job_offers`). Apply on a Supabase branch only; run RLS + foreign-row JWT probe; re-run advisors. Show me before applying to production."
-2. **Profile page — Claude Code + repo:** "Replace the `profile/page.tsx` stub with a read-only page reusing `getEmployeePortalShellData`, `IdentityCard`, `EmployeePortalPageShell`, `ScopeBadge`. Implement Option A: non-clickable 'Contact HR to update' note. Log failures via the WS5 helper."
-3. **Navigation gating — Claude Code + repo:** "Gate Marketing (3 flags) and the Support section behind a launch/beta flag in `src/lib/employee-portal/navigation.ts` / `buildEmployeePortalSections()`. Revert the wrong-layer edits in `system-navigation.ts` + `sidebar.tsx`. Add a test asserting Beta items are absent at launch and present when the flag is on."
-4. **Scope badge — Claude Code + repo:** "Apply `ScopeBadge` to the 7 scoped pages; ensure 'Company' shows only for `company` scope."
-5. **Logging — Codex or Claude Code + repo:** "Add the PII-safe `logPortalFailure` helper and instrument the verified catch sites starting with `employee-portal-server-shell.tsx:27`. No salary/token/payload logging."
-6. **Role helper cleanup — Codex + repo:** "Keep `isNationalSalesManager`; add `isDistrictManager`/`isTrainingManager` only if they remove real duplication. Add the helper truth-table test."
-7. **QA smoke — Codex + Vercel MCP:** "Generate a dev-auth role/device smoke checklist; run against the read-only-data preview; capture cross-employee-exposure results."
-8. **Release gate — Codex + Supabase/Vercel MCP (GitHub via CLI):** "Run `check:harden`; re-run Supabase advisors; check GitHub CI; preview smoke; verify public alias only after an approved promote."
+1. **RLS / Support closure — engineering (Supabase, branch/read-only first):** "Confirm the production Supabase project via `NEXT_PUBLIC_SUPABASE_URL`. Draft `supabase/migrations/<ts>_employee_support_requests_rls.sql` enabling RLS + a single `service_role` deny-by-default policy (mirror `job_offers`). Apply on a Supabase branch only; run RLS + foreign-row JWT probe; re-run advisors. Show me before applying to production."
+2. **Profile page — engineering (repo):** "Replace the `profile/page.tsx` stub with a read-only page reusing `getEmployeePortalShellData`, `IdentityCard`, `EmployeePortalPageShell`, `ScopeBadge`. Implement Option A: non-clickable 'Contact HR to update' note. Log failures via the WS5 helper."
+3. **Navigation gating — engineering (repo):** "Gate Marketing (3 flags) and the Support section behind a launch/beta flag in `src/lib/employee-portal/navigation.ts` / `buildEmployeePortalSections()`. Revert the wrong-layer edits in `system-navigation.ts` + `sidebar.tsx`. Add a test asserting Beta items are absent at launch and present when the flag is on."
+4. **Scope badge — engineering (repo):** "Apply `ScopeBadge` to the 7 scoped pages; ensure 'Company' shows only for `company` scope."
+5. **Logging — engineering (repo):** "Add the PII-safe `logPortalFailure` helper and instrument the verified catch sites starting with `employee-portal-server-shell.tsx:27`. No salary/token/payload logging."
+6. **Role helper cleanup — engineering (repo):** "Keep `isNationalSalesManager`; add `isDistrictManager`/`isTrainingManager` only if they remove real duplication. Add the helper truth-table test."
+7. **QA smoke — engineering (Vercel):** "Generate a dev-auth role/device smoke checklist; run against the read-only-data preview; capture cross-employee-exposure results."
+8. **Release gate — engineering (Supabase / Vercel, GitHub via CLI):** "Run `check:harden`; re-run Supabase advisors; check GitHub CI; preview smoke; verify public alias only after an approved promote."
 
 ---
 

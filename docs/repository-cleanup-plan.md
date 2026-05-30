@@ -1,10 +1,10 @@
 # Repository Cleanup Plan
 
 **Date:** 2026-05-30
-**Status:** Phase 1 executed -- branch cleanup, Excel cleanup, employee photo cleanup, and history rewrite remain pending approval
+**Status:** Phases 1-3 executed (root cleanup, branch cleanup, Excel/binary List A). Employee photo cleanup and history rewrite remain pending approval
 **Goal:** Make this repository look like a serious enterprise software project
 
-### Phase 1 Completed Actions
+### Phase 1 Completed Actions (root + artifacts)
 - Moved 4 root docs to docs/ (audit, payroll guide, system overview, todo)
 - Moved 3 root scripts to scripts/ (check-query.js, no-data-check.js, start-dev.ps1)
 - Moved 1 stray SQL to supabase/
@@ -12,13 +12,24 @@
 - Fixed local Windows paths in moved docs, production-readiness doc, and attendance agent README
 - proxy.ts kept at root (test dependency found in tests/phase21-security-hardening.test.ts)
 
-### Pending Approval
-- Branch deletion (16 local + 15 remote)
-- Excel file untracking (32 files, ~45 MB)
-- Output directory untracking
-- Employee photo PII remediation
-- shadcn stub consolidation
-- Git history rewrite (BFG/filter-repo)
+### Phase 2 Completed Actions (branches)
+- Deleted 14 stale local branches
+- Deleted 18 stale remote branches (List A)
+- Kept: main, codex/work-from-production, dependabot (open PR), seer/fix (open PR #15)
+
+### Phase 3 Completed Actions (Excel/binary List A)
+- Untracked `sato 4-2026/` (25 files, ~40.75 MB) via git rm --cached
+- Untracked `output/` (2 files, ~3.15 MB)
+- Untracked `mabretelasafraRTDrequest.xlsx` and `Outcome_VS_investment(Marchrequests)_2.xlsx`
+- Total untracked: ~44 MB (files remain on disk)
+- KEPT (required): Phoenix Pharmacy Database.xlsx + phoenix products.xlsx (CI test fixtures), Phoneix system template.xlsx (payroll app asset)
+- Documented sato 4-2026/ local-only requirement in docs/scripts.md
+
+### Pending Approval (future phases)
+- Close PR #15, then delete origin/seer/fix/hr-specialist-portal-access
+- Employee photo PII remediation + Supabase Storage migration (127 files, ~17 MB)
+- shadcn stub consolidation (components/ui/button.tsx, lib/utils.ts)
+- Git history rewrite (BFG/filter-repo) to permanently reclaim ~44 MB of binary history
 
 ---
 
@@ -36,7 +47,7 @@ The Phoenix Workforce repository contains **84 MB of tracked binary data** (45 M
 | 55 root-level entries (should be ~20) | High | Unprofessional first impression, confusing for new devs |
 | 38 branches (most stale or experimental) | Medium | Cluttered branch list, confusing for contributors |
 | 9 employee photos with personal-name filenames | Medium | PII risk (full names in git history) |
-| Tool artifact directories tracked (.codex-artifacts, memory, trae, .trae) | Medium | Exposes internal tooling, unprofessional |
+| Local development tool directories tracked (screenshots, notes, IDE config) | Medium | Exposes internal tooling, unprofessional |
 | 5 root-level Excel files | Medium | Not source code, inflates repo |
 | 6 scratch/debug files at root | Low | Clutter, unprofessional |
 | 4 documentation files misplaced at root | Low | Disorganized |
@@ -291,7 +302,7 @@ README.md, CONTRIBUTING.md, docs/README.md, docs/troubleshooting.md, .github/pul
 |---|---|---|
 | `docs/workforce-lifecycle-phase-1-plan.md` | Planning doc | Keep -- still relevant |
 | `docs/marketing-requests-mvp.md` | Planning doc | Keep -- still relevant |
-| `docs/employee-portal-launch-remediation-plan.md` | Remediation plan (contains tool names) | Archive to docs/archive/ in future |
+| `docs/archive/employee-portal-launch-remediation-plan.md` | Completed remediation plan | **Archived** to docs/archive/ and marked as a historical record; tool-brand names neutralized |
 | `docs/image-evidence-storage-report.md` | Analysis report | Keep for reference |
 
 ---

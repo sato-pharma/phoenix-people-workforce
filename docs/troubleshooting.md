@@ -57,7 +57,7 @@ Excel imports (payroll, employees, sales) require specific column formats. Check
 
 ### Vercel preview not updating
 
-Ensure you pushed to `codex/work-from-production`. Check the Vercel dashboard for build errors. The preview URL may change after each push -- use the branch alias, not the deployment-specific URL.
+Ensure you pushed to the working branch. Check the Vercel dashboard for build errors. The preview URL may change after each push -- use the branch alias, not the deployment-specific URL.
 
 ### Cron jobs not firing
 
