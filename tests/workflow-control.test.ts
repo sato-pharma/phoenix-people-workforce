@@ -11,7 +11,13 @@ import {
 import {
   applyDraftToStep,
   applyDraftToSteps,
+  buildDraftMapSteps,
+  defaultOrderIds,
   diffDraftSteps,
+  draftHiddenStepNames,
+  isOrderChanged,
+  moveOrder,
+  reorderSteps,
   validateWorkflowDraft,
   WORKFLOW_DRAFT_FORBIDDEN_FIELDS,
 } from "../src/lib/workflow-control/draft.ts";
@@ -279,12 +285,13 @@ export function runWorkflowControlTests() {
   const draftSrc = readFileSync(new URL("../src/lib/workflow-control/draft.ts", import.meta.url), "utf8");
   const editorSrc = readFileSync(new URL("../src/components/workflow-control/workflow-draft-editor.tsx", import.meta.url), "utf8");
   for (const src of [draftSrc, editorSrc]) {
-    assert.equal(/fetch\(|\/api\/|getSupabaseAdmin|@\/lib\/supabase|\.insert\(|\.update\(|\.delete\(/.test(src), false, "draft layer/editor must not call any API/DB/mutation");
+    // DB/API-specific patterns (avoids matching Map.delete()/Array methods).
+    assert.equal(/fetch\(|\/api\/|getSupabaseAdmin|getSupabaseUserClient|@\/lib\/supabase|enqueueInAppNotification|\.from\(["'`]/.test(src), false, "draft layer/editor must not call any API/DB/mutation");
   }
 
   // Editor UI: Phase 2A title, runtime-safety banner, Save + Publish disabled.
   assert.match(editorSrc, /Draft Editor — Phase 2A/, "editor titled Draft Editor — Phase 2A");
-  assert.match(editorSrc, /does not change live workflow behavior/i, "editor states runtime is unchanged");
+  assert.match(editorSrc, /runtime workflow is unchanged/i, "editor states the runtime workflow is unchanged");
   assert.match(editorSrc, /Phase 3 persistence required/, "Save Draft labelled Phase 3 persistence required");
   assert.match(editorSrc, /Phase 3 versioning \+ approval required/, "Publish labelled Phase 3 versioning + approval required");
   assert.match(editorSrc, /disabled/, "disabled controls present (Save/Publish)");
@@ -334,4 +341,45 @@ export function runWorkflowControlTests() {
   assert.match(centerSrc, /WorkflowDraftEditor/, "center renders the draft editor");
   assert.match(centerSrc, /canDraftEdit \? setDraftEditorOpen\(true\)/, "Edit Workflow opens the draft editor for allowed users");
   assert.match(pageSrc, /canUseWorkflowDraftEditor/, "page passes the draft-editor access gate");
+
+  // ===========================================================================
+  // Phase 2C: local step ordering + visibility (DRAFT preview only).
+  // ===========================================================================
+  const p2cSteps = getWorkflowSubflow("leave", "vacation-request")?.steps ?? [];
+  const ids0 = defaultOrderIds(p2cSteps);
+  assert.deepEqual(ids0, p2cSteps.map((s) => s.id), "default order matches canonical");
+  assert.equal(isOrderChanged(p2cSteps, ids0), false, "default order is not reported as changed");
+
+  // Move Up / Move Down change the local order (pure).
+  const movedDown = moveOrder(ids0, ids0[0], "down");
+  assert.deepEqual(movedDown.slice(0, 2), [ids0[1], ids0[0]], "move down swaps the first two steps");
+  assert.equal(isOrderChanged(p2cSteps, movedDown), true, "reorder is detected as a change");
+  assert.equal(reorderSteps(p2cSteps, movedDown)[0].id, ids0[1], "reorderSteps reflects the new order");
+
+  // Move controls do NOT mutate the runtime/canonical definitions.
+  assert.deepEqual(getWorkflowSubflow("leave", "vacation-request")?.steps.map((s) => s.id) ?? [], ids0, "canonical order unchanged after reorder");
+
+  // Visibility toggle affects the DRAFT preview only.
+  const hideFirst = { [ids0[0]]: { hidden: true } };
+  assert.deepEqual(draftHiddenStepNames(p2cSteps, hideFirst), [p2cSteps[0].name], "hidden step is listed in the impact summary");
+  const draftMap = buildDraftMapSteps(p2cSteps, hideFirst, ids0);
+  assert.equal(draftMap.some((s) => s.id === ids0[0]), false, "hidden step is excluded from the draft map");
+  assert.equal(draftMap.length, p2cSteps.length - 1, "draft map drops the hidden step");
+  assert.equal(getWorkflowSubflow("leave", "vacation-request")?.steps.length ?? 0, p2cSteps.length, "runtime steps are NOT removed by hiding");
+
+  // Draft map reflects order + rename together (pure, read-only).
+  const builtOrdered = buildDraftMapSteps(p2cSteps, { [ids0[0]]: { name: "Renamed first" } }, movedDown);
+  assert.equal(builtOrdered[0].id, ids0[1], "draft map honors the reordered first step");
+  assert.ok(builtOrdered.some((s) => s.name === "Renamed first"), "draft map applies the rename override");
+
+  // Editor UX: move/visibility controls, draft map preview (reusing WorkflowMap), impact.
+  assert.match(editorSrc, /Move up/, "editor has a Move up control");
+  assert.match(editorSrc, /Move down/, "editor has a Move down control");
+  assert.match(editorSrc, /function move\(|moveOrder/, "editor reorders via the pure move helper");
+  assert.match(editorSrc, /Toggle visibility/, "editor has a visibility toggle");
+  assert.match(editorSrc, /Draft map preview/, "editor shows a draft map preview");
+  assert.match(editorSrc, /<WorkflowMap /, "editor reuses the WorkflowMap component for the preview");
+  assert.match(editorSrc, /buildDraftMapSteps/, "editor builds the draft map from order + visibility + overrides");
+  assert.match(editorSrc, /Order changed/, "impact summary shows order-changed state");
+  assert.match(editorSrc, /Hidden in draft map/, "impact summary lists hidden steps");
 }

@@ -1,14 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, Lock, Play, RotateCcw, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Eye, EyeOff, Lock, Play, RotateCcw, ShieldCheck, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { WorkflowControlStep } from "@/lib/workflow-control/definitions";
 import {
-  applyDraftToSteps,
+  buildDraftMapSteps,
   changedFieldKeys,
+  defaultOrderIds,
   diffDraftSteps,
+  draftHiddenStepNames,
+  isOrderChanged,
+  moveOrder,
+  reorderSteps,
   validateWorkflowDraft,
   type WorkflowDraft,
   type WorkflowDraftValidation,
@@ -16,18 +21,20 @@ import {
 } from "@/lib/workflow-control/draft";
 import { simulateWorkflow, type WorkflowSimulationResult } from "@/lib/workflow-control/simulator";
 
+import { WorkflowMap } from "./workflow-map";
+
 const inputBase = "w-full rounded-lg border bg-white px-2.5 py-1.5 text-[13px] text-[#0F172A] outline-none focus:border-[#F97316]";
 const label = "text-[10px] font-black uppercase tracking-[0.10em] text-[#64748B]";
 const currentNote = "mt-0.5 text-[11px] text-[#94A3B8]";
 
 /**
- * Phase 2A/2B Controlled Draft Editor (CLIENT-ONLY).
+ * Phase 2A/2B/2C Controlled Draft Builder (CLIENT-ONLY).
  *
- * Edits SAFE display/config fields of a subflow's steps in local React state,
- * shows Current vs Draft (changed fields highlighted, change count), validates,
- * and simulates the draft read-only ("Draft simulation only"). It does NOT
- * persist, call any API, change runtime behavior, or publish. Save/Publish are
- * intentionally disabled (Phase 3).
+ * A simple, safe workflow builder: edit safe display/config fields, reorder
+ * steps (Move Up/Down), hide steps from the DRAFT map, see Current-vs-Draft
+ * impact, validate, and simulate the draft read-only ("Draft simulation only").
+ * It does NOT persist, call any API, change runtime behavior, or publish.
+ * Save/Publish are intentionally disabled (Phase 3).
  */
 export function WorkflowDraftEditor({
   domainKey,
@@ -45,13 +52,21 @@ export function WorkflowDraftEditor({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<WorkflowDraft>({});
+  const [orderIds, setOrderIds] = useState<string[]>(() => defaultOrderIds(steps));
   const [validation, setValidation] = useState<WorkflowDraftValidation | null>(null);
   const [simResult, setSimResult] = useState<WorkflowSimulationResult | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
   const [employeeHrId, setEmployeeHrId] = useState("");
   const [managerHrId, setManagerHrId] = useState("");
 
   const diff = diffDraftSteps(steps, draft);
   const changedKeys = changedFieldKeys(diff);
+  const reordered = isOrderChanged(steps, orderIds);
+  const hiddenNames = draftHiddenStepNames(steps, draft);
+  const orderedSteps = reorderSteps(steps, orderIds);
+  const draftMapSteps = buildDraftMapSteps(steps, draft, orderIds);
+  const hasAnyChange = diff.changeCount > 0 || reordered || hiddenNames.length > 0;
+
   const isChanged = (stepId: string, field: string) => changedKeys.has(`${stepId}::${field}`);
   const fieldCls = (stepId: string, field: string) =>
     cn(inputBase, isChanged(stepId, field) ? "border-[#F97316] bg-[#FFF7ED]" : "border-[#E2E8F0]");
@@ -62,8 +77,14 @@ export function WorkflowDraftEditor({
     setSimResult(null);
   }
 
+  function move(stepId: string, direction: "up" | "down") {
+    setOrderIds((ids) => moveOrder(ids, stepId, direction));
+    setSimResult(null);
+  }
+
   function resetDraft() {
     setDraft({});
+    setOrderIds(defaultOrderIds(steps));
     setValidation(null);
     setSimResult(null);
   }
@@ -73,12 +94,11 @@ export function WorkflowDraftEditor({
   }
 
   function runSimulate() {
-    const draftSteps = applyDraftToSteps(steps, draft);
     setSimResult(
       simulateWorkflow({
         domainKey,
         subflowKey,
-        overrideSteps: draftSteps,
+        overrideSteps: buildDraftMapSteps(steps, draft, orderIds),
         employeeHrId: employeeHrId.trim() || undefined,
         managerHrId: managerHrId.trim() || undefined,
       }),
@@ -105,22 +125,25 @@ export function WorkflowDraftEditor({
         <div className="mx-5 mt-4 flex items-start gap-2 rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-4 py-3">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#C2410C]" />
           <p className="text-[13px] leading-5 text-[#9A3412]">
-            <span className="font-black">This draft does not change live workflow behavior.</span> Current changes are a
-            local preview only — nothing is saved, published, or run.
+            <span className="font-black">Local preview only — the runtime workflow is unchanged.</span> Nothing is saved,
+            published, or run. Save/Persist and Publish/versioning come in Phase 3.
           </p>
         </div>
 
-        {/* Current vs Draft comparison summary */}
+        {/* Draft impact summary (Current vs Draft) */}
         <div className="mx-5 mt-3 rounded-xl border border-[#E2E8F0] px-4 py-2.5">
-          <p className="text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Current vs Draft</p>
-          {diff.changeCount === 0 ? (
-            <p className="mt-0.5 text-[12px] text-[#64748B]">No changes yet — edit a field below to start a draft.</p>
+          <p className="text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Draft impact (Current vs Draft)</p>
+          {!hasAnyChange ? (
+            <p className="mt-0.5 text-[12px] text-[#64748B]">No changes yet — edit a field, reorder, or hide a step to start a draft.</p>
           ) : (
-            <p className="mt-0.5 text-[12px] text-[#334155]">
-              <span className="font-black text-[#C2410C]">{diff.changeCount}</span> change{diff.changeCount === 1 ? "" : "s"} across{" "}
-              <span className="font-black">{diff.changedStepNames.length}</span> step{diff.changedStepNames.length === 1 ? "" : "s"}
-              : <span className="text-[#64748B]">{diff.changedStepNames.join(", ")}</span>
-            </p>
+            <ul className="mt-0.5 space-y-0.5 text-[12px] text-[#334155]">
+              <li>
+                <span className="font-black text-[#C2410C]">{diff.changeCount}</span> field change{diff.changeCount === 1 ? "" : "s"}
+                {diff.changedStepNames.length ? <span className="text-[#64748B]"> · {diff.changedStepNames.join(", ")}</span> : null}
+              </li>
+              <li>Order changed: <span className="font-bold">{reordered ? "Yes" : "No"}</span></li>
+              <li>Hidden in draft map: <span className="font-bold">{hiddenNames.length ? hiddenNames.join(", ") : "None"}</span></li>
+            </ul>
           )}
         </div>
 
@@ -132,7 +155,10 @@ export function WorkflowDraftEditor({
           <button className="inline-flex items-center gap-1.5 rounded-lg bg-[#F97316] px-3 py-2 text-sm font-black text-white hover:bg-[#EA580C]" onClick={runSimulate} type="button">
             <Play className="h-4 w-4" /> Simulate Draft
           </button>
-          <button className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm font-bold text-[#64748B] hover:bg-[#F8FAFC] disabled:opacity-50" disabled={diff.changeCount === 0} onClick={resetDraft} type="button">
+          <button className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm font-bold text-[#475569] hover:bg-[#F8FAFC]" onClick={() => setShowPreview((v) => !v)} type="button">
+            <Eye className="h-4 w-4" /> {showPreview ? "Hide" : "Show"} Draft Map
+          </button>
+          <button className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm font-bold text-[#64748B] hover:bg-[#F8FAFC] disabled:opacity-50" disabled={!hasAnyChange} onClick={resetDraft} type="button">
             <RotateCcw className="h-4 w-4" /> Reset Draft
           </button>
           <button className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#94A3B8]" disabled title="Phase 3 persistence required" type="button">
@@ -143,9 +169,19 @@ export function WorkflowDraftEditor({
           </button>
         </div>
         <p className="px-5 pt-1.5 text-[11px] text-[#94A3B8]">
-          Reset clears your local draft only. Save Draft → <span className="font-bold">Phase 3 persistence required</span>. Publish →{" "}
-          <span className="font-bold">Phase 3 versioning + approval required</span>.
+          Reorder/visibility/edits are <span className="font-bold">draft preview only</span>. Save Draft →{" "}
+          <span className="font-bold">Phase 3 persistence required</span>. Publish → <span className="font-bold">Phase 3 versioning + approval required</span>.
         </p>
+
+        {/* Draft map preview */}
+        {showPreview ? (
+          <div className="mx-5 mt-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Draft map preview (display only)</p>
+            <div className="mt-2 max-h-[280px] overflow-auto">
+              <WorkflowMap steps={draftMapSteps} compact />
+            </div>
+          </div>
+        ) : null}
 
         {/* Validation result */}
         {validation ? (
@@ -162,7 +198,7 @@ export function WorkflowDraftEditor({
             ) : (
               <p className="mt-1 text-[12px] text-[#475569]">All edited fields look fine.</p>
             )}
-            <p className="mt-2 text-[10px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Blocked fields (not editable in Phase 2A)</p>
+            <p className="mt-2 text-[10px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Blocked fields (not editable in Phase 2)</p>
             <p className="mt-0.5 text-[11px] leading-5 text-[#64748B]">{validation.blockedFields.join(" · ")}</p>
             <p className="mt-1.5 text-[11px] font-semibold text-[#B91C1C]">Publish blocked: {validation.publishBlocked}</p>
           </div>
@@ -179,9 +215,6 @@ export function WorkflowDraftEditor({
             </p>
             {simResult.routePath.length ? (
               <p className="mt-1 text-[12px] text-[#475569]"><span className="font-bold">Route path</span> {simResult.routePath.join(" → ")}</p>
-            ) : null}
-            {diff.changedStepNames.length ? (
-              <p className="mt-1 text-[12px] text-[#475569]"><span className="font-bold">Affected steps</span> {diff.changedStepNames.join(", ")}</p>
             ) : null}
             <ol className="mt-1.5 space-y-1">
               {simResult.steps.map((s) => (
@@ -223,20 +256,35 @@ export function WorkflowDraftEditor({
           </label>
         </div>
 
-        {/* Editable step list (changed fields highlighted) */}
+        {/* Editable step list — in draft order, with move + visibility controls */}
         <div className="space-y-3 p-5">
-          <p className="text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Editable steps (safe fields only)</p>
-          {steps.map((step, index) => {
+          <p className="text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Editable steps (safe fields, local order)</p>
+          {orderedSteps.map((step, oi) => {
             const o = draft[step.id] ?? {};
             const notifEnabled = o.notificationEnabled ?? step.notificationRecipients.length > 0;
             const emailEnabled = o.emailEnabled ?? step.emailRecipients.length > 0;
+            const hidden = o.hidden ?? false;
             const stepChanged = diff.changedStepIds.includes(step.id);
             return (
-              <div key={step.id} className={cn("rounded-xl border p-3", stepChanged ? "border-[#FED7AA] bg-[#FFFBEB]" : "border-[#E2E8F0]")}>
-                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">
-                  Step {index + 1} · <span className="text-[#475569]">{step.actor} / {step.role}</span> · → {step.statusProduced}
-                  {stepChanged ? <span className="ml-1.5 rounded bg-[#FFF7ED] px-1.5 py-0.5 text-[9px] font-black text-[#C2410C]">CHANGED</span> : null}
-                </p>
+              <div key={step.id} className={cn("rounded-xl border p-3", hidden ? "border-[#E2E8F0] bg-[#F1F5F9] opacity-80" : stepChanged ? "border-[#FED7AA] bg-[#FFFBEB]" : "border-[#E2E8F0]")}>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">
+                    Draft step {oi + 1} · <span className="text-[#475569]">{step.actor} / {step.role}</span> · → {step.statusProduced}
+                    {stepChanged ? <span className="ml-1.5 rounded bg-[#FFF7ED] px-1.5 py-0.5 text-[9px] font-black text-[#C2410C]">CHANGED</span> : null}
+                    {hidden ? <span className="ml-1.5 rounded bg-[#E2E8F0] px-1.5 py-0.5 text-[9px] font-black text-[#475569]">HIDDEN</span> : null}
+                  </p>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button aria-label="Move up" className="rounded border border-[#E2E8F0] p-1 text-[#64748B] hover:bg-[#F8FAFC] disabled:opacity-40" disabled={oi === 0} onClick={() => move(step.id, "up")} type="button">
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button aria-label="Move down" className="rounded border border-[#E2E8F0] p-1 text-[#64748B] hover:bg-[#F8FAFC] disabled:opacity-40" disabled={oi === orderedSteps.length - 1} onClick={() => move(step.id, "down")} type="button">
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </button>
+                    <button aria-label="Toggle visibility" className="rounded border border-[#E2E8F0] p-1 text-[#64748B] hover:bg-[#F8FAFC]" onClick={() => setField(step.id, "hidden", !hidden)} type="button">
+                      {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
 
                 <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className="block">
@@ -295,7 +343,9 @@ export function WorkflowDraftEditor({
             );
           })}
           <p className="text-[11px] leading-5 text-[#94A3B8]">
-            Approval roles, runtime execution, payroll, security/RLS, access and data changes are <span className="font-bold">not editable</span> here — Phase 2 is display/config only.
+            Reorder and hide affect the <span className="font-bold">draft preview only</span> — runtime steps are never removed
+            or reordered. Approval roles, runtime execution, payroll, security/RLS, access and data changes are{" "}
+            <span className="font-bold">not editable</span> here.
           </p>
         </div>
       </div>

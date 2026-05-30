@@ -26,6 +26,8 @@ export type WorkflowStepDraftOverride = {
   fyiLabel?: string;
   knownGap?: string;
   optional?: boolean;
+  /** Phase 2C: hide this step in the DRAFT map preview (display-only). */
+  hidden?: boolean;
 };
 
 /** A draft is a map of stepId -> safe overrides, kept in client state only. */
@@ -231,6 +233,64 @@ export function diffDraftSteps(steps: readonly WorkflowControlStep[], draft: Wor
 /** Quick lookup set of "stepId::Field" keys for highlighting changed inputs. */
 export function changedFieldKeys(diff: WorkflowDraftDiff): Set<string> {
   return new Set(diff.changes.map((c) => `${c.stepId}::${c.field}`));
+}
+
+// --- Phase 2C: local step ordering + visibility (DRAFT preview only) ---------
+
+/** The canonical step order (used to seed the editor's local draft order). */
+export function defaultOrderIds(steps: readonly WorkflowControlStep[]): string[] {
+  return steps.map((step) => step.id);
+}
+
+/** Pure move of a step id up/down in a local order list. Never mutates input. */
+export function moveOrder(orderIds: readonly string[], stepId: string, direction: "up" | "down"): string[] {
+  const ids = [...orderIds];
+  const i = ids.indexOf(stepId);
+  if (i < 0) return ids;
+  const j = direction === "up" ? i - 1 : i + 1;
+  if (j < 0 || j >= ids.length) return ids;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  return ids;
+}
+
+/** Return the steps in the given local order (unknown ids ignored; missing appended). */
+export function reorderSteps(steps: readonly WorkflowControlStep[], orderIds: readonly string[]): WorkflowControlStep[] {
+  const byId = new Map(steps.map((step) => [step.id, step]));
+  const ordered: WorkflowControlStep[] = [];
+  for (const id of orderIds) {
+    const step = byId.get(id);
+    if (step) {
+      ordered.push(step);
+      byId.delete(id);
+    }
+  }
+  for (const step of steps) if (byId.has(step.id)) ordered.push(step);
+  return ordered;
+}
+
+/** True when the local order differs from the canonical order. */
+export function isOrderChanged(steps: readonly WorkflowControlStep[], orderIds: readonly string[]): boolean {
+  return defaultOrderIds(steps).join("|") !== reorderSteps(steps, orderIds).map((s) => s.id).join("|");
+}
+
+/** Names of steps the draft hides from the preview map. */
+export function draftHiddenStepNames(steps: readonly WorkflowControlStep[], draft: WorkflowDraft): string[] {
+  return steps.filter((step) => draft[step.id]?.hidden).map((step) => step.name);
+}
+
+/**
+ * Build the DRAFT map step list: applies local order, removes draft-hidden steps,
+ * and applies the safe field overrides. Pure — the canonical/runtime steps are
+ * never modified. Used by the draft map preview and the draft simulator.
+ */
+export function buildDraftMapSteps(
+  steps: readonly WorkflowControlStep[],
+  draft: WorkflowDraft,
+  orderIds: readonly string[],
+): WorkflowControlStep[] {
+  const ordered = reorderSteps(steps, orderIds);
+  const visible = ordered.filter((step) => !draft[step.id]?.hidden);
+  return applyDraftToSteps(visible, draft);
 }
 
 /** True when the draft has at least one non-empty override (used to enable buttons). */
