@@ -7,6 +7,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Download,
   FileSpreadsheet,
   FolderOpen,
   ListFilter,
@@ -32,6 +33,9 @@ import type {
   FieldWorkforceArchiveDuplicate,
   FieldWorkforceArchiveListItem,
   FieldWorkforceCellStatus,
+  FieldWorkforceComparisonReport,
+  FieldWorkforceComparisonRow,
+  FieldWorkforceDecisionReason,
   FieldWorkforceDayCell,
   FieldWorkforceDecisionStatus,
   FieldWorkforceEmployeeSummary,
@@ -83,7 +87,14 @@ type RecommendationsResponse = {
   success: boolean;
 };
 
-type WorkspaceTab = "overview" | "timeline" | "queue" | "summary" | "diagnostics" | "archives" | "recommendations";
+type ComparisonResponse = {
+  data?: FieldWorkforceComparisonReport;
+  error?: string;
+  message?: string;
+  success: boolean;
+};
+
+type WorkspaceTab = "overview" | "timeline" | "queue" | "summary" | "diagnostics" | "archives" | "comparison" | "recommendations";
 
 const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -92,9 +103,10 @@ const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "summary", label: "Monthly Summary" },
   { id: "diagnostics", label: "Diagnostics" },
   { id: "archives", label: "Archived Months" },
+  { id: "comparison", label: "Comparison" },
 ];
 
-const reviewWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = workspaceTabs.filter((tab) => tab.id !== "archives");
+const reviewWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = workspaceTabs.filter((tab) => tab.id !== "archives" && tab.id !== "comparison");
 const archiveWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   ...reviewWorkspaceTabs,
   { id: "recommendations", label: "Recommendations" },
@@ -109,7 +121,25 @@ const decisionStatusOptions: FieldWorkforceDecisionStatus[] = [
   "Approved for Payroll Deduction Report",
   "Do Not Take Action",
   "Needs Follow-up",
+  "Disputed",
+  "Resolved",
   "Cancelled",
+];
+
+const decisionReasonOptions: FieldWorkforceDecisionReason[] = [
+  "System issue",
+  "Manager approved field exception",
+  "Official training",
+  "Meeting / cycle meeting",
+  "Medical excuse pending",
+  "Doctor conference",
+  "Area assignment issue",
+  "Public holiday conflict",
+  "Late CRM sync",
+  "Duplicate / data issue",
+  "Already covered",
+  "No action needed",
+  "Other",
 ];
 
 function decisionStatusOptionsForRecommendation(
@@ -119,6 +149,8 @@ function decisionStatusOptionsForRecommendation(
     "Pending",
     "Do Not Take Action",
     "Needs Follow-up",
+    "Disputed",
+    "Resolved",
     "Cancelled",
   ];
   if (recommendation.recommendationType === "leave_reconciliation") {
@@ -223,8 +255,9 @@ function coverageLabel(value: FieldWorkforceRecommendation["existingCoverageStat
 
 function decisionBadge(status: FieldWorkforceDecisionStatus) {
   if (status.includes("Approved")) return <Badge variant="success">{status}</Badge>;
+  if (status === "Resolved") return <Badge variant="success">{status}</Badge>;
   if (status === "Do Not Take Action" || status === "Cancelled") return <Badge variant="neutral">{status}</Badge>;
-  if (status === "Needs Follow-up") return <Badge variant="warning">{status}</Badge>;
+  if (status === "Needs Follow-up" || status === "Disputed") return <Badge variant="warning">{status}</Badge>;
   return <Badge variant="neutral">{status}</Badge>;
 }
 
@@ -243,6 +276,99 @@ function candidateMatchesStatus(candidate: FieldWorkforceReviewCandidate, status
   if (status === "F") return meaning.includes("friday");
   if (status === "UNKNOWN") return meaning.includes("unknown");
   return meaning.includes("blank");
+}
+
+type HierarchyFilterState = {
+  areaName: string;
+  employmentStatus: string;
+  lineName: string;
+  managerName: string;
+  roleName: string;
+  teamName: string;
+};
+
+type HierarchyItem = {
+  areaName?: string | null;
+  employmentStatus?: string | null;
+  lineName?: string | null;
+  managerName?: string | null;
+  roleName?: string | null;
+  teamName?: string | null;
+};
+
+const emptyHierarchyFilters: HierarchyFilterState = {
+  areaName: "All",
+  employmentStatus: "All",
+  lineName: "All",
+  managerName: "All",
+  roleName: "All",
+  teamName: "All",
+};
+
+const hierarchyFilterConfig = [
+  ["managerName", "Manager"],
+  ["lineName", "Line"],
+  ["areaName", "Area"],
+  ["teamName", "Team"],
+  ["roleName", "Role"],
+  ["employmentStatus", "Status"],
+] as const;
+
+function uniqueHierarchyOptions<T extends HierarchyItem>(items: T[], key: keyof HierarchyFilterState) {
+  return [...new Set(items.map((item) => item[key as keyof HierarchyItem]).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right));
+}
+
+function hasHierarchyData<T extends HierarchyItem>(items: T[]) {
+  return hierarchyFilterConfig.some(([key]) => uniqueHierarchyOptions(items, key).length > 0);
+}
+
+function matchesHierarchyFilters<T extends HierarchyItem>(item: T, filters: HierarchyFilterState) {
+  return hierarchyFilterConfig.every(([key]) => {
+    const selected = filters[key];
+    return selected === "All" || item[key as keyof HierarchyItem] === selected;
+  });
+}
+
+function HierarchyFilters<T extends HierarchyItem>({
+  filters,
+  items,
+  onChange,
+}: {
+  filters: HierarchyFilterState;
+  items: T[];
+  onChange: (filters: HierarchyFilterState) => void;
+}) {
+  if (!hasHierarchyData(items)) {
+    return (
+      <AdminCallout tone="neutral">
+        <ListFilter className="mt-0.5 h-4 w-4" />
+        <p>Employee hierarchy filters unavailable for this archive.</p>
+      </AdminCallout>
+    );
+  }
+
+  return (
+    <div className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-3 xl:grid-cols-6">
+      {hierarchyFilterConfig.map(([key, label]) => {
+        const options = uniqueHierarchyOptions(items, key);
+        if (options.length === 0) return null;
+        return (
+          <select
+            className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            key={key}
+            value={filters[key]}
+            onChange={(event) => onChange({
+              ...filters,
+              [key]: event.target.value,
+            })}
+          >
+            <option value="All">All {label}</option>
+            {options.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+        );
+      })}
+    </div>
+  );
 }
 
 function statusCellClass(cell: FieldWorkforceDayCell) {
@@ -553,18 +679,45 @@ function EmployeePicker({
   );
 }
 
-function EmployeeMiniSummary({ employee }: { employee: FieldWorkforceEmployeeSummary }) {
+function employeeRiskLabel(employee: FieldWorkforceEmployeeSummary) {
+  if (employee.severityCounts.High > 0) return "High";
+  if (employee.noActivityPattern.hasThreeDayStreak) return "High";
+  if (employee.severityCounts.Review > 0 || employee.noActivityPattern.hasTwoDayStreak) return "Review";
+  if (employee.severityCounts.Medium > 0) return "Medium";
+  return "Low";
+}
+
+function EmployeeComplianceCard({ employee }: { employee: FieldWorkforceEmployeeSummary }) {
+  const risk = employeeRiskLabel(employee);
   return (
-    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-      <MetricCard label="Eligible Days" value={formatNumber(employee.eligibleWorkingDays)} />
-      <MetricCard label="Worked Days" tone="success" value={formatNumber(employee.workedDays)} />
-      <MetricCard label="N Candidates" tone={employee.noActivityCandidates ? "warning" : "success"} value={formatNumber(employee.noActivityCandidates)} />
-      <MetricCard label="Visits" tone="success" value={formatNumber(employee.totalVisits)} />
-      <MetricCard label="AV Signals" tone={employee.vacationSignalDays ? "warning" : "neutral"} value={formatNumber(employee.vacationSignalDays)} />
-      <MetricCard label="CP Signals" value={formatNumber(employee.campaignDays)} />
-      <MetricCard label="Holiday Warnings" tone={employee.holidayWarnings ? "warning" : "neutral"} value={formatNumber(employee.holidayWarnings)} />
-      <MetricCard label="Pre-hire Context" tone={employee.preHireIgnoredValues ? "warning" : "neutral"} value={formatNumber(employee.preHireIgnoredValues)} />
-    </div>
+    <Card className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Employee Monthly Compliance</p>
+          <h3 className="mt-1 text-lg font-black text-slate-950">{employee.employeeName}</h3>
+          <p className="mt-1 font-mono text-xs font-bold text-slate-500">{employee.hrId} / Hire date {employee.hiringDateIso ?? "-"}</p>
+          <p className="mt-2 text-xs font-semibold text-slate-500">
+            {[employee.managerName, employee.lineName, employee.areaName, employee.teamName, employee.roleName, employee.employmentStatus].filter(Boolean).join(" / ") || "Employee hierarchy unavailable"}
+          </p>
+        </div>
+        {severityBadge(risk)}
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        <MetricCard label="Eligible Days" value={formatNumber(employee.eligibleWorkingDays)} />
+        <MetricCard label="Worked Days" tone="success" value={formatNumber(employee.workedDays)} />
+        <MetricCard label="No Activity" tone={employee.noActivityCandidates ? "warning" : "success"} value={formatNumber(employee.noActivityCandidates)} />
+        <MetricCard label="Vacation Days" tone={employee.vacationSignalDays ? "warning" : "neutral"} value={formatNumber(employee.vacationSignalDays)} />
+        <MetricCard label="Campaign Days" value={formatNumber(employee.campaignDays)} />
+        <MetricCard label="Total Visits" tone="success" value={formatNumber(employee.totalVisits)} />
+        <MetricCard label="Compliance %" tone={employee.compliancePercent >= 75 ? "success" : employee.compliancePercent >= 50 ? "warning" : "danger"} value={`${formatNumber(employee.compliancePercent)}%`} />
+        <MetricCard label="Longest N Streak" tone={employee.noActivityPattern.longestStreak >= 3 ? "danger" : employee.noActivityPattern.longestStreak >= 2 ? "warning" : "neutral"} value={formatNumber(employee.noActivityPattern.longestStreak)} />
+        <MetricCard label="Holiday Warnings" tone={employee.holidayWarnings ? "warning" : "neutral"} value={formatNumber(employee.holidayWarnings)} />
+        <MetricCard label="Pre-hire Context" tone={employee.preHireIgnoredValues ? "warning" : "neutral"} value={formatNumber(employee.preHireIgnoredValues)} />
+      </div>
+      <div className="mt-3 rounded-lg border border-orange-100 bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-900">
+        Consecutive no-activity signal: {employee.noActivityPattern.summary}
+      </div>
+    </Card>
   );
 }
 
@@ -618,6 +771,9 @@ function TimelinePanel({
   employeeNotes,
   employees,
   employeeSearch,
+  hierarchyFilters,
+  hierarchyItems,
+  onHierarchyFiltersChange,
   onEmployeeSearchChange,
   onSelectCell,
   onSelectEmployee,
@@ -628,7 +784,10 @@ function TimelinePanel({
   employeeNotes: Record<string, string>;
   employees: FieldWorkforceEmployeeSummary[];
   employeeSearch: string;
+  hierarchyFilters: HierarchyFilterState;
+  hierarchyItems: FieldWorkforceEmployeeSummary[];
   onEmployeeSearchChange: (value: string) => void;
+  onHierarchyFiltersChange: (filters: HierarchyFilterState) => void;
   onSelectCell: (cell: FieldWorkforceDayCell) => void;
   onSelectEmployee: (hrId: string) => void;
   onUpdateEmployeeNote: (hrId: string, value: string) => void;
@@ -645,6 +804,11 @@ function TimelinePanel({
 
   return (
     <div className="space-y-4">
+      <HierarchyFilters
+        filters={hierarchyFilters}
+        items={hierarchyItems}
+        onChange={onHierarchyFiltersChange}
+      />
       <EmployeePicker
         employeeSearch={employeeSearch}
         employees={employees}
@@ -653,7 +817,7 @@ function TimelinePanel({
         onSelectEmployee={onSelectEmployee}
       />
       <TimelineLegend />
-      <EmployeeMiniSummary employee={selectedEmployee} />
+      <EmployeeComplianceCard employee={selectedEmployee} />
       <SingleEmployeeTimeline
         employee={selectedEmployee}
         selectedCell={selectedCell}
@@ -853,18 +1017,26 @@ function ReviewQueue({
   );
 }
 
-function MonthlySummaryTable({ employees }: { employees: FieldWorkforceEmployeeSummary[] }) {
+function MonthlySummaryTable({
+  employees,
+  hierarchyFilters,
+  onHierarchyFiltersChange,
+}: {
+  employees: FieldWorkforceEmployeeSummary[];
+  hierarchyFilters: HierarchyFilterState;
+  onHierarchyFiltersChange: (filters: HierarchyFilterState) => void;
+}) {
   const [query, setQuery] = useState("");
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return employees;
     return employees.filter((employee) =>
-      `${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle),
+      (!needle || `${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle)) &&
+      matchesHierarchyFilters(employee, hierarchyFilters),
     );
-  }, [employees, query]);
+  }, [employees, hierarchyFilters, query]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -875,6 +1047,16 @@ function MonthlySummaryTable({ employees }: { employees: FieldWorkforceEmployeeS
       description="Compact employee-level totals. Public holidays are warning overlays, not automatic calculation changes."
       title="Monthly Employee Summary"
     >
+      <div className="border-b border-slate-100 p-4">
+        <HierarchyFilters
+          filters={hierarchyFilters}
+          items={employees}
+          onChange={(filters) => {
+            onHierarchyFiltersChange(filters);
+            setPage(1);
+          }}
+        />
+      </div>
       <div className="grid gap-3 border-b border-slate-100 p-4 md:grid-cols-[minmax(0,1fr)_180px]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -915,6 +1097,7 @@ function MonthlySummaryTable({ employees }: { employees: FieldWorkforceEmployeeS
               <th className="px-4 py-3">Hiring Date</th>
               <th className="px-4 py-3">Eligible</th>
               <th className="px-4 py-3">Worked</th>
+              <th className="px-4 py-3">Compliance</th>
               <th className="px-4 py-3">N</th>
               <th className="px-4 py-3">AV</th>
               <th className="px-4 py-3">CP</th>
@@ -922,6 +1105,7 @@ function MonthlySummaryTable({ employees }: { employees: FieldWorkforceEmployeeS
               <th className="px-4 py-3">Holidays</th>
               <th className="px-4 py-3">Pre-hire</th>
               <th className="px-4 py-3">Unknown</th>
+              <th className="px-4 py-3">Hierarchy</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -934,6 +1118,7 @@ function MonthlySummaryTable({ employees }: { employees: FieldWorkforceEmployeeS
                 <td className="whitespace-nowrap px-4 py-3">{employee.hiringDateIso ?? "-"}</td>
                 <td className="px-4 py-3">{formatNumber(employee.eligibleWorkingDays)}</td>
                 <td className="px-4 py-3">{formatNumber(employee.workedDays)}</td>
+                <td className="px-4 py-3 font-black text-slate-950">{formatNumber(employee.compliancePercent)}%</td>
                 <td className="px-4 py-3 font-bold text-rose-700">{formatNumber(employee.noActivityCandidates)}</td>
                 <td className="px-4 py-3 text-sky-700">{formatNumber(employee.vacationSignalDays)}</td>
                 <td className="px-4 py-3 text-violet-700">{formatNumber(employee.campaignDays)}</td>
@@ -941,6 +1126,7 @@ function MonthlySummaryTable({ employees }: { employees: FieldWorkforceEmployeeS
                 <td className="px-4 py-3 text-orange-700">{formatNumber(employee.holidayWarnings)}</td>
                 <td className="px-4 py-3 text-rose-700">{formatNumber(employee.preHireIgnoredValues)}</td>
                 <td className="px-4 py-3 text-red-700">{formatNumber(employee.unknownValues)}</td>
+                <td className="px-4 py-3">{[employee.managerName, employee.lineName, employee.areaName].filter(Boolean).join(" / ") || "-"}</td>
               </tr>
             ))}
           </tbody>
@@ -1024,14 +1210,15 @@ function ReviewWorkspacePanels({
   const [selectedHrId, setSelectedHrId] = useState<string>(result.employees[0]?.hrId ?? "");
   const [selectedCell, setSelectedCell] = useState<FieldWorkforceDayCell | null>(result.employees[0]?.timeline[0] ?? null);
   const [employeeNotes, setEmployeeNotes] = useState<Record<string, string>>({});
+  const [hierarchyFilters, setHierarchyFilters] = useState<HierarchyFilterState>(emptyHierarchyFilters);
 
   const filteredEmployees = useMemo(() => {
     const needle = employeeSearch.trim().toLowerCase();
-    if (!needle) return result.employees;
     return result.employees.filter((employee) =>
-      `${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle),
+      (!needle || `${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle)) &&
+      matchesHierarchyFilters(employee, hierarchyFilters),
     );
-  }, [employeeSearch, result.employees]);
+  }, [employeeSearch, hierarchyFilters, result.employees]);
 
   const selectedEmployee =
     filteredEmployees.find((employee) => employee.hrId === selectedHrId) ??
@@ -1069,9 +1256,15 @@ function ReviewWorkspacePanels({
         employeeNotes={employeeNotes}
         employeeSearch={employeeSearch}
         employees={filteredEmployees}
+        hierarchyFilters={hierarchyFilters}
+        hierarchyItems={result.employees}
         selectedCell={effectiveSelectedCell}
         selectedEmployee={selectedEmployee}
         onEmployeeSearchChange={setEmployeeSearch}
+        onHierarchyFiltersChange={(filters) => {
+          setHierarchyFilters(filters);
+          setSelectedHrId("");
+        }}
         onSelectCell={setSelectedCell}
         onSelectEmployee={selectEmployee}
         onUpdateEmployeeNote={(hrId, value) => setEmployeeNotes((current) => ({
@@ -1083,7 +1276,7 @@ function ReviewWorkspacePanels({
   }
 
   if (activeTab === "queue") return <ReviewQueue candidates={result.reviewCandidates} />;
-  if (activeTab === "summary") return <MonthlySummaryTable employees={result.employees} />;
+  if (activeTab === "summary") return <MonthlySummaryTable employees={result.employees} hierarchyFilters={hierarchyFilters} onHierarchyFiltersChange={setHierarchyFilters} />;
   if (activeTab === "diagnostics") return <DiagnosticsPanel errors={errors} result={result} warnings={warnings} />;
 
   return null;
@@ -1095,7 +1288,7 @@ function RecommendationRows({
   recommendations,
 }: {
   isSavingDecisionKey: string | null;
-  onSaveDecision: (recommendation: FieldWorkforceRecommendation, status: FieldWorkforceDecisionStatus, note: string) => void;
+  onSaveDecision: (recommendation: FieldWorkforceRecommendation, status: FieldWorkforceDecisionStatus, note: string, reason: FieldWorkforceDecisionReason | "") => void;
   recommendations: FieldWorkforceRecommendation[];
 }) {
   const [query, setQuery] = useState("");
@@ -1104,17 +1297,20 @@ function RecommendationRows({
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
   const [draftStatuses, setDraftStatuses] = useState<Record<string, FieldWorkforceDecisionStatus>>({});
+  const [draftReasons, setDraftReasons] = useState<Record<string, FieldWorkforceDecisionReason | "">>({});
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
+  const [hierarchyFilters, setHierarchyFilters] = useState<HierarchyFilterState>(emptyHierarchyFilters);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return recommendations.filter((recommendation) => {
       if (severity !== "All" && recommendation.severity !== severity) return false;
       if (decisionStatus !== "All" && recommendation.decisionStatus !== decisionStatus) return false;
+      if (!matchesHierarchyFilters(recommendation, hierarchyFilters)) return false;
       if (!needle) return true;
       return `${recommendation.employeeName} ${recommendation.employeeCode} ${recommendation.sourceLabel}`.toLowerCase().includes(needle);
     });
-  }, [decisionStatus, query, recommendations, severity]);
+  }, [decisionStatus, hierarchyFilters, query, recommendations, severity]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const visibleRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
@@ -1125,6 +1321,16 @@ function RecommendationRows({
 
   return (
     <div className="space-y-3">
+      <div className="border-b border-slate-100 p-4">
+        <HierarchyFilters
+          filters={hierarchyFilters}
+          items={recommendations}
+          onChange={(filters) => {
+            setHierarchyFilters(filters);
+            resetPage();
+          }}
+        />
+      </div>
       <div className="grid gap-3 border-b border-slate-100 p-4 lg:grid-cols-[minmax(0,1fr)_170px_230px_160px]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1179,7 +1385,7 @@ function RecommendationRows({
         </div>
       </div>
       <div className="phoenix-horizontal-scroll max-h-[56vh] overflow-auto">
-        <table className="w-full min-w-[1320px] text-left text-sm">
+        <table className="w-full min-w-[1480px] text-left text-sm">
           <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
               <th className="px-4 py-3">Employee</th>
@@ -1190,6 +1396,7 @@ function RecommendationRows({
               <th className="px-4 py-3">Recommendation</th>
               <th className="px-4 py-3">Severity</th>
               <th className="px-4 py-3">Decision</th>
+              <th className="px-4 py-3">Reason</th>
               <th className="px-4 py-3">HR Note</th>
               <th className="px-4 py-3">Save</th>
             </tr>
@@ -1197,7 +1404,9 @@ function RecommendationRows({
           <tbody className="divide-y divide-slate-100">
             {visibleRows.map((recommendation) => {
               const status = draftStatuses[recommendation.recommendationKey] ?? recommendation.decisionStatus;
+              const reason = draftReasons[recommendation.recommendationKey] ?? recommendation.decisionReason;
               const note = draftNotes[recommendation.recommendationKey] ?? recommendation.hrNote;
+              const requiresReason = status !== "Pending";
               const rowDecisionStatusOptions = decisionStatusOptionsForRecommendation(recommendation);
               return (
                 <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={recommendation.recommendationKey}>
@@ -1233,6 +1442,21 @@ function RecommendationRows({
                     </div>
                   </td>
                   <td className="px-4 py-3">
+                    <select
+                      className="h-9 w-64 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                      value={reason}
+                      onChange={(event) => setDraftReasons((current) => ({
+                        ...current,
+                        [recommendation.recommendationKey]: event.target.value as FieldWorkforceDecisionReason | "",
+                      }))}
+                    >
+                      <option value="">{requiresReason ? "Choose reason" : "No reason needed"}</option>
+                      {decisionReasonOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                    {requiresReason && !reason ? <p className="mt-1 text-xs font-semibold text-rose-600">Required for this decision.</p> : null}
+                    {reason === "Other" && !note.trim() ? <p className="mt-1 text-xs font-semibold text-rose-600">Other requires HR note.</p> : null}
+                  </td>
+                  <td className="px-4 py-3">
                     <input
                       className="h-9 w-64 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                       placeholder="HR decision note"
@@ -1246,10 +1470,10 @@ function RecommendationRows({
                   <td className="px-4 py-3">
                     <Button
                       className="gap-2"
-                      disabled={isSavingDecisionKey === recommendation.recommendationKey}
+                      disabled={isSavingDecisionKey === recommendation.recommendationKey || (requiresReason && !reason) || (reason === "Other" && !note.trim())}
                       type="button"
                       variant="secondary"
-                      onClick={() => onSaveDecision(recommendation, status, note)}
+                      onClick={() => onSaveDecision(recommendation, status, note, reason)}
                     >
                       {isSavingDecisionKey === recommendation.recommendationKey ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                       Save Decision
@@ -1260,7 +1484,7 @@ function RecommendationRows({
             })}
             {visibleRows.length === 0 ? (
               <tr>
-                <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={10}>
+                <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={11}>
                   No recommendations match the current filters.
                 </td>
               </tr>
@@ -1272,49 +1496,83 @@ function RecommendationRows({
   );
 }
 
-function FinalActionsTable({ actions }: { actions: FieldWorkforceFinalAction[] }) {
+function FinalActionsTable({
+  actions,
+  archiveId,
+}: {
+  actions: FieldWorkforceFinalAction[];
+  archiveId: string;
+}) {
+  const [hierarchyFilters, setHierarchyFilters] = useState<HierarchyFilterState>(emptyHierarchyFilters);
+  const filteredActions = useMemo(() =>
+    actions.filter((action) => matchesHierarchyFilters(action, hierarchyFilters)),
+  [actions, hierarchyFilters]);
+
   return (
-    <div className="phoenix-horizontal-scroll max-h-[52vh] overflow-auto">
-      <table className="w-full min-w-[1120px] text-left text-sm">
-        <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
-          <tr>
-            <th className="px-4 py-3">Employee</th>
-            <th className="px-4 py-3">Action Type</th>
-            <th className="px-4 py-3">Approved Dates</th>
-            <th className="px-4 py-3">Days</th>
-            <th className="px-4 py-3">Amount</th>
-            <th className="px-4 py-3">Approved By</th>
-            <th className="px-4 py-3">Approved At</th>
-            <th className="px-4 py-3">HR Note</th>
-            <th className="px-4 py-3">Push Status</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {actions.map((action) => (
-            <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={action.recommendationKey}>
-              <td className="px-4 py-3">
-                <p className="font-black text-slate-950">{action.employeeName}</p>
-                <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{action.employeeCode}</p>
-              </td>
-              <td className="px-4 py-3">{action.actionType}</td>
-              <td className="px-4 py-3">{formatDates(action.approvedDates)}</td>
-              <td className="px-4 py-3">{formatNumber(action.approvedDaysCount)}</td>
-              <td className="px-4 py-3">{action.amount === null ? "-" : formatNumber(action.amount)}</td>
-              <td className="px-4 py-3">{action.approvedBy ?? "-"}</td>
-              <td className="px-4 py-3">{displayDateTime(action.approvedAt)}</td>
-              <td className="max-w-[300px] px-4 py-3 leading-6">{action.hrNote || "-"}</td>
-              <td className="px-4 py-3"><Badge variant="neutral">{action.pushStatus}</Badge></td>
-            </tr>
-          ))}
-          {actions.length === 0 ? (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
+        <HierarchyFilters filters={hierarchyFilters} items={actions} onChange={setHierarchyFilters} />
+        <Button
+          className="gap-2"
+          disabled={actions.length === 0}
+          type="button"
+          variant="secondary"
+          onClick={() => {
+            window.location.href = `/api/admin/field-workforce-compliance/archive/${archiveId}/recommendations/export`;
+          }}
+        >
+          <Download className="h-4 w-4" />
+          Export Report Only
+        </Button>
+      </div>
+      <AdminCallout tone="neutral">
+        <ShieldAlert className="mt-0.5 h-4 w-4" />
+        <p>Final approved actions are report-only. Exporting does not execute payroll, mutate leave balances, or push integrations.</p>
+      </AdminCallout>
+      <div className="phoenix-horizontal-scroll max-h-[52vh] overflow-auto">
+        <table className="w-full min-w-[1280px] text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
-              <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={9}>
-                No approved report actions yet.
-              </td>
+              <th className="px-4 py-3">Employee</th>
+              <th className="px-4 py-3">Action Type</th>
+              <th className="px-4 py-3">Approved Dates</th>
+              <th className="px-4 py-3">Days</th>
+              <th className="px-4 py-3">Amount</th>
+              <th className="px-4 py-3">Reason</th>
+              <th className="px-4 py-3">Approved By</th>
+              <th className="px-4 py-3">Approved At</th>
+              <th className="px-4 py-3">HR Note</th>
+              <th className="px-4 py-3">Push Status</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {filteredActions.map((action) => (
+              <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={action.recommendationKey}>
+                <td className="px-4 py-3">
+                  <p className="font-black text-slate-950">{action.employeeName}</p>
+                  <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{action.employeeCode}</p>
+                </td>
+                <td className="px-4 py-3">{action.actionType}</td>
+                <td className="px-4 py-3">{formatDates(action.approvedDates)}</td>
+                <td className="px-4 py-3">{formatNumber(action.approvedDaysCount)}</td>
+                <td className="px-4 py-3">{action.amount === null ? "Amount requires payroll calculation" : formatNumber(action.amount)}</td>
+                <td className="px-4 py-3">{action.decisionReason || "-"}</td>
+                <td className="px-4 py-3">{action.approvedBy ?? "-"}</td>
+                <td className="px-4 py-3">{displayDateTime(action.approvedAt)}</td>
+                <td className="max-w-[300px] px-4 py-3 leading-6">{action.hrNote || "-"}</td>
+                <td className="px-4 py-3"><Badge variant="neutral">{action.pushStatus}</Badge></td>
+              </tr>
+            ))}
+            {filteredActions.length === 0 ? (
+              <tr>
+                <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={10}>
+                  No approved report actions match the current filters.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1329,7 +1587,7 @@ function RecommendationsPanel({
   isLoading: boolean;
   isSavingDecisionKey: string | null;
   onRefresh: (auditFinalReportView?: boolean) => void;
-  onSaveDecision: (recommendation: FieldWorkforceRecommendation, status: FieldWorkforceDecisionStatus, note: string) => void;
+  onSaveDecision: (recommendation: FieldWorkforceRecommendation, status: FieldWorkforceDecisionStatus, note: string, reason: FieldWorkforceDecisionReason | "") => void;
   report: FieldWorkforceRecommendationsReport | null;
 }) {
   const [recommendationTab, setRecommendationTab] = useState<"final" | "leave" | "payroll">("leave");
@@ -1406,7 +1664,115 @@ function RecommendationsPanel({
           onSaveDecision={onSaveDecision}
         />
       ) : null}
-      {recommendationTab === "final" ? <FinalActionsTable actions={report.finalActions} /> : null}
+      {recommendationTab === "final" ? <FinalActionsTable actions={report.finalActions} archiveId={report.archive.id} /> : null}
+    </AdminTableShell>
+  );
+}
+
+function ComparisonPanel({
+  isLoading,
+  onRefresh,
+  report,
+}: {
+  isLoading: boolean;
+  onRefresh: () => void;
+  report: FieldWorkforceComparisonReport | null;
+}) {
+  const [hierarchyFilters, setHierarchyFilters] = useState<HierarchyFilterState>(emptyHierarchyFilters);
+  const [query, setQuery] = useState("");
+  const rows = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return (report?.rows ?? []).filter((row) =>
+      matchesHierarchyFilters(row, hierarchyFilters) &&
+      (!needle || `${row.employeeName} ${row.employeeCode} ${row.monthKey}`.toLowerCase().includes(needle)),
+    );
+  }, [hierarchyFilters, query, report?.rows]);
+
+  if (!report) {
+    return (
+      <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p>Load archived month comparison trends.</p>
+          <Button className="gap-2" disabled={isLoading} type="button" variant="secondary" onClick={onRefresh}>
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Load Comparison
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  if (report.archiveCount < 2) {
+    return (
+      <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+        Archive at least two months to compare trends.
+      </Card>
+    );
+  }
+
+  return (
+    <AdminTableShell
+      description="Simple archived month comparison. Table-first trend view only; no BI dashboard and no execution."
+      title="Archived Month Comparison"
+    >
+      <div className="grid gap-3 border-b border-slate-100 p-4 md:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            placeholder="Filter employee, code, or month"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        <Button className="gap-2" disabled={isLoading} type="button" variant="secondary" onClick={onRefresh}>
+          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          Refresh
+        </Button>
+      </div>
+      <div className="border-b border-slate-100 p-4">
+        <HierarchyFilters filters={hierarchyFilters} items={report.rows} onChange={setHierarchyFilters} />
+      </div>
+      <div className="grid gap-3 border-b border-slate-100 p-4 sm:grid-cols-3">
+        <MetricCard label="Archived Months" value={formatNumber(report.archiveCount)} />
+        <MetricCard label="Comparison Rows" value={formatNumber(rows.length)} />
+        <MetricCard label="Hierarchy Filters" tone={report.hierarchyAvailable ? "success" : "neutral"} value={report.hierarchyAvailable ? "Available" : "Unavailable"} />
+      </div>
+      <div className="phoenix-horizontal-scroll max-h-[56vh] overflow-auto">
+        <table className="w-full min-w-[1180px] text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Employee</th>
+              <th className="px-4 py-3">Month</th>
+              <th className="px-4 py-3">Compliance %</th>
+              <th className="px-4 py-3">Worked</th>
+              <th className="px-4 py-3">N Days</th>
+              <th className="px-4 py-3">AV</th>
+              <th className="px-4 py-3">CP</th>
+              <th className="px-4 py-3">Visits</th>
+              <th className="px-4 py-3">Line / Area</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((row: FieldWorkforceComparisonRow) => (
+              <tr className="text-slate-700 hover:bg-slate-50/70" key={`${row.importId}:${row.employeeCode}`}>
+                <td className="px-4 py-3">
+                  <p className="font-black text-slate-950">{row.employeeName}</p>
+                  <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{row.employeeCode}</p>
+                </td>
+                <td className="px-4 py-3">{row.monthKey}</td>
+                <td className="px-4 py-3 font-black text-slate-950">{formatNumber(row.compliancePercent)}%</td>
+                <td className="px-4 py-3 text-emerald-700">{formatNumber(row.workedDays)}</td>
+                <td className="px-4 py-3 text-rose-700">{formatNumber(row.noActivityDays)}</td>
+                <td className="px-4 py-3 text-sky-700">{formatNumber(row.vacationDays)}</td>
+                <td className="px-4 py-3 text-violet-700">{formatNumber(row.campaignDays)}</td>
+                <td className="px-4 py-3 text-emerald-700">{formatNumber(row.totalVisits)}</td>
+                <td className="px-4 py-3">{[row.lineName, row.areaName].filter(Boolean).join(" / ") || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </AdminTableShell>
   );
 }
@@ -1437,7 +1803,7 @@ function ArchivedMonthsPanel({
   onOpenArchive: (archive: FieldWorkforceArchiveListItem) => void;
   onRefresh: () => void;
   onRefreshRecommendations: (auditFinalReportView?: boolean) => void;
-  onSaveDecision: (recommendation: FieldWorkforceRecommendation, status: FieldWorkforceDecisionStatus, note: string) => void;
+  onSaveDecision: (recommendation: FieldWorkforceRecommendation, status: FieldWorkforceDecisionStatus, note: string, reason: FieldWorkforceDecisionReason | "") => void;
   recommendationsReport: FieldWorkforceRecommendationsReport | null;
 }) {
   return (
@@ -1574,6 +1940,7 @@ export function FieldWorkforceComplianceWorkspace() {
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isSavingArchive, setIsSavingArchive] = useState(false);
   const [isLoadingArchives, setIsLoadingArchives] = useState(false);
+  const [isLoadingComparison, setIsLoadingComparison] = useState(false);
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
   const [isOpeningArchiveId, setIsOpeningArchiveId] = useState<string | null>(null);
   const [isSavingDecisionKey, setIsSavingDecisionKey] = useState<string | null>(null);
@@ -1581,6 +1948,7 @@ export function FieldWorkforceComplianceWorkspace() {
   const [archives, setArchives] = useState<FieldWorkforceArchiveListItem[]>([]);
   const [archiveDetail, setArchiveDetail] = useState<FieldWorkforceArchiveDetail | null>(null);
   const [recommendationsReport, setRecommendationsReport] = useState<FieldWorkforceRecommendationsReport | null>(null);
+  const [comparisonReport, setComparisonReport] = useState<FieldWorkforceComparisonReport | null>(null);
   const [errors, setErrors] = useState<FieldWorkforceValidationIssue[]>([]);
   const [warnings, setWarnings] = useState<FieldWorkforceValidationIssue[]>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -1611,10 +1979,33 @@ export function FieldWorkforceComplianceWorkspace() {
     }
   }, []);
 
+  const loadComparison = useCallback(async () => {
+    setIsLoadingComparison(true);
+    setArchiveError(null);
+    try {
+      const response = await fetch("/api/admin/field-workforce-compliance/archive/comparison", {
+        method: "GET",
+      });
+      const payload = await readJsonResponse<ComparisonResponse>(response);
+      if (payload.success && payload.data) {
+        setComparisonReport(payload.data);
+      } else {
+        setArchiveError(payload.message ?? payload.error ?? "Comparison could not be loaded.");
+      }
+    } catch (error) {
+      setArchiveError(error instanceof Error ? error.message : "Comparison could not be loaded.");
+    } finally {
+      setIsLoadingComparison(false);
+    }
+  }, []);
+
   function handleWorkspaceTabChange(tab: WorkspaceTab) {
     setActiveTab(tab);
     if (tab === "archives" && archives.length === 0 && !isLoadingArchives) {
       void loadArchives();
+    }
+    if (tab === "comparison" && !comparisonReport && !isLoadingComparison) {
+      void loadComparison();
     }
   }
 
@@ -1738,13 +2129,23 @@ export function FieldWorkforceComplianceWorkspace() {
     recommendation: FieldWorkforceRecommendation,
     decisionStatus: FieldWorkforceDecisionStatus,
     hrNote: string,
+    decisionReason: FieldWorkforceDecisionReason | "",
   ) {
+    if (decisionStatus !== "Pending" && !decisionReason) {
+      setRecommendationsError("A decision reason is required for non-Pending HR decisions.");
+      return;
+    }
+    if (decisionReason === "Other" && !hrNote.trim()) {
+      setRecommendationsError("HR note is required when decision reason is Other.");
+      return;
+    }
     setIsSavingDecisionKey(recommendation.recommendationKey);
     setRecommendationsMessage(null);
     setRecommendationsError(null);
     try {
       const response = await fetch(`/api/admin/field-workforce-compliance/archive/${recommendation.importId}/recommendations`, {
         body: JSON.stringify({
+          decisionReason,
           decisionStatus,
           hrNote,
           recommendationKey: recommendation.recommendationKey,
@@ -1912,8 +2313,14 @@ export function FieldWorkforceComplianceWorkspace() {
             onRefreshRecommendations={(auditFinalReportView) => {
               if (archiveDetail) void loadRecommendations(archiveDetail.archive.id, auditFinalReportView);
             }}
-            onSaveDecision={(recommendation, decisionStatus, hrNote) => void handleSaveDecision(recommendation, decisionStatus, hrNote)}
+            onSaveDecision={(recommendation, decisionStatus, hrNote, decisionReason) => void handleSaveDecision(recommendation, decisionStatus, hrNote, decisionReason)}
             recommendationsReport={recommendationsReport}
+          />
+        ) : activeTab === "comparison" ? (
+          <ComparisonPanel
+            isLoading={isLoadingComparison}
+            report={comparisonReport}
+            onRefresh={() => void loadComparison()}
           />
         ) : result ? (
           <>

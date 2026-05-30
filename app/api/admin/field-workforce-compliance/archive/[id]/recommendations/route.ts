@@ -4,6 +4,7 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   FieldWorkforceConflictingDecisionError,
+  FieldWorkforceDecisionReasonError,
   FieldWorkforceInvalidDecisionStatusError,
   FieldWorkforceRecommendationNotFoundError,
   fieldWorkforceDecisionStatuses,
@@ -77,6 +78,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     await assertPermission(access, "hr_calendar", "update");
 
     const body = await request.json().catch(() => null) as {
+      decisionReason?: unknown;
       decisionStatus?: unknown;
       hrNote?: unknown;
       recommendationKey?: unknown;
@@ -100,6 +102,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     const report = await saveFieldWorkforceRecommendationDecision({
       actorLoginId: actorFromAccess(access),
       archiveId: id,
+      decisionReason: typeof body.decisionReason === "string" ? body.decisionReason : "",
       decisionStatus: body.decisionStatus,
       hrNote: typeof body.hrNote === "string" ? body.hrNote : "",
       recommendationKey: body.recommendationKey.trim(),
@@ -136,6 +139,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     if (
       error instanceof FieldWorkforceInvalidDecisionStatusError ||
+      error instanceof FieldWorkforceDecisionReasonError ||
       error instanceof FieldWorkforceConflictingDecisionError
     ) {
       return NextResponse.json({

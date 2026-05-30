@@ -55,6 +55,10 @@ function monthDates(year: number, month: number) {
   });
 }
 
+function roundPercent(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
 function isFriday(dateIso: string) {
   return new Date(`${dateIso}T00:00:00Z`).getUTCDay() === 5;
 }
@@ -232,6 +236,58 @@ function updateNoActivitySeverity(cells: FieldWorkforceDayCell[]) {
   }
 }
 
+export function buildFieldWorkforceNoActivityPattern(cells: FieldWorkforceDayCell[]) {
+  const noActivityCells = cells.filter((cell) =>
+    cell.countedAsNoActivityCandidate &&
+    !cell.isPreHire &&
+    !cell.ignored,
+  );
+  const timelineByDate = new Map(cells.map((cell) => [cell.dateIso, cell]));
+  const adjacentToFridayDates = new Set<string>();
+  const adjacentToPublicHolidayDates = new Set<string>();
+  let longestStreak = 0;
+  let consecutiveSignalCount = 0;
+  let currentStreak = 0;
+
+  for (const cell of noActivityCells) {
+    const previous = timelineByDate.get(dateAddDays(cell.dateIso, -1));
+    const next = timelineByDate.get(dateAddDays(cell.dateIso, 1));
+    if (previous?.isFriday || next?.isFriday) adjacentToFridayDates.add(cell.dateIso);
+    if (previous?.isPublicHoliday || next?.isPublicHoliday) adjacentToPublicHolidayDates.add(cell.dateIso);
+
+    const previousNoActivity = noActivityCells.some((candidate) => candidate.dateIso === dateAddDays(cell.dateIso, -1));
+    if (previousNoActivity) {
+      currentStreak += 1;
+    } else {
+      currentStreak = 1;
+    }
+    if (currentStreak > longestStreak) longestStreak = currentStreak;
+  }
+
+  if (longestStreak >= 2) consecutiveSignalCount += 1;
+  if (longestStreak >= 3) consecutiveSignalCount += 1;
+  if (adjacentToFridayDates.size > 0) consecutiveSignalCount += 1;
+  if (adjacentToPublicHolidayDates.size > 0) consecutiveSignalCount += 1;
+  if (noActivityCells.length >= 5) consecutiveSignalCount += 1;
+
+  const signals: string[] = [];
+  if (longestStreak >= 2) signals.push(`${longestStreak}-day N streak`);
+  if (adjacentToFridayDates.size > 0) signals.push("N adjacent to Friday/weekend");
+  if (adjacentToPublicHolidayDates.size > 0) signals.push("N adjacent to public holiday");
+  if (noActivityCells.length >= 5) signals.push("High monthly N count");
+
+  return {
+    adjacentToFridayDates: [...adjacentToFridayDates],
+    adjacentToPublicHolidayDates: [...adjacentToPublicHolidayDates],
+    consecutiveSignalCount,
+    hasThreeDayStreak: longestStreak >= 3,
+    hasTwoDayStreak: longestStreak >= 2,
+    highMonthlyCount: noActivityCells.length >= 5,
+    longestStreak,
+    summary: signals.length > 0 ? signals.join("; ") : "No consecutive N pattern detected.",
+  };
+}
+
 function buildEmployeeMatchCandidate(input: {
   employee: FieldWorkforceParsedEmployeeRow;
   employeeIndex: number;
@@ -395,6 +451,7 @@ function buildEmployeeSummary(input: {
     year: input.year,
   });
   updateNoActivitySeverity(timeline);
+  const noActivityPattern = buildFieldWorkforceNoActivityPattern(timeline);
 
   const severityCounts = emptySeverityCounts();
   const candidates = timeline
@@ -407,21 +464,31 @@ function buildEmployeeSummary(input: {
   }
 
   return {
+    areaName: input.employeeReference?.areaName ?? null,
     campaignDays: timeline.filter((cell) => !cell.ignored && cell.status === "CP").length,
+    compliancePercent: timeline.filter((cell) => !cell.isPreHire && !cell.isFriday).length > 0
+      ? roundPercent((timeline.filter((cell) => cell.countedAsWorkedDay).length / timeline.filter((cell) => !cell.isPreHire && !cell.isFriday).length) * 100)
+      : 0,
     employeeName,
+    employmentStatus: input.employeeReference?.employmentStatus ?? null,
     eligibleWorkingDays: timeline.filter((cell) => !cell.isPreHire && !cell.isFriday).length,
     fridays: timeline.filter((cell) => !cell.isPreHire && cell.isFriday).length,
     hiringDateIso,
     hiringDateSource,
     holidayWarnings: timeline.filter((cell) => cell.isPublicHoliday && ["N", "AV", "CP", "VISITS"].includes(cell.status)).length,
     hrId: displayHrId,
+    lineName: input.employeeReference?.lineName ?? null,
+    managerName: input.employeeReference?.managerName ?? null,
     matchedEmployeeName: input.employeeReference?.fullName ?? null,
     matchedHrId: input.employeeReference?.hrId ?? null,
     matchStatus: input.employeeReference ? "matched" : "unmatched",
     noActivityCandidates: timeline.filter((cell) => cell.countedAsNoActivityCandidate).length,
+    noActivityPattern,
     preHireIgnoredValues: timeline.filter((cell) => cell.isPreHire && cell.rawValue !== null).length,
+    roleName: input.employeeReference?.roleName ?? input.employeeReference?.jobTitle ?? null,
     severityCounts,
     sourceRowNumber: input.employee.sourceRowNumber,
+    teamName: input.employeeReference?.teamName ?? null,
     timeline,
     totalVisits: timeline.reduce((sum, cell) => sum + (cell.countedAsVisitTotal ? cell.visitCount ?? 0 : 0), 0),
     unknownValues: timeline.filter((cell) => cell.status === "UNKNOWN").length,
