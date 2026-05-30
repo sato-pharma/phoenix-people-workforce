@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { CalendarClock, Plus, RefreshCw, Save } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { CalendarClock, Pencil, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 
 import {
   AdminCallout,
@@ -88,17 +88,15 @@ function formFromPolicy(policy: AttendancePolicyGroup): PolicyForm {
     id: policy.id,
     isActive: policy.isActive,
     policyName: policy.policyName,
-    rules: policy.rules.length > 0
-      ? policy.rules.map((rule) => ({
-        deductionDays: rule.deductionDays,
-        deductionValue: rule.deductionValue,
-        eventType: rule.eventType,
-        fromMinutes: rule.fromMinutes,
-        isActive: rule.isActive,
-        recommendedAction: rule.recommendedAction,
-        toMinutes: rule.toMinutes,
-      }))
-      : [{ ...blankRule }],
+    rules: policy.rules.map((rule) => ({
+      deductionDays: rule.deductionDays,
+      deductionValue: rule.deductionValue,
+      eventType: rule.eventType,
+      fromMinutes: rule.fromMinutes,
+      isActive: rule.isActive,
+      recommendedAction: rule.recommendedAction,
+      toMinutes: rule.toMinutes,
+    })),
     scheduledEnd: policy.scheduledEnd,
     scheduledStart: policy.scheduledStart,
     targetType: policy.targetType,
@@ -119,13 +117,16 @@ function targetBadge(policy: Pick<AttendancePolicyGroup, "targetType" | "targetV
 }
 
 function eventLabel(value: AttendancePolicyEventType) {
+  if (value === "exception") return "Exception";
   return value.replace("_", " ");
 }
 
 export function AttendancePoliciesManager({ canUpdate, initialData, initialError }: Props) {
+  const formRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState(initialData);
   const [error, setError] = useState(initialError);
   const [notice, setNotice] = useState<string | null>(null);
+  const [deletingPolicyId, setDeletingPolicyId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<PolicyForm>(() => blankPolicy());
@@ -154,6 +155,8 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
     setSaving(true);
     setError(null);
     setNotice(null);
+    const isEditing = form.id !== null;
+    const policyName = form.policyName;
     const policyPayload = form.targetType === "default" && form.targetValue
       ? { ...form, targetValue: "" }
       : form;
@@ -166,13 +169,53 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? "Attendance policy failed to save.");
       setData(payload);
-      setNotice(`Saved ${form.policyName}.`);
+      setNotice(`${isEditing ? "Updated" : "Created"} ${policyName}.`);
       setForm(blankPolicy());
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Attendance policy failed to save.");
     } finally {
       setSaving(false);
     }
+  }
+
+  async function deletePolicy(policy: AttendancePolicyGroup) {
+    if (!canUpdate || deletingPolicyId !== null) return;
+    const confirmed = window.confirm(`Delete "${policy.policyName}" and all its rules? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeletingPolicyId(policy.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/attendance/policies?id=${encodeURIComponent(String(policy.id))}`, {
+        method: "DELETE",
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? "Attendance policy failed to delete.");
+      setData(payload);
+      if (form.id === policy.id) setForm(blankPolicy());
+      setNotice(`Deleted ${policy.policyName}.`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Attendance policy failed to delete.");
+    } finally {
+      setDeletingPolicyId(null);
+    }
+  }
+
+  function editPolicy(policy: AttendancePolicyGroup) {
+    setForm(formFromPolicy(policy));
+    setError(null);
+    setNotice(`Editing ${policy.policyName}. Make changes above, then save.`);
+    window.requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function addRule(patch: Partial<RuleForm> = {}) {
+    setForm((current) => ({
+      ...current,
+      rules: [...current.rules, { ...blankRule, ...patch }],
+    }));
   }
 
   function updateRule(index: number, patch: Partial<RuleForm>) {
@@ -187,6 +230,7 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
       ...current,
       rules: current.rules.filter((_, ruleIndex) => ruleIndex !== index),
     }));
+    setNotice("Rule removed from the draft. Save policy to apply this change.");
   }
 
   return (
@@ -218,10 +262,16 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
         These policies are configuration only for now. They do not modify payroll until the deduction calculation and approval workflow are explicitly connected.
       </AdminCallout>
 
-      <AdminTableShell
-        description="Create a default policy, job-title policy, or HR_ID-specific override."
-        title={form.id ? "Edit Policy" : "New Policy"}
-      >
+      <div ref={formRef}>
+        <AdminTableShell
+          description="Create a default policy, job-title policy, HR_ID-specific override, or exception review rule."
+          title={form.id ? "Edit Policy" : "New Policy"}
+        >
+          {form.id ? (
+            <div className="border-b border-slate-100 px-4 py-3">
+              <AdminCallout tone="warning">Editing policy #{form.id}. Save to apply changes, or choose New to cancel editing.</AdminCallout>
+            </div>
+          ) : null}
         <div className="grid gap-4 p-4 lg:grid-cols-4">
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Policy Name</span>
@@ -284,26 +334,49 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
         <div className="border-t border-slate-100 p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="text-sm font-black text-slate-900">Rules</p>
-            <Button variant="secondary" type="button" onClick={() => setForm({ ...form, rules: [...form.rules, { ...blankRule }] })}>
-              <Plus className="h-4 w-4" />
-              Add rule
-            </Button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="secondary" type="button" onClick={() => addRule()}>
+                <Plus className="h-4 w-4" />
+                Add rule
+              </Button>
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => addRule({ eventType: "exception", recommendedAction: "Manual exception review" })}
+              >
+                <Plus className="h-4 w-4" />
+                Add exception
+              </Button>
+            </div>
           </div>
+          {form.rules.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-600">
+              No rules in this policy. Add a rule above, or save the policy with no rule brackets.
+            </div>
+          ) : null}
           <div className="space-y-3">
             {form.rules.map((rule, index) => (
-              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 lg:grid-cols-8" key={index}>
+              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 lg:grid-cols-9" key={index}>
                 <select className="h-10 rounded-lg border border-slate-200 px-3 text-sm" value={rule.eventType} onChange={(event) => updateRule(index, { eventType: event.target.value as AttendancePolicyEventType })}>
                   <option value="late">Late</option>
                   <option value="early_leave">Early leave</option>
                   <option value="single_punch">Single punch</option>
                   <option value="absence">Absence</option>
+                  <option value="exception">Exception</option>
                 </select>
                 <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="From min" type="number" value={rule.fromMinutes} onChange={(event) => updateRule(index, { fromMinutes: event.target.value })} />
                 <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="To min" type="number" value={rule.toMinutes} onChange={(event) => updateRule(index, { toMinutes: event.target.value })} />
                 <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm lg:col-span-2" placeholder="Recommended action" value={rule.recommendedAction} onChange={(event) => updateRule(index, { recommendedAction: event.target.value })} />
                 <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="Days" type="number" value={rule.deductionDays} onChange={(event) => updateRule(index, { deductionDays: event.target.value })} />
                 <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="Value" type="number" value={rule.deductionValue} onChange={(event) => updateRule(index, { deductionValue: event.target.value })} />
-                <Button disabled={form.rules.length === 1} variant="secondary" type="button" onClick={() => removeRule(index)}>Remove</Button>
+                <label className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+                  <input checked={rule.isActive} className="h-4 w-4" type="checkbox" onChange={(event) => updateRule(index, { isActive: event.target.checked })} />
+                  Active
+                </label>
+                <Button variant="destructive" type="button" onClick={() => removeRule(index)}>
+                  <Trash2 className="h-4 w-4" />
+                  Delete rule
+                </Button>
               </div>
             ))}
           </div>
@@ -316,7 +389,8 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
             {saving ? "Saving" : "Save policy"}
           </Button>
         </div>
-      </AdminTableShell>
+        </AdminTableShell>
+      </div>
 
       <AdminTableShell
         description="Priority is HR_ID policy, then job title policy, then default policy."
@@ -357,7 +431,21 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                   </td>
                   <td className="px-4 py-3">{policy.isActive ? <Badge variant="success">Active</Badge> : <Badge variant="neutral">Inactive</Badge>}</td>
                   <td className="px-4 py-3 text-right">
-                    <Button variant="secondary" type="button" onClick={() => setForm(formFromPolicy(policy))}>Edit</Button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button variant="secondary" type="button" onClick={() => editPolicy(policy)}>
+                        <Pencil className="h-4 w-4" />
+                        Edit
+                      </Button>
+                      <Button
+                        disabled={!canUpdate || deletingPolicyId !== null}
+                        variant="destructive"
+                        type="button"
+                        onClick={() => deletePolicy(policy)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {deletingPolicyId === policy.id ? "Deleting" : "Delete"}
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -155,6 +155,12 @@ export function runAttendanceCalendarSourceTests() {
 
   const policySource = readFileSync("src/lib/attendance/policies.ts", "utf8");
   assert.match(policySource, /summarizeAttendancePolicies/);
+  assert.match(policySource, /deleteAttendancePolicy/);
+  assert.match(policySource, /"exception"/);
+  const policyManagerSource = readFileSync("src/components/attendance/attendance-policies-manager.tsx", "utf8");
+  assert.match(policyManagerSource, /Add exception/);
+  assert.match(policyManagerSource, /Delete rule/);
+  assert.match(policyManagerSource, /scrollIntoView/);
 
   const calendarPageSource = readFileSync("app/hr-calendar/page.tsx", "utf8");
   assert.match(calendarPageSource, /getHrCalendarData/);
