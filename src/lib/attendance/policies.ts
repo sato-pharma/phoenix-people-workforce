@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { summarizeAttendancePolicies } from "@/lib/attendance/metrics";
 
 export type AttendancePolicyTargetType = "default" | "employee_hr_id" | "job_title";
-export type AttendancePolicyEventType = "absence" | "early_leave" | "late" | "single_punch";
+export type AttendancePolicyEventType = "absence" | "early_leave" | "exception" | "late" | "single_punch";
 
 export type AttendancePolicyRule = {
   deductionDays: string;
@@ -276,7 +276,7 @@ export async function saveAttendancePolicy(input: {
     }
     const rule = rawRule as Record<string, unknown>;
     const eventType = cleanText(rule.eventType) as AttendancePolicyEventType;
-    if (!["late", "early_leave", "single_punch", "absence"].includes(eventType)) {
+    if (!["late", "early_leave", "single_punch", "absence", "exception"].includes(eventType)) {
       throw new Error(`Rule ${index + 1} eventType is invalid.`);
     }
     const recommendedAction = cleanText(rule.recommendedAction);
@@ -302,4 +302,19 @@ export async function saveAttendancePolicy(input: {
       .insert(rules);
     if (error) throw error;
   }
+}
+
+export async function deleteAttendancePolicy(input: { id: unknown }) {
+  const supabase = getSupabaseAdmin();
+  const id = cleanNumber(input.id, "id", { integer: true });
+
+  const { data, error } = await supabase
+    .from("attendance_policy_groups")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error("Attendance policy was not found.");
 }
