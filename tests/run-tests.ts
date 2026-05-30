@@ -13,6 +13,7 @@ import { runOperationalEventsTests } from "./operational-events.test.ts";
 import { runRecruitmentOnboardingMetricsTests } from "./recruitment-onboarding-metrics.test.ts";
 import { runAttendanceCalendarSourceTests } from "./attendance-calendar-source.test.ts";
 import { runDeductionsGovernanceFoundationTests } from "./deductions-governance-foundation.test.ts";
+import { runDeductionsGovernanceServiceTests } from "./deductions-governance-service.test.ts";
 import { runFieldWorkforceComplianceTests } from "./field-workforce-compliance.test.ts";
 import { runLeaveSourceOfTruthTests } from "./leave-source-of-truth.test.ts";
 import { runLifecycleRiskSourceTests } from "./lifecycle-risk-source.test.ts";
@@ -120,6 +121,7 @@ await runTest("recruitment onboarding metrics", runRecruitmentOnboardingMetricsT
 await runTest("attendance calendar source", runAttendanceCalendarSourceTests);
 await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
 await runTest("deductions governance foundation", runDeductionsGovernanceFoundationTests);
+await runTest("deductions governance service", runDeductionsGovernanceServiceTests);
 await runTest("leave source of truth", runLeaveSourceOfTruthTests);
 await runTest("lifecycle risk source", runLifecycleRiskSourceTests);
 await runTest("login page hardening", runLoginPageHardeningTests);
