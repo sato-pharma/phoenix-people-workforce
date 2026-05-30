@@ -16,9 +16,23 @@ export type AttendancePolicyMetricInput = {
 export type AttendancePolicySelectionInput = {
   effective_from: string;
   effective_to: string | null;
+  grace_minutes?: number | null;
   is_active: boolean | null;
+  scheduled_end?: string | null;
+  scheduled_start?: string | null;
   target_type: string | null;
   target_value: string | null;
+};
+
+export type AttendancePolicyRuleSelectionInput = {
+  deduction_days: number | string | null;
+  deduction_value?: number | string | null;
+  event_type: string | null;
+  from_minutes: number | null;
+  is_active: boolean | null;
+  recommended_action: string | null;
+  sort_order?: number | null;
+  to_minutes: number | null;
 };
 
 export type AttendancePolicyEmployeeInput = {
@@ -27,6 +41,25 @@ export type AttendancePolicyEmployeeInput = {
 };
 
 export type FingerprintSummaryInput = {
+  recommendedAction: string;
+  status: string;
+};
+
+export type PolicyAttendanceStatusInput = {
+  baseSalary?: number | null;
+  durationMinutes: number;
+  firstPunchMinutes: number | null;
+  lastPunchMinutes: number | null;
+  policy: AttendancePolicySelectionInput | null | undefined;
+  rules: AttendancePolicyRuleSelectionInput[];
+  visiblePunchCount: number;
+};
+
+export type PolicyAttendanceStatusResult = {
+  deductionDays: string;
+  deductionValue: string;
+  earlyLeaveMinutes: string;
+  lateMinutes: string;
   recommendedAction: string;
   status: string;
 };
@@ -92,6 +125,156 @@ export function resolveAttendanceStatus(visiblePunchCount: number, durationMs: n
     recommendedAction: "No action",
     status: "Complete",
   };
+}
+
+function timeToMinutes(value: string | null | undefined) {
+  const [hourText, minuteText] = String(value ?? "").slice(0, 5).split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function boundedInteger(value: number | null | undefined, fallback: number) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : fallback;
+}
+
+function scheduleDurationMinutes(policy: AttendancePolicySelectionInput | null | undefined) {
+  const start = timeToMinutes(policy?.scheduled_start);
+  const end = timeToMinutes(policy?.scheduled_end);
+  if (start == null || end == null) return standardAttendanceDayMs / 60000;
+  return end >= start ? end - start : end + 1440 - start;
+}
+
+function numberText(value: number | string | null | undefined) {
+  if (value == null) return "";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "";
+  return Number.isInteger(parsed) ? String(parsed) : String(parsed);
+}
+
+function findAttendanceRule(
+  rules: AttendancePolicyRuleSelectionInput[],
+  eventType: string,
+  minutes: number | null,
+) {
+  return rules
+    .filter((rule) => rule.is_active !== false)
+    .filter((rule) => rule.event_type === eventType)
+    .filter((rule) => {
+      if (minutes == null) return true;
+      const from = rule.from_minutes;
+      const to = rule.to_minutes;
+      return (from == null || minutes >= from) && (to == null || minutes <= to);
+    })
+    .sort((left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0))[0];
+}
+
+function deductionAmountText(baseSalary: number | null | undefined, deductionDays: string) {
+  if (!deductionDays.trim()) return "";
+  const salary = Number(baseSalary);
+  const days = Number(deductionDays);
+  if (!Number.isFinite(days) || days <= 0) return days === 0 ? "0" : "";
+  if (!Number.isFinite(salary) || salary <= 0) return "Base salary missing";
+  return ((salary / 30) * days).toFixed(2);
+}
+
+function ruleStatusResult(input: {
+  baseSalary?: number | null;
+  defaultAction: string;
+  earlyLeaveMinutes?: number;
+  eventType: "early_leave" | "late" | "single_punch";
+  lateMinutes?: number;
+  minutes: number | null;
+  rules: AttendancePolicyRuleSelectionInput[];
+  status: string;
+}): PolicyAttendanceStatusResult {
+  const rule = findAttendanceRule(input.rules, input.eventType, input.minutes);
+  const deductionDays = numberText(rule?.deduction_days);
+  const missingRuleAction = input.eventType === "single_punch"
+    ? input.defaultAction
+    : `Missing deduction rule: ${input.defaultAction}`;
+  return {
+    deductionDays,
+    deductionValue: deductionAmountText(input.baseSalary, deductionDays),
+    earlyLeaveMinutes: input.earlyLeaveMinutes ? String(input.earlyLeaveMinutes) : "",
+    lateMinutes: input.lateMinutes ? String(input.lateMinutes) : "",
+    recommendedAction: rule?.recommended_action?.trim() || missingRuleAction,
+    status: input.status,
+  };
+}
+
+export function resolvePolicyAttendanceStatus(input: PolicyAttendanceStatusInput): PolicyAttendanceStatusResult {
+  if (input.visiblePunchCount <= 1) {
+    return ruleStatusResult({
+      baseSalary: input.baseSalary,
+      defaultAction: "Review missing punch",
+      eventType: "single_punch",
+      minutes: null,
+      rules: input.rules,
+      status: "Single punch",
+    });
+  }
+
+  const policy = input.policy;
+  if (!policy) {
+    const fallback = resolveAttendanceStatus(input.visiblePunchCount, input.durationMinutes * 60000);
+    return { ...fallback, earlyLeaveMinutes: "", lateMinutes: "" };
+  }
+
+  const scheduledStart = timeToMinutes(policy.scheduled_start);
+  const scheduledEnd = timeToMinutes(policy.scheduled_end);
+  if (scheduledStart == null || scheduledEnd == null || input.firstPunchMinutes == null || input.lastPunchMinutes == null) {
+    const fallback = resolveAttendanceStatus(input.visiblePunchCount, input.durationMinutes * 60000);
+    return { ...fallback, earlyLeaveMinutes: "", lateMinutes: "" };
+  }
+
+  const graceMinutes = boundedInteger(policy.grace_minutes ?? null, 0);
+  const scheduledWorkMinutes = scheduleDurationMinutes(policy);
+  const normalizedScheduledEnd = scheduledEnd >= scheduledStart ? scheduledEnd : scheduledEnd + 1440;
+  const firstPunchMinutes = input.firstPunchMinutes;
+  const lastPunchMinutes = input.lastPunchMinutes >= firstPunchMinutes
+    ? input.lastPunchMinutes
+    : input.lastPunchMinutes + 1440;
+  const durationMinutes = Math.max(0, Math.floor(input.durationMinutes));
+  const lateFromSchedule = Math.max(0, firstPunchMinutes - scheduledStart);
+  const earlyLeaveMinutes = Math.max(0, normalizedScheduledEnd - lastPunchMinutes);
+  const shortMinutes = Math.max(0, Math.ceil(scheduledWorkMinutes - durationMinutes));
+  const dailyGraceUsageMinutes = Math.max(shortMinutes, lateFromSchedule + earlyLeaveMinutes);
+
+  if (dailyGraceUsageMinutes <= graceMinutes) {
+    return {
+      deductionDays: "0",
+      deductionValue: "0",
+      earlyLeaveMinutes: "",
+      lateMinutes: "",
+      recommendedAction: "No action",
+      status: "Complete",
+    };
+  }
+
+  if (lateFromSchedule > 0) {
+    return ruleStatusResult({
+      baseSalary: input.baseSalary,
+      defaultAction: "Review late arrival",
+      eventType: "late",
+      lateMinutes: dailyGraceUsageMinutes,
+      minutes: dailyGraceUsageMinutes,
+      rules: input.rules,
+      status: "Late",
+    });
+  }
+
+  return ruleStatusResult({
+    baseSalary: input.baseSalary,
+    defaultAction: earlyLeaveMinutes > 0 ? "Review early leave" : "Review short day",
+    earlyLeaveMinutes: dailyGraceUsageMinutes,
+    eventType: "early_leave",
+    minutes: dailyGraceUsageMinutes,
+    rules: input.rules,
+    status: earlyLeaveMinutes > 0 ? "Early leave" : "Short day",
+  });
 }
 
 export function summarizeFingerprintRows(rows: FingerprintSummaryInput[]) {
