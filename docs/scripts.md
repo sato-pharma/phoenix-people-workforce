@@ -75,7 +75,7 @@ These scripts form a staged pipeline for validating and applying production data
 | `scripts/seed-marketing-reference-data.ts` | Seed marketing reference data from xlsx | Caution | Needs MARKETING_PRODUCTS_XLSX env |
 | `scripts/export-supabase-to-xlsx.js` | Export Supabase tables to Excel | Caution | Needs DATABASE_URL |
 | `scripts/audit-image-evidence-storage.ts` | Audit image evidence in database | Caution | Read-only |
-| `scripts/build_sales_database_foundation.py` | Build sales database foundation xlsx | Safe | Python, standalone |
+| `scripts/build_sales_database_foundation.py` | Build sales database foundation xlsx | Safe | Python, standalone. Expects the local `sato 4-2026/` workbooks to exist on disk (these are intentionally **not** tracked in Git). |
 | `scripts/employee-portal-launch-smoke.mjs` | Employee portal smoke test | Safe | Browser test |
 | `scripts/phase13-phase24` (various) | Legacy staging validation scripts | Caution | Historical |
 

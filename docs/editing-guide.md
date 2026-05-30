@@ -4,7 +4,7 @@ This guide explains where to make common system-wide edits without hunting throu
 
 ## Safe Branch Rule
 
-Do not edit `main` directly. Use `codex/work-from-production` or a dedicated `codex/*` feature branch, then validate before push or deployment.
+Do not edit `main` directly. Use the working branch or a dedicated feature branch, then validate before push or deployment. The working-branch name is documented in [current-operating-state.md](current-operating-state.md).
 
 ## Global Edit Points
 

@@ -17,13 +17,13 @@ Phoenix Workforce is deployed on Vercel with a Supabase PostgreSQL backend.
 | Branch | Purpose | Deployment |
 |---|---|---|
 | main | Production only | Auto-deploys to production |
-| codex/work-from-production | Active development | Auto-deploys to preview |
+| working branch | Active development | Auto-deploys to preview |
 
-Never push directly to main. All changes go through the working branch and are promoted after validation.
+Never push directly to main. All changes go through the working branch and are promoted after validation. The exact working-branch name is documented in [current-operating-state.md](current-operating-state.md).
 
 ## Deployment Workflow
 
-1. Develop on codex/work-from-production (or a feature branch)
+1. Develop on the working branch (or a feature branch)
 2. Run check:harden locally (lint + typecheck + test + build)
 3. Push to trigger Vercel preview deployment
 4. Verify the preview deployment

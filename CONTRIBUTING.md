@@ -5,9 +5,9 @@ Phoenix Workforce is a private enterprise HR/workforce platform. This repository
 ## Branch Strategy
 
 - **`main`** is production-only. Never commit or push directly to `main`.
-- **`codex/work-from-production`** is the active working branch for all edits, fixes, and features.
-- Feature branches use the naming convention `codex/<feature-name>` and branch off `codex/work-from-production`.
-- Keep branches short-lived and focused on a single change.
+- A long-lived **working branch** holds active development; all edits, fixes, and features land there before promotion to `main`.
+- Feature branches branch off the working branch and stay short-lived and focused on a single change.
+- The exact working-branch name and deployment mapping are documented in [docs/current-operating-state.md](docs/current-operating-state.md).
 
 ## Development Workflow
 
@@ -29,7 +29,7 @@ Use conventional commit format: `type(scope): description`.
 
 ## Pull Request Process
 
-1. Create a PR from your feature branch into `codex/work-from-production`.
+1. Create a PR from your feature branch into the working branch.
 2. Fill out the PR template completely, including a summary, test plan, and risk assessment.
 3. All CI gates must pass: lint, typecheck, tests, and production build.
 4. At least one code review approval is required before merging.

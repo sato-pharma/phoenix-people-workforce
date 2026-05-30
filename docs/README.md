@@ -64,5 +64,12 @@
 | [Production Build Scorecard](system-production-build-scorecard.md) | Build quality tracking |
 | [Workflow Linkage Audit](system-workflow-linkage-audit.md) | Workflow linkage integrity audit |
 | [Image Evidence Storage](image-evidence-storage-report.md) | Image/evidence storage analysis |
-| [Employee Portal Remediation](employee-portal-launch-remediation-plan.md) | Portal launch remediation plan |
 | [Production Readiness Closure](production-readiness-closure-system.md) | Readiness closure tracking |
+
+## Archive
+
+Completed, point-in-time planning and verification records. Retained for reference; not current operating documents.
+
+| Document | Description |
+|---|---|
+| [Employee Portal Remediation](archive/employee-portal-launch-remediation-plan.md) | Historical portal launch-readiness verification (2026-05-28) |

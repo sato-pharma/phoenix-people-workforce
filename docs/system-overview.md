@@ -15,10 +15,10 @@ Current operating state: see [Current Operating State](F:/Phoenix%20Workforce/ph
 ## Current Git And Deployment Workflow
 
 - `main` is production-only and should stay aligned with the live production deployment.
-- `codex/work-from-production` is the active working branch for new edits, feature work, and function changes.
+- A long-lived working branch holds new edits, feature work, and function changes.
 - Production is served at `https://phoenix-workforce.vercel.app`.
-- The active working preview is `https://phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects.vercel.app`.
-- Vercel should keep only two active deployments: production `main` and the `codex/work-from-production` preview.
+- Vercel keeps only two active deployments: production (`main`) and the working-branch preview.
+- The working-branch name, preview URL, and deployment mapping are documented in [current-operating-state.md](current-operating-state.md).
 - `.vercel/` is local Vercel CLI metadata and is intentionally ignored.
 
 ## Roles And Permissions

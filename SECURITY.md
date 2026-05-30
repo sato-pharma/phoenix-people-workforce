@@ -136,4 +136,4 @@ Key principles:
   verified after every production deploy -- workspace aliases can diverge
   from the public alias.
 - Only two active Vercel deployments are maintained: production (`main`) and
-  the working preview (`codex/work-from-production`).
+  the working preview branch.
