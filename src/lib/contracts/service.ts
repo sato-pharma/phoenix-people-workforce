@@ -7,9 +7,11 @@ import { assertContractWorkflowTransition } from "@/lib/employee-lifecycle/workf
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { daysUntilLifecycleDate, lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { isDateOnlyBefore, nextContractAnniversary } from "./date-rules";
+import { WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED } from "./feature-flags";
 import type {
   ContractRenewalAction,
   ContractRenewalDashboardData,
@@ -421,6 +423,61 @@ async function notifyContractWorkflow(
   });
 }
 
+// WP-6: when a contract is marked not_renewed, terminate the employee and open
+// the vacancy via the canonical resignations helper. Behavior-gated by the
+// WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED kill switch — when the flag is
+// false, this helper is a strict no-op (no DB call, no mutation, no side
+// effect). The flag should only be flipped after the WP-6 migration is applied
+// and staging smoke is green.
+async function maybeRunNonRenewalTerminalLifecycle(
+  record: ContractRenewalRecord,
+  access: Pick<AccessContext, "role"> | undefined,
+  actor: string,
+) {
+  if (!WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED) {
+    return;
+  }
+
+  // Reason must mention "Contract not renewed" so downstream audit + reporting
+  // can attribute the termination to the contract non-renewal flow. The
+  // contract renewal request id is included in workflowNotes so the resignation
+  // record carries traceability back to the originating request.
+  const effectiveDate =
+    cleanText(record.proposedEndDate) ??
+    cleanText(record.currentRenewalDate) ??
+    cleanText(record.requestedRenewalDate) ??
+    todayDate();
+  const reason = `Contract not renewed (request ${record.id}).`;
+  const workflowNotes = [
+    `Triggered by contract non-renewal.`,
+    `contract_renewal_request_id: ${record.id}`,
+    cleanText(record.decisionReason),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  try {
+    await resignEmployeeAndOpenVacancy(
+      record.employeeHrId,
+      {
+        effectiveDate,
+        employeeHrId: record.employeeHrId,
+        employeeStatus: "terminated",
+        lastWorkingDate: effectiveDate,
+        reason,
+        submittedDate: todayDate(),
+        workflowNotes,
+      },
+      actor,
+      access,
+    );
+  } catch (error) {
+    // Match the surrounding file style: surface the failure as a
+    // ContractRenewalValidationError so the API layer can map it to a 4xx.
+    throw new ContractRenewalValidationError(contractErrorMessage(error));
+  }
+}
+
 export function validateWorkflowTransition(status: ContractRenewalStatus, action: ContractRenewalAction) {
   if (action === "manager_review") return status === "requested" || status === "manager_review";
   if (action === "hr_review") return activeRequestStatuses.includes(status);
@@ -492,6 +549,13 @@ export async function runContractRenewalWorkflow(
 
   if (error) throw new ContractRenewalValidationError(error.message);
   const updated = mapRenewalRequest(data as RenewalRequestDbRow);
+
+  // WP-6: terminate the employee + open vacancy on non-renewal. Strict no-op
+  // when WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED is false (default), so this
+  // is behavior-preserving until the WP-6 migration is applied.
+  if (action === "not_renew") {
+    await maybeRunNonRenewalTerminalLifecycle(updated, input.access, actor);
+  }
 
   await notifyContractWorkflow(
     updated,
