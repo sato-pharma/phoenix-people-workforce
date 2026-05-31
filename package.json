@@ -36,6 +36,8 @@
     "phase33:migration-history-reconciliation-gate": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase33-migration-history-reconciliation-gate.ts",
     "phase34:post-repair-pending-migrations": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase34-post-repair-pending-migrations.ts",
     "phase36:post-apply-no-pending-migrations": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase36-post-apply-no-pending-migrations.ts",
+    "audit:validate": "node --no-warnings --experimental-strip-types --experimental-specifier-resolution=node scripts/audit/validate-audit-registry.ts",
+    "audit:dashboard": "node --no-warnings --experimental-strip-types --experimental-specifier-resolution=node scripts/audit/generate-management-dashboard.ts",
     "ci": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
