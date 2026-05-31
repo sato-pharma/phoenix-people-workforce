@@ -2,11 +2,18 @@ import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   createVacationRequest,
   isVacationSchemaMissing,
   vacationErrorMessage,
 } from "@/lib/vacation/service";
+import {
+  assertVacationRouteRateLimit,
+  rejectOversizedVacationFile,
+  rejectOversizedVacationUploadRequest,
+} from "@/lib/vacation/route-guards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,13 +35,30 @@ function isFormFile(value: FormDataEntryValue | null): value is File {
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+    const uploadSizeError = rejectOversizedVacationUploadRequest(request);
+    if (uploadSizeError) return uploadSizeError;
+
     const access = await resolveAccessContext(request);
+    await assertVacationRouteRateLimit({
+      actor: access.loginId ?? access.hrId,
+      limit: 12,
+      request,
+      scope: "vacation:upload",
+      windowMs: 60_000,
+    });
     const contentType = request.headers.get("content-type") ?? "";
     const body = contentType.includes("multipart/form-data")
       ? await request.formData()
       : await request.json();
     const sickDocument = body instanceof FormData ? body.get("sickDocument") : null;
     const compensatoryPhoto = body instanceof FormData ? body.get("compensatoryPhoto") : null;
+    const oversizedSick = isFormFile(sickDocument) ? rejectOversizedVacationFile(sickDocument) : null;
+    if (oversizedSick) return oversizedSick;
+    const oversizedCompensatory = isFormFile(compensatoryPhoto) ? rejectOversizedVacationFile(compensatoryPhoto) : null;
+    if (oversizedCompensatory) return oversizedCompensatory;
+
     const result = await createVacationRequest(
       access,
       body instanceof FormData
@@ -89,6 +113,12 @@ export async function POST(request: Request) {
     }
     if (isVacationSchemaMissing(error)) {
       return NextResponse.json({ error: "vacation_schema_missing", message, success: false }, { status: 409 });
+    }
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message, success: false },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
     }
     return NextResponse.json({ error: "vacation_request_failed", message, success: false }, { status: 400 });
   }

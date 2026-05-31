@@ -4,6 +4,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { googleDirectionsRoute } from "@/lib/google-maps/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { getResidenceLocationForEmployee } from "@/lib/outstation/service";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,9 @@ function minutesFromSeconds(value: number | null | undefined) {
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertOutstationAdminAccess(access, "approve");
 

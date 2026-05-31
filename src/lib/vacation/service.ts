@@ -86,8 +86,11 @@ const vacationSlaRunsTable = "v2_vacation_sla_runs";
 const vacationSlaSettingsTable = "v2_vacation_sla_settings";
 const vacationTokensTable = "v2_vacation_email_tokens";
 const vacationWeeklyOffPoliciesTable = "v2_vacation_weekly_off_policies";
+const vacationRetentionPoliciesTable = "v2_vacation_retention_policies";
+const vacationRetentionPurgeRunsTable = "v2_vacation_retention_purge_runs";
 const vacationAttachmentBucket = "leave-attachments";
 const emailTokenTtlDays = 14;
+const vacationAuditExportMaxRows = 5000;
 const sickAttachmentMaxUploadBytes = 10 * 1024 * 1024;
 const sickAttachmentAllowedContentTypes = new Set([
   "application/pdf",
@@ -353,6 +356,8 @@ function isVacationSchemaMissingError(error: unknown) {
     message.includes(vacationSlaSettingsTable) ||
     message.includes(vacationTokensTable) ||
     message.includes(vacationWeeklyOffPoliciesTable) ||
+    message.includes(vacationRetentionPoliciesTable) ||
+    message.includes(vacationRetentionPurgeRunsTable) ||
     message.includes("could not find the table") ||
     message.includes("schema cache") ||
     (message.includes("relation") && message.includes("does not exist"))
@@ -1027,7 +1032,7 @@ function normalizeAdminVacationStatus(value: unknown): VacationRequestStatus {
   if (normalized === "pending_manager" || normalized === "pending_hr" || normalized === "approved" || normalized === "rejected") {
     return normalized;
   }
-  return "approved";
+  return "pending_manager";
 }
 
 function adminDecisionPayload(input: {
@@ -1193,6 +1198,17 @@ function hasAcceptedRequiredEvidence(request: VacationRequestRecord) {
     : null;
   if (!requiredType) return true;
   return request.evidenceReviews.some((review) => review.evidenceType === requiredType && review.status === "accepted");
+}
+
+function acceptedRequiredEvidenceReviewerHrIds(request: VacationRequestRecord) {
+  const requiredType = request.vacationType === "sick" || request.vacationType === "compensatory"
+    ? request.vacationType
+    : null;
+  if (!requiredType) return [];
+  return request.evidenceReviews
+    .filter((review) => review.evidenceType === requiredType && review.status === "accepted")
+    .map((review) => canonicalHrId(review.reviewedByHrId))
+    .filter((value): value is string => Boolean(value));
 }
 
 function mapVacationEvent(row: VacationEventDbRow): VacationTimelineEvent {
@@ -2178,6 +2194,10 @@ async function applyVacationDecision(input: {
     if (!hasAcceptedRequiredEvidence(input.request)) {
       throw new Error("Required vacation evidence must be accepted by HR before final HR approval.");
     }
+    const actorHrId = canonicalHrId(input.actorHrId);
+    if (actorHrId && acceptedRequiredEvidenceReviewerHrIds(input.request).includes(actorHrId)) {
+      throw new Error("Separation of duties requires a different HR or Super Admin actor to make the final approval after evidence review.");
+    }
     balance = await calculatePaymentForRequest({
       durationDays: input.request.durationDays,
       employeeHrId: input.request.employeeHrId,
@@ -2420,7 +2440,7 @@ export async function updateVacationWeeklyOffPolicy(access: AccessContext, input
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
     entityId: policy.jobTitle,
-    entityType: "vacation_request",
+    entityType: "vacation_weekly_off_policy",
     newValues: { policy, policyEntity: "vacation_weekly_off_policy" },
     oldValues: {},
     summary: `Vacation weekly-off policy updated for ${policy.jobTitle}.`,
@@ -2457,42 +2477,6 @@ function cleanFilters(filters: VacationReportFilters): VacationReportFilters {
         : "all",
     vacationType: normalizeVacationType(filters.vacationType) ?? "all",
   };
-}
-
-function rowMatchesFilters(row: VacationRequestRecord, filters: VacationReportFilters) {
-  if (filters.status && filters.status !== "all" && row.status !== filters.status) return false;
-  if (filters.paymentStatus && filters.paymentStatus !== "all" && row.paymentStatus !== filters.paymentStatus) return false;
-  if (filters.vacationType && filters.vacationType !== "all" && row.vacationType !== filters.vacationType) return false;
-  if (filters.employee && !hrIdsMatch(row.employeeHrId, filters.employee)) return false;
-  if (filters.manager && !hrIdsMatch(row.managerHrId, filters.manager)) return false;
-  if (filters.department && row.departmentName !== filters.department) return false;
-  if (filters.line && row.lineName !== filters.line) return false;
-  if (filters.requestId) {
-    const requestFilter = filters.requestId.toLowerCase();
-    if (row.id.toLowerCase() !== requestFilter && vacationRequestDisplayId(row.id).toLowerCase() !== requestFilter) return false;
-  }
-  if (filters.dateFrom && row.startDate < filters.dateFrom) return false;
-  if (filters.dateTo && row.startDate > filters.dateTo) return false;
-
-  const search = filters.search?.toLowerCase();
-  if (search) {
-    const haystack = [
-      row.employeeName,
-      row.employeeHrId,
-      row.managerName,
-      row.managerHrId,
-      row.departmentName,
-      row.lineName,
-      vacationTypeLabel(row.vacationType),
-      row.status,
-      row.paymentStatus,
-      vacationRequestDisplayId(row.id),
-      row.id,
-    ].join(" ").toLowerCase();
-    if (!haystack.includes(search)) return false;
-  }
-
-  return true;
 }
 
 function buildReportOptions(rows: VacationRequestRecord[], employees?: EmployeeDirectoryRow[] | null): VacationReportData["options"] {
@@ -2963,48 +2947,63 @@ export async function getVacationRequestTimeline(access: AccessContext, requestI
   }
 
   const eventMap = await fetchVacationEventsForRequests([request.id]);
-  const events = eventMap.get(request.id) ?? [];
-  const evidenceEvents: VacationTimelineEvent[] = request.evidenceReviews.map((review) => ({
-    actorHrId: review.reviewedByHrId,
-    actorLoginId: null,
-    createdAt: review.reviewedAt ?? review.createdAt,
-    eventType: "evidence_reviewed",
-    id: `evidence:${review.id}`,
-    message: `${review.evidenceType} evidence review status: ${review.status}.`,
-    metadata: {
-      evidenceType: review.evidenceType,
-      reviewNote: review.reviewNote,
-      status: review.status,
-    },
-    source: "evidence",
-  }));
-  const decisionEvents: VacationTimelineEvent[] = [];
-  if (request.managerDecisionAt) {
-    decisionEvents.push({
-      actorHrId: request.managerDecisionByHrId,
+  return buildVacationTimelineEntries({
+    eventsByRequest: eventMap,
+    rows: [request],
+  });
+}
+
+function buildVacationTimelineEntries(input: {
+  eventsByRequest: Map<string, VacationTimelineEvent[]>;
+  rows: VacationRequestRecord[];
+}) {
+  const timeline: VacationTimelineEvent[] = [];
+
+  for (const request of input.rows) {
+    timeline.push(...(input.eventsByRequest.get(request.id) ?? []));
+    timeline.push(...request.evidenceReviews.map((review) => ({
+      actorHrId: review.reviewedByHrId,
       actorLoginId: null,
-      createdAt: request.managerDecisionAt,
-      eventType: `manager_${request.managerDecision ?? "decision"}`,
-      id: `decision:manager:${request.id}`,
-      message: `Manager decision: ${request.managerDecision ?? "recorded"}.`,
-      metadata: { decisionComment: request.managerDecisionComment },
-      source: "decision",
-    });
-  }
-  if (request.hrDecisionAt) {
-    decisionEvents.push({
-      actorHrId: request.hrDecisionByHrId,
-      actorLoginId: null,
-      createdAt: request.hrDecisionAt,
-      eventType: `hr_${request.hrDecision ?? "decision"}`,
-      id: `decision:hr:${request.id}`,
-      message: `HR final decision: ${request.hrDecision ?? "recorded"}.`,
-      metadata: { decisionComment: request.hrDecisionComment },
-      source: "decision",
-    });
+      createdAt: review.reviewedAt ?? review.createdAt,
+      eventType: "evidence_reviewed",
+      id: `evidence:${review.id}`,
+      message: `${review.evidenceType} evidence review status: ${review.status}.`,
+      metadata: {
+        evidenceType: review.evidenceType,
+        reviewNote: review.reviewNote,
+        requestId: request.id,
+        status: review.status,
+      },
+      source: "evidence",
+    } satisfies VacationTimelineEvent)));
+
+    if (request.managerDecisionAt) {
+      timeline.push({
+        actorHrId: request.managerDecisionByHrId,
+        actorLoginId: null,
+        createdAt: request.managerDecisionAt,
+        eventType: `manager_${request.managerDecision ?? "decision"}`,
+        id: `decision:manager:${request.id}`,
+        message: `Manager decision: ${request.managerDecision ?? "recorded"}.`,
+        metadata: { decisionComment: request.managerDecisionComment, requestId: request.id },
+        source: "decision",
+      });
+    }
+    if (request.hrDecisionAt) {
+      timeline.push({
+        actorHrId: request.hrDecisionByHrId,
+        actorLoginId: null,
+        createdAt: request.hrDecisionAt,
+        eventType: `hr_${request.hrDecision ?? "decision"}`,
+        id: `decision:hr:${request.id}`,
+        message: `HR final decision: ${request.hrDecision ?? "recorded"}.`,
+        metadata: { decisionComment: request.hrDecisionComment, requestId: request.id },
+        source: "decision",
+      });
+    }
   }
 
-  return [...events, ...decisionEvents, ...evidenceEvents]
+  return timeline
     .filter((event) => event.createdAt)
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
@@ -3020,8 +3019,16 @@ function addWorksheetRows<T extends Record<string, unknown>>(workbook: ExcelJS.W
 }
 
 export async function generateVacationAuditExportWorkbook(access: AccessContext, filters: VacationReportFilters = {}) {
+  await assertPermission(access, "leave", "export");
   const report = await getVacationReportData(access, filters);
-  const timelineEntries = await Promise.all(report.rows.map((row) => getVacationRequestTimeline(access, row.id).catch(() => [])));
+  if (report.rows.length > vacationAuditExportMaxRows) {
+    throw new Error(`Vacation audit export is limited to ${vacationAuditExportMaxRows} rows. Narrow the filters before exporting.`);
+  }
+  const eventsByRequest = await fetchVacationEventsForRequests(report.rows.map((row) => row.id));
+  const timelineEntries = buildVacationTimelineEntries({
+    eventsByRequest,
+    rows: report.rows,
+  });
   const metadata: VacationAuditExportMetadata = {
     actorHrId: resolveEmployeeIdentityId(access),
     actorLoginId: access.loginId ?? null,
@@ -3062,7 +3069,8 @@ export async function generateVacationAuditExportWorkbook(access: AccessContext,
     auditWarnings: row.overlapWarnings.map((warning) => warning.code).join("; "),
   })));
 
-  addWorksheetRows(workbook, "Timeline", timelineEntries.flat().map((event) => ({
+  addWorksheetRows(workbook, "Timeline", timelineEntries.map((event) => ({
+    requestId: typeof event.metadata.requestId === "string" ? event.metadata.requestId : "",
     actorHrId: event.actorHrId,
     actorLoginId: event.actorLoginId,
     createdAt: event.createdAt,
@@ -3103,6 +3111,226 @@ export async function generateVacationAuditExportWorkbook(access: AccessContext,
   ]);
 
   return workbook;
+}
+
+export const vacationRetentionPolicyDefaults = {
+  decisionTokensDays: 90,
+  evidenceAttachmentsDays: 1095,
+  requestHistoryDays: 2555,
+  slaRunLogsDays: 365,
+} as const;
+
+type VacationRetentionPolicyKey = "decision_tokens" | "evidence_attachments" | "request_history" | "sla_run_logs";
+
+type VacationRetentionPolicySnapshot = Record<VacationRetentionPolicyKey, number>;
+
+function retentionCutoff(days: number) {
+  return new Date(Date.now() - days * 86400000).toISOString();
+}
+
+async function loadVacationRetentionPolicySnapshot(): Promise<VacationRetentionPolicySnapshot> {
+  const fallback: VacationRetentionPolicySnapshot = {
+    decision_tokens: vacationRetentionPolicyDefaults.decisionTokensDays,
+    evidence_attachments: vacationRetentionPolicyDefaults.evidenceAttachmentsDays,
+    request_history: vacationRetentionPolicyDefaults.requestHistoryDays,
+    sla_run_logs: vacationRetentionPolicyDefaults.slaRunLogsDays,
+  };
+
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from(vacationRetentionPoliciesTable)
+      .select("policy_key,retention_days");
+    if (error) throwVacationDatabaseError(error);
+
+    for (const row of (data ?? []) as Array<{ policy_key?: string | null; retention_days?: number | string | null }>) {
+      const key = row.policy_key as VacationRetentionPolicyKey;
+      if (key in fallback) fallback[key] = Math.max(1, Number(row.retention_days ?? fallback[key]));
+    }
+  } catch (error) {
+    if (!isVacationSchemaMissingError(error)) throw error;
+  }
+
+  return fallback;
+}
+
+async function retentionCount(table: string, column: string, cutoff: string) {
+  try {
+    const { count, error } = await getSupabaseAdmin()
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      .lt(column, cutoff);
+    if (error) throwVacationDatabaseError(error);
+    return count ?? 0;
+  } catch (error) {
+    if (!isVacationSchemaMissingError(error)) throw error;
+    return 0;
+  }
+}
+
+async function fetchEvidencePurgeCandidates(cutoff: string) {
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from(vacationRequestsTable)
+      .select("id,sick_attachment_object_path,compensatory_attachment_object_path,hr_decision_at,updated_at,created_at,status")
+      .in("status", ["approved", "rejected"])
+      .lt("hr_decision_at", cutoff)
+      .or("sick_attachment_object_path.not.is.null,compensatory_attachment_object_path.not.is.null")
+      .limit(500);
+    if (error) throwVacationDatabaseError(error);
+    return (data ?? []) as Array<{
+      compensatory_attachment_object_path?: string | null;
+      id: string;
+      sick_attachment_object_path?: string | null;
+    }>;
+  } catch (error) {
+    if (!isVacationSchemaMissingError(error)) throw error;
+    return [];
+  }
+}
+
+async function recordRetentionPurgeRun(input: {
+  actorLoginId: string | null;
+  candidates: Record<string, number>;
+  deletedCounts: Record<string, number>;
+  dryRun: boolean;
+  errors: Array<Record<string, unknown>>;
+  policySnapshot: VacationRetentionPolicySnapshot;
+  status: "completed" | "failed";
+}) {
+  try {
+    await getSupabaseAdmin()
+      .from(vacationRetentionPurgeRunsTable)
+      .insert({
+        actor_login_id: input.actorLoginId,
+        candidates: input.candidates,
+        deleted_counts: input.deletedCounts,
+        dry_run: input.dryRun,
+        errors: input.errors,
+        finished_at: new Date().toISOString(),
+        policy_snapshot: input.policySnapshot,
+        status: input.status,
+      });
+  } catch (error) {
+    if (!isVacationSchemaMissingError(error)) throw error;
+  }
+}
+
+export async function runVacationRetentionPurge(access: AccessContext, input: { dryRun?: boolean } = {}) {
+  await assertPermission(access, "leave", "delete");
+  if (!isAllVacationVisibility(access)) {
+    throw new Error("Forbidden: only HR or Super Admin can run leave retention governance.");
+  }
+
+  const dryRun = input.dryRun !== false;
+  const policySnapshot = await loadVacationRetentionPolicySnapshot();
+  const cutoffs = {
+    decision_tokens: retentionCutoff(policySnapshot.decision_tokens),
+    evidence_attachments: retentionCutoff(policySnapshot.evidence_attachments),
+    request_history: retentionCutoff(policySnapshot.request_history),
+    sla_run_logs: retentionCutoff(policySnapshot.sla_run_logs),
+  };
+  const evidenceCandidates = await fetchEvidencePurgeCandidates(cutoffs.evidence_attachments);
+  const candidates = {
+    decisionTokens: await retentionCount(vacationTokensTable, "created_at", cutoffs.decision_tokens),
+    evidenceAttachments: evidenceCandidates.length,
+    requestEvents: await retentionCount(vacationEventsTable, "created_at", cutoffs.request_history),
+    requestHistory: await retentionCount(vacationRequestsTable, "created_at", cutoffs.request_history),
+    slaRunLogs: await retentionCount(vacationSlaRunsTable, "started_at", cutoffs.sla_run_logs),
+  };
+  const deletedCounts = {
+    decisionTokens: 0,
+    evidenceAttachments: 0,
+    requestEvents: 0,
+    requestHistory: 0,
+    slaRunLogs: 0,
+  };
+  const errors: Array<Record<string, unknown>> = [];
+
+  if (!dryRun) {
+    try {
+      const evidenceObjectPaths = evidenceCandidates.flatMap((row) => [
+        row.sick_attachment_object_path,
+        row.compensatory_attachment_object_path,
+      ]).filter((value): value is string => Boolean(value));
+      if (evidenceObjectPaths.length > 0) {
+        const { error } = await getSupabaseAdmin().storage.from(vacationAttachmentBucket).remove(evidenceObjectPaths);
+        if (error) throw error;
+        deletedCounts.evidenceAttachments = evidenceObjectPaths.length;
+      }
+
+      for (const row of evidenceCandidates) {
+        const { error } = await getSupabaseAdmin()
+          .from(vacationRequestsTable)
+          .update({
+            compensatory_attachment_bucket: null,
+            compensatory_attachment_content_type: null,
+            compensatory_attachment_object_path: null,
+            compensatory_attachment_original_name: null,
+            compensatory_attachment_size_bytes: null,
+            compensatory_attachment_uploaded_at: null,
+            sick_attachment_bucket: null,
+            sick_attachment_content_type: null,
+            sick_attachment_object_path: null,
+            sick_attachment_original_name: null,
+            sick_attachment_size_bytes: null,
+            sick_attachment_uploaded_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", row.id);
+        if (error) throwVacationDatabaseError(error);
+      }
+
+      const { count: tokenCount, error: tokenError } = await getSupabaseAdmin()
+        .from(vacationTokensTable)
+        .delete({ count: "exact" })
+        .lt("created_at", cutoffs.decision_tokens);
+      if (tokenError) throwVacationDatabaseError(tokenError);
+      deletedCounts.decisionTokens = tokenCount ?? 0;
+
+      const { count: slaCount, error: slaError } = await getSupabaseAdmin()
+        .from(vacationSlaRunsTable)
+        .delete({ count: "exact" })
+        .lt("started_at", cutoffs.sla_run_logs);
+      if (slaError) throwVacationDatabaseError(slaError);
+      deletedCounts.slaRunLogs = slaCount ?? 0;
+
+      const { count: eventCount, error: eventError } = await getSupabaseAdmin()
+        .from(vacationEventsTable)
+        .delete({ count: "exact" })
+        .lt("created_at", cutoffs.request_history);
+      if (eventError) throwVacationDatabaseError(eventError);
+      deletedCounts.requestEvents = eventCount ?? 0;
+
+      const { count: requestCount, error: requestError } = await getSupabaseAdmin()
+        .from(vacationRequestsTable)
+        .delete({ count: "exact" })
+        .lt("created_at", cutoffs.request_history);
+      if (requestError) throwVacationDatabaseError(requestError);
+      deletedCounts.requestHistory = requestCount ?? 0;
+    } catch (error) {
+      errors.push({ message: vacationErrorMessage(error) });
+    }
+  }
+
+  const status = errors.length > 0 ? "failed" : "completed";
+  await recordRetentionPurgeRun({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access),
+    candidates,
+    deletedCounts,
+    dryRun,
+    errors,
+    policySnapshot,
+    status,
+  });
+
+  return {
+    candidates,
+    deletedCounts,
+    dryRun,
+    errors,
+    policySnapshot,
+    status,
+  };
 }
 
 function cairoDateOnly() {
@@ -3233,6 +3461,7 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
   await assertPermission(access, "leave", "read");
   const clean = cleanFilters(filters);
   const canAdminManage = isAllVacationVisibility(access) && await canManageVacationRecords(access);
+  const canExport = await canAccess(access, "leave", "export");
   const canReviewAttachments = isAllVacationVisibility(access);
   const activeEmployees = await getEmployeeDirectoryRows();
   const visibleEmployees = filterVacationEmployeesForAccess(access, activeEmployees);
@@ -3249,7 +3478,7 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
     ...row,
     overlapWarnings: warningsByRequest.get(row.id) ?? [],
   }));
-  const filteredRows = visibleRowsWithWarnings.filter((row) => rowMatchesFilters(row, clean));
+  const filteredRows = visibleRowsWithWarnings;
   const employeeEligibility = buildEmployeeEligibilityRows({
     employees: visibleEmployees,
     filters: clean,
@@ -3260,6 +3489,7 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
 
   return {
     canAdminManage,
+    canExport,
     canReviewAttachments,
     dashboard: buildVacationDashboardData({ latestSlaRun, rows: filteredRows }),
     employeeEligibility,

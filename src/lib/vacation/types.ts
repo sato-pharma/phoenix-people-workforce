@@ -293,6 +293,7 @@ export type VacationEmployeeEligibilityRow = {
 
 export type VacationReportData = {
   canAdminManage: boolean;
+  canExport: boolean;
   canReviewAttachments: boolean;
   dashboard: VacationDashboardData;
   employeeEligibility: VacationEmployeeEligibilityRow[];
