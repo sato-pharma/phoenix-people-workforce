@@ -11,6 +11,7 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
+import { CommandPalette } from "@/components/layout/command-palette";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -56,8 +57,13 @@ export async function AppShell({
   const isAdminMode = resolvedNavigationMode === "admin";
 
   return (
-    <div className={`min-h-screen text-[#0F172A] ${isAdminMode ? adminShellBackgroundClassName : "bg-[#F8FAFC]"}`}>
+    <div className={`min-h-screen text-[#0F172A] ${isAdminMode ? `admin-shell ${adminShellBackgroundClassName}` : "bg-[#F8FAFC]"}`}>
       <SessionSecurityGuard />
+      <CommandPalette
+        currentRole={access.role}
+        navigationMode={resolvedNavigationMode}
+        permissionLookup={permissionLookup}
+      />
       <div className="flex min-h-screen">
         <Sidebar currentRole={access.role} navigationMode={resolvedNavigationMode} permissionLookup={permissionLookup} />
         <div className="flex min-w-0 flex-1 flex-col">
