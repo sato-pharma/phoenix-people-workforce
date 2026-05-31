@@ -4,7 +4,7 @@ import { ChevronRight, ShieldCheck, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Fragment, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   getNavigationSections,
@@ -191,21 +191,6 @@ function SidebarNav({
 
     return nextCollapsedSectionIds;
   }, [activeSectionId, collapsedSectionSnapshot, sectionIds]);
-
-  useEffect(() => {
-    if (mode !== "admin") return;
-
-    function handleShortcut(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      }
-    }
-
-    window.addEventListener("keydown", handleShortcut);
-    return () => window.removeEventListener("keydown", handleShortcut);
-  }, [mode]);
 
   function toggleSection(sectionId: string) {
     const nextCollapsedSectionIds = new Set(collapsedSectionIds);

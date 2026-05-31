@@ -572,6 +572,18 @@ body {
   font-family: var(--font-display), serif;
 }
 
+/* ───────────────────────────────────────────────────────────────────────────
+   Admin shell design rule: SQUARE CORNERS everywhere.
+   Zeroes border-radius for every element inside the admin shell, except genuinely
+   circular indicators (anything using `rounded-full` — status dots, pings, avatars).
+   The employee portal is unaffected because it is not wrapped in `.admin-shell`.
+   This enforces the rule globally so current and future admin pages stay square
+   without per-file edits.
+   ─────────────────────────────────────────────────────────────────────────── */
+.admin-shell [class*="rounded"]:not([class*="rounded-full"]) {
+  border-radius: 0 !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ep-pulse-orange,
   .ep-pulse-green,
