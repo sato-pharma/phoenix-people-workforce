@@ -1,0 +1,24 @@
+[
+  {
+    "moduleName": "Example Module (Replace Me)",
+    "moduleSlug": "example-module",
+    "auditCycle": 0,
+    "currentStage": "NOT AUDITED",
+    "score": null,
+    "simpleAverageScore": null,
+    "weightedAverageScore": null,
+    "verdict": "NOT AUDITED",
+    "criticalIssues": 0,
+    "highIssues": 0,
+    "mediumIssues": 0,
+    "lowIssues": 0,
+    "blocksLaunch": false,
+    "requiredNextAction": "Pick a real module and complete the first audit file using the templates in docs/production-audits/_templates/.",
+    "managerSummary": "This is an example placeholder entry. Replace it with a real module record when you start auditing.",
+    "topBusinessRisks": [],
+    "latestAuditFile": null,
+    "latestFixFile": null,
+    "latestVerificationFile": null,
+    "lastUpdated": "2026-05-31T00:00:00.000Z"
+  }
+]
