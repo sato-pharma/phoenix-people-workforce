@@ -45,6 +45,23 @@ export type ComposerPayload = ComposerRecipientSelections & {
   tone?: unknown;
 };
 
+export type EmailDeliveryAnalytics = {
+  externalRecipients30d: number;
+  failed30d: number;
+  lastManualSendAt: string | null;
+  providerEvents30d: Record<string, number>;
+  recentManualSends: Array<{
+    createdAt: string | null;
+    externalCount: number;
+    status: string;
+    subject: string;
+    templateKey: string | null;
+    totalRecipients: number;
+  }>;
+  sent30d: number;
+  skipped30d: number;
+};
+
 const allowedTones = new Set<PhoenixHrEmailTone>(["professional", "warm", "firm", "concise"]);
 
 const composerGroups = [
@@ -179,7 +196,11 @@ function dedupeChannels(input: {
 }
 
 export async function getEmailComposerOptions() {
-  const [{ employees }, templates] = await Promise.all([getEmployeeDirectory(), getEmailTemplateCatalog()]);
+  const [{ employees }, templates, analytics] = await Promise.all([
+    getEmployeeDirectory(),
+    getEmailTemplateCatalog(),
+    getManualEmailDeliveryAnalytics(),
+  ]);
   const metadata = getEmailDesignerMetadata();
   const employeeOptions = employees
     .filter((employee) => employee.workEmail)
@@ -197,6 +218,7 @@ export async function getEmailComposerOptions() {
   const policy = validateManualEmailRecipientPolicy({ to: [] });
   return {
     allowedDomains: policy.allowedDomains,
+    analytics,
     employeeOptions,
     groups: composerGroups,
     maxRecipients: policy.maxRecipients,
@@ -213,6 +235,58 @@ export async function getEmailComposerOptions() {
       { label: "Detailed", value: "firm" },
     ],
     variables: metadata.variables,
+  };
+}
+
+export async function getManualEmailDeliveryAnalytics(): Promise<EmailDeliveryAnalytics> {
+  const sinceIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const supabase = getSupabaseAdmin();
+  const [manual, provider] = await Promise.all([
+    supabase
+      .from("manual_email_send_audit")
+      .select("to_recipients,cc_recipients,bcc_recipients,external_recipients,status,subject,template_key,created_at")
+      .gte("created_at", sinceIso)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    supabase
+      .from("email_delivery_events")
+      .select("status,occurred_at")
+      .gte("occurred_at", sinceIso)
+      .limit(500),
+  ]);
+
+  const manualRows = manual.error ? [] : ((manual.data ?? []) as Array<{
+    bcc_recipients: string[] | null;
+    cc_recipients: string[] | null;
+    created_at: string | null;
+    external_recipients: string[] | null;
+    status: string | null;
+    subject: string | null;
+    template_key: string | null;
+    to_recipients: string[] | null;
+  }>);
+  const providerRows = provider.error ? [] : ((provider.data ?? []) as Array<{ status: string | null }>);
+  const providerEvents30d = providerRows.reduce<Record<string, number>>((acc, row) => {
+    const status = String(row.status ?? "unknown").toLowerCase();
+    acc[status] = (acc[status] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    externalRecipients30d: manualRows.reduce((total, row) => total + (row.external_recipients?.length ?? 0), 0),
+    failed30d: manualRows.filter((row) => row.status === "failed").length,
+    lastManualSendAt: manualRows[0]?.created_at ?? null,
+    providerEvents30d,
+    recentManualSends: manualRows.slice(0, 8).map((row) => ({
+      createdAt: row.created_at,
+      externalCount: row.external_recipients?.length ?? 0,
+      status: row.status ?? "unknown",
+      subject: row.subject ?? "No subject",
+      templateKey: row.template_key,
+      totalRecipients: (row.to_recipients?.length ?? 0) + (row.cc_recipients?.length ?? 0) + (row.bcc_recipients?.length ?? 0),
+    })),
+    sent30d: manualRows.filter((row) => row.status === "sent").length,
+    skipped30d: manualRows.filter((row) => row.status === "skipped").length,
   };
 }
 

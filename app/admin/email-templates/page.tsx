@@ -5,7 +5,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
-  getEmailTemplateCatalog,
+  getEmailTemplateDesignerCatalog,
   getEmailTemplateReadinessMetrics,
   getEmailTemplateRoutingOptions,
   getTemplatePlaceholderHints,
@@ -20,7 +20,7 @@ export default async function AdminEmailTemplatesPage() {
   }
 
   const [templates, routingOptions, templateReadiness] = await Promise.all([
-    getEmailTemplateCatalog(),
+    getEmailTemplateDesignerCatalog(),
     getEmailTemplateRoutingOptions(),
     getEmailTemplateReadinessMetrics(),
   ]);
