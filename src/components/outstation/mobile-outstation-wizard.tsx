@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Car, CheckCircle2, MapPin, ReceiptText, Route, TrainFront } from "lucide-react";
+import { Camera, MapPin } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { ApprovalRecommendationBadge } from "@/components/outstation/approval-recommendation-badge";
@@ -9,10 +9,18 @@ import { OfflineSyncBanner } from "@/components/outstation/offline-sync-banner";
 import { OutstationCostBreakdown } from "@/components/outstation/outstation-cost-breakdown";
 import { RouteMapPreview } from "@/components/outstation/route-map-preview";
 import { TicketUploadCard } from "@/components/outstation/ticket-upload-card";
+import {
+  Field,
+  FieldValue,
+  Stat,
+  SummaryValue,
+  WizardStep,
+} from "@/components/outstation/wizard-primitives";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { PremiumTooltip } from "@/components/ui/premium-tooltip";
 import {
   isRestorableOutstationLocalDraft,
   outstationDraftStorageKey,
@@ -48,6 +56,16 @@ type CarEvidenceCaptureDetails = {
   capturedLatitude: number;
   capturedLocationLabel: string;
   capturedLongitude: number;
+};
+
+type PermissionPromptKind =
+  | "destination-location"
+  | "car-evidence-location"
+  | "camera";
+
+type PermissionPromptState = {
+  blocked?: boolean;
+  kind: PermissionPromptKind;
 };
 
 const draftKey = outstationDraftStorageKey;
@@ -90,6 +108,161 @@ function getDurationSummary(start: string, end: string) {
     return "Overnight stay - 1 night";
   }
   return `Overnight stay - ${days} nights`;
+}
+
+function cleanLocationPart(value: string | null | undefined) {
+  return String(value ?? "").trim();
+}
+
+function withoutGovernorateSuffix(value: string | null | undefined) {
+  return cleanLocationPart(value).replace(/\s+governorate$/i, "");
+}
+
+function uniqueLocationParts(values: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  return values
+    .map(cleanLocationPart)
+    .filter((value) => {
+      if (!value) return false;
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function splitAddressLabel(label: string | null | undefined) {
+  return cleanLocationPart(label)
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function compactLocationLabel(area: string | null | undefined, city: string | null | undefined, fallback: string) {
+  const parts = uniqueLocationParts([area, withoutGovernorateSuffix(city)]);
+  return parts.length > 0 ? parts.join(", ") : fallback;
+}
+
+function capturedDestinationParts(captured: OutstationCaptureResult | null) {
+  if (!captured) {
+    return {
+      area: "Not captured yet",
+      fullAddress: "Tap To to capture current location",
+      governorate: "Not captured yet",
+      shortLabel: "Tap here to capture current location",
+    };
+  }
+
+  const addressParts = splitAddressLabel(captured.toLabel);
+  const area = cleanLocationPart(captured.toArea) || addressParts[0] || "Not detected";
+  const governorate = withoutGovernorateSuffix(captured.toCity) || addressParts[1] || "Not detected";
+  const fullAddress = cleanLocationPart(captured.toLabel) || compactLocationLabel(area, governorate, "Location captured");
+
+  return {
+    area,
+    fullAddress,
+    governorate,
+    shortLabel: compactLocationLabel(area, governorate, fullAddress),
+  };
+}
+
+function isDeniedPermissionError(error: unknown) {
+  if (typeof error === "object" && error && "code" in error && Number(error.code) === 1) {
+    return true;
+  }
+  return error instanceof DOMException && (
+    error.name === "NotAllowedError" ||
+    error.name === "PermissionDeniedError"
+  );
+}
+
+function permissionDeniedMessage(kind: PermissionPromptKind) {
+  if (kind === "camera") {
+    return "Camera permission is blocked. Tap Open browser settings to unblock it for this website, then tap Accept & retry.";
+  }
+
+  return "Location permission is blocked. Tap Open browser settings to unblock it for this website, then tap Accept & retry.";
+}
+
+function getCurrentSiteUrl() {
+  return typeof window === "undefined" ? "" : window.location.origin;
+}
+
+function getPermissionSettingsUrl(kind: PermissionPromptKind) {
+  if (typeof navigator === "undefined") {
+    return null;
+  }
+
+  const permissionPath = kind === "camera" ? "camera" : "location";
+  const siteDetailsPath = getCurrentSiteUrl()
+    ? `content/siteDetails?site=${encodeURIComponent(getCurrentSiteUrl())}`
+    : `content/${permissionPath}`;
+  const userAgent = navigator.userAgent.toLowerCase();
+
+  if (userAgent.includes("edg/")) {
+    return `edge://settings/${siteDetailsPath}`;
+  }
+  if (userAgent.includes("opr/") || userAgent.includes("opera/")) {
+    return `opera://settings/content/${permissionPath}`;
+  }
+  if (userAgent.includes("firefox/")) {
+    return "about:preferences#privacy";
+  }
+  if (userAgent.includes("chrome/") || userAgent.includes("crios/")) {
+    return `chrome://settings/${siteDetailsPath}`;
+  }
+
+  return null;
+}
+
+function getPermissionSettingsSteps(kind: PermissionPromptKind) {
+  if (typeof navigator === "undefined") {
+    return [];
+  }
+
+  const permissionName = kind === "camera" ? "Camera" : "Location";
+  const lowerPermissionName = permissionName.toLowerCase();
+  const userAgent = navigator.userAgent.toLowerCase();
+
+  if (/iphone|ipad|ipod/.test(userAgent)) {
+    if (userAgent.includes("crios/")) {
+      return [
+        `Open the iOS Settings app, then open Chrome.`,
+        `Set ${permissionName} to Allow.`,
+        "Return to this page, reload it, then tap Accept & retry.",
+      ];
+    }
+
+    return [
+      "Tap the AA/page settings icon in Safari's address bar, then open Website Settings.",
+      `Set ${permissionName} to Allow for this website.`,
+      `If it is still blocked, open the iOS Settings app, open Safari, and allow ${lowerPermissionName}.`,
+      "Return to this page, reload it, then tap Accept & retry.",
+    ];
+  }
+
+  if (userAgent.includes("android")) {
+    return [
+      "Tap the lock/tune icon beside the website address.",
+      `Open Permissions and set ${permissionName} to Allow.`,
+      "Return to this page, reload it, then tap Accept & retry.",
+    ];
+  }
+
+  if (userAgent.includes("firefox/")) {
+    return [
+      "Click the lock icon beside the website address.",
+      `Open Permissions and set ${permissionName} to Allow.`,
+      "Reload this page, then tap Accept & retry.",
+    ];
+  }
+
+  return [
+    "Click the lock/tune icon beside the website address.",
+    "Open Site settings.",
+    `Set ${permissionName} to Allow for this website.`,
+    "Return to this page, reload it, then tap Accept & retry.",
+  ];
 }
 
 function formatEvidenceDateTime(value: string) {
@@ -229,16 +402,13 @@ async function drawCarEvidenceWatermark(
   context.shadowBlur = 0;
 }
 
-function buildTransportIcon(type: OutstationTransportationType) {
-  return type === "car" ? Car : type === "train" || type === "bus" ? TrainFront : Route;
-}
-
 export function MobileOutstationWizard({
   employeeHrId,
   employeeName,
   employeeRole,
   hasResidenceCoordinates,
   medicalTripOptions,
+  residenceShortSummary,
   residenceSummary,
   showIntro = true,
 }: {
@@ -247,6 +417,7 @@ export function MobileOutstationWizard({
   employeeRole: string;
   hasResidenceCoordinates: boolean;
   medicalTripOptions: MedicalTripOption[];
+  residenceShortSummary?: string;
   residenceSummary: string;
   showIntro?: boolean;
 }) {
@@ -272,9 +443,11 @@ export function MobileOutstationWizard({
   const [isCalculating, setIsCalculating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
+  const [permissionPrompt, setPermissionPrompt] = useState<PermissionPromptState | null>(null);
   const [ticketFiles, setTicketFiles] = useState<File[]>([]);
   const carEvidenceStreamRef = useRef<MediaStream | null>(null);
   const pendingOfflineDraftRef = useRef(false);
+  const permissionActionRef = useRef<(() => Promise<void>) | null>(null);
   const skipInitialDraftPersistRef = useRef(true);
   const syncAttemptedRef = useRef(false);
   const lastCalculationKeyRef = useRef("");
@@ -282,13 +455,42 @@ export function MobileOutstationWizard({
 
   const selectedMedicalTripName =
     medicalTripOptions.find((option) => option.hrId === medicalTripHrId)?.name ?? null;
-  const transportIcon = buildTransportIcon(transportationType);
+  // transportIcon was removed when WizardStep migrated from icon containers
+  // to numbered indices (visual polish — no logic change).
   const isTicketBased = transportationType === "train" || transportationType === "bus";
   const durationSummary = calculation
     ? calculation.sameDayTrip
       ? "Return the same day"
       : `Overnight stay - ${calculation.overnightDays} ${calculation.overnightDays === 1 ? "night" : "nights"}`
     : getDurationSummary(tripStartDate, tripEndDate);
+  const fromShortLabel = cleanLocationPart(residenceShortSummary) || residenceSummary;
+  const destinationLocation = capturedDestinationParts(captured);
+
+  function openPermissionPrompt(kind: PermissionPromptKind, action: () => Promise<void>, blocked = false) {
+    permissionActionRef.current = action;
+    setPermissionPrompt({ blocked, kind });
+  }
+
+  function closePermissionPrompt() {
+    permissionActionRef.current = null;
+    setPermissionPrompt(null);
+  }
+
+  async function acceptPermissionPrompt() {
+    const action = permissionActionRef.current;
+    closePermissionPrompt();
+    await action?.();
+  }
+
+  function declinePermissionPrompt() {
+    const kind = permissionPrompt?.kind;
+    closePermissionPrompt();
+    setMessage(
+      kind === "camera"
+        ? "Camera permission was declined. Car evidence cannot be captured without camera access."
+        : "Location permission was declined. This expense cannot continue without GPS access.",
+    );
+  }
 
   const stopCarEvidenceCamera = useCallback(() => {
     if (carEvidenceStreamRef.current) {
@@ -739,12 +941,11 @@ export function MobileOutstationWizard({
       setCaptured(payload);
       setStep(2);
     } catch (error) {
-      const geoError = error as GeolocationPositionError | Error;
-      if ("code" in geoError && typeof geoError.code === "number" && geoError.code === 1) {
-        setMessage(
-          "Location permission was denied. This report cannot proceed without GPS permission.",
-        );
+      if (isDeniedPermissionError(error)) {
+        setMessage(permissionDeniedMessage("destination-location"));
+        openPermissionPrompt("destination-location", captureLocation, true);
       } else {
+        const geoError = error as Error;
         setMessage(
           geoError instanceof Error
             ? geoError.message
@@ -792,8 +993,9 @@ export function MobileOutstationWizard({
       setIsCarEvidenceCameraOpen(true);
     } catch (error) {
       const typedError = error as GeolocationPositionError | DOMException | Error;
-      if (typedError instanceof DOMException && typedError.name === "NotAllowedError") {
-        setMessage("Camera permission was denied. Enable camera permission to continue.");
+      if (isDeniedPermissionError(typedError)) {
+        setMessage(permissionDeniedMessage("camera"));
+        openPermissionPrompt("camera", openCarEvidenceCamera, true);
         return;
       }
       setMessage(
@@ -866,10 +1068,9 @@ export function MobileOutstationWizard({
       setMessage("Live car evidence captured. This photo is attached to this request.");
     } catch (error) {
       const typedError = error as GeolocationPositionError | DOMException | Error;
-      if ("code" in typedError && typeof typedError.code === "number" && typedError.code === 1) {
-        setMessage(
-          "Location permission was denied. Car evidence cannot be captured without GPS permission.",
-        );
+      if (isDeniedPermissionError(typedError)) {
+        setMessage(permissionDeniedMessage("car-evidence-location"));
+        openPermissionPrompt("car-evidence-location", captureCarEvidence, true);
         return;
       }
       setMessage(
@@ -927,47 +1128,93 @@ export function MobileOutstationWizard({
   return (
     <div className="space-y-5">
       <OfflineSyncBanner visible={isOffline} />
-
-      {showIntro ? (
-      <section className="overflow-hidden rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_46%,#f8fafc_100%)] p-6 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
-        <p className="text-xs font-black uppercase tracking-[0.2em] text-orange-500">
-          Outstation Expense
-        </p>
-        <h1 className="mt-2 text-3xl font-black tracking-[-0.05em] text-slate-950">
-          Smart expense entry
-        </h1>
-        <p className="mt-3 text-sm leading-7 text-slate-600">
-          From is locked to your registered residence. Tap To so Phoenix Workforce captures
-          your live destination, validates distance, detects fraud signals, and calculates the
-          request automatically on the server.
-        </p>
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Stat label="Employee" value={formatEmployeeDisplayName(employeeName)} />
-          <Stat label="Role" value={employeeRole} />
-          <Stat label="From" value={residenceSummary} />
-          <Stat label="Residence Coordinates" value={hasResidenceCoordinates ? "Ready" : "Missing"} />
-        </div>
-      </section>
+      {permissionPrompt ? (
+        <PermissionPromptModal
+          blocked={permissionPrompt.blocked}
+          kind={permissionPrompt.kind}
+          onAccept={() => void acceptPermissionPrompt()}
+          onDecline={declinePermissionPrompt}
+        />
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <WizardStep active={step === 1} icon={ReceiptText} label="1. Trip details" />
-        <WizardStep active={step === 2} icon={transportIcon} label="2. Validate route" />
-        <WizardStep active={step === 3} icon={CheckCircle2} label="3. Review & submit" />
+      {showIntro ? (
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">
+            Outstation Expense
+          </p>
+          <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
+            Smart expense entry
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-500">
+            From is locked to your registered residence. Tap To so Phoenix Workforce captures
+            your live destination, validates distance, detects fraud signals, and calculates
+            the request automatically on the server.
+          </p>
+          <div className="mt-4 grid grid-cols-2 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-4">
+            <Stat label="Employee" value={formatEmployeeDisplayName(employeeName)} />
+            <Stat label="Role" value={employeeRole} />
+            <Stat label="From" value={fromShortLabel} />
+            <Stat
+              label="Residence GPS"
+              value={hasResidenceCoordinates ? "Ready" : "Missing"}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {/* Step indicator — flat thin pills, no oversized icon boxes */}
+      <div
+        aria-label="Submission progress"
+        className="overflow-hidden rounded-md border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)]"
+        role="group"
+      >
+        <div className="grid grid-cols-3 divide-x divide-gray-100">
+          <WizardStep active={step === 1} index={1} label="Trip details" />
+          <WizardStep active={step === 2} index={2} label="Validate route" />
+          <WizardStep active={step === 3} index={3} label="Review & submit" />
+        </div>
       </div>
 
-      <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
-          Request Details
-        </p>
-        <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-slate-950">
+      <Card
+        aria-busy={isCalculating}
+        className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+            Request details
+          </span>
+        </div>
+        <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
           Fill the trip and let the system calculate the rest
         </h2>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {/* Conditional hint banner */}
+        {(!hasResidenceCoordinates || isOffline) && (
+          <div
+            className={`mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] ${
+              !hasResidenceCoordinates
+                ? "border-rose-200 bg-rose-50 text-rose-700"
+                : "border-amber-200 bg-amber-50 text-amber-800"
+            }`}
+            role="status"
+          >
+            <span
+              className={`mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-sm ${
+                !hasResidenceCoordinates ? "bg-rose-500" : "bg-amber-500"
+              }`}
+            />
+            <span>
+              {!hasResidenceCoordinates
+                ? "Residence GPS coordinates are missing. Ask HR to set your residence in your profile before submitting."
+                : "You are offline. The request will be saved locally and synced automatically when you reconnect."}
+            </span>
+          </div>
+        )}
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Field label="Expense Type">
             <select
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+              className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
               onChange={(event) => setExpenseType(event.target.value as OutstationExpenseType)}
               value={expenseType}
             >
@@ -978,48 +1225,108 @@ export function MobileOutstationWizard({
           </Field>
 
           <Field label="From Date">
-            <Input onChange={(event) => setTripStartDate(event.target.value)} type="date" value={tripStartDate} />
+            <Input
+              aria-label="Trip start date"
+              lang="en-GB"
+              max={tripEndDate || undefined}
+              onChange={(event) => setTripStartDate(event.target.value)}
+              placeholder="YYYY-MM-DD"
+              type="date"
+              value={tripStartDate}
+            />
           </Field>
 
           <Field label="To Date">
-            <Input onChange={(event) => setTripEndDate(event.target.value)} type="date" value={tripEndDate} />
+            <Input
+              aria-label="Trip end date"
+              lang="en-GB"
+              min={tripStartDate || undefined}
+              onChange={(event) => setTripEndDate(event.target.value)}
+              placeholder="YYYY-MM-DD"
+              type="date"
+              value={tripEndDate}
+            />
           </Field>
 
           <Field label="Duration">
-            <div className="flex min-h-11 items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
+            <div className="flex min-h-11 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
               {durationSummary}
             </div>
           </Field>
 
           <Field label="From">
-            <div className="flex min-h-11 items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
-              {residenceSummary}
-            </div>
+            <PremiumTooltip
+              className="w-80"
+              content={<LocationTooltipContent label="Full residence address" value={residenceSummary} />}
+              placement="top"
+              triggerClassName="block"
+            >
+              <div
+                aria-label={`From residence: ${residenceSummary}`}
+                className="flex min-h-11 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800"
+                title={residenceSummary}
+              >
+                <span className="h-1.5 w-1.5 shrink-0 rounded-sm bg-orange-400" />
+                <span className="truncate">{fromShortLabel}</span>
+              </div>
+            </PremiumTooltip>
           </Field>
 
           <Field label="To">
-            <button
-              className="flex min-h-11 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-800 transition hover:border-orange-300 hover:bg-orange-50"
-              disabled={isCapturing}
-              onClick={() => void captureLocation()}
-              type="button"
+            <PremiumTooltip
+              className="w-80"
+              content={<LocationTooltipContent label="Full destination address" value={destinationLocation.fullAddress} />}
+              placement="top"
+              triggerClassName="block"
             >
-              <span className="truncate">
-                {isCapturing
-                  ? "Capturing destination..."
-                  : captured?.toLabel ?? "Tap here to capture current location"}
-              </span>
-              {isCapturing ? (
-                <LoadingSpinner />
-              ) : (
-                <MapPin className="h-4 w-4 shrink-0 text-orange-500" />
-              )}
-            </button>
+              <button
+                aria-label={`To destination: ${destinationLocation.fullAddress}`}
+                className="flex min-h-11 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-800 transition hover:border-orange-300 hover:bg-orange-50"
+                disabled={isCapturing}
+                onClick={() => void captureLocation()}
+                title={destinationLocation.fullAddress}
+                type="button"
+              >
+                <span className="truncate">
+                  {isCapturing ? "Capturing destination..." : destinationLocation.shortLabel}
+                </span>
+                {isCapturing ? (
+                  <LoadingSpinner />
+                ) : (
+                  <MapPin className="h-4 w-4 shrink-0 text-orange-500" />
+                )}
+              </button>
+            </PremiumTooltip>
           </Field>
+
+          {captured ? (
+            <>
+              <Field label="Area / Brick">
+                <LocationReadout value={destinationLocation.area} />
+              </Field>
+
+              <Field label="Governorate">
+                <LocationReadout value={destinationLocation.governorate} />
+              </Field>
+
+              <div className="sm:col-span-2 xl:col-span-2">
+                <Field label="Full Address">
+                  <PremiumTooltip
+                    className="w-80 max-w-[calc(100vw-2rem)]"
+                    content={<LocationTooltipContent label="Captured full address" value={destinationLocation.fullAddress} />}
+                    placement="top"
+                    triggerClassName="block"
+                  >
+                    <LocationReadout value={destinationLocation.fullAddress} />
+                  </PremiumTooltip>
+                </Field>
+              </div>
+            </>
+          ) : null}
 
           <Field label="Transportation Type">
             <select
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+              className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
               onChange={(event) =>
                 handleTransportationTypeChange(event.target.value as OutstationTransportationType)
               }
@@ -1034,7 +1341,7 @@ export function MobileOutstationWizard({
 
           <Field label="Medical Representative">
             <select
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 disabled:bg-slate-50 disabled:text-slate-400"
+              className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 disabled:bg-slate-50 disabled:text-slate-400"
               disabled={medicalTripOptions.length === 0}
               onChange={(event) => setMedicalTripHrId(event.target.value)}
               value={medicalTripHrId}
@@ -1084,7 +1391,7 @@ export function MobileOutstationWizard({
 
           <Field label="Notes">
             <textarea
-              className="min-h-28 w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-orange-50"
+              className="min-h-28 w-full rounded-md border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-orange-50"
               onChange={(event) => setNotes(event.target.value)}
               placeholder="Add any trip note or explanation"
               value={notes}
@@ -1093,10 +1400,10 @@ export function MobileOutstationWizard({
         </div>
 
         <div className="mt-5">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
-            Auto Calculated Summary
-          </p>
-          <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+            Auto calculated summary
+          </span>
+          <div className="mt-3 grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-2 xl:grid-cols-3">
             <SummaryValue
               label="Allowance"
               value={calculation ? egp(calculation.allowanceAmount) : "Will appear automatically"}
@@ -1142,7 +1449,7 @@ export function MobileOutstationWizard({
           </div>
         </div>
 
-        <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <div className="mt-4 rounded-md border border-gray-100 bg-slate-50/60 px-3 py-2.5 text-[12px] text-slate-600">
           {isCalculating ? (
             <span className="inline-flex items-center gap-2 font-medium text-slate-800">
               <LoadingSpinner />
@@ -1162,7 +1469,7 @@ export function MobileOutstationWizard({
         </div>
 
         {calculation ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-5 grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-2 xl:grid-cols-3">
             <FieldValue
               label="Kilometer"
               value={
@@ -1189,31 +1496,25 @@ export function MobileOutstationWizard({
                   : "N/A"
               }
             />
-            <FieldValue
-              label="Amount"
-              value={egp(calculation.expectedTotalAmount)}
-            />
+            <FieldValue label="Amount" value={egp(calculation.expectedTotalAmount)} />
             <FieldValue
               label="Eligibility"
               value={calculation.eligibilityStatus.replace(/_/g, " ")}
             />
-            <FieldValue
-              label="Allowance"
-              value={egp(calculation.allowanceAmount)}
-            />
+            <FieldValue label="Allowance" value={egp(calculation.allowanceAmount)} />
           </div>
         ) : null}
       </Card>
 
       {transportationType === "car" ? (
-        <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
-            Car Live Evidence
-          </p>
-          <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-slate-950">
+        <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+          <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+            Car live evidence
+          </span>
+          <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
             Capture one live photo from device camera
           </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+          <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-slate-500">
             Car requests require one in-app camera photo with GPS and app-generated timestamp.
           </p>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -1222,7 +1523,7 @@ export function MobileOutstationWizard({
                 Live Camera Evidence
               </span>
               <button
-                className="flex min-h-12 w-full items-center justify-center gap-3 rounded-2xl bg-orange-500 px-5 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:bg-orange-300"
+                className="flex min-h-12 w-full items-center justify-center gap-3 rounded-md bg-orange-500 px-5 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:bg-orange-300"
                 disabled={isCapturingCarEvidence || isCarEvidenceCameraOpen}
                 onClick={() => void openCarEvidenceCamera()}
                 type="button"
@@ -1244,7 +1545,7 @@ export function MobileOutstationWizard({
                 )}
               </button>
             </label>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
               <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
                 Evidence status
               </p>
@@ -1259,7 +1560,7 @@ export function MobileOutstationWizard({
             </div>
           </div>
           {isCarEvidenceCameraOpen ? (
-            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950">
+            <div className="mt-5 overflow-hidden rounded-md border border-slate-200 bg-slate-950">
               <video
                 ref={videoRef}
                 autoPlay
@@ -1273,14 +1574,14 @@ export function MobileOutstationWizard({
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Button
-                    className="rounded-2xl border border-white/20 bg-transparent px-4 text-white hover:bg-white/10"
+                    className="rounded-md border border-white/20 bg-transparent px-4 text-white hover:bg-white/10"
                     onClick={stopCarEvidenceCamera}
                     type="button"
                   >
                     Cancel
                   </Button>
                   <Button
-                    className="rounded-2xl bg-orange-500 px-5 text-white hover:bg-orange-600"
+                    className="rounded-md bg-orange-500 px-5 text-white hover:bg-orange-600"
                     disabled={isCapturingCarEvidence}
                     onClick={() => void captureCarEvidence()}
                     type="button"
@@ -1293,7 +1594,8 @@ export function MobileOutstationWizard({
             </div>
           ) : null}
           {carEvidence?.imageDataUrl ? (
-            <div className="relative mt-4 overflow-hidden rounded-2xl border border-slate-200">
+            <div className="relative mt-4 overflow-hidden rounded-md border border-slate-200">
+              {/* eslint-disable-next-line @next/next/no-img-element -- Local camera data URLs cannot be optimized by Next Image. */}
               <img
                 alt="Live car evidence preview"
                 className="h-auto w-full object-cover"
@@ -1301,7 +1603,7 @@ export function MobileOutstationWizard({
               />
             </div>
           ) : carEvidence ? (
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
               Live evidence metadata is restored, but the image preview cannot be restored. Re-capture the photo before submitting if needed.
             </div>
           ) : null}
@@ -1320,42 +1622,81 @@ export function MobileOutstationWizard({
       <RouteMapPreview request={calculation} />
 
       {calculation ? (
-        <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
-                Step 3
-              </p>
-              <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-slate-950">
-                Submit request
-              </h2>
+        <>
+          {/* Desktop / tablet inline submit card */}
+          <Card className="hidden rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:block sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+                  Step 3
+                </span>
+                <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
+                  Submit request
+                </h2>
+              </div>
+              <ApprovalRecommendationBadge value={calculation.approvalRecommendation} />
             </div>
-            <ApprovalRecommendationBadge value={calculation.approvalRecommendation} />
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button
+                className="min-h-11 rounded-md bg-orange-500 px-5 text-sm font-semibold text-white shadow-sm hover:bg-orange-600 disabled:opacity-60"
+                disabled={
+                  isSubmitting ||
+                  calculation.eligibilityStatus === "not_eligible" ||
+                  (transportationType === "car" && !hasCarEvidence)
+                }
+                onClick={submit}
+                type="button"
+              >
+                {isSubmitting ? <LoadingSpinner className="text-white" /> : null}
+                {isSubmitting
+                  ? "Submitting..."
+                  : isOffline
+                    ? "Save & Sync Offline Request"
+                    : "Submit Request"}
+              </Button>
+            </div>
+          </Card>
+
+          {/* Mobile sticky footer (< sm). Includes a spacer above the
+              container so the last content row isn't hidden behind the
+              footer when the form is fully scrolled. */}
+          <div aria-hidden className="h-20 sm:hidden" />
+          <div
+            className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-100 bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] pt-2.5 shadow-[0_-2px_8px_rgba(15,23,42,0.06)] backdrop-blur sm:hidden print:hidden"
+            data-no-print
+            role="region"
+            aria-label="Submit expense action bar"
+          >
+            <div className="flex items-center gap-2">
+              <ApprovalRecommendationBadge value={calculation.approvalRecommendation} />
+              <Button
+                className="ml-auto min-h-11 flex-1 rounded-md bg-orange-500 px-4 text-sm font-semibold text-white shadow-sm hover:bg-orange-600 disabled:opacity-60"
+                disabled={
+                  isSubmitting ||
+                  calculation.eligibilityStatus === "not_eligible" ||
+                  (transportationType === "car" && !hasCarEvidence)
+                }
+                onClick={submit}
+                type="button"
+              >
+                {isSubmitting ? <LoadingSpinner className="text-white" /> : null}
+                {isSubmitting
+                  ? "Submitting..."
+                  : isOffline
+                    ? "Save offline"
+                    : "Submit Request"}
+              </Button>
+            </div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <Button
-              className="min-h-12 rounded-2xl bg-orange-500 px-5 text-white hover:bg-orange-600"
-              disabled={
-                isSubmitting ||
-                calculation.eligibilityStatus === "not_eligible" ||
-                (transportationType === "car" && !hasCarEvidence)
-              }
-              onClick={submit}
-              type="button"
-            >
-              {isSubmitting ? <LoadingSpinner className="text-white" /> : null}
-              {isSubmitting
-                ? "Submitting..."
-                : isOffline
-                  ? "Save & Sync Offline Request"
-                  : "Submit Request"}
-            </Button>
-          </div>
-        </Card>
+        </>
       ) : null}
 
       {message ? (
-        <Card className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+        <Card
+          aria-live="polite"
+          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] font-medium text-amber-800"
+          role="status"
+        >
           {message}
         </Card>
       ) : null}
@@ -1363,91 +1704,200 @@ export function MobileOutstationWizard({
   );
 }
 
-function WizardStep({
-  active,
-  icon: Icon,
+function LocationTooltipContent({
   label,
+  value,
 }: {
-  active: boolean;
-  icon: typeof MapPin;
   label: string;
+  value: string;
 }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+        {label}
+      </p>
+      <p className="break-words text-sm font-semibold leading-5 text-slate-900">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function LocationReadout({ value }: { value: string }) {
   return (
     <div
-      className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
-        active ? "border-orange-200 bg-orange-50" : "border-slate-200 bg-white"
-      }`}
+      className="flex min-h-11 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800"
+      title={value}
     >
-      <span
-        className={`flex h-10 w-10 items-center justify-center rounded-2xl ${
-          active ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-600"
-        }`}
-      >
-        <Icon className="h-4 w-4" />
-      </span>
-      <span className="text-sm font-bold text-slate-900">{label}</span>
+      <span className="truncate">{value}</span>
     </div>
   );
 }
 
-function Field({
-  children,
-  label,
-}: {
-  children: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-        {label}
-      </span>
-      {children}
-    </label>
-  );
+function permissionPromptCopy(kind: PermissionPromptKind, blocked?: boolean) {
+  if (kind === "camera") {
+    return {
+      badge: blocked ? "Camera blocked" : "Camera permission",
+      description: blocked
+        ? "Camera is blocked by the browser for this website. Open browser settings, change camera to Allow for this site, return here, then retry. If the permission is still set to Ask, the browser will show its real camera prompt."
+        : "Phoenix will request the real browser camera permission now. If you approve it, the camera opens immediately.",
+      title: blocked ? "Camera permission blocked" : "Camera permission required",
+    };
+  }
+
+  if (kind === "car-evidence-location") {
+    return {
+      badge: blocked ? "Location blocked" : "Location permission",
+      description: blocked
+        ? "Location is blocked by the browser for this website. Open browser settings, change location to Allow for this site, return here, then retry."
+        : "Phoenix will request the real browser location permission now and attach the GPS position to this car evidence photo.",
+      title: blocked ? "Location permission blocked" : "Location permission required",
+    };
+  }
+
+  return {
+    badge: blocked ? "Location blocked" : "Location permission",
+    description: blocked
+      ? "Location is blocked by the browser for this website. Open browser settings, change location to Allow for this site, return here, then retry."
+      : "Phoenix will request the real browser location permission now and use it to capture your destination.",
+    title: blocked ? "Location permission blocked" : "Location permission required",
+  };
 }
 
-function Stat({
-  label,
-  value,
+function PermissionPromptModal({
+  blocked = false,
+  kind,
+  onAccept,
+  onDecline,
 }: {
-  label: string;
-  value: string;
+  blocked?: boolean;
+  kind: PermissionPromptKind;
+  onAccept: () => void;
+  onDecline: () => void;
 }) {
+  const copy = permissionPromptCopy(kind, blocked);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [settingsAttempted, setSettingsAttempted] = useState(false);
+  const settingsUrl = getPermissionSettingsUrl(kind);
+  const siteUrl = getCurrentSiteUrl();
+  const steps = getPermissionSettingsSteps(kind);
+
+  function handleOpenSettings() {
+    setSettingsAttempted(true);
+    if (!settingsUrl) {
+      return;
+    }
+
+    try {
+      window.open(settingsUrl, "_blank", "noopener,noreferrer");
+    } catch {
+      // Browser security commonly blocks internal settings URLs from webpages.
+    }
+  }
+
+  async function copyText(value: string, label: string) {
+    if (!value) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyMessage(`${label} copied.`);
+    } catch {
+      setCopyMessage(`Could not copy ${label.toLowerCase()}. Select and copy it manually.`);
+    }
+  }
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 text-sm font-semibold text-slate-900">{value}</p>
+    <div
+      aria-labelledby="outstation-permission-title"
+      aria-modal="true"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/45 px-4 py-6 backdrop-blur-sm"
+      role="dialog"
+    >
+      <div className="w-full max-w-md rounded-lg border border-white/30 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.24)]">
+        <span className="inline-flex rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
+          {copy.badge}
+        </span>
+        <h2 id="outstation-permission-title" className="mt-3 text-lg font-bold text-slate-900">
+          {copy.title}
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{copy.description}</p>
+        {blocked ? (
+          <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-800">
+            Browser security can prevent the native prompt from appearing again after a permanent block.
+            The app can open settings as a shortcut, but you must switch this site&apos;s permission to Allow.
+          </p>
+        ) : null}
+        {blocked ? (
+          <Button
+            className="mt-4 min-h-11 w-full rounded-md border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
+            onClick={handleOpenSettings}
+            type="button"
+            variant="secondary"
+          >
+            Open settings / show steps
+          </Button>
+        ) : null}
+        {blocked && settingsAttempted ? (
+          <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-700">
+            <p className="font-semibold text-slate-900">
+              If no settings page opened, your browser blocked the shortcut.
+            </p>
+            <ol className="mt-2 list-decimal space-y-1 pl-4">
+              {steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {settingsUrl ? (
+                <Button
+                  className="min-h-10 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+                  onClick={() => void copyText(settingsUrl, "Settings shortcut")}
+                  type="button"
+                  variant="secondary"
+                >
+                  Copy settings shortcut
+                </Button>
+              ) : null}
+              {siteUrl ? (
+                <Button
+                  className="min-h-10 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+                  onClick={() => void copyText(siteUrl, "Site URL")}
+                  type="button"
+                  variant="secondary"
+                >
+                  Copy site URL
+                </Button>
+              ) : null}
+            </div>
+            {copyMessage ? (
+              <p className="mt-2 font-medium text-slate-600">{copyMessage}</p>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Button
+            className="min-h-11 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            onClick={onDecline}
+            type="button"
+            variant="secondary"
+          >
+            Decline
+          </Button>
+          <Button
+            className="min-h-11 rounded-md bg-orange-500 text-white hover:bg-orange-600"
+            onClick={onAccept}
+            type="button"
+          >
+            {blocked ? "Accept & retry" : "Accept"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
 
-function FieldValue({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 text-sm font-semibold capitalize text-slate-900">{value}</p>
-    </div>
-  );
-}
-
-function SummaryValue({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-white/70 bg-white/90 p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 text-xl font-black tracking-[-0.03em] text-slate-950">{value}</p>
-    </div>
-  );
-}
+// WizardStep / Field / Stat / FieldValue / SummaryValue moved to
+// `src/components/outstation/wizard-primitives.tsx` so admin outstation
+// pages can reuse them.

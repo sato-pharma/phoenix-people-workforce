@@ -106,6 +106,20 @@ Before adding a new feature to a module, check:
 
 If the answer is unclear, close the old workflow first.
 
+## Current Delivery Guardrail
+
+Current branch and deployment state is documented in [Current Operating State](current-operating-state.md).
+
+New production work must follow this flow:
+
+1. Work on the working branch, not `main`.
+2. Validate with typecheck, tests, build, and audit when code or dependencies change.
+3. Test the Vercel preview deployment.
+4. Promote or merge only after approval.
+5. Verify `https://phoenix-workforce.vercel.app` after production deployment.
+
+Do not use old Vercel deployments for validation. The project should keep only the production (`main`) and working-branch preview deployments active.
+
 ## Current Immediate Closure Target
 
 Phase 1 should close:

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getAttendancePolicyDashboard, saveAttendancePolicy } from "@/lib/attendance/policies";
+import { deleteAttendancePolicy, getAttendancePolicyDashboard, saveAttendancePolicy } from "@/lib/attendance/policies";
 import { assertAttendanceSetupPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, validationError } from "@/lib/http/api-errors";
@@ -45,5 +45,21 @@ export async function POST(request: Request) {
     return NextResponse.json(await getAttendancePolicyDashboard());
   } catch (error) {
     return apiResponse(error, "Attendance policy failed to save.");
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    await assertAttendanceSetupPermission(access, "update");
+
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id");
+    if (!id) throw validationError("Policy id is required.");
+
+    await deleteAttendancePolicy({ id });
+    return NextResponse.json(await getAttendancePolicyDashboard());
+  } catch (error) {
+    return apiResponse(error, "Attendance policy failed to delete.");
   }
 }

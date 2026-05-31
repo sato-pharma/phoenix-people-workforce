@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { systemIdentity } from "@/config/system-settings";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
@@ -144,7 +145,7 @@ export async function POST(request: Request) {
     const subject = stringField(body.subject);
     const replyMessage = stringField(body.replyMessage);
     const recipientName = stringField(body.recipientName);
-    const senderName = stringField(body.senderName) || "Phoenix HR Team";
+    const senderName = stringField(body.senderName) || systemIdentity.hrSignatureName;
     const tone = allowedTones.has(body.tone as PhoenixHrEmailTone)
       ? (body.tone as PhoenixHrEmailTone)
       : "professional";

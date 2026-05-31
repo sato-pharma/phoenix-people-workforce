@@ -8,7 +8,9 @@ import {
   publicVacancyLabel,
   type StructureKpiSummary,
 } from "../src/lib/reports/organogram-safety.ts";
-import type { OrganogramReportRow } from "../src/lib/reports/vacancies.ts";
+import { scopeOrganogramReportData } from "../src/lib/reports/organogram.ts";
+import { buildOrganogramLanes } from "../src/lib/reports/organogram-view-model.ts";
+import type { OrganogramReportRow, VacancyReportData } from "../src/lib/reports/vacancies.ts";
 
 function row(overrides: Partial<OrganogramReportRow>): OrganogramReportRow {
   return {
@@ -92,7 +94,7 @@ export function runOrganogramHardeningTests() {
       vacancyCode: "vacancy_dsm_2",
     }),
   ]);
-  assert.equal(sameCairoDsmAcrossChildAreas.length, 1);
+  assert.equal(sameCairoDsmAcrossChildAreas.length, 2);
 
   const sameLineTeamDifferentManager = applyOrganogramMirrorSafety([
     vacancy({ hrId: "vacancy_5", managerHrId: "DSM-1", vacancyCode: "vacancy_5" }),
@@ -100,13 +102,32 @@ export function runOrganogramHardeningTests() {
   ]);
   assert.equal(sameLineTeamDifferentManager.length, 2);
 
-  const exactFilledSlot = applyOrganogramMirrorSafety([
+  const activeRepDoesNotHideOpenRepVacancy = applyOrganogramMirrorSafety([
     row({ hrId: "MR-1" }),
     vacancy({ vacancyCode: "vacancy_7" }),
   ]);
-  assert.deepEqual(exactFilledSlot.map((item) => item.type), ["employee"]);
+  assert.deepEqual(activeRepDoesNotHideOpenRepVacancy.map((item) => item.type), ["employee", "vacancy"]);
 
-  const filledDsmSlotStillShowsManagerVacancy = applyOrganogramMirrorSafety([
+  const sameCairoTeamRepVacanciesRemainVisible = applyOrganogramMirrorSafety([
+    row({ hrId: "MR-CAIRO-1", areaName: "Cairo", regionName: "Cairo", teamName: "New Cairo" }),
+    vacancy({
+      areaName: "Cairo",
+      hrId: "vacancy_mr_cairo_1",
+      regionName: "Cairo",
+      teamName: "New Cairo",
+      vacancyCode: "vacancy_mr_cairo_1",
+    }),
+    vacancy({
+      areaName: "Cairo",
+      hrId: "vacancy_mr_cairo_2",
+      regionName: "Cairo",
+      teamName: "New Cairo",
+      vacancyCode: "vacancy_mr_cairo_2",
+    }),
+  ]);
+  assert.equal(sameCairoTeamRepVacanciesRemainVisible.filter((item) => item.type === "vacancy").length, 2);
+
+  const filledDsmSlotSuppressesManagerVacancy = applyOrganogramMirrorSafety([
     row({
       hrId: "DSM-FILLED",
       jobTitle: "District Sales Manager",
@@ -122,7 +143,37 @@ export function runOrganogramHardeningTests() {
     }),
   ]);
   assert.deepEqual(
-    filledDsmSlotStillShowsManagerVacancy.map((item) => item.type),
+    filledDsmSlotSuppressesManagerVacancy.map((item) => item.type),
+    ["employee"],
+  );
+
+  const broadCairoDsmVacancyWithoutTeamIsPreserved = applyOrganogramMirrorSafety([
+    row({
+      areaId: null,
+      areaName: "Cairo",
+      hrId: "DSM-CAIRO-ACTIVE",
+      jobTitle: "District Sales Manager",
+      managerHrId: "NSM-1",
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+      teamId: null,
+      teamName: null,
+    }),
+    vacancy({
+      areaId: null,
+      areaName: "Cairo",
+      hrId: "vacancy_dsm_cairo",
+      jobTitle: "District Sales Manager",
+      managerHrId: "NSM-1",
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+      teamId: null,
+      teamName: null,
+      vacancyCode: "vacancy_dsm_cairo",
+    }),
+  ]);
+  assert.deepEqual(
+    broadCairoDsmVacancyWithoutTeamIsPreserved.map((item) => item.type),
     ["employee", "vacancy"],
   );
 
@@ -141,8 +192,53 @@ export function runOrganogramHardeningTests() {
       vacancyCode: "resignation_b-180_20260101000000",
     }),
   ]);
-  assert.equal(resignationVacancy[0]?.hrId, "VAC-B180");
-  assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-B180");
+  assert.equal(resignationVacancy[0]?.hrId, "VAC-RES-000000");
+  assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-RES-123456");
+
+  const vacantDsmLaneKeepsPendingReports = buildOrganogramLanes([
+    row({
+      fullName: "Line NSM",
+      hrId: "NSM-1",
+      jobTitle: "National Sales Manager",
+      managerHrId: "AA",
+      positionId: 300,
+      positionTitle: "National Sales Manager",
+    }),
+    vacancy({
+      fullName: "Vacant",
+      hrId: "VAC-DSM-180",
+      jobTitle: "District Sales Manager",
+      managerHrId: "NSM-1",
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+      replacementForHrId: "B-180",
+      vacancyCode: "VAC-DSM-180",
+    }),
+    row({
+      areaName: "Heliopolis",
+      fullName: "Active Rep",
+      hrId: "MR-HELIO",
+      managerHrId: "NSM-1",
+      managerReplacementForHrId: "B-180",
+      positionTitle: "Medical Representative",
+    }),
+    vacancy({
+      areaName: "Cairo East 1",
+      hrId: "VAC-MR-EAST-1",
+      managerHrId: "NSM-1",
+      managerReplacementForHrId: "B-180",
+      positionTitle: "Medical Representative",
+      vacancyCode: "VAC-MR-EAST-1",
+    }),
+  ]);
+  const vacantDsmLane = vacantDsmLaneKeepsPendingReports.groups.find(
+    (group) => group.dsm?.replacementForHrId === "B-180",
+  );
+  assert.ok(vacantDsmLane, "Vacant DSM must render as its own lane.");
+  assert.deepEqual(
+    vacantDsmLane.members.map((member) => member.hrId).sort(),
+    ["MR-HELIO", "VAC-MR-EAST-1"],
+  );
 
   const kpis = calculateOrganogramStructureKpis([
     row({ hrId: "MR-3", positionTitle: "Medical Representative" }),
@@ -179,8 +275,76 @@ export function runOrganogramHardeningTests() {
       vacancyCode: "vacancy_dsm_4",
     }),
   ]);
-  expectKpi(duplicateDsmKpis, "dsm", { actual: 0, total: 1, vacant: 1 });
-  expectKpi(duplicateDsmKpis, "total", { actual: 0, total: 1, vacant: 1 });
+  expectKpi(duplicateDsmKpis, "dsm", { actual: 0, total: 2, vacant: 2 });
+  expectKpi(duplicateDsmKpis, "total", { actual: 0, total: 2, vacant: 2 });
+
+  const scoped = scopeOrganogramReportData(
+    {
+      organogramRows: [
+        row({ hrId: "PEDIA-1", lineName: "Pedia" }),
+        row({ hrId: "CNS-1", lineName: "CNS" }),
+        vacancy({ hrId: "PEDIA-VAC", lineName: "Pedia", managerHrId: "DSM-X", vacancyCode: "vacancy_pedia" }),
+        vacancy({ hrId: "CNS-VAC", lineName: "CNS", managerHrId: "DSM-Y", vacancyCode: "vacancy_cns" }),
+      ],
+      rows: [
+        {
+          areaId: 10,
+          areaName: "Cairo",
+          createdAt: "2026-01-01",
+          departmentId: 1,
+          departmentName: "Sales",
+          id: 1,
+          jobTitle: "Medical Representative",
+          lineId: 1,
+          lineName: "Pedia",
+          managerHrId: "DSM-1",
+          managerName: "DSM One",
+          note: null,
+          positionId: 100,
+          positionTitle: "Medical Representative",
+          regionName: "Cairo",
+          sourceRowNumber: null,
+          status: "open",
+          teamId: 20,
+          teamName: "New Cairo",
+          vacancyCode: "vacancy_pedia",
+        },
+        {
+          areaId: 11,
+          areaName: "Giza",
+          createdAt: "2026-01-01",
+          departmentId: 1,
+          departmentName: "Sales",
+          id: 2,
+          jobTitle: "Medical Representative",
+          lineId: 2,
+          lineName: "CNS",
+          managerHrId: "DSM-2",
+          managerName: "DSM Two",
+          note: null,
+          positionId: 100,
+          positionTitle: "Medical Representative",
+          regionName: "Giza",
+          sourceRowNumber: null,
+          status: "open",
+          teamId: 21,
+          teamName: "Giza",
+          vacancyCode: "vacancy_cns",
+        },
+      ],
+      summary: {
+        areasAffected: 2,
+        linesAffected: 2,
+        openVacancies: 2,
+        positionsAffected: 1,
+        totalVacancies: 2,
+      },
+    } satisfies VacancyReportData,
+    { lineName: "Pedia", mode: "line" },
+  );
+  assert.deepEqual(scoped.organogramRows.map((item) => item.lineName), ["Pedia", "Pedia"]);
+  assert.equal(scoped.summary.linesAffected, 1);
+  assert.equal(scoped.summary.openVacancies, 1);
 
   assert.equal(
     districtBucketMatches(
@@ -203,8 +367,59 @@ export function runOrganogramHardeningTests() {
     ),
     false,
   );
+  assert.equal(
+    districtBucketMatches(
+      vacancy({
+        areaId: 44,
+        areaName: "Downtown + shoubra Masr",
+        lineName: "Pedia",
+        positionTitle: "Medical Representative",
+        regionName: null,
+        teamName: null,
+      }),
+      vacancy({ areaName: "Cairo", lineName: "Pedia", positionTitle: "District Sales Manager" }),
+    ),
+    true,
+  );
 
   const componentSource = readFileSync("src/components/reports/organogram-report.tsx", "utf8");
+  const portalSource = readFileSync("src/components/employee-portal/employee-organogram-dashboard.tsx", "utf8");
+  const organogramApiSource = readFileSync("app/api/reports/organogram/route.ts", "utf8");
+  const vacancyApiSource = readFileSync("app/api/reports/vacancies/route.ts", "utf8");
+  const portalPageSource = readFileSync("app/employee-portals/organogram/page.tsx", "utf8");
+  const adminPageSource = readFileSync("app/organogram/page.tsx", "utf8");
+  const sharedViewModelSource = readFileSync("src/lib/reports/organogram-view-model.ts", "utf8");
+  const vacancyReportSource = readFileSync("src/lib/reports/vacancies.ts", "utf8");
+  const resignationServiceSource = readFileSync("src/lib/resignations/service.ts", "utf8");
+  const terminalVacancyGuardMigration = readFileSync(
+    "supabase/migrations/20260527064308_terminal_employee_vacancy_guard.sql",
+    "utf8",
+  );
+
+  assert.match(componentSource, /\/api\/reports\/organogram/);
+  assert.match(portalSource, /\/api\/reports\/organogram/);
+  assert.match(organogramApiSource, /assertPermission\(access, "organogram", "read"\)/);
+  assert.match(vacancyApiSource, /assertPermission\(access, "vacancies", "read"\)/);
+  assert.match(portalPageSource, /resolveOrganogramLineForEmployee/);
+  assert.doesNotMatch(portalPageSource, /getVacancyReport/);
+  assert.match(adminPageSource, /canAccessCompanyOrganogram/);
+  assert.match(sharedViewModelSource, /export function buildOrganogramLanes/);
+  assert.match(sharedViewModelSource, /organogramPositionSlotKey/);
+  assert.match(sharedViewModelSource, /reportsToVacantReplacementOwner/);
+  assert.match(vacancyReportSource, /manager_replacement_for_hr_id/);
+  assert.match(vacancyReportSource, /pending_manager_replacement_for_hr_id/);
+  assert.match(resignationServiceSource, /ensureResignationVacancyOwnership/);
+  assert.match(resignationServiceSource, /replacement_for_hr_id: employee\.hrId/);
+  assert.match(terminalVacancyGuardMigration, /phx_ensure_terminal_employee_vacancy/);
+  assert.match(terminalVacancyGuardMigration, /phx_employee_terminal_vacancy_guard/);
+  assert.match(terminalVacancyGuardMigration, /replacement_for_hr_id = v_employee\.hr_id/);
+  assert.match(terminalVacancyGuardMigration, /area_id is not distinct from v_employee\.area_id/);
+  assert.match(terminalVacancyGuardMigration, /phx_release_terminal_manager_ownership/);
+  assert.doesNotMatch(
+    terminalVacancyGuardMigration,
+    /for r in[\s\S]*public\.employees[\s\S]*perform public\.phx_ensure_terminal_employee_vacancy/,
+    "Terminal vacancy guard must not backfill every historical terminal employee automatically.",
+  );
   assert.match(componentSource, /Reports to NSM/);
   assert.match(componentSource, /childLanes/);
   assert.match(componentSource, /Medical Sales Representatives/);

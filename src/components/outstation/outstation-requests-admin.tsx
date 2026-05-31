@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   CalendarDays,
@@ -108,7 +108,7 @@ function recommendationTone(value: string) {
 }
 
 const panelClassName =
-  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
+  "rounded-lg border border-[#D8E0EA] bg-white/94 shadow-[0_1px_3px_rgba(15,23,42,0.06)] backdrop-blur";
 const adminTableHeaderClassName = "px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
 const stickyEmployeeHeaderClassName = `${adminTableHeaderClassName} sticky left-0 z-30 w-[260px] min-w-[260px] bg-[#F8FAFC] shadow-[10px_0_18px_rgba(15,23,42,0.06)]`;
 const stickyTripHeaderClassName = `${adminTableHeaderClassName} sticky left-[260px] z-30 w-[220px] min-w-[220px] bg-[#F8FAFC] shadow-[10px_0_18px_rgba(15,23,42,0.04)]`;
@@ -117,7 +117,7 @@ const stickyTripCellClassName = "sticky left-[260px] z-20 w-[220px] min-w-[220px
 
 function OutstationAdminShell({ children }: { children: ReactNode }) {
   return (
-    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-lg border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
@@ -209,6 +209,7 @@ function RequestActionButtons({
           className="gap-2 rounded-xl border border-[#FECACA] bg-white px-4 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FEF2F2]"
           disabled={busy}
           onClick={() => onDelete(request)}
+          title="Delete this expense if it has not been imported into a payroll batch."
           type="button"
         >
           {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -216,7 +217,7 @@ function RequestActionButtons({
         </Button>
       </div>
       {request.status === "approved" ? (
-        <p className="text-xs font-black uppercase tracking-[0.12em] text-[#047857]">Approved for payroll</p>
+        <p className="text-xs font-black uppercase tracking-[0.12em] text-[#047857]">Approved - payroll import lock checked before delete</p>
       ) : null}
       {request.status === "rejected" ? (
         <p className="text-xs font-black uppercase tracking-[0.12em] text-[#B91C1C]">Rejected by admin review</p>
@@ -248,7 +249,7 @@ function RequestDetailsModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-3 backdrop-blur-sm sm:p-6">
-      <div className="w-full max-w-7xl overflow-hidden rounded-[24px] border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
+      <div className="w-full max-w-7xl overflow-hidden rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-white/98 px-5 py-4 backdrop-blur">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -298,7 +299,7 @@ function RequestDetailsModal({
           <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
             <Card className={`${panelClassName} p-5`}>
               <div className="mb-4 flex items-start gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FFF7ED] text-[#EA580C]">
+                <span className="flex h-11 w-11 items-center justify-center rounded-md bg-[#FFF7ED] text-[#EA580C]">
                   <Camera className="h-5 w-5" />
                 </span>
                 <div>
@@ -308,7 +309,7 @@ function RequestDetailsModal({
               </div>
 
               {request.carEvidenceImageUrl ? (
-                <div className="overflow-hidden rounded-[22px] border border-[#E2E8F0] bg-[#F8FAFC]">
+                <div className="overflow-hidden rounded-lg border border-[#E2E8F0] bg-[#F8FAFC]">
                   {/* eslint-disable-next-line @next/next/no-img-element -- Private signed Supabase URLs are not configured for Next image optimization. */}
                   <img
                     alt={`Car evidence for outstation request ${request.id}`}
@@ -317,7 +318,7 @@ function RequestDetailsModal({
                   />
                 </div>
               ) : (
-                <div className="rounded-[22px] border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-5 text-sm font-semibold text-[#64748B]">
+                <div className="rounded-lg border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-5 text-sm font-semibold text-[#64748B]">
                   No signed evidence photo is available for this request.
                 </div>
               )}
@@ -403,7 +404,7 @@ function RequestDetailsModal({
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748B]">Admin decision</p>
-              <p className="mt-1 text-sm font-semibold text-[#475569]">Approve, reject, or permanently delete this outstation expense.</p>
+              <p className="mt-1 text-sm font-semibold text-[#475569]">Approve, reject, edit, or delete before the expense is added to payroll.</p>
             </div>
             <RequestActionButtons
               actionError={actionError}
@@ -466,7 +467,9 @@ export function OutstationRequestsAdmin({
 
   useEffect(() => {
     if (searchParams.get("action") === "create-manager-expense") {
-      setManagerExpenseModal({ mode: "create" });
+      startTransition(() => {
+        setManagerExpenseModal({ mode: "create" });
+      });
     }
   }, [searchParams]);
 
@@ -554,8 +557,8 @@ export function OutstationRequestsAdmin({
     }
     setActionMessage(
       managerExpenseModal?.mode === "edit"
-        ? `Manager expense #${saved.id} updated.`
-        : `Manager expense #${saved.id} created for ${saved.employeeName}.`,
+        ? `Outstation expense #${saved.id} updated.`
+        : `Outstation expense #${saved.id} created for ${saved.employeeName}.`,
     );
   }
 
@@ -614,7 +617,7 @@ export function OutstationRequestsAdmin({
 
   async function deleteRequest(request: OutstationExpenseRequest) {
     const confirmed = window.confirm(
-      `Delete outstation request ${request.id}? This permanently removes the request, stored evidence files, and any linked payroll expense row.`,
+      `Delete outstation expense ${request.id}? This permanently removes the request, stored evidence files, and any linked expense row that has not been imported into payroll.`,
     );
     if (!confirmed) return;
 
@@ -632,10 +635,7 @@ export function OutstationRequestsAdmin({
       setLocalRequests(remaining);
       if (selectedId === request.id) setSelectedId(remaining[0]?.id ?? null);
       if (detailRequestId === request.id) setDetailRequestId(null);
-      const payrollNote = payload?.linkedPayroll?.deletedRows
-        ? ` Linked payroll row ${payload.linkedPayroll.expenseTripId ?? ""} was also removed.`
-        : "";
-      setActionMessage(`${payload?.message ?? "Outstation request deleted."}${payrollNote}`);
+      setActionMessage(payload?.message ?? "Outstation expense deleted.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Unable to delete outstation request.");
     } finally {
@@ -649,8 +649,8 @@ export function OutstationRequestsAdmin({
     return (
       <OutstationAdminShell>
         <AdminPageHero
-          description="No residence-validated outstation request data is currently available. You can still create a manager expense manually."
-          eyebrow="Outstation requests"
+          description="No outstation expense data is currently available. You can still add a manual expense."
+          eyebrow="Outstation expenses"
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
           title="Residence-validated expense review"
           actions={(
@@ -660,7 +660,7 @@ export function OutstationRequestsAdmin({
               type="button"
             >
               <PlusCircle className="h-4 w-4" />
-              Create manager expense
+              Add manual expense
             </Button>
           )}
         />
@@ -694,10 +694,10 @@ export function OutstationRequestsAdmin({
     <OutstationAdminShell>
       <div className="space-y-6">
         <AdminPageHero
-          description="Review captured distance, eligibility, expected payout, claimed amount, evidence, route validation, and final admin decisions."
-          eyebrow="Outstation review"
+          description="Review uploaded history, employee requests, manual entries, eligibility, expected payout, claimed amount, evidence, route validation, and final admin decisions."
+          eyebrow="Outstation expenses"
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
-          title="Residence-validated expense requests"
+          title="Outstation expenses"
           actions={(
             <Button
               className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
@@ -705,7 +705,7 @@ export function OutstationRequestsAdmin({
               type="button"
             >
               <PlusCircle className="h-4 w-4" />
-              Create manager expense
+              Add manual expense
             </Button>
           )}
           badges={(
@@ -730,7 +730,7 @@ export function OutstationRequestsAdmin({
         <AdminTableShell
           action={hasActiveFilters ? (
             <button
-              className="inline-flex rounded-2xl border border-[#E2E8F0] bg-white px-3 py-2 text-xs font-semibold text-[#64748B] shadow-sm transition hover:border-[#F97316] hover:text-[#EA580C]"
+              className="inline-flex rounded-md border border-[#E2E8F0] bg-white px-3 py-2 text-xs font-semibold text-[#64748B] shadow-sm transition hover:border-[#F97316] hover:text-[#EA580C]"
               onClick={clearFilters}
               type="button"
             >
@@ -746,7 +746,7 @@ export function OutstationRequestsAdmin({
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white/95 pl-9 shadow-sm"
+                  className="h-11 rounded-md border-[#DDE6F1] bg-white/95 pl-9 shadow-sm"
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Employee, HR ID, area, city"
                   value={search}
@@ -757,7 +757,7 @@ export function OutstationRequestsAdmin({
             <label className="block">
               <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Eligibility</span>
               <select
-                className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+                className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setEligibility(event.target.value)}
                 value={eligibility}
               >
@@ -771,7 +771,7 @@ export function OutstationRequestsAdmin({
             <label className="block">
               <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Role</span>
               <select
-                className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+                className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setRole(event.target.value)}
                 value={role}
               >
@@ -794,7 +794,7 @@ export function OutstationRequestsAdmin({
               />
               <div className="relative z-10 space-y-1.5">
                 <p className="inline-flex rounded-full border border-[#F97316]/35 bg-[#F97316]/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-[#FDBA74]">Request queue</p>
-                <h2 className="text-xl font-black text-white">Submitted outstation requests</h2>
+                <h2 className="text-xl font-black text-white">Outstation expense queue</h2>
                 <p className="text-sm text-[#CBD5E1]">Open any row to inspect evidence, route metrics, location validation, and admin decisions.</p>
               </div>
             </div>
@@ -876,7 +876,7 @@ export function OutstationRequestsAdmin({
                                 event.stopPropagation();
                                 setManagerExpenseModal({ mode: "edit", request });
                               }}
-                              title="Edit destination and recalculate distance"
+                              title="Edit expense details and recalculate distance"
                               type="button"
                             >
                               <Edit2 className="h-3.5 w-3.5" />
@@ -894,12 +894,12 @@ export function OutstationRequestsAdmin({
       </div>
 
       {actionMessage && !acting ? (
-        <div className="fixed bottom-4 right-4 z-40 max-w-md rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] px-4 py-3 text-sm font-semibold text-[#047857] shadow-xl">
+        <div className="fixed bottom-4 right-4 z-40 max-w-md rounded-md border border-[#A7F3D0] bg-[#ECFDF5] px-4 py-3 text-sm font-semibold text-[#047857] shadow-xl">
           {actionMessage}
         </div>
       ) : null}
       {actionError && !acting ? (
-        <div className="fixed bottom-4 right-4 z-40 max-w-md rounded-2xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm font-semibold text-[#B91C1C] shadow-xl">
+        <div className="fixed bottom-4 right-4 z-40 max-w-md rounded-md border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm font-semibold text-[#B91C1C] shadow-xl">
           {actionError}
         </div>
       ) : null}

@@ -1,0 +1,54 @@
+// Sentry initialization for the browser. Next.js 16 loads this automatically.
+// The DSN must be public (NEXT_PUBLIC_*) to be available in the browser. A Sentry
+// DSN is a publishable identifier, not a secret. Inert until the DSN is set.
+import * as Sentry from "@sentry/nextjs";
+
+import {
+  parseSentrySampleRate,
+  resolveSentryEnvironment,
+  resolveSentryRelease,
+  scrubSentryBreadcrumb,
+  scrubSentryErrorEvent,
+  scrubSentryTransactionEvent,
+  sentryIgnoredErrors,
+} from "@/lib/observability/sentry";
+
+const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+const replayEnabled = Boolean(dsn) && process.env.NEXT_PUBLIC_SENTRY_REPLAY_ENABLED === "true";
+
+Sentry.init({
+  dsn,
+  beforeBreadcrumb: scrubSentryBreadcrumb,
+  beforeSend: scrubSentryErrorEvent,
+  beforeSendTransaction: scrubSentryTransactionEvent,
+  denyUrls: [/extensions\//i, /^chrome:\/\//i, /^moz-extension:\/\//i],
+  enabled: Boolean(dsn),
+  environment: resolveSentryEnvironment(process.env.NEXT_PUBLIC_VERCEL_ENV),
+  ignoreErrors: sentryIgnoredErrors,
+  integrations: replayEnabled
+    ? [
+        Sentry.replayIntegration({
+          blockAllMedia: true,
+          maskAllText: true,
+        }),
+      ]
+    : [],
+  maxBreadcrumbs: 30,
+  normalizeDepth: 3,
+  release: resolveSentryRelease(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA),
+  replaysOnErrorSampleRate: replayEnabled
+    ? parseSentrySampleRate(process.env.NEXT_PUBLIC_SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE, 1)
+    : 0,
+  replaysSessionSampleRate: replayEnabled
+    ? parseSentrySampleRate(process.env.NEXT_PUBLIC_SENTRY_REPLAY_SESSION_SAMPLE_RATE, 0)
+    : 0,
+  sampleRate: parseSentrySampleRate(process.env.NEXT_PUBLIC_SENTRY_ERROR_SAMPLE_RATE, 1),
+  // Session Replay is opt-in per environment. Normal sessions default to 0%;
+  // error sessions default to 100% only when Replay is explicitly enabled.
+  sendDefaultPii: false,
+  tracePropagationTargets: [/^\//],
+  tracesSampleRate: parseSentrySampleRate(process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE, 0.02),
+});
+
+// Instruments client-side navigations for tracing.
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

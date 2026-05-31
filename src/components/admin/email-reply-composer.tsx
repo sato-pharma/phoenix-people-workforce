@@ -12,6 +12,7 @@ import {
 } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { systemIdentity } from "@/config/system-settings";
 import {
   buildPhoenixHrReplyEmail,
   type PhoenixHrEmailTone,
@@ -37,7 +38,7 @@ const defaultComposerState: ComposerState = {
   recipientName: "Omar",
   replyMessage:
     "Thank you for your email.\n\nWe have reviewed your request and will proceed according to the HR process. Please share any missing details or supporting documents if required.",
-  senderName: "Phoenix HR Team",
+  senderName: systemIdentity.hrSignatureName,
   subject: "Re: HR Request",
   to: "omar.anwar@satopharma.com",
   tone: "professional",
@@ -356,7 +357,7 @@ export function EmailReplyComposer() {
                 <input
                   className={inputClassName}
                   onChange={(event) => updateField("senderName", event.target.value)}
-                  placeholder="Phoenix HR Team"
+                  placeholder={systemIdentity.hrSignatureName}
                   type="text"
                   value={form.senderName}
                 />

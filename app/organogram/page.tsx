@@ -4,9 +4,9 @@ import { redirect } from "next/navigation";
 
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canAccessCompanyOrganogram, getOrganogramReport } from "@/lib/reports/organogram";
 import {
   errorMessage,
-  getVacancyReport,
   isDatabaseSchemaMissing,
   isSupabaseEnvMissing,
   isSupabaseTimeout,
@@ -32,18 +32,24 @@ function organogramPageError(error: unknown) {
 
 export default async function OrganogramPage() {
   const access = await resolveAccessContextFromPage();
-  if (resolveNavigationMode(access) === "employee-portal") {
-    redirect("/employee-portals/organogram");
-  }
 
   if (!await canAccess(access, "organogram", "read")) {
     redirect("/employee-portals");
   }
+
+  if (!canAccessCompanyOrganogram(access)) {
+    if (resolveNavigationMode(access) === "employee-portal") {
+      redirect("/employee-portals/organogram");
+    }
+
+    redirect("/employee-portals");
+  }
+
   let initialError: string | null = null;
   let initialReport = null;
 
   try {
-    initialReport = await getVacancyReport();
+    initialReport = await getOrganogramReport(access, { mode: "company" });
   } catch (error) {
     initialError = organogramPageError(error);
   }

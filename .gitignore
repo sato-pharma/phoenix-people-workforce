@@ -3,12 +3,58 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env.github-secrets
 coverage/
+output/playwright/
+output/playwright-report/
 *.log
 .playwright-mcp/
+tests/e2e/.auth/
+.vercel/
 tsconfig.tsbuildinfo
 _junk/
+
+# Sentry
+.sentryclirc
+.env.sentry-build-plugin
+tmp-sentry-test*
+app/api/sentry-example-api/
+app/sentry-example-page/
 .claude/worktrees/
+.claude/settings.local.json
 
 PHOENIX old/
 Phoenix Workforce/
+
+# Data files (store in cloud, not git)
+*.xlsx
+*.csv
+!.env.*.example
+
+# Generated output
+output/
+supabase-export/
+
+# Local tool screenshots
+.codex-artifacts/
+
+# Local development tool artifacts
+trae/
+.trae/
+memory/
+skills-lock.json
+ChatGPT*
+
+# OS files
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Editor temp files
+*.swp
+*.swo
+*~
+*.bak
+
+# JetBrains IDE
+.idea/

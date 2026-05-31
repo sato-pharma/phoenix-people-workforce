@@ -1,15 +1,26 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import {
   deleteOutstationRequestAsAdmin,
   updateManagerExpenseAsAdmin,
 } from "@/lib/outstation/service";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
+import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function isOutstationPayrollLockError(error: unknown) {
+  return error instanceof Error && error.message.toLowerCase().includes("already been added to payroll");
+}
+
+function managerExpenseStatus(error: unknown) {
+  if (isForbiddenError(error)) return 403;
+  if (isOutstationPayrollLockError(error) || isWorkflowRegistryTransitionError(error)) return 409;
+  return 500;
+}
 
 export async function PATCH(
   request: Request,
@@ -17,7 +28,7 @@ export async function PATCH(
 ) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "outstation", "approve");
+    await assertOutstationAdminAccess(access, "approve");
 
     const { id: rawId } = await params;
     const id = Number(rawId);
@@ -59,19 +70,19 @@ export async function PATCH(
     const updated = await updateManagerExpenseAsAdmin(id, access, body);
 
     return NextResponse.json({
-      message: "Manager expense updated successfully.",
+      message: "Outstation expense updated successfully.",
       request: updated,
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update manager expense.";
+    const message = error instanceof Error ? error.message : "Failed to update outstation expense.";
     return NextResponse.json(
       {
-        error: isForbiddenError(error) ? "forbidden" : "manager_expense_update_failed",
+        error: isForbiddenError(error) ? "forbidden" : "outstation_expense_update_failed",
         message,
         success: false,
       },
-      { status: isForbiddenError(error) ? 403 : 500 },
+      { status: managerExpenseStatus(error) },
     );
   }
 }
@@ -82,7 +93,7 @@ export async function DELETE(
 ) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "outstation", "delete");
+    await assertOutstationAdminAccess(access, "delete");
 
     const { id: rawId } = await params;
     const id = Number(rawId);
@@ -97,18 +108,18 @@ export async function DELETE(
 
     return NextResponse.json({
       linkedPayroll: deleted.linkedPayroll,
-      message: "Manager expense deleted.",
+      message: "Outstation expense deleted.",
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to delete manager expense.";
+    const message = error instanceof Error ? error.message : "Failed to delete outstation expense.";
     return NextResponse.json(
       {
-        error: isForbiddenError(error) ? "forbidden" : "manager_expense_delete_failed",
+        error: isForbiddenError(error) ? "forbidden" : "outstation_expense_delete_failed",
         message,
         success: false,
       },
-      { status: isForbiddenError(error) ? 403 : 500 },
+      { status: managerExpenseStatus(error) },
     );
   }
 }

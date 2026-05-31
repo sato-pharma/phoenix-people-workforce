@@ -227,6 +227,7 @@ export function runMarketingRequestServiceTests() {
       lineName: "Anti infective",
       managerHrId: "DM001",
       managerName: "District Manager",
+      pendingManagerReplacementForHrId: null,
       medicalInsurance: null,
       medicalInsuranceNumber: null,
       medicalInsuranceStatus: null,

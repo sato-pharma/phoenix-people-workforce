@@ -863,6 +863,7 @@ async function closeVacanciesForImportedEmployees(
   records: EmployeeImportRecord[],
   ids: {
     areaIds: IdMap;
+    departmentIds: IdMap;
     lineIds: IdMap;
     positionIds: IdMap;
   },
@@ -871,6 +872,9 @@ async function closeVacanciesForImportedEmployees(
 
   for (const record of records) {
     const areaId = record.codes.areaCode ? ids.areaIds.get(record.codes.areaCode) ?? null : null;
+    const departmentId = record.codes.departmentCode
+      ? ids.departmentIds.get(record.codes.departmentCode) ?? null
+      : null;
     const lineId = record.codes.lineCode ? ids.lineIds.get(record.codes.lineCode) ?? null : null;
     const positionId = record.codes.positionCode ? ids.positionIds.get(record.codes.positionCode) ?? null : null;
 
@@ -889,6 +893,7 @@ async function closeVacanciesForImportedEmployees(
 
     const closedVacancy = await closeVacancyForOffer({
       area_id: areaId,
+      department_id: departmentId,
       filled_by_hr_id: record.hrId,
       line_id: lineId,
       manager_hr_id: record.managerHrId,
@@ -1123,6 +1128,7 @@ export async function POST(request: Request) {
       dryRunResult.rowsToInsert,
       {
         areaIds,
+        departmentIds,
         lineIds,
         positionIds,
       },

@@ -1,6 +1,10 @@
 ﻿import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 
-import { applyOrganogramMirrorSafety, publicVacancyLabel } from "@/lib/reports/organogram-safety";
+import {
+  applyOrganogramMirrorSafety,
+  classifyOrganogramStructureLevel,
+  publicVacancyLabel,
+} from "@/lib/reports/organogram-safety";
 import { dedupeVacancyReportRows } from "@/lib/reports/vacancy-report-safety";
 
 type LookupRow = {
@@ -14,6 +18,11 @@ type EmployeeLookupRow = {
   hr_id: string;
 };
 
+type EmployeeReplacementOwnerRow = {
+  hr_id: string;
+  pending_manager_replacement_for_hr_id?: string | null;
+};
+
 type VacancyDbRow = {
   area_id: number | null;
   created_at: string;
@@ -22,10 +31,12 @@ type VacancyDbRow = {
   job_title: string | null;
   line_id: number | null;
   manager_hr_id?: string | null;
+  manager_replacement_for_hr_id?: string | null;
   manager_name?: string | null;
   note: string | null;
   position_id: number | null;
   region_name?: string | null;
+  replacement_for_hr_id?: string | null;
   source_row_number: number | null;
   status: string;
   team_id?: number | null;
@@ -43,11 +54,13 @@ export type VacancyReportRow = {
   lineId: number | null;
   lineName: string | null;
   managerHrId: string | null;
+  managerReplacementForHrId?: string | null;
   managerName: string | null;
   note: string | null;
   positionId: number | null;
   positionTitle: string | null;
   regionName: string | null;
+  replacementForHrId?: string | null;
   sourceRowNumber: number | null;
   status: string;
   teamId: number | null;
@@ -67,10 +80,12 @@ export type OrganogramReportRow = {
   lineId: number | null;
   lineName: string | null;
   managerHrId: string | null;
+  managerReplacementForHrId?: string | null;
   managerName: string | null;
   positionId: number | null;
   positionTitle: string | null;
   regionName: string | null;
+  replacementForHrId?: string | null;
   sourceRowNumber: number | null;
   status: string;
   teamId: number | null;
@@ -253,7 +268,10 @@ function isMissingManagerColumns(error: unknown) {
 
   return (
     message.includes("manager_hr_id") ||
+    message.includes("manager_replacement_for_hr_id") ||
     message.includes("manager_name") ||
+    message.includes("pending_manager_replacement_for_hr_id") ||
+    message.includes("replacement_for_hr_id") ||
     message.includes("region_name")
   );
 }
@@ -262,7 +280,7 @@ async function loadVacancyRows() {
   const baseSelect =
     "id,vacancy_code,department_id,line_id,area_id,team_id,position_id,job_title,source_row_number,status,note,created_at";
   const params = new URLSearchParams({
-    select: `${baseSelect},manager_hr_id,manager_name,region_name`,
+    select: `${baseSelect},manager_hr_id,manager_name,manager_replacement_for_hr_id,region_name,replacement_for_hr_id`,
     order: "created_at.desc",
   });
 
@@ -273,14 +291,56 @@ async function loadVacancyRows() {
       throw error;
     }
 
-    const fallbackParams = new URLSearchParams({
-      select: baseSelect,
+    const managerOnlyParams = new URLSearchParams({
+      select: `${baseSelect},manager_hr_id,manager_name,region_name`,
       order: "created_at.desc",
     });
 
-    return supabaseRest<VacancyDbRow[]>(
-      `position_vacancies?${fallbackParams}`,
+    try {
+      return await supabaseRest<VacancyDbRow[]>(
+        `position_vacancies?${managerOnlyParams}`,
+      );
+    } catch (fallbackError) {
+      if (!isMissingManagerColumns(fallbackError)) {
+        throw fallbackError;
+      }
+
+      const fallbackParams = new URLSearchParams({
+        select: baseSelect,
+        order: "created_at.desc",
+      });
+
+      return supabaseRest<VacancyDbRow[]>(
+        `position_vacancies?${fallbackParams}`,
+      );
+    }
+  }
+}
+
+async function loadEmployeePendingManagerReplacements(hrIds: string[]) {
+  if (hrIds.length === 0) {
+    return new Map<string, string | null>();
+  }
+
+  const params = new URLSearchParams({
+    select: "hr_id,pending_manager_replacement_for_hr_id",
+    hr_id: textInFilter(hrIds),
+  });
+
+  try {
+    const rows = await supabaseRest<EmployeeReplacementOwnerRow[]>(`employees?${params}`);
+    return new Map(
+      rows.map((row) => [
+        String(row.hr_id),
+        row.pending_manager_replacement_for_hr_id ?? null,
+      ]),
     );
+  } catch (error) {
+    if (isMissingManagerColumns(error)) {
+      return new Map<string, string | null>();
+    }
+
+    throw error;
   }
 }
 
@@ -298,8 +358,11 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
       loadLookup("positions", ids(vacancyRows, "position_id"), "title"),
       loadEmployeeNames(textValues(vacancyRows, "manager_hr_id")),
     ]);
+  const pendingManagerReplacements = await loadEmployeePendingManagerReplacements(
+    employeeDirectory.employees.map((employee) => employee.hrId),
+  );
 
-  const rows = dedupeVacancyReportRows(vacancyRows.map((row): VacancyReportRow => ({
+  const mappedRows = vacancyRows.map((row): VacancyReportRow => ({
     areaId: row.area_id,
     areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
     createdAt: row.created_at,
@@ -312,6 +375,7 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
     lineId: row.line_id,
     lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
     managerHrId: row.manager_hr_id ?? null,
+    managerReplacementForHrId: row.manager_replacement_for_hr_id ?? null,
     managerName:
       row.manager_name ??
       (row.manager_hr_id ? managerNames.get(row.manager_hr_id) ?? null : null),
@@ -321,13 +385,26 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
       ? positionTitles.get(row.position_id) ?? null
       : null,
     regionName: row.region_name ?? null,
+    replacementForHrId: row.replacement_for_hr_id ?? null,
     sourceRowNumber: row.source_row_number,
     status: row.status,
     teamId: row.team_id ?? null,
     teamName: row.team_id ? teamNames.get(row.team_id) ?? null : null,
     vacancyCode: row.vacancy_code,
-  })));
+  }));
+  const rows = dedupeVacancyReportRows(mappedRows);
   const openRows = rows.filter((row) => row.status === "open");
+
+  // Organogram display uses raw vacancy rows and its own strict slot safety.
+  // Vacancy reporting can still de-duplicate broad seat buckets, but the
+  // Organogram must not collapse similar vacancies across lines, teams, or
+  // managers before exact slot matching runs.
+  const organogramVacancyRows = mappedRows.filter((row) => {
+    if (row.status === "open") return true;
+    const level = classifyOrganogramStructureLevel(row);
+    return level !== null && level !== "medicalRep";
+  });
+
   const employeeOrganogramRows: OrganogramReportRow[] =
     employeeDirectory.employees
       .filter((employee) =>
@@ -347,10 +424,12 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
         lineId: employee.lineId,
         lineName: employee.lineName,
         managerHrId: employee.managerHrId,
+        managerReplacementForHrId: pendingManagerReplacements.get(employee.hrId) ?? null,
         managerName: employee.managerName,
         positionId: employee.positionId,
         positionTitle: employee.positionTitle,
         regionName: employee.regionName,
+        replacementForHrId: null,
         sourceRowNumber: null,
         status: employee.employmentStatus ?? "active",
         teamId: employee.teamId,
@@ -358,7 +437,7 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
         type: "employee",
         vacancyCode: null,
       }));
-  const vacancyOrganogramRows: OrganogramReportRow[] = openRows.map((row) => ({
+  const vacancyOrganogramRows: OrganogramReportRow[] = organogramVacancyRows.map((row) => ({
     areaId: row.areaId,
     areaName: row.areaName,
     departmentId: row.departmentId,
@@ -370,10 +449,12 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
     lineId: row.lineId,
     lineName: row.lineName,
     managerHrId: row.managerHrId,
+    managerReplacementForHrId: row.managerReplacementForHrId ?? null,
     managerName: row.managerName,
     positionId: row.positionId,
     positionTitle: row.positionTitle,
     regionName: row.regionName,
+    replacementForHrId: row.replacementForHrId ?? null,
     sourceRowNumber: row.sourceRowNumber,
     status: row.status,
     teamId: row.teamId,

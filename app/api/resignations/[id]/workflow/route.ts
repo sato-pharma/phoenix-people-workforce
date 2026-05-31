@@ -42,7 +42,7 @@ export async function POST(
     );
 
     const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
-    const updated = await runResignationWorkflow(id, action, actor, note, rejectedReason);
+    const updated = await runResignationWorkflow(id, action, actor, note, rejectedReason, access);
     if (!updated) {
       return NextResponse.json({ success: false, error: "Resignation record not found." }, { status: 404 });
     }

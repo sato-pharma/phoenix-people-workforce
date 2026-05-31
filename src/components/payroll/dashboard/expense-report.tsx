@@ -52,7 +52,7 @@ function ExpenseErrorBanner({
     <AdminCallout tone="danger">
       <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
       <div>
-        <p className="font-semibold">Expenses analysis error</p>
+        <p className="font-semibold">Outstation expenses analysis error</p>
         <p className="mt-1 leading-6">{message}</p>
       </div>
     </AdminCallout>
@@ -144,11 +144,7 @@ export function ExpenseReport({
   analyzing: boolean;
   error: string | null;
   inputRef: RefObject<HTMLInputElement | null>;
-  onImportToPayroll: (
-    records: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>,
-    month: number,
-    year: number,
-  ) => void;
+  onImportToPayroll: (month: number, year: number) => void;
   onDeleteReport: (reportId: string) => void;
   onReplaceReport: (reportId: string, file: File | null) => void;
   onSaveApprovals: (records: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>) => void;
@@ -278,15 +274,7 @@ export function ExpenseReport({
   function importToPayroll() {
     if (!analysis) return;
 
-    onImportToPayroll(
-      analysis.records.map((record) => ({
-        ...record,
-        hrApproved: approvalFor(record).hrApproved,
-        hrComment: approvalFor(record).hrComment,
-      })),
-      Number(importMonth),
-      Number(importYear),
-    );
+    onImportToPayroll(Number(importMonth), Number(importYear));
   }
 
   function downloadFilteredExpenses() {
@@ -303,7 +291,7 @@ export function ExpenseReport({
       "Allowance",
       "Total",
       "Status",
-      "HR Approved",
+      "HR/Admin Approved",
       "Comment",
     ];
     const escapeCsv = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
@@ -328,7 +316,7 @@ export function ExpenseReport({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `expenses-filtered-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `outstation-expenses-filtered-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -343,13 +331,13 @@ export function ExpenseReport({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="relative z-10">
             <p className="inline-flex rounded-full border border-[#F97316]/35 bg-[#F97316]/12 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-[#FDBA74]">
-              Expense Operations
+              Outstation Expense Operations
             </p>
-            <h2 className="mt-3 text-2xl font-black tracking-tight text-white">Expenses Report</h2>
+            <h2 className="mt-3 text-2xl font-black tracking-tight text-white">Outstation Expenses Report</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#CBD5E1]">
               {analysis
                 ? `${analysis.fileName} - ${formatNumber(analysis.summary.trips)} trips saved for review`
-                : "Upload an expenses sheet, approve rows from HR, then import approved expenses into payroll."}
+                : "Upload a historical outstation expenses sheet, approve rows from HR, then import approved expenses into payroll."}
             </p>
           </div>
           <div className="relative z-10 flex flex-wrap items-center gap-2">
@@ -371,7 +359,7 @@ export function ExpenseReport({
             ) : (
               <Upload className="mr-2 h-4 w-4" />
             )}
-            Upload Expenses
+            Upload Historical Expenses
           </Button>
           <Button
             className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(0,0,0,0.18)] hover:bg-white/16"
@@ -380,7 +368,7 @@ export function ExpenseReport({
             variant="secondary"
           >
             <Download className="mr-2 h-4 w-4" />
-            Download Expenses
+            Download Outstation Expenses
           </Button>
           <Button
             className="rounded-2xl border border-[#FDBA74]/40 bg-[#F97316] px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(249,115,22,0.22)] hover:bg-[#EA580C]"
@@ -393,7 +381,7 @@ export function ExpenseReport({
             ) : (
               <FileCheck2 className="mr-2 h-4 w-4" />
             )}
-            Save HR Approvals
+            Save HR/Admin Approvals
           </Button>
           </div>
         </div>
@@ -416,9 +404,9 @@ export function ExpenseReport({
           />
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] bg-[linear-gradient(135deg,#F8FAFC_0%,#FFF7ED_100%)] px-4 py-3">
             <div>
-              <h3 className="text-sm font-semibold text-[#0F172A]">Saved Expense Reports</h3>
+              <h3 className="text-sm font-semibold text-[#0F172A]">Historical Outstation Uploads</h3>
               <p className="mt-0.5 text-xs text-[#64748B]">
-                Preview, replace, or delete uploaded expense reports from the system database.
+                Preview, replace, or delete historical uploaded expense reports from the system database.
               </p>
             </div>
             <Badge variant="neutral">{formatNumber(reports.length)} reports</Badge>
@@ -491,7 +479,7 @@ export function ExpenseReport({
               { label: "Specialists", tone: "bg-[#F8FAFC] text-[#0F172A]", value: formatNumber(analysis.summary.specialists) },
               { label: "Filtered Total", tone: "bg-orange-50 text-orange-800", value: formatEGP(filteredTotal) },
               { label: "Travel Cost", tone: "bg-amber-50 text-amber-800", value: formatEGP(analysis.summary.totalTravelCost) },
-              { label: "HR Approved", tone: "bg-emerald-50 text-emerald-800", value: formatEGP(approvedTotal) },
+              { label: "HR/Admin Approved", tone: "bg-emerald-50 text-emerald-800", value: formatEGP(approvedTotal) },
               { label: "Unmapped", tone: "bg-rose-50 text-rose-800", value: formatNumber(unmappedRecords.length) },
             ].map((metric) => (
               <div className={cn("rounded-2xl border border-[#E2E8F0] p-4", metric.tone)} key={metric.label}>
@@ -504,7 +492,7 @@ export function ExpenseReport({
           <div className="flex flex-wrap items-center gap-2 rounded-[28px] border border-[#D8E0EA] bg-white/90 p-4 shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
             <div className="mr-2">
               <p className="text-sm font-semibold text-[#0F172A]">Import to Payroll</p>
-              <p className="text-xs text-[#64748B]">Approved rows with HR ID only.</p>
+              <p className="text-xs text-[#64748B]">Saved HR/admin approved rows with HR ID only.</p>
             </div>
             <select
               className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-[#0F172A] focus:outline-none"
@@ -537,7 +525,7 @@ export function ExpenseReport({
               Import to Payroll
             </Button>
             <p className="text-xs text-text-secondary">
-              Select the payroll month that will receive the approved expenses.
+              Import uses only approvals already saved by HR/admin, not unsaved switches on this screen.
             </p>
           </div>
 
@@ -632,7 +620,7 @@ export function ExpenseReport({
                           <td className="px-3 py-3">
                             <Switch
                               checked={approvalFor(record).hrApproved}
-                              label="Approved by HR"
+                              label="Approved by HR/Admin"
                               onChange={(checked) =>
                                 setApprovals((current) => ({
                                   ...current,
@@ -656,7 +644,7 @@ export function ExpenseReport({
                                   },
                                 }))
                               }
-                              placeholder="HR comment"
+                              placeholder="HR/admin comment"
                               value={approvalFor(record).hrComment}
                             />
                           </td>

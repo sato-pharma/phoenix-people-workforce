@@ -11,7 +11,7 @@ export function runPhase17WorkflowUiActionClosureTests() {
   const phase17SmokeSource = readFileSync("scripts/phase17-disposable-fixture-smoke.ts", "utf8");
 
   assert.match(outstationRouteSource, /export async function POST/);
-  assert.match(outstationRouteSource, /assertPermission\(access,\s*"outstation",\s*"approve"\)/);
+  assert.match(outstationRouteSource, /assertOutstationAdminAccess\(access,\s*"approve"\)/);
   assert.match(outstationRouteSource, /approveOutstationRequestForPayroll/);
   assert.match(outstationUiSource, /Approve for payroll/);
   assert.match(outstationUiSource, /fetch\(`\/api\/admin\/outstation\/\$\{selectedRequest\.id\}`/);

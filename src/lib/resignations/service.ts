@@ -1,5 +1,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import type { AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectory, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
+import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -721,6 +723,51 @@ async function insertFallbackVacancy(
   return Number((minimalResult.data as { id: number }).id);
 }
 
+async function ensureResignationVacancyOwnership(
+  supabase: SupabaseClient,
+  employee: DirectoryEmployee,
+  vacancyCode: string,
+) {
+  const cleanVacancyCode = String(vacancyCode ?? "").trim();
+  if (!cleanVacancyCode) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const fullPayload = {
+    manager_hr_id: employee.managerHrId,
+    manager_name: employee.managerName ?? null,
+    replacement_for_hr_id: employee.hrId,
+    updated_at: now,
+  };
+
+  const fullResult = await supabase
+    .from("position_vacancies")
+    .update(fullPayload)
+    .eq("vacancy_code", cleanVacancyCode);
+
+  if (!fullResult.error) {
+    return;
+  }
+
+  if (!isMissingSchemaMessage(fullResult.error)) {
+    throw fullResult.error;
+  }
+
+  const fallbackResult = await supabase
+    .from("position_vacancies")
+    .update({
+      manager_hr_id: employee.managerHrId,
+      manager_name: employee.managerName ?? null,
+      updated_at: now,
+    })
+    .eq("vacancy_code", cleanVacancyCode);
+
+  if (fallbackResult.error && !isMissingSchemaMessage(fallbackResult.error)) {
+    throw fallbackResult.error;
+  }
+}
+
 async function updateEmployeeLifecycleFallback(
   supabase: SupabaseClient,
   employeeHrId: string,
@@ -882,6 +929,7 @@ async function resignEmployeeWithFallback(
 export async function createResignation(
   input: CreateResignationInput,
   actor: string,
+  access?: Pick<AccessContext, "role">,
 ) {
   const employeeHrId = String(input.employeeHrId ?? "").trim();
   const submittedDate = normalizeSubmittedDate(input);
@@ -901,19 +949,26 @@ export async function createResignation(
     ...input,
     submittedDate,
     effectiveDate,
-  }, actor, employee);
+  }, actor, employee, access);
 }
 
 async function createResignationForEmployee(
   input: CreateResignationInput,
   actor: string,
   employee: DirectoryEmployee,
+  access?: Pick<AccessContext, "role">,
 ) {
   const submittedDate = normalizeSubmittedDate(input);
   const effectiveDate = normalizeLastWorkingDate(input);
   const directory = await getEmployeeDirectory();
   const submittedByHrId = resolveSubmittedByHrId(actor, directory);
   const supabase = getSupabaseAdmin();
+  await assertResignationWorkflowTransition({
+    access,
+    action: "submit",
+    expectedNextStatus: "resignation_submitted",
+    status: "new",
+  });
   const resignationId = await insertResignationRecord(supabase, {
     actor,
     effectiveDate,
@@ -948,6 +1003,7 @@ export async function resignEmployeeAndOpenVacancy(
   hrId: string,
   input: EmployeeResignationInput,
   actor: string,
+  access?: Pick<AccessContext, "role">,
 ) {
   const employeeHrId = String(hrId || input.employeeHrId || "").trim();
   if (!employeeHrId) {
@@ -975,6 +1031,13 @@ export async function resignEmployeeAndOpenVacancy(
   if (effectiveDate < submittedDate) {
     throw new Error("Effective resignation date cannot be before the submitted date.");
   }
+
+  await assertResignationWorkflowTransition({
+    access,
+    action: "submit",
+    expectedNextStatus: "resignation_submitted",
+    status: "new",
+  });
 
   const rpcResult = await supabase.rpc("phx_resign_employee_and_open_vacancy", {
     p_actor: actor,
@@ -1038,6 +1101,7 @@ export async function resignEmployeeAndOpenVacancy(
     reason: cleanText(input.reason),
     submittedDate,
   });
+  await ensureResignationVacancyOwnership(supabase, employee, result.vacancy_code ?? vacancyCode);
   await normalizeTerminalEmployeeLifecycleFlags(supabase, employeeHrId);
 
   const { data: existingAuditRows, error: auditLookupError } = await supabase
@@ -1302,6 +1366,7 @@ export async function runResignationWorkflow(
   actor: string,
   note?: string | null,
   rejectedReason?: string | null,
+  access?: Pick<AccessContext, "role">,
 ) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -1315,6 +1380,21 @@ export async function runResignationWorkflow(
 
   const row = data as ResignationRow;
   const currentStatus = (cleanText(row.status) ?? cleanText(row.exit_status) ?? "submitted") as ResignationStatus;
+  const expectedNextStatusByAction: Record<ResignationWorkflowAction, string> = {
+    approve: "resignation_approved",
+    cancel: "resignation_cancelled",
+    complete: "resignation_completed",
+    mark_review: "resignation_under_review",
+    reject: "resignation_rejected",
+    reopen: "resignation_under_review",
+  };
+  await assertResignationWorkflowTransition({
+    access,
+    action,
+    expectedNextStatus: expectedNextStatusByAction[action],
+    status: currentStatus,
+  });
+
   const now = new Date().toISOString();
   const updates: Record<string, unknown> = {
     exit_status: currentStatus,

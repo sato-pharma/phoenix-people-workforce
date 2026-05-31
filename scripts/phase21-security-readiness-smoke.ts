@@ -105,8 +105,22 @@ function listFiles(root: string, predicate: (path: string) => boolean) {
   return files;
 }
 
+const mutationMethods = ["POST", "PUT", "PATCH", "DELETE"] as const;
+
+function routeExportsMethod(source: string, method: typeof mutationMethods[number]) {
+  return new RegExp(`export\\s+async\\s+function\\s+${method}\\b`).test(source);
+}
+
+function methodIsExplicitlyUnsupported(source: string, method: typeof mutationMethods[number]) {
+  return new RegExp(
+    `export\\s+async\\s+function\\s+${method}\\b[\\s\\S]{0,900}(unsupported_method|status:\\s*405)`,
+  ).test(source);
+}
+
 function routeHasMutation(source: string) {
-  return /export async function (POST|PUT|PATCH|DELETE)\b/.test(source);
+  return mutationMethods.some(
+    (method) => routeExportsMethod(source, method) && !methodIsExplicitlyUnsupported(source, method),
+  );
 }
 
 function routeHasGuard(source: string) {
@@ -137,7 +151,7 @@ function staticRouteAudit() {
   addCheck("probation workflow route uses approve/update permission matrix", /assertPermission\(access, "probation", action === "pass" \|\| action === "terminate" \? "approve" : "update"\)/.test(probationWorkflow));
   addCheck("bulk access mutation requires authenticated user admin update permission", /Authentication is required/.test(bulkAction) && /assertPermission\(access, "user_admin", "update"\)/.test(bulkAction));
   addCheck("notification test email requires admin update permission", /assertPermission\(access, "admin", "update"\)/.test(notificationTest));
-  addCheck("HR reply email send requires admin update permission", /assertPermission\(access, "admin", "update"\)/.test(emailReplySend));
+  addCheck("HR reply email send requires communication update permission", /assertPermission\(access, "communication", "update"\)/.test(emailReplySend));
 }
 
 function serviceRoleBoundaryAudit() {

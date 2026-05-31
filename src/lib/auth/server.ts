@@ -13,6 +13,10 @@ import {
   verifySessionToken,
 } from "@/lib/auth/session";
 import { writeAuthAudit } from "@/lib/auth/audit";
+import {
+  evaluateEmployeeLifecycleGate,
+  type SessionLifecycleGate,
+} from "@/lib/auth/session-lifecycle";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cookies, headers } from "next/headers";
@@ -78,6 +82,46 @@ export type ViewerIdentity = {
   initials: string;
   roleLabel: string;
 };
+
+/**
+ * Read-only evaluation of the linked employee's lifecycle gate.
+ *
+ * Distinguishes three cases so governance fails CLOSED on uncertainty but does
+ * not lock out intentionally-supported accounts:
+ *   - no linked hr_id / employee row not found -> ALLOW (unlinked/system account)
+ *   - unexpected query/DB error or thrown exception -> DENY (`employee_lookup_failed`)
+ *   - row found -> classify status (terminal -> DENY, active/on_leave/unset -> ALLOW)
+ *
+ * Read-only; never mutates employees or app_auth_users.
+ */
+async function resolveEmployeeLifecycleGate(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  hrId: string | null | undefined,
+): Promise<SessionLifecycleGate> {
+  const linkedHrId = String(hrId ?? "").trim();
+  if (!linkedHrId) return { allowed: true };
+
+  try {
+    const { data, error } = await supabase
+      .from("employees")
+      .select("employment_status")
+      .eq("hr_id", linkedHrId)
+      .maybeSingle();
+
+    // Unexpected query error -> fail closed (do not silently allow).
+    if (error) return { allowed: false, reason: "employee_lookup_failed" };
+    // Employee row not found -> intentionally supported (unlinked/system account).
+    if (!data) return { allowed: true };
+
+    return evaluateEmployeeLifecycleGate({
+      lookupFailed: false,
+      employmentStatus: (data as { employment_status?: string | null }).employment_status ?? null,
+    });
+  } catch {
+    // Thrown exception (network/driver) -> fail closed.
+    return { allowed: false, reason: "employee_lookup_failed" };
+  }
+}
 
 async function resolveSessionAccessContext(token: string | null | undefined) {
   const payload = verifySessionToken(token);
@@ -153,6 +197,33 @@ async function resolveSessionAccessContext(token: string | null | undefined) {
         sessionId: payload.sid,
       },
       summary: "Session rejected: session version mismatch",
+    }).catch(() => undefined);
+    return null;
+  }
+
+  // Read-time lifecycle governance: do not rely on app_auth_users.is_active alone.
+  // Reject the session if the linked employee is terminal (resigned/terminated/
+  // non-renewed/inactive) while is_active is stale, OR if the lifecycle lookup
+  // fails unexpectedly (fail closed — never silently allow when it cannot verify).
+  // Missing employee row / unset status remain allowed. See
+  // src/lib/auth/session-lifecycle.ts. (Read-only; no mutation.)
+  const lifecycleGate = await resolveEmployeeLifecycleGate(supabase, row.hr_id);
+  if (!lifecycleGate.allowed) {
+    await writeAuthAudit({
+      actorLoginId: row.login_id,
+      entityId: row.login_id,
+      newValues: {
+        ...(lifecycleGate.employmentStatus ? { employmentStatus: lifecycleGate.employmentStatus } : {}),
+        reason: lifecycleGate.reason,
+        sessionId: payload.sid,
+      },
+      oldValues: {
+        role,
+      },
+      summary:
+        lifecycleGate.reason === "employee_terminal"
+          ? "Session rejected: linked employee is no longer active"
+          : "Session rejected: employee lifecycle lookup failed",
     }).catch(() => undefined);
     return null;
   }

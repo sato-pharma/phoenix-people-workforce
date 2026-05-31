@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { systemDocuments } from "@/config/system-settings";
 import type { FingerprintReportData, FingerprintReportRow } from "@/lib/attendance/fingerprint-report";
 
 const phoenixOrange = "FFC2410C";
@@ -47,7 +48,7 @@ function rowValues(data: FingerprintReportData, row: FingerprintReportRow) {
 
 export async function generateFingerprintReportWorkbook(data: FingerprintReportData) {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Phoenix Workforce";
+  workbook.creator = systemDocuments.workbookCreator;
   workbook.created = new Date();
   workbook.modified = new Date();
 
@@ -58,7 +59,7 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
   const columnCount = data.columns.length;
   sheet.mergeCells(1, 1, 1, columnCount);
   styleTitle(sheet.getCell(1, 1));
-  sheet.getCell(1, 1).value = "Phoenix Workforce - Fingerprint Attendance Report";
+  sheet.getCell(1, 1).value = systemDocuments.titles.fingerprintAttendanceReport;
 
   sheet.mergeCells(2, 1, 2, columnCount);
   sheet.getCell(2, 1).value = `Period: ${data.filters.dateFrom} to ${data.filters.dateTo} | Rows: ${data.summary.rows} | Deduction Flags: ${data.summary.deductions}`;
@@ -102,7 +103,7 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
     "Department",
     "Scheduled Start",
     "Scheduled End",
-    "Grace Minutes",
+    "Daily Grace",
     "Policy",
     "Effective From",
     "Effective To",
@@ -132,8 +133,8 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
   notesSheet.addRows([
     ["Note", "Details"],
     ["Source", "Rows are calculated from attendance_raw_punches after active device user mappings resolve to employee HR_ID."],
-    ["Deduction Days / Value", "Reserved for the attendance policy engine. Current report does not mutate payroll."],
-    ["Scheduled Times", "Shown separately in the Policy Details sheet."],
+    ["Deduction Days / Amount", "Deduction amount is estimated from employee base salary / 30 * deduction day fraction. Current report does not mutate payroll."],
+    ["Scheduled Times", "Daily rows use the active policy resolved by HR_ID, then job title, then default policy. Grace minutes are a daily budget shared between late arrival and early leave."],
   ]);
   styleHeader(notesSheet.getRow(1));
   for (let row = 2; row <= notesSheet.rowCount; row += 1) {

@@ -39,7 +39,7 @@ function Metric({
   value: number;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+    <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-1 text-2xl font-black text-slate-950">{value}</p>
     </div>
@@ -52,7 +52,7 @@ function TextCell({ value }: { value: string | null | undefined }) {
 
 function CodeCell({ value }: { value: number | string | null | undefined }) {
   return (
-    <span className="rounded-lg bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-700">
+    <span className="rounded bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-700">
       {value || "-"}
     </span>
   );
@@ -114,14 +114,14 @@ export function MarketingCustomerDatabase() {
 
   return (
     <div className="space-y-6">
-      <Card className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] sm:p-5">
+      <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] sm:p-5">
         <div className="grid gap-3 md:grid-cols-5">
           <Metric label="Rows" value={workspace.summary.rows} />
           <Metric label="Customers" value={workspace.summary.customers} />
           <Metric label="Pharmacies" value={workspace.summary.pharmacies} />
           <Metric label="Vendors" value={workspace.summary.vendors} />
           <button
-            className="flex min-h-[78px] items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+            className="flex min-h-[78px] items-center justify-center gap-2 rounded border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
             onClick={() => void loadWorkspace()}
             type="button"
           >
@@ -132,12 +132,12 @@ export function MarketingCustomerDatabase() {
       </Card>
 
       {message ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+        <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
           {message}
         </div>
       ) : null}
 
-      <Card className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
+      <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">SCP / PH Database</p>

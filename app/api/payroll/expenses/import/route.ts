@@ -21,7 +21,17 @@ export async function POST(request: Request) {
     const fileName = String(body.fileName ?? "expenses-upload.xls");
     const month = Number(body.month);
     const year = Number(body.year);
-    const records = Array.isArray(body.records) ? body.records : [];
+    const rawRecords = Array.isArray(body.records) ? body.records : [];
+
+    if (rawRecords.length > 0) {
+      return NextResponse.json(
+        {
+          error: "unsaved_approval_rows_not_allowed",
+          message: "Save manual HR/admin expense approvals before importing to payroll.",
+        },
+        { status: 400 },
+      );
+    }
 
     if (body.month === undefined || body.month === null || body.month === "" || body.year === undefined || body.year === null || body.year === "") {
       return NextResponse.json(
@@ -45,7 +55,6 @@ export async function POST(request: Request) {
     const result = await importApprovedExpensesToPayroll({
       fileName,
       month,
-      records: records.length > 0 ? records : undefined,
       year,
     }, access);
 

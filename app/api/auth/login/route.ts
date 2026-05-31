@@ -36,6 +36,34 @@ type LoginRequestPayload = LoginPayload & {
   responseMode: "json" | "redirect";
 };
 
+class InvalidLoginPayloadError extends Error {
+  constructor(message = "Login request body must be valid JSON.") {
+    super(message);
+    this.name = "InvalidLoginPayloadError";
+  }
+}
+
+function parseJsonLoginPayload(payload: unknown): LoginPayload {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new InvalidLoginPayloadError("Login request body must be a JSON object.");
+  }
+
+  const record = payload as Record<string, unknown>;
+  const loginId = record.loginId;
+  const password = record.password;
+  const remember = record.remember;
+
+  if (
+    (loginId !== undefined && typeof loginId !== "string") ||
+    (password !== undefined && typeof password !== "string") ||
+    (remember !== undefined && typeof remember !== "boolean")
+  ) {
+    throw new InvalidLoginPayloadError("Login request body has invalid fields.");
+  }
+
+  return { loginId, password, remember };
+}
+
 async function readLoginPayload(request: Request): Promise<LoginRequestPayload> {
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
 
@@ -50,10 +78,18 @@ async function readLoginPayload(request: Request): Promise<LoginRequestPayload> 
     };
   }
 
-  const payload = (await request.json()) as LoginPayload;
+  let payload: unknown;
+
+  try {
+    payload = await request.json();
+  } catch {
+    throw new InvalidLoginPayloadError();
+  }
+
+  const parsedPayload = parseJsonLoginPayload(payload);
 
   return {
-    ...payload,
+    ...parsedPayload,
     responseMode: "json",
   };
 }
@@ -94,6 +130,32 @@ function loginFailureResponse(
   }
 
   return NextResponse.json({ error, message }, { status });
+}
+
+function serializeLoginError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    };
+  }
+
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+
+    return {
+      code: typeof record.code === "string" ? record.code : undefined,
+      details: typeof record.details === "string" ? record.details : undefined,
+      hint: typeof record.hint === "string" ? record.hint : undefined,
+      message: typeof record.message === "string" ? record.message : "Non-Error login failure.",
+      name: typeof record.name === "string" ? record.name : undefined,
+    };
+  }
+
+  return {
+    message: typeof error === "string" ? error : "Login failed.",
+  };
 }
 
 export async function POST(request: Request) {
@@ -306,7 +368,19 @@ export async function POST(request: Request) {
 
     return response;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Login failed.";
-    return NextResponse.json({ error: "login_failed", message }, { status: 500 });
+    if (error instanceof InvalidLoginPayloadError) {
+      return NextResponse.json(
+        { error: "invalid_request", message: error.message },
+        { status: 400 },
+      );
+    }
+
+    const diagnostic = serializeLoginError(error);
+    console.error("[auth/login] failed", diagnostic);
+
+    return NextResponse.json(
+      { error: "login_failed", message: "Login failed." },
+      { status: 500 },
+    );
   }
 }

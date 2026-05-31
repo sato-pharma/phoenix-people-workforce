@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { systemDocuments } from "@/config/system-settings";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import type {
   CoachingPerformanceZone,
@@ -125,10 +126,10 @@ function normalizeHrId(value: string | null | undefined) {
 }
 
 function setWorkbookMetadata(workbook: ExcelJS.Workbook) {
-  workbook.creator = "Phoenix Workforce";
-  workbook.company = "Phoenix Workforce";
+  workbook.creator = systemDocuments.workbookCreator;
+  workbook.company = systemDocuments.workbookCompany;
   workbook.subject = "Coaching Reports Export";
-  workbook.title = "Phoenix Workforce | Coaching Reports Export";
+  workbook.title = systemDocuments.titles.coachingReportsExport;
   workbook.created = new Date();
   workbook.modified = new Date();
 }
@@ -388,11 +389,11 @@ function addExecutiveSummarySheet(workbook: ExcelJS.Workbook, input: GenerateCoa
     statusRow += 1;
   }
   worksheet.getRow(summaryHeaderRow + 1).getCell(7).value = "Exported by";
-  worksheet.getRow(summaryHeaderRow + 1).getCell(8).value = input.exportedBy || "Phoenix Workforce";
+  worksheet.getRow(summaryHeaderRow + 1).getCell(8).value = input.exportedBy || systemDocuments.workbookCreator;
   worksheet.getRow(summaryHeaderRow + 2).getCell(7).value = "Applied filters";
   worksheet.getRow(summaryHeaderRow + 2).getCell(8).value = filterSummary(input.filters);
   worksheet.getRow(summaryHeaderRow + 3).getCell(7).value = "Access scope note";
-  worksheet.getRow(summaryHeaderRow + 3).getCell(8).value = "Generated from Phoenix Workforce according to the active user access scope.";
+  worksheet.getRow(summaryHeaderRow + 3).getCell(8).value = systemDocuments.workbookExportScopeNote;
 
   worksheet.columns = [
     { key: "label", width: 28 },

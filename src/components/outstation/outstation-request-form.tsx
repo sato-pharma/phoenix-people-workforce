@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { AlertTriangle, Car, CheckCircle2, MapPin, TrainFront, XCircle } from "lucide-react";
 import { useState } from "react";
@@ -201,7 +201,7 @@ export function OutstationRequestForm({
 
   return (
     <div className="space-y-6">
-      <Card className="rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_44%,#f8fafc_100%)] p-6 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
+      <Card className="rounded-lg border border-slate-200 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_44%,#f8fafc_100%)] p-6 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
         <p className="text-xs font-black uppercase tracking-[0.2em] text-orange-500">
           Outstation Expense
         </p>
@@ -222,7 +222,7 @@ export function OutstationRequestForm({
         </div>
       </Card>
 
-      <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+      <Card className="rounded-lg border border-slate-200 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
@@ -257,7 +257,7 @@ export function OutstationRequestForm({
         ) : null}
       </Card>
 
-      <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+      <Card className="rounded-lg border border-slate-200 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <SelectField
             label="Transportation Type"
@@ -285,13 +285,13 @@ export function OutstationRequestForm({
               <Field label="Return Ticket Amount">
                 <Input onChange={(event) => setReturnTicketAmount(event.target.value)} type="number" value={returnTicketAmount} />
               </Field>
-              <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              <div className="md:col-span-2 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                 Train / Bus requests require go and return ticket evidence during review.
               </div>
             </>
           ) : (
-            <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-              Car payable fuel is calculated as distance × 2 × policy fuel rate. Round trip is enforced automatically.
+            <div className="md:col-span-2 rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              Car payable fuel is calculated as distance Ã— 2 Ã— policy fuel rate. Round trip is enforced automatically.
             </div>
           )}
         </div>
@@ -309,7 +309,7 @@ export function OutstationRequestForm({
       </Card>
 
       {calculation ? (
-        <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+        <Card className="rounded-lg border border-slate-200 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
@@ -336,7 +336,7 @@ export function OutstationRequestForm({
       ) : null}
 
       {message ? (
-        <Card className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+        <Card className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
           {message}
         </Card>
       ) : null}
@@ -388,7 +388,7 @@ function SelectField({
 
 function InfoCard({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <div className="mt-2 text-sm font-semibold text-slate-900">{value}</div>
     </div>

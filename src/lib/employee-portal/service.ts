@@ -1,4 +1,3 @@
-import { isDevelopment } from "@/lib/env";
 import {
   canSeeEmployee,
   resolveEmployeeIdentityId,
@@ -17,6 +16,7 @@ import {
   employeeMatchesPortalSalesScope,
   salesRecordMatchesPortalSalesScope,
 } from "@/lib/employee-portal/sales-scope";
+import { isEmployeePortalBetaNavEnabled } from "@/lib/employee-portal/navigation";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
   isDateWithinLifecycleRiskWindow,
@@ -26,6 +26,14 @@ import {
 } from "@/lib/lifecycle-risk/metrics";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { salesRecordMatchesSeatContinuity } from "@/lib/workforce/seat-lifecycle";
+import {
+  formatVacantSeatLabel,
+  lineScopeIncludesEmployee,
+  reportsToManagerSeat,
+  resolveSeatGrouping,
+  selectVacantManagerSeat,
+  type ResolvedVacantSeat,
+} from "@/lib/workforce/hierarchy-resolver";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import {
   buildPayrollExpenseDsmSummaries,
@@ -48,6 +56,7 @@ import type { SalesDashboardData } from "@/lib/sales/types";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { canonicalSalesLine } from "@/lib/sales/others";
 import { getMarketingRequestDraftWorkspace } from "@/lib/marketing-requests/service";
+import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { getVacationReportData } from "@/lib/vacation/service";
 
 // ---------------------------------------------------------------------------
@@ -665,14 +674,6 @@ function hasMissingColumnError(error: unknown, columnName: string) {
       message.includes(columnName) ||
       message.includes(`column ${columnName}`))
   );
-}
-
-function hasMeaningfulError(error: unknown) {
-  if (!error) return false;
-  if (error instanceof Error) return Boolean(error.message?.trim());
-  if (typeof error !== "object") return Boolean(String(error ?? "").trim());
-  const typed = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
-  return Boolean(typed.message ?? typed.details ?? typed.hint ?? typed.code);
 }
 
 function buildSalaryTrendFromRecords(records: PortalPayrollRecord[]): SalaryTrendPoint[] {
@@ -1444,7 +1445,7 @@ async function getEmployeePortalSalesDashboard(
   };
 }
 
-function buildEmployeeSalesDashboard(records: PortalSalesNormalized[]): SalesDashboardData {
+export function buildEmployeeSalesDashboard(records: PortalSalesNormalized[]): SalesDashboardData {
   const trendByPeriod = new Map<string, { sales: number; target: number; linkedEmployees: number }>();
   const productPerformanceMap = new Map<string, { sales: number; target: number; family: string; salesUnits: number }>();
   const familyMatrixMap = new Map<string, { sales: number; target: number; units: number; salesRows: PortalSalesNormalized[] }>();
@@ -1826,6 +1827,7 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     lineName: null,
     managerHrId: null,
     managerName: null,
+    pendingManagerReplacementForHrId: null,
     medicalInsurance: null,
     medicalInsuranceStatus: null,
     medicalInsuranceNumber: null,
@@ -2118,6 +2120,13 @@ export async function getEmployeePortalProfile(access: AccessContext) {
 }
 
 export type MedicalRepPortalData = {
+  /**
+   * Whether Beta employee-portal modules should be surfaced in the UI, resolved
+   * server-side from PHOENIX_PORTAL_SHOW_BETA_NAV. Mirrors the nav-layer gating
+   * so dashboard quick-actions for Beta modules (e.g. Marketing Requests) stay
+   * hidden by default. Optional: only populated for full dashboard payloads.
+   */
+  betaNavEnabled?: boolean;
   employee: {
     area: string | null;
     department: string | null;
@@ -2664,84 +2673,8 @@ function isMissingOutstationTable(error: unknown) {
   );
 }
 
-function expenseTypeLabel(value: unknown) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "traveling") return "Traveling";
-  if (normalized === "meeting") return "Meeting";
-  if (normalized === "other") return "Other";
-  return "Other";
-}
-
-function statusLabelFromOutstation(value: unknown) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized.includes("approve") || normalized.includes("confirm")) return "Confirmed by HR";
-  if (normalized.includes("reject") || normalized.includes("decline")) return "Declined";
-  return "Pending";
-}
-
 function mapOutstationExpenseToPayrollApproval(row: Record<string, unknown>): PayrollExpenseApproval {
-  const status = statusLabelFromOutstation(row.status);
-  const requestType = expenseTypeLabel(row.expense_type);
-  const transportationType = String(row.transportation_type ?? "car").trim() || "car";
-  const expectedTotal = toNumber(row.expected_total_amount);
-  const claimedTotal = toNumber(row.claimed_total_amount);
-  const total = claimedTotal > 0 ? claimedTotal : expectedTotal;
-  const ticketAmount = toNumber(row.ticket_amount);
-  const fuelAmount = toNumber(row.fuel_amount);
-  const tripId = `OUT-${String(row.id ?? "").trim() || "request"}`;
-  const createdAt = String(row.created_at ?? "").trim();
-  const tripStartDate = String(row.trip_start_date ?? createdAt).trim();
-  const tripEndDate = String(row.trip_end_date ?? tripStartDate).trim();
-  const employeeHrId = String(row.employee_hr_id ?? "").trim();
-  const employeeName = String(row.employee_name ?? "").trim();
-  const destination =
-    String(row.to_label ?? "").trim() ||
-    [row.to_area, row.to_city].map((value) => String(value ?? "").trim()).filter(Boolean).join(", ");
-  const origin =
-    String(row.residence_address ?? "").trim() ||
-    [row.residence_area, row.residence_city].map((value) => String(value ?? "").trim()).filter(Boolean).join(", ");
-
-  return {
-    allowance: toNumber(row.allowance_amount),
-    amWorkload: 0,
-    approvedAt: null,
-    approvedBy: null,
-    date: tripStartDate,
-    description: String(row.notes ?? "").trim() || "Live outstation expense request",
-    from: origin,
-    hr: employeeName,
-    hrApproved: status === "Confirmed by HR",
-    hrComment: String(row.approval_reason ?? "").trim(),
-    hrId: employeeHrId,
-    hrNotes: String(row.eligibility_reason ?? "").trim(),
-    km: toNumber(row.distance_km ?? row.distance_from_residence_km),
-    location: destination,
-    meetingAmount: requestType === "Meeting" ? total : 0,
-    open: "",
-    payoutMonth: (() => {
-      const date = new Date(tripStartDate || createdAt);
-      return Number.isNaN(date.getTime()) ? 0 : date.getUTCMonth() + 1;
-    })(),
-    payoutYear: (() => {
-      const date = new Date(tripStartDate || createdAt);
-      return Number.isNaN(date.getTime()) ? 0 : date.getUTCFullYear();
-    })(),
-    pmWorkload: 0,
-    reportId: null,
-    requestType,
-    returnTicketAmount: 0,
-    row: Number(row.id ?? 0),
-    sourceFileName: "Live Outstation Requests",
-    specialist: employeeName,
-    status,
-    to: destination,
-    toDate: tripEndDate,
-    total,
-    transportationType,
-    travelCost: ticketAmount + fuelAmount,
-    tripId,
-    tripType: requestType === "Traveling" ? "Travel" : requestType,
-  } as PayrollExpenseApproval;
+  return mapOutstationRequestRowToPayrollApproval(row);
 }
 
 async function listOutstationExpensesForPortal(hrIds?: Array<string | null | undefined>) {
@@ -3299,7 +3232,6 @@ async function resolveSalesRankInTeam(params: {
 
   let data: unknown[] = [];
   let error: unknown = null;
-  const startTime = Date.now();
   try {
     data = await fetchAllRows(buildRankQuery);
   } catch (err) {
@@ -3555,13 +3487,17 @@ export async function getMedicalRepPortalData(
       includeLiveOutstationExpenses ? listOutstationExpensesForPortal(currentHrId ? [currentHrId] : []) : Promise.resolve([]),
       listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     ]);
-    const expenses = [...historicalExpenses, ...liveOutstationExpenses];
+    const liveOutstationTripIds = new Set(liveOutstationExpenses.map((expense) => expense.tripId));
+    const expenses = [
+      ...historicalExpenses.filter((expense) => !liveOutstationTripIds.has(expense.tripId)),
+      ...liveOutstationExpenses,
+    ];
 
     const base = await getEmployeePortalData(access, {
       payroll: payrollDashboard,
       sales: salesDashboard,
       directory: directory,
-      expenses: historicalExpenses,
+      expenses,
       expenseReports: expenseReports,
     });
 
@@ -3798,7 +3734,7 @@ export async function getMedicalRepPortalData(
         teamRankResult = allPeriodsResult ?? teamRankResult;
       }
     }
-  } catch (error) {
+  } catch {
     // team rank exception
   }
   
@@ -3913,6 +3849,7 @@ export async function getMedicalRepPortalData(
   const activeExpenseDays = new Set(expenses.map((expense) => expense.date?.slice(0, 10)).filter(Boolean)).size;
 
   return {
+    betaNavEnabled: isEmployeePortalBetaNavEnabled(),
     employee: {
       area: employee.areaName,
       department: employee.departmentName,
@@ -4137,6 +4074,42 @@ export type DsmTeamPerformanceData = {
   teamTotalTarget: number;
 };
 
+/**
+ * Resolve the single, unambiguous vacant DSM seat under a given NSM for a line,
+ * derived from the open vacancies the directory already loaded (no extra query).
+ *
+ * Used as the FALLBACK seat-continuity signal when an orphaned medical rep has
+ * lost its `pending_manager_replacement_for_hr_id` marker but the org clearly has
+ * exactly one open DSM seat under this NSM/line. If zero or more than one open
+ * DSM seat exists, no seat is returned (we never guess across districts).
+ */
+function resolveNsmVacantDsmSeat(
+  directory: EmployeeDirectoryData,
+  lineScope: ReturnType<typeof createPortalSalesLineScope>,
+  nsmCanonicalHrId: string | null,
+): { seat: ResolvedVacantSeat | null; ambiguous: boolean } {
+  if (!nsmCanonicalHrId) return { seat: null, ambiguous: false };
+
+  const candidates = directory.lookups.workforceVacancies
+    .filter(
+      (vac) =>
+        isDistrictManagerVacancyTitle(vac.jobTitle, vac.positionTitle) &&
+        employeeMatchesPortalSalesScope(
+          { lineId: vac.lineId, lineName: vac.lineName },
+          lineScope,
+        ) &&
+        toCanonicalPortalHrId(vac.managerHrId) === nsmCanonicalHrId,
+    )
+    .map((vac) => ({
+      vacancyId: vac.vacancyId,
+      vacancyCode: vac.vacancyCode,
+      areaName: vac.areaName,
+      lineName: vac.lineName,
+    }));
+
+  return selectVacantManagerSeat(candidates, "DSM seat");
+}
+
 export async function getDsmTeamPerformance(
   access: AccessContext,
   options: { period?: string | null } = {},
@@ -4177,6 +4150,18 @@ export async function getDsmTeamPerformance(
         .map((emp) => toCanonicalPortalHrId(emp.hrId))
         .filter((hrId): hrId is string => Boolean(hrId)),
     );
+
+    // Fallback seat-continuity: the single open DSM seat under this NSM/line (if
+    // exactly one), used to group orphaned reps whose continuity marker was lost.
+    const vacantDsmSeat = isNsm
+      ? resolveNsmVacantDsmSeat(directory, lineScope, dsmCanonical)
+      : { seat: null, ambiguous: false };
+    if (vacantDsmSeat.ambiguous) {
+      logPortalDebug(
+        "med-reps-performance: multiple open DSM seats; orphaned reps left under NSM (canonical seat field needed)",
+        { nsm: dsmCanonical },
+      );
+    }
 
     // Find target employees based on role
     // NSM sees all Med Reps in their line
@@ -4327,12 +4312,28 @@ export async function getDsmTeamPerformance(
     medRepRows.forEach((emp) => {
       const canonical = toCanonicalPortalHrId(emp.hrId);
       if (!canonical) return;
+      // Seat-continuity-aware grouping: when this rep's DSM resigned and has not
+      // been replaced, group them under the vacant DSM seat instead of under the
+      // upward-reassigned NSM — first via the pending-replacement marker, then via
+      // the single open DSM vacancy fallback. Otherwise grouping is unchanged.
+      // See src/lib/workforce/hierarchy-resolver.ts.
+      const grouping = resolveSeatGrouping(emp, {
+        vacantSeatTitle: "DSM seat",
+        orphanFallback: {
+          isOrphanToNsm: isNsm && toCanonicalPortalHrId(emp.managerHrId) === dsmCanonical,
+          vacantSeat: vacantDsmSeat.seat,
+        },
+      });
+      const seatHrId =
+        grouping.isVacant && !grouping.seatKeyIsSynthetic
+          ? toCanonicalPortalHrId(grouping.seatHrId) ?? grouping.seatHrId
+          : grouping.seatHrId;
       membersMap.set(canonical, {
         achievementPercent: 0,
         hrId: canonical,
         name: emp.fullName,
-        managerHrId: emp.managerHrId ?? null,
-        managerName: emp.managerName ?? null,
+        managerHrId: seatHrId,
+        managerName: grouping.seatName,
         position: 0,
         products: [],
         totalSales: 0,
@@ -4393,7 +4394,7 @@ export async function getDsmTeamPerformance(
       teamTotalSales,
       teamTotalTarget,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -4706,7 +4707,7 @@ export async function getEmployeePortalVacancies(
       },
       vacancies,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -4754,14 +4755,56 @@ export async function getNsmDsmPerformance(
     });
     const dsmCanonicalIds = new Set(dsmHrIdToCanonical.values());
 
+    const nsmCanonical = toCanonicalPortalHrId(currentUser.hrId);
+    // Fallback seat-continuity: the single open DSM seat under this NSM/line, used
+    // when an orphaned rep's continuity marker was lost.
+    const vacantDsmSeat = resolveNsmVacantDsmSeat(directory, lineScope, nsmCanonical);
+    if (vacantDsmSeat.ambiguous) {
+      logPortalDebug(
+        "dsms-performance: multiple open DSM seats; orphaned reps left unattributed (canonical seat field needed)",
+        { nsm: nsmCanonical },
+      );
+    }
+
+    // Seat-continuity-aware med-rep -> DSM mapping. Reps whose DSM resigned and
+    // has not yet been replaced are attributed to the vacant DSM seat (via the
+    // pending marker first, then the single open DSM vacancy fallback) rather than
+    // dropped or rolled up to the NSM, so their district still appears in the
+    // DSMs performance view. See src/lib/workforce/hierarchy-resolver.ts.
     const medRepToDsmCanonical = new Map<string, string>();
+    const vacantSeatLabelByCanonical = new Map<string, string>();
     directory.employees.forEach((emp) => {
       if (!isMedicalRepDirectoryEmployee(emp)) return;
       if (!employeeMatchesPortalSalesScope(emp, lineScope)) return;
 
       const repCanonical = toCanonicalPortalHrId(emp.hrId);
+      if (!repCanonical) return;
+
+      const grouping = resolveSeatGrouping(emp, {
+        vacantSeatTitle: "DSM seat",
+        orphanFallback: {
+          isOrphanToNsm: toCanonicalPortalHrId(emp.managerHrId) === nsmCanonical,
+          vacantSeat: vacantDsmSeat.seat,
+        },
+      });
+
+      if (grouping.isVacant && grouping.seatHrId) {
+        const seatKey = grouping.seatKeyIsSynthetic
+          ? grouping.seatHrId
+          : toCanonicalPortalHrId(grouping.seatHrId) ?? grouping.seatHrId;
+        medRepToDsmCanonical.set(repCanonical, seatKey);
+        dsmCanonicalIds.add(seatKey);
+        if (!vacantSeatLabelByCanonical.has(seatKey)) {
+          vacantSeatLabelByCanonical.set(
+            seatKey,
+            grouping.seatName ?? formatVacantSeatLabel(emp, "DSM seat"),
+          );
+        }
+        return;
+      }
+
       const managerCanonical = toCanonicalPortalHrId(emp.managerHrId);
-      if (!repCanonical || !managerCanonical || !dsmCanonicalIds.has(managerCanonical)) return;
+      if (!managerCanonical || !dsmCanonicalIds.has(managerCanonical)) return;
       medRepToDsmCanonical.set(repCanonical, managerCanonical);
     });
 
@@ -4875,6 +4918,23 @@ export async function getNsmDsmPerformance(
       });
     });
 
+    // Surface vacant DSM seats as their own district node so the reps attributed
+    // to them above are not silently dropped from the line view.
+    vacantSeatLabelByCanonical.forEach((label, seatCanonical) => {
+      if (dsmsMap.has(seatCanonical)) return;
+      dsmsMap.set(seatCanonical, {
+        achievementPercent: 0,
+        hrId: seatCanonical,
+        name: label,
+        managerHrId: null, // NSM is the manager
+        managerName: currentUser.name,
+        position: 0,
+        products: [],
+        totalSales: 0,
+        totalTarget: 0,
+      });
+    });
+
     const activeDsmIds = new Set(Array.from(salesByDsmProduct.keys()).map(k => k.split("::")[0]));
     activeDsmIds.forEach(dsmId => {
       const entry = dsmsMap.get(dsmId);
@@ -4918,7 +4978,7 @@ export async function getNsmDsmPerformance(
       lineTotalSales,
       lineTotalTarget
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -4949,26 +5009,25 @@ export async function getNsmTeamExpenses(
     );
     if (!viewer) return null;
 
-    const directDsms = directory.employees.filter((employee) => {
-      const managerCanonical = normalizeHrIdForAccess(employee.managerHrId);
-      return (
+    const directDsms = directory.employees.filter(
+      (employee) =>
         isDistrictManagerEmployee(employee) &&
-        Boolean(viewerCanonicalHrId) &&
-        managerCanonical === viewerCanonicalHrId
-      );
-    });
+        viewerCanonicalHrId !== null &&
+        // Seat-continuity aware: a DSM held under this NSM via the vacant-seat
+        // marker still counts as a direct report, consistent with the organogram.
+        reportsToManagerSeat({
+          employee,
+          viewerCanonicalHrId,
+          canonicalize: normalizeHrIdForAccess,
+        }),
+    );
 
-    const lineDsms = directory.employees.filter((employee) => {
-      if (!isDistrictManagerEmployee(employee)) {
-        return false;
-      }
-
-      if (typeof viewer.lineId === "number" && typeof employee.lineId === "number") {
-        return employee.lineId === viewer.lineId;
-      }
-
-      return normalizeLineName(employee.lineName) === normalizeLineName(viewer.lineName);
-    });
+    const lineDsms = directory.employees.filter(
+      (employee) =>
+        // Department-safe LINE scope: same line AND same department only, so an
+        // NSM never picks up DSMs from another department on a shared line.
+        isDistrictManagerEmployee(employee) && lineScopeIncludesEmployee(viewer, employee),
+    );
 
     const scopedDsms = directDsms.length > 0 ? directDsms : lineDsms;
     if (scopedDsms.length === 0) return null;
@@ -4993,21 +5052,23 @@ export async function getNsmTeamExpenses(
     const selectedReportId =
       options.reportId && reports.some((report) => report.id === options.reportId)
         ? options.reportId
-        : reports[0]?.id ?? null;
+        : null;
 
-    const reportExpenses = selectedReportId
-      ? await listPayrollExpenses(
-          undefined,
-          undefined,
-          selectedReportId,
-          access,
-        )
-      : [];
+    const reportExpenses = await listPayrollExpenses(
+      undefined,
+      undefined,
+      selectedReportId ?? undefined,
+      access,
+    );
     const liveOutstationExpenses = await listOutstationExpensesForPortal(
       scopedDsms.map((employee) => employee.hrId),
     );
 
-    const combinedExpenses = [...reportExpenses, ...liveOutstationExpenses];
+    const liveOutstationTripIds = new Set(liveOutstationExpenses.map((expense) => expense.tripId));
+    const combinedExpenses = [
+      ...reportExpenses.filter((expense) => !liveOutstationTripIds.has(expense.tripId)),
+      ...liveOutstationExpenses,
+    ];
 
     const lineExpenses = combinedExpenses.filter((expense) => {
       const canonicalHrId = normalizeHrIdForAccess(expense.hrId);
@@ -5129,7 +5190,7 @@ export async function getNsmTeamExpenses(
       selectedPeriods,
       summary,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }

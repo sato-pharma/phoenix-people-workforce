@@ -1,16 +1,26 @@
+import * as Sentry from "@sentry/nextjs";
+
 import { getOperationalAuditLogs } from "@/lib/operations/events";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type AuditEntityType =
   | "auth_session"
+  | "deduction_candidate"
+  | "deduction_decision"
+  | "deduction_export"
   | "employee_resignation"
+  | "field_workforce_compliance_import"
   | "outstation_request"
   | "payroll_batch"
   | "permission_override"
   | "salary_flag"
   | "sales_import_batch"
+  | "source_of_sales_product"
   | "user"
-  | "vacation_request";
+  | "vacation_request"
+  | "weekly_plan"
+  | "weekly_plan_day"
+  | "workflow_registry";
 
 export type AuditLogInput = {
   actorLoginId?: string | null;
@@ -93,6 +103,11 @@ export async function writeAuditLog(input: AuditLogInput) {
       event: "audit_persistence_failed",
       summary: input.summary,
     }));
+    Sentry.captureException(error, {
+      level: "error",
+      tags: { event: "audit_persistence_failed", entityType: input.entityType },
+      extra: { summary: input.summary, entityId: input.entityId ?? null },
+    });
   }
 }
 
@@ -108,6 +123,12 @@ export async function writeRequiredAuditLog(input: AuditLogInput) {
       event: "critical_audit_persistence_failed",
       summary: input.summary,
     }));
+    // Critical: a required audit row could not be written. Page this loudly.
+    Sentry.captureException(error, {
+      level: "fatal",
+      tags: { event: "critical_audit_persistence_failed", entityType: input.entityType },
+      extra: { summary: input.summary, entityId: input.entityId ?? null },
+    });
     throw new AuditPersistenceError(error);
   }
 }

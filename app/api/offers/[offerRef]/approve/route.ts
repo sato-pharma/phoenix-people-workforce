@@ -39,7 +39,7 @@ export async function POST(
     const body = await request.json().catch(() => ({}));
     const hrId = body?.hrId;
 
-    const result = await approveAcceptedOffer(offerRef, access.hrId, hrId);
+    const result = await approveAcceptedOffer(offerRef, access.hrId, hrId, access);
     const accessProvisioning = await provisionNewHireAccess({
       actor: { loginId: access.loginId ?? null, role: access.role },
       hrIds: [result.employeeHrId],

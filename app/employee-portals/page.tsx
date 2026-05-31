@@ -7,6 +7,7 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 
@@ -37,7 +38,11 @@ export default async function EmployeePortalsHomePage({
     data = await getMedicalRepPortalData(access, {
       teamComparisonPeriod,
     });
-  } catch {
+  } catch (error) {
+    logPortalFailure(
+      { route: "/employee-portals", module: "dashboard", role: access.role, hrId: access.hrId },
+      error,
+    );
     data = null;
   }
 

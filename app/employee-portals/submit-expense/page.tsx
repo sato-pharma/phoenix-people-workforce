@@ -10,6 +10,10 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertPermission, normalizeRole, resolveNavigationMode } from "@/lib/auth/permissions";
 import { getOutstationEmployeeContext } from "@/lib/outstation/service";
 
+// NOTE: dir="auto", print stylesheet, prefers-reduced-motion, and a
+// page-level WorkspaceErrorBoundary are now provided automatically by
+// EmployeePortalPageShell - no need to wire them per-page.
+
 function buildResidenceSummary(residence: {
   residenceAddress: string | null;
   residenceArea: string | null;
@@ -17,11 +21,25 @@ function buildResidenceSummary(residence: {
 } | null) {
   if (!residence) return "Not configured";
 
-  const parts = [residence.residenceAddress, residence.residenceCity, residence.residenceArea]
+  const parts = [residence.residenceAddress, residence.residenceArea, residence.residenceCity]
     .map((value) => String(value ?? "").trim())
     .filter(Boolean);
 
   return parts.length > 0 ? parts.join(" - ") : "Not configured";
+}
+
+function buildResidenceShortSummary(residence: {
+  residenceAddress: string | null;
+  residenceArea: string | null;
+  residenceCity: string | null;
+} | null) {
+  if (!residence) return "Not configured";
+
+  const parts = [residence.residenceArea, residence.residenceCity]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+
+  return parts.length > 0 ? parts.join(", ") : buildResidenceSummary(residence);
 }
 
 export default async function EmployeePortalSubmitExpensePage() {
@@ -66,6 +84,7 @@ export default async function EmployeePortalSubmitExpensePage() {
   const employeeName = outstationContext?.employeeName ?? portalData.employee.fullName;
   const employeeRole = outstationContext?.employeeRole ?? portalData.employee.roleLabel;
   const residenceSummary = buildResidenceSummary(outstationContext?.residence ?? null);
+  const residenceShortSummary = buildResidenceShortSummary(outstationContext?.residence ?? null);
   const hasResidenceCoordinates = outstationContext?.residence
     ? outstationContext.residence.residenceLatitude !== null && outstationContext.residence.residenceLongitude !== null
     : false;
@@ -83,6 +102,7 @@ export default async function EmployeePortalSubmitExpensePage() {
     <EmployeePortalPageShell
       badge="Expenses"
       description="Capture outstation travel from the employee portal without duplicating the full admin expense workspace."
+      errorBoundaryTitle="Submit Expense unavailable"
       title="Submit Expense"
     >
       <MobileOutstationWizard
@@ -91,6 +111,7 @@ export default async function EmployeePortalSubmitExpensePage() {
         employeeRole={employeeRole}
         hasResidenceCoordinates={hasResidenceCoordinates}
         medicalTripOptions={medicalTripOptions}
+        residenceShortSummary={residenceShortSummary}
         residenceSummary={residenceSummary}
         showIntro={false}
       />

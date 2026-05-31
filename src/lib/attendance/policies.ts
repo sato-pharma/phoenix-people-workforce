@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { summarizeAttendancePolicies } from "@/lib/attendance/metrics";
 
 export type AttendancePolicyTargetType = "default" | "employee_hr_id" | "job_title";
-export type AttendancePolicyEventType = "absence" | "early_leave" | "late" | "single_punch";
+export type AttendancePolicyEventType = "absence" | "early_leave" | "exception" | "late" | "single_punch";
 
 export type AttendancePolicyRule = {
   deductionDays: string;
@@ -128,6 +128,38 @@ function numberText(value: number | string | null) {
   return value == null ? "" : String(value);
 }
 
+function validatePolicyRules(rules: Array<{
+  deduction_days: number | null;
+  event_type: AttendancePolicyEventType;
+  from_minutes: number | null;
+  recommended_action: string;
+  to_minutes: number | null;
+}>) {
+  rules.forEach((rule, index) => {
+    if (rule.event_type !== "exception" && rule.deduction_days == null) {
+      throw new Error(`Rule ${index + 1} deduction day fraction is required.`);
+    }
+    if (rule.from_minutes != null && rule.to_minutes != null && rule.to_minutes < rule.from_minutes) {
+      throw new Error(`Rule ${index + 1} toMinutes cannot be before fromMinutes.`);
+    }
+  });
+
+  for (let leftIndex = 0; leftIndex < rules.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < rules.length; rightIndex += 1) {
+      const left = rules[leftIndex];
+      const right = rules[rightIndex];
+      if (left.event_type !== right.event_type) continue;
+      const leftFrom = left.from_minutes ?? 0;
+      const leftTo = left.to_minutes ?? Number.POSITIVE_INFINITY;
+      const rightFrom = right.from_minutes ?? 0;
+      const rightTo = right.to_minutes ?? Number.POSITIVE_INFINITY;
+      if (leftFrom <= rightTo && rightFrom <= leftTo) {
+        throw new Error(`Rules ${leftIndex + 1} and ${rightIndex + 1} overlap for ${left.event_type}.`);
+      }
+    }
+  }
+}
+
 export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDashboard> {
   const supabase = getSupabaseAdmin();
   const [policyResult, ruleResult, employeeResult] = await Promise.all([
@@ -216,13 +248,14 @@ export async function saveAttendancePolicy(input: {
   const { targetType, targetValue } = normalizeTarget(input);
   const scheduledStart = cleanTime(input.scheduledStart, "scheduledStart");
   const scheduledEnd = cleanTime(input.scheduledEnd, "scheduledEnd");
-  const graceMinutes = cleanNumber(input.graceMinutes, "graceMinutes", { integer: true });
+  const graceMinutes = cleanNumber(input.graceMinutes, "graceMinutes", { integer: true }) as number;
   const effectiveFrom = cleanDate(input.effectiveFrom, "effectiveFrom");
   const effectiveTo = cleanDate(input.effectiveTo, "effectiveTo", { allowNull: true });
 
   if (!policyName) throw new Error("policyName is required.");
   if (typeof input.isActive !== "boolean") throw new Error("isActive must be true or false.");
   if (!Array.isArray(input.rules)) throw new Error("rules must be an array.");
+  if (graceMinutes > 240) throw new Error("graceMinutes cannot exceed 240.");
 
   if (targetType === "employee_hr_id" && targetValue) {
     const { data, error } = await supabase
@@ -247,6 +280,32 @@ export async function saveAttendancePolicy(input: {
     updated_at: new Date().toISOString(),
   };
 
+  const ruleRows = input.rules.map((rawRule, index) => {
+    if (!rawRule || typeof rawRule !== "object" || Array.isArray(rawRule)) {
+      throw new Error(`Rule ${index + 1} must be an object.`);
+    }
+    const rule = rawRule as Record<string, unknown>;
+    const eventType = cleanText(rule.eventType) as AttendancePolicyEventType;
+    if (!["late", "early_leave", "single_punch", "absence", "exception"].includes(eventType)) {
+      throw new Error(`Rule ${index + 1} eventType is invalid.`);
+    }
+    const recommendedAction = cleanText(rule.recommendedAction);
+    if (!recommendedAction) throw new Error(`Rule ${index + 1} recommendedAction is required.`);
+
+    return {
+      deduction_days: cleanNumber(rule.deductionDays, `Rule ${index + 1} deductionDays`, { allowNull: true }),
+      deduction_value: cleanNumber(rule.deductionValue, `Rule ${index + 1} deductionValue`, { allowNull: true }),
+      event_type: eventType,
+      from_minutes: cleanNumber(rule.fromMinutes, `Rule ${index + 1} fromMinutes`, { allowNull: true, integer: true }),
+      is_active: typeof rule.isActive === "boolean" ? rule.isActive : true,
+      recommended_action: recommendedAction,
+      sort_order: index + 1,
+      to_minutes: cleanNumber(rule.toMinutes, `Rule ${index + 1} toMinutes`, { allowNull: true, integer: true }),
+      updated_at: new Date().toISOString(),
+    };
+  });
+  validatePolicyRules(ruleRows);
+
   let policyId = id;
   if (policyId) {
     const { error } = await supabase
@@ -270,31 +329,7 @@ export async function saveAttendancePolicy(input: {
     .eq("policy_id", policyId);
   if (deleteError) throw deleteError;
 
-  const rules = input.rules.map((rawRule, index) => {
-    if (!rawRule || typeof rawRule !== "object" || Array.isArray(rawRule)) {
-      throw new Error(`Rule ${index + 1} must be an object.`);
-    }
-    const rule = rawRule as Record<string, unknown>;
-    const eventType = cleanText(rule.eventType) as AttendancePolicyEventType;
-    if (!["late", "early_leave", "single_punch", "absence"].includes(eventType)) {
-      throw new Error(`Rule ${index + 1} eventType is invalid.`);
-    }
-    const recommendedAction = cleanText(rule.recommendedAction);
-    if (!recommendedAction) throw new Error(`Rule ${index + 1} recommendedAction is required.`);
-
-    return {
-      deduction_days: cleanNumber(rule.deductionDays, `Rule ${index + 1} deductionDays`, { allowNull: true }),
-      deduction_value: cleanNumber(rule.deductionValue, `Rule ${index + 1} deductionValue`, { allowNull: true }),
-      event_type: eventType,
-      from_minutes: cleanNumber(rule.fromMinutes, `Rule ${index + 1} fromMinutes`, { allowNull: true, integer: true }),
-      is_active: typeof rule.isActive === "boolean" ? rule.isActive : true,
-      policy_id: policyId,
-      recommended_action: recommendedAction,
-      sort_order: index + 1,
-      to_minutes: cleanNumber(rule.toMinutes, `Rule ${index + 1} toMinutes`, { allowNull: true, integer: true }),
-      updated_at: new Date().toISOString(),
-    };
-  });
+  const rules = ruleRows.map((rule) => ({ ...rule, policy_id: policyId }));
 
   if (rules.length > 0) {
     const { error } = await supabase
@@ -302,4 +337,19 @@ export async function saveAttendancePolicy(input: {
       .insert(rules);
     if (error) throw error;
   }
+}
+
+export async function deleteAttendancePolicy(input: { id: unknown }) {
+  const supabase = getSupabaseAdmin();
+  const id = cleanNumber(input.id, "id", { integer: true });
+
+  const { data, error } = await supabase
+    .from("attendance_policy_groups")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error("Attendance policy was not found.");
 }

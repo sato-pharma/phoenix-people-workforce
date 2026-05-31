@@ -1,4 +1,5 @@
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { assertProbationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import {
   canSeeEmployee,
   normalizeHrId,
@@ -95,7 +96,6 @@ type AuthNotificationRecipientRow = {
 
 const probationDays = 90;
 const hrProbationRoles = new Set(["Super Admin", "HR Specialist"]);
-const extensionProbationStatus = "extended";
 
 export function isProbationAdministrator(access: Pick<AccessContext, "role" | "scope">) {
   return access.scope === "system" || hrProbationRoles.has(access.role);
@@ -164,13 +164,6 @@ function isDirectManagerOrManagerOfManager(directory: EmployeeScopeRow[], viewer
   return Boolean(manager && viewerHrId === normalizeHrId(manager.managerHrId));
 }
 
-function employeeLabel(employee: Pick<EmployeeScopeRow, "fullName" | "hrId"> | null | undefined, fallbackHrId: string | null | undefined) {
-  const hrId = String(employee?.hrId ?? fallbackHrId ?? "").trim();
-  const name = String(employee?.fullName ?? "").trim();
-  if (name && hrId) return `${name} (${hrId})`;
-  return name || hrId || "-";
-}
-
 function managerOf(employee: EmployeeScopeRow, directory: EmployeeScopeRow[]) {
   const managerHrId = normalizeHrId(employee.managerHrId);
   return managerHrId ? directory.find((row) => normalizeHrId(row.hrId) === managerHrId) ?? null : null;
@@ -222,7 +215,7 @@ function baseProbationEndDate(employee: Pick<EmployeeScopeRow, "hireDate">) {
   return addDays(employee.hireDate, probationDays) ?? "";
 }
 
-function currentProbationEndDate(employee: EmployeeScopeRow, probation: ProbationDbRow | undefined) {
+function currentProbationEndDate(employee: EmployeeScopeRow) {
   return baseProbationEndDate(employee);
 }
 
@@ -389,7 +382,7 @@ export async function getProbationRows(access: AccessContext): Promise<Probation
       const workflow = evaluationsByHrId.get(employee.hrId) ?? null;
       const manager = managerOf(employee, employees);
       const managerManager = manager ? managerOf(manager, employees) : null;
-      const probationEndDate = currentProbationEndDate(employee, probation);
+      const probationEndDate = currentProbationEndDate(employee);
       const allowedActions = allowedWorkflowActions(access, workflow, employee, viewer, employees);
       if (workflow) workflow.allowedActions = allowedActions;
       return {
@@ -567,19 +560,25 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
     event_key: `${employee.hrId}:probation:${reminder.reminderType}:${reminder.scheduledFor}`,
     metadata: {
       href: "/probation",
-      message: `${employee.fullName} has ${reminder.daysRemaining} days remaining in the fixed 90-day probation period.`,
-      title: `Probation reminder: ${employee.fullName}`,
+      message: `${employee.fullName} has ${reminder.daysRemaining} days remaining in the 90-day probation period. Submit manager probation feedback.`,
+      title: `${employee.fullName}'s probation feedback is due`,
       days_after_hire: reminder.daysAfterHire,
       days_remaining: reminder.daysRemaining,
       hire_date: employee.hireDate,
       recipient_emails: recipientEmails,
       recipient_roles: recipients.map((recipient) => ({ hr_id: recipient.hrId, role: recipient.role })),
       reminder_type: reminder.reminderType,
+      details: [
+        { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
+        { label: "Days remaining", value: `${reminder.daysRemaining}` },
+        { label: "Status", value: "Feedback required" },
+        { label: "Action", value: "Submit feedback" },
+      ],
     },
     recipients: recipientHrIds,
     scheduled_for: reminder.scheduledFor,
     status: "pending",
-    subject: `Probation reminder: ${employee.fullName}`,
+    subject: `${employee.fullName}'s probation feedback is due`,
     updated_at: now,
   }));
 
@@ -743,14 +742,6 @@ function assertText(value: string | null | undefined, message: string) {
   if (!cleanText(value)) throw new Error(message);
 }
 
-function assertDateAfter(value: string | null | undefined, current: string | null | undefined, message: string) {
-  const next = parseDateOnly(normalizeDate(value));
-  const previous = parseDateOnly(normalizeDate(current));
-  if (!next || !previous || next.getTime() <= previous.getTime()) {
-    throw new Error(message);
-  }
-}
-
 function assertExpectedVersion(row: ProbationWorkflowRecord, expectedUpdatedAt: string | null | undefined) {
   if (!expectedUpdatedAt) return;
   const current = new Date(row.updatedAt);
@@ -801,7 +792,7 @@ export async function createProbationEvaluation(input: CreateProbationEvaluation
     throw error;
   });
   const probation = probationByHrId.get(employee.hrId);
-  const probationEndDate = currentProbationEndDate(employee, probation);
+  const probationEndDate = currentProbationEndDate(employee);
   if (!probationEndDate) throw new Error("Probation end date is required.");
 
   const existingEvaluations = await loadEvaluationsByHrId().catch((error) => {
@@ -812,6 +803,12 @@ export async function createProbationEvaluation(input: CreateProbationEvaluation
   if (existing && !isFinalWorkflow(existing)) {
     throw new Error("An open probation evaluation already exists for this employee.");
   }
+
+  await assertProbationWorkflowTransition({
+    access,
+    action: "create",
+    status: "new",
+  });
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -864,6 +861,18 @@ export async function runProbationWorkflow(
   }
   assertWorkflowActionAllowed(access, current, action, employee, viewer, employees);
   validateWorkflowTransition(current, action, input);
+  const expectedNextStatusByAction: Record<ProbationWorkflowAction, string> = {
+    manager_feedback: "probation_manager_feedback",
+    pass: "probation_passed",
+    terminate: "probation_terminated",
+  };
+  await assertProbationWorkflowTransition({
+    access,
+    action,
+    decision: row.decision,
+    expectedNextStatus: expectedNextStatusByAction[action],
+    status: row.status,
+  });
 
   const now = new Date().toISOString();
   const note = cleanText(input.note);

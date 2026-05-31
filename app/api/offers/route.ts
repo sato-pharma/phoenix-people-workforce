@@ -59,23 +59,26 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      await createOffer({
-        areaId: payload.areaId,
-        areaScope: payload.areaScope ? String(payload.areaScope) : null,
-        candidateEmail: String(payload.candidateEmail),
-        candidateName: String(payload.candidateName),
-        candidatePhone: payload.candidatePhone ? String(payload.candidatePhone) : null,
-        createdByHrId: access.hrId,
-        departmentId: payload.departmentId,
-        expiresInDays: payload.expiresInDays,
-        jobTitle: String(payload.jobTitle),
-        lineId: payload.lineId,
-        managerHrId: payload.managerHrId ? String(payload.managerHrId) : null,
-        positionId: payload.positionId,
-        salaryAmount: payload.salaryAmount,
-        startDate: payload.startDate ? String(payload.startDate) : null,
-        templateKey: payload.templateKey ? String(payload.templateKey) : null,
-      }),
+      await createOffer(
+        {
+          areaId: payload.areaId,
+          areaScope: payload.areaScope ? String(payload.areaScope) : null,
+          candidateEmail: String(payload.candidateEmail),
+          candidateName: String(payload.candidateName),
+          candidatePhone: payload.candidatePhone ? String(payload.candidatePhone) : null,
+          createdByHrId: access.hrId,
+          departmentId: payload.departmentId,
+          expiresInDays: payload.expiresInDays,
+          jobTitle: String(payload.jobTitle),
+          lineId: payload.lineId,
+          managerHrId: payload.managerHrId ? String(payload.managerHrId) : null,
+          positionId: payload.positionId,
+          salaryAmount: payload.salaryAmount,
+          startDate: payload.startDate ? String(payload.startDate) : null,
+          templateKey: payload.templateKey ? String(payload.templateKey) : null,
+        },
+        access,
+      ),
       { status: 201 },
     );
   } catch (error) {

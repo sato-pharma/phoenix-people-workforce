@@ -81,15 +81,15 @@ function isSalesVsTargetChartDatum(value: unknown): value is SalesVsTargetChartD
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Achievement colours
+// Achievement colours (insight-driven degrading)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function achievementColor(pct: number, isTop = false): string {
-  if (pct >= 100) return "#10b981"; // green – over-achieved
-  if (pct >= 90) return "#22c55e"; // lighter green – eligible
-  if (pct >= 70) return "#f97316"; // orange – within reach
-  if (isTop) return "#f59e0b"; // amber – top but still low
-  return "#ef4444"; // red – needs work
+  if (pct >= 100) return "#10b981"; // green - over-achieved
+  if (pct >= 90) return "#22c55e"; // lighter green - eligible
+  if (pct >= 70) return "#f97316"; // orange - within reach
+  if (isTop) return "#f59e0b"; // amber - top but still low
+  return "#ef4444"; // red - needs work
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,7 +106,7 @@ function AchievementTooltip({
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div className="max-w-[calc(100vw-4rem)] rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-lg">
+    <div className="max-w-[calc(100vw-4rem)] rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm">
       <p className="mb-1 break-words font-semibold text-slate-900">{d.name}</p>
       <p className="text-slate-600">Achievement: <span className="font-bold text-slate-900">{pct(d.achievementPercent)}</span></p>
       <p className="text-slate-600">Sales: <span className="font-medium">{egp(d.totalSales)}</span></p>
@@ -137,60 +137,62 @@ export function TeamAchievementChart({
 
   return (
     <div className="min-w-0 overflow-hidden pb-2">
-      <SafeResponsiveContainer className="w-full min-w-0" minHeight={chartHeight} style={{ height: chartHeight }}>
+      <div role="img" aria-label="Team achievement percentage bar chart showing each rep's achievement against target">
+        <SafeResponsiveContainer className="w-full min-w-0" minHeight={chartHeight} style={{ height: chartHeight }}>
           <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 6, top: 8, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-          <XAxis
-            type="number"
-            domain={[0, Math.max(120, Math.ceil(Math.max(...chartData.map((d) => d.achievementPercent), 0) / 10) * 10)]}
-            tickFormatter={(v) => `${v}%`}
-            tick={{ fontSize: 11, fill: "#94a3b8" }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <YAxis
-            type="category"
-            dataKey="name"
-            tickFormatter={(value) => String(value).replace(/\s+/g, " ")}
-            width={86}
-            tick={{ fontSize: 10, fill: "#475569" }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <Tooltip content={<AchievementTooltip />} />
-          <ReferenceLine
-            x={90}
-            stroke="#94a3b8"
-            strokeDasharray="4 4"
-            label={{ value: "90%", position: "top", fontSize: 10, fill: "#94a3b8" }}
-          />
-          {teamAchievementPercent > 0 && (
-            <ReferenceLine
-              x={Math.round(teamAchievementPercent * 10) / 10}
-              stroke="#f97316"
-              strokeDasharray="4 4"
-              label={{ value: "Avg", position: "top", fontSize: 10, fill: "#f97316" }}
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+            <XAxis
+              type="number"
+              domain={[0, Math.max(120, Math.ceil(Math.max(...chartData.map((d) => d.achievementPercent), 0) / 10) * 10)]}
+              tickFormatter={(v) => `${v}%`}
+              tick={{ fontSize: 11, fill: "#94a3b8" }}
+              axisLine={false}
+              tickLine={false}
             />
-          )}
-          <Bar
-            dataKey="achievementPercent"
-            name="Achievement %"
-            onClick={(entry: unknown) => {
-              if (isAchievementChartDatum(entry)) setActiveDatum(entry);
-            }}
-            radius={[0, 4, 4, 0]}
-          >
-            {chartData.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={achievementColor(entry.achievementPercent, index === 0)} />
-            ))}
-          </Bar>
+            <YAxis
+              type="category"
+              dataKey="name"
+              tickFormatter={(value) => String(value).replace(/\s+/g, " ")}
+              width={86}
+              tick={{ fontSize: 10, fill: "#475569" }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip content={<AchievementTooltip />} />
+            <ReferenceLine
+              x={90}
+              stroke="#94a3b8"
+              strokeDasharray="4 4"
+              label={{ value: "90%", position: "top", fontSize: 10, fill: "#94a3b8" }}
+            />
+            {teamAchievementPercent > 0 && (
+              <ReferenceLine
+                x={Math.round(teamAchievementPercent * 10) / 10}
+                stroke="#f97316"
+                strokeDasharray="4 4"
+                label={{ value: "Avg", position: "top", fontSize: 10, fill: "#f97316" }}
+              />
+            )}
+            <Bar
+              dataKey="achievementPercent"
+              name="Achievement %"
+              onClick={(entry: unknown) => {
+                if (isAchievementChartDatum(entry)) setActiveDatum(entry);
+              }}
+              radius={[0, 3, 3, 0]}
+            >
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={achievementColor(entry.achievementPercent, index === 0)} />
+              ))}
+            </Bar>
           </BarChart>
-      </SafeResponsiveContainer>
+        </SafeResponsiveContainer>
+      </div>
       {activeDatum ? (
-        <div className="mt-3 rounded-2xl border border-slate-100 bg-white px-3 py-2 text-xs shadow-sm">
+        <div className="mt-3 rounded-lg border border-slate-100 bg-white px-3 py-2 text-xs shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <p className="min-w-0 break-words font-bold text-slate-900">{activeDatum.name}</p>
-            <p className="shrink-0 font-black" style={{ color: achievementColor(activeDatum.achievementPercent) }}>
+            <p className="shrink-0 font-bold" style={{ color: achievementColor(activeDatum.achievementPercent) }}>
               {pct(activeDatum.achievementPercent)}
             </p>
           </div>
@@ -219,7 +221,7 @@ function SalesVsTargetTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="max-w-[calc(100vw-4rem)] rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-lg">
+    <div className="max-w-[calc(100vw-4rem)] rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm">
       <p className="mb-1 break-words font-semibold text-slate-900">{label}</p>
       {payload.map((p) => (
         <p key={p.name} className="text-slate-600">
@@ -239,7 +241,8 @@ export function TeamSalesVsTargetChart({ members }: { members: DsmTeamMemberData
   }));
   return (
     <div className="min-w-0 overflow-hidden pb-2">
-      <SafeResponsiveContainer className="h-80 min-h-80 w-full min-w-0" minHeight={320}>
+      <div role="img" aria-label="Sales versus target comparison bar chart for each team member">
+        <SafeResponsiveContainer className="h-80 min-h-80 w-full min-w-0" minHeight={320}>
           <BarChart data={chartData} margin={{ left: 0, right: 0, top: 8, bottom: 36 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             <XAxis
@@ -269,7 +272,7 @@ export function TeamSalesVsTargetChart({ members }: { members: DsmTeamMemberData
               onClick={(entry: unknown) => {
                 if (isSalesVsTargetChartDatum(entry)) setActiveDatum(entry);
               }}
-              radius={[4, 4, 0, 0]}
+              radius={[3, 3, 0, 0]}
             />
             <Bar
               dataKey="Target"
@@ -277,12 +280,13 @@ export function TeamSalesVsTargetChart({ members }: { members: DsmTeamMemberData
               onClick={(entry: unknown) => {
                 if (isSalesVsTargetChartDatum(entry)) setActiveDatum(entry);
               }}
-              radius={[4, 4, 0, 0]}
+              radius={[3, 3, 0, 0]}
             />
           </BarChart>
-      </SafeResponsiveContainer>
+        </SafeResponsiveContainer>
+      </div>
       {activeDatum ? (
-        <div className="mt-3 rounded-2xl border border-slate-100 bg-white px-3 py-2 text-xs shadow-sm">
+        <div className="mt-3 rounded-lg border border-slate-100 bg-white px-3 py-2 text-xs shadow-sm">
           <p className="min-w-0 break-words font-bold text-slate-900">{activeDatum.name}</p>
           <div className="mt-1 grid grid-cols-2 gap-2 text-slate-500">
             <p>Sales <span className="font-semibold text-orange-600">{egp(activeDatum.Sales)}</span></p>
@@ -295,7 +299,7 @@ export function TeamSalesVsTargetChart({ members }: { members: DsmTeamMemberData
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Per-rep product breakdown card (expandable)
+// Per-rep product breakdown row
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ProductRow({ product }: { product: DsmTeamMemberProductData }) {
@@ -304,15 +308,15 @@ function ProductRow({ product }: { product: DsmTeamMemberProductData }) {
   return (
     <div className="py-2 border-b border-slate-50 last:border-0">
       <div className="flex items-center justify-between mb-1 gap-2">
-        <span className="text-xs font-medium text-slate-700 truncate flex-1">{product.product}</span>
+        <span className="text-xs font-medium text-slate-700 break-words flex-1 min-w-0">{product.product}</span>
         <span className="text-xs font-bold text-slate-900 shrink-0" style={{ color }}>
           {pct(product.achievementPercent)}
         </span>
       </div>
       <div className="grid gap-1.5 sm:flex sm:items-center sm:gap-2">
-        <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+        <div className="flex-1 h-1.5 rounded bg-slate-100 overflow-hidden">
           <div
-            className="h-full rounded-full transition-all duration-500"
+            className="h-full rounded transition-all duration-500"
             style={{ width: `${barWidth}%`, backgroundColor: color }}
           />
         </div>
@@ -324,14 +328,17 @@ function ProductRow({ product }: { product: DsmTeamMemberProductData }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-rep expandable card
+// ─────────────────────────────────────────────────────────────────────────────
+
 function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) {
   const [expanded, setExpanded] = useState(false);
   const color = achievementColor(member.achievementPercent, rank === 1);
   const isEligible = member.achievementPercent >= 90;
 
   return (
-    <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-      {/* Header */}
+    <div className="min-w-0 overflow-hidden rounded-lg border border-slate-100 bg-white shadow-sm">
       <button
         className="w-full min-w-0 p-4 text-left transition-colors hover:bg-slate-50"
         onClick={() => setExpanded((v) => !v)}
@@ -340,7 +347,7 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 sm:flex sm:items-center">
           {/* Rank badge */}
           <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black text-white shrink-0"
+            className="w-9 h-9 rounded flex items-center justify-center text-sm font-bold text-white shrink-0"
             style={{ backgroundColor: rank <= 3 ? color : "#94a3b8" }}
           >
             #{rank}
@@ -351,7 +358,7 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
             <p className="break-words text-sm font-semibold leading-tight text-slate-900">{formatEmployeeDisplayName(member.name)}</p>
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               <span
-                className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                className="text-[10px] font-medium px-1.5 py-0.5 rounded"
                 style={{
                   backgroundColor: isEligible ? "#dcfce7" : "#fef3c7",
                   color: isEligible ? "#15803d" : "#92400e",
@@ -367,7 +374,7 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
 
           {/* Achievement */}
           <div className="col-span-3 grid grid-cols-[1fr_auto] items-center gap-2 text-left sm:block sm:text-right sm:shrink-0">
-            <p className="text-lg font-black sm:text-xl" style={{ color }}>
+            <p className="text-lg font-bold sm:text-xl" style={{ color }}>
               {pct(member.achievementPercent)}
             </p>
             <p className="min-w-0 break-words text-right text-[10px] text-slate-400 sm:text-right" title={`${egp(member.totalSales)} / ${egp(member.totalTarget)}`}>
@@ -388,9 +395,9 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
         </div>
 
         {/* Achievement progress bar */}
-        <div className="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden">
+        <div className="mt-3 h-2 rounded bg-slate-100 overflow-hidden">
           <div
-            className="h-full rounded-full transition-all duration-700"
+            className="h-full rounded transition-all duration-700"
             style={{
               width: `${Math.min(100, member.achievementPercent)}%`,
               backgroundColor: color,
@@ -426,86 +433,129 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
 export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[] }) {
   return (
     <div className="min-w-0">
-      <div className="grid gap-2 sm:hidden">
+      {/* Mobile card view */}
+      <div className="grid gap-2.5 sm:hidden">
         {members.map((member) => {
           const gap = Math.max(0, member.totalTarget - member.totalSales);
           const color = achievementColor(member.achievementPercent, member.position === 1);
+          const progressWidth = Math.min(100, Math.max(0, member.achievementPercent));
           return (
-            <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-50 py-3" key={member.hrId}>
-              <span
-                className="flex h-8 w-8 items-center justify-center rounded-xl text-xs font-bold text-white"
-                style={{ backgroundColor: member.position <= 3 ? color : "#cbd5e1" }}
-              >
-                {member.position}
-              </span>
-              <div className="min-w-0">
-                <p className="break-words text-sm font-semibold leading-tight text-slate-900">{formatEmployeeDisplayName(member.name)}</p>
-                <p className="mt-0.5 text-[10px] text-slate-400">{member.products.length} products</p>
-              </div>
-              <div className="min-w-0 text-right">
-                <p className="text-sm font-black" style={{ color }}>{pct(member.achievementPercent)}</p>
-                <p className="mt-0.5 max-w-[88px] truncate text-[10px] font-medium text-slate-400" title={gap > 0 ? egp(gap) : "Achieved"}>
-                  {gap > 0 ? compactEgp(gap) : "Achieved"}
-                </p>
+            <div
+              className="relative min-w-0 overflow-hidden rounded-lg border border-slate-100 bg-white shadow-sm"
+              key={member.hrId}
+            >
+              {/* Left accent bar */}
+              <div
+                className="absolute inset-y-0 left-0 w-[3px]"
+                style={{ backgroundColor: color }}
+              />
+
+              <div className="pl-4 pr-3 pt-3 pb-2.5">
+                {/* Top row: rank + name + achievement */}
+                <div className="flex items-start gap-2.5">
+                  <span
+                    className="flex h-7 w-7 items-center justify-center rounded text-[11px] font-bold text-white shrink-0"
+                    style={{ backgroundColor: member.position <= 3 ? color : "#cbd5e1" }}
+                  >
+                    {member.position}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-sm font-semibold leading-tight text-slate-900">
+                      {formatEmployeeDisplayName(member.name)}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-slate-400">{member.products.length} products</p>
+                  </div>
+                  <p className="shrink-0 text-base font-bold" style={{ color }}>
+                    {pct(member.achievementPercent)}
+                  </p>
+                </div>
+
+                {/* Achievement progress bar */}
+                <div className="mt-2 h-1.5 rounded bg-slate-100 overflow-hidden">
+                  <div
+                    className="h-full rounded transition-all duration-500"
+                    style={{ width: `${progressWidth}%`, backgroundColor: color }}
+                  />
+                </div>
+
+                {/* Metadata pills */}
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                    Sales: {compactEgp(member.totalSales)}
+                  </span>
+                  <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                    Target: {compactEgp(member.totalTarget)}
+                  </span>
+                  {gap > 0 ? (
+                    <span className="inline-flex items-center rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600">
+                      Gap: {compactEgp(gap)}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700">
+                      Achieved
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           );
         })}
       </div>
 
+      {/* Desktop table view */}
       <div className="hidden overflow-x-auto sm:block">
-      <table className="w-full min-w-0 text-sm">
-        <thead>
-          <tr className="border-b border-slate-100">
-            <th className="text-left py-2 px-3 text-xs font-medium text-slate-500 w-10">#</th>
-            <th className="text-left py-2 px-3 text-xs font-medium text-slate-500">Name</th>
-            <th className="text-right py-2 px-3 text-xs font-medium text-slate-500">Achievement</th>
-            <th className="text-right py-2 px-3 text-xs font-medium text-slate-500 hidden sm:table-cell">Sales</th>
-            <th className="text-right py-2 px-3 text-xs font-medium text-slate-500 hidden sm:table-cell">Target</th>
-            <th className="text-right py-2 px-3 text-xs font-medium text-slate-500 hidden min-[420px]:table-cell">Gap</th>
-          </tr>
-        </thead>
-        <tbody>
-          {members.map((member) => {
-            const gap = Math.max(0, member.totalTarget - member.totalSales);
-            const color = achievementColor(member.achievementPercent, member.position === 1);
-            return (
-              <tr key={member.hrId} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                <td className="py-2.5 px-3">
-                  <span
-                    className="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold text-white"
-                    style={{ backgroundColor: member.position <= 3 ? color : "#cbd5e1" }}
-                  >
-                    {member.position}
-                  </span>
-                </td>
-                <td className="min-w-0 py-2.5 px-3">
-                  <p className="max-w-[220px] break-words font-medium leading-tight text-slate-900 sm:max-w-none">{formatEmployeeDisplayName(member.name)}</p>
-                  <p className="text-[10px] text-slate-400">{member.products.length} products</p>
-                </td>
-                <td className="py-2.5 px-3 text-right">
-                  <span className="font-bold" style={{ color }}>
-                    {pct(member.achievementPercent)}
-                  </span>
-                </td>
-                <td className="py-2.5 px-3 text-right hidden sm:table-cell">
-                  <span className="text-slate-700">{egp(member.totalSales)}</span>
-                </td>
-                <td className="py-2.5 px-3 text-right hidden sm:table-cell">
-                  <span className="text-slate-500">{egp(member.totalTarget)}</span>
-                </td>
-                <td className="py-2.5 px-3 text-right hidden min-[420px]:table-cell">
-                  {gap > 0 ? (
-                    <span className="text-xs text-red-500 font-medium">{egp(gap)}</span>
-                  ) : (
-                    <span className="text-xs text-green-600 font-medium">Achieved</span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+        <table className="w-full min-w-0 text-sm">
+          <thead>
+            <tr className="border-b border-slate-100">
+              <th className="text-left py-2 px-3 text-xs font-medium text-slate-500 w-10 border-r border-slate-100">#</th>
+              <th className="text-left py-2 px-3 text-xs font-medium text-slate-500 border-r border-slate-100">Name</th>
+              <th className="text-right py-2 px-3 text-xs font-medium text-slate-500 border-r border-slate-100">Achievement</th>
+              <th className="text-right py-2 px-3 text-xs font-medium text-slate-500 hidden sm:table-cell border-r border-slate-100">Sales</th>
+              <th className="text-right py-2 px-3 text-xs font-medium text-slate-500 hidden sm:table-cell border-r border-slate-100">Target</th>
+              <th className="text-right py-2 px-3 text-xs font-medium text-slate-500 hidden min-[420px]:table-cell">Gap</th>
+            </tr>
+          </thead>
+          <tbody>
+            {members.map((member) => {
+              const gap = Math.max(0, member.totalTarget - member.totalSales);
+              const color = achievementColor(member.achievementPercent, member.position === 1);
+              return (
+                <tr key={member.hrId} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                  <td className="py-2.5 px-3 border-r border-slate-100">
+                    <span
+                      className="w-6 h-6 rounded flex items-center justify-center text-xs font-bold text-white"
+                      style={{ backgroundColor: member.position <= 3 ? color : "#cbd5e1" }}
+                    >
+                      {member.position}
+                    </span>
+                  </td>
+                  <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
+                    <p className="max-w-[220px] break-words font-medium leading-tight text-slate-900 sm:max-w-none">{formatEmployeeDisplayName(member.name)}</p>
+                    <p className="text-[10px] text-slate-400">{member.products.length} products</p>
+                  </td>
+                  <td className="py-2.5 px-3 text-right border-r border-slate-100">
+                    <span className="font-bold" style={{ color }}>
+                      {pct(member.achievementPercent)}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right hidden sm:table-cell border-r border-slate-100">
+                    <span className="text-slate-700">{egp(member.totalSales)}</span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right hidden sm:table-cell border-r border-slate-100">
+                    <span className="text-slate-500">{egp(member.totalTarget)}</span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right hidden min-[420px]:table-cell">
+                    {gap > 0 ? (
+                      <span className="text-xs text-red-500 font-medium">{egp(gap)}</span>
+                    ) : (
+                      <span className="text-xs text-green-600 font-medium">Achieved</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

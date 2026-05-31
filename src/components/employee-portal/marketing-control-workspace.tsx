@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { LockKeyhole, RefreshCcw, Save, Settings2, SlidersHorizontal, Workflow } from "lucide-react";
@@ -53,7 +53,7 @@ function SelectField({
 }) {
   return (
     <select
-      className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+      className="h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
       onChange={(event) => onChange(event.target.value)}
       value={value}
     >
@@ -72,14 +72,14 @@ function Toggle({
   return (
     <button
       aria-pressed={checked}
-      className={`relative h-7 w-12 rounded-full border transition ${
+      className={`relative h-7 w-12 rounded border transition ${
         checked ? "border-orange-500 bg-orange-500" : "border-slate-300 bg-slate-200"
       }`}
       onClick={() => onChange(!checked)}
       type="button"
     >
       <span
-        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${
+        className={`absolute top-1 h-5 w-5 rounded bg-white shadow transition ${
           checked ? "left-6" : "left-1"
         }`}
       />
@@ -123,7 +123,7 @@ function SectionHeader({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-orange-50 text-orange-700">
+        <div className="flex h-10 w-10 items-center justify-center rounded bg-orange-50 text-orange-700">
           {icon}
         </div>
         <div>
@@ -233,24 +233,24 @@ export function MarketingControlWorkspace() {
 
   return (
     <div className="space-y-6">
-      <Card className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] sm:p-5">
+      <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
         <div className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Request Types</p>
             <p className="mt-1 text-2xl font-black text-slate-950">{workspace.requestTypes.length}</p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Workflow Steps</p>
             <p className="mt-1 text-2xl font-black text-slate-950">{workspace.workflowSteps.length}</p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Validation Settings</p>
             <p className="mt-1 text-2xl font-black text-slate-950">
               {workspace.canManageValidationRules ? groupedSettings.validation.length : "Admin"}
             </p>
           </div>
           <button
-            className="flex min-h-[78px] items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+            className="flex min-h-[78px] items-center justify-center gap-2 rounded border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
             onClick={() => void loadWorkspace()}
             type="button"
           >
@@ -261,12 +261,12 @@ export function MarketingControlWorkspace() {
       </Card>
 
       {message ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+        <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
           {message}
         </div>
       ) : null}
 
-      <Card className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
+      <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
         <SectionHeader
           badge={`${workspace.requestTypes.length} types`}
           icon={<SlidersHorizontal className="h-5 w-5" />}
@@ -343,7 +343,7 @@ export function MarketingControlWorkspace() {
                     </td>
                     <td className="px-4 py-3">
                       <Button
-                        className="gap-2 rounded-xl bg-orange-600 px-3 font-black hover:bg-orange-700"
+                        className="gap-2 rounded bg-orange-600 px-3 font-black hover:bg-orange-700"
                         disabled={saving}
                         onClick={() => void patchControl({
                           entity: "request_type",
@@ -369,7 +369,7 @@ export function MarketingControlWorkspace() {
         </div>
       </Card>
 
-      <Card className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
+      <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
         <SectionHeader
           badge={`${workspace.workflowSteps.length} steps`}
           icon={<Workflow className="h-5 w-5" />}
@@ -475,7 +475,7 @@ export function MarketingControlWorkspace() {
                     </td>
                     <td className="px-4 py-3">
                       <Button
-                        className="gap-2 rounded-xl bg-orange-600 px-3 font-black hover:bg-orange-700"
+                        className="gap-2 rounded bg-orange-600 px-3 font-black hover:bg-orange-700"
                         disabled={saving}
                         onClick={() => void patchControl({
                           entity: "workflow_step",
@@ -503,13 +503,13 @@ export function MarketingControlWorkspace() {
         </div>
       </Card>
 
-      <Card className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
+      <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
         <SectionHeader
           icon={<Settings2 className="h-5 w-5" />}
           title="ROI And Finance Rules"
         />
         <div className="grid gap-4 p-5 lg:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="rounded border border-slate-200 bg-slate-50 p-4">
             <Field label="ROI multiplier">
               <Input
                 className="h-11 border-slate-200 bg-white text-base font-black"
@@ -523,7 +523,7 @@ export function MarketingControlWorkspace() {
               Updated: {settingUpdatedLabel(groupedSettings.roi.find((setting) => setting.key === "roi_multiplier"))}
             </p>
             <Button
-              className="mt-4 gap-2 rounded-xl bg-orange-600 font-black hover:bg-orange-700"
+              className="mt-4 gap-2 rounded bg-orange-600 font-black hover:bg-orange-700"
               disabled={saving}
               onClick={() => void patchControl({
                 entity: "setting",
@@ -536,7 +536,7 @@ export function MarketingControlWorkspace() {
             </Button>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="rounded border border-slate-200 bg-slate-50 p-4">
             <Field label="Invoice deadline days">
               <Input
                 className="h-11 border-slate-200 bg-white text-base font-black"
@@ -550,7 +550,7 @@ export function MarketingControlWorkspace() {
               Updated: {settingUpdatedLabel(groupedSettings.finance.find((setting) => setting.key === "finance_invoice_deadline_days"))}
             </p>
             <Button
-              className="mt-4 gap-2 rounded-xl bg-orange-600 font-black hover:bg-orange-700"
+              className="mt-4 gap-2 rounded bg-orange-600 font-black hover:bg-orange-700"
               disabled={saving}
               onClick={() => void patchControl({
                 entity: "setting",
@@ -565,7 +565,7 @@ export function MarketingControlWorkspace() {
         </div>
       </Card>
 
-      <Card className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
+      <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
         <SectionHeader
           badge={workspace.canManageValidationRules ? `${groupedSettings.validation.length} rules` : "Admin only"}
           icon={<LockKeyhole className="h-5 w-5" />}
@@ -587,7 +587,7 @@ export function MarketingControlWorkspace() {
                   }))}
                 />
                 <Button
-                  className="gap-2 rounded-xl bg-orange-600 px-3 font-black hover:bg-orange-700"
+                  className="gap-2 rounded bg-orange-600 px-3 font-black hover:bg-orange-700"
                   disabled={saving}
                   onClick={() => void patchControl({
                     entity: "setting",
@@ -603,7 +603,7 @@ export function MarketingControlWorkspace() {
           </div>
         ) : (
           <div className="px-5 py-6">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-bold text-slate-600">
+            <div className="rounded border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-bold text-slate-600">
               Validation settings are available to Super Admin only.
             </div>
           </div>
