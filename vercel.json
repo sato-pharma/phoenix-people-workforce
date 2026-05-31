@@ -1,12 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/notifications/birthdays",
+      "path": "/api/notifications/daily",
       "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/notifications/contract-renewals",
-      "schedule": "15 4 * * *"
     }
   ]
 }

@@ -85,16 +85,70 @@ type NationalHolidayPayload = {
 };
 
 type QueuedVacationSubmission = {
+  createdAt: number;
   id: string;
-  payload: FormData;
-  timestamp: number;
+  lastSyncError: string | null;
+  payload: QueuedVacationPayload;
+  retryCount: number;
+};
+
+type QueuedVacationPayload = {
+  dayPart: VacationDayPart;
+  endDate: string;
+  otherReason?: string;
+  startDate: string;
+  vacationType: Exclude<VacationType, "compensatory" | "sick">;
 };
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Offline Queue Hook (#2) + SSR Hydration Guard ────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-function useOfflineQueue(onReplay: (payload: FormData) => Promise<void>) {
+const vacationQueueDbName = "phoenix-vacation-offline-queue";
+const vacationQueueStoreName = "queued-submissions";
+
+function openVacationQueueDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(vacationQueueDbName, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(vacationQueueStoreName)) {
+        db.createObjectStore(vacationQueueStoreName, { keyPath: "id" });
+      }
+    };
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB is unavailable."));
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+
+async function readQueuedVacationSubmissions() {
+  const db = await openVacationQueueDb();
+  return new Promise<QueuedVacationSubmission[]>((resolve, reject) => {
+    const request = db.transaction(vacationQueueStoreName, "readonly").objectStore(vacationQueueStoreName).getAll();
+    request.onerror = () => reject(request.error ?? new Error("Unable to read vacation offline queue."));
+    request.onsuccess = () => resolve((request.result ?? []) as QueuedVacationSubmission[]);
+  });
+}
+
+async function putQueuedVacationSubmission(submission: QueuedVacationSubmission) {
+  const db = await openVacationQueueDb();
+  await new Promise<void>((resolve, reject) => {
+    const request = db.transaction(vacationQueueStoreName, "readwrite").objectStore(vacationQueueStoreName).put(submission);
+    request.onerror = () => reject(request.error ?? new Error("Unable to save vacation offline queue."));
+    request.onsuccess = () => resolve();
+  });
+}
+
+async function deleteQueuedVacationSubmission(id: string) {
+  const db = await openVacationQueueDb();
+  await new Promise<void>((resolve, reject) => {
+    const request = db.transaction(vacationQueueStoreName, "readwrite").objectStore(vacationQueueStoreName).delete(id);
+    request.onerror = () => reject(request.error ?? new Error("Unable to remove queued vacation submission."));
+    request.onsuccess = () => resolve();
+  });
+}
+
+function useOfflineQueue(onReplay: (payload: QueuedVacationPayload) => Promise<void>) {
   const [queue, setQueue] = useState<QueuedVacationSubmission[]>([]);
   // SSR hydration guard: always start `true` to match server output,
   // then sync the real browser value inside useEffect.
@@ -114,6 +168,9 @@ function useOfflineQueue(onReplay: (payload: FormData) => Promise<void>) {
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    readQueuedVacationSubmissions()
+      .then(setQueue)
+      .catch(() => undefined);
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
@@ -130,8 +187,12 @@ function useOfflineQueue(onReplay: (payload: FormData) => Promise<void>) {
       for (const item of pending) {
         try {
           await onReplay(item.payload);
+          await deleteQueuedVacationSubmission(item.id);
           setQueue((current) => current.filter((q) => q.id !== item.id));
-        } catch {
+        } catch (error) {
+          const failed = { ...item, lastSyncError: error instanceof Error ? error.message : "Replay failed.", retryCount: item.retryCount + 1 };
+          await putQueuedVacationSubmission(failed).catch(() => undefined);
+          setQueue((current) => current.map((q) => q.id === item.id ? failed : q));
           break; // Stop on first failure — will retry next online event
         }
       }
@@ -139,12 +200,15 @@ function useOfflineQueue(onReplay: (payload: FormData) => Promise<void>) {
     })();
   }, [isOnline, queue, onReplay]);
 
-  function enqueue(payload: FormData) {
+  async function enqueue(payload: QueuedVacationPayload) {
     const submission: QueuedVacationSubmission = {
+      createdAt: Date.now(),
       id: `q-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      lastSyncError: null,
       payload,
-      timestamp: Date.now(),
+      retryCount: 0,
     };
+    await putQueuedVacationSubmission(submission);
     setQueue((current) => [...current, submission]);
   }
 
@@ -1090,9 +1154,10 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
   const [error, setError] = useState(initialError);
 
   // Offline queue (#2)
-  const replayVacationRequest = useCallback(async (payload: FormData) => {
+  const replayVacationRequest = useCallback(async (payload: QueuedVacationPayload) => {
     const response = await fetch("/api/vacations/requests", {
-      body: payload,
+      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
       method: "POST",
     });
     if (!response.ok) {
@@ -1150,6 +1215,17 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     return formData;
   }
 
+  function buildQueuedPayload(): QueuedVacationPayload | null {
+    if (vacationType === "sick" || vacationType === "compensatory") return null;
+    return {
+      dayPart,
+      endDate,
+      otherReason: vacationType === "other" ? otherReason : undefined,
+      startDate,
+      vacationType,
+    };
+  }
+
   async function submitRequest() {
     setSubmitting(true);
     setError(null);
@@ -1158,7 +1234,13 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
 
     // Offline queue fallback (#2)
     if (!isOnline) {
-      enqueue(formData);
+      const queuedPayload = buildQueuedPayload();
+      if (!queuedPayload) {
+        setSubmitting(false);
+        setError("Online connection is required for evidence upload. Sick and compensatory vacation requests cannot be queued offline.");
+        return;
+      }
+      await enqueue(queuedPayload);
       setSubmitting(false);
       setSubmitSuccess(true);
       setTimeout(() => {
@@ -1288,7 +1370,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
           <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] font-bold text-amber-800">
             <WifiOff className="h-4 w-4 shrink-0 text-amber-600" />
             <span>
-              You are offline. Requests will be queued and sent automatically when you reconnect.
+              You are offline. Annual, emergency, and other requests are saved in this browser and sent automatically when you reconnect. Evidence requests require online upload.
               {queueLength > 0 ? ` (${queueLength} queued)` : ""}
             </span>
           </div>
@@ -1298,7 +1380,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
         {submitSuccess ? (
           <div className="flex items-center gap-2.5 rounded-sm border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] font-bold text-emerald-800 animate-in fade-in duration-300">
             <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
-            <span>{isOnline ? "Request submitted successfully. Redirecting..." : "Request queued. It will be submitted when you are back online."}</span>
+            <span>{isOnline ? "Request submitted successfully. Redirecting..." : "Request queued in this browser. It will retry when you are back online."}</span>
           </div>
         ) : null}
 
@@ -1577,12 +1659,15 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                           onChange={(event) => setCompensatoryManager2(event.target.value)}
                         />
                       </label>
-                      <label className="space-y-1.5 sm:col-span-2">
-                        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Event photo</span>
-                        <label className="flex cursor-pointer flex-col items-center justify-center rounded-sm border-2 border-dashed border-orange-200 bg-white/60 px-4 py-4 text-center transition hover:border-orange-300 hover:bg-white">
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500" htmlFor="compensatory-photo">
+                          Event photo
+                        </label>
+                        <label className="flex cursor-pointer flex-col items-center justify-center rounded-sm border-2 border-dashed border-orange-200 bg-white/60 px-4 py-4 text-center transition hover:border-orange-300 hover:bg-white" htmlFor="compensatory-photo">
                           <input
                             accept="image/jpeg,image/png,image/webp"
                             className="sr-only"
+                            id="compensatory-photo"
                             required
                             type="file"
                             onChange={(event) => setCompensatoryPhoto(event.target.files?.[0] ?? null)}
@@ -1597,7 +1682,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         <p className="text-[11px] font-medium text-slate-500">
                           {compensatoryPhoto ? compensatoryPhoto.name : "Required event or conference photo."}
                         </p>
-                      </label>
+                      </div>
                     </div>
                     {compensatoryDateError ? (
                       <div className="rounded-sm border border-rose-200 bg-rose-50 px-2.5 py-2 text-[11px] font-bold leading-4 text-rose-800">

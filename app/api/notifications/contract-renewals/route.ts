@@ -24,7 +24,7 @@ function isAuthorized(request: Request) {
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-async function runContractRenewalNotifications(request: Request) {
+export async function runContractRenewalNotifications(request: Request) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "unauthorized", message: "Contract renewal notification run is not authorized." }, { status: 401 });
   }
