@@ -58,6 +58,13 @@ export const navigationHomePathByMode: Record<NavigationMode, `/${string}`> = {
 
 export const adminNavigationSections = [
   {
+    id: "executive",
+    items: [
+      { href: "/admin/ceo-command-center", icon: BriefcaseBusiness, label: "CEO Command Center", roles: ["CEO", "Super Admin"] },
+    ],
+    label: "Executive",
+  },
+  {
     id: "command-center",
     items: [
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }] },

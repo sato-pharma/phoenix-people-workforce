@@ -168,7 +168,7 @@ function verifyScopeHelpers() {
   expectScope("Super Admin navigation mode is admin", resolveNavigationMode(contextFor("Super Admin")), "admin");
   expectScope("HR Specialist navigation mode is admin", resolveNavigationMode(contextFor("HR Specialist")), "admin");
   expectScope("Finance Manager navigation mode is employee portal", resolveNavigationMode(contextFor("Finance Manager")), "employee-portal");
-  expectScope("CEO navigation mode is employee portal", resolveNavigationMode(contextFor("CEO")), "employee-portal");
+  expectScope("CEO navigation mode is admin", resolveNavigationMode(contextFor("CEO")), "admin");
   expectScope("District Manager navigation mode is employee portal", resolveNavigationMode(contextFor("District Manager")), "employee-portal");
   expectScope("Medical Rep navigation mode is employee portal", resolveNavigationMode(contextFor("Medical Rep")), "employee-portal");
 
