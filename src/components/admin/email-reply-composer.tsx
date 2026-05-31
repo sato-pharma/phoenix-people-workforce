@@ -35,6 +35,22 @@ type EmployeeOption = {
 
 type ComposerOptions = {
   allowedDomains: string[];
+  analytics: {
+    externalRecipients30d: number;
+    failed30d: number;
+    lastManualSendAt: string | null;
+    providerEvents30d: Record<string, number>;
+    recentManualSends: Array<{
+      createdAt: string | null;
+      externalCount: number;
+      status: string;
+      subject: string;
+      templateKey: string | null;
+      totalRecipients: number;
+    }>;
+    sent30d: number;
+    skipped30d: number;
+  };
   employeeOptions: EmployeeOption[];
   groups: Array<{ description: string; key: "finance_team" | "hr_team" | "managers"; label: string }>;
   maxRecipients: number;
@@ -321,6 +337,8 @@ export function EmailReplyComposer() {
           </div>
         </Card>
 
+        <DeliveryAnalyticsPanel analytics={options?.analytics} />
+
         {step === 0 ? (
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
             <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
@@ -524,6 +542,28 @@ function Metric({ label, value }: { label: string; value: string }) {
       <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</p>
       <p className="mt-1 text-lg font-black text-[#0F172A]">{value}</p>
     </div>
+  );
+}
+
+function DeliveryAnalyticsPanel({ analytics }: { analytics: ComposerOptions["analytics"] | undefined }) {
+  if (!analytics) return null;
+  return (
+    <Card className={cn(adminPanelClassName, "p-4")}>
+      <div className="grid gap-3 md:grid-cols-4">
+        <Metric label="Sent 30d" value={String(analytics.sent30d)} />
+        <Metric label="Skipped 30d" value={String(analytics.skipped30d)} />
+        <Metric label="Failed 30d" value={String(analytics.failed30d)} />
+        <Metric label="External 30d" value={String(analytics.externalRecipients30d)} />
+      </div>
+      <div className="mt-4 grid gap-2 lg:grid-cols-4">
+        {analytics.recentManualSends.length > 0 ? analytics.recentManualSends.slice(0, 4).map((send, index) => (
+          <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3" key={`${send.createdAt ?? index}-${send.subject}`}>
+            <p className="truncate text-sm font-black text-[#0F172A]">{send.subject}</p>
+            <p className="mt-1 text-xs font-bold text-[#64748B]">{send.status} - {send.totalRecipients} recipient(s)</p>
+          </div>
+        )) : <p className="text-sm font-semibold text-[#64748B]">No manual sends recorded in the last 30 days.</p>}
+      </div>
+    </Card>
   );
 }
 

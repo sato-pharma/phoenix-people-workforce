@@ -11,6 +11,9 @@ import {
   compileTemplateRecipientPresets,
   getEmailDesignerMetadata,
 } from "../src/lib/email/email-designer.ts";
+import {
+  getEmailTemplateHealth,
+} from "../src/lib/email-templates/service.ts";
 
 export async function runEmailGovernanceTests() {
   const sanitized = sanitizeEmailTemplateHtml(
@@ -75,6 +78,32 @@ export async function runEmailGovernanceTests() {
   assert.ok(employeeNameVariable?.sampleValue);
   assert.ok(designerMetadata.recipientPresets.some((preset) => preset.key === "hr_team" && preset.role === "hr"));
 
+  const healthyTemplate = getEmailTemplateHealth(
+    {
+      bodyHtml: "<p>Hello</p>",
+      bodyText: "Hello",
+      closingText: "Regards",
+      description: "Test",
+      greeting: "Dear Team,",
+      isActive: true,
+      previewText: "Preview",
+      subject: "Subject",
+      templateKey: "general",
+      templateName: "General",
+    },
+    {
+      bccRoles: [],
+      bccStaticEmails: [],
+      ccRoles: [],
+      ccStaticEmails: [],
+      targetLines: [],
+      targetTitles: [],
+      toRoles: ["hr"],
+      toStaticEmails: [],
+    },
+  );
+  assert.equal(healthyTemplate.status, "good");
+
   const compiledPresets = compileTemplateRecipientPresets({
     cc: ["hr_team"],
     to: ["employee", "direct_manager"],
@@ -99,6 +128,7 @@ export async function runEmailGovernanceTests() {
 
   const metadataRouteSource = readFileSync("app/api/admin/email-templates/designer-metadata/route.ts", "utf8");
   assert.match(metadataRouteSource, /getEmailDesignerMetadata/);
+  assert.match(metadataRouteSource, /getEmailTemplateCategoryOptions/);
 
   const validateDraftRouteSource = readFileSync("app/api/admin/email-templates/validate-draft/route.ts", "utf8");
   assert.match(validateDraftRouteSource, /validateEmailTemplateDraft/);
@@ -127,4 +157,17 @@ export async function runEmailGovernanceTests() {
   assert.match(manualAuditMigration, /enable row level security/);
   assert.match(manualAuditMigration, /revoke all on public\.manual_email_send_audit from anon, authenticated/);
   assert.match(manualAuditMigration, /to service_role/);
+
+  const designerUpgradeMigration = readFileSync("supabase/migrations/20260531164447_email_template_designer_upgrades.sql", "utf8");
+  assert.match(designerUpgradeMigration, /create table if not exists public\.email_template_drafts/);
+  assert.match(designerUpgradeMigration, /enable row level security/);
+  assert.match(designerUpgradeMigration, /revoke all on public\.email_template_drafts from anon, authenticated/);
+  assert.match(designerUpgradeMigration, /to service_role/);
+
+  assert.match(templateServiceSource, /emailTemplateDraftsTable/);
+  assert.match(templateServiceSource, /saveEmailTemplateDraft/);
+  assert.match(templateServiceSource, /clearEmailTemplateDraft/);
+  const composerServiceSource = readFileSync("src/lib/email/email-composer-service.ts", "utf8");
+  assert.match(composerServiceSource, /getManualEmailDeliveryAnalytics/);
+  assert.match(composerServiceSource, /manual_email_send_audit/);
 }

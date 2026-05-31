@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmailDesignerMetadata } from "@/lib/email/email-designer";
-import { getEmailTemplateCatalog, getEmailTemplateRoutingOptions } from "@/lib/email-templates/service";
+import { getEmailTemplateCategoryOptions, getEmailTemplateDesignerCatalog, getEmailTemplateRoutingOptions } from "@/lib/email-templates/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,16 +13,22 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "communication", "read");
     const [templates, routingOptions] = await Promise.all([
-      getEmailTemplateCatalog(),
+      getEmailTemplateDesignerCatalog(),
       getEmailTemplateRoutingOptions(),
     ]);
 
     return NextResponse.json({
       ...getEmailDesignerMetadata(),
+      categories: getEmailTemplateCategoryOptions(),
       routingOptions,
       templates: templates.map((template) => ({
+        category: template.category,
         description: template.description,
+        hasDraftChanges: template.hasDraftChanges,
+        health: template.health,
         isActive: template.isActive,
+        publicationState: template.publicationState,
+        publishedIsActive: template.publishedIsActive,
         templateKey: template.templateKey,
         templateName: template.templateName,
         updatedAt: template.updatedAt,

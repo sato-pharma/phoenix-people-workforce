@@ -182,6 +182,7 @@ export function EmailTemplateManager({
   const [metadataLoaded, setMetadataLoaded] = useState(false);
   const [validation, setValidation] = useState<ValidationState | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState("All");
   const [changeReason, setChangeReason] = useState("");
   const [restoreReason, setRestoreReason] = useState("");
   const [testEmail, setTestEmail] = useState("");
@@ -197,6 +198,14 @@ export function EmailTemplateManager({
   }, [draft, variables]);
   const issues = validation?.issues ?? [];
   const canPublish = Boolean(validation?.isReadyToPublish && changeReason.trim().length >= 10);
+  const categoryOptions = useMemo(
+    () => ["All", ...Array.from(new Set(templates.map((template) => template.category).filter(Boolean)))],
+    [templates],
+  );
+  const visibleTemplates = useMemo(
+    () => categoryFilter === "All" ? templates : templates.filter((template) => template.category === categoryFilter),
+    [categoryFilter, templates],
+  );
 
   function loadDesignerMetadata() {
     if (metadataLoaded) return;
@@ -296,7 +305,7 @@ export function EmailTemplateManager({
       return;
     }
     startTransition(async () => {
-      const nextDraft = { ...draft, isActive: mode === "publish" };
+      const nextDraft = { ...draft, isActive: mode === "publish" ? true : draft.isActive };
       const response = await fetch(`/api/admin/email-templates/${encodeURIComponent(draft.templateKey)}`, {
         body: JSON.stringify({
           ...templatePayload(nextDraft),
@@ -441,22 +450,45 @@ export function EmailTemplateManager({
         </Card>
 
         {step === 0 ? (
-          <div className="grid gap-4 lg:grid-cols-3">
-            {templates.map((template) => {
-              const healthy = template.subject.trim() && template.bodyHtml.trim() && template.rules.toRoles.length + template.rules.toStaticEmails.length > 0;
+          <div className="space-y-4">
+            <Card className={cn(adminPanelClassName, "p-4")}>
+              <div className="flex flex-wrap gap-2">
+                {categoryOptions.map((category) => (
+                  <button
+                    className={cn(
+                      "rounded-full border px-3 py-2 text-xs font-black",
+                      categoryFilter === category ? "border-[#F97316] bg-[#FFF7ED] text-[#9A3412]" : "border-[#E2E8F0] bg-white text-[#334155]",
+                    )}
+                    key={category}
+                    onClick={() => setCategoryFilter(category)}
+                    type="button"
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            </Card>
+            <div className="grid gap-4 lg:grid-cols-3">
+            {visibleTemplates.map((template) => {
+              const healthTone = template.health.status === "good" ? "bg-[#DCFCE7] text-[#166534]" : template.health.status === "broken" ? "bg-[#FEE2E2] text-[#991B1B]" : "bg-[#FFF7ED] text-[#9A3412]";
               return (
                 <Card className={cn(adminPanelClassName, "p-5")} key={template.templateKey}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h2 className="text-lg font-black text-[#0F172A]">{template.templateName}</h2>
+                      <p className="mt-1 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{template.category}</p>
                       <p className="mt-2 text-sm leading-6 text-[#64748B]">{template.description}</p>
                     </div>
-                    <span className={cn("rounded-full px-2.5 py-1 text-xs font-black", healthy ? "bg-[#DCFCE7] text-[#166534]" : "bg-[#FFF7ED] text-[#9A3412]")}>
-                      {healthy ? "Healthy" : "Needs review"}
+                    <span className={cn("rounded-full px-2.5 py-1 text-xs font-black", healthTone)}>
+                      {template.health.label} {template.health.score}%
                     </span>
                   </div>
+                  <div className="mt-4 grid gap-2 text-xs font-bold text-[#64748B]">
+                    <span>{publicationLabel(template.publicationState)}</span>
+                    {template.health.issues[0] ? <span className="text-[#9A3412]">{template.health.issues[0].message}</span> : <span className="text-[#166534]">Ready for admin review.</span>}
+                  </div>
                   <div className="mt-4 flex items-center justify-between gap-3">
-                    <span className="text-xs font-bold text-[#64748B]">{template.isActive ? "Published" : "Draft"} - {new Date(template.updatedAt).toLocaleDateString()}</span>
+                    <span className="text-xs font-bold text-[#64748B]">Updated {new Date(template.updatedAt).toLocaleDateString()}</span>
                     <Button className="rounded-xl bg-[#0F172A] text-white" onClick={() => selectTemplate(template)} type="button">
                       Edit
                     </Button>
@@ -464,6 +496,7 @@ export function EmailTemplateManager({
                 </Card>
               );
             })}
+            </div>
           </div>
         ) : null}
 
@@ -474,6 +507,7 @@ export function EmailTemplateManager({
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Edit Content</p>
                   <h2 className="mt-1 text-xl font-black text-[#0F172A]">{draft.templateName}</h2>
+                  <p className="mt-1 text-sm font-bold text-[#64748B]">{draft.category} - {publicationLabel(draft.publicationState)}</p>
                 </div>
                 <div className="flex items-center gap-3 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
                   <span className="text-xs font-bold text-[#475569]">{draft.isActive ? "Active" : "Inactive"}</span>
@@ -511,6 +545,11 @@ export function EmailTemplateManager({
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Choose Recipients</p>
                 <h2 className="mt-1 text-xl font-black text-[#0F172A]">Simple recipient presets</h2>
+              </div>
+              <div className={cn(adminSoftPanelClassName, "grid gap-3 p-4 md:grid-cols-3")}>
+                <RecipientRoleFlow label="TO" roles={draft.rules.toRoles} />
+                <RecipientRoleFlow label="CC" roles={draft.rules.ccRoles} />
+                <RecipientRoleFlow label="BCC" roles={draft.rules.bccRoles} />
               </div>
               <div className="grid gap-4 lg:grid-cols-3">
                 {(["toRoles", "ccRoles", "bccRoles"] as const).map((channel) => (
@@ -581,6 +620,11 @@ export function EmailTemplateManager({
             <aside className="space-y-5">
               <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
                 <Field label="Publish reason"><textarea className="min-h-[96px] w-full rounded-xl border border-[#CBD5E1] px-3 py-3 text-sm" value={changeReason} onChange={(event) => setChangeReason(event.target.value)} placeholder="Example: Simplified leave approval wording for HR audit clarity." /></Field>
+                <div className={cn(adminSoftPanelClassName, "space-y-2 p-3 text-sm font-semibold text-[#475569]")}>
+                  <p className="font-black text-[#0F172A]">Draft / Published</p>
+                  <p>{publicationLabel(draft.publicationState)}</p>
+                  <p>Automated emails continue using the published version until this draft is published.</p>
+                </div>
                 <div className="grid gap-2">
                   <Button className="rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A]" onClick={() => saveTemplate("draft")} type="button" variant="secondary"><Save className="mr-2 h-4 w-4" />Save Draft</Button>
                   <Button className="rounded-xl bg-[#F97316] text-white" disabled={!canPublish || isPending} onClick={() => saveTemplate("publish")} type="button"><Send className="mr-2 h-4 w-4" />Publish</Button>
@@ -633,6 +677,28 @@ function Field({ children, label }: { children: ReactNode; label: string }) {
       <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</span>
       {children}
     </label>
+  );
+}
+
+function publicationLabel(value: string) {
+  if (value === "draft_changes") return "Published version is live; draft changes are waiting.";
+  if (value === "draft_unpublished") return "Draft exists; no published active version is live.";
+  if (value === "inactive") return "Inactive; not used by automated sends.";
+  return "Published version is live.";
+}
+
+function RecipientRoleFlow({ label, roles }: { label: string; roles: EmailTemplateRecipientRole[] }) {
+  return (
+    <div className="rounded-xl border border-[#E2E8F0] bg-white p-3">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {roles.length > 0 ? roles.map((role) => (
+          <span className="rounded-full bg-[#F8FAFC] px-2.5 py-1 text-xs font-black text-[#0F172A]" key={`${label}-${role}`}>
+            {role.replace(/_/g, " ")}
+          </span>
+        )) : <span className="text-sm font-semibold text-[#94A3B8]">No preset selected.</span>}
+      </div>
+    </div>
   );
 }
 
