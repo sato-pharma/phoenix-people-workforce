@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { validateSalaryWorkbook } from "@/lib/payroll/salary-import";
 import { getPayrollSalarySourcesByHrId } from "@/lib/payroll/salary-source";
@@ -14,6 +15,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertPermission(access, "payroll", "import");
 

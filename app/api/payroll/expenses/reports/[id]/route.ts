@@ -11,6 +11,7 @@ import {
   savePayrollExpenseApprovals,
 } from "@/lib/payroll/expenses";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
@@ -20,9 +21,12 @@ type Params = {
   params: Promise<{ id: string }>;
 };
 
-export async function DELETE(_request: Request, { params }: Params) {
+export async function DELETE(request: Request, { params }: Params) {
   try {
-    const access = await resolveAccessContext(_request);
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
+    const access = await resolveAccessContext(request);
     await assertPermission(access, "expenses", "delete");
 
     const { id } = await params;
@@ -65,6 +69,9 @@ export async function DELETE(_request: Request, { params }: Params) {
 
 export async function PUT(request: Request, { params }: Params) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertPermission(access, "expenses", "approve");
 

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isDevelopment } from "@/lib/env";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   getResignationsDashboardData,
   isResignationsSchemaMissing,
@@ -41,6 +42,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const { id } = await params;
     const access = await resolveAccessContext(request);
     await assertPermission(access, "resignations", "update");

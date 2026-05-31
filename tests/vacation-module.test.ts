@@ -41,6 +41,10 @@ const governanceMigrationSource = readFileSync(
   new URL("../supabase/migrations/20260531172108_vacation_enterprise_governance.sql", import.meta.url),
   "utf8",
 );
+const complianceMigrationSource = readFileSync(
+  new URL("../supabase/migrations/20260531202329_vacation_leave_governance_compliance.sql", import.meta.url),
+  "utf8",
+);
 const typesSource = readFileSync(
   new URL("../src/lib/vacation/types.ts", import.meta.url),
   "utf8",
@@ -132,6 +136,14 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /reviewVacationEvidence/);
   assert.match(serviceSource, /getVacationRequestTimeline/);
   assert.match(serviceSource, /generateVacationAuditExportWorkbook/);
+  assert.match(serviceSource, /assertPermission\(access, "leave", "export"\)/);
+  assert.match(serviceSource, /vacationAuditExportMaxRows = 5000/);
+  assert.match(serviceSource, /buildVacationTimelineEntries/);
+  assert.match(serviceSource, /fetchVacationEventsForRequests\(report\.rows\.map/);
+  assert.doesNotMatch(serviceSource, /Promise\.all\(report\.rows\.map\(\(row\) => getVacationRequestTimeline/);
+  assert.match(serviceSource, /Separation of duties requires a different HR or Super Admin actor/);
+  assert.match(serviceSource, /vacationRetentionPolicyDefaults/);
+  assert.match(serviceSource, /runVacationRetentionPurge/);
   assert.match(serviceSource, /runVacationSlaDaily/);
   assert.match(serviceSource, /Required vacation evidence must be accepted by HR before final HR approval/);
   assert.match(serviceSource, /buildVacationOverlapWarnings/);
@@ -145,8 +157,14 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /v2_vacation_weekly_off_policies/);
   assert.match(serviceSource, /getVacationControlData/);
   assert.match(serviceSource, /updateVacationWeeklyOffPolicy/);
+  assert.match(serviceSource, /entityType: "vacation_weekly_off_policy"/);
+  assert.match(serviceSource, /return "pending_manager"/);
   assert.match(serviceSource, /fetchWeeklyOffPolicyForTitle/);
   assert.match(routeSource, /request\.formData\(\)/);
+  assert.match(routeSource, /assertSameOriginMutation/);
+  assert.match(routeSource, /rejectOversizedVacationUploadRequest/);
+  assert.match(routeSource, /rejectOversizedVacationFile/);
+  assert.match(routeSource, /assertVacationRouteRateLimit/);
   assert.match(routeSource, /sickDocument/);
   assert.match(routeSource, /otherReason/);
   assert.match(routeSource, /compensatoryPhoto/);
@@ -157,7 +175,10 @@ export function runVacationModuleTests() {
   assert.match(requestAttachmentRouteSource, /NextResponse\.redirect/);
   assert.match(requestTimelineRouteSource, /getVacationRequestTimeline/);
   assert.match(requestEvidenceReviewRouteSource, /reviewVacationEvidence/);
+  assert.match(requestEvidenceReviewRouteSource, /assertSameOriginMutation/);
+  assert.match(requestEvidenceReviewRouteSource, /assertVacationRouteRateLimit/);
   assert.match(vacationAuditExportRouteSource, /generateVacationAuditExportWorkbook/);
+  assert.match(vacationAuditExportRouteSource, /assertVacationRouteRateLimit/);
   assert.match(vacationAuditExportRouteSource, /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/);
   assert.match(dailyNotificationsRouteSource, /runBirthdayNotifications/);
   assert.match(dailyNotificationsRouteSource, /runContractRenewalNotifications/);
@@ -175,6 +196,9 @@ export function runVacationModuleTests() {
   assert.match(nationalHolidaysSource, /dateRangeIndex/);
   assert.match(nationalHolidaysSource, /mergeHolidayRows/);
   assert.match(nationalHolidaysSource, /https:\/\/www\.googleapis\.com\/calendar\/v3\/calendars/);
+  assert.match(nationalHolidaysSource, /holidayFetchTimeoutMs/);
+  assert.match(nationalHolidaysSource, /holidayCacheTtlMs/);
+  assert.match(nationalHolidaysSource, /AbortController/);
   assert.match(vacationRequestFormSource, /National Egyptian holiday/);
   assert.match(vacationRequestFormSource, /Google Calendar/);
   assert.match(vacationRequestFormSource, /Official holiday adjacency/);
@@ -202,6 +226,8 @@ export function runVacationModuleTests() {
   assert.match(vacationReportSource, /deleteAdminRequest/);
   assert.match(vacationReportSource, /VacationAttachmentLinks/);
   assert.match(vacationReportSource, /Audit XLSX/);
+  assert.match(vacationReportSource, /canExport/);
+  assert.match(vacationReportSource, /status: "pending_manager"/);
   assert.match(vacationReportSource, /Evidence review/);
   assert.match(vacationReportSource, /Approval timeline/);
   assert.match(vacationReportSource, /Overlap intelligence/);
@@ -209,6 +235,7 @@ export function runVacationModuleTests() {
   assert.match(vacationReportSource, /pendingAction/);
   assert.doesNotMatch(vacationReportSource, /window\.confirm|window\.prompt/);
   assert.match(typesSource, /canAdminManage: boolean/);
+  assert.match(typesSource, /canExport: boolean/);
   assert.match(typesSource, /canReviewAttachments: boolean/);
   assert.match(typesSource, /VacationWeeklyOffPolicySnapshot/);
   assert.match(typesSource, /VacationTimelineEvent/);
@@ -263,6 +290,15 @@ export function runVacationModuleTests() {
   assert.match(governanceMigrationSource, /v2_vacation_requests_sla_pending_manager_idx/);
   assert.match(governanceMigrationSource, /v2_vacation_requests_sla_pending_hr_idx/);
   assert.doesNotMatch(governanceMigrationSource, /drop table|drop function|drop policy .*leave/i);
+  assert.match(complianceMigrationSource, /create table if not exists public\.api_rate_limit_buckets/);
+  assert.match(complianceMigrationSource, /create table if not exists public\.v2_vacation_retention_policies/);
+  assert.match(complianceMigrationSource, /'request_history', 2555/);
+  assert.match(complianceMigrationSource, /'evidence_attachments', 1095/);
+  assert.match(complianceMigrationSource, /'decision_tokens', 90/);
+  assert.match(complianceMigrationSource, /'sla_run_logs', 365/);
+  assert.match(complianceMigrationSource, /create table if not exists public\.v2_vacation_retention_purge_runs/);
+  assert.match(complianceMigrationSource, /enable row level security/);
+  assert.doesNotMatch(complianceMigrationSource, /drop table|drop function|drop policy .*leave/i);
   const crons = JSON.parse(vercelConfigSource).crons as Array<{ path: string; schedule: string }>;
   assert.deepEqual(crons, [{ path: "/api/notifications/daily", schedule: "0 4 * * *" }]);
 }

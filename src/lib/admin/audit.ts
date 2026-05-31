@@ -18,6 +18,7 @@ export type AuditEntityType =
   | "source_of_sales_product"
   | "user"
   | "vacation_request"
+  | "vacation_weekly_off_policy"
   | "weekly_plan"
   | "weekly_plan_day"
   | "workflow_registry";

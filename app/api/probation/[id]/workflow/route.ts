@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   getProbationRows,
   isProbationSchemaMissing,
@@ -15,6 +16,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const { id } = await params;
     const access = await resolveAccessContext(request);
     const body = await request.json();
