@@ -6,10 +6,22 @@ import {
 } from "@/lib/security/csrf";
 
 const previewReadOnlyAllowedMutationPaths = new Set([
+  "/api/admin/email-composer/preview",
+  "/api/admin/email-composer/resolve-recipients",
+  "/api/admin/email-reply/send",
+  "/api/admin/email-templates/preview",
+  "/api/admin/email-templates/simulate-recipients",
+  "/api/admin/email-templates/test",
+  "/api/admin/email-templates/validate-draft",
   "/api/auth/heartbeat",
   "/api/auth/login",
   "/api/auth/logout",
 ]);
+
+function isPreviewEmailTemplateMutationPath(pathname: string) {
+  return /^\/api\/admin\/email-templates\/[^/]+$/.test(pathname) ||
+    /^\/api\/admin\/email-templates\/[^/]+\/rollback$/.test(pathname);
+}
 
 function isPreviewReadOnlyEnabled() {
   return (
@@ -23,7 +35,8 @@ function isPreviewReadOnlyBlockedMutation(request: NextRequest) {
     return false;
   }
 
-  return !previewReadOnlyAllowedMutationPaths.has(request.nextUrl.pathname);
+  return !previewReadOnlyAllowedMutationPaths.has(request.nextUrl.pathname) &&
+    !isPreviewEmailTemplateMutationPath(request.nextUrl.pathname);
 }
 
 export function proxy(request: NextRequest) {
