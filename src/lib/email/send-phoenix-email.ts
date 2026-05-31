@@ -1,5 +1,6 @@
 import { phoenixEmailSignatureHostedUrl } from "@/emails/phoenix-email-layout";
 import { systemEmail, systemIdentity } from "@/config/system-settings";
+import { assertReachableEmailImage } from "@/lib/email/email-safety";
 
 const resendEndpoint = "https://api.resend.com/emails";
 
@@ -40,43 +41,7 @@ function resolveTestingRecipients() {
 }
 
 export async function assertReachablePhoenixEmailImage(url = phoenixEmailSignatureHostedUrl) {
-  let parsed: URL;
-
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error("Email signature image URL is invalid.");
-  }
-
-  if (parsed.protocol !== "https:") {
-    throw new Error("Email signature image URL must be HTTPS so email clients can load it.");
-  }
-
-  if (/localhost|127\.0\.0\.1|\/assets\//i.test(url)) {
-    throw new Error("Email signature image must not use localhost or a relative /assets URL.");
-  }
-
-  const verify = async (method: "GET" | "HEAD") =>
-    fetch(url, {
-      cache: "no-store",
-      headers: method === "GET" ? { Range: "bytes=0-0" } : undefined,
-      method,
-      signal: AbortSignal.timeout(8000),
-    });
-
-  let response = await verify("HEAD").catch(() => null);
-
-  if (!response?.ok || !String(response.headers.get("content-type") ?? "").toLowerCase().startsWith("image/")) {
-    response = await verify("GET").catch(() => null);
-  }
-
-  const contentType = response?.headers.get("content-type") ?? "";
-
-  if (!response?.ok || !contentType.toLowerCase().startsWith("image/")) {
-    throw new Error(
-      `Email signature image is not reachable as an image. Status: ${response?.status ?? "network_error"}.`,
-    );
-  }
+  return assertReachableEmailImage(url, { blockLocalAssets: true });
 }
 
 export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<SendPhoenixEmailResult> {
