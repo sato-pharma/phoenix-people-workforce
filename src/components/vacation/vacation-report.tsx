@@ -104,7 +104,7 @@ function emptyAdminVacationForm(employeeHrId = ""): AdminVacationFormState {
     endDate: "",
     notes: "",
     startDate: "",
-    status: "approved",
+    status: "pending_manager",
     vacationType: "annual",
   };
 }
@@ -1111,6 +1111,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   const summary = initialData?.summary;
   const dashboard = initialData?.dashboard;
   const canAdminManage = Boolean(initialData?.canAdminManage);
+  const canExport = Boolean(initialData?.canExport);
   const canReviewAttachments = Boolean(initialData?.canReviewAttachments);
   const showEntitlementsTab = activeTab === "entitlements";
   const showRequestsTab = activeTab === "requests";
@@ -1998,13 +1999,15 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     >
                       <Download className="h-3 w-3" /> CSV
                     </button>
-                    <a
-                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-orange-200 bg-orange-50 px-2.5 text-[10px] font-bold text-orange-700 transition hover:bg-orange-100 print:hidden"
-                      href={auditExportHref}
-                      title="Audit-grade XLSX export"
-                    >
-                      <Download className="h-3 w-3" /> Audit XLSX
-                    </a>
+                    {canExport ? (
+                      <a
+                        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-orange-200 bg-orange-50 px-2.5 text-[10px] font-bold text-orange-700 transition hover:bg-orange-100 print:hidden"
+                        href={auditExportHref}
+                        title="Audit-grade XLSX export"
+                      >
+                        <Download className="h-3 w-3" /> Audit XLSX
+                      </a>
+                    ) : null}
                     <button
                       className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
                       onClick={() => window.print()}

@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import {
   generateVacationAuditExportWorkbook,
   isVacationSchemaMissing,
   vacationErrorMessage,
 } from "@/lib/vacation/service";
+import { assertVacationRouteRateLimit } from "@/lib/vacation/route-guards";
 import type { VacationReportFilters } from "@/lib/vacation/types";
 
 export const runtime = "nodejs";
@@ -30,6 +32,13 @@ function filtersFromUrl(url: URL): VacationReportFilters {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    await assertVacationRouteRateLimit({
+      actor: access.loginId ?? access.hrId,
+      limit: 8,
+      request,
+      scope: "vacation:export",
+      windowMs: 60_000,
+    });
     const workbook = await generateVacationAuditExportWorkbook(access, filtersFromUrl(new URL(request.url)));
     const buffer = await workbook.xlsx.writeBuffer();
     return new Response(new Uint8Array(buffer), {
@@ -46,6 +55,12 @@ export async function GET(request: Request) {
     }
     if (isVacationSchemaMissing(error)) {
       return NextResponse.json({ error: "vacation_schema_missing", message, success: false }, { status: 409 });
+    }
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message, success: false },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
     }
     return NextResponse.json({ error: "vacation_audit_export_failed", message, success: false }, { status: 400 });
   }

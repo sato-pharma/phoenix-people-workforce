@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { isPayrollConflictError } from "@/lib/payroll/errors";
 import { runPayrollWorkflow } from "@/lib/payroll/service";
@@ -9,6 +10,9 @@ import type { PayrollWorkflowAction } from "@/lib/payroll/types";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const { id } = await params;
     const access = await resolveAccessContext(request);
     const body = await request.json();

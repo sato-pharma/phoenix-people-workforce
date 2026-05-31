@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   isVacationSchemaMissing,
   reviewVacationEvidence,
   vacationErrorMessage,
 } from "@/lib/vacation/service";
+import { assertVacationRouteRateLimit } from "@/lib/vacation/route-guards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,8 +18,18 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    await assertVacationRouteRateLimit({
+      actor: access.loginId ?? access.hrId,
+      limit: 30,
+      request,
+      scope: "vacation:evidence-review",
+      windowMs: 60_000,
+    });
     const body = await request.json();
     const review = await reviewVacationEvidence(access, {
       evidenceType: body.evidenceType,
@@ -32,6 +45,12 @@ export async function POST(
     }
     if (isVacationSchemaMissing(error)) {
       return NextResponse.json({ error: "vacation_schema_missing", message, success: false }, { status: 409 });
+    }
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message, success: false },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
     }
     return NextResponse.json({ error: "vacation_evidence_review_failed", message, success: false }, { status: 400 });
   }

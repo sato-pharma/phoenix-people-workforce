@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { createManagerExpenseAsAdmin } from "@/lib/outstation/service";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 
@@ -17,6 +18,9 @@ function managerExpenseCreateStatus(error: unknown) {
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertOutstationAdminAccess(access, "approve");
 

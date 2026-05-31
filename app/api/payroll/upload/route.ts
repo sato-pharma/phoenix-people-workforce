@@ -14,6 +14,7 @@ import {
 import { upsertPayrollResignationCandidates } from "@/lib/resignations/service";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
@@ -32,6 +33,9 @@ function payrollPeriodConflictResponse(conflict: ReturnType<typeof payrollPeriod
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertPermission(access, "payroll", "import");
     const formData = await request.formData();

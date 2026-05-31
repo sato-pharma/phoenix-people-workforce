@@ -38,6 +38,7 @@
     "phase36:post-apply-no-pending-migrations": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase36-post-apply-no-pending-migrations.ts",
     "audit:validate": "node --no-warnings --experimental-strip-types --experimental-specifier-resolution=node scripts/audit/validate-audit-registry.ts",
     "audit:dashboard": "node --no-warnings --experimental-strip-types --experimental-specifier-resolution=node scripts/audit/generate-management-dashboard.ts",
+    "leave:retention:dry-run": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/vacation-retention-purge.ts",
     "ci": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
