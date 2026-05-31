@@ -54,9 +54,10 @@ create or replace view public.v_recently_orphaned_managers as
     h.old_manager_hr_id,
     h.changed_at,
     e.full_name   as employee_name,
-    e.department_name
+    d.name        as department_name
   from public.employees_manager_history h
   left join public.employees e on lower(e.hr_id) = lower(h.employee_hr_id)
+  left join public.departments d on d.id = e.department_id
   where h.new_manager_hr_id is null
     and h.changed_at >= now() - interval '90 days'
   order by h.changed_at desc;
