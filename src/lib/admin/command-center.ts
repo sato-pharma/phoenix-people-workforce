@@ -105,6 +105,8 @@ export type AdminCommandCenterData = {
   operations: OperationalActivitySummary;
   payrollEligibleCount: number;
   dataUnavailable: string[];
+  /** ISO timestamp of when this snapshot was built (server-side), for the "data as of" label. */
+  generatedAt: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -562,6 +564,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     return {
       access: { showAdminModules, showFinancialModules },
       dataUnavailable,
+      generatedAt: new Date().toISOString(),
       health,
       operations,
       overview,
@@ -831,6 +834,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   return {
     access: { showAdminModules, showFinancialModules },
     dataUnavailable,
+    generatedAt: new Date().toISOString(),
     health,
     operations,
     overview: { hr, payroll, sales, expenses, recruitment, risk, leave, attendance },

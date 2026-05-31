@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
+import { COMMAND_PALETTE_EVENT } from "@/components/layout/command-palette";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import { MobileSidebar } from "@/components/layout/sidebar";
@@ -12,7 +13,6 @@ import { systemUiText } from "@/config/system-settings";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import type { ViewerIdentity } from "@/lib/auth/server";
-import { Input } from "@/components/ui/input";
 
 export function Topbar({
   navigationMode = "admin",
@@ -70,23 +70,34 @@ export function Topbar({
           <PhoenixLogo compact />
         </div>
 
-        <div className="relative hidden flex-1 md:block md:max-w-[280px] xl:max-w-xl">
+        <button
+          aria-label="Open command palette"
+          className={`relative hidden h-10 flex-1 items-center gap-2 rounded border pl-9 pr-2 text-left text-sm md:flex md:max-w-[280px] xl:max-w-xl ${
+            isAdminMode
+              ? "border-[#333333] bg-[#0B0B0B] text-[#64748B] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-[#F97316]"
+              : "border-[#E2E8F0] bg-[#FCFDFE] text-[#64748B] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] hover:border-[#FDBA74]"
+          }`}
+          onClick={() => window.dispatchEvent(new Event(COMMAND_PALETTE_EVENT))}
+          type="button"
+        >
           <Search className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${isAdminMode ? "text-[#F8B56B]" : "text-[#64748B]"}`} />
-          <Input
-            aria-label="Search"
-            className={`h-10 rounded pl-9 ${
-              isAdminMode
-                ? "border-[#333333] bg-[#0B0B0B] text-[#F8FAFC] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] placeholder:text-[#64748B] focus:border-[#F97316]"
-                : "border-[#E2E8F0] bg-[#FCFDFE] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]"
-            }`}
-            placeholder={systemUiText.globalSearchPlaceholder}
-          />
-        </div>
+          <span className="truncate">{systemUiText.globalSearchPlaceholder}</span>
+          <kbd className={`ml-auto hidden shrink-0 items-center gap-0.5 border px-1.5 py-0.5 text-[10px] font-semibold sm:flex ${
+            isAdminMode ? "border-[#333333] bg-[#111111] text-[#94A3B8]" : "border-[#E2E8F0] bg-white text-[#64748B]"
+          }`}>
+            ⌘K
+          </kbd>
+        </button>
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-3">
-          <button className={`inline-flex h-9 w-9 items-center justify-center rounded md:hidden ${
-            isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
-          }`}>
+          <button
+            aria-label="Open command palette"
+            className={`inline-flex h-9 w-9 items-center justify-center rounded md:hidden ${
+              isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+            }`}
+            onClick={() => window.dispatchEvent(new Event(COMMAND_PALETTE_EVENT))}
+            type="button"
+          >
             <Search className="h-5 w-5" />
           </button>
           <InAppNotificationsBell isAdminMode={isAdminMode} />

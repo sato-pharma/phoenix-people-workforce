@@ -6,6 +6,7 @@ import {
   renderPhoenixEmailText,
 } from "@/emails/phoenix-email-layout";
 import { summarizeEmailTemplateReadiness } from "@/lib/communication/metrics";
+import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -128,13 +129,53 @@ export type EmailTemplateRecipientRules = {
 };
 
 export type EmailTemplateRow = EmailTemplateDefinition & {
+  category: EmailTemplateCategory;
   createdAt: string;
+  draftEditedAt: string | null;
+  draftEditedBy: string | null;
+  hasDraftChanges: boolean;
+  health: EmailTemplateHealth;
+  publicationState: EmailTemplatePublicationState;
+  publishedIsActive: boolean;
+  publishedUpdatedAt: string;
   rules: EmailTemplateRecipientRules;
   updatedAt: string;
 };
 
 export type EmailTemplatePayload = Partial<Omit<EmailTemplateDefinition, "templateKey">> & {
+  changeReason?: string;
   rules?: Partial<EmailTemplateRecipientRules>;
+};
+
+export type EmailTemplateHistoryAction = "draft" | "publish" | "rollback" | "save";
+
+export type EmailTemplateHistoryEntry = {
+  action: EmailTemplateHistoryAction;
+  changedAt: string;
+  changedBy: string | null;
+  id: string;
+  reason: string | null;
+  rollbackSourceVersion: number | null;
+  rulesSnapshot: EmailTemplateRecipientRules;
+  templateKey: EmailTemplateKey;
+  templateSnapshot: EmailTemplateDefinition;
+  versionNumber: number;
+};
+
+export type EmailTemplateCategory =
+  | "Account Access"
+  | "Employee Lifecycle"
+  | "General"
+  | "Leave Management"
+  | "Recruitment";
+
+export type EmailTemplatePublicationState = "draft_changes" | "draft_unpublished" | "inactive" | "published";
+
+export type EmailTemplateHealth = {
+  issues: Array<{ message: string; severity: "error" | "warning" }>;
+  label: "Good" | "Needs Attention" | "Broken";
+  score: number;
+  status: "broken" | "good" | "needs_attention";
 };
 
 export type SendTemplatedEmailInput = {
@@ -196,6 +237,28 @@ type RulesTableRow = {
   to_roles: string[] | null;
 };
 
+type HistoryTableRow = {
+  action: string | null;
+  changed_at: string | null;
+  changed_by: string | null;
+  id: string;
+  reason: string | null;
+  rollback_source_version: number | null;
+  rules_snapshot: EmailTemplateRecipientRules | null;
+  template_key: string;
+  template_snapshot: EmailTemplateDefinition | null;
+  version_number: number | null;
+};
+
+type DraftTableRow = {
+  edited_at: string | null;
+  edited_by: string | null;
+  reason: string | null;
+  rules_snapshot: EmailTemplateRecipientRules | null;
+  template_key: string;
+  template_snapshot: EmailTemplateDefinition | null;
+};
+
 type Recipient = {
   email: string;
   name?: string | null;
@@ -212,6 +275,8 @@ type Contact = {
 };
 
 const emailTemplatesTable = "email_templates";
+const emailTemplateDraftsTable = "email_template_drafts";
+const emailTemplateHistoryTable = "email_template_history";
 const recipientRulesTable = "email_template_recipient_rules";
 const placeholderHints = [
   "employeeName",
@@ -454,6 +519,33 @@ const aliases: Record<string, EmailTemplateKey> = {
   user_creation: "user_created",
 };
 
+const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
+  birthday: "Employee Lifecycle",
+  contract_renewal: "Employee Lifecycle",
+  general: "General",
+  interview_feedback: "Recruitment",
+  interview_invitation: "Recruitment",
+  leave_approval: "Leave Management",
+  leave_rejection: "Leave Management",
+  leave_request: "Leave Management",
+  offer: "Recruitment",
+  password_reset: "Account Access",
+  password_setup: "Account Access",
+  probation_reminder: "Employee Lifecycle",
+  probation_workflow: "Employee Lifecycle",
+  resignation_workflow: "Employee Lifecycle",
+  user_created: "Account Access",
+};
+
+export const emailTemplateCategories = [
+  "All",
+  "Recruitment",
+  "Employee Lifecycle",
+  "Leave Management",
+  "Account Access",
+  "General",
+] as const;
+
 function emptyRules(toRoles: EmailTemplateRecipientRole[] = [], ccRoles: EmailTemplateRecipientRole[] = []): EmailTemplateRecipientRules {
   return {
     bccRoles: [],
@@ -515,15 +607,6 @@ function escapeHtml(value: unknown) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-function sanitizeHtml(value: string) {
-  return value
-    .replace(/<\s*script\b[^>]*>[\s\S]*?<\s*\/\s*script>/gi, "")
-    .replace(/<\s*iframe\b[^>]*>[\s\S]*?<\s*\/\s*iframe>/gi, "")
-    .replace(/\son\w+\s*=\s*(["']).*?\1/gi, "")
-    .replace(/\son\w+\s*=\s*[^\s>]+/gi, "")
-    .replace(/javascript:/gi, "");
 }
 
 function interpolate(template: string, variables: Record<string, string>, escapeValues: boolean) {
@@ -617,11 +700,66 @@ function tableMissing(error: unknown) {
   return (
     code === "42703" ||
     code === "42p01" ||
+    message.includes("email_template_history") ||
+    message.includes("email_template_drafts") ||
     message.includes("email_templates") ||
     message.includes("email_template_recipient_rules") ||
     message.includes("does not exist") ||
     message.includes("schema cache")
   );
+}
+
+function hasAnyRecipientRule(rules: EmailTemplateRecipientRules) {
+  return [
+    rules.bccRoles,
+    rules.bccStaticEmails,
+    rules.ccRoles,
+    rules.ccStaticEmails,
+    rules.toRoles,
+    rules.toStaticEmails,
+  ].some((values) => values.length > 0);
+}
+
+export function getEmailTemplateHealth(template: EmailTemplateDefinition, rules: EmailTemplateRecipientRules): EmailTemplateHealth {
+  const validation = validateEmailTemplatePayload({ ...template, rules });
+  const issues: EmailTemplateHealth["issues"] = [];
+  let score = 100;
+
+  if (!text(template.subject)) {
+    issues.push({ message: "Subject is missing.", severity: "error" });
+    score -= 25;
+  }
+  if (!text(template.bodyHtml) && !text(template.bodyText)) {
+    issues.push({ message: "Email body is missing.", severity: "error" });
+    score -= 30;
+  }
+  if (!hasAnyRecipientRule(rules)) {
+    issues.push({ message: "No recipients are configured.", severity: "error" });
+    score -= 30;
+  }
+  if (!template.isActive) {
+    issues.push({ message: "Template is inactive.", severity: "warning" });
+    score -= 10;
+  }
+  for (const issue of validation.issues) {
+    issues.push({ message: issue.message, severity: "error" });
+    score -= 15;
+  }
+  const staticEmails = [...rules.toStaticEmails, ...rules.ccStaticEmails, ...rules.bccStaticEmails];
+  if (staticEmails.some((email) => !email.toLowerCase().endsWith("@satopharma.com"))) {
+    issues.push({ message: "External static recipients need careful review before publishing.", severity: "warning" });
+    score -= 10;
+  }
+
+  const normalizedScore = Math.max(0, Math.min(100, score));
+  const hasErrors = issues.some((issue) => issue.severity === "error");
+  if (hasErrors || normalizedScore < 60) {
+    return { issues, label: "Broken", score: normalizedScore, status: "broken" };
+  }
+  if (issues.length > 0 || normalizedScore < 90) {
+    return { issues, label: "Needs Attention", score: normalizedScore, status: "needs_attention" };
+  }
+  return { issues, label: "Good", score: normalizedScore, status: "good" };
 }
 
 function mapTemplate(row: TemplateTableRow | null | undefined, key: EmailTemplateKey): EmailTemplateDefinition {
@@ -654,12 +792,49 @@ function mapRules(row: RulesTableRow | null | undefined, key: EmailTemplateKey):
   };
 }
 
-function toTemplateRow(template: EmailTemplateDefinition, row?: TemplateTableRow | null, rules?: RulesTableRow | null): EmailTemplateRow {
+function mapDraft(row: DraftTableRow | null | undefined, key: EmailTemplateKey) {
+  if (!row?.template_snapshot || !row.rules_snapshot) return null;
   return {
-    ...template,
+    editedAt: row.edited_at ?? new Date().toISOString(),
+    editedBy: row.edited_by ?? null,
+    reason: row.reason ?? null,
+    rules: normalizeRules(row.rules_snapshot, key),
+    template: {
+      ...templateDefaults[key],
+      ...row.template_snapshot,
+      templateKey: key,
+    },
+  };
+}
+
+function toTemplateRow(
+  template: EmailTemplateDefinition,
+  row?: TemplateTableRow | null,
+  rules?: RulesTableRow | null,
+  draftRow?: DraftTableRow | null,
+): EmailTemplateRow {
+  const liveRules = mapRules(rules, template.templateKey);
+  const draft = mapDraft(draftRow, template.templateKey);
+  const displayTemplate = draft?.template ?? template;
+  const displayRules = draft?.rules ?? liveRules;
+  const publishedIsActive = template.isActive;
+  const hasDraftChanges = Boolean(draft);
+  const publicationState: EmailTemplatePublicationState = hasDraftChanges
+    ? (publishedIsActive ? "draft_changes" : "draft_unpublished")
+    : (publishedIsActive ? "published" : "inactive");
+  return {
+    ...displayTemplate,
+    category: templateCategories[template.templateKey],
     createdAt: row?.created_at ?? new Date().toISOString(),
-    rules: mapRules(rules, template.templateKey),
-    updatedAt: row?.updated_at ?? new Date().toISOString(),
+    draftEditedAt: draft?.editedAt ?? null,
+    draftEditedBy: draft?.editedBy ?? null,
+    hasDraftChanges,
+    health: getEmailTemplateHealth(displayTemplate, displayRules),
+    publicationState,
+    publishedIsActive,
+    publishedUpdatedAt: row?.updated_at ?? new Date().toISOString(),
+    rules: displayRules,
+    updatedAt: draft?.editedAt ?? row?.updated_at ?? new Date().toISOString(),
   };
 }
 
@@ -683,14 +858,30 @@ async function readTemplateTables() {
   };
 }
 
-export async function getEmailTemplateCatalog(): Promise<EmailTemplateRow[]> {
+async function readTemplateDrafts() {
+  const result = await getSupabaseAdmin()
+    .from(emailTemplateDraftsTable)
+    .select("template_key,template_snapshot,rules_snapshot,edited_by,edited_at,reason");
+
+  if (result.error) {
+    if (tableMissing(result.error)) return [] as DraftTableRow[];
+    throw result.error;
+  }
+  return (result.data ?? []) as DraftTableRow[];
+}
+
+export async function getEmailTemplateCatalog(options: { includeDrafts?: boolean } = {}): Promise<EmailTemplateRow[]> {
   try {
-    const { templates, rules } = await readTemplateTables();
+    const [{ templates, rules }, drafts] = await Promise.all([
+      readTemplateTables(),
+      options.includeDrafts ? readTemplateDrafts() : Promise.resolve([] as DraftTableRow[]),
+    ]);
     return emailTemplateKeys
       .map((key) => {
         const templateRow = templates.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
         const rulesRow = rules.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
-        return toTemplateRow(mapTemplate(templateRow, key), templateRow, rulesRow);
+        const draftRow = drafts.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
+        return toTemplateRow(mapTemplate(templateRow, key), templateRow, rulesRow, draftRow);
       })
       .sort((left, right) => left.templateName.localeCompare(right.templateName));
   } catch (error) {
@@ -701,8 +892,16 @@ export async function getEmailTemplateCatalog(): Promise<EmailTemplateRow[]> {
   }
 }
 
+export function getEmailTemplateCategoryOptions() {
+  return [...emailTemplateCategories];
+}
+
+export async function getEmailTemplateDesignerCatalog() {
+  return getEmailTemplateCatalog({ includeDrafts: true });
+}
+
 export async function getEmailTemplateReadinessMetrics() {
-  const templates = await getEmailTemplateCatalog();
+  const templates = await getEmailTemplateCatalog({ includeDrafts: true });
   return summarizeEmailTemplateReadiness(templates.map((template) => ({
     bodyHtml: template.bodyHtml,
     bodyText: template.bodyText,
@@ -728,6 +927,90 @@ export async function getEmailTemplate(templateKey: string): Promise<EmailTempla
   }
 }
 
+function mapHistory(row: HistoryTableRow): EmailTemplateHistoryEntry | null {
+  const key = normalizeTemplateKey(row.template_key);
+  if (!key || !row.template_snapshot || !row.rules_snapshot || !row.version_number) return null;
+  const action = ["draft", "publish", "rollback", "save"].includes(String(row.action))
+    ? (row.action as EmailTemplateHistoryAction)
+    : "save";
+  return {
+    action,
+    changedAt: row.changed_at ?? new Date().toISOString(),
+    changedBy: row.changed_by ?? null,
+    id: row.id,
+    reason: row.reason ?? null,
+    rollbackSourceVersion: row.rollback_source_version ?? null,
+    rulesSnapshot: normalizeRules(row.rules_snapshot, key),
+    templateKey: key,
+    templateSnapshot: {
+      ...templateDefaults[key],
+      ...row.template_snapshot,
+      templateKey: key,
+    },
+    versionNumber: row.version_number,
+  };
+}
+
+async function recordTemplateHistory(input: {
+  action: EmailTemplateHistoryAction;
+  actor?: string | null;
+  reason?: string | null;
+  rollbackSourceVersion?: number | null;
+  rules: EmailTemplateRecipientRules;
+  template: EmailTemplateDefinition;
+}) {
+  const supabase = getSupabaseAdmin();
+  const latest = await supabase
+    .from(emailTemplateHistoryTable)
+    .select("version_number")
+    .eq("template_key", input.template.templateKey)
+    .order("version_number", { ascending: false })
+    .limit(1);
+
+  if (latest.error) {
+    if (tableMissing(latest.error)) return;
+    throw latest.error;
+  }
+
+  const currentVersion = Number((latest.data?.[0] as { version_number?: number } | undefined)?.version_number ?? 0);
+  const inserted = await supabase.from(emailTemplateHistoryTable).insert({
+    action: input.action,
+    changed_by: input.actor ?? null,
+    reason: text(input.reason),
+    rollback_source_version: input.rollbackSourceVersion ?? null,
+    rules_snapshot: input.rules,
+    template_key: input.template.templateKey,
+    template_snapshot: input.template,
+    version_number: currentVersion + 1,
+  });
+
+  if (inserted.error) {
+    if (tableMissing(inserted.error)) return;
+    throw inserted.error;
+  }
+}
+
+export async function getEmailTemplateHistory(templateKey: string) {
+  const key = normalizeTemplateKey(templateKey);
+  if (!key) return [];
+
+  const result = await getSupabaseAdmin()
+    .from(emailTemplateHistoryTable)
+    .select("id,template_key,version_number,action,template_snapshot,rules_snapshot,changed_by,changed_at,reason,rollback_source_version")
+    .eq("template_key", key)
+    .order("version_number", { ascending: false })
+    .limit(20);
+
+  if (result.error) {
+    if (tableMissing(result.error)) return [];
+    throw result.error;
+  }
+
+  return ((result.data ?? []) as HistoryTableRow[])
+    .map(mapHistory)
+    .filter((entry): entry is EmailTemplateHistoryEntry => Boolean(entry));
+}
+
 function normalizeRules(input: Partial<EmailTemplateRecipientRules> | undefined, key: EmailTemplateKey): EmailTemplateRecipientRules {
   const fallback = defaultRules[key];
   return {
@@ -742,30 +1025,143 @@ function normalizeRules(input: Partial<EmailTemplateRecipientRules> | undefined,
   };
 }
 
-export async function saveEmailTemplate(templateKey: string, payload: EmailTemplatePayload, actor?: string | null) {
+function buildTemplateSnapshot(
+  key: EmailTemplateKey,
+  payload: EmailTemplatePayload,
+  fallback: EmailTemplateDefinition,
+) {
+  return {
+    bodyHtml: sanitizeEmailTemplateHtml(text(payload.bodyHtml ?? fallback.bodyHtml)),
+    bodyText: text(payload.bodyText ?? fallback.bodyText),
+    closingText: text(payload.closingText ?? fallback.closingText),
+    description: text(payload.description ?? fallback.description),
+    greeting: text(payload.greeting ?? fallback.greeting),
+    isActive: Boolean(payload.isActive ?? fallback.isActive),
+    previewText: text(payload.previewText ?? fallback.previewText),
+    subject: text(payload.subject ?? fallback.subject),
+    templateKey: key,
+    templateName: text(payload.templateName ?? fallback.templateName),
+  } satisfies EmailTemplateDefinition;
+}
+
+async function saveEmailTemplateDraft(input: {
+  actor?: string | null;
+  key: EmailTemplateKey;
+  reason?: string | null;
+  rules: EmailTemplateRecipientRules;
+  template: EmailTemplateDefinition;
+}) {
+  const now = new Date().toISOString();
+  const result = await getSupabaseAdmin()
+    .from(emailTemplateDraftsTable)
+    .upsert(
+      {
+        edited_at: now,
+        edited_by: input.actor ?? null,
+        reason: text(input.reason),
+        rules_snapshot: input.rules,
+        template_key: input.key,
+        template_snapshot: input.template,
+      },
+      { onConflict: "template_key" },
+    );
+
+  if (result.error) {
+    if (tableMissing(result.error)) return null;
+    throw result.error;
+  }
+
+  await recordTemplateHistory({
+    action: "draft",
+    actor: input.actor,
+    reason: input.reason,
+    rules: input.rules,
+    template: input.template,
+  });
+
+  const published = await getEmailTemplate(input.key);
+  const fallback = published ?? toTemplateRow(templateDefaults[input.key], null, null);
+  return toTemplateRow(
+    {
+      bodyHtml: fallback.bodyHtml,
+      bodyText: fallback.bodyText,
+      closingText: fallback.closingText,
+      description: fallback.description,
+      greeting: fallback.greeting,
+      isActive: fallback.publishedIsActive,
+      previewText: fallback.previewText,
+      subject: fallback.subject,
+      templateKey: input.key,
+      templateName: fallback.templateName,
+    },
+    null,
+    null,
+    {
+      edited_at: now,
+      edited_by: input.actor ?? null,
+      reason: text(input.reason),
+      rules_snapshot: input.rules,
+      template_key: input.key,
+      template_snapshot: input.template,
+    },
+  );
+}
+
+async function clearEmailTemplateDraft(key: EmailTemplateKey) {
+  const result = await getSupabaseAdmin().from(emailTemplateDraftsTable).delete().eq("template_key", key);
+  if (result.error && !tableMissing(result.error)) throw result.error;
+}
+
+export async function saveEmailTemplate(
+  templateKey: string,
+  payload: EmailTemplatePayload,
+  actor?: string | null,
+  options: { action?: EmailTemplateHistoryAction; reason?: string | null; rollbackSourceVersion?: number | null } = {},
+) {
   const key = normalizeTemplateKey(templateKey);
   if (!key) throw new Error("Unsupported email template.");
   const validation = validateEmailTemplatePayload(payload);
   if (!validation.isValid) throw new EmailTemplateValidationError(validation.issues);
+  const action = options.action ?? (payload.isActive ? "publish" : "save");
+  const reason = text(options.reason ?? payload.changeReason);
+  if (action === "publish" && reason.length < 10) {
+    throw new EmailTemplateValidationError([{
+      field: "changeReason",
+      message: "Publishing an email template requires a change reason of at least 10 characters.",
+      type: "required",
+    }]);
+  }
 
   const current = await getEmailTemplate(key);
   const fallback = current ?? toTemplateRow(templateDefaults[key], null, null);
   const now = new Date().toISOString();
+  const templateSnapshot = buildTemplateSnapshot(key, payload, fallback);
+  const rules = normalizeRules(payload.rules, key);
+
+  if (action === "draft") {
+    return saveEmailTemplateDraft({
+      actor,
+      key,
+      reason,
+      rules,
+      template: templateSnapshot,
+    });
+  }
+
   const template = {
-    body_html: sanitizeHtml(text(payload.bodyHtml ?? fallback.bodyHtml)),
-    body_text: text(payload.bodyText ?? fallback.bodyText),
-    closing_text: text(payload.closingText ?? fallback.closingText),
-    description: text(payload.description ?? fallback.description),
-    greeting: text(payload.greeting ?? fallback.greeting),
-    is_active: Boolean(payload.isActive ?? fallback.isActive),
-    preview_text: text(payload.previewText ?? fallback.previewText),
-    subject: text(payload.subject ?? fallback.subject),
+    body_html: templateSnapshot.bodyHtml,
+    body_text: templateSnapshot.bodyText,
+    closing_text: templateSnapshot.closingText,
+    description: templateSnapshot.description,
+    greeting: templateSnapshot.greeting,
+    is_active: action === "publish" ? true : templateSnapshot.isActive,
+    preview_text: templateSnapshot.previewText,
+    subject: templateSnapshot.subject,
     template_key: key,
-    template_name: text(payload.templateName ?? fallback.templateName),
+    template_name: templateSnapshot.templateName,
     updated_at: now,
     updated_by: actor ?? null,
   };
-  const rules = normalizeRules(payload.rules, key);
 
   const supabase = getSupabaseAdmin();
   const templateResult = await supabase.from(emailTemplatesTable).upsert(template, { onConflict: "template_key" });
@@ -789,7 +1185,62 @@ export async function saveEmailTemplate(templateKey: string, payload: EmailTempl
   );
   if (ruleResult.error) throw ruleResult.error;
 
+  const savedTemplate: EmailTemplateDefinition = {
+    bodyHtml: template.body_html,
+    bodyText: template.body_text,
+    closingText: template.closing_text,
+    description: template.description,
+    greeting: template.greeting,
+    isActive: template.is_active,
+    previewText: template.preview_text,
+    subject: template.subject,
+    templateKey: key,
+    templateName: template.template_name,
+  };
+  await recordTemplateHistory({
+    action,
+    actor,
+    reason,
+    rollbackSourceVersion: options.rollbackSourceVersion,
+    rules,
+    template: savedTemplate,
+  });
+
+  if (action === "publish") await clearEmailTemplateDraft(key);
+
   return getEmailTemplate(key);
+}
+
+export async function rollbackEmailTemplate(input: {
+  actor?: string | null;
+  reason?: string | null;
+  templateKey: string;
+  versionNumber: number;
+}) {
+  const key = normalizeTemplateKey(input.templateKey);
+  if (!key) throw new Error("Unsupported email template.");
+  const reason = text(input.reason);
+  if (reason.length < 10) {
+    throw new EmailTemplateValidationError([{
+      field: "changeReason",
+      message: "Rollback requires a reason of at least 10 characters.",
+      type: "required",
+    }]);
+  }
+
+  const history = await getEmailTemplateHistory(key);
+  const selected = history.find((entry) => entry.versionNumber === input.versionNumber);
+  if (!selected) throw new Error("Template history version not found.");
+
+  return saveEmailTemplate(key, {
+    ...selected.templateSnapshot,
+    changeReason: reason,
+    rules: selected.rulesSnapshot,
+  }, input.actor, {
+    action: "rollback",
+    reason,
+    rollbackSourceVersion: selected.versionNumber,
+  });
 }
 
 async function loadContacts(): Promise<Contact[]> {
@@ -940,20 +1391,26 @@ export async function resolveTemplateRecipients(input: {
   candidateEmail?: string | null;
   context?: Partial<EmailTemplateContext>;
   fallbackTo?: string[] | null;
+  template?: EmailTemplatePayload;
   templateKey: string;
 }) {
   const key = normalizeTemplateKey(input.templateKey);
   if (!key) throw new Error("Unsupported email template.");
 
   const [template, contacts] = await Promise.all([getEmailTemplate(key), loadContacts()]);
-  const rules = template?.rules ?? defaultRules[key];
+  const rules = input.template?.rules ? normalizeRules(input.template.rules, key) : template?.rules ?? defaultRules[key];
   const employeeHrId = input.context?.employeeHrId;
   const employee = contacts.find((contact) => hrIdMatches(contact.hrId, employeeHrId)) ?? null;
+  let rawRecipientCount = 0;
 
-  const build = (roles: EmailTemplateRecipientRole[], staticEmails: string[]) => dedupe([
-    ...roles.flatMap((role) => resolveRoleRecipients(role, contacts, employee, input.candidateEmail, rules)),
-    ...staticEmails.map((email) => ({ email, name: "Static recipient" })),
-  ]);
+  const build = (roles: EmailTemplateRecipientRole[], staticEmails: string[]) => {
+    const raw = [
+      ...roles.flatMap((role) => resolveRoleRecipients(role, contacts, employee, input.candidateEmail, rules)),
+      ...staticEmails.map((email) => ({ email, name: "Static recipient" })),
+    ];
+    rawRecipientCount += raw.length;
+    return dedupe(raw);
+  };
 
   let to = build(rules.toRoles, rules.toStaticEmails);
   if (to.length === 0) {
@@ -962,7 +1419,71 @@ export async function resolveTemplateRecipients(input: {
   const cc = removeEmails(build(rules.ccRoles, rules.ccStaticEmails), to);
   const bcc = removeEmails(build(rules.bccRoles, rules.bccStaticEmails), [...to, ...cc]);
 
-  return { bcc, cc, to };
+  const finalRecipientCount = to.length + cc.length + bcc.length;
+
+  return {
+    bcc,
+    cc,
+    diagnostics: {
+      duplicateRecipientsRemoved: Math.max(0, rawRecipientCount - finalRecipientCount),
+      finalRecipientCount,
+      rawRecipientCount,
+    },
+    to,
+  };
+}
+
+function rulesUseAnyRole(rules: EmailTemplateRecipientRules, roles: EmailTemplateRecipientRole[]) {
+  const configured = [...rules.toRoles, ...rules.ccRoles, ...rules.bccRoles];
+  return roles.some((role) => configured.includes(role));
+}
+
+export async function simulateTemplateRecipients(input: {
+  candidateEmail?: string | null;
+  context?: Partial<EmailTemplateContext>;
+  template?: EmailTemplatePayload;
+  templateKey: string;
+}) {
+  const key = normalizeTemplateKey(input.templateKey);
+  if (!key) throw new Error("Unsupported email template.");
+  const current = input.template?.rules ? null : await getEmailTemplate(key);
+  const rules = input.template?.rules ? normalizeRules(input.template.rules, key) : current?.rules ?? defaultRules[key];
+  const resolved = await resolveTemplateRecipients({
+    candidateEmail: input.candidateEmail,
+    context: input.context,
+    template: input.template,
+    templateKey: key,
+  });
+  const warnings: string[] = [];
+  const employeeRoles: EmailTemplateRecipientRole[] = [
+    "employee",
+    "direct_manager",
+    "manager_of_manager",
+    "manager_chain",
+    "district_manager",
+    "regional_sales_manager",
+    "national_sales_manager",
+    "line_manager",
+    "same_line_selected_titles",
+  ];
+
+  if (rulesUseAnyRole(rules, ["candidate"]) && !text(input.candidateEmail)) {
+    warnings.push("Candidate routing is selected, but no candidate email was provided for this simulation.");
+  }
+
+  if (rulesUseAnyRole(rules, employeeRoles) && !text(input.context?.employeeHrId)) {
+    warnings.push("Employee or manager routing is selected, but no employee HR ID was provided for this simulation.");
+  }
+
+  if (resolved.diagnostics.finalRecipientCount === 0) {
+    warnings.push("No recipients resolved. Publishing this template may cause sends to be skipped.");
+  }
+
+  if (resolved.diagnostics.duplicateRecipientsRemoved > 0) {
+    warnings.push(`${resolved.diagnostics.duplicateRecipientsRemoved} duplicate recipient(s) were removed across TO, CC, and BCC.`);
+  }
+
+  return { ...resolved, warnings };
 }
 
 function contextVariables(input: Partial<EmailTemplateContext>, recipientName: string) {
@@ -1024,7 +1545,7 @@ export function renderEmailTemplate(
   const variables = contextVariables(context, recipientNameForGreeting(recipients, context));
   const subject = interpolate(template.subject, variables, false) || template.templateName;
   const greeting = interpolate(template.greeting, variables, false);
-  const bodyHtml = sanitizeHtml(interpolate(template.bodyHtml, variables, true));
+  const bodyHtml = sanitizeEmailTemplateHtml(interpolate(template.bodyHtml, variables, true));
   const bodyText = interpolate(template.bodyText, variables, false);
   const closingText = interpolate(template.closingText, variables, false);
   const previewText = interpolate(template.previewText, variables, false) || subject;
