@@ -23,7 +23,7 @@ export function sanitizeEmailTemplateHtml(value: string) {
       span: ["title"],
     },
     allowedSchemes: ["http", "https", "mailto", "tel"],
-    allowedTags: ["a", "b", "blockquote", "br", "em", "i", "li", "ol", "p", "span", "strong", "u", "ul"],
+    allowedTags: ["a", "b", "blockquote", "br", "em", "hr", "i", "li", "ol", "p", "span", "strong", "u", "ul"],
     disallowedTagsMode: "discard",
     enforceHtmlBoundary: true,
     transformTags: {
