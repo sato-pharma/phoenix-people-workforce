@@ -78,6 +78,8 @@ import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforce
 import { runVacationCalculationTests } from "./vacation-calculations.test.ts";
 import { runVacationModuleTests } from "./vacation-module.test.ts";
 import { runContractRenewalHardeningTests } from "./contract-renewal-hardening.test.ts";
+import { runContractNonRenewalTerminalTests } from "./contract-non-renewal-terminal.test.ts";
+import { runContractNonRenewalMigrationReadinessTests } from "./contract-non-renewal-migration-readiness.test.ts";
 import { runCvDatabaseTests } from "./cv-database.test.ts";
 import { runTransactionWorkflowAuditTests } from "./transaction-workflow-audit.test.ts";
 import { runPhase13BrowserSmokeRegressionTests } from "./phase13-browser-smoke-regression.test.ts";
@@ -193,6 +195,8 @@ await runTest("workflow registry enforcement", runWorkflowRegistryEnforcementTes
 await runTest("vacation calculations", runVacationCalculationTests);
 await runTest("vacation module", runVacationModuleTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);
+await runTest("contract non-renewal terminal lifecycle", runContractNonRenewalTerminalTests);
+await runTest("contract non-renewal migration readiness", runContractNonRenewalMigrationReadinessTests);
 await runTest("cv database", runCvDatabaseTests);
 await runTest("transaction workflow audit", runTransactionWorkflowAuditTests);
 await runTest("phase 13 browser smoke regressions", runPhase13BrowserSmokeRegressionTests);
