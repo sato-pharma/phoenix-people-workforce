@@ -3,7 +3,6 @@ import {
   resolveFixedSalaryAmounts,
   type PayrollPaymentMode,
 } from "@/lib/payroll/policy";
-import { isDevelopment } from "@/lib/env";
 import { googleGeocodeAddress } from "@/lib/google-maps/server";
 import { canonicalHrIdForDisplay, hrIdLookupKeys } from "@/lib/hr-id";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
@@ -71,6 +70,10 @@ export type EmployeeDirectoryRow = {
   lineName: string | null;
   managerHrId: string | null;
   managerName: string | null;
+  // Seat-continuity key: when this person's manager resigned and has not been
+  // replaced, this holds the departed manager's HR_ID (see
+  // src/lib/workforce/hierarchy-resolver.ts). Null in the normal case.
+  pendingManagerReplacementForHrId: string | null;
   medicalInsurance: number | null;
   medicalInsuranceStatus: string | null;
   medicalInsuranceNumber: string | null;
@@ -217,6 +220,7 @@ type EmployeeDbRow = {
   last_working_date?: string | null;
   line_id: number | null;
   manager_hr_id: string | null;
+  pending_manager_replacement_for_hr_id?: string | null;
   mobile_number: string | null;
   name_ar: string | null;
   national_id?: string | null;
@@ -763,6 +767,40 @@ async function loadCompensationByHrId(hrIds: string[]) {
   }
 }
 
+/**
+ * Defensive loader for the seat-continuity column
+ * `pending_manager_replacement_for_hr_id`. Fetched separately (not in the main
+ * employee select) so the directory keeps working in any environment/project
+ * where the column has not been provisioned yet — there it simply degrades to an
+ * empty map and the seat-continuity feature no-ops. Keyed by raw `hr_id`.
+ */
+async function loadPendingManagerReplacementByHrId(hrIds: string[]) {
+  const cleanedHrIds = Array.from(new Set(hrIds.map(compact).filter(Boolean))) as string[];
+  if (cleanedHrIds.length === 0) {
+    return new Map<string, string | null>();
+  }
+
+  const params = new URLSearchParams({
+    select: "hr_id,pending_manager_replacement_for_hr_id",
+    hr_id: textInFilter(cleanedHrIds),
+  });
+
+  try {
+    const rows = await supabaseRest<
+      Array<{ hr_id: string; pending_manager_replacement_for_hr_id?: string | null }>
+    >(`employees?${params}`);
+
+    return new Map(
+      rows.map((row) => [row.hr_id, row.pending_manager_replacement_for_hr_id ?? null]),
+    );
+  } catch (error) {
+    if (isEmployeeDirectorySchemaMissing(error)) {
+      return new Map<string, string | null>();
+    }
+    throw error;
+  }
+}
+
 async function loadResidenceByHrId(hrIds: string[]) {
   const cleanedHrIds = Array.from(new Set(hrIds.map(compact).filter(Boolean))) as string[];
   if (cleanedHrIds.length === 0) {
@@ -793,7 +831,6 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     return directoryCache.data;
   }
 
-  const startTime = Date.now();
   try {
     const result = await fetchEmployeeDirectory();
     directoryCache = {
@@ -842,6 +879,9 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   }
 
   const residenceByHrId = await loadResidenceByHrId(uniqueTextValues(employeeRows, "hr_id"));
+  const pendingReplacementByHrId = await loadPendingManagerReplacementByHrId(
+    uniqueTextValues(employeeRows, "hr_id"),
+  );
 
   // Check if we got joined data
   const hasJoinedData = employeeRows.length > 0 && (employeeRows[0].employee_compensation || employeeRows[0].departments);
@@ -943,6 +983,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         lineName,
         managerHrId: row.manager_hr_id,
         managerName: managerNameFromLookup(managerNames, row.manager_hr_id),
+        pendingManagerReplacementForHrId: pendingReplacementByHrId.get(row.hr_id) ?? null,
         medicalInsurance: row.medical_insurance ?? compensation?.medical_insurance ?? null,
         medicalInsuranceStatus: row.medical_insurance_status ?? null,
         medicalInsuranceNumber: row.medical_insurance_number ?? null,
@@ -1098,6 +1139,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         lineName,
         managerHrId: row.manager_hr_id,
         managerName: managerNameFromLookup(managerNames, row.manager_hr_id),
+        pendingManagerReplacementForHrId: pendingReplacementByHrId.get(row.hr_id) ?? null,
         medicalInsurance: row.medical_insurance ?? comp?.medical_insurance ?? null,
         medicalInsuranceStatus: row.medical_insurance_status ?? null,
         medicalInsuranceNumber: row.medical_insurance_number ?? null,
@@ -1212,6 +1254,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       lineName,
       managerHrId: row.manager_hr_id,
       managerName: managerNameFromLookup(managerNames, row.manager_hr_id),
+      pendingManagerReplacementForHrId: pendingReplacementByHrId.get(row.hr_id) ?? null,
       medicalInsurance: row.medical_insurance ?? compensation?.medical_insurance ?? null,
       medicalInsuranceStatus: row.medical_insurance_status ?? null,
       medicalInsuranceNumber: row.medical_insurance_number ?? null,
@@ -1317,6 +1360,9 @@ export async function getEmployeeDirectoryRows(
     ]);
 
   const residenceByHrId = await loadResidenceByHrId(uniqueTextValues(employeeRows, "hr_id"));
+  const pendingReplacementByHrId = await loadPendingManagerReplacementByHrId(
+    uniqueTextValues(employeeRows, "hr_id"),
+  );
 
   return employeeRows.map((row) => {
     const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
@@ -1355,6 +1401,7 @@ export async function getEmployeeDirectoryRows(
       lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
       managerHrId: row.manager_hr_id,
       managerName: managerNameFromLookup(managerNames, row.manager_hr_id),
+      pendingManagerReplacementForHrId: pendingReplacementByHrId.get(row.hr_id) ?? null,
       medicalInsurance: row.medical_insurance ?? null,
       medicalInsuranceStatus: row.medical_insurance_status ?? null,
       medicalInsuranceNumber: row.medical_insurance_number ?? null,
@@ -1926,6 +1973,7 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
       : null;
     const closedVacancy = await closeVacancyForOffer({
       area_id: payload.area_id,
+      department_id: payload.department_id,
       filled_by_hr_id: payload.hr_id,
       line_id: payload.line_id,
       manager_name: managerName,

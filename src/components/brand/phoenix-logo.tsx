@@ -1,5 +1,6 @@
 ﻿import Image from "next/image";
 
+import { systemAssets, systemIdentity } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
 
 type PhoenixLogoProps = {
@@ -21,21 +22,21 @@ export function PhoenixLogo({ compact = false, className }: PhoenixLogoProps) {
         )}
       >
         <Image
-          alt="Phoenix Workforce logo"
+          alt={systemIdentity.logoAlt}
           className={cn("object-contain", imageSize)}
           height={40}
           priority
-          src="/brand/phoenix-bird-icon.png"
+          src={systemAssets.iconLogo}
           width={40}
         />
       </div>
       {!compact ? (
         <div>
           <div className="text-sm font-semibold tracking-[0.28em] text-text">
-            PHOENIX
+            {systemIdentity.brandName.toUpperCase()}
           </div>
           <div className="text-[10px] font-semibold tracking-[0.34em] text-primary">
-            WORKFORCE
+            {systemIdentity.productName.toUpperCase()}
           </div>
         </div>
       ) : null}

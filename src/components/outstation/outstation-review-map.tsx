@@ -297,9 +297,9 @@ export function OutstationReviewMap({
 
   if (!browserKey) {
     return (
-      <Card className="rounded-[28px] border border-[#D8E0EA] bg-white/94 p-6 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur">
-        <p className="text-sm font-semibold text-slate-900">Map unavailable</p>
-        <p className="mt-2 text-sm text-slate-500">
+      <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+        <p className="text-sm font-semibold text-slate-800">Map unavailable</p>
+        <p className="mt-1 text-[13px] text-slate-500">
           NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY is missing from the environment.
         </p>
       </Card>
@@ -307,15 +307,15 @@ export function OutstationReviewMap({
   }
 
   return (
-    <Card className="rounded-[28px] border border-[#D8E0EA] bg-white/94 p-6 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur">
+    <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
       <div className="mb-4">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-500">
-          Route Review
-        </p>
-        <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-slate-950">
+        <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+          Route review
+        </span>
+        <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
           Residence versus captured destination
         </h2>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
           Calculation is based on the fastest available route. Alternative routes are shown for reference only.
         </p>
       </div>
@@ -323,31 +323,48 @@ export function OutstationReviewMap({
       {coordinatesReady(request) ? (
         <div className="space-y-3">
           {request ? (
-            <div className="grid gap-3 rounded-[22px] border border-[#E2E8F0] bg-[#F8FAFC] p-4 text-sm sm:grid-cols-3">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Fastest time</p>
-                <p className="mt-1 font-bold text-slate-950">
-                  {formatMinutes(selectedRoute?.durationInTrafficMinutes ?? selectedRoute?.durationMinutes ?? request.durationMinutes)}
+            <div className="grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 text-sm sm:grid-cols-3">
+              <div className="border-l-2 border-l-emerald-400 px-3 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  Fastest time
+                </p>
+                <p className="mt-1 text-[13px] font-semibold text-slate-800">
+                  {formatMinutes(
+                    selectedRoute?.durationInTrafficMinutes ??
+                      selectedRoute?.durationMinutes ??
+                      request.durationMinutes,
+                  )}
                 </p>
               </div>
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Fastest distance</p>
-                <p className="mt-1 font-bold text-slate-950">
+              <div className="border-l-2 border-l-sky-400 px-3 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  Fastest distance
+                </p>
+                <p className="mt-1 text-[13px] font-semibold text-slate-800">
                   {formatDistance(selectedRoute?.distanceKm ?? request.distanceFromResidenceKm)}
                 </p>
               </div>
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Routes found</p>
-                <p className="mt-1 font-bold text-slate-950">{routeCount.toLocaleString()}</p>
+              <div className="border-l-2 border-l-amber-400 px-3 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  Routes found
+                </p>
+                <p className="mt-1 text-[13px] font-semibold text-slate-800">
+                  {routeCount.toLocaleString()}
+                </p>
               </div>
             </div>
           ) : null}
-          <div className="h-[420px] rounded-[28px] border border-[#E2E8F0] bg-[#F8FAFC] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]" ref={mapRef} />
-          {!ready ? <p className="text-sm text-slate-500">Loading Google Maps...</p> : null}
-          {error ? <p className="text-sm text-amber-700">{error}</p> : null}
+          <div
+            className="h-[360px] rounded-md border border-gray-100 bg-slate-50 sm:h-[420px]"
+            ref={mapRef}
+          />
+          {!ready ? (
+            <p className="text-[13px] text-slate-500">Loading Google Maps...</p>
+          ) : null}
+          {error ? <p className="text-[13px] text-amber-700">{error}</p> : null}
         </div>
       ) : (
-        <div className="rounded-[24px] border border-[#E2E8F0] bg-[#F8FAFC] p-6 text-sm text-slate-600">
+        <div className="rounded-md border border-gray-100 bg-slate-50/60 px-3 py-3 text-[13px] text-slate-600">
           Select a request with both residence and captured coordinates to review the route on the map.
         </div>
       )}

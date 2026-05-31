@@ -1,4 +1,19 @@
+import { getPayrollScope, type AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+/**
+ * Function-level access guard (defense-in-depth) for the company-wide Payslips
+ * Center reads. The admin page already redirects non-COMPANY scopes, but the data
+ * functions must not be callable by a non-company-scope caller. System scope (the
+ * service role) is allowed for internal/admin use. Throws a Forbidden-prefixed
+ * error so route handlers map it to 403 via the shared isForbiddenError helper.
+ */
+function assertPayslipCenterAccess(access: AccessContext) {
+  if (access.scope === "system") return;
+  if (getPayrollScope(access) !== "COMPANY") {
+    throw new Error("Forbidden: Payslips Center requires company-scope payroll access.");
+  }
+}
 
 type SalaryRecordLookupRow = {
   area: string | null;
@@ -97,7 +112,8 @@ function uniqueRows(rows: SalaryRecordLookupRow[]) {
 
 const publishedPayslipStatuses = ["approved", "locked"] as const;
 
-export async function getPayslipCenterEmployeeOptions() {
+export async function getPayslipCenterEmployeeOptions(access: AccessContext) {
+  assertPayslipCenterAccess(access);
   const supabase = getSupabaseAdmin();
   const initialResult = await supabase
     .from("salary_records")
@@ -179,7 +195,8 @@ async function querySalaryRecords(column: "employee_code" | "full_name" | "hr_id
   return (data ?? []) as SalaryRecordLookupRow[];
 }
 
-export async function searchPayslipCenter(search: string | string[] | undefined) {
+export async function searchPayslipCenter(access: AccessContext, search: string | string[] | undefined) {
+  assertPayslipCenterAccess(access);
   const query = cleanSearch(search);
   if (!query) {
     return {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ function extractAddressComponent(
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "outstation", "read");
+    await assertOutstationAdminAccess(access, "approve");
 
     const { searchParams } = new URL(request.url);
     const placeId = searchParams.get("placeId")?.trim() ?? "";

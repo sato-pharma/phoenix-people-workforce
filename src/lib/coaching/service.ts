@@ -9,11 +9,17 @@ import {
 } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
+  isWithinManagerHierarchy,
+  lineScopeIncludesEmployee,
+  reportsToManagerSeat,
+} from "@/lib/workforce/hierarchy-resolver";
+import {
   buildCoachingScoreAnalytics,
   emptyCoachingScoreAnalytics,
   type CoachingScoreAnalyticsInputRow,
 } from "@/lib/coaching/analytics";
 import { calculateCoachingScore, normalizeCoachingScoreItems, toCoachingScoreRows } from "@/lib/coaching/scoring";
+import { assertCoachingWorkflowTransition } from "@/lib/coaching/workflow";
 import type {
   CoachingAcknowledgmentInput,
   CoachingPerformanceZone,
@@ -150,32 +156,13 @@ function findEmployee(rows: EmployeeDirectoryRow[], hrId: string) {
   return rows.find((row) => idsMatch(row.hrId, hrId)) ?? null;
 }
 
-function buildManagerGraph(rows: EmployeeDirectoryRow[]) {
-  const reports = new Map<string, string[]>();
+function buildCanonicalDirectory(rows: EmployeeDirectoryRow[]) {
+  const byCanonicalHrId = new Map<string, EmployeeDirectoryRow>();
   for (const row of rows) {
-    const manager = normalizeHrId(row.managerHrId);
-    const employee = normalizeHrId(row.hrId);
-    if (!manager || !employee) continue;
-    reports.set(manager, [...(reports.get(manager) ?? []), employee]);
+    const key = normalizeHrId(row.hrId);
+    if (key) byCanonicalHrId.set(key, row);
   }
-  return reports;
-}
-
-function isInHierarchy(rows: EmployeeDirectoryRow[], managerHrId: string, employeeHrId: string) {
-  const reports = buildManagerGraph(rows);
-  const target = normalizeHrId(employeeHrId);
-  const stack = [...(reports.get(normalizeHrId(managerHrId) ?? "") ?? [])];
-  const visited = new Set<string>();
-
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current || visited.has(current)) continue;
-    if (current === target) return true;
-    visited.add(current);
-    stack.push(...(reports.get(current) ?? []));
-  }
-
-  return false;
+  return byCanonicalHrId;
 }
 
 export function canAccessCoachingEmployee(
@@ -191,13 +178,26 @@ export function canAccessCoachingEmployee(
     return Boolean(coach && idsMatch(currentHrId, coach.hrId));
   }
   if (idsMatch(currentHrId, employee.hrId)) return true;
-  if (idsMatch(currentHrId, employee.managerHrId)) return true;
+  // TEAM (direct report): seat-continuity aware so a manager keeps their team
+  // after a sub-manager resignation (vacant-seat marker), staying consistent with
+  // the organogram. See src/lib/workforce/hierarchy-resolver.ts.
+  if (reportsToManagerSeat({ employee, viewerCanonicalHrId: currentHrId, canonicalize: normalizeHrId })) {
+    return true;
+  }
   if (access.role === "Regional Manager" || access.role === "Manager") {
-    return isInHierarchy(directory, currentHrId, employee.hrId);
+    // HIERARCHY: seat-continuity aware management-chain membership.
+    return isWithinManagerHierarchy({
+      employee,
+      byCanonicalHrId: buildCanonicalDirectory(directory),
+      viewerCanonicalHrId: currentHrId,
+      canonicalize: normalizeHrId,
+    });
   }
   if (lineRoles.has(access.role)) {
     const accessor = findEmployee(directory, currentHrId);
-    return Boolean(accessor?.lineId && employee.lineId && accessor.lineId === employee.lineId);
+    // Department-safe LINE scope: same line AND same department only, so a Sales
+    // line role never sees Marketing/Product employees on a shared product line.
+    return Boolean(accessor && lineScopeIncludesEmployee(accessor, employee));
   }
   return false;
 }
@@ -358,6 +358,12 @@ function scoreInputFromRows(rows: CoachingScoreItemRow[]) {
 }
 
 export async function createDraftCoachingReport(input: CoachingReportCreateInput, access: AccessContext) {
+  await assertCoachingWorkflowTransition({
+    access,
+    actionKey: "create_draft",
+    expectedNextStatus: "draft",
+    status: "draft",
+  });
   assertCanManageCoachingLifecycle(access);
   const coachHrId = requireActorHrId(access);
   const directory = await getEmployeeDirectoryRows();
@@ -426,6 +432,11 @@ export async function updateDraftCoachingReport(
   if (!editableStatuses.has(report.status)) {
     throw new Error("Only draft coaching reports can be edited.");
   }
+  await assertCoachingWorkflowTransition({
+    access,
+    actionKey: "update_draft",
+    status: report.status,
+  });
   assertCanManageCoachingLifecycle(access);
   assertOwnDraftOrOverride(access, report);
 
@@ -490,6 +501,12 @@ export async function submitCoachingReport(
   if (!editableStatuses.has(report.status)) {
     throw new Error("Only draft coaching reports can be submitted.");
   }
+  await assertCoachingWorkflowTransition({
+    access,
+    actionKey: "submit",
+    expectedNextStatus: "submitted",
+    status: report.status,
+  });
   assertCanManageCoachingLifecycle(access);
   assertOwnDraftOrOverride(access, report);
 
@@ -535,6 +552,12 @@ export async function lockSubmittedCoachingReport(id: string, access: AccessCont
   if (!submittedStatuses.has(report.status)) {
     throw new Error("Only submitted or employee-reviewed coaching reports can be locked.");
   }
+  await assertCoachingWorkflowTransition({
+    access,
+    actionKey: "lock",
+    expectedNextStatus: "locked",
+    status: report.status,
+  });
 
   const directory = await getEmployeeDirectoryRows();
   const medicalRep = findEmployee(directory, report.medical_rep_hr_id);
@@ -571,6 +594,14 @@ export async function acknowledgeCoachingReport(
   input: CoachingAcknowledgmentInput = {},
 ) {
   const employeeHrId = requireActorHrId(access);
+  const report = await loadReport(id);
+  if (!report) throw new Error("Coaching report was not found.");
+  await assertCoachingWorkflowTransition({
+    access,
+    actionKey: "acknowledge",
+    expectedNextStatus: "reviewed_by_employee",
+    status: report.status,
+  });
   const acknowledgmentText = cleanText(input.acknowledgmentText) ?? "I acknowledge and submit this coaching report review.";
   const { data, error } = await getSupabaseAdmin().rpc("acknowledge_coaching_report", {
     p_acknowledgment_text: acknowledgmentText,
@@ -586,7 +617,7 @@ export async function acknowledgeCoachingReport(
     actor: actorId(access),
     metadata: { acknowledgmentText },
     newValues: { status: "reviewed_by_employee" },
-    oldValues: { status: "submitted" },
+    oldValues: { status: report.status },
     reportId: id,
   });
 

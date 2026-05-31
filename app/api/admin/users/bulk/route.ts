@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 
+import { systemDocuments } from "@/config/system-settings";
 import { getAccessControlDashboard, phoenixLines, upsertAccessUser } from "@/lib/admin/access-control";
 import { assertPermission, parseRoleStrict, phoenixRoles } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -141,7 +142,7 @@ function buildTemplateWorkbook(
   isDirectorySourceFresh: boolean,
 ) {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Phoenix Workforce";
+  workbook.creator = systemDocuments.workbookCreator;
   workbook.created = new Date();
 
   const template = workbook.addWorksheet("Users Template");
@@ -231,7 +232,7 @@ function buildTemplateWorkbook(
   };
 
   const guide = workbook.addWorksheet("Template Notes");
-  guide.addRow(["Phoenix Workforce Bulk Import Template"]);
+  guide.addRow([systemDocuments.titles.userBulkImportTemplate]);
   guide.addRow(["Allowed lines:", phoenixLines.join(", ")]);
   guide.addRow(["Allowed roles:", phoenixRoles.join(", ")]);
   guide.addRow(["Use the Employees Directory sheet to copy valid HR_ID and Line values"]);

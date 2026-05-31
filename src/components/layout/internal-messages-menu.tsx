@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Loader2, Mail, RefreshCw, Search, Send, XCircle } from "lucide-react";
 
+import { systemUiText } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
 
 type InternalEmailStatus = "failed" | "not_requested" | "pending" | "sent" | "skipped";
@@ -176,15 +177,15 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
       <button
         aria-expanded={open}
         aria-label="Messages"
-        className={`relative hidden h-10 w-10 items-center justify-center rounded-lg sm:inline-flex ${
+        className={`relative hidden h-9 w-9 items-center justify-center rounded sm:inline-flex ${
           isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
         }`}
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
-        <Mail className="h-5 w-5" />
+        <Mail className="h-[18px] w-[18px]" />
         {unreadCount > 0 ? (
-          <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#F97316] px-1 text-[9px] font-black text-white">
+          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded bg-[#F97316] px-1 text-[9px] font-black text-white">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         ) : null}
@@ -193,7 +194,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
       {open ? (
         <div
           className={cn(
-            "absolute right-0 top-full z-30 mt-2 grid w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded-[20px] border shadow-2xl xl:grid-cols-[0.95fr_1.05fr]",
+            "absolute right-0 top-full z-30 mt-1.5 grid w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded border shadow-lg xl:grid-cols-[0.95fr_1.05fr]",
             isAdminMode ? "border-[#333333] bg-[#050505]" : "border-[#E2E8F0] bg-white",
           )}
         >
@@ -207,7 +208,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
               </div>
               <button
                 aria-label="Refresh messages"
-                className={cn("flex h-8 w-8 items-center justify-center rounded-lg", isAdminMode ? "text-[#94A3B8] hover:bg-[#111111]" : "text-[#64748B] hover:bg-[#F8FAFC]")}
+                className={cn("flex h-8 w-8 items-center justify-center rounded", isAdminMode ? "text-[#94A3B8] hover:bg-[#111111]" : "text-[#64748B] hover:bg-[#F8FAFC]")}
                 onClick={() => void loadMessages()}
                 type="button"
               >
@@ -217,27 +218,27 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
 
             <div className="max-h-[520px] overflow-auto p-3">
               {error ? (
-                <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                <div className="mb-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
                   {error}
                 </div>
               ) : null}
               {success ? (
-                <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
+                <div className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
                   {success}
                 </div>
               ) : null}
 
               <div className="mb-2 flex items-center gap-2">
-                <span className="rounded-full bg-[#FFF7ED] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#C2410C]">
+                <span className="rounded bg-[#FFF7ED] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#C2410C]">
                   Inbox {inboxMessages.length}
                 </span>
-                <span className={cn("rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em]", isAdminMode ? "bg-[#111111] text-[#94A3B8]" : "bg-[#F8FAFC] text-[#64748B]")}>
+                <span className={cn("rounded px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em]", isAdminMode ? "bg-[#111111] text-[#94A3B8]" : "bg-[#F8FAFC] text-[#64748B]")}>
                   Sent {sentMessages.length}
                 </span>
               </div>
 
               {messages.length === 0 ? (
-                <div className={cn("rounded-xl px-4 py-8 text-center text-sm", isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]")}>
+                <div className={cn("rounded px-4 py-8 text-center text-sm", isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]")}>
                   {loading ? "Loading messages..." : "No internal messages yet."}
                 </div>
               ) : (
@@ -245,26 +246,26 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
                   {messages.map((message) => (
                     <article
                       className={cn(
-                        "rounded-2xl border px-3 py-3",
+                        "rounded border px-3 py-2.5",
                         isAdminMode ? "border-[#1f2937] bg-[#0B0B0B]" : "border-[#E2E8F0] bg-[#FCFDFE]",
                       )}
                       key={message.id}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className={cn("truncate text-sm font-black", isAdminMode ? "text-white" : "text-[#0F172A]")}>{message.subject}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className={cn("whitespace-nowrap text-sm font-black", isAdminMode ? "text-white" : "text-[#0F172A]")}>{message.subject}</p>
                           <p className={cn("mt-1 text-xs", isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]")}>
                             {message.direction === "inbox" ? `From ${message.sender.name}` : `To ${message.recipient.name}`}
                           </p>
                         </div>
-                        <span className="shrink-0 rounded-full bg-[#FFF7ED] px-2 py-0.5 text-[10px] font-black uppercase text-[#C2410C]">
+                        <span className="shrink-0 rounded bg-[#FFF7ED] px-2 py-0.5 text-[10px] font-black uppercase text-[#C2410C]">
                           {message.direction}
                         </span>
                       </div>
                       <p className={cn("mt-2 line-clamp-2 text-xs leading-5", isAdminMode ? "text-[#CBD5E1]" : "text-[#475569]")}>{message.body}</p>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
                         <span className={isAdminMode ? "text-[#64748B]" : "text-[#94A3B8]"}>{formatMessageTime(message.createdAt)}</span>
-                        <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-bold", message.emailStatus === "sent" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>
+                        <span className={cn("inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold", message.emailStatus === "sent" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>
                           {message.emailStatus === "sent" ? <CheckCircle2 className="h-3 w-3" /> : message.emailStatus === "failed" ? <XCircle className="h-3 w-3" /> : null}
                           {emailStatusText(message.emailStatus, message.emailError)}
                         </span>
@@ -279,7 +280,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
           <section className="p-4">
             <p className={cn("text-sm font-black", isAdminMode ? "text-white" : "text-[#0F172A]")}>Send Message</p>
             <p className={cn("mt-1 text-xs", isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]")}>
-              Send inside Phoenix Workforce and optionally email the recipient.
+              {systemUiText.internalMessageComposerDescription}
             </p>
 
             <div className="mt-4 space-y-3">
@@ -289,7 +290,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
                   <input
                     className={cn(
-                      "h-11 w-full rounded-xl border pl-9 pr-3 text-sm font-semibold outline-none",
+                      "h-10 w-full rounded border pl-9 pr-3 text-sm font-semibold outline-none",
                       isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-[#F97316]" : "border-[#E2E8F0] bg-white text-[#0F172A] focus:border-[#FDBA74]",
                     )}
                     onChange={(event) => {
@@ -303,10 +304,10 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
                   {recipientLoading ? <Loader2 className="absolute right-3 top-3.5 h-4 w-4 animate-spin text-[#F97316]" /> : null}
                 </div>
                 {recipients.length > 0 ? (
-                  <div className={cn("mt-2 max-h-40 overflow-auto rounded-xl border p-1", isAdminMode ? "border-[#333333] bg-[#0B0B0B]" : "border-[#E2E8F0] bg-white")}>
+                  <div className={cn("mt-2 max-h-40 overflow-auto rounded border p-1", isAdminMode ? "border-[#333333] bg-[#0B0B0B]" : "border-[#E2E8F0] bg-white")}>
                     {recipients.map((recipient) => (
                       <button
-                        className={cn("block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold", isAdminMode ? "text-[#D4DDE8] hover:bg-[#111111]" : "text-[#0F172A] hover:bg-[#F8FAFC]")}
+                        className={cn("block w-full rounded px-3 py-2 text-left text-xs font-semibold", isAdminMode ? "text-[#D4DDE8] hover:bg-[#111111]" : "text-[#0F172A] hover:bg-[#F8FAFC]")}
                         key={recipient.id}
                         onClick={() => selectRecipient(recipient)}
                         type="button"
@@ -321,7 +322,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
               <label className="block">
                 <span className={cn("mb-1 block text-[10px] font-black uppercase tracking-[0.12em]", isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]")}>Subject</span>
                 <input
-                  className={cn("h-11 w-full rounded-xl border px-3 text-sm font-semibold outline-none", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-[#F97316]" : "border-[#E2E8F0] bg-white text-[#0F172A] focus:border-[#FDBA74]")}
+                  className={cn("h-10 w-full rounded border px-3 text-sm font-semibold outline-none", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-[#F97316]" : "border-[#E2E8F0] bg-white text-[#0F172A] focus:border-[#FDBA74]")}
                   onChange={(event) => setForm((current) => ({ ...current, subject: event.target.value }))}
                   placeholder="Message subject"
                   value={form.subject}
@@ -331,14 +332,14 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
               <label className="block">
                 <span className={cn("mb-1 block text-[10px] font-black uppercase tracking-[0.12em]", isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]")}>Message</span>
                 <textarea
-                  className={cn("min-h-32 w-full resize-y rounded-xl border px-3 py-3 text-sm font-medium leading-6 outline-none", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-[#F97316]" : "border-[#E2E8F0] bg-white text-[#0F172A] focus:border-[#FDBA74]")}
+                  className={cn("min-h-28 w-full resize-y rounded border px-3 py-2.5 text-sm font-medium leading-6 outline-none", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-[#F97316]" : "border-[#E2E8F0] bg-white text-[#0F172A] focus:border-[#FDBA74]")}
                   onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))}
                   placeholder="Write the internal message..."
                   value={form.body}
                 />
               </label>
 
-              <label className={cn("flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold", isAdminMode ? "border-[#333333] text-[#D4DDE8]" : "border-[#E2E8F0] text-[#475569]")}>
+              <label className={cn("flex items-center gap-2 rounded border px-3 py-2 text-xs font-bold", isAdminMode ? "border-[#333333] text-[#D4DDE8]" : "border-[#E2E8F0] text-[#475569]")}>
                 <input
                   checked={form.sendEmail}
                   className="h-4 w-4 accent-[#F97316]"
@@ -349,7 +350,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
               </label>
 
               <button
-                className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA580C] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-10 w-full items-center justify-center rounded bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA580C] disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={sending}
                 onClick={() => void sendMessage()}
                 type="button"

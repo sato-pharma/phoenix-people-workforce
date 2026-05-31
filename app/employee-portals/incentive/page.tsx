@@ -7,6 +7,7 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { getEmployeePortalIncentiveData } from "@/lib/employee-portal/service";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,11 @@ export default async function EmployeePortalIncentivePageRoute() {
   let data = null;
   try {
     data = await getEmployeePortalIncentiveData(access);
-  } catch {
+  } catch (error) {
+    logPortalFailure(
+      { route: "/employee-portals/incentive", module: "incentive", role: access.role, hrId: access.hrId },
+      error,
+    );
     data = null;
   }
 

@@ -7,6 +7,7 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { getSalesDashboard } from "@/lib/sales/service";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +62,11 @@ export default async function EmployeePortalSalesPage({
     if (normalizedProducts.length > 0) filters.products = normalizedProducts;
     
     initialData = await getSalesDashboard(filters, accessContext);
-  } catch {
+  } catch (error) {
+    logPortalFailure(
+      { route: "/employee-portals/sales", module: "sales", role: accessContext.role, hrId: accessContext.hrId },
+      error,
+    );
     initialData = null;
   }
 

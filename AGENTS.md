@@ -116,6 +116,15 @@ If a workflow is repeatedly manual:
 
 Never assume it is safe to work directly on main.
 
+Current Phoenix Workforce branch policy:
+
+- `main` is production-only and must not be edited directly.
+- `codex/work-from-production` is the active working branch for new edits, functions, fixes, and feature work.
+- Production URL: `https://phoenix-workforce.vercel.app`.
+- Working preview URL: `https://phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects.vercel.app`.
+- Vercel should keep only two active deployments: production `main` and the `codex/work-from-production` preview.
+- `.vercel/` is local Vercel CLI metadata and must remain ignored/uncommitted.
+
 Prefer:
 - dedicated feature branches
 - isolated commits
@@ -347,6 +356,12 @@ Optimize for:
 - low-risk changes
 - operational reliability
 - reduced manual effort
+
+Current Vercel production safety note:
+
+- Always verify the exact public domain `https://phoenix-workforce.vercel.app` after production deploys.
+- Do not rely only on workspace aliases.
+- The current Vercel Hobby cron setup allows only two daily crons. Do not restore sub-daily Vercel crons unless the account is upgraded or an external scheduler is approved.
 
 ---
 

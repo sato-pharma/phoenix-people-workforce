@@ -48,6 +48,8 @@ export function runPhase24RealAuthRlsApiSmokeTests() {
   assert.match(loginRoute, /createSupabaseAuthSession/);
   assert.match(loginRoute, /phoenixSupabaseAccessTokenCookieName/);
   assert.match(loginRoute, /phoenixSupabaseRefreshTokenCookieName/);
+  assert.match(loginRoute, /InvalidLoginPayloadError/);
+  assert.match(loginRoute, /invalid_request/);
   assert.match(rlsServer, /supabase\.auth\.setSession/);
   assert.match(rlsServer, /phoenixSupabaseAccessTokenCookieName/);
 }

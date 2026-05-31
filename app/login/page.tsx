@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { PremiumLoginPage } from "@/components/auth/premium-login-page";
+import { systemIdentity } from "@/config/system-settings";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import {
   getCookieValue,
@@ -11,7 +12,7 @@ import {
 } from "@/lib/auth/session-token";
 
 export const metadata: Metadata = {
-  title: "Phoenix Workforce",
+  title: systemIdentity.appName,
 };
 
 export const dynamic = "force-dynamic";

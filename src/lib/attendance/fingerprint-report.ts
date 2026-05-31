@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   normalizeAttendanceHrId,
   resolveActiveAttendancePolicy,
-  resolveAttendanceStatus,
+  resolvePolicyAttendanceStatus,
   summarizeFingerprintRows,
 } from "@/lib/attendance/metrics";
 
@@ -86,6 +86,7 @@ type RawPunchRow = {
 };
 
 type EmployeeRow = {
+  base_salary: number | null;
   department_id: number | null;
   full_name: string | null;
   hr_id: string;
@@ -101,12 +102,25 @@ type PolicyRow = {
   effective_from: string;
   effective_to: string | null;
   grace_minutes: number | null;
+  id: number;
   is_active: boolean | null;
   policy_name: string | null;
   scheduled_end: string | null;
   scheduled_start: string | null;
   target_type: string | null;
   target_value: string | null;
+};
+
+type PolicyRuleRow = {
+  deduction_days: number | string | null;
+  deduction_value: number | string | null;
+  event_type: string | null;
+  from_minutes: number | null;
+  is_active: boolean | null;
+  policy_id: number;
+  recommended_action: string | null;
+  sort_order: number | null;
+  to_minutes: number | null;
 };
 
 type PunchBucket = {
@@ -132,7 +146,7 @@ export const fingerprintReportColumns: FingerprintReportColumn[] = [
   { always: true, key: "status", label: "Status" },
   { always: true, key: "recommendedAction", label: "Recommended Action" },
   { always: true, key: "deductionDays", label: "Deduction Days" },
-  { always: true, key: "deductionValue", label: "Deduction Value" },
+  { always: true, key: "deductionValue", label: "Deduction Amount" },
 ];
 
 function pad(value: number) {
@@ -174,6 +188,19 @@ function localTime(date: Date) {
     minute: "2-digit",
     timeZone: reportTimeZone,
   }).format(date);
+}
+
+function localMinutesOfDay(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    timeZone: reportTimeZone,
+  }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? NaN);
+  const hour = value("hour");
+  const minute = value("minute");
+  return Number.isInteger(hour) && Number.isInteger(minute) ? hour * 60 + minute : null;
 }
 
 function displayPolicyTime(value: string | null | undefined) {
@@ -313,22 +340,28 @@ export async function getFingerprintAttendanceReport(input: {
   const effectiveDateFrom = hasDateRange ? dateFrom : todayKey();
   const effectiveDateTo = hasDateRange ? dateTo : todayKey();
 
-  const [employeeResult, policyResult] = await Promise.all([
+  const [employeeResult, policyResult, ruleResult] = await Promise.all([
     supabase
       .from("employees")
-      .select("hr_id,full_name,job_title,department_id")
+      .select("hr_id,full_name,job_title,department_id,base_salary")
       .order("full_name"),
     supabase
       .from("attendance_policy_groups")
-      .select("policy_name,target_type,target_value,scheduled_start,scheduled_end,grace_minutes,is_active,effective_from,effective_to")
+      .select("id,policy_name,target_type,target_value,scheduled_start,scheduled_end,grace_minutes,is_active,effective_from,effective_to")
       .eq("is_active", true)
       .order("target_type")
       .order("target_value")
       .order("effective_from", { ascending: false }),
+    supabase
+      .from("attendance_policy_rules")
+      .select("policy_id,event_type,from_minutes,to_minutes,recommended_action,deduction_days,deduction_value,is_active,sort_order")
+      .eq("is_active", true)
+      .order("sort_order"),
   ]);
 
   if (employeeResult.error) throw employeeResult.error;
   if (policyResult.error) throw policyResult.error;
+  if (ruleResult.error) throw ruleResult.error;
 
   const allEmployees = uniqueEmployeesByHrId((employeeResult.data ?? []) as EmployeeRow[]);
   const allDepartmentIds = new Set<number>();
@@ -351,6 +384,12 @@ export async function getFingerprintAttendanceReport(input: {
   }
 
   const policyRows = (policyResult.data ?? []) as PolicyRow[];
+  const rulesByPolicy = new Map<number, PolicyRuleRow[]>();
+  for (const rule of (ruleResult.data ?? []) as PolicyRuleRow[]) {
+    const list = rulesByPolicy.get(rule.policy_id) ?? [];
+    list.push(rule);
+    rulesByPolicy.set(rule.policy_id, list);
+  }
   const policyDetails = allEmployees
     .map((employee) => {
       const policy = resolveActiveAttendancePolicy(employee, policyRows, effectiveDateFrom, effectiveDateTo);
@@ -443,8 +482,20 @@ export async function getFingerprintAttendanceReport(input: {
     const durationMs = firstPunch && lastPunch && hasDistinctVisibleLastPunch
       ? lastPunch.getTime() - firstPunch.getTime()
       : 0;
-    const status = resolveAttendanceStatus(visiblePunchTimes.length, durationMs);
     const employee = employeeMap.get(bucket.employeeHrId);
+    const policy = employee
+      ? resolveActiveAttendancePolicy(employee, policyRows, bucket.reportDate, bucket.reportDate)
+      : null;
+    const policyRules = policy ? rulesByPolicy.get(policy.id) ?? [] : [];
+    const status = resolvePolicyAttendanceStatus({
+      baseSalary: employee?.base_salary ?? null,
+      durationMinutes: Math.floor(durationMs / 60000),
+      firstPunchMinutes: firstPunch ? localMinutesOfDay(firstPunch) : null,
+      lastPunchMinutes: lastPunch ? localMinutesOfDay(lastPunch) : null,
+      policy,
+      rules: policyRules,
+      visiblePunchCount: visiblePunchTimes.length,
+    });
     const department = typeof employee?.department_id === "number"
       ? departmentMap.get(employee.department_id) ?? ""
       : "";
@@ -459,13 +510,13 @@ export async function getFingerprintAttendanceReport(input: {
       deviceUserId: bucket.deviceUserId,
       employeeHrId: bucket.employeeHrId,
       employeeName: employee?.full_name?.trim() || bucket.employeeHrId,
-      earlyLeaveMinutes: "",
-      graceMinutes: "",
+      earlyLeaveMinutes: status.earlyLeaveMinutes,
+      graceMinutes: policy?.grace_minutes == null ? "" : String(policy.grace_minutes),
       jobTitle: employee?.job_title?.trim() || "",
-      lateMinutes: "",
+      lateMinutes: status.lateMinutes,
       recommendedAction: status.recommendedAction,
-      scheduledEnd: "",
-      scheduledStart: "",
+      scheduledEnd: displayPolicyTime(policy?.scheduled_end),
+      scheduledStart: displayPolicyTime(policy?.scheduled_start),
       sortKey: `${bucket.reportDate}\u0000${bucket.employeeHrId}`,
       status: status.status,
       timeLong: durationText(durationMs),

@@ -1,18 +1,30 @@
 import { redirect } from "next/navigation";
-import { ReceiptText } from "lucide-react";
 
 import { NsmTeamExpensesDashboard } from "@/components/employee-portal/nsm-team-expenses-dashboard";
 import { TeamExpensesFilters } from "@/components/employee-portal/team-expenses-filters";
 import {
-  EmployeePortalActionBar,
   EmployeePortalPageShell,
   EmployeePortalEmptyState,
 } from "@/components/employee-portal/enterprise-shell";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { ScopeBadge } from "@/components/employee-portal/scope-badge";
+import { Card } from "@/components/ui/card";
+import { assertPermission, isNationalSalesManager, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getNsmTeamExpenses } from "@/lib/employee-portal/service";
 
 export const dynamic = "force-dynamic";
+
+/* ---------- print stylesheet ---------- */
+
+const printStyles = `
+@media print {
+  body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  nav, header, footer, button, [data-no-print] { display: none !important; }
+  .print\\:break-inside-avoid { break-inside: avoid; }
+  .print\\:shadow-none { box-shadow: none !important; }
+  * { border-color: #e2e8f0 !important; }
+}
+`;
 
 type TeamExpensesPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -27,7 +39,7 @@ export default async function TeamExpensesPage(
     redirect("/overview");
   }
 
-  if (!access.role.toLowerCase().includes("national sales manager")) {
+  if (!isNationalSalesManager(access.role)) {
     redirect("/employee-portals");
   }
 
@@ -53,8 +65,8 @@ export default async function TeamExpensesPage(
   if (!data) {
     return (
       <EmployeePortalEmptyState
-        message="Unable to load DSM expenses for your line at the moment."
-        title="Team Expenses Data Unavailable"
+        message="Unable to load team expenses for your line at the moment."
+        title="Team Expenses Unavailable"
       />
     );
   }
@@ -75,26 +87,34 @@ export default async function TeamExpensesPage(
     )
       ? data.selectedRequestType
       : null;
+
   return (
     <EmployeePortalPageShell
-      description={`${data.scopeLabel} · DSM expense workload only`}
+      badge="Expenses"
+      description={`${data.scopeLabel} - DSM expense workload`}
       title="Team Expenses"
     >
-      <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        <EmployeePortalActionBar
-          actions={
-            <>
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
-                Filters
-              </span>
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
-                <ReceiptText className="h-3.5 w-3.5 inline-block" />
-                <span className="ml-1">Data scope: {validPeriods.length} periods</span>
-              </span>
-            </>
-          }
-        />
-        <div className="mt-4">
+      {/* Print stylesheet */}
+      <style dangerouslySetInnerHTML={{ __html: printStyles }} />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <ScopeBadge scope={access.scope} />
+      </div>
+
+      <div
+        className="max-w-full min-w-0 space-y-5 overflow-x-hidden text-slate-900 sm:space-y-7"
+        dir="auto"
+      >
+        {/* Filters Card */}
+        <Card className="rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none" data-no-print>
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+              Filters
+            </span>
+            <span className="text-[11px] font-medium text-slate-400">
+              {validPeriods.length > 0 ? `${validPeriods.length} periods` : "All periods"} / {validDsm ? "1 DSM" : `${data.dsms.length} DSMs`}
+            </span>
+          </div>
           <TeamExpensesFilters
             dsms={data.dsms.map((dsm) => ({ hrId: dsm.hrId, name: dsm.name }))}
             periods={data.periods}
@@ -103,9 +123,11 @@ export default async function TeamExpensesPage(
             selectedPeriods={validPeriods}
             selectedRequestType={validRequestType ?? ""}
           />
-        </div>
+        </Card>
+
+        {/* Dashboard Content */}
+        <NsmTeamExpensesDashboard data={data} />
       </div>
-      <NsmTeamExpensesDashboard data={data} />
     </EmployeePortalPageShell>
   );
 }

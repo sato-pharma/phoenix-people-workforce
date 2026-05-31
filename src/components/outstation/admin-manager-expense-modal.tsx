@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   AlertCircle,
@@ -41,7 +41,7 @@ type DistanceResult = {
 const SESSION_TOKEN = Math.random().toString(36).slice(2);
 
 const panelClassName =
-  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
+  "rounded-lg border border-[#D8E0EA] bg-white/94 shadow-[0_1px_3px_rgba(15,23,42,0.06)] backdrop-blur";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -57,7 +57,7 @@ function InputField({
 }: React.InputHTMLAttributes<HTMLInputElement> & { className?: string }) {
   return (
     <input
-      className={`h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm placeholder:font-normal placeholder:text-[#94A3B8] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60 ${className ?? ""}`}
+      className={`h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm placeholder:font-normal placeholder:text-[#94A3B8] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60 ${className ?? ""}`}
       {...props}
     />
   );
@@ -69,7 +69,7 @@ function SelectField({
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { children: React.ReactNode }) {
   return (
     <select
-      className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60"
+      className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60"
       {...props}
     >
       {children}
@@ -289,7 +289,7 @@ export function AdminManagerExpenseModal({
       };
 
       if (!response.ok || !payload.request) {
-        setSubmitError(payload.message ?? "Failed to save manager expense.");
+        setSubmitError(payload.message ?? "Failed to save outstation expense.");
       } else {
         onSaved(payload.request);
       }
@@ -312,19 +312,19 @@ export function AdminManagerExpenseModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl overflow-hidden rounded-[24px] border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
+      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-white/98 px-6 py-5">
           <div>
             <span className="inline-flex rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-[#EA580C]">
-              Manager expense · Admin
+              Manual outstation expense - Admin
             </span>
             <h2 className="mt-2 text-xl font-black text-[#0F172A]">
-              {isEdit ? "Edit manager expense" : "Create manager expense"}
+              {isEdit ? "Edit outstation expense" : "Add manual outstation expense"}
             </h2>
             {(targetName ?? request?.employeeName) ? (
               <p className="mt-1 text-sm font-semibold text-[#64748B]">
-                {targetName ?? request?.employeeName} · {employeeHrId}
+                {targetName ?? request?.employeeName} - {employeeHrId}
               </p>
             ) : null}
           </div>
@@ -349,7 +349,7 @@ export function AdminManagerExpenseModal({
                 value={employeeHrId}
               />
               <p className="mt-1 text-xs text-[#64748B]">
-                Enter the HR ID of the manager for whom you are creating this expense.
+                Enter the HR ID of the employee for whom you are adding this expense.
               </p>
             </div>
           ) : null}
@@ -360,7 +360,7 @@ export function AdminManagerExpenseModal({
             <PlacesAutocompleteInput
               disabled={resolvingPlace || calculatingDistance}
               onSelect={(prediction) => void resolveAndCalculate(prediction)}
-              placeholder="Search city or location…"
+              placeholder="Search city or locationâ€¦"
               value={destination?.label}
             />
 
@@ -374,15 +374,15 @@ export function AdminManagerExpenseModal({
             {resolvingPlace ? (
               <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-[#64748B]">
                 <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" />
-                Resolving place details…
+                Resolving place detailsâ€¦
               </div>
             ) : destination ? (
               <div className="mt-2 space-y-1">
                 {(destination.city ?? destination.area) ? (
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-[#047857]">
                     <MapPin className="h-3.5 w-3.5" />
-                    {[destination.city, destination.area].filter(Boolean).join(" · ")}
-                    {destination.country ? ` · ${destination.country}` : ""}
+                    {[destination.city, destination.area].filter(Boolean).join(" Â· ")}
+                    {destination.country ? ` Â· ${destination.country}` : ""}
                   </div>
                 ) : null}
                 <p className="text-[11px] text-[#94A3B8]">
@@ -397,12 +397,12 @@ export function AdminManagerExpenseModal({
             <div className={`${panelClassName} flex items-center gap-3 p-4`}>
               <Loader2 className="h-5 w-5 animate-spin text-[#F97316]" />
               <div>
-                <p className="text-sm font-black text-[#0F172A]">Calculating road distance…</p>
+                <p className="text-sm font-black text-[#0F172A]">Calculating road distanceâ€¦</p>
                 <p className="text-xs text-[#64748B]">Using Google Maps Routes API</p>
               </div>
             </div>
           ) : distanceError ? (
-            <div className="flex items-start gap-2 rounded-2xl border border-[#FECACA] bg-[#FEF2F2] p-4 text-sm">
+            <div className="flex items-start gap-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] p-4 text-sm">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#B91C1C]" />
               <div>
                 <p className="font-black text-[#B91C1C]">Distance calculation failed</p>
@@ -414,7 +414,7 @@ export function AdminManagerExpenseModal({
               <div className="mb-3 flex items-center gap-2">
                 <Route className="h-4 w-4 text-[#F97316]" />
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
-                  Road distance · Google Maps
+                  Road distance Â· Google Maps
                 </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -507,7 +507,7 @@ export function AdminManagerExpenseModal({
 
           {/* Claimed amount */}
           <div>
-            <FieldLabel>Claimed amount (EGP) — optional</FieldLabel>
+            <FieldLabel>Claimed amount (EGP) â€” optional</FieldLabel>
             <InputField
               min="0"
               onChange={(e) => setClaimedAmount(e.target.value)}
@@ -522,7 +522,7 @@ export function AdminManagerExpenseModal({
           <div>
             <FieldLabel>Notes</FieldLabel>
             <textarea
-              className="w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 py-2.5 text-sm font-semibold text-[#0F172A] shadow-sm placeholder:font-normal placeholder:text-[#94A3B8] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+              className="w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 py-2.5 text-sm font-semibold text-[#0F172A] shadow-sm placeholder:font-normal placeholder:text-[#94A3B8] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Optional notes for this expense"
               rows={3}
@@ -532,7 +532,7 @@ export function AdminManagerExpenseModal({
 
           {/* Submit error */}
           {submitError ? (
-            <div className="flex items-start gap-2 rounded-2xl border border-[#FECACA] bg-[#FEF2F2] p-4 text-sm">
+            <div className="flex items-start gap-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] p-4 text-sm">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#B91C1C]" />
               <p className="font-semibold text-[#B91C1C]">{submitError}</p>
             </div>
@@ -557,7 +557,7 @@ export function AdminManagerExpenseModal({
               ) : (
                 <CheckCircle2 className="h-4 w-4" />
               )}
-              {isEdit ? "Save changes" : "Create expense"}
+              {isEdit ? "Save changes" : "Add expense"}
             </Button>
           </div>
         </form>

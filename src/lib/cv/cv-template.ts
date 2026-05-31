@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { systemDocuments } from "@/config/system-settings";
 import { cvDatabaseHeaders } from "@/lib/cv/cv-database";
 
 const dataStartRow = 6;
@@ -24,7 +25,7 @@ function border(color = "FFE2E8F0"): Partial<ExcelJS.Borders> {
 
 function styleTitle(sheet: ExcelJS.Worksheet) {
   sheet.mergeCells("A1:H1");
-  sheet.getCell("A1").value = "Phoenix CV Database Upload Template";
+  sheet.getCell("A1").value = systemDocuments.titles.cvDatabaseUploadTemplate;
   sheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 18 };
   sheet.getCell("A1").fill = solidFill("FF111827");
   sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
@@ -177,7 +178,7 @@ function addInstructions(workbook: ExcelJS.Workbook) {
 
 export async function generateCvDatabaseTemplateWorkbook() {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Phoenix Workforce";
+  workbook.creator = systemDocuments.workbookCreator;
   workbook.created = new Date();
 
   const sheet = workbook.addWorksheet("CV Database", {

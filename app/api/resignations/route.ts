@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     }
 
     const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
-    await createResignation(payload.resignation, actor);
+    await createResignation(payload.resignation, actor, access);
     return NextResponse.json(await getResignationsDashboardData());
   } catch (error) {
     const { message, status } = resignationsApiError(error);

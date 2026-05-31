@@ -46,13 +46,13 @@ function PayrollStat({
   const toggleLabel = isValueVisible ? `Hide ${label}` : `Show ${label}`;
 
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
+    <div className="group relative overflow-hidden rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
       <div className="flex items-start justify-between gap-3">
         <p className="min-w-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
         <button
           aria-label={toggleLabel}
           aria-pressed={isValueVisible}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-2 focus-visible:outline-orange-500 focus-visible:outline-offset-1"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-2 focus-visible:outline-orange-500 focus-visible:outline-offset-1"
           onClick={() => setIsValueVisible((current) => !current)}
           title={toggleLabel}
           type="button"
@@ -70,9 +70,9 @@ function PayrollStat({
 export function PayrollSummaryPanel({ data }: { data: MedicalRepPortalData }) {
   if (data.empty.payroll) {
     return (
-      <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
         <div className="flex h-full flex-col items-center justify-center text-center">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-50 text-slate-500">
+          <div className="flex h-11 w-11 items-center justify-center rounded bg-slate-50 text-slate-500">
             <MinusCircle className="h-5 w-5" />
           </div>
           <p className="mt-3 text-sm font-semibold text-slate-900">Payroll Unavailable</p>
@@ -89,7 +89,7 @@ export function PayrollSummaryPanel({ data }: { data: MedicalRepPortalData }) {
   const netRatio = Math.min(100, Math.round((Math.max(0, data.payroll.netSalary) / gross) * 100));
 
   return (
-    <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+    <Card className="rounded border border-slate-100 bg-white p-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
       <div className="flex items-center justify-between">
         <p className="text-lg font-semibold text-slate-900">Payroll Summary</p>
         <Link className="text-sm font-medium text-orange-600 hover:text-orange-700" href="/payslips">
@@ -101,7 +101,7 @@ export function PayrollSummaryPanel({ data }: { data: MedicalRepPortalData }) {
       <p className="mt-3 text-3xl font-semibold text-slate-900">{egp(data.payroll.netSalary)}</p>
       <p className="text-sm text-slate-500">Net Pay</p>
 
-      <div className="mt-5 space-y-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+      <div className="mt-5 space-y-2 rounded border border-slate-100 bg-slate-50/70 p-3">
         <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Gross</span><span className="font-semibold text-slate-900">{egp(data.payroll.grossSalary)}</span></div>
         <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Additions</span><span className="font-semibold text-emerald-600">{egp(data.payroll.totalAdditions)}</span></div>
         <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Deductions</span><span className="font-semibold text-rose-600">{egp(data.payroll.totalDeductions)}</span></div>
@@ -110,19 +110,19 @@ export function PayrollSummaryPanel({ data }: { data: MedicalRepPortalData }) {
       <div className="mt-4 space-y-2">
         <div>
           <div className="mb-1 flex items-center justify-between text-xs text-slate-500"><span>Net Pay</span><span>{netRatio}%</span></div>
-          <div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-orange-500" style={{ width: `${netRatio}%` }} /></div>
+          <div className="h-2 rounded-sm bg-slate-100"><div className="h-2 rounded-sm bg-orange-500" style={{ width: `${netRatio}%` }} /></div>
         </div>
         <div>
           <div className="mb-1 flex items-center justify-between text-xs text-slate-500"><span>Additions</span><span>{additionsRatio}%</span></div>
-          <div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-emerald-500" style={{ width: `${additionsRatio}%` }} /></div>
+          <div className="h-2 rounded-sm bg-slate-100"><div className="h-2 rounded-sm bg-emerald-500" style={{ width: `${additionsRatio}%` }} /></div>
         </div>
         <div>
           <div className="mb-1 flex items-center justify-between text-xs text-slate-500"><span>Deductions</span><span>{deductionsRatio}%</span></div>
-          <div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-rose-400" style={{ width: `${deductionsRatio}%` }} /></div>
+          <div className="h-2 rounded-sm bg-slate-100"><div className="h-2 rounded-sm bg-rose-400" style={{ width: `${deductionsRatio}%` }} /></div>
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-slate-100 bg-white px-3 py-2 text-sm text-slate-700">
+      <div className="mt-4 rounded border border-slate-100 bg-white px-3 py-2 text-sm text-slate-700">
         Incentive = <span className="font-semibold text-slate-900">{additionsRatio}%</span> of your gross pay
       </div>
     </Card>
@@ -163,15 +163,15 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
   return (
     <section id="payroll" className="space-y-4">
       {payrollMissing ? (
-        <div className="rounded-[18px] border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <div className="flex flex-col gap-4 rounded-2xl border border-slate-100 bg-slate-50/70 p-6">
+        <div className="rounded border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          <div className="flex flex-col gap-4 rounded border border-slate-100 bg-slate-50/70 p-6">
             <div className="mx-auto flex max-w-md flex-col items-center text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-500 shadow">
+              <div className="flex h-12 w-12 items-center justify-center rounded bg-white text-slate-500 shadow">
                 <MinusCircle className="h-5 w-5" />
               </div>
               <p className="mt-4 text-sm font-semibold text-slate-900">Payroll Unavailable</p>
               <p className="mt-1 text-sm text-slate-600">Payslip data has not been uploaded yet.</p>
-              <Button className="mt-5 rounded-xl" disabled variant="secondary">
+              <Button className="mt-5 rounded" disabled variant="secondary">
                 View Payslip
               </Button>
             </div>
@@ -179,10 +179,10 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
+          <div className="rounded border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="min-w-0 space-y-3">
-                <p className="inline-flex w-fit items-center rounded-full border border-orange-100 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#B45309]">
+                <p className="inline-flex w-fit items-center rounded border border-orange-100 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#B45309]">
                   Payroll
                 </p>
                 <h2 className="text-[1.4rem] font-semibold leading-tight text-slate-900">
@@ -216,7 +216,7 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[1.1fr_1.5fr]">
-            <Card className="rounded-[18px] border border-slate-200 bg-white p-5">
+            <Card className="rounded border border-slate-200 bg-white p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-900">Salary Breakdown</p>
@@ -227,7 +227,7 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
                 <button
                   aria-label={breakdownToggleLabel}
                   aria-pressed={isBreakdownVisible}
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-2 focus-visible:outline-orange-500 focus-visible:outline-offset-1"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-2 focus-visible:outline-orange-500 focus-visible:outline-offset-1"
                   onClick={() => setIsBreakdownVisible((current) => !current)}
                   title={breakdownToggleLabel}
                   type="button"
@@ -236,7 +236,7 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
                 </button>
               </div>
 
-              <div className="mt-4 divide-y divide-slate-100 rounded-2xl border border-slate-100">
+              <div className="mt-4 divide-y divide-slate-100 rounded border border-slate-100">
                 {breakdownRows.map((row) => (
                   <div className="grid gap-2 px-3 py-3 sm:grid-cols-[1fr_auto]" key={row.label}>
                     <div className="min-w-0">
@@ -251,44 +251,44 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
               </div>
             </Card>
 
-            <Card className="rounded-[18px] border border-slate-200 bg-white p-4 sm:p-5">
+            <Card className="rounded border border-slate-200 bg-white p-4 sm:p-5">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-sm font-semibold text-slate-900">Payslip History</p>
-                <span className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-500">
+                <span className="rounded border border-slate-200 px-3 py-1 text-xs text-slate-500">
                   {historyRows.length} record{historyRows.length === 1 ? "" : "s"}
                 </span>
               </div>
-              <div className="max-h-[320px] overflow-y-auto overflow-x-hidden rounded-2xl border border-slate-100">
-                <table className="w-full table-fixed text-left text-xs sm:text-sm">
+              <div className="max-h-[320px] overflow-y-auto overflow-x-hidden rounded border border-slate-100">
+                <table className="w-full border-collapse table-fixed text-left text-xs sm:text-sm">
                   <colgroup>
                     <col className="w-[32%]" />
                     <col className="w-[34%]" />
                     <col className="w-[34%]" />
                   </colgroup>
                   <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
-                      <th className="px-2 py-2 sm:px-3">Month</th>
-                      <th className="px-2 py-2 sm:px-3">Status</th>
-                      <th className="px-2 py-2 text-right sm:px-3">Action</th>
+                    <tr>
+                      <th className="border border-slate-100 bg-slate-50 px-2 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 sm:px-3">Month</th>
+                      <th className="border border-slate-100 bg-slate-50 px-2 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 sm:px-3">Status</th>
+                      <th className="border border-slate-100 bg-slate-50 px-2 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 sm:px-3">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {historyRows.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-6 text-center text-slate-500" colSpan={3}>
+                        <td className="border border-slate-100 px-3 py-6 text-center text-slate-500" colSpan={3}>
                           No payroll history records found yet.
                         </td>
                       </tr>
                     ) : (
                       historyRows.map((row) => (
-                        <tr className="border-b border-slate-100 transition hover:bg-slate-50" key={row.id}>
-                          <td className="px-2 py-2.5 font-medium text-slate-900 sm:px-3">{row.label}</td>
-                          <td className="px-2 py-2.5 sm:px-3">
-                            <Badge className="max-w-full truncate px-2 py-0.5 text-[10px] sm:px-2.5 sm:text-xs" variant={payrollStatusTone(row.status)}>
+                        <tr className="transition hover:bg-slate-50/60" key={row.id}>
+                          <td className="border border-slate-100 px-2 py-2.5 font-medium text-slate-900 sm:px-3">{row.label}</td>
+                          <td className="border border-slate-100 px-2 py-2.5 sm:px-3">
+                            <Badge className="max-w-full whitespace-nowrap px-2 py-0.5 text-[10px] sm:px-2.5 sm:text-xs" variant={payrollStatusTone(row.status)}>
                               {row.status.replace(/_/g, " ")}
                             </Badge>
                           </td>
-                          <td className="px-2 py-2.5 text-right sm:px-3">
+                          <td className="border border-slate-100 px-2 py-2.5 text-right sm:px-3">
                             <Link href={`/api/payroll/${row.id}/payslips`} target="_blank">
                               <Button className="h-8 max-w-full px-2 text-[11px] sm:px-3 sm:text-xs" variant="secondary">
                                 <span className="sm:hidden">View</span>

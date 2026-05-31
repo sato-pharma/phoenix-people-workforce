@@ -1,4 +1,4 @@
-import { Award, CalendarDays, CheckCircle2, ClipboardCheck, Target, UserRound } from "lucide-react";
+﻿import { Award, CalendarDays, CheckCircle2, ClipboardCheck, Target, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 
 import {
@@ -136,7 +136,7 @@ function StatTile({
   value: string;
 }) {
   return (
-    <div className="rounded-[22px] border border-[#E2E8F0] bg-white px-4 py-3 shadow-sm">
+    <div className="rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
@@ -175,13 +175,13 @@ function ScoreItemNotes({ score }: { score: CoachingScoreItemRow | undefined }) 
   return (
     <div className="mt-3 grid gap-2 md:grid-cols-2">
       {area ? (
-        <div className="rounded-2xl border border-orange-100 bg-orange-50/70 px-3 py-2.5">
+        <div className="rounded-md border border-orange-100 bg-orange-50/70 px-3 py-2.5">
           <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#EA580C]">Area to be Improved</p>
           <p className="mt-1 whitespace-pre-wrap text-xs font-semibold leading-5 text-[#7C2D12]">{area}</p>
         </div>
       ) : null}
       {strength ? (
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5">
+        <div className="rounded-md border border-emerald-100 bg-emerald-50/70 px-3 py-2.5">
           <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-700">Strength Point</p>
           <p className="mt-1 whitespace-pre-wrap text-xs font-semibold leading-5 text-emerald-900">{strength}</p>
         </div>
@@ -289,7 +289,7 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
               <div className={cn(adminInsetPanelClassName, "p-4")} key={category}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#0F172A] text-sm font-black text-[#FDBA74]">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[#0F172A] text-sm font-black text-[#FDBA74]">
                       {categoryLetters[category]}
                     </span>
                     <div>
@@ -308,7 +308,7 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
                     const score = scoreRow?.score;
                     return (
                       <div
-                        className="rounded-2xl border border-[#E2E8F0] bg-white px-4 py-3"
+                        className="rounded-md border border-[#E2E8F0] bg-white px-4 py-3"
                         key={item.key}
                       >
                         <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
@@ -316,7 +316,7 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
                             <p className="text-sm font-bold text-[#0F172A]">{item.label}</p>
                             <p className="mt-1 text-xs font-semibold text-[#64748B]">Point {item.displayOrder}</p>
                           </div>
-                          <span className="inline-flex h-9 min-w-12 items-center justify-center rounded-2xl bg-[#FFF7ED] px-3 text-sm font-black text-[#EA580C] ring-1 ring-[#FED7AA]">
+                          <span className="inline-flex h-9 min-w-12 items-center justify-center rounded-md bg-[#FFF7ED] px-3 text-sm font-black text-[#EA580C] ring-1 ring-[#FED7AA]">
                             {score ?? "-"} / 6
                           </span>
                         </div>

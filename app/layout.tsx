@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/layout/theme-provider";
+import { systemIdentity } from "@/config/system-settings";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Phoenix Workforce",
-  description: "A premium workforce intelligence foundation for Phoenix.",
+  title: systemIdentity.appName,
+  description: systemIdentity.description,
   icons: {
     apple: [{ type: "image/png", sizes: "180x180", url: "/apple-icon.png?v=phoenix-transparent-2" }],
     icon: [

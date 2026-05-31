@@ -32,7 +32,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     await assertPermission(access, "payroll", action === "approve" ? "approve" : "update");
     const actorIdentity = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
-    const updated = await runPayrollWorkflow(id, action, actorIdentity, rejectedReason);
+    const updated = await runPayrollWorkflow(id, action, access, actorIdentity, rejectedReason);
     if (!updated) {
       return NextResponse.json({ success: false, error: "Batch not found." }, { status: 404 });
     }

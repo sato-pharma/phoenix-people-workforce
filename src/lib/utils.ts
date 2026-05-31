@@ -10,6 +10,7 @@ export function formatEmployeeDisplayName(
   fallback = "Employee",
   _maxParts = 2,
 ) {
+  void _maxParts;
   const fullName = String(value ?? "").trim().replace(/\s+/g, " ");
   return fullName || fallback;
 }

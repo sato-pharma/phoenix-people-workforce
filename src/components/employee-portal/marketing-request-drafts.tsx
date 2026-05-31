@@ -1,17 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  BarChart3,
   CalendarDays,
-  CircleDollarSign,
+  CheckCircle2,
+  ClipboardList,
   FileCheck2,
   ListChecks,
   Megaphone,
   PackagePlus,
   RefreshCcw,
   Save,
+  Search,
   Trash2,
+  TrendingUp,
   Upload,
+  WifiOff,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
 import type {
   MarketingApprovedRequestRow,
@@ -27,6 +40,10 @@ import type {
   MarketingRequest,
   MarketingRequestType,
 } from "@/lib/marketing-requests/types";
+
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Types ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
 type DraftWorkspacePayload = {
   approvedRequests: MarketingApprovedRequestRow[];
@@ -44,6 +61,121 @@ type ProductLine = {
   quantity: string;
 };
 
+type QueuedSubmission = {
+  id: string;
+  payload: unknown;
+  timestamp: number;
+};
+
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Focus Trap Hook (#1) --------------------------------------------------------------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+
+function useFocusTrap(active: boolean) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const focusableSelector =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Tab") return;
+      const focusableElements =
+        container!.querySelectorAll<HTMLElement>(focusableSelector);
+      if (focusableElements.length === 0) return;
+
+      const first = focusableElements[0];
+      const last = focusableElements[focusableElements.length - 1];
+
+      if (event.shiftKey) {
+        if (document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [active]);
+
+  return containerRef;
+}
+
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Offline Queue Hook (#3 + #4) --------------------------------------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+
+function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
+  const [queue, setQueue] = useState<QueuedSubmission[]>([]);
+  // SSR hydration guard (#4): Always start `true` to match server output,
+  // then sync the real browser value inside useEffect.
+  const [isOnline, setIsOnline] = useState(true);
+  const replayingRef = useRef(false);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsOnline(navigator.onLine);
+
+    function handleOnline() {
+      setIsOnline(true);
+    }
+    function handleOffline() {
+      setIsOnline(false);
+    }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // Replay queue when back online
+  useEffect(() => {
+    if (!isOnline || queue.length === 0 || replayingRef.current) return;
+    replayingRef.current = true;
+
+    (async () => {
+      const pending = [...queue];
+      for (const item of pending) {
+        try {
+          await onReplay(item.payload);
+          setQueue((current) => current.filter((q) => q.id !== item.id));
+        } catch {
+          break; // Stop on first failure --- will retry next online event
+        }
+      }
+      replayingRef.current = false;
+    })();
+  }, [isOnline, queue, onReplay]);
+
+  function enqueue(payload: unknown) {
+    const submission: QueuedSubmission = {
+      id: `q-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      payload,
+      timestamp: Date.now(),
+    };
+    setQueue((current) => [...current, submission]);
+  }
+
+  return { enqueue, isOnline, queueLength: queue.length };
+}
+
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Helpers ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+
 const todayDate = new Date().toISOString().slice(0, 10);
 
 function egp(value: number) {
@@ -59,16 +191,217 @@ function fieldNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function Field({
-  children,
+function roiBadgeVariant(status: string): "success" | "warning" | "neutral" {
+  if (status === "covers_required") return "success";
+  if (status === "under_target") return "warning";
+  return "neutral";
+}
+
+/** Coverage bar color: green >= 100%, amber 50-99%, red < 50% */
+function coverageGradient(pct: number): string {
+  if (pct >= 100) return "from-emerald-600 to-emerald-300";
+  if (pct >= 50) return "from-amber-500 to-amber-300";
+  return "from-rose-600 to-rose-300";
+}
+
+/** #6 - Shorten product name for <select> on narrow screens */
+function shortProductName(name: string, maxLen = 28): string {
+  if (name.length <= maxLen) return name;
+  return `${name.slice(0, Math.max(0, maxLen - 3))}...`;
+}
+
+function emptyPayload(): DraftWorkspacePayload {
+  return {
+    approvedRequests: [],
+    customers: [],
+    drafts: [],
+    products: [],
+    requestTypes: [],
+    requesterLineId: null,
+    requesterLineName: null,
+  };
+}
+
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Skeleton Loaders --------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+
+function MetricSkeleton() {
+  return (
+    <div className="animate-pulse rounded-sm border border-slate-100 bg-slate-50 px-4 py-3">
+      <div className="h-2.5 w-16 rounded-sm bg-slate-200" />
+      <div className="mt-2.5 h-5 w-12 rounded-sm bg-slate-200" />
+    </div>
+  );
+}
+
+function FormSkeleton() {
+  return (
+    <div className="animate-pulse space-y-4 p-5">
+      <div className="h-4 w-28 rounded-sm bg-slate-200" />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="h-10 rounded-sm bg-slate-100" />
+        <div className="h-10 rounded-sm bg-slate-100" />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="h-10 rounded-sm bg-slate-100" />
+        <div className="h-10 rounded-sm bg-slate-100" />
+        <div className="h-10 rounded-sm bg-slate-100" />
+      </div>
+      <div className="h-10 rounded-sm bg-slate-100" />
+      <div className="h-20 rounded-sm bg-slate-100" />
+    </div>
+  );
+}
+
+function TableSkeleton({ cols, rows }: { cols: number; rows: number }) {
+  return (
+    <div className="animate-pulse">
+      <div className="flex gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
+        {Array.from({ length: cols }).map((_, i) => (
+          <div key={i} className="h-2.5 flex-1 rounded-sm bg-slate-200" />
+        ))}
+      </div>
+      {Array.from({ length: rows }).map((_, r) => (
+        <div
+          key={r}
+          className="flex gap-2 border-b border-slate-50 px-4 py-3"
+        >
+          {Array.from({ length: cols }).map((_, c) => (
+            <div key={c} className="h-3.5 flex-1 rounded-sm bg-slate-100" />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Pure SVG Sparkline (#5) ------------------------------------------------------------------------------------------------------------------------ */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+
+function CostSparkline({ drafts }: { drafts: MarketingRequest[] }) {
+  // Take latest 12 drafts sorted oldest---newest for a chronological sparkline
+  const points = useMemo(() => {
+    const sorted = [...drafts]
+      .sort(
+        (a, b) =>
+          new Date(a.requestDate).getTime() -
+          new Date(b.requestDate).getTime(),
+      )
+      .slice(-12);
+
+    if (sorted.length < 2) return null;
+
+    const values = sorted.map((d) => d.estimatedCost);
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const range = max - min || 1;
+
+    const w = 200;
+    const h = 36;
+    const padY = 4;
+
+    const coords = values.map((v, i) => ({
+      x: (i / (values.length - 1)) * w,
+      y: padY + ((max - v) / range) * (h - padY * 2),
+    }));
+
+    const pathD = coords
+      .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+      .join(" ");
+
+    // Gradient fill area path
+    const areaD = `${pathD} L ${w} ${h} L 0 ${h} Z`;
+
+    return { areaD, coords, h, pathD, w };
+  }, [drafts]);
+
+  if (!points) return null;
+
+  return (
+    <div className="mt-2 rounded-sm border border-slate-100 bg-slate-50 p-2">
+      <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-400">
+        Cost Trend (last {Math.min(drafts.length, 12)} drafts)
+      </p>
+      <svg
+        viewBox={`0 0 ${points.w} ${points.h}`}
+        className="h-9 w-full"
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <linearGradient id="spark-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#f97316" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#f97316" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <path d={points.areaD} fill="url(#spark-grad)" />
+        <path
+          d={points.pathD}
+          fill="none"
+          stroke="#f97316"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Latest point dot */}
+        <circle
+          cx={points.coords[points.coords.length - 1].x}
+          cy={points.coords[points.coords.length - 1].y}
+          r="2.5"
+          fill="#f97316"
+        />
+      </svg>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Sub-components --------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+
+function MetricCard({
+  accent,
+  icon: Icon,
   label,
+  value,
 }: {
-  children: ReactNode;
+  accent: "orange" | "slate" | "emerald" | "blue";
+  icon: React.ElementType;
   label: string;
+  value: number | string;
 }) {
+  const borderColors: Record<string, string> = {
+    blue: "border-l-blue-500",
+    emerald: "border-l-emerald-500",
+    orange: "border-l-orange-500",
+    slate: "border-l-slate-400",
+  };
+  const iconColors: Record<string, string> = {
+    blue: "text-blue-500",
+    emerald: "text-emerald-500",
+    orange: "text-orange-500",
+    slate: "text-slate-400",
+  };
+  return (
+    <div
+      className={`rounded-sm border border-slate-200 border-l-[3px] bg-white px-3 py-2.5 ${borderColors[accent]}`}
+    >
+      <div className="flex items-center gap-1.5">
+        <Icon className={`h-3 w-3 ${iconColors[accent]}`} />
+        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          {label}
+        </p>
+      </div>
+      <p className="mt-1 text-lg font-black text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
     <label className="block min-w-0">
-      <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+      <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
         {label}
       </span>
       {children}
@@ -89,7 +422,7 @@ function SelectField({
 }) {
   return (
     <select
-      className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+      className="h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-[13px] font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       value={value}
@@ -99,31 +432,163 @@ function SelectField({
   );
 }
 
-function roiBadgeVariant(status: string): "success" | "warning" | "neutral" {
-  if (status === "covers_required") return "success";
-  if (status === "under_target") return "warning";
-  return "neutral";
+function RoiMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-sm border border-slate-100 bg-slate-50 px-3 py-2">
+      <span className="text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+        {label}
+      </span>
+      <span className="text-[13px] font-black text-slate-950">{value}</span>
+    </div>
+  );
 }
 
-function emptyPayload(): DraftWorkspacePayload {
-  return {
-    approvedRequests: [],
-    customers: [],
-    drafts: [],
-    products: [],
-    requestTypes: [],
-    requesterLineId: null,
-    requesterLineName: null,
-  };
+function ReadOnlyValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex h-10 min-w-0 flex-col justify-center rounded-sm border border-slate-200 bg-white px-3">
+      <span className="text-[9px] font-bold uppercase tracking-[0.10em] text-slate-400">
+        {label}
+      </span>
+      <span className="text-[13px] font-black text-slate-800">{value}</span>
+    </div>
+  );
 }
 
-export function MarketingRequestDraftWorkspace() {
-  const [workspace, setWorkspace] = useState<DraftWorkspacePayload>(emptyPayload);
+function EvidenceUpload({
+  accept,
+  fileName,
+  isUploading,
+  label,
+  onUpload,
+}: {
+  accept: string;
+  fileName: string | null;
+  isUploading: boolean;
+  label: string;
+  onUpload: (file: File | null | undefined) => void;
+}) {
+  return (
+    <label className="flex min-w-0 cursor-pointer flex-col gap-1 rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-2 transition hover:border-orange-200 hover:bg-orange-50">
+      <span className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
+        {isUploading ? (
+          <LoadingSpinner />
+        ) : (
+          <Upload className="h-3 w-3 text-orange-600" />
+        )}
+        {isUploading ? "Uploading..." : label}
+      </span>
+      <span className="break-all text-[10px] font-medium text-slate-500">
+        {fileName ?? "No file yet"}
+      </span>
+      <input
+        accept={accept}
+        className="sr-only"
+        disabled={isUploading}
+        onChange={(event) => {
+          onUpload(event.target.files?.[0]);
+          event.currentTarget.value = "";
+        }}
+        type="file"
+      />
+    </label>
+  );
+}
+
+/** Inline share bar in ROI table --- gradient proportional to share % */
+function ShareBar({ pct }: { pct: number }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="hidden sm:flex h-1.5 flex-1 overflow-hidden rounded-sm bg-slate-100">
+        <div
+          className="h-full bg-gradient-to-r from-orange-500 to-orange-200 transition-all duration-300"
+          style={{ width: `${Math.min(pct, 100)}%` }}
+        />
+      </div>
+      <span className="shrink-0 text-right font-bold text-orange-700">
+        {pct}%
+      </span>
+    </div>
+  );
+}
+
+/** Draft ROI status distribution bar */
+function DraftStatusBar({ drafts }: { drafts: MarketingRequest[] }) {
+  if (drafts.length === 0) return null;
+
+  const covers = drafts.filter(
+    (d) => d.roiStatus === "covers_required",
+  ).length;
+  const under = drafts.filter(
+    (d) => d.roiStatus === "under_target",
+  ).length;
+  const other = drafts.length - covers - under;
+
+  const total = drafts.length;
+  const pctCovers = Math.round((covers / total) * 100);
+  const pctUnder = Math.round((under / total) * 100);
+  const pctOther = 100 - pctCovers - pctUnder;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex h-2 w-full overflow-hidden rounded-sm bg-slate-100">
+        {pctCovers > 0 && (
+          <div
+            className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
+            style={{ width: `${pctCovers}%` }}
+          />
+        )}
+        {pctUnder > 0 && (
+          <div
+            className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-500"
+            style={{ width: `${pctUnder}%` }}
+          />
+        )}
+        {pctOther > 0 && (
+          <div
+            className="h-full bg-gradient-to-r from-slate-300 to-slate-200 transition-all duration-500"
+            style={{ width: `${pctOther}%` }}
+          />
+        )}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] font-medium text-slate-500">
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-1.5 w-1.5 rounded-sm bg-emerald-500" />
+          Covers ROI {covers}
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-1.5 w-1.5 rounded-sm bg-amber-500" />
+          Under Target {under}
+        </span>
+        {other > 0 && (
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-1.5 w-1.5 rounded-sm bg-slate-300" />
+            Not Calculated {other}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Main Workspace --------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+
+function MarketingRequestDraftWorkspaceInner() {
+  const [workspace, setWorkspace] =
+    useState<DraftWorkspacePayload>(emptyPayload);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<"create" | "approved">("create");
-  const [uploadingEvidenceKey, setUploadingEvidenceKey] = useState<string | null>(null);
+  const [message, setMessage] = useState<{
+    text: string;
+    type: "success" | "error";
+  } | null>(null);
+  const [activeView, setActiveView] = useState<"create" | "approved">(
+    "create",
+  );
+  const [uploadingEvidenceKey, setUploadingEvidenceKey] = useState<
+    string | null
+  >(null);
   const [customerId, setCustomerId] = useState("");
   const [requestTypeId, setRequestTypeId] = useState("");
   const [requestDate, setRequestDate] = useState(todayDate);
@@ -135,8 +600,63 @@ export function MarketingRequestDraftWorkspace() {
   const [productLines, setProductLines] = useState<ProductLine[]>([
     { key: "line-1", productId: "", quantity: "" },
   ]);
+  // #2 --- Optimistic UI: track newly saved draft id for highlight
+  const [highlightDraftId, setHighlightDraftId] = useState<string | null>(
+    null,
+  );
+  // #7 --- Approved requests search
+  const [approvedSearch, setApprovedSearch] = useState("");
 
-  async function loadWorkspace() {
+  /* ------ Focus trap for active tab panel (#1) ------------------------------------------------------------------------------ */
+  const createPanelRef = useFocusTrap(activeView === "create");
+  const approvedPanelRef = useFocusTrap(activeView === "approved");
+
+  /* ------ Auto-dismiss timer ref ------------------------------------------------------------------------------------------------------------------------ */
+  const dismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showMessage = useCallback(
+    (text: string, type: "success" | "error") => {
+      if (dismissRef.current) clearTimeout(dismissRef.current);
+      setMessage({ text, type });
+      if (type === "success") {
+        dismissRef.current = setTimeout(() => setMessage(null), 4000);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (dismissRef.current) clearTimeout(dismissRef.current);
+    };
+  }, []);
+
+  /* ------ Offline queue (#3) ------------------------------------------------------------------------------------------------------------------------------------ */
+
+  const replayDraft = useCallback(
+    async (payload: unknown) => {
+      const response = await fetch("/api/marketing-requests/drafts", {
+        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "Replay failed");
+
+      setWorkspace((current) => ({
+        ...current,
+        drafts: [result.draft as MarketingRequest, ...current.drafts],
+      }));
+      showMessage("Queued draft saved successfully.", "success");
+    },
+    [showMessage],
+  );
+
+  const { enqueue, isOnline, queueLength } = useOfflineQueue(replayDraft);
+
+  /* ------ Data loading ------------------------------------------------------------------------------------------------------------------------------------------------------ */
+
+  const loadWorkspace = useCallback(async () => {
     try {
       const response = await fetch("/api/marketing-requests/drafts", {
         cache: "no-store",
@@ -144,7 +664,10 @@ export function MarketingRequestDraftWorkspace() {
       const payload = await response.json();
       if (!response.ok) {
         setWorkspace(emptyPayload());
-        setMessage(payload.message ?? "Unable to load marketing request workspace.");
+        showMessage(
+          payload.message ?? "Unable to load marketing request workspace.",
+          "error",
+        );
         return;
       }
 
@@ -157,43 +680,62 @@ export function MarketingRequestDraftWorkspace() {
         requesterLineId: payload.requesterLineId ?? null,
         requesterLineName: payload.requesterLineName ?? null,
       });
-      setCustomerId((current) => current || payload.customers?.[0]?.id || "");
-      setRequestTypeId((current) => current || String(payload.requestTypes?.[0]?.id ?? ""));
+      setCustomerId(
+        (current) => current || payload.customers?.[0]?.id || "",
+      );
+      setRequestTypeId(
+        (current) =>
+          current || String(payload.requestTypes?.[0]?.id ?? ""),
+      );
     } catch {
       setWorkspace(emptyPayload());
-      setMessage("Unable to load marketing request workspace.");
+      showMessage("Unable to load marketing request workspace.", "error");
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [showMessage]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       void loadWorkspace();
     }, 0);
     return () => window.clearTimeout(timeout);
-  }, []);
+  }, [loadWorkspace]);
+
+  /* ------ Memoised derived state ------------------------------------------------------------------------------------------------------------------------ */
 
   const selectedRequestType = useMemo(
-    () => workspace.requestTypes.find((type) => String(type.id) === requestTypeId),
+    () =>
+      workspace.requestTypes.find(
+        (type) => String(type.id) === requestTypeId,
+      ),
     [requestTypeId, workspace.requestTypes],
   );
 
   const productMap = useMemo(
-    () => new Map(workspace.products.map((product) => [String(product.id), product])),
+    () =>
+      new Map(
+        workspace.products.map((product) => [String(product.id), product]),
+      ),
     [workspace.products],
   );
 
   const visibleProducts = workspace.products;
 
   const lineScopedProductIdKey = useMemo(
-    () => visibleProducts.map((product) => product.id).sort((left, right) => left - right).join("|"),
+    () =>
+      visibleProducts
+        .map((product) => product.id)
+        .sort((left, right) => left - right)
+        .join("|"),
     [visibleProducts],
   );
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      const productIds = new Set(lineScopedProductIdKey.split("|").filter(Boolean));
+      const productIds = new Set(
+        lineScopedProductIdKey.split("|").filter(Boolean),
+      );
       setProductLines((current) =>
         current.map((line) =>
           line.productId && !productIds.has(line.productId)
@@ -202,7 +744,6 @@ export function MarketingRequestDraftWorkspace() {
         ),
       );
     }, 0);
-
     return () => window.clearTimeout(timeoutId);
   }, [lineScopedProductIdKey]);
 
@@ -218,7 +759,9 @@ export function MarketingRequestDraftWorkspace() {
           quantity: fieldNumber(line.quantity),
         };
       })
-      .filter((line): line is NonNullable<typeof line> => Boolean(line));
+      .filter(
+        (line): line is NonNullable<typeof line> => Boolean(line),
+      );
 
     return calculateMarketingRoiPreview({
       estimatedCost: fieldNumber(estimatedCost),
@@ -240,38 +783,66 @@ export function MarketingRequestDraftWorkspace() {
           productId: product.id,
           productName: product.productName,
           quantity,
-          valueShare: roiPreview.expectedRoiValue > 0 ? expectedValue / roiPreview.expectedRoiValue : 0,
+          valueShare:
+            roiPreview.expectedRoiValue > 0
+              ? expectedValue / roiPreview.expectedRoiValue
+              : 0,
         };
       })
-      .filter((line): line is NonNullable<typeof line> => Boolean(line));
+      .filter(
+        (line): line is NonNullable<typeof line> => Boolean(line),
+      );
   }, [productLines, productMap, roiPreview.expectedRoiValue]);
 
   const canSave =
     !isSaving &&
-    Boolean(customerId && requestTypeId && requestDate && roiDurationMonths && fieldNumber(estimatedCost) > 0) &&
+    Boolean(
+      customerId &&
+        requestTypeId &&
+        requestDate &&
+        roiDurationMonths &&
+        fieldNumber(estimatedCost) > 0,
+    ) &&
     roiPreview.products.some((product) => product.quantity > 0) &&
-    (!selectedRequestType?.requiresDescription || otherRequestType.trim().length > 0);
+    (!selectedRequestType?.requiresDescription ||
+      otherRequestType.trim().length > 0);
+
+  /* #7 --- Filtered approved requests */
+  const filteredApproved = useMemo(() => {
+    if (!approvedSearch.trim()) return workspace.approvedRequests;
+    const q = approvedSearch.toLowerCase();
+    return workspace.approvedRequests.filter(
+      (row) =>
+        row.customerName.toLowerCase().includes(q) ||
+        row.contactForMoneyTransfer.toLowerCase().includes(q) ||
+        row.requestCode.toLowerCase().includes(q) ||
+        (row.moneyTransferDate ?? "").toLowerCase().includes(q) ||
+        (row.line ?? "").toLowerCase().includes(q),
+    );
+  }, [workspace.approvedRequests, approvedSearch]);
+
+  /* ------ Actions --------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
   function updateProductLine(key: string, patch: Partial<ProductLine>) {
     setProductLines((current) =>
-      current.map((line) => (line.key === key ? { ...line, ...patch } : line)),
+      current.map((line) =>
+        line.key === key ? { ...line, ...patch } : line,
+      ),
     );
   }
 
   function addProductLine() {
     setProductLines((current) => [
       ...current,
-      {
-        key: `line-${Date.now()}`,
-        productId: "",
-        quantity: "",
-      },
+      { key: `line-${Date.now()}`, productId: "", quantity: "" },
     ]);
   }
 
   function removeProductLine(key: string) {
     setProductLines((current) =>
-      current.length === 1 ? current : current.filter((line) => line.key !== key),
+      current.length === 1
+        ? current
+        : current.filter((line) => line.key !== key),
     );
   }
 
@@ -279,55 +850,74 @@ export function MarketingRequestDraftWorkspace() {
     event.preventDefault();
     setMessage(null);
     if (!canSave) {
-      setMessage("Complete the draft fields before saving.");
+      showMessage("Complete the draft fields before saving.", "error");
       return;
     }
 
-    const products = productLines
-      .filter((line) => line.productId && fieldNumber(line.quantity) > 0)
-      .map((line) => ({
-        productId: Number(line.productId),
-        quantity: fieldNumber(line.quantity),
-      }));
+    const draftPayload = {
+      customerId,
+      estimatedCost: fieldNumber(estimatedCost),
+      lineId: workspace.requesterLineId,
+      notes,
+      otherRequestType,
+      payDate: payDate || null,
+      products: productLines
+        .filter((line) => line.productId && fieldNumber(line.quantity) > 0)
+        .map((line) => ({
+          productId: Number(line.productId),
+          quantity: fieldNumber(line.quantity),
+        })),
+      requestDate,
+      requestTypeId: Number(requestTypeId),
+      roiDurationMonths: Number(roiDurationMonths),
+    };
+
+    // #3 --- Offline: enqueue and show optimistic feedback
+    if (!isOnline) {
+      enqueue(draftPayload);
+      showMessage(
+        "You are offline. Draft queued and will save when reconnected.",
+        "success",
+      );
+      setEstimatedCost("");
+      setNotes("");
+      setOtherRequestType("");
+      setPayDate("");
+      setProductLines([{ key: "line-1", productId: "", quantity: "" }]);
+      return;
+    }
 
     setIsSaving(true);
     try {
       const response = await fetch("/api/marketing-requests/drafts", {
-        body: JSON.stringify({
-          customerId,
-          estimatedCost: fieldNumber(estimatedCost),
-          lineId: workspace.requesterLineId,
-          notes,
-          otherRequestType,
-          payDate: payDate || null,
-          products,
-          requestDate,
-          requestTypeId: Number(requestTypeId),
-          roiDurationMonths: Number(roiDurationMonths),
-        }),
-        headers: {
-          "Content-Type": "application/json",
-        },
+        body: JSON.stringify(draftPayload),
+        headers: { "Content-Type": "application/json" },
         method: "POST",
       });
       const payload = await response.json();
       if (!response.ok) {
-        setMessage(payload.message ?? "Unable to save draft.");
+        showMessage(payload.message ?? "Unable to save draft.", "error");
         return;
       }
 
+      const newDraft = payload.draft as MarketingRequest;
       setWorkspace((current) => ({
         ...current,
-        drafts: [payload.draft as MarketingRequest, ...current.drafts],
+        drafts: [newDraft, ...current.drafts],
       }));
-      setMessage("Draft saved.");
+
+      // #2 --- Optimistic UI: highlight the new draft row
+      setHighlightDraftId(newDraft.id);
+      setTimeout(() => setHighlightDraftId(null), 3000);
+
+      showMessage("Draft saved successfully.", "success");
       setEstimatedCost("");
       setNotes("");
       setOtherRequestType("");
       setPayDate("");
       setProductLines([{ key: "line-1", productId: "", quantity: "" }]);
     } catch {
-      setMessage("Unable to save draft.");
+      showMessage("Unable to save draft.", "error");
     } finally {
       setIsSaving(false);
     }
@@ -349,553 +939,1112 @@ export function MarketingRequestDraftWorkspace() {
     formData.append("file", file);
 
     try {
-      const response = await fetch("/api/marketing-requests/finance-evidence", {
-        body: formData,
-        method: "POST",
-      });
+      const response = await fetch(
+        "/api/marketing-requests/finance-evidence",
+        { body: formData, method: "POST" },
+      );
       const payload = await response.json();
       if (!response.ok) {
-        setMessage(payload.message ?? "Unable to upload finance evidence.");
+        showMessage(
+          payload.message ?? "Unable to upload finance evidence.",
+          "error",
+        );
         return;
       }
 
       setWorkspace((current) => ({
         ...current,
         approvedRequests: current.approvedRequests.map((row) =>
-          row.id === requestId ? payload.row as MarketingApprovedRequestRow : row,
+          row.id === requestId
+            ? (payload.row as MarketingApprovedRequestRow)
+            : row,
         ),
       }));
-      setMessage(evidenceType === "money_transfer_proof" ? "Money transfer proof uploaded." : "Invoice uploaded.");
+      showMessage(
+        evidenceType === "money_transfer_proof"
+          ? "Money transfer proof uploaded."
+          : "Invoice uploaded.",
+        "success",
+      );
     } catch {
-      setMessage("Unable to upload finance evidence.");
+      showMessage("Unable to upload finance evidence.", "error");
     } finally {
       setUploadingEvidenceKey(null);
     }
   }
 
-  return (
-    <div className="space-y-6">
-      <Card className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] sm:p-5">
-        <div className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-orange-600">
-              Drafts
-            </p>
-            <p className="mt-1 text-2xl font-black text-slate-950">{workspace.drafts.length}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-              Customers
-            </p>
-            <p className="mt-1 text-2xl font-black text-slate-950">{workspace.customers.length}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-              Products
-            </p>
-            <p className="mt-1 text-2xl font-black text-slate-950">{workspace.products.length}</p>
-          </div>
-          <button
-            className="flex min-h-[78px] items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
-            onClick={() => {
-              setIsLoading(true);
-              setMessage(null);
-              void loadWorkspace();
-            }}
-            type="button"
-          >
-            {isLoading ? <LoadingSpinner /> : <RefreshCcw className="h-4 w-4" />}
-            Refresh
-          </button>
-        </div>
-      </Card>
+  /* ------ Derived metrics --------------------------------------------------------------------------------------------------------------------------------------------- */
 
+  const coveragePct = Math.min(
+    Math.round(roiPreview.roiCoverageRatio * 100),
+    100,
+  );
+
+  const totalDraftValue = useMemo(
+    () => workspace.drafts.reduce((sum, d) => sum + d.estimatedCost, 0),
+    [workspace.drafts],
+  );
+
+  /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+  /* --------- Render --------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+  /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+
+  return (
+    <div className="space-y-3" dir="auto">
+      {/* ------ Offline Banner (#3) ------------------------------------------------------------------------------------------------------------------ */}
+      {!isOnline && (
+        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-semibold text-amber-900">
+          <WifiOff className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            You are offline.
+            {queueLength > 0
+              ? ` ${queueLength} draft${queueLength > 1 ? "s" : ""} queued.`
+              : " Drafts will be queued until reconnected."}
+          </span>
+        </div>
+      )}
+
+      {/* ------ Metric Cards + Refresh --------------------------------------------------------------------------------------------------------- */}
+      <div className="flex items-start gap-2">
+        <div className="grid flex-1 gap-2 grid-cols-2 xs:grid-cols-4">
+          {isLoading ? (
+            <>
+              <MetricSkeleton />
+              <MetricSkeleton />
+              <MetricSkeleton />
+              <MetricSkeleton />
+            </>
+          ) : (
+            <>
+              <MetricCard
+                accent="orange"
+                icon={ClipboardList}
+                label="Drafts"
+                value={workspace.drafts.length}
+              />
+              <MetricCard
+                accent="emerald"
+                icon={CheckCircle2}
+                label="Approved"
+                value={workspace.approvedRequests.length}
+              />
+              <MetricCard
+                accent="slate"
+                icon={Megaphone}
+                label="Customers"
+                value={workspace.customers.length}
+              />
+              <MetricCard
+                accent="blue"
+                icon={PackagePlus}
+                label="Products"
+                value={workspace.products.length}
+              />
+            </>
+          )}
+        </div>
+        <button
+          aria-label="Refresh data"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
+          onClick={() => {
+            setIsLoading(true);
+            setMessage(null);
+            void loadWorkspace();
+          }}
+          title="Refresh data"
+          type="button"
+        >
+          {isLoading ? (
+            <LoadingSpinner />
+          ) : (
+            <RefreshCcw className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </div>
+
+      {/* ------ Draft ROI Health + Sparkline ------------------------------------------------------------------------------------------ */}
+      {!isLoading && workspace.drafts.length > 0 && (
+        <div className="rounded-sm border border-slate-200 bg-white px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+              Draft ROI Health
+            </span>
+            <span className="text-[11px] font-bold text-slate-600">
+              Total: {egp(totalDraftValue)}
+            </span>
+          </div>
+          <DraftStatusBar drafts={workspace.drafts} />
+          {/* #5 --- Time-series sparkline */}
+          {workspace.drafts.length >= 2 && (
+            <CostSparkline drafts={workspace.drafts} />
+          )}
+        </div>
+      )}
+
+      {/* ------ Alert Messages --------------------------------------------------------------------------------------------------------------------------------- */}
       {message ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-          {message}
+        <div
+          className={`flex items-center gap-2 rounded-sm border px-3 py-2 text-[13px] font-semibold transition-all ${
+            message.type === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-amber-200 bg-amber-50 text-amber-900"
+          }`}
+        >
+          {message.type === "success" && (
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+          )}
+          <span className="min-w-0 break-words">{message.text}</span>
         </div>
       ) : null}
 
-      <Card className="rounded-[24px] border border-slate-200 bg-white p-2 shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <button
-            className={`flex min-h-12 items-center justify-center gap-2 rounded-[18px] px-4 text-sm font-black transition ${
-              activeView === "create"
-                ? "bg-orange-500 text-white shadow-[0_10px_24px_rgba(249,115,22,0.22)]"
-                : "bg-white text-slate-600 hover:bg-slate-50"
-            }`}
-            onClick={() => setActiveView("create")}
-            type="button"
-          >
-            <Megaphone className="h-4 w-4" />
-            Create Request
-          </button>
-          <button
-            className={`flex min-h-12 items-center justify-center gap-2 rounded-[18px] px-4 text-sm font-black transition ${
-              activeView === "approved"
-                ? "bg-orange-500 text-white shadow-[0_10px_24px_rgba(249,115,22,0.22)]"
-                : "bg-white text-slate-600 hover:bg-slate-50"
-            }`}
-            onClick={() => setActiveView("approved")}
-            type="button"
-          >
-            <FileCheck2 className="h-4 w-4" />
-            Approved Requests
-          </button>
-        </div>
-      </Card>
+      {/* ------ Tab Switcher --------------------------------------------------------------------------------------------------------------------------------------- */}
+      <div className="flex gap-1 rounded-sm border border-slate-200 bg-slate-50 p-1">
+        <button
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-[13px] font-bold transition ${
+            activeView === "create"
+              ? "bg-orange-500 text-white shadow-sm"
+              : "bg-transparent text-slate-600 hover:bg-white"
+          }`}
+          onClick={() => setActiveView("create")}
+          type="button"
+        >
+          <Megaphone className="h-3.5 w-3.5" />
+          <span>Create</span>
+          {!isLoading && (
+            <span
+              className={`ml-0.5 rounded-sm px-1.5 py-0.5 text-[10px] font-black ${
+                activeView === "create"
+                  ? "bg-white/20 text-white"
+                  : "bg-slate-200/60 text-slate-500"
+              }`}
+            >
+              {workspace.drafts.length}
+            </span>
+          )}
+        </button>
+        <button
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-[13px] font-bold transition ${
+            activeView === "approved"
+              ? "bg-orange-500 text-white shadow-sm"
+              : "bg-transparent text-slate-600 hover:bg-white"
+          }`}
+          onClick={() => setActiveView("approved")}
+          type="button"
+        >
+          <FileCheck2 className="h-3.5 w-3.5" />
+          <span>Approved</span>
+          {!isLoading && (
+            <span
+              className={`ml-0.5 rounded-sm px-1.5 py-0.5 text-[10px] font-black ${
+                activeView === "approved"
+                  ? "bg-white/20 text-white"
+                  : "bg-slate-200/60 text-slate-500"
+              }`}
+            >
+              {workspace.approvedRequests.length}
+            </span>
+          )}
+        </button>
+      </div>
 
-      <div className={activeView === "create" ? "space-y-6" : "hidden"}>
-        <Card className="overflow-hidden rounded-[32px] border border-slate-200 bg-white p-0 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
-          <form onSubmit={submitDraft}>
-            <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/60 to-white p-5 sm:p-7">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">
-                    Create Draft
-                  </p>
-                  <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">
-                    Activity request
-                  </h2>
+      {/* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */}
+      {/* ------ CREATE REQUEST TAB  (#1 focus trap) ------------------------------------------------------------------ */}
+      {/* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */}
+      <div
+        ref={createPanelRef}
+        className={activeView === "create" ? "space-y-3" : "hidden"}
+      >
+        {/* ------ Draft Form Card ------------------------------------------------------------------------------------------------------------------------ */}
+        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          {isLoading ? (
+            <FormSkeleton />
+          ) : (
+            <form aria-busy={isSaving} onSubmit={submitDraft}>
+              {/* Form header */}
+              <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/30 to-white px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
+                      Create Draft
+                    </p>
+                    <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
+                      Activity request
+                    </h2>
+                  </div>
+                  <Badge variant={roiBadgeVariant(roiPreview.roiStatus)}>
+                    {roiPreview.roiStatus.replace(/_/g, " ")}
+                  </Badge>
                 </div>
-                <Badge variant={roiBadgeVariant(roiPreview.roiStatus)}>
-                  {roiPreview.roiStatus.replace(/_/g, " ")}
-                </Badge>
-              </div>
-            </div>
-
-            <div className="grid gap-5 p-5 sm:p-7 lg:grid-cols-6">
-              <div className="lg:col-span-3">
-                <Field label="Customer">
-                  <SelectField disabled={isLoading || workspace.customers.length === 0} onChange={setCustomerId} value={customerId}>
-                    <option value="">Select customer</option>
-                    {workspace.customers.map((customer) => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.displayName} - {customer.customerType}
-                      </option>
-                    ))}
-                  </SelectField>
-                </Field>
               </div>
 
-              <div className="lg:col-span-3">
-                <Field label="Request Type">
-                  <SelectField disabled={isLoading || workspace.requestTypes.length === 0} onChange={setRequestTypeId} value={requestTypeId}>
-                    <option value="">Select type</option>
-                    {workspace.requestTypes.map((type) => (
-                      <option key={type.id} value={type.id}>
-                        {type.name}
-                      </option>
-                    ))}
-                  </SelectField>
-                </Field>
-              </div>
+              {/* Form fields */}
+              <div className="grid gap-3 p-4 sm:grid-cols-6">
+                <div className="sm:col-span-3">
+                  <Field label="Customer">
+                    <SelectField
+                      disabled={
+                        isLoading || workspace.customers.length === 0
+                      }
+                      onChange={setCustomerId}
+                      value={customerId}
+                    >
+                      <option value="">Select customer</option>
+                      {workspace.customers.map((customer) => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.displayName} -{" "}
+                          {customer.customerType}
+                        </option>
+                      ))}
+                    </SelectField>
+                  </Field>
+                </div>
 
-              {selectedRequestType?.requiresDescription ? (
-                <div className="lg:col-span-6">
-                  <Field label="Other Type Description">
+                <div className="sm:col-span-3">
+                  <Field label="Request Type">
+                    <SelectField
+                      disabled={
+                        isLoading ||
+                        workspace.requestTypes.length === 0
+                      }
+                      onChange={setRequestTypeId}
+                      value={requestTypeId}
+                    >
+                      <option value="">Select type</option>
+                      {workspace.requestTypes.map((type) => (
+                        <option key={type.id} value={type.id}>
+                          {type.name}
+                        </option>
+                      ))}
+                    </SelectField>
+                  </Field>
+                </div>
+
+                {selectedRequestType?.requiresDescription ? (
+                  <div className="sm:col-span-6">
+                    <Field label="Other Type Description">
+                      <Input
+                        className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                        onChange={(event) =>
+                          setOtherRequestType(event.target.value)
+                        }
+                        placeholder="Describe the request type"
+                        value={otherRequestType}
+                      />
+                    </Field>
+                  </div>
+                ) : null}
+
+                <div className="sm:col-span-2">
+                  <Field label="Request Date">
                     <Input
-                      className="h-12 rounded-2xl border-slate-200 bg-white"
-                      onChange={(event) => setOtherRequestType(event.target.value)}
-                      placeholder="Describe the request type"
-                      value={otherRequestType}
+                      className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                      onChange={(event) =>
+                        setRequestDate(event.target.value)
+                      }
+                      type="date"
+                      value={requestDate}
                     />
                   </Field>
                 </div>
-              ) : null}
 
-              <div className="lg:col-span-2">
-                <Field label="Request Date">
-                  <Input
-                    className="h-12 rounded-2xl border-slate-200 bg-white"
-                    onChange={(event) => setRequestDate(event.target.value)}
-                    type="date"
-                    value={requestDate}
-                  />
-                </Field>
-              </div>
+                <div className="sm:col-span-2">
+                  <Field label="Pay Date">
+                    <Input
+                      className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                      onChange={(event) =>
+                        setPayDate(event.target.value)
+                      }
+                      type="date"
+                      value={payDate}
+                    />
+                  </Field>
+                </div>
 
-              <div className="lg:col-span-2">
-                <Field label="Pay Date">
-                  <Input
-                    className="h-12 rounded-2xl border-slate-200 bg-white"
-                    onChange={(event) => setPayDate(event.target.value)}
-                    type="date"
-                    value={payDate}
-                  />
-                </Field>
-              </div>
+                <div className="sm:col-span-2">
+                  <Field label="ROI Duration (months)">
+                    <Input
+                      className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                      min="1"
+                      onChange={(event) =>
+                        setRoiDurationMonths(event.target.value)
+                      }
+                      type="number"
+                      value={roiDurationMonths}
+                    />
+                  </Field>
+                </div>
 
-              <div className="lg:col-span-2">
-                <Field label="ROI Duration">
-                  <Input
-                    className="h-12 rounded-2xl border-slate-200 bg-white"
-                    min="1"
-                    onChange={(event) => setRoiDurationMonths(event.target.value)}
-                    type="number"
-                    value={roiDurationMonths}
-                  />
-                </Field>
-              </div>
+                <div className="sm:col-span-3">
+                  <Field label="Estimated Cost (EGP)">
+                    <Input
+                      className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                      min="0"
+                      onChange={(event) =>
+                        setEstimatedCost(event.target.value)
+                      }
+                      placeholder="0"
+                      type="number"
+                      value={estimatedCost}
+                    />
+                  </Field>
+                </div>
 
-              <div className="lg:col-span-3">
-                <Field label="Estimated Cost">
-                  <Input
-                    className="h-12 rounded-2xl border-slate-200 bg-white"
-                    min="0"
-                    onChange={(event) => setEstimatedCost(event.target.value)}
-                    placeholder="EGP"
-                    type="number"
-                    value={estimatedCost}
-                  />
-                </Field>
-              </div>
-
-              <div className="lg:col-span-6">
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                        Products
-                      </p>
-                      <p className="mt-1 text-xs font-bold text-slate-500">
-                        {workspace.requesterLineId === null
-                          ? "Showing available products."
-                          : `Showing your assigned line products${workspace.requesterLineName ? `: ${workspace.requesterLineName}` : ""}.`}
-                      </p>
-                    </div>
-                    <Button
-                      className="gap-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                      onClick={addProductLine}
-                      type="button"
-                    >
-                      <PackagePlus className="h-4 w-4" />
-                      Add Product
-                    </Button>
-                  </div>
-
-                  {productLines.map((line) => {
-                    const product = productMap.get(line.productId);
-                    return (
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3" key={line.key}>
-                        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_130px_130px_150px_90px_44px]">
-                          <SelectField
-                            disabled={visibleProducts.length === 0}
-                            onChange={(value) => updateProductLine(line.key, { productId: value })}
-                            value={line.productId}
-                          >
-                            <option value="">
-                              {visibleProducts.length === 0 ? "No products for your assigned line" : "Select product"}
-                            </option>
-                            {visibleProducts.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.productName} - {egp(item.factoryPrice)}
-                              </option>
-                            ))}
-                          </SelectField>
-                          <Input
-                            className="h-12 rounded-2xl border-slate-200 bg-white"
-                            min="0"
-                            onChange={(event) => updateProductLine(line.key, { quantity: event.target.value })}
-                            placeholder="Qty"
-                            type="number"
-                            value={line.quantity}
-                          />
-                          <ReadOnlyValue label="Unit Price" value={product ? egp(product.factoryPrice) : "-"} />
-                          <ReadOnlyValue label="Value" value={product ? egp(fieldNumber(line.quantity) * product.factoryPrice) : "-"} />
-                          <ReadOnlyValue
-                            label="Share"
-                            value={product && roiPreview.expectedRoiValue > 0
-                              ? `${Math.round((fieldNumber(line.quantity) * product.factoryPrice / roiPreview.expectedRoiValue) * 100)}%`
-                              : "0%"}
-                          />
-                          <button
-                            aria-label="Remove product"
-                            className="flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                            onClick={() => removeProductLine(line.key)}
-                            type="button"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
+                {/* ------ Product Lines --------------------------------------------------------------------------------------------------------- */}
+                <div className="sm:col-span-6">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                          Products
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+                          {workspace.requesterLineId === null
+                            ? "All available products"
+                            : `Line: ${workspace.requesterLineName ?? "Assigned"}`}
+                        </p>
                       </div>
-                    );
-                  })}
+                      <button
+                        className="flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:bg-slate-50"
+                        onClick={addProductLine}
+                        type="button"
+                      >
+                        <PackagePlus className="h-3 w-3" />
+                        Add
+                      </button>
+                    </div>
+
+                    {productLines.map((line) => {
+                      const product = productMap.get(line.productId);
+                      return (
+                        <div
+                          className="rounded-sm border border-slate-200 bg-slate-50/50 p-2.5"
+                          key={line.key}
+                        >
+                          {/* Desktop layout */}
+                          <div className="hidden sm:grid gap-2 sm:grid-cols-[minmax(0,1fr)_100px_100px_120px_80px_36px]">
+                            <SelectField
+                              disabled={visibleProducts.length === 0}
+                              onChange={(value) =>
+                                updateProductLine(line.key, {
+                                  productId: value,
+                                })
+                              }
+                              value={line.productId}
+                            >
+                              <option value="">
+                                {visibleProducts.length === 0
+                                  ? "No products"
+                                  : "Select product"}
+                              </option>
+                              {visibleProducts.map((item) => (
+                                <option
+                                  key={item.id}
+                                  value={item.id}
+                                >
+                                  {item.productName} -{" "}
+                                  {egp(item.factoryPrice)}
+                                </option>
+                              ))}
+                            </SelectField>
+                            <Input
+                              className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                              min="0"
+                              onChange={(event) =>
+                                updateProductLine(line.key, {
+                                  quantity: event.target.value,
+                                })
+                              }
+                              placeholder="Qty"
+                              type="number"
+                              value={line.quantity}
+                            />
+                            <ReadOnlyValue
+                              label="Unit"
+                              value={
+                                product
+                                  ? egp(product.factoryPrice)
+                                  : "-"
+                              }
+                            />
+                            <ReadOnlyValue
+                              label="Value"
+                              value={
+                                product
+                                  ? egp(
+                                      fieldNumber(line.quantity) *
+                                        product.factoryPrice,
+                                    )
+                                  : "-"
+                              }
+                            />
+                            <ReadOnlyValue
+                              label="Share"
+                              value={
+                                product &&
+                                roiPreview.expectedRoiValue > 0
+                                  ? `${Math.round(
+                                      ((fieldNumber(line.quantity) *
+                                        product.factoryPrice) /
+                                        roiPreview.expectedRoiValue) *
+                                        100,
+                                    )}%`
+                                  : "0%"
+                              }
+                            />
+                            <button
+                              aria-label="Remove product"
+                              className="flex h-10 w-full items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                              onClick={() =>
+                                removeProductLine(line.key)
+                              }
+                              type="button"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+
+                          {/* Mobile layout (#6 --- short product names) */}
+                          <div className="block sm:hidden space-y-2">
+                            <SelectField
+                              disabled={visibleProducts.length === 0}
+                              onChange={(value) =>
+                                updateProductLine(line.key, {
+                                  productId: value,
+                                })
+                              }
+                              value={line.productId}
+                            >
+                              <option value="">
+                                {visibleProducts.length === 0
+                                  ? "No products"
+                                  : "Select product"}
+                              </option>
+                              {visibleProducts.map((item) => (
+                                <option
+                                  key={item.id}
+                                  value={item.id}
+                                >
+                                  {shortProductName(item.productName)}{" "}
+                                  - {egp(item.factoryPrice)}
+                                </option>
+                              ))}
+                            </SelectField>
+                            <div className="grid grid-cols-[1fr_auto] gap-2">
+                              <Input
+                                className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                                min="0"
+                                onChange={(event) =>
+                                  updateProductLine(line.key, {
+                                    quantity: event.target.value,
+                                  })
+                                }
+                                placeholder="Quantity"
+                                type="number"
+                                value={line.quantity}
+                              />
+                              <button
+                                aria-label="Remove product"
+                                className="flex h-10 w-10 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                onClick={() =>
+                                  removeProductLine(line.key)
+                                }
+                                type="button"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                            {product && (
+                              <div className="grid grid-cols-3 gap-1.5">
+                                <ReadOnlyValue
+                                  label="Unit"
+                                  value={egp(product.factoryPrice)}
+                                />
+                                <ReadOnlyValue
+                                  label="Value"
+                                  value={egp(
+                                    fieldNumber(line.quantity) *
+                                      product.factoryPrice,
+                                  )}
+                                />
+                                <ReadOnlyValue
+                                  label="Share"
+                                  value={
+                                    roiPreview.expectedRoiValue > 0
+                                      ? `${Math.round(
+                                          ((fieldNumber(line.quantity) *
+                                            product.factoryPrice) /
+                                            roiPreview.expectedRoiValue) *
+                                            100,
+                                        )}%`
+                                      : "0%"
+                                  }
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ------ Notes --------------------------------------------------------------------------------------------------------------------------------- */}
+                <div className="sm:col-span-6">
+                  <Field label="Note">
+                    <textarea
+                      className="min-h-20 w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                      onChange={(event) => setNotes(event.target.value)}
+                      placeholder="Optional request note"
+                      value={notes}
+                    />
+                  </Field>
                 </div>
               </div>
 
-              <div className="lg:col-span-6">
-                <Field label="Note">
-                  <textarea
-                    className="min-h-28 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
-                    onChange={(event) => setNotes(event.target.value)}
-                    placeholder="Optional request note"
-                    value={notes}
-                  />
-                </Field>
+              {/* Form footer */}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/50 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-2 text-[13px] font-bold text-slate-700">
+                  <TrendingUp className="h-4 w-4 shrink-0 text-orange-500" />
+                  <span>
+                    Required ROI: {egp(roiPreview.requiredRoiValue)}
+                  </span>
+                </div>
+                <Button
+                  className="min-h-10 gap-1.5 rounded-sm bg-orange-500 px-5 text-[13px] font-bold text-white shadow-sm hover:bg-orange-600"
+                  disabled={!canSave}
+                  type="submit"
+                >
+                  {isSaving ? (
+                    <LoadingSpinner className="text-white" />
+                  ) : (
+                    <Save className="h-3.5 w-3.5" />
+                  )}
+                  Save Draft
+                </Button>
               </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 bg-slate-50 px-5 py-5 sm:px-7">
-              <div className="flex min-w-0 items-center gap-3 text-sm font-black text-slate-800">
-                <CircleDollarSign className="h-5 w-5 shrink-0 text-orange-500" />
-                <span>Required ROI: {egp(roiPreview.requiredRoiValue)}</span>
-              </div>
-              <Button
-                className="min-h-12 min-w-[210px] gap-2 rounded-2xl bg-orange-500 px-6 text-white hover:bg-orange-600"
-                disabled={!canSave}
-                type="submit"
-              >
-                {isSaving ? <LoadingSpinner className="text-white" /> : <Save className="h-4 w-4" />}
-                Save Draft
-              </Button>
-            </div>
-          </form>
+            </form>
+          )}
         </Card>
 
-        <div className="space-y-6">
-          <Card className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
-                <Megaphone className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-black text-slate-950">ROI Preview</p>
-                <p className="text-xs font-semibold text-slate-500">Server recalculates on save</p>
-              </div>
+        {/* ------ ROI Preview Card --------------------------------------------------------------------------------------------------------------------- */}
+        <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-orange-50 text-orange-600 ring-1 ring-orange-100">
+              <BarChart3 className="h-3.5 w-3.5" />
             </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-4">
-              <Metric label="Estimated Cost" value={egp(fieldNumber(estimatedCost))} />
-              <Metric label="Required ROI" value={egp(roiPreview.requiredRoiValue)} />
-              <Metric label="Expected ROI" value={egp(roiPreview.expectedRoiValue)} />
-              <Metric label="Coverage" value={`${Math.round(roiPreview.roiCoverageRatio * 100)}%`} />
+            <div>
+              <p className="text-[13px] font-black text-slate-950">
+                ROI Preview
+              </p>
+              <p className="text-[10px] font-medium text-slate-400">
+                Recalculates on save
+              </p>
             </div>
-            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-                  <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+          </div>
+
+          {/* ROI metrics row */}
+          <div className="mt-3 grid gap-2 grid-cols-2 xs:grid-cols-4">
+            <RoiMetric
+              label="Est. Cost"
+              value={egp(fieldNumber(estimatedCost))}
+            />
+            <RoiMetric
+              label="Required"
+              value={egp(roiPreview.requiredRoiValue)}
+            />
+            <RoiMetric
+              label="Expected"
+              value={egp(roiPreview.expectedRoiValue)}
+            />
+            <RoiMetric label="Coverage" value={`${coveragePct}%`} />
+          </div>
+
+          {/* Smart coverage bar --- green/amber/red */}
+          <div className="mt-2 overflow-hidden rounded-sm bg-slate-100">
+            <div className="flex h-2 w-full overflow-hidden">
+              <div
+                className={`h-full bg-gradient-to-r ${coverageGradient(coveragePct)} transition-all duration-500`}
+                style={{ width: `${coveragePct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Product ROI table --- Desktop */}
+          <div className="mt-3 hidden xs:block overflow-hidden rounded-sm border border-slate-200">
+            {isLoading ? (
+              <TableSkeleton cols={5} rows={3} />
+            ) : (
+              <table className="w-full border-collapse text-left text-[13px]">
+                <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+                  <tr>
+                    <th className="border-b border-r border-slate-100 px-3 py-2">
+                      Product
+                    </th>
+                    <th className="border-b border-r border-slate-100 px-3 py-2 text-right">
+                      Qty
+                    </th>
+                    <th className="border-b border-r border-slate-100 px-3 py-2 text-right">
+                      Unit Price
+                    </th>
+                    <th className="border-b border-r border-slate-100 px-3 py-2 text-right">
+                      ROI Value
+                    </th>
+                    <th className="border-b border-slate-100 px-3 py-2 text-right">
+                      Share
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {productLineMetrics.map((product) => (
+                    <tr key={product.key}>
+                      <td className="border-r border-slate-100 px-3 py-2 font-bold text-slate-950">
+                        {product.productName}
+                      </td>
+                      <td className="border-r border-slate-100 px-3 py-2 text-right font-medium text-slate-600">
+                        {product.quantity}
+                      </td>
+                      <td className="border-r border-slate-100 px-3 py-2 text-right font-medium text-slate-600">
+                        {egp(product.factoryPrice)}
+                      </td>
+                      <td className="border-r border-slate-100 px-3 py-2 text-right font-bold text-slate-950">
+                        {egp(product.expectedValue)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <ShareBar
+                          pct={Math.round(product.valueShare * 100)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                  {productLineMetrics.length === 0 ? (
                     <tr>
-                      <th className="px-4 py-3">Product</th>
-                      <th className="px-4 py-3 text-right">Quantity</th>
-                      <th className="px-4 py-3 text-right">Unit Price</th>
-                      <th className="px-4 py-3 text-right">ROI Value</th>
-                      <th className="px-4 py-3 text-right">Share</th>
+                      <td
+                        className="px-3 py-5 text-center text-[12px] font-medium text-slate-400"
+                        colSpan={5}
+                      >
+                        Add product quantities to preview ROI.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Product ROI --- Mobile cards */}
+          <div className="mt-3 block xs:hidden space-y-2">
+            {productLineMetrics.length === 0 ? (
+              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[11px] font-medium text-slate-400">
+                Add product quantities to preview ROI.
+              </p>
+            ) : (
+              productLineMetrics.map((product) => (
+                <div
+                  key={product.key}
+                  className="rounded-sm border border-slate-200 bg-slate-50 p-3 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[13px] font-bold text-slate-950">
+                      {product.productName}
+                    </p>
+                    <span className="text-[12px] font-black text-orange-600">
+                      {Math.round(product.valueShare * 100)}%
+                    </span>
+                  </div>
+                  <div className="h-1 overflow-hidden rounded-sm bg-slate-200">
+                    <div
+                      className="h-full bg-gradient-to-r from-orange-500 to-orange-200"
+                      style={{
+                        width: `${Math.min(Math.round(product.valueShare * 100), 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 text-[10px]">
+                    <div>
+                      <span className="font-medium text-slate-400">
+                        Qty
+                      </span>
+                      <p className="font-bold text-slate-700">
+                        {product.quantity}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-slate-400">
+                        Unit
+                      </span>
+                      <p className="font-bold text-slate-700">
+                        {egp(product.factoryPrice)}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-slate-400">
+                        Value
+                      </span>
+                      <p className="font-bold text-slate-950">
+                        {egp(product.expectedValue)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+
+        {/* ------ Draft Rows Card ------------------------------------------------------------------------------------------------------------------------ */}
+        <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-slate-100 text-slate-600 ring-1 ring-slate-200">
+              <ListChecks className="h-3.5 w-3.5" />
+            </div>
+            <div>
+              <p className="text-[13px] font-black text-slate-950">
+                Draft Rows
+              </p>
+              <p className="text-[10px] font-medium text-slate-400">
+                {workspace.drafts.length > 0
+                  ? `${Math.min(workspace.drafts.length, 6)} of ${workspace.drafts.length} shown`
+                  : "No drafts yet"}
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 space-y-1.5">
+            {isLoading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="animate-pulse rounded-sm border border-slate-100 bg-slate-50 p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-2">
+                      <div className="h-2.5 w-20 rounded-sm bg-slate-200" />
+                      <div className="h-4 w-16 rounded-sm bg-slate-200" />
+                    </div>
+                    <div className="h-5 w-20 rounded-sm bg-slate-200" />
+                  </div>
+                  <div className="mt-2 h-2.5 w-24 rounded-sm bg-slate-200" />
+                </div>
+              ))
+            ) : (
+              <>
+                {workspace.drafts.slice(0, 6).map((draft) => (
+                  <div
+                    className={`rounded-sm border p-2.5 transition-colors duration-700 ${
+                      highlightDraftId === draft.id
+                        ? "border-orange-300 bg-orange-50/60"
+                        : "border-slate-100 bg-slate-50/60"
+                    }`}
+                    key={draft.id}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-mono text-[10px] font-bold text-slate-500">
+                          {draft.requestCode}
+                        </p>
+                        <p className="mt-0.5 text-[13px] font-black text-slate-950">
+                          {egp(draft.estimatedCost)}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={roiBadgeVariant(draft.roiStatus)}
+                      >
+                        {draft.roiStatus.replace(/_/g, " ")}
+                      </Badge>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1 text-[10px] font-medium text-slate-400">
+                        <CalendarDays className="h-2.5 w-2.5" />
+                        {draft.requestDate}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-500">
+                        {Math.round(draft.roiCoverageRatio * 100)}%
+                        coverage
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {workspace.drafts.length === 0 ? (
+                  <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-400">
+                    No draft rows yet.
+                  </p>
+                ) : null}
+              </>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */}
+      {/* ------ APPROVED REQUESTS TAB  (#1 focus trap) --------------------------------------------------------- */}
+      {/* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */}
+      <div
+        ref={approvedPanelRef}
+        className={activeView === "approved" ? "space-y-3" : "hidden"}
+      >
+        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
+                  Finance Evidence
+                </p>
+                <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
+                  Approved Requests
+                </h2>
+              </div>
+              <Badge variant="neutral">
+                {filteredApproved.length === workspace.approvedRequests.length
+                  ? `${workspace.approvedRequests.length} rows`
+                  : `${filteredApproved.length} / ${workspace.approvedRequests.length}`}
+              </Badge>
+            </div>
+
+            {/* #7 --- Search input */}
+            {workspace.approvedRequests.length > 0 && (
+              <div className="relative mt-2">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  className="h-9 w-full rounded-sm border border-slate-200 bg-white pl-8 pr-3 text-[13px] font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                  onChange={(e) => setApprovedSearch(e.target.value)}
+                  placeholder="Search customer, contact, code, date..."
+                  type="text"
+                  value={approvedSearch}
+                />
+              </div>
+            )}
+          </div>
+
+          {isLoading ? (
+            <TableSkeleton cols={6} rows={4} />
+          ) : (
+            <>
+              {/* Desktop table */}
+              <div className="hidden xs:block overflow-x-auto">
+                <table className="w-full border-collapse text-left text-[12px]">
+                  <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+                    <tr>
+                      <th className="border-b border-r border-slate-100 px-3 py-2">
+                        Transfer Date
+                      </th>
+                      <th className="border-b border-r border-slate-100 px-3 py-2">
+                        Line
+                      </th>
+                      <th className="border-b border-r border-slate-100 px-3 py-2">
+                        Contact
+                      </th>
+                      <th className="border-b border-r border-slate-100 px-3 py-2">
+                        Customer
+                      </th>
+                      <th className="border-b border-r border-slate-100 px-3 py-2">
+                        Notes
+                      </th>
+                      <th className="border-b border-r border-slate-100 px-3 py-2 text-right">
+                        Amount
+                      </th>
+                      <th className="border-b border-r border-slate-100 px-3 py-2">
+                        Proof
+                      </th>
+                      <th className="border-b border-slate-100 px-3 py-2">
+                        Invoice
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {productLineMetrics.map((product) => (
-                      <tr key={product.key}>
-                        <td className="px-4 py-3 font-black text-slate-950">{product.productName}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-slate-700">{product.quantity}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-slate-700">{egp(product.factoryPrice)}</td>
-                        <td className="px-4 py-3 text-right font-black text-slate-950">{egp(product.expectedValue)}</td>
-                        <td className="px-4 py-3 text-right font-black text-orange-700">{Math.round(product.valueShare * 100)}%</td>
+                    {filteredApproved.map((row) => (
+                      <tr key={row.id} className="align-top">
+                        <td className="border-r border-slate-100 px-3 py-2 font-medium text-slate-600">
+                          {row.moneyTransferDate ?? "-"}
+                        </td>
+                        <td className="border-r border-slate-100 px-3 py-2 font-medium text-slate-600">
+                          {row.line ?? "-"}
+                        </td>
+                        <td className="border-r border-slate-100 px-3 py-2">
+                          <p className="font-bold text-slate-900">
+                            {row.contactForMoneyTransfer}
+                          </p>
+                          <p className="mt-0.5 font-mono text-[10px] font-medium text-slate-400">
+                            {row.requesterHrId}
+                          </p>
+                        </td>
+                        <td className="border-r border-slate-100 px-3 py-2 font-bold text-slate-900">
+                          {row.customerName}
+                        </td>
+                        <td className="border-r border-slate-100 px-3 py-2 text-slate-500">
+                          <p className="text-[11px] font-medium break-words">
+                            {row.notes || "-"}
+                          </p>
+                        </td>
+                        <td className="border-r border-slate-100 px-3 py-2 text-right font-bold text-slate-900">
+                          {egp(row.sumOfAmount)}
+                        </td>
+                        <td className="border-r border-slate-100 px-3 py-2">
+                          <EvidenceUpload
+                            accept="image/jpeg,image/png,image/webp"
+                            fileName={row.financeProofFileName}
+                            isUploading={
+                              uploadingEvidenceKey ===
+                              `${row.id}:money_transfer_proof`
+                            }
+                            label="Upload proof"
+                            onUpload={(file) =>
+                              void uploadFinanceEvidence(
+                                row.id,
+                                "money_transfer_proof",
+                                file,
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <EvidenceUpload
+                            accept="image/jpeg,image/png,image/webp,application/pdf"
+                            fileName={row.invoiceFileName}
+                            isUploading={
+                              uploadingEvidenceKey ===
+                              `${row.id}:invoice`
+                            }
+                            label="Upload invoice"
+                            onUpload={(file) =>
+                              void uploadFinanceEvidence(
+                                row.id,
+                                "invoice",
+                                file,
+                              )
+                            }
+                          />
+                        </td>
                       </tr>
                     ))}
-                    {productLineMetrics.length === 0 ? (
+                    {filteredApproved.length === 0 ? (
                       <tr>
-                        <td className="px-4 py-8 text-center text-sm font-semibold text-slate-500" colSpan={5}>
-                          Add product quantities to preview ROI by product.
+                        <td
+                          className="px-3 py-6 text-center text-[12px] font-medium text-slate-400"
+                          colSpan={8}
+                        >
+                          {approvedSearch
+                            ? "No matching approved requests."
+                            : "No approved requests are available yet."}
                         </td>
                       </tr>
                     ) : null}
                   </tbody>
                 </table>
               </div>
-            </div>
-          </Card>
 
-          <Card className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-50 text-slate-600 ring-1 ring-slate-200">
-                <ListChecks className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-black text-slate-950">Draft Rows</p>
-                <p className="text-xs font-semibold text-slate-500">Latest 100 visible drafts</p>
-              </div>
-            </div>
-            <div className="mt-5 space-y-3">
-              {workspace.drafts.slice(0, 6).map((draft) => (
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3" key={draft.id}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-xs font-bold text-slate-600">{draft.requestCode}</p>
-                      <p className="mt-1 text-sm font-black text-slate-950">{egp(draft.estimatedCost)}</p>
-                    </div>
-                    <Badge variant={roiBadgeVariant(draft.roiStatus)}>
-                      {draft.roiStatus.replace(/_/g, " ")}
-                    </Badge>
-                  </div>
-                  <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-                    <CalendarDays className="h-3.5 w-3.5" />
-                    {draft.requestDate}
+              {/* Mobile cards */}
+              <div className="block xs:hidden divide-y divide-slate-100">
+                {filteredApproved.length === 0 ? (
+                  <p className="px-4 py-5 text-center text-[11px] font-medium text-slate-400">
+                    {approvedSearch
+                      ? "No matching results."
+                      : "No approved requests yet."}
                   </p>
-                </div>
-              ))}
-              {!isLoading && workspace.drafts.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm font-semibold text-slate-500">
-                  No draft rows yet.
-                </p>
-              ) : null}
-            </div>
-          </Card>
-        </div>
-      </div>
+                ) : (
+                  filteredApproved.map((row) => (
+                    <div key={row.id} className="space-y-2 px-3 py-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-bold text-slate-950">
+                            {row.customerName}
+                          </p>
+                          <p className="mt-0.5 text-[10px] font-medium text-slate-400">
+                            {row.contactForMoneyTransfer}
+                            {row.requesterHrId
+                              ? ` (${row.requesterHrId})`
+                              : ""}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-sm bg-slate-100 px-2 py-0.5 text-[12px] font-black text-slate-900">
+                          {egp(row.sumOfAmount)}
+                        </span>
+                      </div>
 
-      <div className={activeView === "approved" ? "space-y-6" : "hidden"}>
-        <Card className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
-          <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">
-                  Employee Portal
-                </p>
-                <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
-                  Approved Requests
-                </h2>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
+                        <span className="font-medium text-slate-400">
+                          Transfer
+                        </span>
+                        <span className="text-right font-bold text-slate-600">
+                          {row.moneyTransferDate ?? "-"}
+                        </span>
+                        <span className="font-medium text-slate-400">
+                          Line
+                        </span>
+                        <span className="text-right font-bold text-slate-600">
+                          {row.line ?? "-"}
+                        </span>
+                      </div>
+
+                      {row.notes ? (
+                        <p className="text-[10px] font-medium text-slate-500 break-words">
+                          {row.notes}
+                        </p>
+                      ) : null}
+
+                      <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                        <EvidenceUpload
+                          accept="image/jpeg,image/png,image/webp"
+                          fileName={row.financeProofFileName}
+                          isUploading={
+                            uploadingEvidenceKey ===
+                            `${row.id}:money_transfer_proof`
+                          }
+                          label="Proof"
+                          onUpload={(file) =>
+                            void uploadFinanceEvidence(
+                              row.id,
+                              "money_transfer_proof",
+                              file,
+                            )
+                          }
+                        />
+                        <EvidenceUpload
+                          accept="image/jpeg,image/png,image/webp,application/pdf"
+                          fileName={row.invoiceFileName}
+                          isUploading={
+                            uploadingEvidenceKey ===
+                            `${row.id}:invoice`
+                          }
+                          label="Invoice"
+                          onUpload={(file) =>
+                            void uploadFinanceEvidence(
+                              row.id,
+                              "invoice",
+                              file,
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
-              <Badge variant="neutral">{workspace.approvedRequests.length} rows</Badge>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
-              <thead className="bg-slate-100 text-[11px] font-black uppercase tracking-[0.12em] text-slate-600">
-                <tr>
-                  <th className="px-4 py-3">Money Transfer Date</th>
-                  <th className="px-4 py-3">Line</th>
-                  <th className="px-4 py-3">Contact For Money Transfer</th>
-                  <th className="px-4 py-3">Customer Name</th>
-                  <th className="px-4 py-3">Notes</th>
-                  <th className="px-4 py-3 text-right">Sum Of Amount</th>
-                  <th className="px-4 py-3">Transfer Proof</th>
-                  <th className="px-4 py-3">Invoice</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {workspace.approvedRequests.map((row) => (
-                  <tr key={row.id} className="align-top">
-                    <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
-                      {row.moneyTransferDate ?? "-"}
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-slate-700">{row.line ?? "-"}</td>
-                    <td className="px-4 py-3">
-                      <p className="font-black text-slate-950">{row.contactForMoneyTransfer}</p>
-                      <p className="mt-1 font-mono text-[11px] font-semibold text-slate-500">{row.requesterHrId}</p>
-                    </td>
-                    <td className="px-4 py-3 font-black text-slate-950">{row.customerName}</td>
-                    <td className="max-w-[260px] px-4 py-3 text-slate-600">
-                      <p className="line-clamp-3">{row.notes || "-"}</p>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right font-black text-slate-950">
-                      {egp(row.sumOfAmount)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <EvidenceUpload
-                        accept="image/jpeg,image/png,image/webp"
-                        fileName={row.financeProofFileName}
-                        isUploading={uploadingEvidenceKey === `${row.id}:money_transfer_proof`}
-                        label="Upload proof"
-                        onUpload={(file) => void uploadFinanceEvidence(row.id, "money_transfer_proof", file)}
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <EvidenceUpload
-                        accept="image/jpeg,image/png,image/webp,application/pdf"
-                        fileName={row.invoiceFileName}
-                        isUploading={uploadingEvidenceKey === `${row.id}:invoice`}
-                        label="Upload invoice"
-                        onUpload={(file) => void uploadFinanceEvidence(row.id, "invoice", file)}
-                      />
-                    </td>
-                  </tr>
-                ))}
-                {!isLoading && workspace.approvedRequests.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-10 text-center text-sm font-semibold text-slate-500" colSpan={8}>
-                      No approved requests are available yet.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
+            </>
+          )}
         </Card>
       </div>
 
-      {workspace.customers.length === 0 || workspace.products.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
-          {workspace.customers.length === 0
-            ? "No active marketing customers are available yet. Customer creation is the next UI slice."
-            : "No active marketing products are available yet. Run the reference-data seed before saving real drafts."}
-        </div>
-      ) : null}
+      {/* ------ Empty-data hint ------------------------------------------------------------------------------------------------------------------------------ */}
+      {!isLoading &&
+        (workspace.customers.length === 0 ||
+          workspace.products.length === 0) && (
+          <div className="rounded-sm border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-500">
+            {workspace.customers.length === 0
+              ? "No active marketing customers available. Customer creation is coming next."
+              : "No active marketing products available. Run the reference-data seed."}
+          </div>
+        )}
     </div>
   );
 }
 
-function Metric({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
-      <span className="text-sm font-black text-slate-950">{value}</span>
-    </div>
-  );
-}
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Exported wrapper with error boundary --------------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
-function EvidenceUpload({
-  accept,
-  fileName,
-  isUploading,
-  label,
-  onUpload,
-}: {
-  accept: string;
-  fileName: string | null;
-  isUploading: boolean;
-  label: string;
-  onUpload: (file: File | null | undefined) => void;
-}) {
+export function MarketingRequestDraftWorkspace() {
   return (
-    <label className="flex min-w-[150px] cursor-pointer flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 transition hover:border-orange-200 hover:bg-orange-50">
-      <span className="flex items-center gap-2 text-xs font-black text-slate-700">
-        {isUploading ? <LoadingSpinner /> : <Upload className="h-3.5 w-3.5 text-orange-600" />}
-        {isUploading ? "Uploading..." : label}
-      </span>
-      <span className="truncate text-[11px] font-semibold text-slate-500">
-        {fileName ?? "No file yet"}
-      </span>
-      <input
-        accept={accept}
-        className="sr-only"
-        disabled={isUploading}
-        onChange={(event) => {
-          onUpload(event.target.files?.[0]);
-          event.currentTarget.value = "";
-        }}
-        type="file"
-      />
-    </label>
-  );
-}
-
-function ReadOnlyValue({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex h-12 min-w-0 flex-col justify-center rounded-2xl border border-slate-200 bg-white px-3">
-      <span className="truncate text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</span>
-      <span className="truncate text-sm font-black text-slate-800">{value}</span>
-    </div>
+    <WorkspaceErrorBoundary fallbackTitle="Marketing requests workspace error">
+      <MarketingRequestDraftWorkspaceInner />
+    </WorkspaceErrorBoundary>
   );
 }

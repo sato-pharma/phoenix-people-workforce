@@ -42,6 +42,8 @@ export type PermissionResource =
   | "sales"
   | "payroll"
   | "payslips"
+  | "deductions"
+  | "weekly_plans"
   | "expenses"
   | "vacancies"
   | "organogram"
@@ -56,7 +58,9 @@ export type PermissionResource =
   | "leave"
   | "admin"
   | "user_admin"
-  | "permission_admin";
+  | "permission_admin"
+  | "support_requests"
+  | "workflow_registry";
 
 export const permissionResources: PermissionResource[] = [
   "admin",
@@ -65,6 +69,8 @@ export const permissionResources: PermissionResource[] = [
   "imports",
   "sales",
   "payroll",
+  "deductions",
+  "weekly_plans",
   "expenses",
   "employees",
   "team",
@@ -76,6 +82,7 @@ export const permissionResources: PermissionResource[] = [
   "communication",
   "user_admin",
   "permission_admin",
+  "workflow_registry",
   "employee_documents",
   "employee_profile",
   "vacancies",
@@ -84,6 +91,7 @@ export const permissionResources: PermissionResource[] = [
   "payslips",
   "outstation",
   "leave",
+  "support_requests",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -153,10 +161,14 @@ const defaultPermissionMatrix: PermissionMap = {
     offers: allActions,
     payroll: allActions,
     payslips: allActions,
+    deductions: allActions,
+    weekly_plans: allActions,
     probation: allActions,
     resignations: allActions,
     permission_admin: allActions,
+    workflow_registry: allActions,
     sales: allActions,
+    support_requests: allActions,
     team: allActions,
     user_admin: allActions,
     vacancies: allActions,
@@ -176,9 +188,13 @@ const defaultPermissionMatrix: PermissionMap = {
     organogram: ["read", "export"],
     payroll: ["read", "export"],
     permission_admin: ["read"],
+    workflow_registry: ["read"],
     payslips: ["read", "export"],
+    deductions: ["read", "approve", "export"],
+    weekly_plans: ["read", "approve", "export"],
     resignations: ["read", "approve", "export"],
     sales: ["read", "export"],
+    support_requests: ["read", "export"],
     team: ["read", "export"],
     user_admin: ["read"],
     vacancies: ["read", "export"],
@@ -192,15 +208,21 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: allActions,
     employee_profile: allActions,
     employees: allActions,
+    expenses: ["read", "approve", "update", "delete", "export"],
     hr_calendar: allActions,
     leave: allActions,
     organogram: ["read", "export"],
+    outstation: ["read", "approve", "update", "delete", "export"],
     offers: allActions,
     payslips: ["read", "export"],
+    deductions: ["read", "create", "update", "approve", "export", "import"],
+    weekly_plans: ["read", "create", "update", "approve", "export", "import"],
     probation: allActions,
     resignations: allActions,
+    support_requests: ["read", "create", "update", "approve", "export"],
     team: ["read", "export"],
     vacancies: allActions,
+    workflow_registry: ["read"],
   },
   "Finance Manager": {
     employee_documents: ["read", "export"],
@@ -210,7 +232,11 @@ const defaultPermissionMatrix: PermissionMap = {
     leave: ["read", "approve", "export", "update"],
     payroll: allActions,
     payslips: ["read", "export"],
+    deductions: ["read", "approve", "export"],
+    weekly_plans: ["read", "approve", "export"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
+    workflow_registry: ["read"],
   },
   Employee: {
     overview: [],
@@ -224,6 +250,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
   },
   "Medical Rep": {
     overview: [],
@@ -237,6 +264,7 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read"],
     sales: ["read", "export"],
     payslips: ["read", "export"],
+    support_requests: ["read", "create"],
   },
   "District Manager": {
     overview: [],
@@ -251,6 +279,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read", "export"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
   },
@@ -267,7 +296,9 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
     team: ["read", "export"],
+    weekly_plans: ["read", "create", "update", "approve"],
   },
   "National Sales Manager": {
     overview: [],
@@ -281,9 +312,11 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
     team: ["read", "export"],
     organogram: ["read"],
     vacancies: ["read", "export"],
+    weekly_plans: ["read", "create", "update"],
   },
   "Product Manager": {
     overview: [],
@@ -296,6 +329,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
   },
   "Group Product Manager": {
     overview: [],
@@ -308,6 +342,8 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
+    weekly_plans: ["read", "create", "update"],
   },
   "SFE Manager": {
     overview: ["read"],
@@ -320,6 +356,8 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: allActions,
+    support_requests: ["read", "create"],
+    weekly_plans: ["read", "create", "update"],
   },
   "Training Manager": {
     overview: [],
@@ -333,7 +371,9 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     probation: ["read", "export"],
+    support_requests: ["read", "create"],
     team: ["read"],
+    weekly_plans: ["read", "create", "update"],
   },
   "Marketing Manager": {
     overview: [],
@@ -346,6 +386,8 @@ const defaultPermissionMatrix: PermissionMap = {
     offers: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
+    support_requests: ["read", "create"],
+    weekly_plans: ["read", "create", "update"],
   },
   Manager: {
     overview: [],
@@ -360,7 +402,9 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read"],
     sales: ["read", "export"],
+    support_requests: ["read", "create"],
     team: ["read", "export"],
+    weekly_plans: ["read", "approve"],
   },
 };
 
@@ -447,6 +491,10 @@ export function parseRoleStrict(value: string | null | undefined): PhoenixRole {
   return parsed;
 }
 
+export function isNationalSalesManager(value: string | null | undefined): boolean {
+  return normalizeRole(value) === "National Sales Manager";
+}
+
 export function getRolePrivilegeRank(role: PhoenixRole) {
   switch (role) {
     case "Super Admin":
@@ -497,6 +545,14 @@ export function resolveEmployeeIdentityId(context: Partial<Pick<AccessContext, "
 }
 
 export function resolveNavigationMode(context: AccessContext): NavigationMode {
+  if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) {
+    return "employee-portal";
+  }
+  // The CEO is an executive Admin account: it uses the existing admin shell and
+  // navigation (landing on /admin/ceo-command-center), never the employee portal.
+  if (context.role === "CEO") {
+    return "admin";
+  }
   return portalNavigationRoles.has(context.role) ? "employee-portal" : "admin";
 }
 
@@ -652,7 +708,9 @@ export async function canAccess(
   action: PermissionAction = "read",
 ) {
   if (context.scope === "system") return true;
-  if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) return false;
+  if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) {
+    return resource === "employee_profile" && (action === "read" || action === "update");
+  }
   const matrix = await resolvePermissionMatrix();
   return matrix[context.role][resource]?.includes(action) ?? false;
 }
@@ -864,4 +922,57 @@ export async function assertAttendanceSetupPermission(
   if (!(await canAccessAttendanceSetup(context, action))) {
     throw new Error(`Forbidden: ${context.role} cannot ${action} attendance setup.`);
   }
+}
+
+/**
+ * Workflow Control Center (Admin / Governance) access design.
+ *
+ * Phase 1 is a READ-ONLY workflow map + simulator. Access is restricted to HR
+ * governance: Super Admin only. In Phoenix there is no distinct "HR Manager" /
+ * "HR Admin" role — the HR Manager (HR_ID B-10) holds the Super Admin role and
+ * is therefore covered. Generic HR Specialists (e.g. A-16, Talent Acquisition)
+ * are intentionally EXCLUDED, as are CEO, Finance Manager, all Sales roles,
+ * Training Manager and Employees.
+ *
+ * If a future non-Super-Admin HR governance user must be granted access, add
+ * their (normalized) HR_ID to WORKFLOW_CONTROL_GOVERNANCE_HR_IDS rather than
+ * widening the role set.
+ *
+ * Editing is globally disabled in Phase 1 via WORKFLOW_CONTROL_EDIT_ENABLED.
+ * The edit design is reserved for Phase 2 (versioning / draft / publish /
+ * rollback) but stays locked while the flag is false.
+ */
+export const WORKFLOW_CONTROL_ACCESS_ROLES: readonly PhoenixRole[] = ["Super Admin"];
+
+/** Extra non-Super-Admin HR governance accounts (normalized HR_IDs). None today. */
+export const WORKFLOW_CONTROL_GOVERNANCE_HR_IDS: readonly string[] = [];
+
+/** Phase 1: workflow editing is disabled for everyone. Flipped on in Phase 2. */
+export const WORKFLOW_CONTROL_EDIT_ENABLED = false;
+
+export function canAccessWorkflowControlCenter(context: Pick<AccessContext, "role" | "hrId">): boolean {
+  if (WORKFLOW_CONTROL_ACCESS_ROLES.includes(context.role)) return true;
+  const normalized = normalizeHrIdForAccess(context.hrId);
+  return normalized != null && WORKFLOW_CONTROL_GOVERNANCE_HR_IDS.some((id) => normalizeHrIdForAccess(id) === normalized);
+}
+
+export function canEditWorkflowControlCenter(context: Pick<AccessContext, "role" | "hrId">): boolean {
+  // Phase 2 design: edit follows the same access set — but stays locked until
+  // WORKFLOW_CONTROL_EDIT_ENABLED is turned on.
+  if (!WORKFLOW_CONTROL_EDIT_ENABLED) return false;
+  return canAccessWorkflowControlCenter(context);
+}
+
+/**
+ * Phase 2A: a SAFE, client-only Draft Editor (display/config fields, local
+ * state, no persistence, no runtime/publish). Available to the same governance
+ * set as access (Super Admin only). This is distinct from
+ * WORKFLOW_CONTROL_EDIT_ENABLED, which gates REAL runtime editing/publish and
+ * remains OFF.
+ */
+export const WORKFLOW_CONTROL_DRAFT_EDITOR_ENABLED = true;
+
+export function canUseWorkflowDraftEditor(context: Pick<AccessContext, "role" | "hrId">): boolean {
+  if (!WORKFLOW_CONTROL_DRAFT_EDITOR_ENABLED) return false;
+  return canAccessWorkflowControlCenter(context);
 }

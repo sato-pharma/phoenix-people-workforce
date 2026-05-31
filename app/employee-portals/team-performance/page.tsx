@@ -4,9 +4,11 @@ import { Users, TrendingUp, Target, Award, BarChart3 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import {
   TeamAchievementChart,
   TeamSalesVsTargetChart,
@@ -39,12 +41,28 @@ export default async function EmployeePortalTeamPerformancePage({
     redirect("/overview");
   }
 
-  await assertPermission(access, "sales", "read");
+  if (!(await canAccess(access, "sales", "read"))) {
+    return (
+      <EmployeePortalEmptyState
+        message="Team performance is available for manager roles with sales access."
+        title="Team Performance Unavailable"
+      />
+    );
+  }
 
   const resolvedParams = await searchParams;
   const requestedPeriod = resolvedParams.period?.trim() ?? null;
 
-  const data = await getDsmTeamPerformance(access, { period: requestedPeriod });
+  let data = null;
+  try {
+    data = await getDsmTeamPerformance(access, { period: requestedPeriod });
+  } catch (error) {
+    logPortalFailure(
+      { route: "/employee-portals/team-performance", module: "team-performance", role: access.role, hrId: access.hrId },
+      error,
+    );
+    data = null;
+  }
 
   if (!data) {
     return (
@@ -80,6 +98,9 @@ export default async function EmployeePortalTeamPerformancePage({
       }.`}
       title="Team Performance"
     >
+      <div className="flex flex-wrap items-center gap-2">
+        <ScopeBadge scope={access.scope} />
+      </div>
       <div className="space-y-6">
       {/* ── Page header + period filter ────────────────────────────────── */}
       <Card className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">

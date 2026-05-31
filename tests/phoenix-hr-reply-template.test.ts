@@ -6,7 +6,7 @@ export function runPhoenixHrReplyTemplateTests() {
   const hrTemplate = readFileSync("src/lib/email/phoenix-hr-reply-template.ts", "utf8");
   const composer = readFileSync("src/components/admin/email-reply-composer.tsx", "utf8");
 
-  assert.match(layout, /Phoenix Workforce HR System/);
+  assert.match(layout, /\$\{systemIdentity\.appName\} HR System/);
   assert.match(layout, /phoenixGlow/);
   assert.match(layout, /phoenixSweep/);
   assert.match(layout, /phoenixFloat/);

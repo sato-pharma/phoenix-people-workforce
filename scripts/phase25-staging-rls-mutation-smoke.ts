@@ -365,7 +365,7 @@ async function alignStagingProbationAndLeaveSchema(sql: ReturnType<typeof postgr
   return { createdOrAlignedTables: ["employee_probation", "v2_vacation_requests"] };
 }
 
-async function cleanupPhase25Fixtures(sql: ReturnType<typeof postgres>, cleanup: CleanupState) {
+async function cleanupPhase25Fixtures(sql: ReturnType<typeof postgres>) {
   await sql.begin(async (transaction) => {
     await transaction`
       delete from public.v2_vacation_requests
@@ -747,7 +747,7 @@ async function main() {
     checks.push(fail("PHASE25 smoke", "staging RLS mutation proof completed", error));
   } finally {
     try {
-      await cleanupPhase25Fixtures(sql, cleanup);
+      await cleanupPhase25Fixtures(sql);
       checks.push(pass(
         "Cleanup",
         "PHASE25 disposable fixtures cleaned where safe",

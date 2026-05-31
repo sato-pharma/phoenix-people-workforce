@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -8,8 +9,9 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://routes.googleapis.com",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://routes.googleapis.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io",
   "media-src 'self' blob:",
+  "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -69,4 +71,25 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG ?? "phoenix-b7",
+  project: process.env.SENTRY_PROJECT ?? "phoenix-workspace",
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  errorHandler: (error) => {
+    if (process.env.CI) {
+      console.warn(`Sentry source map upload skipped: ${error.message}`);
+    }
+  },
+  // Only upload source maps when an auth token is configured; otherwise builds
+  // (local, CI, and un-configured deploys) stay clean and require nothing extra.
+  sourcemaps: { deleteSourcemapsAfterUpload: true, disable: !process.env.SENTRY_AUTH_TOKEN },
+  // Keep build output quiet unless running in CI.
+  silent: !process.env.CI,
+  telemetry: false,
+  widenClientFileUpload: false,
+  webpack: {
+    treeshake: {
+      removeDebugLogging: true,
+    },
+  },
+});

@@ -1,6 +1,7 @@
 ﻿import { Loader2 } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
+import { systemIdentity } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
 
 export function LoadingSpinner({ className }: { className?: string }) {
@@ -19,7 +20,7 @@ export function PageLoadingState({ title = "Loading" }: { title?: string }) {
         <LoadingSpinner className="h-5 w-5" />
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">
-            Phoenix Workforce
+            {systemIdentity.appName}
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-text">
             {title}

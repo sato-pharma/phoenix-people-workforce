@@ -127,7 +127,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
         </AdminCallout>
       ) : null}
       <AdminCallout tone="neutral">
-        Schedule Start, Schedule End, and Grace Minutes are in the Policy Details tab. The daily report only shows punch/report columns.
+        The report evaluates active attendance policies and estimates deductions from day fractions. Payroll is not changed from this screen.
       </AdminCallout>
 
       <AdminTableShell
@@ -214,6 +214,8 @@ export function FingerprintReport({ initialData, initialError }: Props) {
             >
               <option value="">All statuses</option>
               <option value="Complete">Complete</option>
+              <option value="Late">Late</option>
+              <option value="Early leave">Early leave</option>
               <option value="Short day">Short day</option>
               <option value="Single punch">Single punch</option>
             </select>
@@ -246,7 +248,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
 
       {activeTab === "policies" ? (
         <AdminTableShell
-          description="Schedule and grace details resolved from employee HR_ID policy, then job title policy, then default policy."
+          description="Schedule details resolved from employee HR_ID policy, then job title policy, then default policy."
           title="Employee Policy Details"
         >
           <div className="phoenix-horizontal-scroll overflow-x-auto">
@@ -259,7 +261,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
                   <th className="border-b border-r border-slate-200 px-4 py-3">Department</th>
                   <th className="border-b border-r border-slate-200 px-4 py-3">Scheduled Start</th>
                   <th className="border-b border-r border-slate-200 px-4 py-3">Scheduled End</th>
-                  <th className="border-b border-r border-slate-200 px-4 py-3">Grace Minutes</th>
+                  <th className="border-b border-r border-slate-200 px-4 py-3">Daily Grace</th>
                   <th className="border-b border-r border-slate-200 px-4 py-3">Policy</th>
                   <th className="border-b border-slate-200 px-4 py-3">Effective</th>
                 </tr>

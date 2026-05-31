@@ -18,6 +18,11 @@ import {
 } from "@/lib/employees/employee-directory";
 import { enqueueInAppNotification } from "@/lib/notifications/in-app";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import {
+  isWithinManagerHierarchy,
+  reportsToManagerSeat,
+  sameWorkforceDepartment,
+} from "@/lib/workforce/hierarchy-resolver";
 import { addDaysToDateOnly, daysBetweenDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
 import { getEgyptianNationalHolidays, type EgyptianNationalHoliday } from "@/lib/vacation/national-holidays";
 import {
@@ -35,6 +40,10 @@ import {
 } from "@/lib/vacation/calculations";
 import { summarizeVacationRequests } from "@/lib/vacation/metrics";
 import {
+  assertLeaveWorkflowTransition,
+  vacationDecisionAction,
+} from "@/lib/vacation/workflow";
+import {
   buildVacationDecisionUrl,
   sendVacationDecisionResultEmail,
   sendVacationManagerDecisionEmail,
@@ -47,7 +56,6 @@ import type {
   VacationEmployeeSummary,
   VacationEligibilityStatus,
   VacationEmployeeEligibilityRow,
-  VacationPaymentStatus,
   VacationReportData,
   VacationReportFilters,
   VacationRequestInput,
@@ -347,23 +355,6 @@ function employeeLineMatches(left: EmployeeDirectoryRow, right: EmployeeDirector
   return Boolean(leftLine && rightLine && leftLine === rightLine);
 }
 
-function isEmployeeInManagerHierarchy(input: {
-  employee: EmployeeDirectoryRow;
-  employeeByHrId: Map<string, EmployeeDirectoryRow>;
-  viewerHrId: string;
-}) {
-  let managerHrId = canonicalHrId(input.employee.managerHrId);
-  const visited = new Set<string>();
-
-  while (managerHrId && !visited.has(managerHrId)) {
-    if (managerHrId === input.viewerHrId) return true;
-    visited.add(managerHrId);
-    managerHrId = canonicalHrId(input.employeeByHrId.get(managerHrId)?.managerHrId);
-  }
-
-  return false;
-}
-
 function filterVacationEmployeesForAccess(access: AccessContext, employees: EmployeeDirectoryRow[]) {
   const scope = getVacationVisibilityScope(access);
   if (scope === "COMPANY") return employees;
@@ -389,15 +380,37 @@ function filterVacationEmployeesForAccess(access: AccessContext, employees: Empl
     if (employeeHrId === viewerHrId) return true;
 
     if (scope === "TEAM") {
-      return hrIdsMatch(currentEmployee.hrId, employee.managerHrId);
+      // Seat-continuity-aware: a report belongs to this manager's team via the
+      // current manager edge OR the vacant-seat continuity marker, so the team
+      // stays consistent with the organogram across a manager resignation.
+      return reportsToManagerSeat({
+        employee,
+        viewerCanonicalHrId: viewerHrId,
+        canonicalize: canonicalHrId,
+      });
     }
 
     if (scope === "HIERARCHY") {
-      return isEmployeeInManagerHierarchy({ employee, employeeByHrId, viewerHrId });
+      // Seat-continuity-aware management-chain climb (see hierarchy-resolver.ts).
+      return isWithinManagerHierarchy({
+        employee,
+        byCanonicalHrId: employeeByHrId,
+        viewerCanonicalHrId: viewerHrId,
+        canonicalize: canonicalHrId,
+      });
     }
 
     if (scope === "LINE") {
-      return employeeLineMatches(employee, currentEmployee);
+      // Department-safe LINE scope: a LINE-scoped viewer (e.g. National Sales
+      // Manager, Product Manager) sees colleagues in the SAME line AND the SAME
+      // department only. This stops a Sales NSM from seeing Marketing employees
+      // who merely share the same product line, and symmetrically keeps Marketing
+      // roles within their own department. See
+      // src/lib/workforce/hierarchy-resolver.ts.
+      return (
+        employeeLineMatches(employee, currentEmployee) &&
+        sameWorkforceDepartment(currentEmployee, employee)
+      );
     }
 
     return false;
@@ -856,11 +869,23 @@ function canSeeVacation(access: AccessContext, request: VacationRequestRecord, v
   const employeeHrId = canonicalHrId(request.employeeHrId);
   if (employeeHrId && visibleEmployeeHrIds?.has(employeeHrId)) return true;
 
-  return (
-    accessMatchesHrId(access, request.employeeHrId) ||
-    accessMatchesHrId(access, request.managerHrId) ||
-    accessMatchesHrId(access, request.managerOfManagerHrId)
-  );
+  // Own request is always visible.
+  if (accessMatchesHrId(access, request.employeeHrId)) return true;
+
+  // Management-chain fallback (stored manager / manager-of-manager on the request)
+  // is allowed ONLY for management scopes (TEAM / HIERARCHY). LINE and SELF scopes
+  // must rely solely on the department-safe `visibleEmployeeHrIds` set above, so a
+  // LINE-scoped viewer (e.g. a Sales NSM) cannot use a stale stored manager field
+  // to reach a request outside their department boundary.
+  const scope = getVacationVisibilityScope(access);
+  if (scope === "TEAM" || scope === "HIERARCHY") {
+    return (
+      accessMatchesHrId(access, request.managerHrId) ||
+      accessMatchesHrId(access, request.managerOfManagerHrId)
+    );
+  }
+
+  return false;
 }
 
 async function insertVacationEvent(input: {
@@ -966,15 +991,26 @@ async function dispatchVacationSubmitted(input: {
   const policyWarningText = (input.policyWarnings ?? []).join(" ");
   await notifyRecipients({
     href: reportHref,
-    message: `${input.request.employeeName} submitted ${vacationTypeLabel(input.request.vacationType)} for ${input.request.durationDays} day(s).${policyWarningText ? ` Policy review: ${policyWarningText}` : ""}`,
-    metadata: { policyWarnings: input.policyWarnings ?? [], requestId: input.request.id, status: input.request.status },
+    message: `${input.request.employeeName} submitted ${vacationTypeLabel(input.request.vacationType)} from ${input.request.startDate} to ${input.request.endDate} (${input.request.durationDays} day(s)). Review is pending your decision.${policyWarningText ? ` Policy review: ${policyWarningText}` : ""}`,
+    metadata: {
+      policyWarnings: input.policyWarnings ?? [],
+      requestId: input.request.id,
+      status: input.request.status,
+      details: [
+        { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
+        { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
+        { label: "Period", value: `${input.request.startDate} → ${input.request.endDate}` },
+        { label: "Status", value: "Pending manager decision" },
+        { label: "Action", value: "Review request" },
+      ],
+    },
     recipients: [
       input.request.managerHrId,
       input.request.managerOfManagerHrId,
       ...hrRecipients.map((recipient) => recipient.hrId),
     ],
     requestId: input.request.id,
-    title: "Vacation request submitted",
+    title: `${input.request.employeeName} submitted a vacation request`,
     type: "submitted",
   });
 
@@ -1012,15 +1048,27 @@ async function dispatchVacationManagerReview(input: {
   const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
   await notifyRecipients({
     href: reportHref,
-    message: `${input.request.managerName ?? "Direct manager"} ${input.decision === "approve" ? "approved" : "rejected"} ${input.request.employeeName}'s vacation request. HR final decision is required.`,
-    metadata: { managerDecision: input.request.managerDecision, requestId: input.request.id, status: input.request.status },
+    message: `${input.request.managerName ?? "Direct manager"} ${input.decision === "approve" ? "approved" : "rejected"} ${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}). HR final decision is required.`,
+    metadata: {
+      managerDecision: input.request.managerDecision,
+      requestId: input.request.id,
+      status: input.request.status,
+      details: [
+        { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
+        { label: "Manager", value: input.request.managerName ?? "Direct manager" },
+        { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
+        { label: "Period", value: `${input.request.startDate} → ${input.request.endDate}` },
+        { label: "Status", value: "Pending HR final decision" },
+        { label: "Action", value: "Complete HR decision" },
+      ],
+    },
     recipients: [
       input.request.employeeHrId,
       input.request.managerOfManagerHrId,
       ...hrRecipients.map((recipient) => recipient.hrId),
     ],
     requestId: input.request.id,
-    title: "Vacation request pending HR final decision",
+    title: `${input.request.employeeName}'s vacation request needs HR final decision`,
     type: `manager_review:${input.decision}`,
   });
 }
@@ -1034,15 +1082,24 @@ async function dispatchVacationDecision(input: {
   const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
   await notifyRecipients({
     href: reportHref,
-    message: `${input.request.employeeName}'s vacation request was ${input.decision === "approve" ? "approved" : "rejected"} by HR final review.`,
-    metadata: { requestId: input.request.id, status: input.request.status },
+    message: `${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}) was ${input.decision === "approve" ? "approved" : "rejected"} by HR final review.`,
+    metadata: {
+      requestId: input.request.id,
+      status: input.request.status,
+      details: [
+        { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
+        { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
+        { label: "Period", value: `${input.request.startDate} → ${input.request.endDate}` },
+        { label: "Status", value: input.decision === "approve" ? "Approved" : "Rejected" },
+      ],
+    },
     recipients: [
       input.request.employeeHrId,
       input.request.managerOfManagerHrId,
       ...hrRecipients.map((recipient) => recipient.hrId),
     ],
     requestId: input.request.id,
-    title: `Vacation request ${input.decision === "approve" ? "approved" : "rejected"} by HR`,
+    title: `${input.request.employeeName}'s vacation request was ${input.decision === "approve" ? "approved" : "rejected"}`,
     type: `decision:${input.decision}`,
   });
 
@@ -1355,6 +1412,12 @@ export async function getVacationRequestPageData(access: AccessContext) {
 
 export async function createVacationRequest(access: AccessContext, input: CreateVacationRequestInput, options: { baseUrl: string }) {
   await assertPermission(access, "leave", "create");
+  await assertLeaveWorkflowTransition({
+    access,
+    actionKey: "submit",
+    expectedNextStatus: "pending_manager",
+    status: "draft",
+  });
   const vacationType = normalizeVacationType(input.vacationType);
   const dayPart = normalizeVacationDayPart(input.dayPart);
   const startDate = toDateOnlyString(String(input.startDate ?? ""));
@@ -1614,6 +1677,11 @@ export async function createVacationRequestAsAdmin(access: AccessContext, input:
   const directory = await getEmployeeDirectory();
   const requestId = randomUUID();
   const { payload, status } = await buildAdminVacationMutationPayload({ access, directory, form: input });
+  await assertLeaveWorkflowTransition({
+    access,
+    actionKey: "admin_create",
+    status: "draft",
+  });
 
   const { data, error } = await getSupabaseAdmin()
     .from(vacationRequestsTable)
@@ -1651,6 +1719,11 @@ export async function updateVacationRequestAsAdmin(access: AccessContext, input:
 
   const directory = await getEmployeeDirectory();
   const { payload, status } = await buildAdminVacationMutationPayload({ access, directory, existing, form: input });
+  await assertLeaveWorkflowTransition({
+    access,
+    actionKey: "admin_update",
+    status: existing.status,
+  });
   const { data, error } = await getSupabaseAdmin()
     .from(vacationRequestsTable)
     .update(payload)
@@ -1685,6 +1758,12 @@ export async function deleteVacationRequestAsAdmin(access: AccessContext, reques
   await assertVacationAdminManagement(access, "delete");
   const existing = await fetchVacationRequestById(requestId);
   if (!existing) throw new Error("Vacation request was not found.");
+  await assertLeaveWorkflowTransition({
+    access,
+    actionKey: "admin_delete",
+    expectedNextStatus: "deleted",
+    status: existing.status,
+  });
 
   const { error } = await getSupabaseAdmin()
     .from(vacationRequestsTable)
@@ -1747,6 +1826,16 @@ async function applyVacationDecision(input: {
 
   const decisionValue = input.decision === "approve" ? "approved" : "rejected";
   const isHrFinalDecision = input.request.status === "pending_hr";
+  const workflowDecision = vacationDecisionAction({
+    decision: input.decision,
+    status: input.request.status,
+  });
+  await assertLeaveWorkflowTransition({
+    access: input.access ?? { role: "Manager" },
+    actionKey: workflowDecision.actionKey,
+    expectedNextStatus: workflowDecision.expectedNextStatus,
+    status: input.request.status,
+  });
   const now = new Date().toISOString();
   const updatePayload = isHrFinalDecision
     ? {

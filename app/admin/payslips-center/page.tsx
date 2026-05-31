@@ -56,8 +56,8 @@ export default async function AdminPayslipsCenterPage(
 
   const searchParams = await props.searchParams;
   const [employeeOptions, data] = await Promise.all([
-    getPayslipCenterEmployeeOptions(),
-    searchPayslipCenter(searchParams.employee),
+    getPayslipCenterEmployeeOptions(access),
+    searchPayslipCenter(access, searchParams.employee),
   ]);
   const latestNet = data.rows[0] ? formatMoney(data.rows[0].netSalary) : "-";
   const canExportPayslipImage = access.role === "Super Admin";

@@ -1,17 +1,24 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { createManagerExpenseAsAdmin } from "@/lib/outstation/service";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
+import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function managerExpenseCreateStatus(error: unknown) {
+  if (isForbiddenError(error)) return 403;
+  if (isWorkflowRegistryTransitionError(error)) return 409;
+  return 500;
+}
+
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "outstation", "approve");
+    await assertOutstationAdminAccess(access, "approve");
 
     const body = (await request.json().catch(() => ({}))) as Partial<ManagerExpenseAdminInput>;
 
@@ -102,19 +109,19 @@ export async function POST(request: Request) {
     const created = await createManagerExpenseAsAdmin(access, input);
 
     return NextResponse.json({
-      message: "Manager expense created successfully.",
+      message: "Manual outstation expense added successfully.",
       request: created,
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create manager expense.";
+    const message = error instanceof Error ? error.message : "Failed to add manual outstation expense.";
     return NextResponse.json(
       {
-        error: isForbiddenError(error) ? "forbidden" : "manager_expense_create_failed",
+        error: isForbiddenError(error) ? "forbidden" : "outstation_expense_create_failed",
         message,
         success: false,
       },
-      { status: isForbiddenError(error) ? 403 : 500 },
+      { status: managerExpenseCreateStatus(error) },
     );
   }
 }

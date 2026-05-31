@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import {
@@ -339,7 +339,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
           <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2">
             <div className={`${adminSoftPanelClassName} p-4`}>
               <div className="mb-4 flex items-center gap-3">
-                <div className="rounded-2xl bg-[#FFF7ED] p-3 text-[#F97316]">
+                <div className="rounded-md bg-[#FFF7ED] p-3 text-[#F97316]">
                   <UserRound className="h-5 w-5" />
                 </div>
                 <div>
@@ -357,7 +357,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
               <label className="block">
                 <FieldLabel required>Medical Rep</FieldLabel>
                 <select
-                  className="h-12 w-full rounded-2xl border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                  className="h-12 w-full rounded-md border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
                   onChange={(event) => setSelectedHrId(event.target.value)}
                   value={selectedHrId}
                 >
@@ -385,7 +385,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
               <div className="relative">
                 <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
                 <input
-                  className="h-12 w-full rounded-2xl border border-[#D8E0EA] bg-white pl-10 pr-3 text-sm font-bold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                  className="h-12 w-full rounded-md border border-[#D8E0EA] bg-white pl-10 pr-3 text-sm font-bold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
                   onChange={(event) => setCoachingDate(event.target.value)}
                   type="date"
                   value={coachingDate}
@@ -403,7 +403,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
           <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 sm:px-5">
             <div className="grid gap-2 md:grid-cols-5">
               {ratingMeanings.map((meaning) => (
-                <div className="rounded-2xl border border-[#E2E8F0] bg-white px-3 py-2" key={meaning.value}>
+                <div className="rounded-md border border-[#E2E8F0] bg-white px-3 py-2" key={meaning.value}>
                   <p className="text-xs font-black text-[#0F172A]">{meaning.value}</p>
                   <p className="mt-0.5 text-[11px] font-semibold leading-4 text-[#64748B]">{meaning.label}</p>
                 </div>
@@ -461,7 +461,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
                             Area to be Improved
                           </span>
                           <textarea
-                            className="min-h-20 w-full rounded-2xl border border-[#D8E0EA] bg-white px-3 py-2.5 text-sm font-semibold leading-5 text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                            className="min-h-20 w-full rounded-md border border-[#D8E0EA] bg-white px-3 py-2.5 text-sm font-semibold leading-5 text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
                             onChange={(event) => updateScoreNote(item.key, "areaToBeImproved", event.target.value)}
                             placeholder="What should be improved for this point?"
                             value={scoreNotes[item.key]?.areaToBeImproved ?? ""}
@@ -472,7 +472,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
                             Strength Point
                           </span>
                           <textarea
-                            className="min-h-20 w-full rounded-2xl border border-[#D8E0EA] bg-white px-3 py-2.5 text-sm font-semibold leading-5 text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                            className="min-h-20 w-full rounded-md border border-[#D8E0EA] bg-white px-3 py-2.5 text-sm font-semibold leading-5 text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
                             onChange={(event) => updateScoreNote(item.key, "strengthPoint", event.target.value)}
                             placeholder="What was strong in this point?"
                             value={scoreNotes[item.key]?.strengthPoint ?? ""}
@@ -501,7 +501,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
               <label className="block" key={label as string}>
                 <FieldLabel required>{label as string}</FieldLabel>
                 <textarea
-                  className="min-h-28 w-full rounded-2xl border border-[#D8E0EA] bg-white px-4 py-3 text-sm font-semibold leading-6 text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                  className="min-h-28 w-full rounded-md border border-[#D8E0EA] bg-white px-4 py-3 text-sm font-semibold leading-6 text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
                   onChange={(event) => (setValue as React.Dispatch<React.SetStateAction<string>>)(event.target.value)}
                   placeholder={`Write ${String(label).toLowerCase()}...`}
                   value={value as string}
@@ -516,7 +516,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
         <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
           <div className="border-b border-[#E2E8F0] bg-[#0F172A] px-5 py-5 text-white">
             <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-white/10 p-3 text-[#FDBA74]">
+              <div className="rounded-md bg-white/10 p-3 text-[#FDBA74]">
                 <Sparkles className="h-5 w-5" />
               </div>
               <div>
@@ -555,7 +555,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
                   </div>
                 </div>
 
-                <div className={cn("rounded-2xl border px-4 py-3 text-sm font-black", zoneClassNames[liveScore.performanceZone])}>
+                <div className={cn("rounded-md border px-4 py-3 text-sm font-black", zoneClassNames[liveScore.performanceZone])}>
                   {coachingPerformanceZoneDisplayLabels[liveScore.performanceZone]}
                 </div>
 
@@ -581,7 +581,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
                 </div>
               </>
             ) : (
-              <div className="rounded-2xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-4 text-sm font-semibold leading-6 text-[#64748B]">
+              <div className="rounded-md border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-4 text-sm font-semibold leading-6 text-[#64748B]">
                 Complete all 20 ratings to calculate the final score, zone, strongest parameter, and key development area.
               </div>
             )}
@@ -589,7 +589,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
             {message ? (
               <div
                 className={cn(
-                  "flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold leading-6",
+                  "flex items-start gap-3 rounded-md border px-4 py-3 text-sm font-semibold leading-6",
                   message.tone === "success"
                     ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                     : "border-rose-200 bg-rose-50 text-rose-800",
@@ -610,7 +610,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
 
             <div className="grid gap-2">
               <Button
-                className="h-12 gap-2 rounded-2xl bg-white text-[#0F172A] ring-1 ring-[#D8E0EA] hover:bg-[#F8FAFC]"
+                className="h-12 gap-2 rounded-md bg-white text-[#0F172A] ring-1 ring-[#D8E0EA] hover:bg-[#F8FAFC]"
                 disabled={isBusy}
                 onClick={handleSaveDraft}
                 variant="secondary"
@@ -619,7 +619,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
                 Save Draft
               </Button>
               <Button
-                className="h-12 gap-2 rounded-2xl bg-[#F97316] font-black shadow-[0_14px_30px_rgba(249,115,22,0.22)] hover:bg-[#EA580C]"
+                className="h-12 gap-2 rounded-md bg-[#F97316] font-black shadow-[0_14px_30px_rgba(249,115,22,0.22)] hover:bg-[#EA580C]"
                 disabled={isBusy}
                 onClick={handleSubmitReport}
               >
@@ -628,7 +628,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
               </Button>
             </div>
 
-            <div className="flex items-start gap-3 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-4 text-xs font-semibold leading-5 text-[#64748B]">
+            <div className="flex items-start gap-3 rounded-md border border-[#E2E8F0] bg-[#F8FAFC] p-4 text-xs font-semibold leading-5 text-[#64748B]">
               <ClipboardCheck className="mt-0.5 h-4 w-4 text-[#F97316]" />
               <p>No notification or employee acknowledgment UI is triggered from this screen yet.</p>
             </div>

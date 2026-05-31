@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { getContractRenewalReminderCandidates } from "@/lib/contracts/service";
@@ -68,9 +69,25 @@ async function runContractRenewalNotifications(request: Request) {
 }
 
 export async function GET(request: Request) {
+  // Only authorized cron runs are monitored, so unrelated pings don't record check-ins.
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: "unauthorized", message: "Contract renewal notification run is not authorized." }, { status: 401 });
+  }
   try {
-    return await runContractRenewalNotifications(request);
+    // Sentry cron monitor: a missed or failed daily run raises an alert (email).
+    // This run also processes the notification outbox + probation reminders.
+    return await Sentry.withMonitor(
+      "contract-renewals",
+      () => runContractRenewalNotifications(request),
+      {
+        schedule: { type: "crontab", value: "15 4 * * *" },
+        checkinMargin: 60,
+        maxRuntime: 30,
+        timezone: "Etc/UTC",
+      },
+    );
   } catch (error) {
+    Sentry.captureException(error, { tags: { cron: "contract-renewals" } });
     const message = error instanceof Error ? error.message : "Contract renewal notification run failed.";
     return NextResponse.json({ error: "contract_renewal_notifications_failed", message }, { status: 500 });
   }
