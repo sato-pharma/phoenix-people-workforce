@@ -1,6 +1,7 @@
 import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runIncentiveSchemeTests } from "./incentive-scheme.test.ts";
 import { runEmailNotificationTests } from "./email-notifications.test.ts";
+import { runEmailGovernanceTests } from "./email-governance.test.ts";
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
 import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
@@ -118,6 +119,7 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 await runTest("i18n config", runI18nConfigTests);
 await runTest("incentive scheme", runIncentiveSchemeTests);
 await runTest("email notifications", runEmailNotificationTests);
+await runTest("email governance", runEmailGovernanceTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);
 await runTest("ready payroll template formulas", runReadyPayrollTemplateFormulaTests);
