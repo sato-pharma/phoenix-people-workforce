@@ -40,8 +40,14 @@ export async function PATCH(request: Request, context: RouteContext) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "communication", "update");
     const { templateKey } = await context.params;
-    const body = (await request.json().catch(() => ({}))) as EmailTemplatePayload;
-    const template = await saveEmailTemplate(templateKey, body, access.loginId ?? access.hrId);
+    const body = (await request.json().catch(() => ({}))) as EmailTemplatePayload & {
+      action?: "draft" | "publish" | "save";
+      changeReason?: string;
+    };
+    const template = await saveEmailTemplate(templateKey, body, access.loginId ?? access.hrId, {
+      action: body.action ?? (body.isActive ? "publish" : "draft"),
+      reason: body.changeReason,
+    });
     return NextResponse.json({ template });
   } catch (error) {
     if (isForbiddenError(error)) {

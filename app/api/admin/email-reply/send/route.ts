@@ -1,115 +1,32 @@
 import { NextResponse } from "next/server";
 
-import { systemIdentity } from "@/config/system-settings";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   invalidCommunicationEmails,
-  splitCommunicationEmailList,
 } from "@/lib/communication/metrics";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { assertReachableEmailImage, validateManualEmailRecipientPolicy } from "@/lib/email/email-safety";
 import {
-  buildPhoenixHrReplyEmail,
-  phoenixHrEmailSignatureHostedUrl,
-  phoenixHrEmailSignatureSmallPath,
-  type PhoenixHrEmailTone,
-} from "@/lib/email/phoenix-hr-reply-template";
+  buildComposerIdempotency,
+  emailSignatureUrl,
+  interpolateComposerText,
+  normalizeComposerBody,
+  recordManualEmailSendAudit,
+  resolveComposerRecipients,
+  type ComposerPayload,
+} from "@/lib/email/email-composer-service";
+import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { buildPhoenixHrReplyEmail } from "@/lib/email/phoenix-hr-reply-template";
 import { emailNotificationsEnabled } from "@/lib/notifications/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const allowedTones = new Set<PhoenixHrEmailTone>(["professional", "warm", "firm", "concise"]);
-
-type EmailReplySendBody = {
-  bcc?: unknown;
-  cc?: unknown;
-  recipientName?: unknown;
-  replyMessage?: unknown;
-  senderName?: unknown;
-  subject?: unknown;
-  to?: unknown;
-  tone?: unknown;
-};
-
-function isLocalUrl(value: string) {
-  try {
-    const hostname = new URL(value).hostname.toLowerCase();
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-  } catch {
-    return false;
-  }
-}
-
-function publicAssetUrl(publicPath: string, requestUrl: string) {
-  const configuredBase =
-    process.env.HR_EMAIL_ASSET_BASE_URL ||
-    process.env.NOTIFICATION_DASHBOARD_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
-    process.env.VERCEL_URL ||
-    new URL(requestUrl).origin;
-  const base = /^https?:\/\//i.test(configuredBase) ? configuredBase : `https://${configuredBase}`;
-
-  return `${base.replace(/\/+$/, "")}/${publicPath.replace(/^\/+/, "")}`;
-}
-
-function emailSignatureUrl(requestUrl: string) {
-  const explicitUrl = process.env.HR_EMAIL_SIGNATURE_URL?.trim();
-  if (explicitUrl) return explicitUrl;
-
-  if (!process.env.HR_EMAIL_ASSET_BASE_URL?.trim()) {
-    return phoenixHrEmailSignatureHostedUrl;
-  }
-
-  const assetUrl = publicAssetUrl(phoenixHrEmailSignatureSmallPath, requestUrl);
-  return isLocalUrl(assetUrl) ? phoenixHrEmailSignatureHostedUrl : assetUrl;
-}
-
-async function assertReachableImageUrl(url: string) {
-  let parsed: URL;
-
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error("Email signature image URL is invalid.");
-  }
-
-  if (parsed.protocol !== "https:") {
-    throw new Error("Email signature image URL must be HTTPS so email clients can load it.");
-  }
-
-  const verify = async (method: "GET" | "HEAD") =>
-    fetch(url, {
-      cache: "no-store",
-      headers: method === "GET" ? { Range: "bytes=0-0" } : undefined,
-      method,
-      signal: AbortSignal.timeout(8000),
-    });
-
-  let response = await verify("HEAD").catch(() => null);
-
-  if (!response?.ok || !String(response.headers.get("content-type") ?? "").toLowerCase().startsWith("image/")) {
-    response = await verify("GET").catch(() => null);
-  }
-
-  const contentType = response?.headers.get("content-type") ?? "";
-
-  if (!response?.ok || !contentType.toLowerCase().startsWith("image/")) {
-    throw new Error(
-      `Email signature image is not reachable as an image. Status: ${response?.status ?? "network_error"}.`,
-    );
-  }
-}
-
-function stringField(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
 async function sendEmail({
   bcc,
   cc,
   html,
+  idempotencyKey,
   subject,
   text,
   to,
@@ -117,6 +34,7 @@ async function sendEmail({
   bcc: string[];
   cc: string[];
   html: string;
+  idempotencyKey: string;
   subject: string;
   text: string;
   to: string[];
@@ -129,8 +47,7 @@ async function sendEmail({
 
   if (!from) return { reason: "HR_REPLY_EMAIL_FROM or NOTIFICATION_EMAIL_FROM is missing.", skipped: true as const };
 
-  const requestId = `phoenix-hr-${Date.now()}`;
-  return sendPhoenixEmail({ bcc, cc, from, html, idempotencyKey: requestId, subject, text, to });
+  return sendPhoenixEmail({ bcc, cc, from, html, idempotencyKey, subject, text, to });
 }
 
 export async function POST(request: Request) {
@@ -138,17 +55,15 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "communication", "update");
 
-    const body = (await request.json().catch(() => ({}))) as EmailReplySendBody;
-    const to = splitCommunicationEmailList(body.to);
-    const cc = splitCommunicationEmailList(body.cc);
-    const bcc = splitCommunicationEmailList(body.bcc);
-    const subject = stringField(body.subject);
-    const replyMessage = stringField(body.replyMessage);
-    const recipientName = stringField(body.recipientName);
-    const senderName = stringField(body.senderName) || systemIdentity.hrSignatureName;
-    const tone = allowedTones.has(body.tone as PhoenixHrEmailTone)
-      ? (body.tone as PhoenixHrEmailTone)
-      : "professional";
+    const body = (await request.json().catch(() => ({}))) as ComposerPayload;
+    const normalized = normalizeComposerBody(body);
+    const resolved = await resolveComposerRecipients(body);
+    const to = resolved.emails.to;
+    const cc = resolved.emails.cc;
+    const bcc = resolved.emails.bcc;
+    const subject = interpolateComposerText(normalized.subject, resolved.context);
+    const replyMessage = interpolateComposerText(normalized.replyMessage, resolved.context);
+    const recipientName = normalized.recipientName || resolved.context.recipientName;
 
     if (to.length === 0) {
       return NextResponse.json({ error: "missing_to", message: "Add at least one recipient." }, { status: 400 });
@@ -162,6 +77,25 @@ export async function POST(request: Request) {
       );
     }
 
+    const recipientPolicy = validateManualEmailRecipientPolicy({
+      bcc,
+      cc,
+      externalJustification: normalized.externalJustification,
+      to,
+    });
+    if (recipientPolicy.issues.length > 0) {
+      return NextResponse.json(
+        {
+          allowedDomains: recipientPolicy.allowedDomains,
+          error: recipientPolicy.issues[0].code,
+          externalRecipients: recipientPolicy.externalRecipients,
+          issues: recipientPolicy.issues,
+          message: recipientPolicy.issues[0].message,
+        },
+        { status: 400 },
+      );
+    }
+
     if (!subject) {
       return NextResponse.json({ error: "missing_subject", message: "Subject is required." }, { status: 400 });
     }
@@ -171,29 +105,60 @@ export async function POST(request: Request) {
     }
 
     const signatureImageSrc = emailSignatureUrl(request.url);
-    await assertReachableImageUrl(signatureImageSrc);
+    const signatureImageCheck = await assertReachableEmailImage(signatureImageSrc);
 
     const generated = buildPhoenixHrReplyEmail({
       cc: cc.join(", "),
       recipientName,
       replyMessage,
-      senderName,
+      senderName: normalized.senderName,
       signatureImageSrc,
       subject,
       to: to.join(", "),
-      tone,
+      tone: normalized.tone,
+    });
+    const idempotencyKey = buildComposerIdempotency({
+      bcc,
+      cc,
+      normalized: { ...normalized, recipientName, replyMessage, subject },
+      to,
     });
 
     const result = await sendEmail({
       bcc,
       cc,
       html: generated.html,
+      idempotencyKey,
       subject,
       text: generated.plainText,
       to,
     });
+    await recordManualEmailSendAudit({
+      actor: access.loginId ?? access.hrId ?? null,
+      bcc,
+      cc,
+      clientRequestId: normalized.clientRequestId,
+      externalJustification: normalized.externalJustification,
+      externalRecipients: recipientPolicy.externalRecipients,
+      providerMessageId: "id" in result ? result.id ?? null : null,
+      providerReason: "reason" in result ? result.reason ?? null : null,
+      providerSkipped: "skipped" in result ? result.skipped : false,
+      status: "skipped" in result && result.skipped ? "skipped" : "sent",
+      subject,
+      templateKey: normalized.templateKey,
+      to,
+    }).catch((auditError) => {
+      console.error("manual_email_send_audit_failed", auditError);
+    });
 
-    return NextResponse.json({ result: { ...result, signatureImageVerified: true } });
+    return NextResponse.json({
+      result: {
+        ...result,
+        externalRecipients: recipientPolicy.externalRecipients,
+        signatureImageVerified: true,
+        signatureImageWarning: signatureImageCheck.warning,
+      },
+    });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to send HR emails." }, { status: 403 });
