@@ -4,6 +4,7 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isEmployeeDirectorySchemaMissing, employeeDirectoryErrorMessage } from "@/lib/employees/employee-directory";
 import { isDevelopment } from "@/lib/env";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   isResignationsSchemaMissing,
   resignationErrorMessage,
@@ -54,6 +55,9 @@ export async function POST(
   { params }: { params: Promise<{ hrId: string }> },
 ) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const { hrId } = await params;
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employees", "update");

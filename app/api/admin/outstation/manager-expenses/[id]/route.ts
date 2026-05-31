@@ -6,6 +6,7 @@ import {
   deleteOutstationRequestAsAdmin,
   updateManagerExpenseAsAdmin,
 } from "@/lib/outstation/service";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 
@@ -27,6 +28,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertOutstationAdminAccess(access, "approve");
 
@@ -92,6 +96,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertOutstationAdminAccess(access, "delete");
 

@@ -38,6 +38,9 @@ const egyptGoogleHolidayCalendarIds = [
   "en.eg#holiday@group.v.calendar.google.com",
   "en.egyptian#holiday@group.v.calendar.google.com",
 ] as const;
+const holidayFetchTimeoutMs = 3500;
+const holidayCacheTtlMs = 10 * 60 * 1000;
+const holidayCache = new Map<string, { expiresAt: number; result: EgyptianNationalHolidayResult }>();
 
 function clampMonth(value: number) {
   return Number.isInteger(value) && value >= 1 && value <= 12 ? value : null;
@@ -148,6 +151,8 @@ async function fetchGoogleHolidayCalendar(input: {
   timeMax: string;
   timeMin: string;
 }) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), holidayFetchTimeoutMs);
   const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(input.calendarId)}/events`);
   url.searchParams.set("key", input.apiKey);
   url.searchParams.set("singleEvents", "true");
@@ -155,18 +160,30 @@ async function fetchGoogleHolidayCalendar(input: {
   url.searchParams.set("timeMin", input.timeMin);
   url.searchParams.set("timeMax", input.timeMax);
 
-  return fetch(url, {
-    cache: "no-store",
-    headers: { Accept: "application/json" },
-  });
+  try {
+    return await fetch(url, {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function fetchGoogleHolidayCalendarIcs(calendarId: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), holidayFetchTimeoutMs);
   const url = new URL(`https://calendar.google.com/calendar/ical/${encodeURIComponent(calendarId)}/public/basic.ics`);
-  return fetch(url, {
-    cache: "no-store",
-    headers: { Accept: "text/calendar,text/plain,*/*" },
-  });
+  try {
+    return await fetch(url, {
+      cache: "no-store",
+      headers: { Accept: "text/calendar,text/plain,*/*" },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function unfoldIcsLines(value: string) {
@@ -282,6 +299,10 @@ export async function getEgyptianNationalHolidays(input: {
   const now = new Date();
   const year = validYear(input.year) ?? now.getFullYear();
   const month = clampMonth(input.month) ?? now.getMonth() + 1;
+  const cacheKey = `${year}-${String(month).padStart(2, "0")}`;
+  const cached = holidayCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.result;
+
   const configuredCalendarId = process.env.GOOGLE_HOLIDAY_CALENDAR_ID_EG?.trim();
   const calendarCandidates = Array.from(new Set([
     configuredCalendarId,
@@ -294,19 +315,25 @@ export async function getEgyptianNationalHolidays(input: {
   let lastStatus = 0;
 
   for (const candidateCalendarId of calendarCandidates) {
-    const icsResponse = await fetchGoogleHolidayCalendarIcs(candidateCalendarId);
-    lastStatus = icsResponse.status;
-    if (icsResponse.ok) {
-      const holidays = icsEventsToHolidays(parseGoogleHolidayIcs(await icsResponse.text()), monthStart, monthEnd);
-      return {
-        calendarId: candidateCalendarId,
-        connected: true,
-        holidays,
-        message: null,
-        month,
-        sourceLabel: "Google Calendar Egypt public holidays",
-        year,
-      };
+    const icsResponse = await fetchGoogleHolidayCalendarIcs(candidateCalendarId).catch(() => null);
+    if (!icsResponse) {
+      lastStatus = 0;
+    } else {
+      lastStatus = icsResponse.status;
+      if (icsResponse.ok) {
+        const holidays = icsEventsToHolidays(parseGoogleHolidayIcs(await icsResponse.text()), monthStart, monthEnd);
+        const result = {
+          calendarId: candidateCalendarId,
+          connected: true,
+          holidays,
+          message: null,
+          month,
+          sourceLabel: "Google Calendar Egypt public holidays",
+          year,
+        };
+        holidayCache.set(cacheKey, { expiresAt: Date.now() + holidayCacheTtlMs, result });
+        return result;
+      }
     }
 
     if (!apiKey.trim()) continue;
@@ -316,11 +343,15 @@ export async function getEgyptianNationalHolidays(input: {
       calendarId: candidateCalendarId,
       timeMax,
       timeMin,
-    });
+    }).catch(() => null);
+    if (!apiResponse) {
+      lastStatus = 0;
+      continue;
+    }
     lastStatus = apiResponse.status;
     if (apiResponse.ok) {
       const payload = await apiResponse.json() as { items?: GoogleCalendarEvent[] };
-      return {
+      const result = {
         calendarId: candidateCalendarId,
         connected: true,
         holidays: googleEventsToHolidays(payload.items ?? [], monthStart, monthEnd),
@@ -329,10 +360,12 @@ export async function getEgyptianNationalHolidays(input: {
         sourceLabel: "Google Calendar Egypt public holidays",
         year,
       };
+      holidayCache.set(cacheKey, { expiresAt: Date.now() + holidayCacheTtlMs, result });
+      return result;
     }
   }
 
-  return {
+  const result = {
     calendarId: calendarCandidates[0] ?? null,
     connected: false,
     holidays: [],
@@ -341,4 +374,6 @@ export async function getEgyptianNationalHolidays(input: {
     sourceLabel: "Google Calendar Egypt public holidays",
     year,
   };
+  holidayCache.set(cacheKey, { expiresAt: Date.now() + holidayCacheTtlMs, result });
+  return result;
 }

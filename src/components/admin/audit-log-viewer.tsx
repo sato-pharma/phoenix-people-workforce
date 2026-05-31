@@ -14,6 +14,7 @@ const ENTITY_TYPES = [
   "sales_import_batch",
   "payroll_batch",
   "vacation_request",
+  "vacation_weekly_off_policy",
 ];
 
 function formatDate(iso: string) {

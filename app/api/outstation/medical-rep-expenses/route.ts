@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { submitMedicalRepSimpleExpenseRequest } from "@/lib/outstation/service";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 
 export const runtime = "nodejs";
@@ -46,6 +47,9 @@ function medicalRepExpenseStatus(error: unknown) {
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertPermission(access, "outstation", "create");
 

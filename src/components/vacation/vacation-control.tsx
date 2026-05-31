@@ -112,7 +112,54 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
       ) : null}
 
       <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
-        <div className="overflow-x-auto">
+        <div className="divide-y divide-slate-100 md:hidden">
+          {policies.map((policy) => {
+            const draft = drafts[policy.jobTitle] ?? policy;
+            const dirty = policyKey(draft) !== policyKey(policyMap.get(policy.jobTitle) ?? policy);
+            return (
+              <div className="bg-white p-4" key={policy.jobTitle}>
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-black text-slate-950">{policy.jobTitle}</p>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                    Used by vacation duration calculation.
+                  </p>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  {dayFields.map((field) => (
+                    <label className="grid gap-1.5" key={field.key}>
+                      <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">{field.label}</span>
+                      <select
+                        className="h-11 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold"
+                        value={draft[field.key]}
+                        onChange={(event) => updateDraft(policy.jobTitle, field.key, event.target.value as VacationWeeklyOffMode)}
+                      >
+                        {VACATION_WEEKLY_OFF_MODES.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+                <Button
+                  className="mt-4 w-full gap-2 rounded-lg bg-slate-950 font-black text-white hover:bg-slate-800"
+                  disabled={!dirty || savingTitle === policy.jobTitle}
+                  onClick={() => savePolicy(policy.jobTitle)}
+                  type="button"
+                >
+                  <Save className="h-4 w-4" />
+                  {savingTitle === policy.jobTitle ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            );
+          })}
+          {policies.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm font-semibold text-slate-500">
+              No job titles found in the employee directory.
+            </div>
+          ) : null}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-[980px] w-full border-collapse text-left text-sm">
             <thead className="bg-slate-50 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
               <tr>
