@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   emailTemplateKeys,
+  getEmailTemplateCategoryOptions,
   getEmailTemplateCatalog,
   getEmailTemplateRoutingOptions,
   getTemplatePlaceholderHints,
@@ -24,6 +25,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       placeholderHints: getTemplatePlaceholderHints(),
+      templateCategories: getEmailTemplateCategoryOptions(),
       templateKeys: emailTemplateKeys,
       templates,
       routingOptions,

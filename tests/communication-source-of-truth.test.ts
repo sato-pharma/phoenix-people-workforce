@@ -133,7 +133,7 @@ export function runCommunicationSourceOfTruthTests() {
   assert.match(platformSource, /communication/);
 
   const composerRouteSource = readFileSync("app/api/admin/email-reply/send/route.ts", "utf8");
-  assert.match(composerRouteSource, /splitCommunicationEmailList/);
+  assert.match(composerRouteSource, /resolveComposerRecipients/);
   assert.match(composerRouteSource, /invalidCommunicationEmails/);
 
   const contractReminderRoute = readFileSync("app/api/notifications/contract-renewals/route.ts", "utf8");

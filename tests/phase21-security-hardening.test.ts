@@ -38,6 +38,9 @@ export function runPhase21SecurityHardeningTests() {
   assert.match(proxySource, /\/api\/auth\/login/);
   assert.match(proxySource, /\/api\/auth\/logout/);
   assert.match(proxySource, /\/api\/auth\/heartbeat/);
+  assert.match(proxySource, /\/api\/admin\/email-composer\/preview/);
+  assert.match(proxySource, /\/api\/admin\/email-reply\/send/);
+  assert.match(proxySource, /isPreviewEmailTemplateMutationPath/);
 
   assert.match(phase21Smoke, /critical public tables have RLS enabled/);
   assert.match(phase21Smoke, /critical tables do not grant direct anon privileges/);

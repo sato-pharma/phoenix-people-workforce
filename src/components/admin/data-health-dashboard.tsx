@@ -20,7 +20,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -217,6 +217,30 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
       detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }
+
+  // Deep-link support: `/admin/data-health?view=<queue>` opens that queue and scrolls to it.
+  // Used by the Command Center "Fix now" remediation shortcuts.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("view");
+    const validViews = new Set<string>([
+      "active-missing-access",
+      "employee-issues",
+      "salary-flags",
+      "sales-issues",
+      "orphan-hrids",
+      "non-login-nodes",
+      "historical-records",
+      "vacancy-nodes",
+      "non-assignable-sales",
+      "vacant-territory-sales",
+      "line-level-sales",
+      "other-sales-exceptions",
+    ]);
+    if (!requested || !validViews.has(requested)) return;
+    // Defer so the state update runs in a callback, not synchronously in the effect body.
+    const id = window.setTimeout(() => openDetail(requested as DetailViewKey), 0);
+    return () => window.clearTimeout(id);
+  }, []);
 
   const priorityCards: Array<Omit<QueueCardProps, "active" | "onClick"> & { key: DetailViewKey }> = [
     {
