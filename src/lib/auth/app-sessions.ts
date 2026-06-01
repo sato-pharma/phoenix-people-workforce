@@ -46,6 +46,13 @@ export function isSupabaseBridgeRequiredForRole(role: PhoenixRole) {
   return privilegedSupabaseBridgeRoles.has(role);
 }
 
+export function shouldBlockLoginWhenSupabaseBridgeUnavailable(role: PhoenixRole) {
+  if (!isSupabaseBridgeRequiredForRole(role)) return false;
+  if (process.env.PHOENIX_STRICT_SUPABASE_BRIDGE === "true") return true;
+  if (process.env.PHOENIX_STRICT_SUPABASE_BRIDGE === "false") return false;
+  return process.env.VERCEL_ENV === "production";
+}
+
 export function sessionAbsoluteTimeoutSecondsForRole(role: PhoenixRole) {
   void role;
   const configured = Number(process.env.PHOENIX_SESSION_ABSOLUTE_TIMEOUT_SECONDS);
