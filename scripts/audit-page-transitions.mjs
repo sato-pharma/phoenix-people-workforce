@@ -404,6 +404,37 @@ async function waitForTransitionProvider(page) {
   );
 }
 
+async function readShellState(page) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await page.evaluate(() => ({
+        activeCount: document.querySelectorAll("aside a[aria-current='page']").length,
+        hasMain: Boolean(document.querySelector("main")),
+        hasMatchingNavLink: [...document.querySelectorAll("aside a[href]")].some((link) => {
+          try {
+            const url = new URL(link.href);
+            return `${url.pathname}${url.search}` === `${window.location.pathname}${window.location.search}`;
+          } catch {
+            return false;
+          }
+        }),
+        hasSidebar: Boolean(document.querySelector("aside")),
+        hasTopbar: Boolean(document.querySelector("header")),
+        horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
+        stuckLoading: /Loading Phoenix Workforce/i.test(document.body.innerText),
+        transitionIndicatorStuck: document.documentElement.hasAttribute("data-route-transition-pending"),
+      }));
+    } catch (error) {
+      if (!/Execution context was destroyed|Cannot find context/i.test(String(error?.message ?? error)) || attempt > 0) {
+        throw error;
+      }
+      await page.locator("main").first().waitFor({ timeout: routeCompletionTimeoutMs }).catch(() => undefined);
+      await page.waitForTimeout(120);
+    }
+  }
+  return null;
+}
+
 async function auditRouteInPage(page, route, role, { closePage = false } = {}) {
   const consoleErrors = [];
   const requestFailures = [];
@@ -469,23 +500,7 @@ async function auditRouteInPage(page, route, role, { closePage = false } = {}) {
       transitionMs = Math.round(performance.now() - feedbackStartedAt);
       await page.waitForTimeout(80);
 
-      state = await page.evaluate(() => ({
-        activeCount: document.querySelectorAll("aside a[aria-current='page']").length,
-        hasMain: Boolean(document.querySelector("main")),
-        hasMatchingNavLink: [...document.querySelectorAll("aside a[href]")].some((link) => {
-          try {
-            const url = new URL(link.href);
-            return `${url.pathname}${url.search}` === `${window.location.pathname}${window.location.search}`;
-          } catch {
-            return false;
-          }
-        }),
-        hasSidebar: Boolean(document.querySelector("aside")),
-        hasTopbar: Boolean(document.querySelector("header")),
-        horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
-        stuckLoading: /Loading Phoenix Workforce/i.test(document.body.innerText),
-        transitionIndicatorStuck: document.documentElement.hasAttribute("data-route-transition-pending"),
-      }));
+      state = await readShellState(page);
 
       if (!state.hasSidebar || !state.hasTopbar || !state.hasMain) status = "shell_loss";
       if (state.horizontalOverflow) status = status === "ok" ? "horizontal_overflow" : `${status};horizontal_overflow`;
@@ -542,23 +557,7 @@ async function auditRouteInPage(page, route, role, { closePage = false } = {}) {
     ).catch(() => undefined);
     await page.waitForTimeout(80);
 
-    state = await page.evaluate(() => ({
-      activeCount: document.querySelectorAll("aside a[aria-current='page']").length,
-      hasMain: Boolean(document.querySelector("main")),
-      hasMatchingNavLink: [...document.querySelectorAll("aside a[href]")].some((link) => {
-        try {
-          const url = new URL(link.href);
-          return `${url.pathname}${url.search}` === `${window.location.pathname}${window.location.search}`;
-        } catch {
-          return false;
-        }
-      }),
-      hasSidebar: Boolean(document.querySelector("aside")),
-      hasTopbar: Boolean(document.querySelector("header")),
-      horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
-      stuckLoading: /Loading Phoenix Workforce/i.test(document.body.innerText),
-      transitionIndicatorStuck: document.documentElement.hasAttribute("data-route-transition-pending"),
-    }));
+    state = await readShellState(page);
 
     if (!state.hasSidebar || !state.hasTopbar || !state.hasMain) status = status === "ok" ? "shell_loss" : `${status};shell_loss`;
     if (state.hasMatchingNavLink && state.activeCount === 0) status = status === "ok" ? "missing_active_nav" : `${status};missing_active_nav`;
@@ -574,10 +573,12 @@ async function auditRouteInPage(page, route, role, { closePage = false } = {}) {
 
   return {
     consoleErrors: consoleErrors.length,
+    consoleErrorSamples: consoleErrors.slice(0, 3),
     completionMs,
     href: route,
     ms: transitionMs ?? Math.round(performance.now() - startedAt),
     requestFailures: requestFailures.length,
+    requestFailureSamples: requestFailures.slice(0, 3),
     role,
     state,
     status,
@@ -673,6 +674,17 @@ function score({ desktopResults, mobileResults }) {
   const slowRoutes = desktopResults.filter((result) => result.ms > maxWarmTransitionMs);
   const consoleErrorCount = all.reduce((total, result) => total + result.consoleErrors, 0);
   const requestFailureCount = all.reduce((total, result) => total + result.requestFailures, 0);
+  const diagnostics = all
+    .filter((result) => result.consoleErrors > 0 || result.requestFailures > 0)
+    .map((result) => ({
+      consoleErrorSamples: result.consoleErrorSamples ?? [],
+      consoleErrors: result.consoleErrors,
+      href: result.href,
+      requestFailureSamples: result.requestFailureSamples ?? [],
+      requestFailures: result.requestFailures,
+      role: result.role,
+      status: result.status,
+    }));
   const raw = 10
     - failures.length * 0.75
     - slowRoutes.length * 0.35
@@ -681,6 +693,7 @@ function score({ desktopResults, mobileResults }) {
 
   return {
     consoleErrorCount,
+    diagnostics,
     failures,
     requestFailureCount,
     score: Number(Math.max(0, raw).toFixed(1)),
