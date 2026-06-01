@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Input } from "@/components/ui/input";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { PageContainer } from "@/components/layout/page-container";
@@ -992,6 +993,7 @@ function NationalEgyptianVacationPanel() {
         </button>
 
         <select
+          aria-label="National holidays month"
           className="h-8 flex-1 min-w-[100px] rounded-sm border border-slate-200 bg-white px-2 text-[13px] font-bold text-slate-800 outline-none focus:border-orange-300"
           value={month}
           onChange={(event) => setMonth(Number(event.target.value))}
@@ -1004,6 +1006,7 @@ function NationalEgyptianVacationPanel() {
         </select>
 
         <select
+          aria-label="National holidays year"
           className="h-8 w-[80px] shrink-0 rounded-sm border border-slate-200 bg-white px-2 text-[13px] font-bold text-slate-800 outline-none focus:border-orange-300"
           value={year}
           onChange={(event) => setYear(Number(event.target.value))}
@@ -1485,18 +1488,16 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 </div>
 
                 {/* Day part */}
-                <label className="space-y-1.5">
+                <div className="space-y-1.5">
                   <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Day part</span>
-                  <select
-                    className="h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                  <ChoiceGroup
+                    aria-label="Day part"
+                    className="grid-cols-3"
+                    onChange={updateDayPart}
+                    options={initialData?.dayPartOptions ?? VACATION_DAY_PARTS}
                     value={dayPart}
-                    onChange={(event) => updateDayPart(event.target.value as VacationDayPart)}
-                  >
-                    {(initialData?.dayPartOptions ?? VACATION_DAY_PARTS).map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </label>
+                  />
+                </div>
 
                 {/* Date pickers */}
                 <VacationDatePicker

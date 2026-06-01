@@ -134,9 +134,13 @@ test.describe("Vacation Request Page", () => {
 
   // ─── Day Part Selector ──────────────────────────────────────────────
 
-  test("day part select renders and is functional", async ({ page }) => {
-    const select = page.locator('select').first();
-    await expect(select).toBeVisible();
+  test("day part options can be selected by direct click", async ({ page }) => {
+    const dayPartGroup = page.getByRole("radiogroup", { name: /Day part/i });
+    await expect(dayPartGroup).toBeVisible();
+
+    const halfDayOption = dayPartGroup.getByRole("radio", { name: /AM only|Morning|Half/i }).first();
+    await halfDayOption.click();
+    await expect(halfDayOption).toHaveAttribute("aria-checked", "true");
   });
 
   // ─── Date Picker ──────────────────────────────────────────────────
@@ -244,10 +248,17 @@ test.describe("Vacation Request Page", () => {
     await expect(page.getByText("National Egyptian holiday")).toBeVisible();
     await expect(page.getByText("Google Calendar")).toBeVisible();
 
-    // Period filter dropdowns should exist
-    const selects = page.locator("select");
-    const count = await selects.count();
-    expect(count).toBeGreaterThanOrEqual(2);
+    await expect(page.getByLabel("National holidays month")).toBeVisible();
+    await expect(page.getByLabel("National holidays year")).toBeVisible();
+  });
+
+  test("national holidays month selection stays controlled", async ({ page }) => {
+    const nationalTab = page.getByRole("tab", { name: /National Holidays/i });
+    await nationalTab.click();
+
+    const monthSelect = page.getByLabel("National holidays month");
+    await monthSelect.selectOption("7");
+    await expect(monthSelect).toHaveValue("7");
   });
 
   test("national holidays prev/next month buttons work", async ({ page }) => {
