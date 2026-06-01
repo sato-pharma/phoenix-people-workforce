@@ -610,7 +610,7 @@ export function OfferLifecycleDashboard({
       <AdminPageHero
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button className="gap-2 rounded-2xl bg-[#0F172A] px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)] hover:bg-[#111827]" onClick={() => setIsModalOpen(true)}>
+            <Button className="gap-2 rounded-2xl px-3 py-2 text-xs shadow-[0_14px_30px_rgba(249,115,22,0.28)]" onClick={() => setIsModalOpen(true)}>
               <Send className="h-4 w-4" />
               Create offer
             </Button>

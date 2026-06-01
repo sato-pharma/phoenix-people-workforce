@@ -397,7 +397,7 @@ export function VacanciesReport({
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
-              className="rounded-2xl bg-[#0F172A] px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)] hover:bg-[#111827]"
+              className="rounded-2xl px-3 py-2 text-xs shadow-sm"
               disabled={!report || filteredRows.length === 0}
               onClick={exportCsv}
               variant="secondary"

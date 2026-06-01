@@ -41,21 +41,13 @@ import { systemAssets, systemIdentity, systemUiText } from "@/config/system-sett
 import { type NavigationMode, type PermissionAction, type PermissionResource, type PhoenixRole } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 
-// ── Shared admin palette — mirrors the CEO hero identity card exactly ────────
-// Hero card (ceo-command-center.tsx): `bg-gradient-to-br from-slate-900 via-slate-900
-// to-slate-800` with `border-slate-800`, plus two decorative blurred glows (warm
-// orange top-right, cool sky bottom-left). We reuse the gradient, hairline, AND the
-// glows so the sidebar reads as the *same surface* as the executive hero.
-const ADMIN_SIDEBAR_BG = "bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800";
-
-/** The hero card's decorative glow overlay — rendered behind sidebar content. */
-function AdminSidebarGlow() {
-  return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-      <div className="absolute -bottom-24 -left-16 h-60 w-60 rounded-full bg-sky-500/10 blur-3xl" />
-    </div>
-  );
-}
+// ── Shared admin palette — matches the top navigation bar exactly ────────────
+// The Topbar admin header (topbar.tsx) is a flat pure-black surface
+// (`bg-[#000000]`) with a `#1a1a1a` hairline border. The sidebar reuses the SAME
+// flat black and hairline — no gradient, no decorative glow — so the navbar and
+// sidebar read as one continuous, identically-coloured chrome around the app.
+const ADMIN_SIDEBAR_BG = "bg-[#000000]";
+const ADMIN_SIDEBAR_BORDER = "border-[#1a1a1a]";
 
 // ── Public types ─────────────────────────────────────────────────────────────
 type SidebarPermission = NavigationPermission;
@@ -293,12 +285,16 @@ function SidebarNav({
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
   currentRole,
   rail = false,
+  scrollable = true,
 }: {
   currentRole?: PhoenixRole;
   mode?: NavigationMode;
   onNavigate?: () => void;
   permissionLookup?: PermissionLookup;
   rail?: boolean;
+  // Desktop sidebar flows with the page (shows every item, no inner scroll); the
+  // mobile drawer is a fixed-height overlay and keeps its own scroll.
+  scrollable?: boolean;
 }) {
   const isAdmin = mode === "admin";
   const sections = useMemo(() => getSections(mode, permissionLookup, currentRole), [currentRole, mode, permissionLookup]);
@@ -356,7 +352,7 @@ function SidebarNav({
 
     return (
       <>
-        <nav className="phoenix-admin-sidebar-scroll flex-1 overflow-auto px-2 py-4">
+        <nav className={cn("flex-1 px-2 py-4", scrollable && "overflow-auto")}>
           <div className="flex flex-col items-center gap-1.5">
             {railItems.map((item) => (
               <NavRow
@@ -423,7 +419,7 @@ function SidebarNav({
         </div>
       )}
 
-      <nav className="phoenix-admin-sidebar-scroll flex-1 overflow-auto px-3 py-4">
+      <nav className={cn("flex-1 px-3 py-4", scrollable && "overflow-auto")}>
         {visibleSections.map((section, sectionIndex) => {
           const hasActive = section.items.some((item) => item.href === activeHref);
           const collapsed = !query && collapsedSectionIds.has(section.id) && !hasActive;
@@ -522,17 +518,49 @@ function SidebarBrand({ mode = "admin", onNavigate, rail = false }: { mode?: Nav
   const subtitle = isAdmin ? `${systemIdentity.productName} · Admin` : systemUiText.sidebar.employeeLogoSubtitle;
 
   if (rail) {
+    // Admin rail: the phoenix mark on the black chrome — no white background box.
+    if (isAdmin) {
+      return (
+        <Link
+          aria-label={`${systemIdentity.brandName} Admin`}
+          className="mx-auto mt-3 flex h-12 w-12 items-center justify-center"
+          href={homePath}
+          onClick={onNavigate}
+        >
+          <Image alt={`${systemIdentity.brandName} Admin`} className="h-11 w-11 object-contain" height={44} src={systemAssets.adminRailMark} width={44} />
+        </Link>
+      );
+    }
     return (
       <Link
-        aria-label={`${systemIdentity.brandName} ${isAdmin ? "Admin" : "Portal"}`}
-        className={cn(
-          "mx-auto mt-3 flex h-12 w-12 items-center justify-center overflow-hidden border bg-white transition",
-          isAdmin ? "border-white/10 hover:border-[#FDBA74]" : "border-[#E7DECF] shadow-[0_1px_2px_rgba(15,23,42,0.05)] hover:border-[#FDBA74]",
-        )}
+        aria-label={`${systemIdentity.brandName} Portal`}
+        className="mx-auto mt-3 flex h-12 w-12 items-center justify-center overflow-hidden border border-[#E7DECF] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-[#FDBA74]"
         href={homePath}
         onClick={onNavigate}
       >
         <Image alt={systemIdentity.brandName} className="h-7 w-7 object-contain" height={28} src={systemAssets.iconLogo} width={28} />
+      </Link>
+    );
+  }
+
+  // Admin: a single full lockup image (phoenix emblem + wordmark) on the black
+  // chrome — replaces the icon + "PHOENIX / Workforce · Admin" text block.
+  if (isAdmin) {
+    return (
+      <Link
+        aria-label={`${systemIdentity.brandName} Admin`}
+        className="mx-3 mt-3 block px-1 py-1.5"
+        href={homePath}
+        onClick={onNavigate}
+      >
+        <Image
+          alt={`${systemIdentity.brandName} Admin`}
+          className="h-auto w-full object-contain"
+          height={841}
+          priority
+          src={systemAssets.adminSidebarLockup}
+          width={1870}
+        />
       </Link>
     );
   }
@@ -621,19 +649,18 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "sticky top-0 z-30 hidden h-screen shrink-0 flex-col transition-[width] duration-200 lg:flex",
+        "hidden shrink-0 flex-col transition-[width] duration-200 lg:flex",
         isAdmin
-          ? cn("relative border-r border-slate-800 text-slate-100", ADMIN_SIDEBAR_BG)
+          ? cn("relative border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG)
           : "border-r border-[#E2E8F0] bg-white",
         railActive ? SIDEBAR_WIDTH_RAIL : SIDEBAR_WIDTH_EXPANDED,
       )}
     >
-      {isAdmin && <AdminSidebarGlow />}
       {isAdmin && (
         <button
           aria-label={railActive ? "Expand sidebar" : "Collapse sidebar"}
           aria-pressed={railActive}
-          className="absolute -right-3 top-[86px] z-40 flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-slate-800 text-slate-300 shadow-[0_6px_16px_rgba(2,6,23,0.6)] transition hover:border-[#FDBA74] hover:text-[#F8B56B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60"
+          className="absolute -right-3 top-[86px] z-40 flex h-7 w-7 items-center justify-center rounded-full border border-[#333333] bg-[#111111] text-slate-300 shadow-[0_6px_16px_rgba(0,0,0,0.6)] transition hover:border-[#FDBA74] hover:text-[#F8B56B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60"
           onClick={toggleRail}
           type="button"
         >
@@ -643,7 +670,7 @@ export function Sidebar({
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <SidebarBrand mode={navigationMode} rail={railActive} />
         <SidebarIntro mode={navigationMode} />
-        <SidebarNav currentRole={currentRole} mode={navigationMode} permissionLookup={permissionLookup} rail={railActive} />
+        <SidebarNav currentRole={currentRole} mode={navigationMode} permissionLookup={permissionLookup} rail={railActive} scrollable={false} />
         <SidebarFooter mode={navigationMode} />
       </div>
     </aside>
@@ -681,11 +708,10 @@ export function MobileSidebar({
       <aside
         className={cn(
           "absolute inset-y-0 left-0 flex w-[min(90vw,320px)] flex-col shadow-2xl transition-transform duration-200",
-          isAdmin ? cn("relative border-r border-slate-800 text-slate-100", ADMIN_SIDEBAR_BG) : "border-r border-[#E2E8F0] bg-white",
+          isAdmin ? cn("relative border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG) : "border-r border-[#E2E8F0] bg-white",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        {isAdmin && <AdminSidebarGlow />}
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           <div className="flex items-start justify-between gap-3">
             <SidebarBrand mode={navigationMode} onNavigate={onClose} />

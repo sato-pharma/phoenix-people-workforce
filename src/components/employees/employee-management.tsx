@@ -1257,17 +1257,17 @@ export function EmployeeManagement({
       <AdminPageHero
         actions={
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 rounded-2xl border border-[#D7E0EA] bg-white/80 p-1 shadow-sm backdrop-blur-sm">
+            <div className="flex items-center gap-1 rounded-2xl border border-white/20 bg-white/10 p-1 shadow-sm backdrop-blur-sm">
               <a
-                className="inline-flex h-10 items-center justify-center gap-2.5 rounded-xl px-5 text-xs font-semibold text-[#475569] transition-all hover:bg-[#F8FAFC] hover:text-[#0F172A] focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                className="inline-flex h-10 items-center justify-center gap-2.5 rounded-xl px-5 text-xs font-semibold text-slate-200 transition-all hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
                 href="/api/employees/template"
                 title="Export active employee master data"
               >
                 <Download className="h-4 w-4 text-[#F97316]" />
                 <span className="hidden sm:inline">Export</span>
               </a>
-              <div className="h-5 w-px bg-[#E2E8F0]" />
-              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2.5 rounded-xl px-5 text-xs font-semibold text-[#475569] transition-all hover:bg-[#F8FAFC] hover:text-[#0F172A] focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1">
+              <div className="h-5 w-px bg-white/15" />
+              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2.5 rounded-xl px-5 text-xs font-semibold text-slate-200 transition-all hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1">
                 {isImportingTemplate ? (
                   <LoadingSpinner />
                 ) : (
@@ -1284,15 +1284,15 @@ export function EmployeeManagement({
               </label>
             </div>
             <Button
-              className="h-10 gap-2 rounded-2xl border-[#D7E0EA] bg-white px-4 text-xs font-semibold text-[#475569] shadow-sm transition-all hover:border-[#FDBA74] hover:bg-[#FFF7ED] hover:text-[#0F172A] focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+              className="h-10 gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 text-xs font-semibold text-slate-100 backdrop-blur transition-all hover:border-[#FDBA74] hover:bg-white/[0.16] hover:text-white focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
               disabled={isLoading}
               onClick={() => void loadEmployees()}
-              variant="outline"
+              variant="secondary"
             >
               {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-4 w-4" />}
               <span className="hidden lg:inline">Sync</span>
             </Button>
-            <Button className="h-11 gap-2 rounded-2xl bg-[#0F172A] px-6 text-xs font-bold text-white shadow-[0_14px_30px_rgba(15,23,42,0.22)] transition-all hover:bg-[#1E293B] hover:shadow-[0_18px_36px_rgba(15,23,42,0.28)] focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1" onClick={startCreate}>
+            <Button className="h-11 gap-2 rounded-2xl bg-[#F97316] px-6 text-xs font-bold text-white shadow-[0_14px_30px_rgba(249,115,22,0.3)] transition-all hover:bg-[#EA580C] hover:shadow-[0_18px_36px_rgba(249,115,22,0.4)] focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1" onClick={startCreate}>
               <UserPlus className="h-4 w-4" />
               Add Employee
             </Button>

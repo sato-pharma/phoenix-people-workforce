@@ -1,5 +1,12 @@
 ﻿import { Loader2 } from "lucide-react";
 
+import {
+  adminHeroAccentBarClassName,
+  adminHeroGlowAmberClassName,
+  adminHeroGlowOrangeClassName,
+  adminHeroGridOverlayClassName,
+  adminHeroSurfaceClassName,
+} from "@/components/admin/admin-design-tokens";
 import { Card } from "@/components/ui/card";
 import { systemIdentity } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
@@ -64,17 +71,20 @@ export function AppRouteLoadingState({
   return (
     <div aria-live="polite" className="space-y-6" role="status">
       <span className="sr-only">{title}</span>
-      <section className="relative overflow-hidden border border-slate-200 bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.08)] sm:p-6">
-        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500/0 via-orange-400/80 to-sky-500/0" />
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <section className={adminHeroSurfaceClassName}>
+        <div aria-hidden="true" className={adminHeroGridOverlayClassName} />
+        <div aria-hidden="true" className={adminHeroGlowOrangeClassName} />
+        <div aria-hidden="true" className={adminHeroGlowAmberClassName} />
+        <div aria-hidden="true" className={adminHeroAccentBarClassName} />
+        <div className="relative flex flex-col gap-4 p-5 sm:p-6 lg:p-7 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-primary">
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-orange-200">
               {systemIdentity.appName}
             </p>
-            <h1 className="mt-3 text-2xl font-black tracking-tight text-text">
+            <h1 className="mt-3 text-2xl font-black tracking-tight text-white">
               {title}
             </h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-text-secondary">
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
               {description}
             </p>
           </div>

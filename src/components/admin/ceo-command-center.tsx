@@ -508,10 +508,10 @@ export function CeoCommandCenter({ data, loadError, viewer, generatedAtIso, brie
 
   return (
     <div className="space-y-7">
-      <section className="relative overflow-hidden rounded-[24px] border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-800 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.32)] ring-1 ring-white/5 sm:p-8">
+      <section className="relative overflow-hidden rounded-[24px] border border-[#1a1a1a] bg-[linear-gradient(135deg,#000000_0%,#070707_55%,#1C0E02_100%)] p-6 shadow-[0_28px_80px_rgba(0,0,0,0.45)] ring-1 ring-white/5 sm:p-8">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-orange-400/60 to-transparent" />
         <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-orange-500/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-24 -left-10 h-60 w-60 rounded-full bg-sky-500/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 -left-10 h-60 w-60 rounded-full bg-amber-500/15 blur-3xl" />
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-orange-300">

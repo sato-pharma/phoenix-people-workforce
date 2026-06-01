@@ -2174,7 +2174,7 @@ export function FieldWorkforceComplianceWorkspace() {
           actions={(
             <div className="flex flex-wrap gap-2">
               <Button
-                className="gap-2 rounded-xl bg-slate-950 font-black text-white hover:bg-orange-600"
+                className="gap-2 rounded-xl font-black"
                 disabled={!selectedFile || isPreviewing}
                 onClick={() => void handlePreview()}
               >
