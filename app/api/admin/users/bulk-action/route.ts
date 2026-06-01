@@ -14,6 +14,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Authentication is required." }, { status: 401 });
     }
     await assertPermission(access, "user_admin", "update");
+    if (access.role !== "Super Admin") {
+      return NextResponse.json({ message: "Forbidden: only Super Admin can manage user access." }, { status: 403 });
+    }
 
     const body = await request.json() as { action?: string; loginIds?: unknown };
     const { action, loginIds } = body;

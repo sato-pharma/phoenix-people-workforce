@@ -45,6 +45,12 @@ function assertAuthenticated(access: { hrId: string | null; loginId?: string | n
   }
 }
 
+function assertSuperAdminUserMutation(access: { role: string }) {
+  if (access.role !== "Super Admin") {
+    throw new Error("Forbidden: only Super Admin can manage user access.");
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -62,6 +68,7 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     assertAuthenticated(access);
     await assertPermission(access, "user_admin", "update");
+    assertSuperAdminUserMutation(access);
     const payload = parseAccessUserRequest(await request.json());
 
     return NextResponse.json(
@@ -90,6 +97,7 @@ export async function PATCH(request: Request) {
     const access = await resolveAccessContext(request);
     assertAuthenticated(access);
     await assertPermission(access, "user_admin", "update");
+    assertSuperAdminUserMutation(access);
     const payload = parseAccessUserStatusRequest(await request.json());
 
     return NextResponse.json(
