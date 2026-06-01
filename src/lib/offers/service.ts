@@ -7,52 +7,88 @@ import { sendJobOfferEmail } from "@/lib/offers/email";
 import { getOfferTemplate } from "@/lib/offers/templates";
 import { pickDepartmentSafeVacancy } from "@/lib/offers/vacancy-matching";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
+import { resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 import { summarizeOfferLifecycleRows } from "@/lib/recruitment/onboarding-metrics";
 
-export type OfferStatus = "draft" | "sent" | "accepted" | "rejected" | "expired";
+export type OfferStatus =
+  | "draft"
+  | "sent"
+  | "accepted"
+  | "rejected"
+  | "expired"
+  | "hired"
+  | "withdrawn"
+  | "cancelled";
 
 export type OfferLifecycleInput = {
   areaId?: number | null;
   areaScope?: string | null;
+  baseSalary?: number | null;
+  compensationNotes?: string | null;
   candidateEmail: string;
   candidateName: string;
   candidatePhone?: string | null;
   createdByHrId?: string | null;
   departmentId?: number | null;
   expiresInDays?: number | null;
+  extraCostOfLiving?: number | null;
+  fuelAllowance?: number | null;
   jobTitle: string;
   lineId?: number | null;
   managerHrId?: string | null;
+  socialInsurance?: number | null;
   positionId?: number | null;
   salaryAmount?: number | null;
   startDate?: string | null;
+  taxes?: number | null;
   templateKey?: string | null;
+  vacancyId?: number | null;
 };
 
 type OfferDbRow = {
   accepted_at: string | null;
+  accepted_terms_snapshot?: Record<string, unknown> | null;
+  access_provisioning_error?: string | null;
+  access_provisioning_status?: string | null;
+  approval_repair_error?: string | null;
+  approval_repair_status?: string | null;
   area_id: number | null;
   area_scope: string | null;
+  base_salary?: number | null;
+  basic_salary?: number | null;
   candidate_email: string;
   candidate_name: string;
   candidate_phone: string | null;
+  cancelled_at?: string | null;
+  compensation_notes?: string | null;
   created_at: string;
   department_id: number | null;
   employee_hr_id: string | null;
   expires_at: string;
+  extra_cost_of_living?: number | null;
+  fuel_allowance?: number | null;
+  gross_salary?: number | null;
   id: string;
   job_title: string;
   line_id: number | null;
   manager_hr_id: string | null;
+  net_salary?: number | null;
   offer_code: string;
   onboarding_status: string;
   position_id: number | null;
   rejected_at: string | null;
+  reserved_employee_hr_id?: string | null;
+  resend_count?: number | null;
+  revoked_at?: string | null;
   salary_amount: number | null;
+  social_insurance?: number | null;
   start_date: string | null;
   status: OfferStatus;
+  taxes?: number | null;
   template_key: string | null;
   updated_at: string;
+  vacancy_id?: number | null;
+  withdrawn_at?: string | null;
 };
 
 type LookupRow = {
@@ -92,36 +128,53 @@ export type OfferLookupData = {
   lines: Array<{ label: string; value: string }>;
   managers: Array<{ label: string; value: string }>;
   positions: Array<{ label: string; value: string }>;
+  openVacancies: VacancyLookupRow[];
   medicalRepVacancies: VacancyLookupRow[];
 };
 
 export type OfferLifecycleRow = {
   acceptedAt: string | null;
+  accessProvisioningStatus?: string | null;
+  approvalRepairStatus?: string | null;
   areaId: number | null;
   areaScope: string | null;
+  baseSalary?: number | null;
+  basicSalary?: number | null;
   candidateEmail: string;
   candidateName: string;
   candidatePhone: string | null;
+  cancelledAt?: string | null;
+  compensationNotes?: string | null;
   createdAt: string;
   departmentId: number | null;
   departmentName: string | null;
   employeeHrId: string | null;
   expiresAt: string;
+  extraCostOfLiving?: number | null;
+  fuelAllowance?: number | null;
+  grossSalary?: number | null;
   id: string;
   jobTitle: string;
   lineId: number | null;
   lineName: string | null;
   managerHrId: string | null;
   managerName: string | null;
+  netSalary?: number | null;
   offerCode: string;
   onboardingStatus: string;
   positionId: number | null;
   rejectedAt: string | null;
+  reservedEmployeeHrId?: string | null;
+  revokedAt?: string | null;
   salaryAmount: number | null;
+  socialInsurance?: number | null;
   startDate: string | null;
   status: OfferStatus;
+  taxes?: number | null;
   templateKey: string | null;
   updatedAt: string;
+  vacancyId?: number | null;
+  withdrawnAt?: string | null;
 };
 
 export type OfferDashboardData = {
@@ -155,6 +208,11 @@ export type OfferDecisionPreview = {
   message: string;
   offer: OfferLifecycleRow | null;
   status: "accepted" | "pending" | "rejected" | "expired" | "invalid";
+};
+
+type OfferDecisionContext = {
+  ip?: string | null;
+  userAgent?: string | null;
 };
 
 const databaseQueryTimeoutMs = 15000;
@@ -220,8 +278,133 @@ function dateOrNull(value: string | null | undefined) {
   return text ? text : null;
 }
 
+const terminalOfferStatuses = new Set<OfferStatus>([
+  "cancelled",
+  "expired",
+  "hired",
+  "rejected",
+  "withdrawn",
+]);
+
+function isTerminalOfferStatus(status: OfferStatus | string | null | undefined) {
+  return terminalOfferStatuses.has(status as OfferStatus);
+}
+
+const offerSelectColumns = [
+  "id",
+  "offer_code",
+  "candidate_name",
+  "candidate_email",
+  "candidate_phone",
+  "job_title",
+  "template_key",
+  "area_scope",
+  "area_id",
+  "department_id",
+  "line_id",
+  "manager_hr_id",
+  "position_id",
+  "salary_amount",
+  "base_salary",
+  "basic_salary",
+  "gross_salary",
+  "net_salary",
+  "fuel_allowance",
+  "extra_cost_of_living",
+  "social_insurance",
+  "taxes",
+  "compensation_notes",
+  "vacancy_id",
+  "start_date",
+  "expires_at",
+  "status",
+  "accepted_at",
+  "accepted_terms_snapshot",
+  "rejected_at",
+  "revoked_at",
+  "withdrawn_at",
+  "cancelled_at",
+  "employee_hr_id",
+  "reserved_employee_hr_id",
+  "resend_count",
+  "onboarding_status",
+  "access_provisioning_status",
+  "access_provisioning_error",
+  "approval_repair_status",
+  "approval_repair_error",
+  "created_at",
+  "updated_at",
+].join(",");
+
+function positiveNumberOrNull(value: unknown) {
+  const parsed = numberOrNull(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
+}
+
+function resolveOfferCompensation(input: {
+  baseSalary?: unknown;
+  basicSalary?: unknown;
+  extraCostOfLiving?: unknown;
+  fuelAllowance?: unknown;
+  grossSalary?: unknown;
+  jobTitle?: string | null;
+  netSalary?: unknown;
+  socialInsurance?: unknown;
+  taxes?: unknown;
+}) {
+  const baseSalary = positiveNumberOrNull(input.baseSalary);
+  const explicitExtraCostOfLiving = numberOrNull(input.extraCostOfLiving);
+  const explicitFuelAllowance = numberOrNull(input.fuelAllowance);
+  const socialInsurance = numberOrNull(input.socialInsurance);
+  const taxes = numberOrNull(input.taxes);
+  const standardAllowances = resolveStandardSalaryAllowances({
+    jobTitle: input.jobTitle,
+  });
+  const extraCostOfLiving = explicitExtraCostOfLiving ?? standardAllowances.extraCostOfLiving;
+  const fuelAllowance = explicitFuelAllowance ?? standardAllowances.fuelAllowance;
+  const fixedSalary = resolveFixedSalaryAmounts({
+    baseSalary,
+    basicSalary: numberOrNull(input.basicSalary),
+    employmentIncomeTax: taxes,
+    extraCostOfLiving,
+    fuelAllowance,
+    grossSalary: numberOrNull(input.grossSalary),
+    netSalary: numberOrNull(input.netSalary),
+    socialInsurance,
+  });
+
+  if (fixedSalary.baseSalary <= 0) {
+    return {
+      baseSalary: null,
+      basicSalary: null,
+      extraCostOfLiving,
+      fuelAllowance,
+      grossSalary: null,
+      netSalary: null,
+      socialInsurance,
+      taxes,
+    };
+  }
+
+  return {
+    baseSalary: fixedSalary.baseSalary,
+    basicSalary: fixedSalary.basicSalary,
+    extraCostOfLiving,
+    fuelAllowance,
+    grossSalary: fixedSalary.grossSalary,
+    netSalary: fixedSalary.netSalary,
+    socialInsurance,
+    taxes,
+  };
+}
+
 function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function hashPublicSignal(value: string | null | undefined) {
+  const text = compact(value);
+  return text ? crypto.createHash("sha256").update(text).digest("hex") : null;
 }
 
 function createToken() {
@@ -468,13 +651,15 @@ export async function closeVacancyForOffer(input: {
   manager_name?: string | null;
   manager_hr_id?: string | null;
   position_id?: number | null;
+  vacancy_id?: number | null;
 }) {
   const compactManagerHrId = compact(input.manager_hr_id);
-  if (
+  const explicitVacancyId = numberOrNull(input.vacancy_id);
+  if (!explicitVacancyId && (
     input.area_id === null || input.area_id === undefined ||
     input.line_id === null || input.line_id === undefined ||
     input.position_id === null || input.position_id === undefined
-  ) {
+  )) {
     return null;
   }
 
@@ -515,17 +700,26 @@ export async function closeVacancyForOffer(input: {
   };
 
   let matches: VacancyCloseMatch[] = [];
-  if (compactManagerHrId) {
+  if (explicitVacancyId) {
+    const params = new URLSearchParams({
+      id: `eq.${explicitVacancyId}`,
+      select: "id,replacement_for_hr_id,department_id",
+      status: "eq.open",
+    });
+    matches = await findMatches(params);
+  }
+
+  if (!explicitVacancyId && compactManagerHrId) {
     const params = baseMatchParams("id,replacement_for_hr_id,department_id");
     params.set("manager_hr_id", `eq.${compactManagerHrId}`);
-    matches = await findMatches(params);
+    matches = matches.length > 0 ? matches : await findMatches(params);
   }
 
   const resolvedManagerName =
     normalizeManagerName(input.manager_name) ??
     normalizeManagerName(await loadEmployeeFullName(compactManagerHrId));
 
-  if (matches.length === 0 && resolvedManagerName) {
+  if (matches.length === 0 && resolvedManagerName && !explicitVacancyId) {
     const params = baseMatchParams("id,replacement_for_hr_id,department_id,manager_hr_id,manager_name");
     params.set("manager_hr_id", "is.null");
     const managerNameMatches = await findMatches(params);
@@ -534,7 +728,7 @@ export async function closeVacancyForOffer(input: {
     );
   }
 
-  if (matches.length === 0 && compactManagerHrId === null) {
+  if (matches.length === 0 && compactManagerHrId === null && !explicitVacancyId) {
     const params = baseMatchParams("id,replacement_for_hr_id,department_id,manager_hr_id,manager_name");
     params.set("manager_hr_id", "is.null");
     const unmatchedSeatVacancies = await findMatches(params);
@@ -602,7 +796,7 @@ export async function closeVacancyForOffer(input: {
 }
 
 export async function getOfferLookups(): Promise<OfferLookupData> {
-  const [departments, employees, lines, areas, positions, medicalRepVacancies] = await Promise.all([
+  const [departments, employees, lines, areas, positions, openVacancies] = await Promise.all([
     loadAllOptions("departments"),
     supabaseRest<LookupRow[]>(
       `employees?${new URLSearchParams({ order: "full_name.asc", select: "hr_id,full_name" })}`,
@@ -612,8 +806,16 @@ export async function getOfferLookups(): Promise<OfferLookupData> {
     supabaseRest<LookupRow[]>(
       `positions?${new URLSearchParams({ order: "title.asc", select: "id,title" })}`,
     ),
-    getOpenMedicalRepVacancies(),
+    getOpenVacancies(),
   ]);
+  const medicalRepVacancies = openVacancies.filter((vacancy) => {
+    const normalizedTitle = `${vacancy.jobTitle ?? ""} ${vacancy.positionTitle ?? ""}`.toLowerCase();
+    return (
+      normalizedTitle.includes("medical representative") ||
+      normalizedTitle.includes("medical rep") ||
+      (normalizedTitle.includes("medical") && normalizedTitle.includes("representative"))
+    );
+  });
 
   return {
     areas: areas.map((a) => ({
@@ -631,6 +833,7 @@ export async function getOfferLookups(): Promise<OfferLookupData> {
       value: String(row.hr_id ?? ""),
     })),
     medicalRepVacancies,
+    openVacancies,
     positions: positions.map((row) => ({
       label: String((row as { title?: string }).title ?? row.name ?? ""),
       value: String(row.id),
@@ -692,39 +895,54 @@ async function hydrateOffers(rows: OfferDbRow[]): Promise<OfferLifecycleRow[]> {
 
   return rows.map((row) => ({
     acceptedAt: row.accepted_at,
+    accessProvisioningStatus: row.access_provisioning_status ?? null,
+    approvalRepairStatus: row.approval_repair_status ?? null,
     areaId: row.area_id,
     areaScope: row.area_scope,
+    baseSalary: row.base_salary ?? null,
+    basicSalary: row.basic_salary ?? null,
     candidateEmail: row.candidate_email,
     candidateName: row.candidate_name,
     candidatePhone: row.candidate_phone,
+    cancelledAt: row.cancelled_at ?? null,
+    compensationNotes: row.compensation_notes ?? null,
     createdAt: row.created_at,
     departmentId: row.department_id,
     departmentName: row.department_id ? lookups.departments.get(row.department_id) ?? null : null,
     employeeHrId: row.employee_hr_id,
     expiresAt: row.expires_at,
+    extraCostOfLiving: row.extra_cost_of_living ?? null,
+    fuelAllowance: row.fuel_allowance ?? null,
+    grossSalary: row.gross_salary ?? null,
     id: row.id,
     jobTitle: row.job_title,
     lineId: row.line_id,
     lineName: row.line_id ? lookups.lines.get(row.line_id) ?? null : null,
     managerHrId: row.manager_hr_id,
     managerName: row.manager_hr_id ? lookups.managers.get(row.manager_hr_id) ?? null : null,
+    netSalary: row.net_salary ?? null,
     offerCode: row.offer_code,
     onboardingStatus: row.onboarding_status,
     positionId: row.position_id,
     rejectedAt: row.rejected_at,
+    reservedEmployeeHrId: row.reserved_employee_hr_id ?? null,
+    revokedAt: row.revoked_at ?? null,
     salaryAmount: row.salary_amount,
+    socialInsurance: row.social_insurance ?? null,
     startDate: row.start_date,
     status: row.status,
+    taxes: row.taxes ?? null,
     templateKey: row.template_key,
     updatedAt: row.updated_at,
+    vacancyId: row.vacancy_id ?? null,
+    withdrawnAt: row.withdrawn_at ?? null,
   }));
 }
 
 async function getOfferByToken(token: string) {
   const params = new URLSearchParams({
     secure_token_hash: `eq.${hashToken(token)}`,
-    select:
-      "id,offer_code,candidate_name,candidate_email,candidate_phone,job_title,template_key,area_scope,area_id,department_id,line_id,manager_hr_id,position_id,salary_amount,start_date,expires_at,status,accepted_at,rejected_at,employee_hr_id,onboarding_status,created_at,updated_at",
+    select: offerSelectColumns,
   });
   const rows = await supabaseRest<OfferDbRow[]>(`job_offers?${params}`);
   return rows[0] ?? null;
@@ -761,6 +979,24 @@ export async function getOfferDecisionPreview(token: string): Promise<OfferDecis
     };
   }
 
+  if (offer.status === "hired" || offer.onboarding_status === "approved_hired") {
+    return {
+      canSubmit: false,
+      message: "This offer has already been approved by HR.",
+      offer: hydratedOffer,
+      status: "accepted",
+    };
+  }
+
+  if (offer.status === "withdrawn" || offer.status === "cancelled") {
+    return {
+      canSubmit: false,
+      message: "This offer is closed. Please contact HR for next steps.",
+      offer: hydratedOffer,
+      status: "invalid",
+    };
+  }
+
   if (offer.status === "expired" || new Date(offer.expires_at).getTime() < Date.now()) {
     return {
       canSubmit: false,
@@ -786,6 +1022,121 @@ async function updateOffer(id: string, payload: Record<string, unknown>) {
     method: "PATCH",
   });
   return rows[0];
+}
+
+async function reserveOfferEmployeeHrId(offerId: string) {
+  const result = await supabaseRpc<{ employee_hr_id: string; offer_id: string }>(
+    "phx_reserve_offer_employee_hr_id",
+    { p_offer_id: offerId },
+  );
+  return compact(result.employee_hr_id);
+}
+
+async function recordOfferDecisionEvent(input: {
+  action: "accepted" | "rejected";
+  details?: Record<string, unknown>;
+  ipHash?: string | null;
+  offerId: string;
+  result: "blocked" | "recorded" | "rate_limited" | "terminal";
+  userAgent?: string | null;
+}) {
+  await supabaseRest("job_offer_decision_events", {
+    body: JSON.stringify({
+      action: input.action,
+      details: input.details ?? {},
+      ip_hash: input.ipHash ?? null,
+      offer_id: input.offerId,
+      result: input.result,
+      user_agent: input.userAgent?.slice(0, 500) ?? null,
+    }),
+    method: "POST",
+  });
+}
+
+async function assertOfferDecisionRateLimit(input: {
+  action: "accepted" | "rejected";
+  ipHash: string | null;
+  offerId: string;
+}) {
+  if (!input.ipHash) return;
+
+  const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const params = new URLSearchParams({
+    action: `eq.${input.action}`,
+    created_at: `gte.${since}`,
+    ip_hash: `eq.${input.ipHash}`,
+    offer_id: `eq.${input.offerId}`,
+    select: "id",
+  });
+  const attempts = await supabaseRest<Array<{ id: number }>>(`job_offer_decision_events?${params}`);
+  if (attempts.length >= 12) {
+    await recordOfferDecisionEvent({
+      action: input.action,
+      ipHash: input.ipHash,
+      offerId: input.offerId,
+      result: "rate_limited",
+    });
+    throw new Error("Too many offer response attempts. Please try again later.");
+  }
+}
+
+async function validateSelectedOfferVacancy(input: OfferLifecycleInput) {
+  const vacancyId = numberOrNull(input.vacancyId);
+  if (!vacancyId) {
+    throw new Error("An explicit open vacancy must be selected before sending an offer.");
+  }
+
+  const params = new URLSearchParams({
+    id: `eq.${vacancyId}`,
+    select: "id,department_id,position_id,line_id,area_id,manager_hr_id,status",
+  });
+  const vacancy = (await supabaseRest<Array<{
+    area_id: number | null;
+    department_id: number | null;
+    id: number;
+    line_id: number | null;
+    manager_hr_id: string | null;
+    position_id: number | null;
+    status: string;
+  }>>(`position_vacancies?${params}`))[0];
+
+  if (!vacancy || vacancy.status !== "open") {
+    throw new Error("Selected vacancy is no longer open.");
+  }
+
+  const checks: Array<[string, unknown, unknown]> = [
+    ["department", input.departmentId, vacancy.department_id],
+    ["position", input.positionId, vacancy.position_id],
+    ["line", input.lineId, vacancy.line_id],
+    ["area", input.areaId, vacancy.area_id],
+  ];
+  for (const [label, selected, actual] of checks) {
+    if (numberOrNull(selected) !== numberOrNull(actual)) {
+      throw new Error(`Selected vacancy does not match the ${label}.`);
+    }
+  }
+
+  const selectedManager = compact(input.managerHrId);
+  const vacancyManager = compact(vacancy.manager_hr_id);
+  if (selectedManager && vacancyManager && selectedManager.toLowerCase() !== vacancyManager.toLowerCase()) {
+    throw new Error("Selected vacancy does not match the manager.");
+  }
+}
+
+export async function markOfferPostApprovalStatus(
+  offerId: string,
+  input: {
+    accessProvisioningError?: string | null;
+    accessProvisioningStatus: "failed" | "skipped" | "succeeded";
+  },
+) {
+  const repairFailed = input.accessProvisioningStatus === "failed";
+  await updateOffer(offerId, {
+    access_provisioning_error: input.accessProvisioningError ?? null,
+    access_provisioning_status: input.accessProvisioningStatus,
+    approval_repair_error: repairFailed ? input.accessProvisioningError ?? "Access provisioning failed." : null,
+    approval_repair_status: repairFailed ? "needs_repair" : "complete",
+  });
 }
 
 export async function expireOutstandingOffers() {
@@ -821,8 +1172,7 @@ export async function getOfferDashboard(): Promise<OfferDashboardData> {
   await expireOutstandingOffers();
   const params = new URLSearchParams({
     order: "created_at.desc",
-    select:
-      "id,offer_code,candidate_name,candidate_email,candidate_phone,job_title,template_key,area_scope,area_id,department_id,line_id,manager_hr_id,position_id,salary_amount,start_date,expires_at,status,accepted_at,rejected_at,employee_hr_id,onboarding_status,created_at,updated_at",
+    select: offerSelectColumns,
   });
   const rows = await hydrateOffers(await supabaseRest<OfferDbRow[]>(`job_offers?${params}`));
   const summary = summarizeOfferLifecycleRows(rows);
@@ -837,33 +1187,62 @@ export async function getOfferDashboard(): Promise<OfferDashboardData> {
 export async function createOffer(input: OfferLifecycleInput, access?: Pick<AccessContext, "role">) {
   const token = createToken();
   const template = getOfferTemplate(input.templateKey);
-  const expiresInDays = Math.max(1, Math.min(60, Number(input.expiresInDays ?? 7)));
+  const requestedExpiry = Number(input.expiresInDays ?? 7);
+  if (!Number.isFinite(requestedExpiry) || requestedExpiry < 1 || requestedExpiry > 60) {
+    throw new Error("Offer expiry must be between 1 and 60 days.");
+  }
+  const expiresInDays = requestedExpiry;
+  const compensation = resolveOfferCompensation({
+    baseSalary: input.baseSalary,
+    extraCostOfLiving: input.extraCostOfLiving,
+    fuelAllowance: input.fuelAllowance,
+    jobTitle: input.jobTitle || template?.label,
+    socialInsurance: input.socialInsurance,
+    taxes: input.taxes,
+  });
   await assertOfferWorkflowTransition({
     access,
     action: "create",
     expectedNextStatus: "offer_sent",
     status: "draft",
   });
+  await validateSelectedOfferVacancy(input);
+  if (!dateOrNull(input.startDate)) {
+    throw new Error("Hiring date is required before sending an offer.");
+  }
+  if (!compensation.baseSalary || compensation.baseSalary <= 0) {
+    throw new Error("Base salary must be greater than zero.");
+  }
   const payload = {
     area_scope: compact(input.areaScope),
     area_id: numberOrNull(input.areaId),
+    base_salary: compensation.baseSalary,
+    basic_salary: compensation.basicSalary,
     candidate_email: input.candidateEmail.trim().toLowerCase(),
     candidate_name: input.candidateName.trim(),
     candidate_phone: compact(input.candidatePhone),
+    compensation_notes: compact(input.compensationNotes),
     created_by_hr_id: compact(input.createdByHrId),
     department_id: numberOrNull(input.departmentId),
     expires_at: daysFromNow(expiresInDays),
+    extra_cost_of_living: compensation.extraCostOfLiving,
+    fuel_allowance: compensation.fuelAllowance,
+    gross_salary: compensation.grossSalary,
     job_title: input.jobTitle.trim() || template?.label || "Job Offer",
     line_id: numberOrNull(input.lineId),
     manager_hr_id: compact(input.managerHrId),
+    net_salary: compensation.netSalary,
     offer_code: offerCode(),
     position_id: numberOrNull(input.positionId),
-    salary_amount: numberOrNull(input.salaryAmount) ?? template?.monthlyPackage ?? null,
+    salary_amount: compensation.netSalary ?? numberOrNull(input.salaryAmount) ?? template?.monthlyPackage ?? null,
     secure_token_hash: hashToken(token),
+    social_insurance: compensation.socialInsurance,
     start_date: dateOrNull(input.startDate),
     status: "sent",
+    taxes: compensation.taxes,
     template_key: template?.value ?? null,
     token_last_four: token.slice(-4),
+    vacancy_id: numberOrNull(input.vacancyId),
   };
 
   const rows = await supabaseRest<OfferDbRow[]>("job_offers", {
@@ -875,12 +1254,15 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
   await insertAudit(offer.id, "offer_sent", "hr", { expiresInDays }, input.createdByHrId);
 
   const baseUrl = publicBaseUrl();
+  const reviewUrl = baseUrl ? `${baseUrl}/offers/${token}/details` : "#";
   const acceptUrl = baseUrl ? `${baseUrl}/offers/${token}/accept` : "#";
   const rejectUrl = baseUrl ? `${baseUrl}/offers/${token}/reject` : "#";
   const hydratedOffer = (await hydrateOffers([offer]))[0];
   const offerEmailResult = await sendJobOfferEmail({
     acceptUrl,
     actionLinksEnabled: Boolean(baseUrl),
+    baseSalary: offer.base_salary,
+    basicSalary: offer.basic_salary,
     candidateEmail: offer.candidate_email,
     candidateName: offer.candidate_name,
     declineUrl: rejectUrl,
@@ -892,7 +1274,9 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
       template?.defaultReportingTo ||
       "the assigned manager",
     issuedAt: offer.created_at,
+    netSalary: offer.net_salary,
     reportingLine: hydratedOffer.lineName,
+    reviewUrl,
     territoryName: offer.area_scope,
     salaryAmount: offer.salary_amount,
     startDate: offer.start_date,
@@ -906,10 +1290,102 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
     email: offerEmailResult,
     offer: hydratedOffer,
     rejectUrl,
+    reviewUrl,
   };
 }
 
-export async function decideOffer(token: string, decision: "accepted" | "rejected"): Promise<OfferActionResult> {
+export async function runOfferAdminAction(
+  id: string,
+  action: "cancel" | "resend" | "withdraw",
+  actorHrId?: string | null,
+) {
+  const params = new URLSearchParams({
+    id: `eq.${id}`,
+    select: offerSelectColumns,
+  });
+  const offer = (await supabaseRest<OfferDbRow[]>(`job_offers?${params}`))[0];
+  if (!offer) throw new Error("Offer not found.");
+
+  if (action === "resend") {
+    if (offer.status !== "sent") {
+      throw new Error("Only sent offers can be resent.");
+    }
+    const token = createToken();
+    const updated = await updateOffer(offer.id, {
+      last_sent_at: new Date().toISOString(),
+      resend_count: Number(offer.resend_count ?? 0) + 1,
+      revoked_at: null,
+      secure_token_hash: hashToken(token),
+      token_last_four: token.slice(-4),
+    });
+    await insertAudit(offer.id, "offer_resent", "hr", { tokenLastFour: token.slice(-4) }, actorHrId);
+
+    const baseUrl = publicBaseUrl();
+    const hydratedOffer = (await hydrateOffers([updated]))[0];
+    const template = getOfferTemplate(updated.template_key);
+    const reviewUrl = baseUrl ? `${baseUrl}/offers/${token}/details` : "#";
+    const acceptUrl = baseUrl ? `${baseUrl}/offers/${token}/accept` : "#";
+    const rejectUrl = baseUrl ? `${baseUrl}/offers/${token}/reject` : "#";
+    const email = await sendJobOfferEmail({
+      acceptUrl,
+      actionLinksEnabled: Boolean(baseUrl),
+      baseSalary: updated.base_salary,
+      basicSalary: updated.basic_salary,
+      candidateEmail: updated.candidate_email,
+      candidateName: updated.candidate_name,
+      declineUrl: rejectUrl,
+      expiresAt: updated.expires_at,
+      jobTitle: updated.job_title,
+      offerCode: updated.offer_code,
+      reportingManager: hydratedOffer.managerName || template?.defaultReportingTo || "the assigned manager",
+      issuedAt: updated.created_at,
+      netSalary: updated.net_salary,
+      reportingLine: hydratedOffer.lineName,
+      reviewUrl,
+      salaryAmount: updated.salary_amount,
+      startDate: updated.start_date,
+      template,
+      territory: updated.area_scope,
+      territoryName: updated.area_scope,
+    });
+
+    return {
+      acceptUrl,
+      dashboard: await getOfferDashboard(),
+      email,
+      offer: hydratedOffer,
+      rejectUrl,
+      reviewUrl,
+    };
+  }
+
+  if (offer.status !== "sent" && offer.status !== "draft") {
+    throw new Error("Only draft or sent offers can be closed by HR.");
+  }
+
+  const now = new Date().toISOString();
+  const status = action === "withdraw" ? "withdrawn" : "cancelled";
+  const updated = await updateOffer(offer.id, {
+    cancelled_at: action === "cancel" ? now : null,
+    onboarding_status: "not_started",
+    revoked_at: now,
+    secure_token_hash: `${hashToken(`${offer.id}:${status}:${now}`)}`,
+    status,
+    withdrawn_at: action === "withdraw" ? now : null,
+  });
+  await insertAudit(offer.id, `offer_${status}`, "hr", { revokedAt: now }, actorHrId);
+
+  return {
+    dashboard: await getOfferDashboard(),
+    offer: (await hydrateOffers([updated]))[0],
+  };
+}
+
+export async function decideOffer(
+  token: string,
+  decision: "accepted" | "rejected",
+  context: OfferDecisionContext = {},
+): Promise<OfferActionResult> {
   const offer = await getOfferByToken(token);
   if (!offer) {
     return {
@@ -921,16 +1397,38 @@ export async function decideOffer(token: string, decision: "accepted" | "rejecte
   }
 
   const hydrated = (row: OfferDbRow) => hydrateOffers([row]).then((rows) => rows[0]);
+  const ipHash = hashPublicSignal(context.ip);
+  const userAgent = compact(context.userAgent);
+  await assertOfferDecisionRateLimit({ action: decision, ipHash, offerId: offer.id });
 
-  if (offer.status === "accepted" || offer.status === "rejected") {
+  if (isTerminalOfferStatus(offer.status) || offer.status === "accepted") {
+    await recordOfferDecisionEvent({
+      action: decision,
+      details: { status: offer.status },
+      ipHash,
+      offerId: offer.id,
+      result: "terminal",
+      userAgent,
+    });
+    const finalStatus: OfferActionResult["status"] =
+      offer.status === "hired" || offer.status === "accepted"
+        ? "accepted"
+        : offer.status === "rejected" || offer.status === "expired"
+        ? offer.status
+        : "invalid";
+
     return {
       alreadyFinal: true,
       message:
-        offer.status === "accepted"
+        offer.status === "hired"
+          ? "This offer has already been approved by HR."
+          : offer.status === "accepted"
           ? "This offer was already accepted."
-          : "This offer was already rejected.",
+          : offer.status === "rejected"
+          ? "This offer was already rejected."
+          : "This offer is closed. Please contact HR.",
       offer: await hydrated(offer),
-      status: offer.status,
+      status: finalStatus,
     };
   }
 
@@ -948,6 +1446,14 @@ export async function decideOffer(token: string, decision: "accepted" | "rejecte
         ? offer
         : await updateOffer(offer.id, { expired_at: new Date().toISOString(), status: "expired" });
     await insertAudit(offer.id, "offer_expired_on_click", "candidate", { decision });
+    await recordOfferDecisionEvent({
+      action: decision,
+      details: { status: "expired" },
+      ipHash,
+      offerId: offer.id,
+      result: "blocked",
+      userAgent,
+    });
     return {
       alreadyFinal: false,
       message: "This offer has expired. Please contact HR for next steps.",
@@ -963,15 +1469,51 @@ export async function decideOffer(token: string, decision: "accepted" | "rejecte
     expectedNextStatus: decision === "accepted" ? "offer_accepted" : "offer_rejected",
     status: offer.status,
   });
+  const reservedEmployeeHrId =
+    decision === "accepted" ? await reserveOfferEmployeeHrId(offer.id) : null;
   const updated = await updateOffer(offer.id, {
     accepted_at: decision === "accepted" ? now : null,
+    accepted_terms_snapshot:
+      decision === "accepted"
+        ? {
+            areaId: offer.area_id,
+            areaScope: offer.area_scope,
+            baseSalary: offer.base_salary ?? null,
+            basicSalary: offer.basic_salary ?? null,
+            candidateEmail: offer.candidate_email,
+            candidateName: offer.candidate_name,
+            extraCostOfLiving: offer.extra_cost_of_living ?? null,
+            fuelAllowance: offer.fuel_allowance ?? null,
+            grossSalary: offer.gross_salary ?? null,
+            jobTitle: offer.job_title,
+            netSalary: offer.net_salary ?? offer.salary_amount,
+            offerCode: offer.offer_code,
+            socialInsurance: offer.social_insurance ?? null,
+            startDate: offer.start_date,
+            taxes: offer.taxes ?? null,
+            vacancyId: offer.vacancy_id ?? null,
+          }
+        : null,
+    decision_ip_hash: ipHash,
+    decision_user_agent: userAgent,
     onboarding_status: decision === "accepted" ? "pending_hr_approval" : "not_started",
     rejected_at: decision === "rejected" ? now : null,
+    reserved_employee_hr_id: reservedEmployeeHrId,
     status: decision,
   });
 
   await insertAudit(offer.id, `offer_${decision}`, "candidate", {
+    ipHash,
     occurredAt: now,
+    userAgent,
+  });
+  await recordOfferDecisionEvent({
+    action: decision,
+    details: { reservedEmployeeHrId },
+    ipHash,
+    offerId: offer.id,
+    result: "recorded",
+    userAgent,
   });
 
   if (decision === "accepted") {
@@ -981,6 +1523,7 @@ export async function decideOffer(token: string, decision: "accepted" | "rejecte
         metrics: [
           { label: "Role", value: offer.job_title },
           { label: "Area", value: offer.area_scope ?? "To be assigned" },
+          { label: "Employee HR ID", value: reservedEmployeeHrId ?? "Pending" },
           { label: "Offer ID", value: offer.offer_code },
           { label: "Status", value: "Accepted" },
         ],
@@ -998,6 +1541,7 @@ export async function decideOffer(token: string, decision: "accepted" | "rejecte
           { label: "Candidate", value: offer.candidate_name },
           { label: "Role", value: offer.job_title },
           { label: "Area", value: offer.area_scope ?? "To be assigned" },
+          { label: "Employee HR ID", value: reservedEmployeeHrId ?? "Pending" },
           { label: "Offer ID", value: offer.offer_code },
           { label: "Approval", value: "Pending HR approval" },
         ],
@@ -1032,7 +1576,7 @@ export async function decideOffer(token: string, decision: "accepted" | "rejecte
     alreadyFinal: false,
     message:
       decision === "accepted"
-        ? "Offer accepted successfully. HR will contact you shortly."
+        ? `Offer accepted successfully. Your HR ID is ${reservedEmployeeHrId ?? "pending HR assignment"}. HR will contact you shortly.`
         : "Your response has been recorded. Thank you.",
     offer: await hydrated(updated),
     status: decision,
@@ -1047,12 +1591,22 @@ export async function approveAcceptedOffer(
 ) {
   const params = new URLSearchParams({
     id: `eq.${id}`,
-    select:
-      "id,offer_code,candidate_name,candidate_email,candidate_phone,job_title,template_key,area_scope,area_id,department_id,line_id,manager_hr_id,position_id,salary_amount,start_date,expires_at,status,accepted_at,rejected_at,employee_hr_id,onboarding_status,created_at,updated_at",
+    select: offerSelectColumns,
   });
   const offer = (await supabaseRest<OfferDbRow[]>(`job_offers?${params}`))[0];
 
   if (!offer) throw new Error("Offer not found.");
+  if (offer.status === "hired" || offer.onboarding_status === "approved_hired") {
+    const employeeHrId = compact(offer.employee_hr_id);
+    if (!employeeHrId) {
+      throw new Error("Offer is marked hired but does not have an employee HR ID.");
+    }
+    return {
+      dashboard: await getOfferDashboard(),
+      employeeHrId,
+      offer: (await hydrateOffers([offer]))[0],
+    };
+  }
   if (offer.status !== "accepted") throw new Error("Only accepted offers can be approved.");
   await assertOfferWorkflowTransition({
     access,
@@ -1062,35 +1616,37 @@ export async function approveAcceptedOffer(
     status: offer.status,
   });
 
-  const template = getOfferTemplate(offer.template_key);
-  const monthlyPackage = Number(offer.salary_amount ?? template?.monthlyPackage ?? 0);
-  const standardAllowances = resolveStandardSalaryAllowances({
-    employeeHrId: manualHrId ?? offer.employee_hr_id,
+  const compensation = resolveOfferCompensation({
+    baseSalary: offer.base_salary,
+    basicSalary: offer.basic_salary,
+    extraCostOfLiving: offer.extra_cost_of_living,
+    fuelAllowance: offer.fuel_allowance,
+    grossSalary: offer.gross_salary,
     jobTitle: offer.job_title,
+    netSalary: offer.net_salary ?? offer.salary_amount,
+    socialInsurance: offer.social_insurance,
+    taxes: offer.taxes,
   });
-  const extraCostOfLiving = standardAllowances.extraCostOfLiving;
-  const fuelAllowance = standardAllowances.fuelAllowance;
 
   const rpcResult = await supabaseRpc<{
+    already_hired?: boolean;
     employee_hr_id: string;
     offer_id: string;
+    vacancy_id?: number | null;
   }>("phx_approve_accepted_offer", {
     p_approved_by_hr_id: approvedByHrId ?? null,
-    p_employee_hr_id: manualHrId ?? offer.employee_hr_id ?? null,
-    p_extra_cost_of_living: extraCostOfLiving,
-    p_fuel_allowance: fuelAllowance,
-    p_gross_salary: monthlyPackage,
+    p_base_salary: compensation.baseSalary,
+    p_basic_salary: compensation.basicSalary,
+    p_employee_hr_id: manualHrId ?? offer.reserved_employee_hr_id ?? offer.employee_hr_id ?? null,
+    p_extra_cost_of_living: compensation.extraCostOfLiving,
+    p_fuel_allowance: compensation.fuelAllowance,
+    p_gross_salary: compensation.grossSalary,
+    p_net_salary: compensation.netSalary,
     p_offer_id: offer.id,
+    p_social_insurance: compensation.socialInsurance,
+    p_taxes: compensation.taxes,
   });
   const employeeHrId = String(rpcResult.employee_hr_id);
-  await closeVacancyForOffer({
-    area_id: offer.area_id,
-    department_id: offer.department_id,
-    filled_by_hr_id: employeeHrId,
-    line_id: offer.line_id,
-    manager_hr_id: offer.manager_hr_id,
-    position_id: offer.position_id,
-  });
 
   const refreshedOffer = (await supabaseRest<OfferDbRow[]>(`job_offers?${params}`))[0];
   if (!refreshedOffer) {

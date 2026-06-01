@@ -13,15 +13,19 @@ type SendEmailResult =
 export type JobOfferEmailInput = {
   acceptUrl: string;
   actionLinksEnabled?: boolean;
+  baseSalary?: number | null;
+  basicSalary?: number | null;
   candidateEmail: string;
   candidateName: string;
   declineUrl: string;
   issuedAt?: string | null;
   expiresAt?: string | null;
   jobTitle: string;
+  netSalary?: number | null;
   offerCode: string;
   reportingLine?: string | null;
   reportingManager: string;
+  reviewUrl?: string | null;
   salaryAmount?: number | null;
   startDate?: string | null;
   template?: OfferTemplate | null;
@@ -63,17 +67,21 @@ function offerTemplateProps(input: JobOfferEmailInput): OfferLetterEmailProps {
   return {
     acceptUrl: input.acceptUrl,
     actionLinksEnabled: input.actionLinksEnabled ?? true,
+    baseSalary: formatCurrencyEGP(input.baseSalary),
+    basicSalary: formatCurrencyEGP(input.basicSalary),
     candidateName: input.candidateName,
     declineUrl: input.declineUrl,
     expiresAt: input.expiresAt ? formatDate(input.expiresAt) : null,
     issueDate: formatDate(input.issuedAt),
     jobTitle: input.jobTitle,
+    netSalary: formatCurrencyEGP(input.netSalary ?? comp.totalMonthlyPackage),
     offerCode: input.offerCode,
     reportingLine: input.reportingLine || "To be assigned",
     reportingManager: input.reportingManager,
     startDate: formatDate(input.startDate),
     totalMonthlyPackage: formatCurrencyEGP(comp.totalMonthlyPackage),
     territory: input.territoryName || input.territory || "your assigned territory",
+    reviewUrl: input.reviewUrl || input.acceptUrl,
   };
 }
 
@@ -91,8 +99,8 @@ export async function sendJobOfferEmail(input: JobOfferEmailInput): Promise<Send
     context: {
       area: input.territoryName || input.territory || "Assigned territory",
       candidateName: input.candidateName,
-      ctaLabel: "Review Offer",
-      ctaUrl: input.acceptUrl,
+      ctaLabel: "Review Offer Details",
+      ctaUrl: input.reviewUrl || input.acceptUrl,
       date: input.issuedAt ?? null,
       jobTitle: input.jobTitle,
       line: input.reportingLine || "To be assigned",
