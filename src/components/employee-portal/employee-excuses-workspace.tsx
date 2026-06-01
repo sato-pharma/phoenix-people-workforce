@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Input } from "@/components/ui/input";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import type {
@@ -188,9 +189,6 @@ function useOfflineQueue(onReplay: (payload: QueuedExcuseSubmission) => Promise<
 /* ═══════════════════════════════════════════════════════════════════ */
 
 const inputClass =
-  "h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
-
-const selectClass =
   "h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
 
 const labelClass = "text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500";
@@ -741,17 +739,19 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                       </p>
                     ) : null}
                   </label>
-                  <label className="space-y-1.5">
+                  <div className="space-y-1.5">
                     <span className={labelClass}>Excuse type</span>
-                    <select
-                      className={selectClass}
-                      onChange={(event) => setExcuseType(event.target.value as "morning" | "afternoon")}
+                    <ChoiceGroup
+                      aria-label="Excuse type"
+                      className="grid-cols-2"
+                      onChange={(value) => setExcuseType(value)}
+                      options={[
+                        { label: "Morning excuse", value: "morning" },
+                        { label: "Afternoon excuse", value: "afternoon" },
+                      ]}
                       value={excuseType}
-                    >
-                      <option value="morning">Morning excuse</option>
-                      <option value="afternoon">Afternoon excuse</option>
-                    </select>
-                  </label>
+                    />
+                  </div>
                 </div>
 
                 {/* Message */}
