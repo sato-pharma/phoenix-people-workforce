@@ -36,14 +36,16 @@ export async function POST(
     const body = await request.json().catch(() => ({}));
     const action = String(body?.action ?? "");
 
-    if (action !== "cancel" && action !== "resend" && action !== "withdraw") {
+    if (action !== "cancel" && action !== "resend" && action !== "withdraw" && action !== "void") {
       return NextResponse.json(
-        { error: "invalid_offer_action", message: "Action must be resend, withdraw, or cancel." },
+        { error: "invalid_offer_action", message: "Action must be resend, withdraw, void, or cancel." },
         { status: 400 },
       );
     }
 
-    return NextResponse.json(await runOfferAdminAction(offerRef, action, access.hrId));
+    return NextResponse.json(await runOfferAdminAction(offerRef, action, access.hrId, {
+      reason: typeof body?.reason === "string" ? body.reason : null,
+    }));
   } catch (error) {
     const { message, status } = offerApiError(error);
     return NextResponse.json({ error: "offer_workflow_failed", message }, { status });
