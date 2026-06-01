@@ -18,6 +18,7 @@ import {
 } from "@/components/outstation/wizard-primitives";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { PremiumTooltip } from "@/components/ui/premium-tooltip";
@@ -147,9 +148,9 @@ function capturedDestinationParts(captured: OutstationCaptureResult | null) {
   if (!captured) {
     return {
       area: "Not captured yet",
-      fullAddress: "Tap To to capture current location",
+      fullAddress: "Destination location has not been captured yet",
       governorate: "Not captured yet",
-      shortLabel: "Tap here to capture current location",
+      shortLabel: "Capture current location",
     };
   }
 
@@ -1212,17 +1213,23 @@ export function MobileOutstationWizard({
         )}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Field label="Expense Type">
-            <select
-              className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
-              onChange={(event) => setExpenseType(event.target.value as OutstationExpenseType)}
+          <div>
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Expense Type
+            </span>
+            <ChoiceGroup
+              aria-label="Expense type"
+              className="grid-cols-3 rounded-md"
+              onChange={(value) => setExpenseType(value)}
+              options={[
+                { label: "Traveling", value: "traveling" },
+                { label: "Meeting", value: "meeting" },
+                { label: "Other", value: "other" },
+              ]}
+              optionClassName="min-h-11"
               value={expenseType}
-            >
-              <option value="traveling">Traveling</option>
-              <option value="meeting">Meeting</option>
-              <option value="other">Other</option>
-            </select>
-          </Field>
+            />
+          </div>
 
           <Field label="From Date">
             <Input
@@ -1280,7 +1287,11 @@ export function MobileOutstationWizard({
               triggerClassName="block"
             >
               <button
-                aria-label={`To destination: ${destinationLocation.fullAddress}`}
+                aria-label={
+                  captured
+                    ? `Destination location: ${destinationLocation.fullAddress}`
+                    : "Capture current location for destination"
+                }
                 className="flex min-h-11 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-800 transition hover:border-orange-300 hover:bg-orange-50"
                 disabled={isCapturing}
                 onClick={() => void captureLocation()}

@@ -103,8 +103,7 @@ test.describe("Employee Excuses Workspace", () => {
     const dateInput = page.locator('input[type="date"]');
     await expect(dateInput).toBeVisible();
 
-    const select = page.locator("select").first();
-    await expect(select).toBeVisible();
+    await expect(page.getByRole("radiogroup", { name: /Excuse type/i })).toBeVisible();
   });
 
   test("request form has submit button", async ({ page }) => {
@@ -112,13 +111,17 @@ test.describe("Employee Excuses Workspace", () => {
     await expect(submitBtn).toBeVisible();
   });
 
-  test("excuse type selector has morning and afternoon options", async ({
+  test("excuse type options can be selected by direct click", async ({
     page,
   }) => {
-    const select = page.locator("select").first();
-    const options = await select.locator("option").allTextContents();
-    expect(options).toContain("Morning excuse");
-    expect(options).toContain("Afternoon excuse");
+    const group = page.getByRole("radiogroup", { name: /Excuse type/i });
+    const morning = group.getByRole("radio", { name: "Morning excuse" });
+    const afternoon = group.getByRole("radio", { name: "Afternoon excuse" });
+
+    await expect(morning).toBeVisible();
+    await expect(afternoon).toBeVisible();
+    await afternoon.click();
+    await expect(afternoon).toHaveAttribute("aria-checked", "true");
   });
 
   test("request form shows workflow description", async ({ page }) => {
