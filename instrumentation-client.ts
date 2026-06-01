@@ -50,5 +50,41 @@ Sentry.init({
   tracesSampleRate: parseSentrySampleRate(process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE, 0.02),
 });
 
+const ignoredResourceUrlPatterns = [
+  /vercel\.live\/_next-live\/feedback\/feedback\.js/i,
+];
+const reportedResourceFailures = new Set<string>();
+
+function resourceUrlFromTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return null;
+  if (target instanceof HTMLImageElement || target instanceof HTMLScriptElement) return target.src;
+  if (target instanceof HTMLLinkElement) return target.href;
+  if (target instanceof HTMLSourceElement) return target.src;
+  return null;
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "error",
+    (event) => {
+      const resourceUrl = resourceUrlFromTarget(event.target);
+      if (!resourceUrl) return;
+      if (ignoredResourceUrlPatterns.some((pattern) => pattern.test(resourceUrl))) return;
+
+      const tagName = event.target instanceof HTMLElement ? event.target.tagName.toLowerCase() : "unknown";
+      const failureKey = `${tagName}:${resourceUrl.split("?")[0]}`;
+      if (reportedResourceFailures.has(failureKey)) return;
+      reportedResourceFailures.add(failureKey);
+
+      Sentry.captureMessage("Client resource failed to load", {
+        extra: { tagName, url: resourceUrl.split("?")[0] },
+        level: "warning",
+        tags: { area: "client-resource", resourceTag: tagName },
+      });
+    },
+    true,
+  );
+}
+
 // Instruments client-side navigations for tracing.
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

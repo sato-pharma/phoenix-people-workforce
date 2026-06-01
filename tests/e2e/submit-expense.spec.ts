@@ -66,9 +66,19 @@ test.describe("Submit Expense", () => {
     ).toBeVisible();
   });
 
-  test("expense type select is rendered", async ({ page }) => {
-    const select = page.locator("select").first();
-    await expect(select).toBeVisible();
+  test("expense type options can be selected by direct click", async ({ page }) => {
+    const expenseTypeGroup = page.getByRole("radiogroup", { name: /Expense type/i });
+    await expect(expenseTypeGroup).toBeVisible();
+
+    const meetingOption = expenseTypeGroup.getByRole("radio", { name: "Meeting" });
+    await meetingOption.click();
+    await expect(meetingOption).toHaveAttribute("aria-checked", "true");
+  });
+
+  test("location capture button is discoverable and clickable", async ({ page }) => {
+    const captureButton = page.getByRole("button", { name: /Capture current location for destination/i });
+    await expect(captureButton).toBeVisible();
+    await expect(captureButton).toBeEnabled();
   });
 
   test("from-date input is rendered", async ({ page }) => {
