@@ -65,8 +65,8 @@ function isPastDueMissingDocument(entry: { dueDate: string | null; status: strin
 }
 
 export function summarizeOfferLifecycleRows(rows: OfferLifecycleRow[]): RecruitmentOfferMetrics {
-  const accepted = rows.filter((row) => row.status === "accepted");
-  const rejected = rows.filter((row) => row.status === "rejected");
+  const accepted = rows.filter((row) => row.status === "accepted" || row.status === "hired");
+  const rejected = rows.filter((row) => ["cancelled", "rejected", "withdrawn"].includes(row.status));
   const final = [...accepted, ...rejected];
   const converted = accepted.filter((row) => Boolean(row.employeeHrId));
   const vacancyLinked = rows.filter((row) =>

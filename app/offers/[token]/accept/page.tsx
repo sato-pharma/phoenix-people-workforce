@@ -2,6 +2,12 @@ import { OfferActionConfirmation } from "@/components/offers/offer-action-confir
 import { getOfferDecisionPreview } from "@/lib/offers/service";
 
 export const dynamic = "force-dynamic";
+export const metadata = {
+  robots: {
+    follow: false,
+    index: false,
+  },
+};
 
 export default async function AcceptOfferPage({
   params,

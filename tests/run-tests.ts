@@ -41,6 +41,7 @@ import { runWorkforceLifecycleSeatTests } from "./workforce-lifecycle-seat.test.
 import { runWorkforceHierarchyContinuityTests } from "./workforce-hierarchy-continuity.test.ts";
 import { runPayrollLifecycleScopeTests } from "./payroll-lifecycle-scope.test.ts";
 import { runOfferVacancyMatchingTests } from "./offer-vacancy-matching.test.ts";
+import { runOfferLifecycleHardeningTests } from "./offer-lifecycle-hardening.test.ts";
 import { runNotificationRecipientIsolationTests } from "./notification-recipient-isolation.test.ts";
 import { runWorkflowControlTests } from "./workflow-control.test.ts";
 import { runWorkflowControlGovernanceTests } from "./workflow-control-governance.test.ts";
@@ -163,6 +164,7 @@ await runTest("workforce lifecycle seat", runWorkforceLifecycleSeatTests);
 await runTest("workforce hierarchy continuity", runWorkforceHierarchyContinuityTests);
 await runTest("payroll lifecycle scope", runPayrollLifecycleScopeTests);
 await runTest("offer vacancy matching", runOfferVacancyMatchingTests);
+await runTest("offer lifecycle hardening", runOfferLifecycleHardeningTests);
 await runTest("notification recipient isolation", runNotificationRecipientIsolationTests);
 await runTest("workflow control center", runWorkflowControlTests);
 await runTest("workflow control governance", runWorkflowControlGovernanceTests);
