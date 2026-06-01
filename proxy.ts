@@ -18,6 +18,13 @@ const previewReadOnlyAllowedMutationPaths = new Set([
   "/api/auth/logout",
 ]);
 
+function isPreviewSourceOfSalesMutationPath(pathname: string) {
+  return pathname === "/api/sales/monthly-import/validate" ||
+    /^\/api\/sales\/monthly-import\/batches\/[^/]+$/.test(pathname) ||
+    pathname === "/api/sales/source-of-sales/products" ||
+    /^\/api\/sales\/source-of-sales\/products\/[^/]+$/.test(pathname);
+}
+
 function isPreviewEmailTemplateMutationPath(pathname: string) {
   return /^\/api\/admin\/email-templates\/[^/]+$/.test(pathname) ||
     /^\/api\/admin\/email-templates\/[^/]+\/rollback$/.test(pathname);
@@ -36,6 +43,7 @@ function isPreviewReadOnlyBlockedMutation(request: NextRequest) {
   }
 
   return !previewReadOnlyAllowedMutationPaths.has(request.nextUrl.pathname) &&
+    !isPreviewSourceOfSalesMutationPath(request.nextUrl.pathname) &&
     !isPreviewEmailTemplateMutationPath(request.nextUrl.pathname);
 }
 
