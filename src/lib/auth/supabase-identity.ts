@@ -1,5 +1,5 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
-import { getSupabaseAdmin, getSupabaseUserClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin, getSupabaseAuthBridgeClient } from "@/lib/supabase/server";
 
 export const phoenixSupabaseAccessTokenCookieName = "phoenix_supabase_access_token";
 export const phoenixSupabaseRefreshTokenCookieName = "phoenix_supabase_refresh_token";
@@ -33,6 +33,7 @@ export type SupabaseAuthSession = {
 };
 
 const longBanDuration = "876000h";
+const authUserListPageSize = 1000;
 
 export function buildPhoenixAuthEmail(loginId: string) {
   const normalizedLoginId = loginId.trim().toLowerCase();
@@ -116,6 +117,63 @@ function appMetadata(input: SupabaseAuthProvisionInput) {
   };
 }
 
+async function findAuthUserIdByEmail(authEmail: string) {
+  const normalizedEmail = authEmail.trim().toLowerCase();
+  const supabaseAdmin = getSupabaseAdmin();
+
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+      page,
+      perPage: authUserListPageSize,
+    });
+    if (error) throw error;
+
+    const match = data.users.find((user) => user.email?.trim().toLowerCase() === normalizedEmail);
+    if (match) return match.id;
+    if (data.users.length < authUserListPageSize) return null;
+  }
+
+  return null;
+}
+
+async function updateSupabaseAuthUser(input: SupabaseAuthProvisionInput, authUserId: string) {
+  const authEmail = buildPhoenixAuthEmail(input.loginId);
+  const coarseRole = mapPhoenixRoleToCoarseAccessRole(input.role);
+  const updatePayload: {
+    app_metadata: ReturnType<typeof appMetadata>;
+    ban_duration?: string;
+    email: string;
+    email_confirm: true;
+    password?: string;
+    user_metadata: ReturnType<typeof userMetadata>;
+  } = {
+    app_metadata: appMetadata(input),
+    ban_duration: input.isActive ? "none" : longBanDuration,
+    email: authEmail,
+    email_confirm: true,
+    user_metadata: userMetadata(input),
+  };
+
+  if (input.password) {
+    updatePayload.password = input.password;
+  }
+
+  const { data, error } = await getSupabaseAdmin().auth.admin.updateUserById(
+    authUserId,
+    updatePayload,
+  );
+
+  if (error || !data.user) {
+    throw error ?? new Error("Failed to update Supabase auth user.");
+  }
+
+  return {
+    authEmail,
+    authUserId: data.user.id,
+    coarseRole,
+  };
+}
+
 export async function provisionSupabaseAuthIdentity(
   input: SupabaseAuthProvisionInput,
 ): Promise<SupabaseAuthIdentity> {
@@ -124,36 +182,13 @@ export async function provisionSupabaseAuthIdentity(
   const coarseRole = mapPhoenixRoleToCoarseAccessRole(input.role);
 
   if (input.authUserId) {
-    const updatePayload: {
-      app_metadata: ReturnType<typeof appMetadata>;
-      ban_duration?: string;
-      email: string;
-      email_confirm: true;
-      password?: string;
-      user_metadata: ReturnType<typeof userMetadata>;
-    } = {
-      app_metadata: appMetadata(input),
-      ban_duration: input.isActive ? "none" : longBanDuration,
-      email: authEmail,
-      email_confirm: true,
-      user_metadata: userMetadata(input),
-    };
-
-    if (input.password) {
-      updatePayload.password = input.password;
-    }
-
-    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
-      input.authUserId,
-      updatePayload,
-    );
-
-    if (!error && data.user) {
-      return {
-        authEmail,
-        authUserId: data.user.id,
-        coarseRole,
-      };
+    try {
+      return await updateSupabaseAuthUser(input, input.authUserId);
+    } catch {
+      const recoveredAuthUserId = await findAuthUserIdByEmail(authEmail);
+      if (recoveredAuthUserId) {
+        return updateSupabaseAuthUser(input, recoveredAuthUserId);
+      }
     }
   }
 
@@ -171,6 +206,10 @@ export async function provisionSupabaseAuthIdentity(
   });
 
   if (error || !data.user) {
+    const recoveredAuthUserId = await findAuthUserIdByEmail(authEmail);
+    if (recoveredAuthUserId) {
+      return updateSupabaseAuthUser(input, recoveredAuthUserId);
+    }
     throw error ?? new Error("Failed to provision Supabase auth user.");
   }
 
@@ -179,6 +218,49 @@ export async function provisionSupabaseAuthIdentity(
     authUserId: data.user.id,
     coarseRole,
   };
+}
+
+export async function persistSupabaseAuthIdentityLink(
+  input: SupabaseAuthProvisionInput & SupabaseAuthIdentity,
+) {
+  const supabaseAdmin = getSupabaseAdmin();
+  const updatedAt = new Date().toISOString();
+
+  const { error: appUserError } = await supabaseAdmin
+    .from("app_auth_users")
+    .update({
+      auth_email: input.authEmail,
+      auth_user_id: input.authUserId,
+      updated_at: updatedAt,
+    })
+    .eq("login_id", input.loginId);
+
+  if (appUserError) throw appUserError;
+
+  await supabaseAdmin
+    .from("user_access_profiles")
+    .update({ is_active: false, updated_at: updatedAt })
+    .eq("login_id", input.loginId)
+    .neq("auth_user_id", input.authUserId);
+
+  const { error: profileError } = await supabaseAdmin
+    .from("user_access_profiles")
+    .upsert({
+      auth_user_id: input.authUserId,
+      hr_id: input.hrId ?? input.loginId,
+      is_active: input.isActive,
+      line: input.line ?? null,
+      login_id: input.loginId,
+      manager_hr_id: input.managerHrId ?? null,
+      phoenix_role: input.role,
+      role: input.coarseRole,
+      scope_type: mapPhoenixRoleToAccessScopeType(input.role),
+      updated_at: updatedAt,
+    }, {
+      onConflict: "auth_user_id",
+    });
+
+  if (profileError) throw profileError;
 }
 
 export async function setSupabaseAuthIdentityAccess(input: {
@@ -219,7 +301,7 @@ export async function createSupabaseAuthSession(
   loginId: string,
   password: string,
 ): Promise<SupabaseAuthSession> {
-  const supabase = getSupabaseUserClient();
+  const supabase = getSupabaseAuthBridgeClient();
   const authEmail = buildPhoenixAuthEmail(loginId);
   const { data, error } = await supabase.auth.signInWithPassword({
     email: authEmail,

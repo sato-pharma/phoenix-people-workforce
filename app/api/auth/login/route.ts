@@ -23,6 +23,7 @@ import {
 } from "@/lib/auth/session";
 import {
   createSupabaseAuthSession,
+  persistSupabaseAuthIdentityLink,
   phoenixSupabaseAccessTokenCookieName,
   phoenixSupabaseRefreshTokenCookieName,
   provisionSupabaseAuthIdentity,
@@ -286,7 +287,7 @@ export async function POST(request: Request) {
         supabaseBridgeWarning = message;
       } else {
         try {
-          await provisionSupabaseAuthIdentity({
+          const repairedIdentity = await provisionSupabaseAuthIdentity({
             authUserId: user.authUserId ?? null,
             email: user.email ?? null,
             hrId: user.hrId,
@@ -296,6 +297,19 @@ export async function POST(request: Request) {
             managerHrId: user.managerHrId ?? null,
             name: user.name ?? user.loginId,
             password,
+            role: user.role,
+          });
+          await persistSupabaseAuthIdentityLink({
+            authEmail: repairedIdentity.authEmail,
+            authUserId: repairedIdentity.authUserId,
+            coarseRole: repairedIdentity.coarseRole,
+            email: user.email ?? null,
+            hrId: user.hrId,
+            isActive: true,
+            line: user.line ?? null,
+            loginId: user.loginId,
+            managerHrId: user.managerHrId ?? null,
+            name: user.name ?? user.loginId,
             role: user.role,
           });
 
