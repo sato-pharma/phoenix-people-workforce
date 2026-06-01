@@ -293,6 +293,12 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "imports", "import");
     await assertPermission(access, "user_admin", "update");
+    if (access.role !== "Super Admin") {
+      return NextResponse.json(
+        { error: "forbidden", message: "Forbidden: only Super Admin can import user access." },
+        { status: 403 },
+      );
+    }
 
     const formData = await request.formData();
     const file = formData.get("file");

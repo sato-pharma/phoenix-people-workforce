@@ -40,6 +40,12 @@ export async function POST(request: Request) {
       throw unauthorizedError();
     }
     await assertPermission(access, "user_admin", "update");
+    if (access.role !== "Super Admin") {
+      return NextResponse.json(
+        { error: "forbidden", message: "Forbidden: only Super Admin can manage user access." },
+        { status: 403 },
+      );
+    }
 
     const payload = parsePasswordSetupRequest(await request.json());
 
