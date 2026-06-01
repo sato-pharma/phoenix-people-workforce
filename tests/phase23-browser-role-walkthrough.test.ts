@@ -41,7 +41,8 @@ export function runPhase23BrowserRoleWalkthroughTests() {
   assert.doesNotMatch(smoke, /\.delete\(/);
 
   assert.match(devAuthRoute, /process\.env\.NODE_ENV !== "development"/);
-  assert.match(devAuthRoute, /hostname === "localhost"/);
+  assert.match(devAuthRoute, /function isLoopbackHostname/);
+  assert.match(devAuthRoute, /normalized === "localhost"/);
   assert.match(devAuthRoute, /phoenixDevPreviewCookieName/);
   assert.match(devAuthRoute, /createDevPreviewSessionToken/);
 
