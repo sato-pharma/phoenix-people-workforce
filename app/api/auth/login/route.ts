@@ -6,6 +6,7 @@ import {
   createAppSession,
   isSupabaseBridgeRequiredForRole,
   sessionAbsoluteTimeoutSecondsForRole,
+  shouldBlockLoginWhenSupabaseBridgeUnavailable,
 } from "@/lib/auth/app-sessions";
 import {
   clearFailedLoginState,
@@ -337,7 +338,7 @@ export async function POST(request: Request) {
         "Supabase auth bridge unavailable; continuing with Phoenix session only.";
     }
 
-    if (!supabaseSession && supabaseSessionRequired) {
+    if (!supabaseSession && shouldBlockLoginWhenSupabaseBridgeUnavailable(user.role)) {
       await writeAuthAudit({
         actorLoginId: user.loginId,
         entityId: user.loginId,

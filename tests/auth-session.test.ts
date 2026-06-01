@@ -8,6 +8,7 @@ import {
   phoenixSessionTimeoutReason,
   readSessionActivityAt,
 } from "../src/lib/auth/client-session.ts";
+import { shouldBlockLoginWhenSupabaseBridgeUnavailable } from "../src/lib/auth/app-sessions.ts";
 import {
   createSessionToken,
   sessionIdleTimeoutSecondsForRole,
@@ -251,6 +252,26 @@ export async function runAuthSessionTests() {
     /"Super Admin"[\s\S]*"CEO"[\s\S]*"Finance Manager"[\s\S]*"HR Specialist"[\s\S]*"SFE Manager"[\s\S]*"National Sales Manager"/,
     "privileged bridge enforcement must cover all specified roles",
   );
+  assert.match(appSessionsSource, /shouldBlockLoginWhenSupabaseBridgeUnavailable/, "privileged bridge strictness must be environment-aware");
+  assert.match(appSessionsSource, /VERCEL_ENV === "production"/, "production must remain strict when privileged bridge is unavailable");
+
+  const originalVercelEnv = process.env.VERCEL_ENV;
+  const originalStrictBridge = process.env.PHOENIX_STRICT_SUPABASE_BRIDGE;
+  try {
+    delete process.env.PHOENIX_STRICT_SUPABASE_BRIDGE;
+    process.env.VERCEL_ENV = "production";
+    assert.equal(shouldBlockLoginWhenSupabaseBridgeUnavailable("Super Admin"), true, "production privileged bridge failure must block login");
+    assert.equal(shouldBlockLoginWhenSupabaseBridgeUnavailable("Employee"), false, "non-privileged bridge failure must not block login");
+    process.env.VERCEL_ENV = "preview";
+    assert.equal(shouldBlockLoginWhenSupabaseBridgeUnavailable("Super Admin"), false, "preview privileged bridge failure may fall back to Phoenix session");
+    process.env.PHOENIX_STRICT_SUPABASE_BRIDGE = "true";
+    assert.equal(shouldBlockLoginWhenSupabaseBridgeUnavailable("Super Admin"), true, "explicit strict bridge env must force blocking");
+  } finally {
+    if (originalVercelEnv === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = originalVercelEnv;
+    if (originalStrictBridge === undefined) delete process.env.PHOENIX_STRICT_SUPABASE_BRIDGE;
+    else process.env.PHOENIX_STRICT_SUPABASE_BRIDGE = originalStrictBridge;
+  }
 
   assert.match(serverSource, /validateAppSession\(payload\)/, "server access resolution must require an active DB app session");
   assert.match(serverSource, /appSessionRejectionSummary/, "DB session rejections must be audited with explicit reasons");
@@ -260,6 +281,7 @@ export async function runAuthSessionTests() {
   assert.match(loginRouteSource, /assertApiRateLimit/, "login route must use API bucket rate limiting");
   assert.match(loginRouteSource, /rejectUntrustedForwardedOrigin/, "login route must reject untrusted origins/forwarded hosts");
   assert.match(loginRouteSource, /isSupabaseBridgeRequiredForRole/, "login route must enforce privileged Supabase bridge strictness");
+  assert.match(loginRouteSource, /shouldBlockLoginWhenSupabaseBridgeUnavailable/, "login route must only hard-block bridge failure in strict environments");
   assert.match(loginRouteSource, /createAppSession/, "login route must create an app_sessions row before issuing a cookie");
   assert.match(loginRouteSource, /auth_bridge_unavailable/, "privileged bridge failure must fail login");
   assert.match(loginRouteSource, /supabaseSessionAvailable:\s*Boolean\(supabaseSession\)/, "bridge fallback status must be recorded");
