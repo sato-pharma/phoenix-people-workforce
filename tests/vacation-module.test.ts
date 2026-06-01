@@ -101,6 +101,10 @@ const vacationReportSource = readFileSync(
   new URL("../src/components/vacation/vacation-report.tsx", import.meta.url),
   "utf8",
 );
+const vacationLayoutSource = readFileSync(
+  new URL("../app/leave-management/layout.tsx", import.meta.url),
+  "utf8",
+);
 
 export function runVacationModuleTests() {
   assert.match(serviceSource, /const vacationRequestsTable = "v2_vacation_requests"/);
@@ -178,7 +182,13 @@ export function runVacationModuleTests() {
   assert.match(requestEvidenceReviewRouteSource, /assertSameOriginMutation/);
   assert.match(requestEvidenceReviewRouteSource, /assertVacationRouteRateLimit/);
   assert.match(vacationAuditExportRouteSource, /generateVacationAuditExportWorkbook/);
+  assert.match(vacationAuditExportRouteSource, /assertPermission\(access, "leave", "export"\)/);
   assert.match(vacationAuditExportRouteSource, /assertVacationRouteRateLimit/);
+  assert.ok(
+    vacationAuditExportRouteSource.indexOf('assertPermission(access, "leave", "export")') <
+      vacationAuditExportRouteSource.indexOf("assertVacationRouteRateLimit({"),
+    "Vacation audit export must assert export permission before rate limiting.",
+  );
   assert.match(vacationAuditExportRouteSource, /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/);
   assert.match(dailyNotificationsRouteSource, /runBirthdayNotifications/);
   assert.match(dailyNotificationsRouteSource, /runContractRenewalNotifications/);
@@ -234,6 +244,8 @@ export function runVacationModuleTests() {
   assert.match(vacationReportSource, /Daily SLA run/);
   assert.match(vacationReportSource, /pendingAction/);
   assert.doesNotMatch(vacationReportSource, /window\.confirm|window\.prompt/);
+  assert.match(vacationLayoutSource, /redirect\("\/login"\)/);
+  assert.match(vacationLayoutSource, /!access\.loginId && !access\.hrId/);
   assert.match(typesSource, /canAdminManage: boolean/);
   assert.match(typesSource, /canExport: boolean/);
   assert.match(typesSource, /canReviewAttachments: boolean/);

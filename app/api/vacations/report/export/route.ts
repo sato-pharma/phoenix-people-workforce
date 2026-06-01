@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import {
@@ -32,6 +33,7 @@ function filtersFromUrl(url: URL): VacationReportFilters {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    await assertPermission(access, "leave", "export");
     await assertVacationRouteRateLimit({
       actor: access.loginId ?? access.hrId,
       limit: 8,

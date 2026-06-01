@@ -369,7 +369,23 @@ export function isVacationSchemaMissing(error: unknown) {
 }
 
 export function vacationErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    const candidate = error as {
+      code?: unknown;
+      details?: unknown;
+      hint?: unknown;
+      message?: unknown;
+    };
+    const message = typeof candidate.message === "string" ? candidate.message.trim() : "";
+    if (message) return message;
+    const parts = [candidate.code, candidate.details, candidate.hint]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .map((value) => value.trim());
+    if (parts.length > 0) return parts.join(" ");
+    return "Unexpected vacation service error.";
+  }
+  return String(error);
 }
 
 function findEmployeeByHrId(directory: EmployeeDirectoryData, hrId: string | null | undefined) {
