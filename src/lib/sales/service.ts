@@ -46,6 +46,33 @@ type SalesAccessFilter = {
   allowedLine?: string;
   includeManagerOwnedHrId?: string;
 };
+const SALES_DASHBOARD_RECORD_SELECT = [
+  "batch_id",
+  "row_number",
+  "employee_hr_id",
+  "employee_crm_id",
+  "employee_lookup_key",
+  "employee_name",
+  "manager_hr_id",
+  "line",
+  "territory",
+  "sales_type",
+  "family",
+  "product",
+  "factory_price",
+  "month",
+  "year",
+  "sales_units",
+  "sales_value",
+  "target_units",
+  "target_value",
+  "validation_state",
+  "validation_notes",
+  "link_status",
+  "link_confidence",
+].join(",");
+const DEFAULT_SALES_DASHBOARD_ACTIVE_BATCH_LIMIT = 24;
+const SALES_DASHBOARD_TRANSACTION_LIMIT = 500;
 
 function toSafeArray<T = unknown>(value: readonly T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
@@ -589,7 +616,10 @@ async function readDashboardSalesRecordRows(
   let from = 0;
 
   while (true) {
-    let query = supabase.from("sales_records").select("*").in("batch_id", activeBatchIds);
+    let query = supabase
+      .from("sales_records")
+      .select(SALES_DASHBOARD_RECORD_SELECT)
+      .in("batch_id", activeBatchIds);
     query = applyDashboardRecordFilters(query, filters);
     const result = await query.range(from, from + pageSize - 1);
     if (result.error) throw result.error;
@@ -789,7 +819,10 @@ export async function getSalesDashboard(
   const { data: batchRows, error: batchError } = await supabase
     .from("sales_import_batches")
     .select("*")
-    .is("replaced_by_batch_id", null);
+    .is("replaced_by_batch_id", null)
+    .order("year", { ascending: false })
+    .order("month", { ascending: false })
+    .order("created_at", { ascending: false });
 
   if (batchError) throw batchError;
 
@@ -825,7 +858,14 @@ export async function getSalesDashboard(
   }));
 
   const activeBatches = batches.filter(isActiveSalesImportBatch);
-  const activeBatchIds = activeBatches.map((batch) => batch.id);
+  const hasDashboardFilter = Object.values(filters).some((value) => {
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== undefined && value !== null && value !== "";
+  });
+  const recordBatches = hasDashboardFilter
+    ? activeBatches
+    : activeBatches.slice(0, DEFAULT_SALES_DASHBOARD_ACTIVE_BATCH_LIMIT);
+  const activeBatchIds = recordBatches.map((batch) => batch.id);
 
   if (activeBatchIds.length === 0) {
     // Return empty dashboard if no active batches
@@ -897,7 +937,7 @@ export async function getSalesDashboard(
   }));
   records = await filterSalesRecordsForAccess(records, accessContext);
 
-  const approvedRecords = selectCurrentSalesRecords(records, activeBatches);
+  const approvedRecords = selectCurrentSalesRecords(records, recordBatches);
 
   const productFilter = [...new Set([
     ...toFilterStringList(filters.product),
@@ -1069,7 +1109,8 @@ export async function getSalesDashboard(
         targetValue: record.targetValue,
         achievementRate: performanceMetric(record.salesValue, record.targetValue),
       };
-    });
+    })
+    .slice(0, SALES_DASHBOARD_TRANSACTION_LIMIT);
 
   const linkageStats = {
     linked: companyRecords.filter((record) => record.linkStatus === "linked").length,

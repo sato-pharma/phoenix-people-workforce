@@ -1,6 +1,11 @@
-﻿import { EmployeeManagement } from "@/components/employees/employee-management";
-import { AppShell } from "@/components/layout/app-shell";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
+
+import { EmployeeManagement } from "@/components/employees/employee-management";
+import { AppShell } from "@/components/layout/app-shell";
+import { AppRouteLoadingState } from "@/components/ui/loading-state";
+import { canAccess, filterEmployeeDirectoryForAccess, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   employeeDirectoryErrorMessage,
   getEmployeeDirectory,
@@ -8,8 +13,6 @@ import {
   isEmployeeDirectorySchemaMissing,
   isEmployeeDirectoryTimeout,
 } from "@/lib/employees/employee-directory";
-import { canAccess, filterEmployeeDirectoryForAccess, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +41,24 @@ export default async function EmployeesPage() {
   if (!await canAccess(access, "employees", "read")) {
     redirect("/employee-portals");
   }
+
+  return (
+    <AppShell accessContext={access} navigationMode="admin">
+      <Suspense
+        fallback={
+          <AppRouteLoadingState
+            title="Loading Employees"
+            description="Preparing directory, hierarchy, compensation, and lookup data."
+          />
+        }
+      >
+        <EmployeesContent access={access} />
+      </Suspense>
+    </AppShell>
+  );
+}
+
+async function EmployeesContent({ access }: { access: AccessContext }) {
   let initialData = null;
   let initialError: string | null = null;
 
@@ -48,11 +69,9 @@ export default async function EmployeesPage() {
   }
 
   return (
-    <AppShell navigationMode="admin">
-      <EmployeeManagement
-        initialData={initialData}
-        initialError={initialError}
-      />
-    </AppShell>
+    <EmployeeManagement
+      initialData={initialData}
+      initialError={initialError}
+    />
   );
 }

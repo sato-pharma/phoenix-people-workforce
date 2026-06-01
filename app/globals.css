@@ -561,6 +561,43 @@ body {
   animation: ep-breathe-orange 1.2s ease-in-out infinite;
 }
 
+.phoenix-route-transition-indicator {
+  height: 3px;
+  inset: 0 0 auto;
+  overflow: hidden;
+  pointer-events: none;
+  position: fixed;
+  z-index: 90;
+}
+
+.phoenix-route-transition-bar {
+  animation: phoenix-route-progress 1.05s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  background: linear-gradient(90deg, transparent, #f97316 35%, #f8b56b 55%, transparent);
+  height: 100%;
+  transform-origin: left center;
+  width: 55%;
+}
+
+html[data-route-transition-pending] main {
+  transition: opacity 160ms ease;
+}
+
+html[data-route-transition-pending] main {
+  opacity: 0.94;
+}
+
+@keyframes phoenix-route-progress {
+  from {
+    transform: translateX(-72%) scaleX(0.72);
+  }
+  55% {
+    transform: translateX(84%) scaleX(1);
+  }
+  to {
+    transform: translateX(182%) scaleX(0.72);
+  }
+}
+
 /* Glass surface helper — use alongside bg-* for layered glass */
 .ep-glass {
   backdrop-filter: blur(14px);
@@ -594,7 +631,13 @@ body {
   .employee-portal-page-transition,
   .employee-portal-route-loading,
   .employee-portal-skeleton,
-  .employee-portal-nav-pending-dot {
+  .employee-portal-nav-pending-dot,
+  .phoenix-route-transition-bar {
     animation: none;
+  }
+
+  html[data-route-transition-pending] main {
+    opacity: 1;
+    transition: none;
   }
 }

@@ -1,5 +1,6 @@
 import { AlertCircle, CalendarClock, ChartNoAxesColumnIncreasing, ClipboardCheck, Radar, ScrollText } from "lucide-react";
 
+import { adminPanelClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import { classifySignal, type BriefSignal, type CeoBriefData, type SignalVerdict } from "@/lib/ceo/brief";
 import type { CompanyHealth } from "@/lib/ceo/health-score";
 import type { RiskRow } from "@/lib/ceo/risk";
@@ -34,7 +35,7 @@ const SEVERITY_DOT: Record<RiskRow["severity"], string> = {
 
 function Block({ icon: Icon, title, children }: { icon: typeof Radar; title: string; children: React.ReactNode }) {
   return (
-    <div className="min-w-0 rounded-[16px] border border-[#E5EAF1] bg-[#FCFDFE] p-4">
+    <div className={`min-w-0 ${adminSoftPanelClassName} bg-gradient-to-b from-white to-slate-50/50 p-4`}>
       <div className="mb-3 flex items-center gap-2">
         <Icon className="h-4 w-4 text-slate-400" />
         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{title}</h3>
@@ -46,7 +47,7 @@ function Block({ icon: Icon, title, children }: { icon: typeof Radar; title: str
 
 function HealthBand({ health }: { health: CompanyHealth }) {
   return (
-    <div className="rounded-[16px] border border-[#E5EAF1] bg-[#FCFDFE] p-4">
+    <div className={`${adminSoftPanelClassName} bg-gradient-to-b from-white to-slate-50/50 p-4`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-500">
@@ -126,10 +127,11 @@ export function CeoWeeklyBrief({ brief, health, attention }: CeoWeeklyBriefProps
       : null;
 
   return (
-    <section className="min-w-0 rounded-[18px] border border-[#D8E0EA] bg-white p-5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+    <section className={`group relative min-w-0 overflow-hidden ${adminPanelClassName} bg-gradient-to-br from-white to-slate-50/40 p-5`}>
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-400/0 via-orange-400/40 to-orange-400/0" />
       <header className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50 text-slate-500">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 text-orange-600">
             <Radar className="h-4 w-4" />
           </span>
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Command Brief</h2>

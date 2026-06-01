@@ -53,3 +53,63 @@ export function PageLoadingState({ title = "Loading" }: { title?: string }) {
     </div>
   );
 }
+
+export function AppRouteLoadingState({
+  title = "Loading workspace",
+  description = "Preparing the next Phoenix Workforce view.",
+}: {
+  title?: string;
+  description?: string;
+}) {
+  return (
+    <div aria-live="polite" className="space-y-6" role="status">
+      <span className="sr-only">{title}</span>
+      <section className="relative overflow-hidden border border-slate-200 bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.08)] sm:p-6">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500/0 via-orange-400/80 to-sky-500/0" />
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-primary">
+              {systemIdentity.appName}
+            </p>
+            <h1 className="mt-3 text-2xl font-black tracking-tight text-text">
+              {title}
+            </h1>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-text-secondary">
+              {description}
+            </p>
+          </div>
+          <LoadingSpinner className="h-7 w-7 text-orange-500" />
+        </div>
+      </section>
+
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((item) => (
+          <Card className="space-y-4 p-4" key={item}>
+            <div className="h-4 w-24 animate-pulse bg-bg-muted" />
+            <div className="h-8 w-20 animate-pulse bg-bg-muted" />
+            <div className="h-3 w-full animate-pulse bg-bg-muted" />
+          </Card>
+        ))}
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
+        <Card className="space-y-4 p-5">
+          <div className="h-5 w-44 animate-pulse bg-bg-muted" />
+          <div className="h-[260px] animate-pulse bg-bg-muted" />
+        </Card>
+        <Card className="space-y-4 p-5">
+          <div className="h-5 w-36 animate-pulse bg-bg-muted" />
+          {[0, 1, 2, 3].map((item) => (
+            <div className="flex items-center gap-3" key={item}>
+              <div className="h-10 w-10 shrink-0 animate-pulse bg-bg-muted" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="h-3.5 w-3/4 animate-pulse bg-bg-muted" />
+                <div className="h-3 w-1/2 animate-pulse bg-bg-muted" />
+              </div>
+            </div>
+          ))}
+        </Card>
+      </section>
+    </div>
+  );
+}

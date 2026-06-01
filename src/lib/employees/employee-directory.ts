@@ -878,10 +878,11 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     employeeRows = await supabaseRest<EmployeeDbRow[]>(`employees?${fallbackParams}`);
   }
 
-  const residenceByHrId = await loadResidenceByHrId(uniqueTextValues(employeeRows, "hr_id"));
-  const pendingReplacementByHrId = await loadPendingManagerReplacementByHrId(
-    uniqueTextValues(employeeRows, "hr_id"),
-  );
+  const employeeHrIds = uniqueTextValues(employeeRows, "hr_id");
+  const [residenceByHrId, pendingReplacementByHrId] = await Promise.all([
+    loadResidenceByHrId(employeeHrIds),
+    loadPendingManagerReplacementByHrId(employeeHrIds),
+  ]);
 
   // Check if we got joined data
   const hasJoinedData = employeeRows.length > 0 && (employeeRows[0].employee_compensation || employeeRows[0].departments);

@@ -1,6 +1,30 @@
 "use client";
 
-import { ChevronRight, ShieldCheck, X } from "lucide-react";
+// ─────────────────────────────────────────────────────────────────────────────
+// Phoenix Workforce — Admin & Portal navigation sidebar
+//
+// One component drives two surfaces (decided by `navigationMode`):
+//   • "admin"           → deep-navy "command" chrome that matches the CEO hero
+//                         identity card gradient (#0B1120 → #111C32 → #0A1A3A),
+//                         with a streamlined smart toolkit: module search, grouped
+//                         collapsible sections, and a collapse-to-icon-rail.
+//   • "employee-portal" → a calm, light grouped-navigation list.
+//
+// Everything visual lives here; the *data* (links, icons, permissions, roles) is the
+// single source of truth in `@/config/system-navigation`. Visibility is filtered by
+// the same permission/role gating the API enforces — the sidebar is UX, never the
+// security boundary. The active-path matcher below intentionally special-cases a few
+// query-param routes (tab=/action=) so highlighting stays correct.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import {
+  ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -11,55 +35,80 @@ import {
   navigationHomePathByMode,
   type NavigationPermission,
   type NavigationSection,
+  type NavigationSectionItem,
 } from "@/config/system-navigation";
 import { systemAssets, systemIdentity, systemUiText } from "@/config/system-settings";
 import { type NavigationMode, type PermissionAction, type PermissionResource, type PhoenixRole } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 
-type SidebarSection = NavigationSection;
+// ── Shared admin palette — mirrors the CEO hero identity card exactly ────────
+// Hero card (ceo-command-center.tsx): `bg-gradient-to-br from-slate-900 via-slate-900
+// to-slate-800` with `border-slate-800`, plus two decorative blurred glows (warm
+// orange top-right, cool sky bottom-left). We reuse the gradient, hairline, AND the
+// glows so the sidebar reads as the *same surface* as the executive hero.
+const ADMIN_SIDEBAR_BG = "bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800";
+
+/** The hero card's decorative glow overlay — rendered behind sidebar content. */
+function AdminSidebarGlow() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+      <div className="absolute -bottom-24 -left-16 h-60 w-60 rounded-full bg-sky-500/10 blur-3xl" />
+    </div>
+  );
+}
+
+// ── Public types ─────────────────────────────────────────────────────────────
 type SidebarPermission = NavigationPermission;
 export type PermissionLookup = Partial<Record<`${PermissionResource}:${PermissionAction}`, boolean>>;
 type PermissionLookupKey = keyof PermissionLookup;
 
-const SIDEBAR_COLLAPSED_STORAGE_PREFIX = "phoenix-sidebar-collapsed";
-const SIDEBAR_COLLAPSED_STORAGE_EVENT = "phoenix-sidebar-collapsed-change";
 const EMPTY_PERMISSION_LOOKUP: PermissionLookup = {};
 
-function permissionAllowed(permissionLookup: PermissionLookup | undefined, permission?: SidebarPermission | readonly SidebarPermission[]) {
-  if (!permission) return true;
+// localStorage keys (kept stable so a user's saved layout survives this rebuild).
+const COLLAPSED_KEY_PREFIX = "phoenix-sidebar-collapsed";
+const COLLAPSED_EVENT = "phoenix-sidebar-collapsed-change";
+const PREFS_EVENT = "phoenix-sidebar-prefs-change";
 
-  const permissionList: readonly SidebarPermission[] = Array.isArray(permission) ? permission : [permission];
-  return permissionList.some((entry) => {
+const SIDEBAR_WIDTH_EXPANDED = "w-[280px]";
+const SIDEBAR_WIDTH_RAIL = "w-[76px]";
+
+// ── Visibility gating (mirrors the server permission matrix) ─────────────────
+function permissionAllowed(lookup: PermissionLookup | undefined, permission?: SidebarPermission | readonly SidebarPermission[]) {
+  if (!permission) return true;
+  const list: readonly SidebarPermission[] = Array.isArray(permission) ? permission : [permission];
+  return list.some((entry) => {
     const action: PermissionAction = entry.action ?? "read";
     const key: PermissionLookupKey = `${entry.resource}:${action}`;
-    if (!permissionLookup || typeof permissionLookup[key] === "undefined") return true;
-    return Boolean(permissionLookup[key]);
+    if (!lookup || typeof lookup[key] === "undefined") return true;
+    return Boolean(lookup[key]);
   });
 }
 
-function roleAllowed(currentRole: PhoenixRole | undefined, roles?: readonly PhoenixRole[]) {
+function roleAllowed(role: PhoenixRole | undefined, roles?: readonly PhoenixRole[]) {
   if (!roles) return true;
-  return Boolean(currentRole && roles.includes(currentRole));
+  return Boolean(role && roles.includes(role));
 }
 
-function roleNotExcluded(currentRole: PhoenixRole | undefined, excludedRoles?: readonly PhoenixRole[]) {
+function roleNotExcluded(role: PhoenixRole | undefined, excludedRoles?: readonly PhoenixRole[]) {
   if (!excludedRoles) return true;
-  return !currentRole || !excludedRoles.includes(currentRole);
+  return !role || !excludedRoles.includes(role);
 }
 
-function getSections(mode: NavigationMode, permissionLookup: PermissionLookup, currentRole?: PhoenixRole): SidebarSection[] {
+function getSections(mode: NavigationMode, lookup: PermissionLookup, role?: PhoenixRole): NavigationSection[] {
   return getNavigationSections(mode)
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => (
-        permissionAllowed(permissionLookup, item.permissions) &&
-        roleAllowed(currentRole, item.roles) &&
-        (mode !== "employee-portal" || roleNotExcluded(currentRole, item.excludedRoles))
-      )),
+      items: section.items.filter(
+        (item) =>
+          permissionAllowed(lookup, item.permissions) &&
+          roleAllowed(role, item.roles) &&
+          (mode !== "employee-portal" || roleNotExcluded(role, item.excludedRoles)),
+      ),
     }))
     .filter((section) => section.items.length > 0);
 }
 
+// ── Active-route detection (special-cases query-param destinations) ──────────
 function isActivePath(pathname: string, href: string, activeTab: string | null) {
   const baseHref = href.split("?")[0];
   if (href.includes("tab=governance")) return pathname === baseHref && activeTab === "governance";
@@ -76,195 +125,348 @@ function isActivePath(pathname: string, href: string, activeTab: string | null) 
   return pathname === baseHref || pathname.startsWith(`${baseHref}/`);
 }
 
-function getActiveHref(pathname: string, sections: SidebarSection[], activeTab: string | null) {
+function getActiveHref(pathname: string, sections: NavigationSection[], activeTab: string | null) {
   const matches = sections
     .flatMap((section) => section.items)
     .filter((item) => isActivePath(pathname, item.href, activeTab))
     .sort((left, right) => right.href.split("?")[0].length - left.href.split("?")[0].length);
-
   return matches[0]?.href ?? null;
 }
 
-function getCollapsedStorageKey(mode: NavigationMode) {
-  return `${SIDEBAR_COLLAPSED_STORAGE_PREFIX}:${mode}`;
+// ── Persistence: collapsed-section set (cross-tab synced) ─────────────────────
+function collapsedStorageKey(mode: NavigationMode) {
+  return `${COLLAPSED_KEY_PREFIX}:${mode}`;
 }
 
-function parseCollapsedSectionIds(rawValue: string, validSectionIds: Set<string>) {
-  const collapsed = new Set<string>();
-
+function parseCollapsedIds(raw: string, valid: Set<string>) {
+  const out = new Set<string>();
   try {
-    const parsedValue: unknown = JSON.parse(rawValue);
-    if (!Array.isArray(parsedValue)) return collapsed;
-
-    for (const value of parsedValue) {
-      if (typeof value === "string" && validSectionIds.has(value)) {
-        collapsed.add(value);
-      }
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return out;
+    for (const value of parsed) {
+      if (typeof value === "string" && valid.has(value)) out.add(value);
     }
   } catch {
     return new Set<string>();
   }
-
-  return collapsed;
+  return out;
 }
 
-function getCollapsedSectionSnapshot(storageKey: string) {
+function readCollapsedSnapshot(key: string) {
   if (typeof window === "undefined") return "[]";
-
   try {
-    return window.localStorage.getItem(storageKey) ?? "[]";
+    return window.localStorage.getItem(key) ?? "[]";
   } catch {
     return "[]";
   }
 }
 
-function subscribeToCollapsedSectionChanges(onStoreChange: () => void) {
+function subscribeCollapsed(onChange: () => void) {
   if (typeof window === "undefined") return () => {};
-
-  window.addEventListener("storage", onStoreChange);
-  window.addEventListener(SIDEBAR_COLLAPSED_STORAGE_EVENT, onStoreChange);
-
+  window.addEventListener("storage", onChange);
+  window.addEventListener(COLLAPSED_EVENT, onChange);
   return () => {
-    window.removeEventListener("storage", onStoreChange);
-    window.removeEventListener(SIDEBAR_COLLAPSED_STORAGE_EVENT, onStoreChange);
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(COLLAPSED_EVENT, onChange);
   };
 }
 
-function writeCollapsedSectionIds(storageKey: string, collapsedSectionIds: Set<string>) {
+function writeCollapsedIds(key: string, ids: Set<string>) {
   if (typeof window === "undefined") return;
-
   try {
-    window.localStorage.setItem(storageKey, JSON.stringify(Array.from(collapsedSectionIds)));
-    window.dispatchEvent(new Event(SIDEBAR_COLLAPSED_STORAGE_EVENT));
+    window.localStorage.setItem(key, JSON.stringify(Array.from(ids)));
+    window.dispatchEvent(new Event(COLLAPSED_EVENT));
   } catch {
-    // Sidebar preferences are optional. Private browsing/storage failures should not block navigation.
+    // Preferences are optional; storage failures must never block navigation.
   }
 }
 
+// ── Persistence: boolean pref (rail collapse) ────────────────────────────────
+function prefKey(base: string, mode: NavigationMode) {
+  return `phoenix-sidebar-${base}:${mode}`;
+}
+
+function readPref(key: string) {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function subscribePrefs(onChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", onChange);
+  window.addEventListener(PREFS_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(PREFS_EVENT, onChange);
+  };
+}
+
+function writePref(key: string, value: unknown) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+    window.dispatchEvent(new Event(PREFS_EVENT));
+  } catch {
+    // Preferences are optional; storage failures must never block navigation.
+  }
+}
+
+function useBooleanPref(key: string): boolean {
+  const snapshot = useSyncExternalStore(subscribePrefs, () => readPref(key), () => "");
+  return snapshot === "true";
+}
+
+// ── A single navigation entry ────────────────────────────────────────────────
+function NavRow({
+  active,
+  dark,
+  item,
+  onActivate,
+  onHover,
+  onHoverEnd,
+  rail,
+}: {
+  active: boolean;
+  dark: boolean;
+  item: NavigationSectionItem;
+  onActivate: () => void;
+  onHover?: (rect: DOMRect) => void;
+  onHoverEnd?: () => void;
+  rail: boolean;
+}) {
+  const Icon = item.icon;
+
+  return (
+    <div
+      className="group relative"
+      onMouseEnter={rail && onHover ? (event) => onHover(event.currentTarget.getBoundingClientRect()) : undefined}
+      onMouseLeave={rail ? onHoverEnd : undefined}
+    >
+      <Link
+        aria-current={active ? "page" : undefined}
+        aria-label={rail ? item.label : undefined}
+        className={cn(
+          "relative flex w-full items-center text-[13px] font-semibold transition-colors duration-150",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60 focus-visible:ring-offset-2",
+          dark ? "focus-visible:ring-offset-slate-900" : "focus-visible:ring-offset-white",
+          rail ? "justify-center px-0 py-2.5" : "gap-3 px-2.5 py-2.5",
+          dark
+            ? active
+              ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-[#F97316]/30"
+              : "text-slate-300 hover:bg-white/[0.06] hover:text-white"
+            : active
+              ? "bg-white text-[#0F172A] shadow-[0_1px_2px_rgba(15,23,42,0.06)] ring-1 ring-[#F4D9BE]"
+              : "text-[#5A6678] hover:bg-white hover:text-[#0F172A] hover:shadow-[0_1px_2px_rgba(15,23,42,0.05)]",
+        )}
+        href={item.href}
+        onClick={onActivate}
+      >
+        {active && <span className={cn("absolute left-0 w-[3px] bg-[#F97316]", rail ? "top-1.5 bottom-1.5" : "top-1.5 bottom-1.5")} />}
+        <span
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center transition-colors duration-150",
+            dark
+              ? active
+                ? "bg-[linear-gradient(180deg,#FB923C_0%,#F97316_100%)] text-white shadow-[0_8px_16px_rgba(249,115,22,0.32)]"
+                : "bg-white/5 text-slate-400 ring-1 ring-white/10 group-hover:text-[#F8B56B] group-hover:ring-white/20"
+              : active
+                ? "bg-[#F97316] text-white shadow-[0_8px_16px_rgba(249,115,22,0.28)]"
+                : "bg-white text-[#64748B] ring-1 ring-[#EBE4DA] group-hover:text-[#F97316] group-hover:ring-[#FDBA74]",
+          )}
+        >
+          <Icon className="h-4 w-4" />
+        </span>
+        {!rail && <span className="min-w-0 flex-1 truncate tracking-[-0.01em]">{item.label}</span>}
+      </Link>
+    </div>
+  );
+}
+
+// ── The navigation brain (search / collapse / rail) ──────────────────────────
 function SidebarNav({
   mode = "admin",
   onNavigate,
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
   currentRole,
+  rail = false,
 }: {
   currentRole?: PhoenixRole;
   mode?: NavigationMode;
   onNavigate?: () => void;
   permissionLookup?: PermissionLookup;
+  rail?: boolean;
 }) {
-  const sections = useMemo(
-    () => getSections(mode, permissionLookup, currentRole),
-    [currentRole, mode, permissionLookup],
-  );
+  const isAdmin = mode === "admin";
+  const sections = useMemo(() => getSections(mode, permissionLookup, currentRole), [currentRole, mode, permissionLookup]);
   const pathname = usePathname();
   const navInstanceId = useId();
   const searchInputRef = useRef<HTMLInputElement>(null);
+
   const [activeTab, setActiveTab] = useState<string | null>(pathname === "/payroll" ? "governance" : null);
   const [searchQuery, setSearchQuery] = useState("");
-  const normalizedSearchQuery = mode === "admin" ? searchQuery.trim().toLowerCase() : "";
-  const visibleSections = useMemo(() => {
-    if (!normalizedSearchQuery) return sections;
+  const [railTip, setRailTip] = useState<{ label: string; top: number; left: number } | null>(null);
 
-    return sections
-      .map((section) => ({
-        ...section,
-        items: section.items.filter((item) => item.label.toLowerCase().includes(normalizedSearchQuery)),
-      }))
-      .filter((section) => section.items.length > 0);
-  }, [normalizedSearchQuery, sections]);
+  const query = isAdmin && !rail ? searchQuery.trim().toLowerCase() : "";
+
   const activeHref = getActiveHref(pathname, sections, activeTab);
+
   const sectionIds = useMemo(() => sections.map((section) => section.id), [sections]);
   const activeSectionId = sections.find((section) => section.items.some((item) => item.href === activeHref))?.id ?? null;
-  const collapsedStorageKey = getCollapsedStorageKey(mode);
-  const collapsedSectionSnapshot = useSyncExternalStore(
-    subscribeToCollapsedSectionChanges,
-    () => getCollapsedSectionSnapshot(collapsedStorageKey),
-    () => "[]",
-  );
+
+  const collapsedKey = collapsedStorageKey(mode);
+  const collapsedSnapshot = useSyncExternalStore(subscribeCollapsed, () => readCollapsedSnapshot(collapsedKey), () => "[]");
   const collapsedSectionIds = useMemo(() => {
-    const validSectionIds = new Set(sectionIds);
-    const nextCollapsedSectionIds = parseCollapsedSectionIds(collapsedSectionSnapshot, validSectionIds);
-
-    if (activeSectionId) {
-      nextCollapsedSectionIds.delete(activeSectionId);
-    }
-
-    return nextCollapsedSectionIds;
-  }, [activeSectionId, collapsedSectionSnapshot, sectionIds]);
+    const next = parseCollapsedIds(collapsedSnapshot, new Set(sectionIds));
+    if (activeSectionId) next.delete(activeSectionId);
+    return next;
+  }, [activeSectionId, collapsedSnapshot, sectionIds]);
 
   function toggleSection(sectionId: string) {
-    const nextCollapsedSectionIds = new Set(collapsedSectionIds);
-
-    if (nextCollapsedSectionIds.has(sectionId)) {
-      nextCollapsedSectionIds.delete(sectionId);
-    } else {
-      nextCollapsedSectionIds.add(sectionId);
-    }
-
-    if (activeSectionId) {
-      nextCollapsedSectionIds.delete(activeSectionId);
-    }
-
-    writeCollapsedSectionIds(collapsedStorageKey, nextCollapsedSectionIds);
+    const next = new Set(collapsedSectionIds);
+    if (next.has(sectionId)) next.delete(sectionId);
+    else next.add(sectionId);
+    if (activeSectionId) next.delete(activeSectionId);
+    writeCollapsedIds(collapsedKey, next);
   }
 
+  function handleActivate(item: NavigationSectionItem) {
+    if (item.href.includes("tab=generate")) setActiveTab("generate");
+    else if (item.href.includes("tab=governance")) setActiveTab("governance");
+    else if (item.href.includes("action=create-manager-expense")) setActiveTab("create-manager-expense");
+    else setActiveTab(null);
+    onNavigate?.();
+  }
+
+  const visibleSections = query
+    ? sections
+        .map((section) => ({ ...section, items: section.items.filter((item) => item.label.toLowerCase().includes(query)) }))
+        .filter((section) => section.items.length > 0)
+    : sections;
+
+  // ── Collapsed icon-rail (admin only) ──────────────────────────────────────
+  if (rail) {
+    const railItems = sections.flatMap((section) => section.items);
+    const showTip = (label: string) => (rect: DOMRect) =>
+      setRailTip({ label, top: rect.top + rect.height / 2, left: rect.right + 12 });
+    const hideTip = () => setRailTip(null);
+
+    return (
+      <>
+        <nav className="phoenix-admin-sidebar-scroll flex-1 overflow-auto px-2 py-4">
+          <div className="flex flex-col items-center gap-1.5">
+            {railItems.map((item) => (
+              <NavRow
+                active={item.href === activeHref}
+                dark
+                item={item}
+                key={`rail-${item.href}`}
+                onActivate={() => handleActivate(item)}
+                onHover={showTip(item.label)}
+                onHoverEnd={hideTip}
+                rail
+              />
+            ))}
+          </div>
+        </nav>
+        {railTip && (
+          <div
+            className="pointer-events-none fixed z-[70] -translate-y-1/2 whitespace-nowrap border border-white/10 bg-slate-900 px-2.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_10px_28px_rgba(2,6,23,0.6)]"
+            style={{ left: railTip.left, top: railTip.top }}
+          >
+            {railTip.label}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // ── Expanded sidebar ──────────────────────────────────────────────────────
   return (
     <>
-      {mode === "admin" && (
+      {isAdmin && (
         <div className="px-3 pt-3">
-          <input
-            ref={searchInputRef}
-            aria-label="Search sidebar modules"
-            className="h-9 w-full rounded border border-[#333333] bg-[#050505] px-3 text-[13px] font-semibold text-[#D4DDE8] outline-none transition placeholder:text-[#64748B] focus:border-[#F97316]/60 focus:ring-2 focus:ring-[#F97316]/30"
-            onChange={(event) => setSearchQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                setSearchQuery("");
-                event.currentTarget.blur();
-              }
-            }}
-            placeholder={systemUiText.sidebarSearchPlaceholder}
-            type="search"
-            value={searchQuery}
-          />
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <input
+              ref={searchInputRef}
+              aria-label="Search modules"
+              className="h-9 w-full border border-white/10 bg-white/5 pl-9 pr-8 text-[13px] font-semibold text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[#FDBA74] focus:bg-white/[0.08] focus:ring-2 focus:ring-[#F97316]/25"
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setSearchQuery("");
+                  event.currentTarget.blur();
+                }
+              }}
+              placeholder={systemUiText.sidebarSearchPlaceholder}
+              type="search"
+              value={searchQuery}
+            />
+            {searchQuery && (
+              <button
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center text-slate-500 transition hover:text-[#F8B56B]"
+                onClick={() => {
+                  setSearchQuery("");
+                  searchInputRef.current?.focus();
+                }}
+                type="button"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       )}
-      <nav className="phoenix-admin-sidebar-scroll flex-1 overflow-auto px-3 py-5 text-[#000000]">
+
+      <nav className="phoenix-admin-sidebar-scroll flex-1 overflow-auto px-3 py-4">
         {visibleSections.map((section, sectionIndex) => {
           const hasActive = section.items.some((item) => item.href === activeHref);
-          const adminSection = mode === "admin";
-          const collapsed = !normalizedSearchQuery && collapsedSectionIds.has(section.id) && !hasActive;
+          const collapsed = !query && collapsedSectionIds.has(section.id) && !hasActive;
           const sectionContentId = `${navInstanceId}-${section.id}-items`;
 
           return (
-            <Fragment key={section.label}>
-              <div
-                className={cn(
-                  adminSection ? "px-1.5" : "px-2",
-                  sectionIndex > 0 && "mt-6",
-                )}
-              >
+            <Fragment key={section.id}>
+              <div className={cn("px-1", sectionIndex > 0 && "mt-5")}>
                 <button
                   aria-controls={sectionContentId}
                   aria-expanded={!collapsed}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#000000]",
-                    adminSection && "border-t border-[#333333] px-2 pt-4",
+                    "flex w-full items-center gap-2 border-t px-1.5 pt-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60 focus-visible:ring-offset-2",
+                    isAdmin ? "border-white/10 focus-visible:ring-offset-slate-900" : "border-[#EAE1D4] focus-visible:ring-offset-white",
                   )}
                   onClick={() => toggleSection(section.id)}
                   type="button"
                 >
-                  <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[#FFF7ED]", adminSection && "bg-[#000000] ring-1 ring-[#333333]")}>
-                    <ChevronRight
-                      className={cn(
-                        "h-3 w-3 shrink-0 text-[#F97316] transition-transform duration-300 ease-out",
-                        adminSection && "text-[#F59E0B]",
-                        hasActive && "text-[#FB923C]",
-                        !collapsed && "rotate-90",
-                      )}
-                    />
-                  </span>
-                  <span className={cn("min-w-0 flex-1 whitespace-nowrap text-[11px] font-black uppercase tracking-[0.18em] text-[#F97316]", adminSection && "text-[#F8B56B]")}>
+                  <ChevronRight
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0 transition-transform duration-300 ease-out",
+                      isAdmin
+                        ? hasActive
+                          ? "text-[#F8B56B]"
+                          : "text-slate-500"
+                        : hasActive
+                          ? "text-[#F97316]"
+                          : "text-[#94A3B8]",
+                      !collapsed && "rotate-90",
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-[0.16em]",
+                      isAdmin
+                        ? hasActive
+                          ? "text-[#F8B56B]"
+                          : "text-slate-400"
+                        : hasActive
+                          ? "text-[#F97316]"
+                          : "text-[#64748B]",
+                    )}
+                  >
                     {section.label}
                   </span>
                 </button>
@@ -279,172 +481,115 @@ function SidebarNav({
                 id={sectionContentId}
               >
                 <div className="min-h-0 overflow-hidden">
-                  <div
-                    className={cn(
-                      "mt-2 space-y-1.5 px-1",
-                      adminSection && "p-1",
-                    )}
-                  >
-                    {section.items.map((item) => {
-                      const active = item.href === activeHref;
-                      return (
-                        <Link
-                          className={cn(
-                            "group relative flex w-full items-center gap-3 rounded px-3 py-3 text-[13px] font-semibold transition-all duration-150",
-                            adminSection
-                              ? active
-                                ? "bg-[linear-gradient(180deg,#1a1a1a_0%,#000000_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_24px_rgba(0,0,0,0.24)]"
-                                : "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-white"
-                              : active
-                                ? "bg-[#FFF7ED] text-[#0F172A]"
-                                : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]",
-                          )}
-                          href={item.href}
-                          key={`${item.href}-${item.label}`}
-                          prefetch={false}
-                          tabIndex={collapsed ? -1 : undefined}
-                          onClick={() => {
-                            if (item.href.includes("tab=generate")) setActiveTab("generate");
-                            else if (item.href.includes("tab=governance")) setActiveTab("governance");
-                            else if (item.href.includes("action=create-manager-expense")) setActiveTab("create-manager-expense");
-                            else setActiveTab(null);
-                            onNavigate?.();
-                          }}
-                        >
-                          {adminSection && (
-                            <span
-                              className={cn(
-                                "absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-sm bg-[#F97316] transition-opacity",
-                                active ? "opacity-100" : "opacity-0",
-                              )}
-                            />
-                          )}
-                          <span
-                            className={cn(
-                              "flex h-10 w-10 shrink-0 items-center justify-center rounded transition-colors duration-150",
-                              adminSection
-                                ? active
-                                  ? "bg-[linear-gradient(180deg,#FF8A1C_0%,#F97316_100%)] text-white shadow-[0_10px_18px_rgba(249,115,22,0.28)]"
-                                  : "bg-[#000000] text-[#94A3B8] ring-1 ring-[#333333] group-hover:border-[#3A475C] group-hover:text-[#F8B56B]"
-                                : active
-                                  ? "bg-[#F97316] text-white"
-                                  : "bg-[#F8FAFC] text-[#64748B] ring-1 ring-[#E2E8F0] group-hover:bg-white group-hover:text-[#F97316]",
-                            )}
-                          >
-                            <item.icon className="h-4 w-4" />
-                          </span>
-                          <span className={cn("min-w-0 flex-1 whitespace-nowrap", adminSection && "tracking-[-0.01em]")}>{item.label}</span>
-                          {active && (
-                            <span className="h-2.5 w-2.5 shrink-0 rounded-sm bg-[#F59E0B] shadow-[0_0_10px_rgba(245,158,11,0.7)]" />
-                          )}
-                        </Link>
-                      );
-                    })}
+                  <div className="mt-1.5 space-y-1 px-1">
+                    {section.items.map((item) => (
+                      <NavRow
+                        active={item.href === activeHref}
+                        dark={isAdmin}
+                        item={item}
+                        key={`${item.href}-${item.label}`}
+                        onActivate={() => handleActivate(item)}
+                        rail={false}
+                      />
+                    ))}
                   </div>
                 </div>
               </div>
             </Fragment>
           );
         })}
+
+        {isAdmin && query && visibleSections.length === 0 && (
+          <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-center">
+            <span className="flex h-12 w-12 items-center justify-center bg-[#F97316]/10 text-[#F97316] ring-1 ring-[#F97316]/25">
+              <Search className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-[13px] font-semibold text-slate-100">No modules match</p>
+              <p className="mt-1 text-[11px] text-slate-500">Try a different search term.</p>
+            </div>
+          </div>
+        )}
       </nav>
     </>
   );
 }
 
-function SidebarLogo({
-  mode = "admin",
-  onNavigate,
-}: {
-  mode?: NavigationMode;
-  onNavigate?: () => void;
-}) {
+// ── Brand / logo header ──────────────────────────────────────────────────────
+function SidebarBrand({ mode = "admin", onNavigate, rail = false }: { mode?: NavigationMode; onNavigate?: () => void; rail?: boolean }) {
   const homePath = navigationHomePathByMode[mode];
+  const isAdmin = mode === "admin";
+  const subtitle = isAdmin ? `${systemIdentity.productName} · Admin` : systemUiText.sidebar.employeeLogoSubtitle;
 
-  if (mode === "admin") {
+  if (rail) {
     return (
       <Link
-        className="mx-2 mt-2 block overflow-hidden rounded border border-[#333333] bg-[#050505] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_30px_rgba(0,0,0,0.28)] transition hover:border-[#F97316]/60"
+        aria-label={`${systemIdentity.brandName} ${isAdmin ? "Admin" : "Portal"}`}
+        className={cn(
+          "mx-auto mt-3 flex h-12 w-12 items-center justify-center overflow-hidden border bg-white transition",
+          isAdmin ? "border-white/10 hover:border-[#FDBA74]" : "border-[#E7DECF] shadow-[0_1px_2px_rgba(15,23,42,0.05)] hover:border-[#FDBA74]",
+        )}
         href={homePath}
         onClick={onNavigate}
       >
-        <span className="relative block h-[82px] w-full">
-          <Image
-            alt={`${systemIdentity.brandName} Admin Intelligence`}
-            className="object-cover"
-            fill
-            priority
-            sizes="260px"
-            src={systemAssets.adminSidebarBadge}
-          />
-        </span>
+        <Image alt={systemIdentity.brandName} className="h-7 w-7 object-contain" height={28} src={systemAssets.iconLogo} width={28} />
       </Link>
     );
   }
 
   return (
-    <Link
-      className={cn(
-        "mx-3 mt-3 flex items-center gap-3 rounded px-4 py-4 transition",
-      )}
-      href={homePath}
-      onClick={onNavigate}
-    >
-      <Image
-        alt={systemIdentity.brandName}
-        className="h-11 w-11 object-contain drop-shadow-[0_0_16px_rgba(249,115,22,0.5)]"
-        height={44}
-        src={systemAssets.iconLogo}
-        width={44}
-      />
+    <Link className="mx-3 mt-3 flex items-center gap-3 px-2 py-3" href={homePath} onClick={onNavigate}>
+      <span
+        className={cn(
+          "flex h-11 w-11 shrink-0 items-center justify-center bg-white",
+          isAdmin ? "ring-1 ring-white/15" : "shadow-[0_1px_3px_rgba(15,23,42,0.06)] ring-1 ring-[#EBE4DA]",
+        )}
+      >
+        <Image
+          alt={systemIdentity.brandName}
+          className="h-8 w-8 object-contain drop-shadow-[0_0_12px_rgba(249,115,22,0.35)]"
+          height={32}
+          src={systemAssets.iconLogo}
+          width={32}
+        />
+      </span>
       <div className="min-w-0">
-        <p className="whitespace-nowrap text-[15px] font-black tracking-[0.26em] text-[#0F172A]">
-          {systemIdentity.brandName.slice(0, -1).toUpperCase()}<span className="text-[#F97316]">{systemIdentity.brandName.slice(-1).toUpperCase()}</span>
+        <p className={cn("whitespace-nowrap text-[15px] font-black tracking-[0.22em]", isAdmin ? "text-white" : "text-[#0F172A]")}>
+          {systemIdentity.brandName.slice(0, -1).toUpperCase()}
+          <span className="text-[#F97316]">{systemIdentity.brandName.slice(-1).toUpperCase()}</span>
         </p>
-        <p className="mt-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.22em] text-[#64748B]">
-          {systemUiText.sidebar.employeeLogoSubtitle}
+        <p className={cn("mt-0.5 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.22em]", isAdmin ? "text-slate-400" : "text-[#64748B]")}>
+          {subtitle}
         </p>
       </div>
     </Link>
   );
 }
 
+// ── Employee-portal-only intro + footer ──────────────────────────────────────
 function SidebarIntro({ mode = "admin" }: { mode?: NavigationMode }) {
-  if (mode === "admin") {
-    return null;
-  }
-
+  if (mode === "admin") return null;
   return (
-    <div className="mx-3 mt-3 rounded border border-[#E2E8F0] bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#F97316]">
-        {systemUiText.sidebar.employeePortalKicker}
-      </p>
-      <p className="mt-2 text-lg font-black tracking-[-0.03em] text-[#0F172A]">
-        {systemUiText.sidebar.employeePortalTitle}
-      </p>
-      <p className="mt-2 text-sm leading-6 text-[#64748B]">
-        {systemUiText.sidebar.employeePortalDescription}
-      </p>
+    <div className="mx-3 mt-3 border border-[#E2E8F0] bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#F97316]">{systemUiText.sidebar.employeePortalKicker}</p>
+      <p className="mt-2 text-lg font-black tracking-[-0.03em] text-[#0F172A]">{systemUiText.sidebar.employeePortalTitle}</p>
+      <p className="mt-2 text-sm leading-6 text-[#64748B]">{systemUiText.sidebar.employeePortalDescription}</p>
     </div>
   );
 }
 
 function SidebarFooter({ mode = "admin" }: { mode?: NavigationMode }) {
-  if (mode === "admin") {
-    return null;
-  }
-
+  if (mode === "admin") return null;
   return (
     <div className="p-3">
-      <div className="overflow-hidden rounded border border-[#E2E8F0] bg-[linear-gradient(180deg,#fff7ed_0%,#ffffff_100%)] p-3">
+      <div className="overflow-hidden border border-[#E2E8F0] bg-[linear-gradient(180deg,#fff7ed_0%,#ffffff_100%)] p-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-[#F97316]/10 text-[#F97316]">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-[#F97316]/10 text-[#F97316]">
             <ShieldCheck className="h-5 w-5" />
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold text-[#0F172A]">{systemUiText.sidebar.employeePortalFooterTitle}</p>
-            <p className="mt-1 text-xs leading-5 text-[#64748B]">
-              {systemUiText.sidebar.employeePortalFooterDescription}
-            </p>
+            <p className="mt-1 text-xs leading-5 text-[#64748B]">{systemUiText.sidebar.employeePortalFooterDescription}</p>
           </div>
         </div>
       </div>
@@ -452,6 +597,14 @@ function SidebarFooter({ mode = "admin" }: { mode?: NavigationMode }) {
   );
 }
 
+function useSidebarRail(mode: NavigationMode) {
+  const key = prefKey("rail", mode);
+  const collapsed = useBooleanPref(key);
+  const toggle = () => writePref(key, !collapsed);
+  return [collapsed, toggle] as const;
+}
+
+// ── Desktop sidebar ──────────────────────────────────────────────────────────
 export function Sidebar({
   navigationMode = "admin",
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
@@ -461,16 +614,43 @@ export function Sidebar({
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
 }) {
+  const isAdmin = navigationMode === "admin";
+  const [rail, toggleRail] = useSidebarRail(navigationMode);
+  const railActive = isAdmin && rail;
+
   return (
-    <aside className="sticky top-0 hidden h-screen w-[276px] shrink-0 flex-col border-r border-[#1a1a1a] bg-[#000000] text-[#0F172A] lg:flex">
-      <SidebarLogo mode={navigationMode} />
-      <SidebarIntro mode={navigationMode} />
-      <SidebarNav currentRole={currentRole} mode={navigationMode} onNavigate={undefined} permissionLookup={permissionLookup} />
-      <SidebarFooter mode={navigationMode} />
+    <aside
+      className={cn(
+        "sticky top-0 z-30 hidden h-screen shrink-0 flex-col transition-[width] duration-200 lg:flex",
+        isAdmin
+          ? cn("relative border-r border-slate-800 text-slate-100", ADMIN_SIDEBAR_BG)
+          : "border-r border-[#E2E8F0] bg-white",
+        railActive ? SIDEBAR_WIDTH_RAIL : SIDEBAR_WIDTH_EXPANDED,
+      )}
+    >
+      {isAdmin && <AdminSidebarGlow />}
+      {isAdmin && (
+        <button
+          aria-label={railActive ? "Expand sidebar" : "Collapse sidebar"}
+          aria-pressed={railActive}
+          className="absolute -right-3 top-[86px] z-40 flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-slate-800 text-slate-300 shadow-[0_6px_16px_rgba(2,6,23,0.6)] transition hover:border-[#FDBA74] hover:text-[#F8B56B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60"
+          onClick={toggleRail}
+          type="button"
+        >
+          {railActive ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+        </button>
+      )}
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+        <SidebarBrand mode={navigationMode} rail={railActive} />
+        <SidebarIntro mode={navigationMode} />
+        <SidebarNav currentRole={currentRole} mode={navigationMode} permissionLookup={permissionLookup} rail={railActive} />
+        <SidebarFooter mode={navigationMode} />
+      </div>
     </aside>
   );
 }
 
+// ── Mobile drawer ────────────────────────────────────────────────────────────
 export function MobileSidebar({
   onClose,
   open,
@@ -484,49 +664,49 @@ export function MobileSidebar({
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
 }) {
+  const isAdmin = navigationMode === "admin";
+
   return (
     <div
       aria-hidden={!open}
-      className={cn(
-        "fixed inset-0 z-50 lg:hidden",
-        open ? "pointer-events-auto" : "pointer-events-none",
-      )}
+      className={cn("fixed inset-0 z-50 lg:hidden", open ? "pointer-events-auto" : "pointer-events-none")}
       inert={!open}
     >
       <button
         aria-label="Close menu"
-        className={cn(
-          "absolute inset-0 bg-slate-950/55 backdrop-blur-sm transition-opacity",
-          open ? "opacity-100" : "opacity-0",
-        )}
+        className={cn("absolute inset-0 bg-slate-950/55 backdrop-blur-sm transition-opacity", open ? "opacity-100" : "opacity-0")}
         onClick={onClose}
         type="button"
       />
-        <aside
-          className={cn(
-          "absolute inset-y-0 left-0 flex w-[min(90vw,320px)] flex-col border-r border-[#1a1a1a] bg-[#000000] text-[#0F172A] shadow-2xl transition-transform duration-200",
+      <aside
+        className={cn(
+          "absolute inset-y-0 left-0 flex w-[min(90vw,320px)] flex-col shadow-2xl transition-transform duration-200",
+          isAdmin ? cn("relative border-r border-slate-800 text-slate-100", ADMIN_SIDEBAR_BG) : "border-r border-[#E2E8F0] bg-white",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        <div className="flex items-start justify-between gap-3">
-          <SidebarLogo mode={navigationMode} onNavigate={onClose} />
-          <button
-            aria-label="Close menu"
-            className="mr-3 mt-4 flex h-9 w-9 shrink-0 items-center justify-center rounded bg-[#F8FAFC] text-[#64748B] transition hover:bg-[#E2E8F0] hover:text-[#0F172A]"
-            onClick={onClose}
-            type="button"
-          >
-            <X className="h-4 w-4" />
-          </button>
+        {isAdmin && <AdminSidebarGlow />}
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+          <div className="flex items-start justify-between gap-3">
+            <SidebarBrand mode={navigationMode} onNavigate={onClose} />
+            <button
+              aria-label="Close menu"
+              className={cn(
+                "mr-3 mt-4 flex h-9 w-9 shrink-0 items-center justify-center transition",
+                isAdmin
+                  ? "bg-white/[0.06] text-slate-300 ring-1 ring-white/10 hover:text-[#F8B56B]"
+                  : "bg-white text-[#64748B] ring-1 ring-[#EBE4DA] hover:bg-[#F1EBE1] hover:text-[#0F172A]",
+              )}
+              onClick={onClose}
+              type="button"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <SidebarIntro mode={navigationMode} />
+          <SidebarNav currentRole={currentRole} mode={navigationMode} onNavigate={onClose} permissionLookup={permissionLookup} rail={false} />
+          <SidebarFooter mode={navigationMode} />
         </div>
-        <SidebarIntro mode={navigationMode} />
-        <SidebarNav
-          currentRole={currentRole}
-          mode={navigationMode}
-          onNavigate={onClose}
-          permissionLookup={permissionLookup}
-        />
-        <SidebarFooter mode={navigationMode} />
       </aside>
     </div>
   );

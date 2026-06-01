@@ -10,7 +10,7 @@ import { InAppNotificationsBell } from "@/components/layout/in-app-notifications
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import { MobileSidebar } from "@/components/layout/sidebar";
 import { systemUiText } from "@/config/system-settings";
-import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
+import { type AccessContext, type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import type { ViewerIdentity } from "@/lib/auth/server";
 
@@ -23,6 +23,8 @@ export function Topbar({
   currentRole?: PhoenixRole;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
+  scope?: AccessContext["scope"];
+  source?: AccessContext["source"];
   viewer: ViewerIdentity;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
