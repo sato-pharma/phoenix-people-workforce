@@ -91,6 +91,7 @@ export async function POST(request: Request) {
           candidateEmail: String(payload.candidateEmail),
           candidateName: String(payload.candidateName),
           candidatePhone: payload.candidatePhone ? String(payload.candidatePhone) : null,
+          compensationLines: payload.compensationLines,
           compensationNotes: payload.compensationNotes ? String(payload.compensationNotes) : null,
           createdByHrId: access.hrId,
           departmentId: payload.departmentId,

@@ -7,6 +7,7 @@ function source(path: string) {
 
 export function runOfferLifecycleHardeningTests() {
   const migration = source("supabase/migrations/20260531235753_offer_lifecycle_10_10_hardening.sql");
+  const completionMigration = source("supabase/migrations/20260601175811_offer_lifecycle_10_10_completion.sql");
   assert.match(migration, /create schema if not exists private/i);
   assert.match(migration, /private\.phx_approve_accepted_offer_v2/i);
   assert.match(migration, /security definer/i);
@@ -17,6 +18,11 @@ export function runOfferLifecycleHardeningTests() {
   assert.match(migration, /accepted_terms_snapshot/i);
   assert.match(migration, /job_offer_decision_events/i);
   assert.match(migration, /status in \('draft', 'sent', 'accepted', 'rejected', 'expired', 'hired', 'withdrawn', 'cancelled'\)/i);
+  assert.match(completionMigration, /compensation_lines jsonb not null default '\[\]'::jsonb/i);
+  assert.match(completionMigration, /'voided'/i);
+  assert.match(completionMigration, /salary_details/i);
+  assert.match(completionMigration, /customEarnings/i);
+  assert.match(completionMigration, /customDeductions/i);
 
   const service = source("src/lib/offers/service.ts");
   assert.match(service, /type OfferDecisionContext/);
@@ -26,6 +32,10 @@ export function runOfferLifecycleHardeningTests() {
   assert.match(migration, /status = 'hired'/);
   assert.doesNotMatch(service, /await closeVacancyForOffer\(\{[\s\S]*vacancy_id: offer\.vacancy_id/);
   assert.match(service, /runOfferAdminAction/);
+  assert.match(service, /normalizeOfferCompensationLines/);
+  assert.match(service, /compensationLineTotals/);
+  assert.match(service, /action: "cancel" \| "resend" \| "void" \| "withdraw"/);
+  assert.match(service, /voided_reserved_employee_hr_id/);
   assert.match(service, /secure_token_hash: hashToken\(token\)/);
   assert.match(service, /revoked_at: now/);
 
@@ -40,11 +50,16 @@ export function runOfferLifecycleHardeningTests() {
   const workflowRoute = source("app/api/offers/[offerRef]/workflow/route.ts");
   assert.match(workflowRoute, /resend/);
   assert.match(workflowRoute, /withdraw/);
+  assert.match(workflowRoute, /void/);
   assert.match(workflowRoute, /cancel/);
 
   const dashboard = source("src/components/offers/offer-lifecycle-dashboard.tsx");
   assert.match(dashboard, /vacancyId: String\(vacancy\.vacancyId\)/);
   assert.match(dashboard, /runWorkflowAction/);
+  assert.match(dashboard, /compensationLines/);
+  assert.match(dashboard, /Custom earnings/);
+  assert.match(dashboard, /Custom deductions/);
+  assert.match(dashboard, /Void/);
   assert.match(dashboard, /exportCsv/);
   assert.match(dashboard, /statusFilter/);
 

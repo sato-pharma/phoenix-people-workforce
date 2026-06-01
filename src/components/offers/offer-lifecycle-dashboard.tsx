@@ -7,8 +7,10 @@ import {
   Clock3,
   Copy,
   Mail,
+  Plus,
   RefreshCw,
   Send,
+  Trash2,
   UserCheck,
   XCircle,
 } from "lucide-react";
@@ -64,6 +66,13 @@ type OfferForm = {
   candidateEmail: string;
   candidateName: string;
   candidatePhone: string;
+  compensationLines: Array<{
+    category: "earning" | "deduction";
+    id: string;
+    label: string;
+    notes: string;
+    value: string;
+  }>;
   compensationNotes: string;
   areaScope: string;
   areaId: string;
@@ -88,6 +97,7 @@ const emptyForm: OfferForm = {
   candidateEmail: "",
   candidateName: "",
   candidatePhone: "",
+  compensationLines: [],
   compensationNotes: "",
   departmentId: "",
   expiresInDays: "7",
@@ -140,8 +150,23 @@ function formatPercent(value: number) {
 function statusVariant(status: OfferStatus) {
   if (status === "accepted" || status === "hired") return "success" as const;
   if (status === "sent") return "warning" as const;
-  if (status === "rejected" || status === "expired" || status === "withdrawn" || status === "cancelled") return "danger" as const;
+  if (status === "rejected" || status === "expired" || status === "withdrawn" || status === "cancelled" || status === "voided") return "danger" as const;
   return "neutral" as const;
+}
+
+function createCompensationLine() {
+  return {
+    category: "earning" as const,
+    id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `line-${Date.now()}`,
+    label: "",
+    notes: "",
+    value: "",
+  };
+}
+
+function compensationLineAmount(value: string) {
+  const parsed = numericField(value);
+  return parsed && parsed > 0 ? parsed : 0;
 }
 
 function statusLabel(status: OfferStatus) {
@@ -222,12 +247,13 @@ function OfferRow({
   approving: boolean;
   offer: OfferLifecycleRow;
   onApprove: (offer: OfferLifecycleRow) => void;
-  onWorkflow: (offer: OfferLifecycleRow, action: "cancel" | "resend" | "withdraw") => void;
+  onWorkflow: (offer: OfferLifecycleRow, action: "cancel" | "resend" | "void" | "withdraw") => void;
 }) {
   const canApprove = offer.status === "accepted" && offer.onboardingStatus !== "approved_hired";
   const canResend = offer.status === "sent";
   const canWithdraw = offer.status === "sent";
   const canCancel = offer.status === "draft";
+  const canVoid = offer.status === "accepted" && offer.onboardingStatus !== "approved_hired" && !offer.employeeHrId;
 
   return (
     <tr className="border-b border-[#E2E8F0] transition-colors last:border-0 hover:bg-[#FFF7ED]/65">
@@ -252,11 +278,18 @@ function OfferRow({
       </td>
       <td className="px-4 py-3">
         {canApprove ? (
-          <Button className="h-8 gap-2 rounded-xl px-3 text-xs" disabled={approving} onClick={() => onApprove(offer)}>
-            {approving ? <LoadingSpinner /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-            Approve hire
-          </Button>
-        ) : canResend || canWithdraw || canCancel ? (
+          <div className="flex flex-wrap gap-1.5">
+            <Button className="h-8 gap-2 rounded-xl px-3 text-xs" disabled={approving} onClick={() => onApprove(offer)}>
+              {approving ? <LoadingSpinner /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              Approve hire
+            </Button>
+            {canVoid ? (
+              <Button className="h-8 gap-1.5 rounded-xl px-2.5 text-xs" disabled={approving} onClick={() => onWorkflow(offer, "void")} variant="secondary">
+                Void
+              </Button>
+            ) : null}
+          </div>
+        ) : canResend || canWithdraw || canCancel || canVoid ? (
           <div className="flex flex-wrap gap-1.5">
             {canResend ? (
               <Button className="h-8 gap-1.5 rounded-xl px-2.5 text-xs" disabled={approving} onClick={() => onWorkflow(offer, "resend")} variant="secondary">
@@ -272,6 +305,11 @@ function OfferRow({
             {canCancel ? (
               <Button className="h-8 gap-1.5 rounded-xl px-2.5 text-xs" disabled={approving} onClick={() => onWorkflow(offer, "cancel")} variant="secondary">
                 Cancel
+              </Button>
+            ) : null}
+            {canVoid ? (
+              <Button className="h-8 gap-1.5 rounded-xl px-2.5 text-xs" disabled={approving} onClick={() => onWorkflow(offer, "void")} variant="secondary">
+                Void
               </Button>
             ) : null}
           </div>
@@ -375,14 +413,27 @@ export function OfferLifecycleDashboard({
   const compensationPreview = React.useMemo(() => {
     const extraCostOfLiving = numericField(form.extraCostOfLiving) ?? standardAllowances.extraCostOfLiving;
     const fuelAllowance = numericField(form.fuelAllowance) ?? standardAllowances.fuelAllowance;
-    return resolveFixedSalaryAmounts({
+    const fixedSalary = resolveFixedSalaryAmounts({
       baseSalary: numericField(form.baseSalary),
       employmentIncomeTax: numericField(form.taxes),
       extraCostOfLiving,
       fuelAllowance,
       socialInsurance: numericField(form.socialInsurance),
     });
-  }, [form.baseSalary, form.extraCostOfLiving, form.fuelAllowance, form.socialInsurance, form.taxes, standardAllowances]);
+    const customEarnings = form.compensationLines
+      .filter((line) => line.category === "earning")
+      .reduce((sum, line) => sum + compensationLineAmount(line.value), 0);
+    const customDeductions = form.compensationLines
+      .filter((line) => line.category === "deduction")
+      .reduce((sum, line) => sum + compensationLineAmount(line.value), 0);
+
+    return {
+      ...fixedSalary,
+      customDeductions,
+      customEarnings,
+      netSalary: Math.max(0, fixedSalary.netSalary + customEarnings - customDeductions),
+    };
+  }, [form.baseSalary, form.compensationLines, form.extraCostOfLiving, form.fuelAllowance, form.socialInsurance, form.taxes, standardAllowances]);
 
   async function loadOffers() {
     setIsLoading(true);
@@ -414,6 +465,16 @@ export function OfferLifecycleDashboard({
           areaId: form.areaId ? Number(form.areaId) : null,
           baseSalary: numericField(form.baseSalary),
           basicSalary: compensationPreview.basicSalary,
+          compensationLines: form.compensationLines
+            .filter((line) => line.label.trim() && compensationLineAmount(line.value) > 0)
+            .map((line) => ({
+              category: line.category,
+              id: line.id,
+              label: line.label.trim(),
+              notes: line.notes.trim() || null,
+              value: compensationLineAmount(line.value),
+              valueType: "amount",
+            })),
           compensationNotes: form.compensationNotes || null,
           departmentId: form.departmentId ? Number(form.departmentId) : null,
           expiresInDays: Number(form.expiresInDays),
@@ -494,15 +555,34 @@ export function OfferLifecycleDashboard({
     }
   }
 
-  async function runWorkflowAction(offer: OfferLifecycleRow, action: "cancel" | "resend" | "withdraw") {
+  function updateCompensationLine(id: string, field: "category" | "label" | "notes" | "value", value: string) {
+    setForm((prev) => ({
+      ...prev,
+      compensationLines: prev.compensationLines.map((line) =>
+        line.id === id
+          ? { ...line, [field]: field === "category" && value === "deduction" ? "deduction" : field === "category" ? "earning" : value }
+          : line,
+      ),
+    }));
+  }
+
+  async function runWorkflowAction(offer: OfferLifecycleRow, action: "cancel" | "resend" | "void" | "withdraw") {
     setApprovingId(offer.id);
     setError(null);
     setCreatedLinks(null);
     setEmailStatus(null);
 
     try {
+      const reason =
+        action === "void"
+          ? window.prompt("Enter the HR reason for voiding this accepted offer.")
+          : null;
+      if (action === "void" && !reason?.trim()) {
+        setApprovingId(null);
+        return;
+      }
       const response = await fetch(`/api/offers/${offer.id}/workflow`, {
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, reason }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -609,7 +689,7 @@ export function OfferLifecycleDashboard({
             onChange={(event) => setStatusFilter(event.target.value as OfferStatus | "all")}
             value={statusFilter}
           >
-            {["all", "sent", "accepted", "hired", "rejected", "expired", "withdrawn", "cancelled"].map((status) => (
+            {["all", "sent", "accepted", "hired", "rejected", "expired", "withdrawn", "cancelled", "voided"].map((status) => (
               <option key={status} value={status}>{statusLabel(status as OfferStatus)}</option>
             ))}
           </select>
@@ -765,6 +845,56 @@ export function OfferLifecycleDashboard({
               <Field label="Social insurance" onChange={(value) => setForm((prev) => ({ ...prev, socialInsurance: value }))} type="number" value={form.socialInsurance} />
             </div>
             <Field label="Tax" onChange={(value) => setForm((prev) => ({ ...prev, taxes: value }))} type="number" value={form.taxes} />
+            <div className="rounded-2xl border border-[#DDE6F1] bg-[#F8FAFC] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-[#0F172A]">Compensation exceptions</h3>
+                  <p className="mt-1 text-xs text-[#64748B]">Structured lines affect the accepted offer and payroll after hire.</p>
+                </div>
+                <Button
+                  className="h-9 gap-1.5 rounded-xl px-3 text-xs"
+                  onClick={() => setForm((prev) => ({ ...prev, compensationLines: [...prev.compensationLines, createCompensationLine()] }))}
+                  type="button"
+                  variant="secondary"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add
+                </Button>
+              </div>
+              <div className="mt-4 space-y-3">
+                {form.compensationLines.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-white px-3 py-4 text-xs text-[#64748B]">
+                    No custom compensation lines.
+                  </div>
+                ) : null}
+                {form.compensationLines.map((line) => (
+                  <div className="grid gap-3 rounded-xl border border-[#E2E8F0] bg-white p-3 sm:grid-cols-[120px_1fr_120px_auto]" key={line.id}>
+                    <SelectField
+                      label="Type"
+                      onChange={(value) => updateCompensationLine(line.id, "category", value)}
+                      options={[
+                        { label: "Earning", value: "earning" },
+                        { label: "Deduction", value: "deduction" },
+                      ]}
+                      value={line.category}
+                    />
+                    <Field label="Label" onChange={(value) => updateCompensationLine(line.id, "label", value)} placeholder="Special allowance" value={line.label} />
+                    <Field label="Amount" onChange={(value) => updateCompensationLine(line.id, "value", value)} type="number" value={line.value} />
+                    <button
+                      aria-label="Remove compensation line"
+                      className="mt-6 flex h-10 w-10 items-center justify-center rounded-xl border border-red-100 text-red-600 hover:bg-red-50"
+                      onClick={() => setForm((prev) => ({ ...prev, compensationLines: prev.compensationLines.filter((item) => item.id !== line.id) }))}
+                      type="button"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                    <div className="sm:col-span-4">
+                      <Field label="Notes" onChange={(value) => updateCompensationLine(line.id, "notes", value)} value={line.notes} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
             <label className="block">
               <span className="mb-1.5 block text-xs font-medium text-text-secondary">Compensation exception notes</span>
               <textarea
@@ -795,6 +925,14 @@ export function OfferLifecycleDashboard({
                     <div className="flex items-center justify-between gap-3">
                       <span>Fuel allowance</span>
                       <span className="font-bold">{formatMoney(numericField(form.fuelAllowance) ?? standardAllowances.fuelAllowance)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Custom earnings</span>
+                      <span className="font-bold">{formatMoney(compensationPreview.customEarnings)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Custom deductions</span>
+                      <span className="font-bold">{formatMoney(compensationPreview.customDeductions)}</span>
                     </div>
                     <div className="border-t border-[#E2E8F0] pt-3">
                       <div className="flex items-center justify-between gap-3 text-[#0F172A]">

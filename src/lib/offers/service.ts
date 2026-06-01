@@ -18,12 +18,23 @@ export type OfferStatus =
   | "expired"
   | "hired"
   | "withdrawn"
-  | "cancelled";
+  | "cancelled"
+  | "voided";
+
+export type OfferCompensationLine = {
+  category: "earning" | "deduction";
+  id: string;
+  label: string;
+  notes: string | null;
+  value: string;
+  valueType: "amount";
+};
 
 export type OfferLifecycleInput = {
   areaId?: number | null;
   areaScope?: string | null;
   baseSalary?: number | null;
+  compensationLines?: unknown;
   compensationNotes?: string | null;
   candidateEmail: string;
   candidateName: string;
@@ -60,6 +71,7 @@ type OfferDbRow = {
   candidate_name: string;
   candidate_phone: string | null;
   cancelled_at?: string | null;
+  compensation_lines?: unknown;
   compensation_notes?: string | null;
   created_at: string;
   department_id: number | null;
@@ -89,6 +101,9 @@ type OfferDbRow = {
   updated_at: string;
   vacancy_id?: number | null;
   withdrawn_at?: string | null;
+  void_reason?: string | null;
+  voided_at?: string | null;
+  voided_reserved_employee_hr_id?: string | null;
 };
 
 type LookupRow = {
@@ -144,6 +159,7 @@ export type OfferLifecycleRow = {
   candidateName: string;
   candidatePhone: string | null;
   cancelledAt?: string | null;
+  compensationLines?: OfferCompensationLine[];
   compensationNotes?: string | null;
   createdAt: string;
   departmentId: number | null;
@@ -175,6 +191,9 @@ export type OfferLifecycleRow = {
   updatedAt: string;
   vacancyId?: number | null;
   withdrawnAt?: string | null;
+  voidReason?: string | null;
+  voidedAt?: string | null;
+  voidedReservedEmployeeHrId?: string | null;
 };
 
 export type OfferDashboardData = {
@@ -283,6 +302,7 @@ const terminalOfferStatuses = new Set<OfferStatus>([
   "expired",
   "hired",
   "rejected",
+  "voided",
   "withdrawn",
 ]);
 
@@ -314,6 +334,7 @@ const offerSelectColumns = [
   "social_insurance",
   "taxes",
   "compensation_notes",
+  "compensation_lines",
   "vacancy_id",
   "start_date",
   "expires_at",
@@ -324,6 +345,9 @@ const offerSelectColumns = [
   "revoked_at",
   "withdrawn_at",
   "cancelled_at",
+  "voided_at",
+  "void_reason",
+  "voided_reserved_employee_hr_id",
   "employee_hr_id",
   "reserved_employee_hr_id",
   "resend_count",
@@ -341,9 +365,47 @@ function positiveNumberOrNull(value: unknown) {
   return parsed !== null && parsed > 0 ? parsed : null;
 }
 
+function normalizeOfferCompensationLines(value: unknown): OfferCompensationLine[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((entry, index) => {
+    if (!entry || typeof entry !== "object") return [];
+    const record = entry as Record<string, unknown>;
+    const label = compact(String(record.label ?? ""));
+    const amount = numberOrNull(record.value ?? record.amount);
+    const category = String(record.category ?? "").toLowerCase() === "deduction" ? "deduction" : "earning";
+    if (!label || amount === null || amount <= 0) return [];
+
+    return [{
+      category,
+      id: compact(String(record.id ?? "")) ?? `offer-line-${index + 1}`,
+      label: label.slice(0, 120),
+      notes: compact(String(record.notes ?? "")),
+      value: String(Math.round((amount + Number.EPSILON) * 100) / 100),
+      valueType: "amount" as const,
+    }];
+  });
+}
+
+function compensationLineTotals(lines: OfferCompensationLine[]) {
+  return lines.reduce(
+    (totals, line) => {
+      const value = Math.max(0, Number(line.value) || 0);
+      if (line.category === "deduction") {
+        totals.deductions += value;
+      } else {
+        totals.earnings += value;
+      }
+      return totals;
+    },
+    { deductions: 0, earnings: 0 },
+  );
+}
+
 function resolveOfferCompensation(input: {
   baseSalary?: unknown;
   basicSalary?: unknown;
+  compensationLines?: unknown;
   extraCostOfLiving?: unknown;
   fuelAllowance?: unknown;
   grossSalary?: unknown;
@@ -357,6 +419,8 @@ function resolveOfferCompensation(input: {
   const explicitFuelAllowance = numberOrNull(input.fuelAllowance);
   const socialInsurance = numberOrNull(input.socialInsurance);
   const taxes = numberOrNull(input.taxes);
+  const compensationLines = normalizeOfferCompensationLines(input.compensationLines);
+  const lineTotals = compensationLineTotals(compensationLines);
   const standardAllowances = resolveStandardSalaryAllowances({
     jobTitle: input.jobTitle,
   });
@@ -383,16 +447,22 @@ function resolveOfferCompensation(input: {
       netSalary: null,
       socialInsurance,
       taxes,
+      compensationLines,
+      customDeductions: lineTotals.deductions,
+      customEarnings: lineTotals.earnings,
     };
   }
 
   return {
     baseSalary: fixedSalary.baseSalary,
     basicSalary: fixedSalary.basicSalary,
+    compensationLines,
+    customDeductions: lineTotals.deductions,
+    customEarnings: lineTotals.earnings,
     extraCostOfLiving,
     fuelAllowance,
     grossSalary: fixedSalary.grossSalary,
-    netSalary: fixedSalary.netSalary,
+    netSalary: Math.max(0, Math.round((fixedSalary.netSalary + lineTotals.earnings - lineTotals.deductions + Number.EPSILON) * 100) / 100),
     socialInsurance,
     taxes,
   };
@@ -905,6 +975,7 @@ async function hydrateOffers(rows: OfferDbRow[]): Promise<OfferLifecycleRow[]> {
     candidateName: row.candidate_name,
     candidatePhone: row.candidate_phone,
     cancelledAt: row.cancelled_at ?? null,
+    compensationLines: normalizeOfferCompensationLines(row.compensation_lines),
     compensationNotes: row.compensation_notes ?? null,
     createdAt: row.created_at,
     departmentId: row.department_id,
@@ -936,6 +1007,9 @@ async function hydrateOffers(rows: OfferDbRow[]): Promise<OfferLifecycleRow[]> {
     updatedAt: row.updated_at,
     vacancyId: row.vacancy_id ?? null,
     withdrawnAt: row.withdrawn_at ?? null,
+    voidReason: row.void_reason ?? null,
+    voidedAt: row.voided_at ?? null,
+    voidedReservedEmployeeHrId: row.voided_reserved_employee_hr_id ?? null,
   }));
 }
 
@@ -988,7 +1062,7 @@ export async function getOfferDecisionPreview(token: string): Promise<OfferDecis
     };
   }
 
-  if (offer.status === "withdrawn" || offer.status === "cancelled") {
+  if (offer.status === "withdrawn" || offer.status === "cancelled" || offer.status === "voided") {
     return {
       canSubmit: false,
       message: "This offer is closed. Please contact HR for next steps.",
@@ -1194,6 +1268,7 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
   const expiresInDays = requestedExpiry;
   const compensation = resolveOfferCompensation({
     baseSalary: input.baseSalary,
+    compensationLines: input.compensationLines,
     extraCostOfLiving: input.extraCostOfLiving,
     fuelAllowance: input.fuelAllowance,
     jobTitle: input.jobTitle || template?.label,
@@ -1221,6 +1296,7 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
     candidate_email: input.candidateEmail.trim().toLowerCase(),
     candidate_name: input.candidateName.trim(),
     candidate_phone: compact(input.candidatePhone),
+    compensation_lines: compensation.compensationLines,
     compensation_notes: compact(input.compensationNotes),
     created_by_hr_id: compact(input.createdByHrId),
     department_id: numberOrNull(input.departmentId),
@@ -1296,8 +1372,9 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
 
 export async function runOfferAdminAction(
   id: string,
-  action: "cancel" | "resend" | "withdraw",
+  action: "cancel" | "resend" | "void" | "withdraw",
   actorHrId?: string | null,
+  input: { reason?: string | null } = {},
 ) {
   const params = new URLSearchParams({
     id: `eq.${id}`,
@@ -1356,6 +1433,37 @@ export async function runOfferAdminAction(
       offer: hydratedOffer,
       rejectUrl,
       reviewUrl,
+    };
+  }
+
+  if (action === "void") {
+    if (offer.status !== "accepted" || offer.onboarding_status === "approved_hired" || compact(offer.employee_hr_id)) {
+      throw new Error("Only accepted offers pending HR approval can be voided.");
+    }
+    const reason = compact(input.reason);
+    if (!reason) {
+      throw new Error("A void reason is required.");
+    }
+    const now = new Date().toISOString();
+    const updated = await updateOffer(offer.id, {
+      onboarding_status: "not_started",
+      reserved_employee_hr_id: null,
+      revoked_at: now,
+      secure_token_hash: hashToken(`${offer.id}:voided:${now}`),
+      status: "voided",
+      void_reason: reason,
+      voided_at: now,
+      voided_reserved_employee_hr_id: compact(offer.reserved_employee_hr_id),
+    });
+    await insertAudit(offer.id, "offer_voided", "hr", {
+      reason,
+      revokedAt: now,
+      voidedReservedEmployeeHrId: offer.reserved_employee_hr_id ?? null,
+    }, actorHrId);
+
+    return {
+      dashboard: await getOfferDashboard(),
+      offer: (await hydrateOffers([updated]))[0],
     };
   }
 
@@ -1482,6 +1590,7 @@ export async function decideOffer(
             basicSalary: offer.basic_salary ?? null,
             candidateEmail: offer.candidate_email,
             candidateName: offer.candidate_name,
+            compensationLines: normalizeOfferCompensationLines(offer.compensation_lines),
             extraCostOfLiving: offer.extra_cost_of_living ?? null,
             fuelAllowance: offer.fuel_allowance ?? null,
             grossSalary: offer.gross_salary ?? null,
@@ -1619,6 +1728,7 @@ export async function approveAcceptedOffer(
   const compensation = resolveOfferCompensation({
     baseSalary: offer.base_salary,
     basicSalary: offer.basic_salary,
+    compensationLines: offer.compensation_lines,
     extraCostOfLiving: offer.extra_cost_of_living,
     fuelAllowance: offer.fuel_allowance,
     grossSalary: offer.gross_salary,
@@ -1637,6 +1747,7 @@ export async function approveAcceptedOffer(
     p_approved_by_hr_id: approvedByHrId ?? null,
     p_base_salary: compensation.baseSalary,
     p_basic_salary: compensation.basicSalary,
+    p_compensation_lines: compensation.compensationLines,
     p_employee_hr_id: manualHrId ?? offer.reserved_employee_hr_id ?? offer.employee_hr_id ?? null,
     p_extra_cost_of_living: compensation.extraCostOfLiving,
     p_fuel_allowance: compensation.fuelAllowance,
