@@ -55,6 +55,12 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // Tree-shake large barrel imports so only the icons/charts/primitives a
+    // component actually uses land in its client chunk (these are imported
+    // across 100+ client components).
+    optimizePackageImports: ["lucide-react", "recharts", "radix-ui"],
+  },
   allowedDevOrigins: [
     "192.168.1.45",
     "imagines-sixfold-corny.ngrok-free.dev",

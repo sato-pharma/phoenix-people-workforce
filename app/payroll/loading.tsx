@@ -1,14 +1,13 @@
-﻿import { LoadingSpinner } from "@/components/ui/loading-state";
+import { AppShellLoading } from "@/components/layout/app-shell-loading";
+import { AppRouteLoadingState } from "@/components/ui/loading-state";
 
 export default function Loading() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg-soft text-text">
-      <div className="text-center">
-        <LoadingSpinner />
-        <p className="mt-4 text-sm font-medium text-text-secondary">
-          Loading payroll intelligence...
-        </p>
-      </div>
-    </div>
+    <AppShellLoading navigationMode="admin">
+      <AppRouteLoadingState
+        description="Preparing payroll data, workflow state, and payslip controls."
+        title="Loading payroll intelligence"
+      />
+    </AppShellLoading>
   );
 }

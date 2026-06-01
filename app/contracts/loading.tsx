@@ -1,10 +1,10 @@
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShellLoading } from "@/components/layout/app-shell-loading";
 import { PageLoadingState } from "@/components/ui/loading-state";
 
 export default function Loading() {
   return (
-    <AppShell>
+    <AppShellLoading>
       <PageLoadingState title="Loading contract renewals" />
-    </AppShell>
+    </AppShellLoading>
   );
 }

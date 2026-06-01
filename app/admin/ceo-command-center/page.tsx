@@ -1,13 +1,16 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { CeoCommandCenter } from "@/components/admin/ceo-command-center";
 import { AppShell } from "@/components/layout/app-shell";
+import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { getAdminCommandCenterData, type AdminCommandCenterData } from "@/lib/admin/command-center";
 import { getCeoBrief, type CeoBriefData } from "@/lib/ceo/brief";
 import { computeCompanyHealth, type CompanyHealth } from "@/lib/ceo/health-score";
 import { buildStrategicRiskRegister, type RiskRegister } from "@/lib/ceo/risk";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
+import type { AccessContext } from "@/lib/auth/permissions";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 export const dynamic = "force-dynamic";
@@ -31,21 +34,42 @@ export default async function CeoCommandCenterPage() {
     redirect(resolveLandingPathForRole(access.role));
   }
 
-  let data: AdminCommandCenterData | null = null;
-  let loadError: string | null = null;
-  try {
-    data = await getAdminCommandCenterData(access);
-  } catch (error) {
-    console.error("Failed to load CEO Command Center:", error);
-    loadError = error instanceof Error ? error.message : "Unknown error occurred";
-  }
+  return (
+    <AppShell accessContext={access} navigationMode="admin">
+      <Suspense
+        fallback={
+          <AppRouteLoadingState
+            title="Loading CEO Command Center"
+            description="Preparing executive metrics, risk signals, and weekly brief."
+          />
+        }
+      >
+        <CeoCommandCenterContent access={access} />
+      </Suspense>
+    </AppShell>
+  );
+}
 
-  let brief: CeoBriefData | null = null;
-  try {
-    brief = await getCeoBrief(access);
-  } catch (error) {
-    console.error("Failed to load CEO brief:", error);
-  }
+async function CeoCommandCenterContent({ access }: { access: AccessContext }) {
+  const [dataResult, briefResult, viewer] = await Promise.all([
+    getAdminCommandCenterData(access)
+      .then((value) => ({ data: value, error: null as string | null }))
+      .catch((error) => {
+        console.error("Failed to load CEO Command Center:", error);
+        return {
+          data: null as AdminCommandCenterData | null,
+          error: error instanceof Error ? error.message : "Unknown error occurred",
+        };
+      }),
+    getCeoBrief(access).catch((error) => {
+      console.error("Failed to load CEO brief:", error);
+      return null as CeoBriefData | null;
+    }),
+    resolveViewerIdentityFromPage(access),
+  ]);
+  const data = dataResult.data;
+  const loadError = dataResult.error;
+  const brief = briefResult;
 
   const risk: RiskRegister = buildStrategicRiskRegister({
     alerts: brief?.alerts ?? null,
@@ -69,7 +93,6 @@ export default async function CeoCommandCenterPage() {
     salesLinkageRate: data?.health.salesLinkageRate ?? null,
   });
 
-  const viewer = await resolveViewerIdentityFromPage(access);
   const executiveProfile = {
     fullName: viewer.displayName,
     roleLabel: viewer.roleLabel,
@@ -77,16 +100,14 @@ export default async function CeoCommandCenterPage() {
   };
 
   return (
-    <AppShell navigationMode="admin">
-      <CeoCommandCenter
-        brief={brief}
-        data={data}
-        generatedAtIso={new Date().toISOString()}
-        health={health}
-        loadError={loadError}
-        risk={risk}
-        viewer={executiveProfile}
-      />
-    </AppShell>
+    <CeoCommandCenter
+      brief={brief}
+      data={data}
+      generatedAtIso={new Date().toISOString()}
+      health={health}
+      loadError={loadError}
+      risk={risk}
+      viewer={executiveProfile}
+    />
   );
 }

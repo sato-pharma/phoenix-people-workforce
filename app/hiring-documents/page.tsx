@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { HiringDocumentsManager } from "@/components/hiring-documents/hiring-documents-manager";
 import { AppShell } from "@/components/layout/app-shell";
-import { canAccess } from "@/lib/auth/permissions";
+import { AppRouteLoadingState } from "@/components/ui/loading-state";
+import { canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   filterHiringDocumentsForAccess,
@@ -24,10 +26,38 @@ function hiringDocumentsPageError(error: unknown) {
 
 export default async function HiringDocumentsPage() {
   const access = await resolveAccessContextFromPage();
-  if (!(await canAccess(access, "employee_documents", "read"))) {
+  const [canRead, canManage] = await Promise.all([
+    canAccess(access, "employee_documents", "read"),
+    canAccess(access, "employee_documents", "update"),
+  ]);
+
+  if (!canRead) {
     redirect("/employee-portals");
   }
 
+  return (
+    <AppShell accessContext={access} navigationMode="admin">
+      <Suspense
+        fallback={
+          <AppRouteLoadingState
+            title="Loading Hiring Documents"
+            description="Preparing onboarding document readiness and employee status."
+          />
+        }
+      >
+        <HiringDocumentsContent access={access} canManage={canManage} />
+      </Suspense>
+    </AppShell>
+  );
+}
+
+async function HiringDocumentsContent({
+  access,
+  canManage,
+}: {
+  access: AccessContext;
+  canManage: boolean;
+}) {
   let initialData: HiringDocumentsDashboardData | null = null;
   let initialError: string | null = null;
 
@@ -38,12 +68,10 @@ export default async function HiringDocumentsPage() {
   }
 
   return (
-    <AppShell navigationMode="admin">
-      <HiringDocumentsManager
-        canManage={await canAccess(access, "employee_documents", "update")}
-        initialData={initialData}
-        initialError={initialError}
-      />
-    </AppShell>
+    <HiringDocumentsManager
+      canManage={canManage}
+      initialData={initialData}
+      initialError={initialError}
+    />
   );
 }

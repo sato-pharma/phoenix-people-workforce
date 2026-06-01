@@ -1,12 +1,13 @@
-﻿import { AppShell } from "@/components/layout/app-shell";
-import { LoadingSpinner } from "@/components/ui/loading-state";
+import { AppShellLoading } from "@/components/layout/app-shell-loading";
+import { AppRouteLoadingState } from "@/components/ui/loading-state";
 
 export default function Loading() {
   return (
-    <AppShell>
-      <div className="flex h-64 items-center justify-center">
-        <LoadingSpinner />
-      </div>
-    </AppShell>
+    <AppShellLoading navigationMode="admin">
+      <AppRouteLoadingState
+        description="Preparing sales dashboards, imports, and performance views."
+        title="Loading sales workspace"
+      />
+    </AppShellLoading>
   );
 }

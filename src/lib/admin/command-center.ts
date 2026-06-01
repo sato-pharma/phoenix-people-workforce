@@ -1,6 +1,11 @@
 import { isDesignatedHrSpecialist, type AccessContext } from "@/lib/auth/permissions";
-import { getDataHealthStats, type DataHealthStats } from "@/lib/admin/service";
+import { getDataHealthStats, getSalaryFlags, type DataHealthStats } from "@/lib/admin/service";
+import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
+import { getCoachingReports } from "@/lib/coaching/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
+import { getDeductionInboxKpis } from "@/lib/deductions-governance/service";
+import { getResignationsDashboardData } from "@/lib/resignations/service";
+import { getVacationReportData } from "@/lib/vacation/service";
 import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
 import { buildLifecycleRiskMetrics } from "@/lib/lifecycle-risk/metrics";
@@ -100,10 +105,37 @@ export type AdminCommandCenterData = {
       totalDeviceMappings: number;
       totalPolicies: number;
     };
+    // Executive attention signals (P1/P2): forward-looking risk the CEO must see at a glance.
+    executive: {
+      pendingResignations: number;
+      totalResignations: number;
+      /** Rolling 30-day departures ÷ active headcount, as a percentage. */
+      attritionRate30d: number;
+      /** Probation reviews with 1–30 days remaining (decision imminent). */
+      criticalProbation: number;
+      /** Contract renewals falling due within the next 7 days. */
+      contractsDueSoon: number;
+      /** Company-wide average coaching score (0–100) across recent completed reports. */
+      coachingScore: number;
+      /** Reps in the critical/red coaching zones. */
+      coachingRedZone: number;
+      /** Vacation requests that have breached the manager/HR approval SLA. */
+      overdueLeaveSla: number;
+    };
+    // Deductions governance summary (P2).
+    deductions: {
+      pending: number;
+      disputed: number;
+      needsFollowUp: number;
+      employeesAffected: number;
+      estimatedAmount: number;
+    };
   };
   health: DataHealthMetrics;
   operations: OperationalActivitySummary;
   payrollEligibleCount: number;
+  /** Open (unresolved) salary flags — financial-gated; 0 when not authorized. */
+  unresolvedSalaryFlags: number;
   dataUnavailable: string[];
   /** ISO timestamp of when this snapshot was built (server-side), for the "data as of" label. */
   generatedAt: string;
@@ -462,6 +494,160 @@ async function fetchRiskSummary(accessContext: AccessContext): Promise<{
   }
 }
 
+/**
+ * Executive attention signals (P1). Each source is isolated: a failure records an
+ * "Unavailable" string and leaves a 0 (never a misleading decision figure). The attrition
+ * RATE is intentionally not computed here — the denominator (active headcount) is owned by
+ * the caller, so we return the raw 30-day departure count and let each path divide.
+ */
+async function fetchExecutiveSignals(
+  accessContext: AccessContext,
+  options: { showFinancial: boolean },
+): Promise<{
+  pendingResignations: number;
+  totalResignations: number;
+  departuresLast30d: number;
+  criticalProbation: number;
+  contractsDueSoon: number;
+  unresolvedSalaryFlags: number;
+  coachingScore: number;
+  coachingRedZone: number;
+  overdueLeaveSla: number;
+  deductions: {
+    pending: number;
+    disputed: number;
+    needsFollowUp: number;
+    employeesAffected: number;
+    estimatedAmount: number;
+  };
+  errors: string[];
+}> {
+  const errors: string[] = [];
+  const dayMs = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const daysFromNow = (iso: string | null | undefined): number | null => {
+    if (!iso) return null;
+    const time = new Date(iso).getTime();
+    if (!Number.isFinite(time)) return null;
+    return Math.floor((time - now) / dayMs);
+  };
+
+  const [
+    resignationsResult,
+    probationResult,
+    contractsResult,
+    salaryFlagsResult,
+    coachingResult,
+    leaveResult,
+    deductionsResult,
+  ] = await Promise.allSettled([
+    getResignationsDashboardData(),
+    getProbationRows(accessContext),
+    getContractRenewalDashboardData(accessContext),
+    options.showFinancial ? getSalaryFlags() : Promise.resolve(null),
+    getCoachingReports({}, accessContext),
+    getVacationReportData(accessContext, {}),
+    getDeductionInboxKpis({ access: accessContext }),
+  ]);
+
+  let pendingResignations = 0;
+  let totalResignations = 0;
+  let departuresLast30d = 0;
+  if (resignationsResult.status === "fulfilled") {
+    const value = resignationsResult.value;
+    pendingResignations = value.summary.pending;
+    totalResignations = value.summary.total;
+    // A departure counts when its effective (last working) date lands in the past 30 days.
+    departuresLast30d = value.records.filter((record) => {
+      const delta = daysFromNow(record.effectiveDate);
+      return delta !== null && delta <= 0 && delta >= -30;
+    }).length;
+  } else {
+    errors.push("Resignation data unavailable.");
+  }
+
+  let criticalProbation = 0;
+  if (probationResult.status === "fulfilled") {
+    criticalProbation = probationResult.value.filter(
+      (row) => typeof row.days_remaining === "number" && row.days_remaining > 0 && row.days_remaining <= 30,
+    ).length;
+  } else {
+    errors.push("Probation data unavailable.");
+  }
+
+  let contractsDueSoon = 0;
+  if (contractsResult.status === "fulfilled") {
+    contractsDueSoon = contractsResult.value.rows.filter((row) => {
+      const delta = daysFromNow(row.contract_renewal_date);
+      return delta !== null && delta >= 0 && delta <= 7;
+    }).length;
+  } else {
+    errors.push("Contract renewal data unavailable.");
+  }
+
+  let unresolvedSalaryFlags = 0;
+  if (options.showFinancial) {
+    if (salaryFlagsResult.status === "fulfilled" && salaryFlagsResult.value) {
+      unresolvedSalaryFlags = salaryFlagsResult.value.unresolvedCount;
+    } else if (salaryFlagsResult.status === "rejected") {
+      errors.push("Salary flag data unavailable.");
+    }
+  }
+
+  // Coaching quality — company-wide average over recent completed reports (no per-rep filter).
+  let coachingScore = 0;
+  let coachingRedZone = 0;
+  if (coachingResult.status === "fulfilled") {
+    const analytics = buildCoachingReportAnalytics(coachingResult.value);
+    if (analytics.coachingCount > 0) {
+      coachingScore = analytics.averageScore;
+      coachingRedZone = (analytics.zoneCounts.critical_red ?? 0) + (analytics.zoneCounts.red_zone ?? 0);
+    } else {
+      // No completed reports yet — show "Unavailable" rather than a misleading 0%.
+      errors.push("Coaching data unavailable.");
+    }
+  } else {
+    errors.push("Coaching data unavailable.");
+  }
+
+  // Leave approval SLA breaches — already aggregated company-wide by the vacation dashboard.
+  let overdueLeaveSla = 0;
+  if (leaveResult.status === "fulfilled") {
+    overdueLeaveSla = leaveResult.value.dashboard.overdueBySla.total;
+  } else {
+    errors.push("Leave SLA data unavailable.");
+  }
+
+  // Deductions governance summary.
+  let deductions = { pending: 0, disputed: 0, needsFollowUp: 0, employeesAffected: 0, estimatedAmount: 0 };
+  if (deductionsResult.status === "fulfilled") {
+    const kpis = deductionsResult.value;
+    deductions = {
+      pending: kpis.pending,
+      disputed: kpis.disputed,
+      needsFollowUp: kpis.needsFollowUp,
+      employeesAffected: kpis.employeesAffected,
+      estimatedAmount: options.showFinancial ? kpis.estimatedAmountSubtotal : 0,
+    };
+  } else {
+    errors.push("Deductions data unavailable.");
+  }
+
+  return {
+    pendingResignations,
+    totalResignations,
+    departuresLast30d,
+    criticalProbation,
+    contractsDueSoon,
+    unresolvedSalaryFlags,
+    coachingScore,
+    coachingRedZone,
+    overdueLeaveSla,
+    deductions,
+    errors,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
@@ -479,14 +665,34 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     totalEvents24h: 0,
   };
 
+  type ExecutiveSignals = Awaited<ReturnType<typeof fetchExecutiveSignals>>;
+  const executiveSignalsPromise: Promise<ExecutiveSignals> = fetchExecutiveSignals(accessContext, { showFinancial: showFinancialModules })
+    .catch(() => ({
+      pendingResignations: 0,
+      totalResignations: 0,
+      departuresLast30d: 0,
+      criticalProbation: 0,
+      contractsDueSoon: 0,
+      unresolvedSalaryFlags: 0,
+      coachingScore: 0,
+      coachingRedZone: 0,
+      overdueLeaveSla: 0,
+      deductions: { pending: 0, disputed: 0, needsFollowUp: 0, employeesAffected: 0, estimatedAmount: 0 },
+      errors: ["Executive signals unavailable."],
+    }));
+  let executiveSignals: ExecutiveSignals | null = null;
+
   try {
-    const [platformMetrics, dataHealthStats, salesHealth, eligibleResult, operations] = await Promise.all([
+    const [executiveSignalsResult, platformMetrics, dataHealthStats, salesHealth, eligibleResult, operations] = await Promise.all([
+      executiveSignalsPromise,
       getPlatformMetrics(accessContext),
       getDataHealthStats().catch(() => null),
       showSalesModules ? fetchSalesHealthCounts() : Promise.resolve({ error: null, linkedRows: 0, totalRows: 0 }),
       showFinancialModules ? fetchPayrollEligibleCount() : Promise.resolve({ count: 0, error: null }),
       getOperationalRecentActivity(accessContext, { limit: 5 }),
     ]);
+    executiveSignals = executiveSignalsResult;
+    dataUnavailable.push(...executiveSignals.errors);
     dataUnavailable.push(...platformMetrics.dataUnavailable);
     if (salesHealth.error) dataUnavailable.push(salesHealth.error);
     if (eligibleResult.error) dataUnavailable.push(eligibleResult.error);
@@ -559,6 +765,20 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
         salesValue: showSalesModules ? platformMetrics.sales.salesValue : 0,
         targetValue: showSalesModules ? platformMetrics.sales.targetValue : 0,
       },
+      executive: {
+        pendingResignations: executiveSignals.pendingResignations,
+        totalResignations: executiveSignals.totalResignations,
+        attritionRate30d:
+          platformMetrics.workforce.activeEmployees > 0
+            ? (executiveSignals.departuresLast30d / platformMetrics.workforce.activeEmployees) * 100
+            : 0,
+        criticalProbation: executiveSignals.criticalProbation,
+        contractsDueSoon: executiveSignals.contractsDueSoon,
+        coachingScore: executiveSignals.coachingScore,
+        coachingRedZone: executiveSignals.coachingRedZone,
+        overdueLeaveSla: executiveSignals.overdueLeaveSla,
+      },
+      deductions: executiveSignals.deductions,
     };
 
     return {
@@ -569,12 +789,16 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
       operations,
       overview,
       payrollEligibleCount: showFinancialModules ? eligibleResult.count : 0,
+      unresolvedSalaryFlags: showFinancialModules ? executiveSignals.unresolvedSalaryFlags : 0,
     };
   } catch {
     dataUnavailable.push("Platform metrics unavailable.");
   }
 
   // Run all fetches in parallel — each is isolated so a single failure doesn't cascade
+  executiveSignals ??= await executiveSignalsPromise;
+  dataUnavailable.push(...executiveSignals.errors);
+
   const [payrollResult, salesResult, employeesResult, dataHealthResult, expensesResult, recruitmentResult, riskResult, salesHealthResult, eligibleResult, operationsResult] =
     await Promise.allSettled([
       showFinancialModules
@@ -734,77 +958,6 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     dataUnavailable.push("Risk data unavailable.");
   }
 
-  try {
-    const platformMetrics = await getPlatformMetrics(accessContext);
-    dataUnavailable.push(...platformMetrics.dataUnavailable);
-    if (showFinancialModules) {
-      payroll = {
-        batchLabel: platformMetrics.payroll.batchLabel,
-        employees: platformMetrics.payroll.employees,
-        flags: platformMetrics.payroll.flags,
-        gross: platformMetrics.payroll.gross,
-        net: platformMetrics.payroll.net,
-      };
-    }
-    if (showSalesModules) {
-      sales = {
-        achievementRate: platformMetrics.sales.achievementRate,
-        activeProducts: platformMetrics.sales.activeProducts,
-        salesValue: platformMetrics.sales.salesValue,
-        targetValue: platformMetrics.sales.targetValue,
-      };
-    }
-    hr = {
-      activeEmployees: platformMetrics.workforce.activeEmployees,
-      employeesWithoutManagers: platformMetrics.workforce.employeesWithoutManagers,
-      totalEmployees: platformMetrics.workforce.totalEmployees,
-      totalStructure: platformMetrics.workforce.totalStructure,
-      uniqueAreas: platformMetrics.workforce.uniqueAreas,
-      uniqueLines: platformMetrics.workforce.uniqueLines,
-      vacantPositions: platformMetrics.workforce.openVacancies,
-    };
-    if (showFinancialModules) {
-      expenses = {
-        approvedAmount: platformMetrics.expenses.approvedAmount,
-        reportCount: platformMetrics.expenses.reportCount,
-        totalAmount: platformMetrics.expenses.totalAmount,
-        totalRows: platformMetrics.expenses.totalRows,
-      };
-    }
-    recruitment = {
-      acceptanceRate: platformMetrics.recruitment.acceptanceRate,
-      acceptedOffers: platformMetrics.recruitment.acceptedOffers,
-      pendingOffers: platformMetrics.recruitment.pendingOffers,
-      rejectedOffers: platformMetrics.recruitment.rejectedOffers,
-      totalOffers: platformMetrics.recruitment.totalOffers,
-    };
-    risk = {
-      expiringContracts: platformMetrics.lifecycleRisk.expiringContracts,
-      probationEndings: platformMetrics.lifecycleRisk.probationEndings,
-    };
-    leave = {
-      approvedRequests: platformMetrics.leave.approvedRequests,
-      managerDecisionActions: platformMetrics.leave.managerDecisionActions,
-      paidDays: platformMetrics.leave.paidDays,
-      pendingRequests: platformMetrics.leave.pendingRequests,
-      rejectedRequests: platformMetrics.leave.rejectedRequests,
-      totalRequests: platformMetrics.leave.totalRequests,
-      unpaidDays: platformMetrics.leave.unpaidDays,
-    };
-    attendance = {
-      activeMappings: platformMetrics.attendance.activeMappings,
-      activePolicies: platformMetrics.attendance.activePolicies,
-      currentMonthWorkingDays: platformMetrics.attendance.currentMonthWorkingDays,
-      mappingReadinessRate: platformMetrics.attendance.mappingReadinessRate,
-      missingDeviceMappings: platformMetrics.attendance.missingDeviceMappings,
-      policyCoverageRate: platformMetrics.attendance.policyCoverageRate,
-      totalDeviceMappings: platformMetrics.attendance.totalDeviceMappings,
-      totalPolicies: platformMetrics.attendance.totalPolicies,
-    };
-  } catch {
-    dataUnavailable.push("Platform metrics unavailable.");
-  }
-
   // ── Health ───────────────────────────────────────────────────────────────
   const salesHealth = salesHealthResult.status === "fulfilled"
     ? salesHealthResult.value
@@ -837,8 +990,30 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     generatedAt: new Date().toISOString(),
     health,
     operations,
-    overview: { hr, payroll, sales, expenses, recruitment, risk, leave, attendance },
+    overview: {
+      hr,
+      payroll,
+      sales,
+      expenses,
+      recruitment,
+      risk,
+      leave,
+      attendance,
+      executive: {
+        pendingResignations: executiveSignals.pendingResignations,
+        totalResignations: executiveSignals.totalResignations,
+        attritionRate30d:
+          hr.activeEmployees > 0 ? (executiveSignals.departuresLast30d / hr.activeEmployees) * 100 : 0,
+        criticalProbation: executiveSignals.criticalProbation,
+        contractsDueSoon: executiveSignals.contractsDueSoon,
+        coachingScore: executiveSignals.coachingScore,
+        coachingRedZone: executiveSignals.coachingRedZone,
+        overdueLeaveSla: executiveSignals.overdueLeaveSla,
+      },
+      deductions: executiveSignals.deductions,
+    },
     payrollEligibleCount,
+    unresolvedSalaryFlags: showFinancialModules ? executiveSignals.unresolvedSalaryFlags : 0,
   };
 }
 
