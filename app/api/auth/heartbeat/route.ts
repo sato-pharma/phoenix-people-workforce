@@ -5,8 +5,8 @@ import {
   getCookieValue,
   phoenixSessionCookieName,
   sessionIdleTimeoutSecondsForRole,
-  verifySessionToken,
 } from "@/lib/auth/session";
+import { resolveSessionState } from "@/lib/auth/server";
 import {
   phoenixSupabaseAccessTokenCookieName,
   phoenixSupabaseRefreshTokenCookieName,
@@ -17,6 +17,11 @@ import {
   devPreviewCookieMaxAgeSeconds,
   phoenixDevPreviewCookieName,
 } from "@/lib/auth/dev-preview";
+import {
+  assertApiRateLimit,
+  isApiRateLimitError,
+  rateLimitIdentity,
+} from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,11 +37,30 @@ function isLocalDevelopmentRequest(request: Request) {
 
 export async function POST(request: Request) {
   const cookieHeader = request.headers.get("cookie");
-  const session = verifySessionToken(
-    getCookieValue(cookieHeader, phoenixSessionCookieName),
-  );
+  const sessionToken = getCookieValue(cookieHeader, phoenixSessionCookieName);
 
-  if (!session) {
+  try {
+    await assertApiRateLimit({
+      identifier: rateLimitIdentity({ request, token: sessionToken }),
+      limit: 60,
+      scope: "auth:heartbeat",
+      windowMs: 60 * 1000,
+    });
+  } catch (error) {
+    if (!isApiRateLimitError(error)) throw error;
+    return NextResponse.json(
+      {
+        error: "rate_limited",
+        message: "Too many heartbeat requests.",
+        retryAfterSeconds: error.retryAfterSeconds,
+      },
+      { status: 429 },
+    );
+  }
+
+  const sessionState = await resolveSessionState(sessionToken, { refreshIdle: true });
+
+  if (!sessionState) {
     const devPreview = isLocalDevelopmentRequest(request)
       ? accessContextFromDevPreviewToken(getCookieValue(cookieHeader, phoenixDevPreviewCookieName))
       : null;
@@ -100,7 +124,8 @@ export async function POST(request: Request) {
   }
 
   const now = Math.floor(Date.now() / 1000);
-  const idleTimeoutSeconds = sessionIdleTimeoutSecondsForRole(session.role);
+  const session = sessionState.payload;
+  const idleTimeoutSeconds = sessionIdleTimeoutSecondsForRole(sessionState.access.role);
   const refreshedExpiresAt = now + idleTimeoutSeconds;
   const refreshed = createSessionToken({
     hrId: session.hrId,
@@ -112,12 +137,14 @@ export async function POST(request: Request) {
   });
 
   const response = NextResponse.json({
+    absoluteExpiresAt: Math.floor(new Date(sessionState.appSession.absolute_expires_at).getTime() / 1000),
     expiresAt: refreshedExpiresAt,
-    idleExpiresAt: refreshedExpiresAt,
+    idleExpiresAt: Math.floor(new Date(sessionState.appSession.idle_expires_at).getTime() / 1000),
     ok: true,
   });
   response.cookies.set({
     httpOnly: true,
+    maxAge: idleTimeoutSeconds,
     name: phoenixSessionCookieName,
     path: "/",
     sameSite: "lax",

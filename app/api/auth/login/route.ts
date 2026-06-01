@@ -3,6 +3,11 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 
 import {
+  createAppSession,
+  isSupabaseBridgeRequiredForRole,
+  sessionAbsoluteTimeoutSecondsForRole,
+} from "@/lib/auth/app-sessions";
+import {
   clearFailedLoginState,
   getRequestIp,
   isLoginRateLimited,
@@ -22,6 +27,15 @@ import {
   phoenixSupabaseRefreshTokenCookieName,
   provisionSupabaseAuthIdentity,
 } from "@/lib/auth/supabase-identity";
+import {
+  assertApiRateLimit,
+  isApiRateLimitError,
+  rateLimitIdentity,
+} from "@/lib/security/api-rate-limit";
+import {
+  rejectUntrustedForwardedOrigin,
+  trustedOriginForRedirect,
+} from "@/lib/security/origins";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,24 +109,7 @@ async function readLoginPayload(request: Request): Promise<LoginRequestPayload> 
 }
 
 function getRedirectUrl(request: Request, pathname: string) {
-  const forwardedHost = request.headers.get("x-forwarded-host")?.trim();
-  const forwardedProto = request.headers.get("x-forwarded-proto")?.trim();
-
-  if (forwardedHost) {
-    return new URL(pathname, `${forwardedProto || "https"}://${forwardedHost}`);
-  }
-
-  const origin = request.headers.get("origin");
-
-  if (origin) {
-    try {
-      return new URL(pathname, origin);
-    } catch {
-      // Fall back to the request URL below.
-    }
-  }
-
-  return new URL(pathname, request.url);
+  return new URL(pathname, trustedOriginForRedirect(request));
 }
 
 function loginFailureResponse(
@@ -163,6 +160,50 @@ export async function POST(request: Request) {
     const payload = await readLoginPayload(request);
     const loginId = normalizeLoginId(payload.loginId ?? "");
     const ip = getRequestIp(request);
+    const originRejection = rejectUntrustedForwardedOrigin(request);
+
+    if (originRejection) {
+      await writeAuthAudit({
+        actorLoginId: loginId || null,
+        entityId: loginId || null,
+        newValues: { ip, ...originRejection },
+        summary: "Login blocked: untrusted request origin",
+      }).catch(() => undefined);
+
+      return loginFailureResponse(
+        request,
+        payload,
+        "invalid_origin",
+        "Login request origin is not trusted.",
+        400,
+      );
+    }
+
+    try {
+      await assertApiRateLimit({
+        identifier: rateLimitIdentity({ actor: loginId || null, request }),
+        limit: 20,
+        scope: "auth:login",
+        windowMs: 15 * 60 * 1000,
+      });
+    } catch (error) {
+      if (!isApiRateLimitError(error)) throw error;
+
+      await writeAuthAudit({
+        actorLoginId: loginId || null,
+        entityId: loginId || null,
+        newValues: { ip, reason: "api_rate_limit", retryAfterSeconds: error.retryAfterSeconds },
+        summary: "Login API rate limited",
+      }).catch(() => undefined);
+
+      return loginFailureResponse(
+        request,
+        payload,
+        "rate_limited",
+        "Too many login requests. Please try again later.",
+        429,
+      );
+    }
 
     if (await isLoginRateLimited(loginId, ip)) {
       await writeAuthAudit({
@@ -221,6 +262,8 @@ export async function POST(request: Request) {
     }
 
     const maxAgeSeconds = sessionIdleTimeoutSecondsForRole(user.role);
+    const absoluteTimeoutSeconds = sessionAbsoluteTimeoutSecondsForRole(user.role);
+    const supabaseSessionRequired = isSupabaseBridgeRequiredForRole(user.role);
     const password = payload.password ?? "";
     let supabaseSession:
       | {
@@ -280,7 +323,42 @@ export async function POST(request: Request) {
         "Supabase auth bridge unavailable; continuing with Phoenix session only.";
     }
 
+    if (!supabaseSession && supabaseSessionRequired) {
+      await writeAuthAudit({
+        actorLoginId: user.loginId,
+        entityId: user.loginId,
+        newValues: {
+          ip,
+          reason: "supabase_bridge_required",
+          role: user.role,
+          supabaseBridgeWarning,
+        },
+        summary: "Login blocked: privileged Supabase bridge unavailable",
+      }).catch(() => undefined);
+
+      return loginFailureResponse(
+        request,
+        payload,
+        "auth_bridge_unavailable",
+        "Login temporarily unavailable for this role. Please contact your Phoenix admin.",
+        503,
+      );
+    }
+
     const sessionId = randomUUID();
+    const appSession = await createAppSession({
+      absoluteTimeoutSeconds,
+      hrId: user.hrId,
+      idleTimeoutSeconds: maxAgeSeconds,
+      ip,
+      loginId: user.loginId,
+      role: user.role,
+      sessionId,
+      sessionVersion: user.sessionVersion,
+      supabaseSessionAvailable: Boolean(supabaseSession),
+      supabaseSessionRequired,
+      userAgent: request.headers.get("user-agent"),
+    });
     const token = createSessionToken({
       hrId: user.hrId,
       loginId: user.loginId,
@@ -298,8 +376,11 @@ export async function POST(request: Request) {
         ip,
         remember: Boolean(payload.remember),
         role: user.role,
+        absoluteExpiresAt: appSession.absoluteExpiresAt,
+        idleExpiresAt: appSession.idleExpiresAt,
         sessionId,
         supabaseBridgeWarning,
+        supabaseSessionRequired,
         supabaseSessionAvailable: Boolean(supabaseSession),
         sessionVersion: user.sessionVersion,
       },
@@ -359,6 +440,7 @@ export async function POST(request: Request) {
 
     response.cookies.set({
       httpOnly: true,
+      maxAge: maxAgeSeconds,
       name: phoenixSessionCookieName,
       path: "/",
       sameSite: "lax",

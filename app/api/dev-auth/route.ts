@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 function isLoopbackHostname(hostname: string | null | undefined) {
   const normalized = hostname?.trim().toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
-  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+  return normalized === "localhost" || hostname === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
 }
 
 function hostnameFromHeader(value: string | null) {
