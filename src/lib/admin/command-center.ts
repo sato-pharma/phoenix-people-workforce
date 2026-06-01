@@ -931,7 +931,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     expiringContracts: 0,
     probationEndings: 0,
   };
-  let leave: AdminCommandCenterData["overview"]["leave"] = {
+  const leave: AdminCommandCenterData["overview"]["leave"] = {
     approvedRequests: 0,
     managerDecisionActions: 0,
     paidDays: 0,
@@ -940,7 +940,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     totalRequests: 0,
     unpaidDays: 0,
   };
-  let attendance: AdminCommandCenterData["overview"]["attendance"] = {
+  const attendance: AdminCommandCenterData["overview"]["attendance"] = {
     activeMappings: 0,
     activePolicies: 0,
     currentMonthWorkingDays: 0,

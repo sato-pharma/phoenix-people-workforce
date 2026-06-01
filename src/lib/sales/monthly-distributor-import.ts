@@ -16,6 +16,33 @@ export type SalesAreaRegionReference = {
   regionName: string;
 };
 
+export type SalesRegionReference = {
+  regionCode: string;
+  regionName: string;
+};
+
+export type SalesAreaReference = SalesAreaRegionReference;
+
+export type SalesBlockReference = {
+  areaCode: string;
+  areaName: string;
+  blockCode: string;
+  blockName: string;
+  regionCode: string;
+  regionName: string;
+};
+
+export type SalesBrickReference = {
+  areaCode: string;
+  areaName: string;
+  blockCode: string;
+  blockName: string;
+  brickId: string;
+  brickName: string;
+  regionCode: string;
+  regionName: string;
+};
+
 export type SalesProductReference = {
   factoryPrice: number;
   family: string;
@@ -29,6 +56,9 @@ export type SalesProductReference = {
 export type SalesDistributorReference = SalesDistributorOption;
 
 export type SalesReferenceData = {
+  areas?: SalesAreaReference[];
+  blocks?: SalesBlockReference[];
+  bricks?: SalesBrickReference[];
   distributors: SalesDistributorReference[];
   products: SalesProductReference[];
   regions: SalesAreaRegionReference[];
@@ -58,6 +88,24 @@ export type DistributorSalesRegionSummary = DistributorSalesTotal & {
   regionName: string;
 };
 
+export type DistributorSalesAreaSummary = DistributorSalesTotal & {
+  areaCode: string;
+  areaName: string;
+  regionCode: string;
+  regionName: string;
+};
+
+export type DistributorSalesBrickSummary = DistributorSalesTotal & {
+  areaCode: string;
+  areaName: string;
+  blockCode: string;
+  blockName: string;
+  brickId: string;
+  brickName: string;
+  regionCode: string;
+  regionName: string;
+};
+
 export type DistributorSalesProductSummary = DistributorSalesTotal & {
   officialLine: string;
   productCode: string;
@@ -67,6 +115,8 @@ export type DistributorSalesProductSummary = DistributorSalesTotal & {
 export type DistributorSalesValidationResult = {
   batchId?: string;
   blockingReasons: string[];
+  byArea: DistributorSalesAreaSummary[];
+  byBrick: DistributorSalesBrickSummary[];
   byLine: DistributorSalesLineSummary[];
   byProduct: DistributorSalesProductSummary[];
   byRegion: DistributorSalesRegionSummary[];
@@ -80,6 +130,8 @@ export type DistributorSalesValidationResult = {
   rowCount: number;
   sheetName: string;
   status: "blocked" | "validated";
+  templateKey: string;
+  templateName: string;
   totals: DistributorSalesTotal;
   warningRows: number;
 };
@@ -96,11 +148,38 @@ export type SourceOfSalesUploadBatch = {
   period: string | null;
   rowCount: number;
   status: "blocked" | "validated";
+  templateKey: string;
   totalBonusQty: number;
   totalQty: number;
   totalValue: number;
   uploadedBy: string;
   warningRows: number;
+};
+
+export type SourceOfSalesDashboardGroup = DistributorSalesTotal & {
+  code: string | null;
+  key: string;
+  label: string;
+  line: string | null;
+};
+
+export type SourceOfSalesDashboardDistributor = DistributorSalesTotal & {
+  distributorCode: string;
+  distributorName: string;
+  sheetCount: number;
+};
+
+export type SourceOfSalesDashboard = {
+  availablePeriods: string[];
+  byArea: SourceOfSalesDashboardGroup[];
+  byBrick: SourceOfSalesDashboardGroup[];
+  byDistributor: SourceOfSalesDashboardDistributor[];
+  byLine: SourceOfSalesDashboardGroup[];
+  byProduct: SourceOfSalesDashboardGroup[];
+  byRegion: SourceOfSalesDashboardGroup[];
+  period: string | null;
+  sheetCount: number;
+  totals: DistributorSalesTotal;
 };
 
 export type SourceOfSalesProduct = SalesProductReference & {
@@ -146,11 +225,19 @@ type NormalizedSourceOfSalesProductInput = {
 
 type HeaderMap = {
   columns: Map<string, number>;
+  labels: Map<string, string>;
   rowNumber: number;
+  template: DistributorSalesTemplate;
 };
 
 type ParsedDistributorRow = {
+  areaCode: string;
+  areaName: string;
+  blockCode: string;
+  blockName: string;
   bonusQty: number;
+  brickId: string;
+  brickName: string;
   distributorCode: string;
   invoicePeriod: string | null;
   officialLine: string;
@@ -166,16 +253,71 @@ type ParsedDistributorRow = {
   value: number;
 };
 
-const OVERSEAS_PS_HEADERS = [
-  "Region Name",
-  "Region Code",
-  "Product Name",
-  "Product Code",
-  "Qty",
-  "B. Qty",
-  "Value",
-  "Distrb code",
-  "Invoice Date",
+type DistributorSalesTemplateField =
+  | "areaCode"
+  | "bonusQty"
+  | "brickId"
+  | "distributorCode"
+  | "invoiceDate"
+  | "productCode"
+  | "qty"
+  | "regionCode"
+  | "value";
+
+type OptionalTemplateField = "areaName" | "brickName" | "productName" | "regionName";
+
+type DistributorSalesTemplate = {
+  distributorCodes: string[];
+  fields: Record<DistributorSalesTemplateField, string>;
+  key: string;
+  name: string;
+  optionalFields?: Partial<Record<OptionalTemplateField, string[]>>;
+};
+
+const OVERSEAS_PS_TEMPLATE: DistributorSalesTemplate = {
+  distributorCodes: ["PS"],
+  fields: {
+    areaCode: "Area ID",
+    bonusQty: "B. Qty",
+    brickId: "Brick ID",
+    distributorCode: "Distrub ID",
+    invoiceDate: "Invoice Date",
+    productCode: "Product ID",
+    qty: "Qty",
+    regionCode: "Region ID",
+    value: "Value",
+  },
+  key: "overseas_ps",
+  name: "Overseas PS coded template",
+  optionalFields: {
+    productName: ["Product Name", "Mat. Desc."],
+  },
+};
+
+const IBN_SINA_IS_TEMPLATE: DistributorSalesTemplate = {
+  distributorCodes: ["IS"],
+  fields: {
+    areaCode: "Area ID",
+    bonusQty: "Free Unit",
+    brickId: "Brick ID2",
+    distributorCode: "Distrub ID",
+    invoiceDate: "Date",
+    productCode: "Product ID",
+    qty: "Quantity",
+    regionCode: "Region ID",
+    value: "Net",
+  },
+  key: "ibn_sina_is",
+  name: "Ibn Sina IS coded template",
+  optionalFields: {
+    brickName: ["Brick Name"],
+    productName: ["Item Name"],
+  },
+};
+
+const DISTRIBUTOR_SALES_TEMPLATES = [
+  OVERSEAS_PS_TEMPLATE,
+  IBN_SINA_IS_TEMPLATE,
 ] as const;
 
 function normalizeKey(value: unknown) {
@@ -214,41 +356,92 @@ function cellValue(cell: ExcelJS.Cell) {
   return value ?? cell.text;
 }
 
-function findHeaderMap(sheet: ExcelJS.Worksheet): HeaderMap | null {
+function requiredHeadersForTemplate(template: DistributorSalesTemplate) {
+  return Object.values(template.fields);
+}
+
+function templateForDistributor(distributorCode: string) {
+  const code = normalizeCode(distributorCode);
+  const matchingTemplates = DISTRIBUTOR_SALES_TEMPLATES.filter((template) =>
+    template.distributorCodes.includes(code),
+  );
+  return matchingTemplates.length > 0 ? matchingTemplates : [...DISTRIBUTOR_SALES_TEMPLATES];
+}
+
+function findHeaderMap(sheet: ExcelJS.Worksheet, template: DistributorSalesTemplate): HeaderMap | null {
   const maxHeaderRow = Math.min(sheet.rowCount, 10);
-  const requiredKeys = OVERSEAS_PS_HEADERS.map(normalizeKey);
+  const requiredKeys = requiredHeadersForTemplate(template).map(normalizeKey);
 
   for (let rowNumber = 1; rowNumber <= maxHeaderRow; rowNumber += 1) {
     const row = sheet.getRow(rowNumber);
     const columns = new Map<string, number>();
+    const labels = new Map<string, string>();
     row.eachCell({ includeEmpty: false }, (cell, columnNumber) => {
-      const header = normalizeKey(cellValue(cell));
-      if (header) columns.set(header, columnNumber);
+      const rawHeader = normalizeDisplay(cellValue(cell));
+      const header = normalizeKey(rawHeader);
+      if (header) {
+        columns.set(header, columnNumber);
+        labels.set(header, rawHeader);
+      }
     });
 
     if (requiredKeys.every((header) => columns.has(header))) {
-      return { columns, rowNumber };
+      return { columns, labels, rowNumber, template };
     }
   }
 
   return null;
 }
 
-function findSalesSheet(workbook: ExcelJS.Workbook) {
-  for (const sheet of workbook.worksheets) {
-    const headerMap = findHeaderMap(sheet);
-    if (headerMap) return { sheet, headerMap };
+function findSalesSheet(workbook: ExcelJS.Workbook, distributorCode: string) {
+  const templates = templateForDistributor(distributorCode);
+  for (const template of templates) {
+    for (const sheet of workbook.worksheets) {
+      const headerMap = findHeaderMap(sheet, template);
+      if (headerMap) return { sheet, headerMap };
+    }
   }
   return null;
 }
 
-function valueAt(row: ExcelJS.Row, headerMap: HeaderMap, header: (typeof OVERSEAS_PS_HEADERS)[number]) {
+function requiredTemplateMessage(distributorCode: string) {
+  return templateForDistributor(distributorCode)
+    .map((template) => `${template.name}: ${requiredHeadersForTemplate(template).join(", ")}`)
+    .join(" | ");
+}
+
+function valueAtHeader(row: ExcelJS.Row, headerMap: HeaderMap, header: string | null | undefined) {
+  if (!header) return null;
   const column = headerMap.columns.get(normalizeKey(header));
   return column ? cellValue(row.getCell(column)) : null;
 }
 
+function valueAt(row: ExcelJS.Row, headerMap: HeaderMap, field: DistributorSalesTemplateField) {
+  return valueAtHeader(row, headerMap, headerMap.template.fields[field]);
+}
+
+function optionalValueAt(row: ExcelJS.Row, headerMap: HeaderMap, field: OptionalTemplateField) {
+  const headers = headerMap.template.optionalFields?.[field] ?? [];
+  for (const header of headers) {
+    const value = valueAtHeader(row, headerMap, header);
+    if (normalizeDisplay(value)) return value;
+  }
+  return null;
+}
+
 function hasAnyImportValue(row: ExcelJS.Row, headerMap: HeaderMap) {
-  return OVERSEAS_PS_HEADERS.some((header) => normalizeDisplay(valueAt(row, headerMap, header)) !== "");
+  return requiredHeadersForTemplate(headerMap.template).some(
+    (header) => normalizeDisplay(valueAtHeader(row, headerMap, header)) !== "",
+  );
+}
+
+function rawImportRow(row: ExcelJS.Row, headerMap: HeaderMap) {
+  return Object.fromEntries(
+    [...headerMap.columns.entries()].map(([key, column]) => [
+      headerMap.labels.get(key) ?? key,
+      normalizeDisplay(cellValue(row.getCell(column))),
+    ]),
+  );
 }
 
 function parseNumber(value: unknown, options?: { emptyAsZero?: boolean }) {
@@ -380,12 +573,6 @@ function validationStateForIssues(issues: DistributorSalesValidationIssue[]): Pa
   return "valid";
 }
 
-function rawImportRow(row: ExcelJS.Row, headerMap: HeaderMap) {
-  return Object.fromEntries(
-    OVERSEAS_PS_HEADERS.map((header) => [header, normalizeDisplay(valueAt(row, headerMap, header))]),
-  );
-}
-
 function addTotals<T extends DistributorSalesTotal>(current: T, row: ParsedDistributorRow) {
   current.rowCount += 1;
   current.totalQty += Number.isFinite(row.qty) ? row.qty : 0;
@@ -413,6 +600,8 @@ function roundedTotals<T extends DistributorSalesTotal>(row: T): T {
 
 function summarizeRows(rows: ParsedDistributorRow[]) {
   const totals = emptyTotals();
+  const areaMap = new Map<string, DistributorSalesAreaSummary>();
+  const brickMap = new Map<string, DistributorSalesBrickSummary>();
   const lineMap = new Map<string, DistributorSalesLineSummary>();
   const regionMap = new Map<string, DistributorSalesRegionSummary>();
   const productMap = new Map<string, DistributorSalesProductSummary>();
@@ -434,6 +623,32 @@ function summarizeRows(rows: ParsedDistributorRow[]) {
     addTotals(regionSummary, row);
     regionMap.set(regionKey, regionSummary);
 
+    const areaKey = `${row.areaCode}\u0000${row.areaName}\u0000${row.regionCode}`;
+    const areaSummary = areaMap.get(areaKey) ?? {
+      ...emptyTotals(),
+      areaCode: row.areaCode || "Unknown",
+      areaName: row.areaName || "Unknown",
+      regionCode: row.regionCode || "Unknown",
+      regionName: row.regionName || "Unknown",
+    };
+    addTotals(areaSummary, row);
+    areaMap.set(areaKey, areaSummary);
+
+    const brickKey = `${row.brickId}\u0000${row.blockCode}\u0000${row.areaCode}\u0000${row.regionCode}`;
+    const brickSummary = brickMap.get(brickKey) ?? {
+      ...emptyTotals(),
+      areaCode: row.areaCode || "Unknown",
+      areaName: row.areaName || "Unknown",
+      blockCode: row.blockCode || "Unknown",
+      blockName: row.blockName || "Unknown",
+      brickId: row.brickId || "Unknown",
+      brickName: row.brickName || "Unknown",
+      regionCode: row.regionCode || "Unknown",
+      regionName: row.regionName || "Unknown",
+    };
+    addTotals(brickSummary, row);
+    brickMap.set(brickKey, brickSummary);
+
     const productKey = `${row.productName}\u0000${row.productCode}\u0000${line}`;
     const productSummary = productMap.get(productKey) ?? {
       ...emptyTotals(),
@@ -447,6 +662,12 @@ function summarizeRows(rows: ParsedDistributorRow[]) {
 
   return {
     totals: roundedTotals(totals),
+    byArea: [...areaMap.values()]
+      .map(roundedTotals)
+      .sort((left, right) => left.regionCode.localeCompare(right.regionCode) || left.areaCode.localeCompare(right.areaCode)),
+    byBrick: [...brickMap.values()]
+      .map(roundedTotals)
+      .sort((left, right) => left.regionCode.localeCompare(right.regionCode) || left.areaCode.localeCompare(right.areaCode) || left.brickId.localeCompare(right.brickId)),
     byLine: [...lineMap.values()]
       .map(roundedTotals)
       .sort((left, right) => left.line.localeCompare(right.line)),
@@ -460,10 +681,25 @@ function summarizeRows(rows: ParsedDistributorRow[]) {
 }
 
 function buildReferenceMaps(references: SalesReferenceData) {
+  const areas = references.areas ?? references.regions;
+  const regionReferences = new Map<string, SalesRegionReference>();
+  for (const row of [...references.regions, ...areas]) {
+    const regionCode = normalizeCode(row.regionCode);
+    if (regionCode && !regionReferences.has(regionCode)) {
+      regionReferences.set(regionCode, {
+        regionCode,
+        regionName: normalizeDisplay(row.regionName),
+      });
+    }
+  }
+
   return {
+    areaByCode: new Map(areas.map((row) => [normalizeCode(row.areaCode), row])),
+    blockByCode: new Map((references.blocks ?? []).map((row) => [normalizeCode(row.blockCode), row])),
+    brickById: new Map((references.bricks ?? []).map((row) => [normalizeCode(row.brickId), row])),
     distributorByCode: new Map(references.distributors.map((row) => [normalizeCode(row.code), row])),
     productByCode: new Map(references.products.map((row) => [normalizeCode(row.productCode), row])),
-    regionByCode: new Map(references.regions.map((row) => [normalizeCode(row.regionCode), row])),
+    regionByCode: regionReferences,
   };
 }
 
@@ -500,11 +736,11 @@ async function parseDistributorSalesWorkbookBuffer(input: {
   }
 
   const workbook = await workbookFromBuffer(input.buffer);
-  const detected = findSalesSheet(workbook);
+  const detected = findSalesSheet(workbook, selectedDistributorCode);
   if (!detected) {
     throw new SalesWorkflowError(
       "unsupported_distributor_template",
-      `This workbook does not match the Overseas POS template. Required headers: ${OVERSEAS_PS_HEADERS.join(", ")}.`,
+      `This workbook does not match the selected distributor template. Required headers: ${requiredTemplateMessage(selectedDistributorCode)}.`,
       400,
     );
   }
@@ -518,19 +754,23 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     if (!hasAnyImportValue(row, headerMap)) continue;
     const rowIssues: DistributorSalesValidationIssue[] = [];
 
-    const rawRegionName = valueAt(row, headerMap, "Region Name");
-    const rawRegionCode = valueAt(row, headerMap, "Region Code");
-    const rawProductName = valueAt(row, headerMap, "Product Name");
-    const rawProductCode = valueAt(row, headerMap, "Product Code");
-    const rawQty = valueAt(row, headerMap, "Qty");
-    const rawBonusQty = valueAt(row, headerMap, "B. Qty");
-    const rawValue = valueAt(row, headerMap, "Value");
-    const rawDistributorCode = valueAt(row, headerMap, "Distrb code");
-    const rawInvoiceDate = valueAt(row, headerMap, "Invoice Date");
+    const rawAreaCode = valueAt(row, headerMap, "areaCode");
+    const rawAreaName = optionalValueAt(row, headerMap, "areaName");
+    const rawBrickId = valueAt(row, headerMap, "brickId");
+    const rawBrickName = optionalValueAt(row, headerMap, "brickName");
+    const rawRegionCode = valueAt(row, headerMap, "regionCode");
+    const rawRegionName = optionalValueAt(row, headerMap, "regionName");
+    const rawProductCode = valueAt(row, headerMap, "productCode");
+    const rawProductName = optionalValueAt(row, headerMap, "productName");
+    const rawQty = valueAt(row, headerMap, "qty");
+    const rawBonusQty = valueAt(row, headerMap, "bonusQty");
+    const rawValue = valueAt(row, headerMap, "value");
+    const rawDistributorCode = valueAt(row, headerMap, "distributorCode");
+    const rawInvoiceDate = valueAt(row, headerMap, "invoiceDate");
 
-    const regionName = normalizeDisplay(rawRegionName);
+    const areaCode = normalizeCode(rawAreaCode);
+    const brickId = normalizeCode(rawBrickId);
     const regionCode = normalizeCode(rawRegionCode);
-    const productName = normalizeDisplay(rawProductName);
     const productCode = normalizeCode(rawProductCode);
     const rowDistributorCode = normalizeCode(rawDistributorCode);
     const qty = parseNumber(rawQty);
@@ -538,11 +778,47 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const value = parseNumber(rawValue);
     const period = invoicePeriod(rawInvoiceDate);
 
+    const productReference = !isNotAvailable(rawProductCode) ? maps.productByCode.get(productCode) : undefined;
+    const regionReference = !isNotAvailable(rawRegionCode) ? maps.regionByCode.get(regionCode) : undefined;
+    const areaReference = !isNotAvailable(rawAreaCode) ? maps.areaByCode.get(areaCode) : undefined;
+    const brickReference = !isNotAvailable(rawBrickId) ? maps.brickById.get(brickId) : undefined;
+    const blockReference = brickReference ? maps.blockByCode.get(normalizeCode(brickReference.blockCode)) : undefined;
+
+    const regionName = normalizeDisplay(rawRegionName)
+      || regionReference?.regionName
+      || areaReference?.regionName
+      || brickReference?.regionName
+      || regionCode
+      || "Unknown";
+    const areaName = normalizeDisplay(rawAreaName)
+      || areaReference?.areaName
+      || brickReference?.areaName
+      || areaCode
+      || "Unknown";
+    const blockCode = brickReference?.blockCode ?? "";
+    const blockName = brickReference?.blockName
+      || blockReference?.blockName
+      || blockCode
+      || "Unknown";
+    const brickName = normalizeDisplay(rawBrickName)
+      || brickReference?.brickName
+      || brickId
+      || "Unknown";
+    const productName = productReference?.productName
+      || normalizeDisplay(rawProductName)
+      || productCode
+      || "Unknown";
+
     const naFields = [
-      ["Region Name", rawRegionName],
-      ["Region Code", rawRegionCode],
-      ["Product Name", rawProductName],
-      ["Product Code", rawProductCode],
+      [headerMap.template.fields.areaCode, rawAreaCode],
+      [headerMap.template.fields.brickId, rawBrickId],
+      [headerMap.template.fields.regionCode, rawRegionCode],
+      [headerMap.template.fields.productCode, rawProductCode],
+      [headerMap.template.fields.distributorCode, rawDistributorCode],
+      [headerMap.template.fields.invoiceDate, rawInvoiceDate],
+      [headerMap.template.fields.qty, rawQty],
+      [headerMap.template.fields.bonusQty, rawBonusQty],
+      [headerMap.template.fields.value, rawValue],
     ] as const;
 
     naFields.forEach(([field, raw]) => {
@@ -557,33 +833,30 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       }
     });
 
-    if (!regionName) addIssue(rowIssues, rowNumber, "Region Name", rawRegionName, "Region Name is required.");
-    if (!regionCode) addIssue(rowIssues, rowNumber, "Region Code", rawRegionCode, "Region Code is required.");
-    if (!productName) addIssue(rowIssues, rowNumber, "Product Name", rawProductName, "Product Name is required.");
-    if (!productCode) addIssue(rowIssues, rowNumber, "Product Code", rawProductCode, "Product Code is required.");
-    if (!rowDistributorCode) addIssue(rowIssues, rowNumber, "Distrb code", rawDistributorCode, "Distributor code is required.");
+    if (!areaCode) addIssue(rowIssues, rowNumber, headerMap.template.fields.areaCode, rawAreaCode, "Area code is required.");
+    if (!brickId) addIssue(rowIssues, rowNumber, headerMap.template.fields.brickId, rawBrickId, "Brick ID is required.");
+    if (!regionCode) addIssue(rowIssues, rowNumber, headerMap.template.fields.regionCode, rawRegionCode, "Region code is required.");
+    if (!productCode) addIssue(rowIssues, rowNumber, headerMap.template.fields.productCode, rawProductCode, "Product code is required.");
+    if (!rowDistributorCode) addIssue(rowIssues, rowNumber, headerMap.template.fields.distributorCode, rawDistributorCode, "Distributor code is required.");
     if (rowDistributorCode && rowDistributorCode !== selectedDistributorCode) {
       addIssue(
         rowIssues,
         rowNumber,
-        "Distrb code",
+        headerMap.template.fields.distributorCode,
         rawDistributorCode,
         `Distributor code must be ${selectedDistributorCode} for the selected distributor.`,
       );
     }
-    if (!Number.isFinite(qty)) addIssue(rowIssues, rowNumber, "Qty", rawQty, "Qty must be numeric.");
-    if (!Number.isFinite(bonusQty)) addIssue(rowIssues, rowNumber, "B. Qty", rawBonusQty, "B. Qty must be numeric.");
-    if (!Number.isFinite(value)) addIssue(rowIssues, rowNumber, "Value", rawValue, "Value must be numeric.");
-    if (!period) addIssue(rowIssues, rowNumber, "Invoice Date", rawInvoiceDate, "Invoice Date must be a valid date.");
-
-    const productReference = !isNotAvailable(rawProductCode) ? maps.productByCode.get(productCode) : undefined;
-    const regionReference = !isNotAvailable(rawRegionCode) ? maps.regionByCode.get(regionCode) : undefined;
+    if (!Number.isFinite(qty)) addIssue(rowIssues, rowNumber, headerMap.template.fields.qty, rawQty, "Qty must be numeric.");
+    if (!Number.isFinite(bonusQty)) addIssue(rowIssues, rowNumber, headerMap.template.fields.bonusQty, rawBonusQty, "Bonus quantity must be numeric.");
+    if (!Number.isFinite(value)) addIssue(rowIssues, rowNumber, headerMap.template.fields.value, rawValue, "Value must be numeric.");
+    if (!period) addIssue(rowIssues, rowNumber, headerMap.template.fields.invoiceDate, rawInvoiceDate, "Invoice Date must be a valid date.");
 
     if (productCode && !isNotAvailable(rawProductCode) && !productReference) {
       addIssue(
         rowIssues,
         rowNumber,
-        "Product Code",
+        headerMap.template.fields.productCode,
         rawProductCode,
         `Product Code ${productCode} is not in the product source-of-truth table.`,
       );
@@ -592,9 +865,30 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       addIssue(
         rowIssues,
         rowNumber,
-        "Region Code",
+        headerMap.template.fields.regionCode,
         rawRegionCode,
         `Region Code ${regionCode} is not in the area/region source-of-truth table.`,
+        "warning",
+      );
+    }
+    if (areaCode && !isNotAvailable(rawAreaCode) && !areaReference) {
+      addIssue(
+        rowIssues,
+        rowNumber,
+        headerMap.template.fields.areaCode,
+        rawAreaCode,
+        `Area Code ${areaCode} is not in the area source-of-truth table. Uploaded code is kept for allocation.`,
+        "warning",
+      );
+    }
+    if (brickId && !isNotAvailable(rawBrickId) && !brickReference) {
+      addIssue(
+        rowIssues,
+        rowNumber,
+        headerMap.template.fields.brickId,
+        rawBrickId,
+        `Brick ID ${brickId} is not in the brick source-of-truth table. Uploaded code is kept for allocation.`,
+        "warning",
       );
     }
     if (regionReference && normalizeKey(regionName) !== normalizeKey(regionReference.regionName)) {
@@ -603,30 +897,62 @@ async function parseDistributorSalesWorkbookBuffer(input: {
         rowNumber,
         "Region Name",
         rawRegionName,
-        `Region Name must be ${regionReference.regionName} for Region Code ${regionCode}.`,
+        `Region Name is different from the source table (${regionReference.regionName}) for Region Code ${regionCode}. Uploaded code is kept for allocation.`,
+        "warning",
       );
     }
-    if (productReference && normalizeKey(productName) !== normalizeKey(productReference.productName)) {
+    if (
+      productReference
+      && normalizeDisplay(rawProductName)
+      && normalizeKey(rawProductName) !== normalizeKey(productReference.productName)
+    ) {
       addIssue(
         rowIssues,
         rowNumber,
         "Product Name",
         rawProductName,
-        `Product Name must be ${productReference.productName} for Product Code ${productCode}.`,
+        `Product Name is different from the product source table (${productReference.productName}) for Product Code ${productCode}. Official product reference is used.`,
+        "warning",
+      );
+    }
+    if (areaReference && regionCode && normalizeCode(areaReference.regionCode) !== regionCode) {
+      addIssue(
+        rowIssues,
+        rowNumber,
+        headerMap.template.fields.areaCode,
+        rawAreaCode,
+        `Area Code ${areaCode} belongs to Region Code ${areaReference.regionCode} in the source table, but the upload says ${regionCode}. Uploaded hierarchy is kept.`,
+        "warning",
+      );
+    }
+    if (brickReference && areaCode && normalizeCode(brickReference.areaCode) !== areaCode) {
+      addIssue(
+        rowIssues,
+        rowNumber,
+        headerMap.template.fields.brickId,
+        rawBrickId,
+        `Brick ID ${brickId} belongs to Area Code ${brickReference.areaCode} in the source table, but the upload says ${areaCode}. Uploaded hierarchy is kept.`,
+        "warning",
       );
     }
 
     issues.push(...rowIssues);
     rows.push({
+      areaCode: areaCode || normalizeDisplay(rawAreaCode),
+      areaName,
+      blockCode,
+      blockName,
       bonusQty,
+      brickId: brickId || normalizeDisplay(rawBrickId),
+      brickName,
       distributorCode: rowDistributorCode,
       invoicePeriod: period,
       officialLine: productReference?.line ?? "Unknown",
       productCode: productCode || normalizeDisplay(rawProductCode),
-      productName: productName || "Unknown",
+      productName,
       qty,
       regionCode: regionCode || normalizeDisplay(rawRegionCode),
-      regionName: regionName || "Unknown",
+      regionName,
       rowNumber,
       rawRow: rawImportRow(row, headerMap),
       validationIssues: rowIssues,
@@ -669,6 +995,8 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     rowCount: rows.length,
     sheetName: sheet.name,
     status: blockingReasons.length > 0 ? "blocked" : "validated",
+    templateKey: headerMap.template.key,
+    templateName: headerMap.template.name,
     warningRows,
     parsedRows: rows,
   };
@@ -685,6 +1013,8 @@ export async function validateDistributorSalesWorkbookBuffer(input: {
   return {
     batchId: parsed.batchId,
     blockingReasons: parsed.blockingReasons,
+    byArea: parsed.byArea,
+    byBrick: parsed.byBrick,
     byLine: parsed.byLine,
     byProduct: parsed.byProduct,
     byRegion: parsed.byRegion,
@@ -698,6 +1028,8 @@ export async function validateDistributorSalesWorkbookBuffer(input: {
     rowCount: parsed.rowCount,
     sheetName: parsed.sheetName,
     status: parsed.status,
+    templateKey: parsed.templateKey,
+    templateName: parsed.templateName,
     totals: parsed.totals,
     warningRows: parsed.warningRows,
   };
@@ -705,12 +1037,27 @@ export async function validateDistributorSalesWorkbookBuffer(input: {
 
 export async function loadSalesReferenceData(): Promise<SalesReferenceData> {
   const supabase = getSupabaseAdmin();
-  const [regionsResult, productsResult, distributorsResult] = await Promise.all([
+  const [newRegionsResult, areasResult, blocksResult, bricksResult, productsResult, distributorsResult] = await Promise.all([
     supabase
-      .from("source_of_sales_area_regions")
-      .select("area_code,area_name,region_code,region_name")
+      .from("source_of_sales_regions")
+      .select("region_code,region_name")
       .eq("active", true)
       .order("region_code", { ascending: true }),
+    supabase
+      .from("source_of_sales_areas")
+      .select("area_code,area_name,region_code,region_name")
+      .eq("active", true)
+      .order("area_code", { ascending: true }),
+    supabase
+      .from("source_of_sales_blocks")
+      .select("block_code,block_name,area_code,area_name,region_code,region_name")
+      .eq("active", true)
+      .order("block_code", { ascending: true }),
+    supabase
+      .from("source_of_sales_bricks")
+      .select("brick_id,brick_name,block_code,block_name,area_code,area_name,region_code,region_name")
+      .eq("active", true)
+      .order("brick_id", { ascending: true }),
     supabase
       .from("source_of_sales_products")
       .select("product_code,product_name,factory_price,family,family_code,source,line")
@@ -723,17 +1070,78 @@ export async function loadSalesReferenceData(): Promise<SalesReferenceData> {
       .order("distributor_name", { ascending: true }),
   ]);
 
-  if (regionsResult.error) throw regionsResult.error;
   if (productsResult.error) throw productsResult.error;
   if (distributorsResult.error) throw distributorsResult.error;
 
-  return {
-    regions: (regionsResult.data ?? []).map((row) => ({
+  let areas: SalesAreaReference[] = [];
+  let regions: SalesAreaRegionReference[] = [];
+  const blocks: SalesBlockReference[] = blocksResult.error
+    ? []
+    : (blocksResult.data ?? []).map((row) => ({
+      areaCode: String(row.area_code ?? ""),
+      areaName: String(row.area_name ?? ""),
+      blockCode: String(row.block_code ?? ""),
+      blockName: String(row.block_name ?? ""),
+      regionCode: String(row.region_code ?? ""),
+      regionName: String(row.region_name ?? ""),
+    }));
+  const bricks: SalesBrickReference[] = bricksResult.error
+    ? []
+    : (bricksResult.data ?? []).map((row) => ({
+      areaCode: String(row.area_code ?? ""),
+      areaName: String(row.area_name ?? ""),
+      blockCode: String(row.block_code ?? ""),
+      blockName: String(row.block_name ?? ""),
+      brickId: String(row.brick_id ?? ""),
+      brickName: String(row.brick_name ?? ""),
+      regionCode: String(row.region_code ?? ""),
+      regionName: String(row.region_name ?? ""),
+    }));
+
+  if (!areasResult.error) {
+    areas = (areasResult.data ?? []).map((row) => ({
       areaCode: String(row.area_code ?? ""),
       areaName: String(row.area_name ?? ""),
       regionCode: String(row.region_code ?? ""),
       regionName: String(row.region_name ?? ""),
-    })),
+    }));
+  } else {
+    const legacyRegionsResult = await supabase
+      .from("source_of_sales_area_regions")
+      .select("area_code,area_name,region_code,region_name")
+      .eq("active", true)
+      .order("region_code", { ascending: true });
+    if (legacyRegionsResult.error) throw legacyRegionsResult.error;
+    areas = (legacyRegionsResult.data ?? []).map((row) => ({
+      areaCode: String(row.area_code ?? ""),
+      areaName: String(row.area_name ?? ""),
+      regionCode: String(row.region_code ?? ""),
+      regionName: String(row.region_name ?? ""),
+    }));
+  }
+
+  if (!newRegionsResult.error && (newRegionsResult.data ?? []).length > 0) {
+    regions = (newRegionsResult.data ?? []).map((row) => ({
+      areaCode: "",
+      areaName: "",
+      regionCode: String(row.region_code ?? ""),
+      regionName: String(row.region_name ?? ""),
+    }));
+  } else {
+    const seenRegions = new Set<string>();
+    regions = areas.filter((row) => {
+      const code = normalizeCode(row.regionCode);
+      if (!code || seenRegions.has(code)) return false;
+      seenRegions.add(code);
+      return true;
+    });
+  }
+
+  return {
+    areas,
+    blocks,
+    bricks,
+    regions,
     products: (productsResult.data ?? []).map((row) => ({
       factoryPrice: Number(row.factory_price ?? 0),
       family: String(row.family ?? ""),
@@ -951,6 +1359,7 @@ function mapSourceOfSalesBatch(row: Record<string, unknown>): SourceOfSalesUploa
     period: row.period ? String(row.period) : null,
     rowCount: Number(row.total_rows ?? 0),
     status: String(row.status ?? "blocked") === "validated" ? "validated" : "blocked",
+    templateKey: String(row.template_key ?? ""),
     totalBonusQty: Number(row.total_bonus_qty ?? 0),
     totalQty: Number(row.total_qty ?? 0),
     totalValue: Number(row.total_value ?? 0),
@@ -969,6 +1378,169 @@ export async function listSourceOfSalesUploadBatches(): Promise<SourceOfSalesUpl
 
   if (error) throw error;
   return (data ?? []).map((row) => mapSourceOfSalesBatch(row as Record<string, unknown>));
+}
+
+type SourceOfSalesSummaryRecord = {
+  groupCode: string | null;
+  groupKey: string;
+  groupLabel: string;
+  groupType: string;
+  officialLine: string | null;
+  rowCount: number;
+  totalBonusQty: number;
+  totalQty: number;
+  totalValue: number;
+};
+
+function addDashboardTotals<T extends DistributorSalesTotal>(current: T, row: DistributorSalesTotal) {
+  current.rowCount += row.rowCount;
+  current.totalQty += row.totalQty;
+  current.totalBonusQty += row.totalBonusQty;
+  current.totalValue += row.totalValue;
+}
+
+function aggregateDashboardGroups(
+  summaries: SourceOfSalesSummaryRecord[],
+  groupType: string,
+): SourceOfSalesDashboardGroup[] {
+  const grouped = new Map<string, SourceOfSalesDashboardGroup>();
+  summaries
+    .filter((row) => row.groupType === groupType)
+    .forEach((row) => {
+      const current = grouped.get(row.groupKey) ?? {
+        ...emptyTotals(),
+        code: row.groupCode,
+        key: row.groupKey,
+        label: row.groupLabel,
+        line: row.officialLine,
+      };
+      addDashboardTotals(current, row);
+      grouped.set(row.groupKey, current);
+    });
+
+  return [...grouped.values()]
+    .map(roundedTotals)
+    .sort((left, right) => right.totalValue - left.totalValue || left.label.localeCompare(right.label));
+}
+
+export function buildSourceOfSalesDashboard(input: {
+  availablePeriods: string[];
+  batches: SourceOfSalesUploadBatch[];
+  period: string | null;
+  summaries: SourceOfSalesSummaryRecord[];
+}): SourceOfSalesDashboard {
+  const totals = emptyTotals();
+  const distributorMap = new Map<string, SourceOfSalesDashboardDistributor>();
+
+  input.batches.forEach((batch) => {
+    const batchTotals = {
+      rowCount: batch.rowCount,
+      totalBonusQty: batch.totalBonusQty,
+      totalQty: batch.totalQty,
+      totalValue: batch.totalValue,
+    };
+    addDashboardTotals(totals, batchTotals);
+    const key = batch.distributorCode;
+    const distributor = distributorMap.get(key) ?? {
+      ...emptyTotals(),
+      distributorCode: batch.distributorCode,
+      distributorName: batch.distributorName,
+      sheetCount: 0,
+    };
+    distributor.sheetCount += 1;
+    addDashboardTotals(distributor, batchTotals);
+    distributorMap.set(key, distributor);
+  });
+
+  return {
+    availablePeriods: input.availablePeriods,
+    byArea: aggregateDashboardGroups(input.summaries, "area"),
+    byBrick: aggregateDashboardGroups(input.summaries, "brick"),
+    byDistributor: [...distributorMap.values()]
+      .map(roundedTotals)
+      .sort((left, right) => right.totalValue - left.totalValue || left.distributorName.localeCompare(right.distributorName)),
+    byLine: aggregateDashboardGroups(input.summaries, "line"),
+    byProduct: aggregateDashboardGroups(input.summaries, "product"),
+    byRegion: aggregateDashboardGroups(input.summaries, "region"),
+    period: input.period,
+    sheetCount: input.batches.length,
+    totals: roundedTotals(totals),
+  };
+}
+
+function mapSourceOfSalesSummary(row: Record<string, unknown>): SourceOfSalesSummaryRecord {
+  return {
+    groupCode: row.group_code === null || row.group_code === undefined ? null : String(row.group_code),
+    groupKey: String(row.group_key ?? ""),
+    groupLabel: String(row.group_label ?? ""),
+    groupType: String(row.group_type ?? ""),
+    officialLine: row.official_line === null || row.official_line === undefined ? null : String(row.official_line),
+    rowCount: Number(row.row_count ?? 0),
+    totalBonusQty: Number(row.total_bonus_qty ?? 0),
+    totalQty: Number(row.total_qty ?? 0),
+    totalValue: Number(row.total_value ?? 0),
+  };
+}
+
+export async function loadSourceOfSalesDashboard(period?: string | null): Promise<SourceOfSalesDashboard> {
+  const supabase = getSupabaseAdmin();
+  const periodsResult = await supabase
+    .from("source_of_sales_import_batches")
+    .select("period")
+    .eq("status", "validated")
+    .not("period", "is", null)
+    .order("period", { ascending: false });
+
+  if (periodsResult.error) throw periodsResult.error;
+
+  const availablePeriods = [...new Set((periodsResult.data ?? [])
+    .map((row) => String(row.period ?? ""))
+    .filter(Boolean))]
+    .sort((left, right) => right.localeCompare(left));
+  const selectedPeriod = period && availablePeriods.includes(period) ? period : availablePeriods[0] ?? null;
+
+  if (!selectedPeriod) {
+    return buildSourceOfSalesDashboard({
+      availablePeriods,
+      batches: [],
+      period: null,
+      summaries: [],
+    });
+  }
+
+  const batchesResult = await supabase
+    .from("source_of_sales_import_batches")
+    .select("*")
+    .eq("status", "validated")
+    .eq("period", selectedPeriod)
+    .order("created_at", { ascending: false });
+
+  if (batchesResult.error) throw batchesResult.error;
+
+  const batches = (batchesResult.data ?? []).map((row) => mapSourceOfSalesBatch(row as Record<string, unknown>));
+  const batchIds = batches.map((batch) => batch.batchId);
+  if (batchIds.length === 0) {
+    return buildSourceOfSalesDashboard({
+      availablePeriods,
+      batches,
+      period: selectedPeriod,
+      summaries: [],
+    });
+  }
+
+  const summariesResult = await supabase
+    .from("source_of_sales_import_summaries")
+    .select("group_type,group_key,group_label,group_code,official_line,row_count,total_qty,total_bonus_qty,total_value")
+    .in("batch_id", batchIds);
+
+  if (summariesResult.error) throw summariesResult.error;
+
+  return buildSourceOfSalesDashboard({
+    availablePeriods,
+    batches,
+    period: selectedPeriod,
+    summaries: (summariesResult.data ?? []).map((row) => mapSourceOfSalesSummary(row as Record<string, unknown>)),
+  });
 }
 
 function sourceOfSalesSummaryRows(batchId: string, result: DistributorSalesValidationResult) {
@@ -997,6 +1569,18 @@ function sourceOfSalesSummaryRows(batchId: string, result: DistributorSalesValid
       total_bonus_qty: row.totalBonusQty,
       total_value: row.totalValue,
     })),
+    ...result.byArea.map((row) => ({
+      batch_id: batchId,
+      group_type: "area",
+      group_key: `${row.areaCode}|${row.areaName}|${row.regionCode}`,
+      group_label: row.areaName,
+      group_code: row.areaCode,
+      official_line: row.regionCode,
+      row_count: row.rowCount,
+      total_qty: row.totalQty,
+      total_bonus_qty: row.totalBonusQty,
+      total_value: row.totalValue,
+    })),
     ...result.byProduct.map((row) => ({
       batch_id: batchId,
       group_type: "product",
@@ -1004,6 +1588,18 @@ function sourceOfSalesSummaryRows(batchId: string, result: DistributorSalesValid
       group_label: row.productName,
       group_code: row.productCode,
       official_line: row.officialLine,
+      row_count: row.rowCount,
+      total_qty: row.totalQty,
+      total_bonus_qty: row.totalBonusQty,
+      total_value: row.totalValue,
+    })),
+    ...result.byBrick.map((row) => ({
+      batch_id: batchId,
+      group_type: "brick",
+      group_key: `${row.brickId}|${row.brickName}|${row.areaCode}|${row.regionCode}`,
+      group_label: row.brickName,
+      group_code: row.brickId,
+      official_line: row.areaCode,
       row_count: row.rowCount,
       total_qty: row.totalQty,
       total_bonus_qty: row.totalBonusQty,
@@ -1018,7 +1614,13 @@ async function insertSourceOfSalesRows(
   rows: ParsedDistributorRow[],
 ) {
   const inserts = rows.map((row) => ({
+    area_code: row.areaCode,
+    area_name: row.areaName,
     batch_id: batchId,
+    block_code: row.blockCode,
+    block_name: row.blockName,
+    brick_id: row.brickId,
+    brick_name: row.brickName,
     row_number: row.rowNumber,
     distributor_code: row.distributorCode,
     invoice_period: row.invoicePeriod,
@@ -1064,7 +1666,7 @@ export async function createSourceOfSalesUpload(input: {
     .insert({
       distributor_code: result.distributor.code,
       distributor_name: result.distributor.name,
-      template_key: "overseas_ps",
+      template_key: result.templateKey,
       file_name: result.fileName,
       sheet_name: result.sheetName,
       period: result.period,
