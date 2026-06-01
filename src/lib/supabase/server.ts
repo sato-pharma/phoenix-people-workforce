@@ -49,6 +49,11 @@ function createSupabaseClient(apiKey: string): SupabaseClient {
   );
 }
 
+function getOptionalEnv(name: string) {
+  const value = process.env[name];
+  return value && value.trim() ? value : null;
+}
+
 /**
  * Admin client using service role key.
  * Bypasses RLS. Use ONLY for system jobs, background tasks, or admin-only logic.
@@ -63,4 +68,15 @@ export function getSupabaseAdmin(): SupabaseClient {
  */
 export function getSupabaseUserClient(): SupabaseClient {
   return createSupabaseClient(getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"));
+}
+
+/**
+ * Server-only Auth bridge client. Prefer anon key, but allow service-role fallback
+ * on previews where the public anon env was not configured. The service key never
+ * leaves the server; the returned session is still a real user JWT.
+ */
+export function getSupabaseAuthBridgeClient(): SupabaseClient {
+  return createSupabaseClient(
+    getOptionalEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY") ?? getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
+  );
 }

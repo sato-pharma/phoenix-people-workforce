@@ -185,6 +185,18 @@ export async function runAuthSessionTests() {
     new URL("../app/api/auth/login/route.ts", import.meta.url),
     "utf8",
   );
+  const supabaseServerSource = readFileSync(
+    new URL("../src/lib/supabase/server.ts", import.meta.url),
+    "utf8",
+  );
+  const supabaseIdentitySource = readFileSync(
+    new URL("../src/lib/auth/supabase-identity.ts", import.meta.url),
+    "utf8",
+  );
+  const passwordSetupSource = readFileSync(
+    new URL("../src/lib/auth/password-setup.ts", import.meta.url),
+    "utf8",
+  );
   const heartbeatRouteSource = readFileSync(
     new URL("../app/api/auth/heartbeat/route.ts", import.meta.url),
     "utf8",
@@ -251,6 +263,19 @@ export async function runAuthSessionTests() {
   assert.match(loginRouteSource, /createAppSession/, "login route must create an app_sessions row before issuing a cookie");
   assert.match(loginRouteSource, /auth_bridge_unavailable/, "privileged bridge failure must fail login");
   assert.match(loginRouteSource, /supabaseSessionAvailable:\s*Boolean\(supabaseSession\)/, "bridge fallback status must be recorded");
+  assert.match(loginRouteSource, /persistSupabaseAuthIdentityLink/, "login bridge repair must persist repaired auth/profile links");
+  assert.match(passwordSetupSource, /persistSupabaseAuthIdentityLink/, "password setup must persist repaired auth/profile links");
+  assert.match(supabaseServerSource, /getSupabaseAuthBridgeClient/, "server must expose a server-only auth bridge client");
+  assert.match(
+    supabaseServerSource,
+    /NEXT_PUBLIC_SUPABASE_ANON_KEY[\s\S]*SUPABASE_SERVICE_ROLE_KEY/,
+    "auth bridge client must recover on previews missing the anon key without exposing service role to the browser",
+  );
+  assert.match(supabaseIdentitySource, /findAuthUserIdByEmail/, "auth provisioning must recover stale stored auth_user_id links by email");
+  assert.match(supabaseIdentitySource, /listUsers/, "stale auth identity recovery must search Supabase Auth users");
+  assert.match(supabaseIdentitySource, /persistSupabaseAuthIdentityLink/, "auth identity helper must persist app/profile auth links");
+  assert.match(supabaseIdentitySource, /\.from\("app_auth_users"\)[\s\S]*auth_user_id/, "auth identity helper must update app_auth_users auth link");
+  assert.match(supabaseIdentitySource, /\.from\("user_access_profiles"\)[\s\S]*\.upsert/, "auth identity helper must upsert user_access_profiles auth link");
 
   assert.match(heartbeatRouteSource, /resolveSessionState\(sessionToken, \{ refreshIdle: true \}\)/, "heartbeat must use server validation and refresh DB idle expiry");
   assert.match(heartbeatRouteSource, /auth:heartbeat/, "heartbeat must be API-bucket rate limited");

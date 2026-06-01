@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 
 import { systemAuthEmailText } from "@/config/system-settings";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
+import { persistSupabaseAuthIdentityLink, provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -346,7 +346,7 @@ export async function completePasswordSetup(input: { password: string; token: st
   }
 
   try {
-    await provisionSupabaseAuthIdentity({
+    const identity = await provisionSupabaseAuthIdentity({
       authUserId: currentUser.auth_user_id ?? null,
       email: currentUser.email ?? null,
       hrId: currentUser.hr_id ?? tokenRow.login_id,
@@ -356,6 +356,19 @@ export async function completePasswordSetup(input: { password: string; token: st
       managerHrId: currentUser.manager_hr_id ?? null,
       name: currentUser.name ?? tokenRow.login_id,
       password,
+      role: String(currentUser.role ?? "Employee") as Parameters<typeof provisionSupabaseAuthIdentity>[0]["role"],
+    });
+    await persistSupabaseAuthIdentityLink({
+      authEmail: identity.authEmail,
+      authUserId: identity.authUserId,
+      coarseRole: identity.coarseRole,
+      email: currentUser.email ?? null,
+      hrId: currentUser.hr_id ?? tokenRow.login_id,
+      isActive: Boolean(currentUser.is_active),
+      line: currentUser.line ?? null,
+      loginId: tokenRow.login_id,
+      managerHrId: currentUser.manager_hr_id ?? null,
+      name: currentUser.name ?? tokenRow.login_id,
       role: String(currentUser.role ?? "Employee") as Parameters<typeof provisionSupabaseAuthIdentity>[0]["role"],
     });
   } catch (error) {
