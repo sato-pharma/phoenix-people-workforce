@@ -23,7 +23,7 @@ import { startTransition, useEffect, useMemo, useState } from "react";
 
 import { AdminManagerExpenseModal } from "@/components/outstation/admin-manager-expense-modal";
 
-import { AdminCallout, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
+import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { OutstationReviewMap } from "@/components/outstation/outstation-review-map";
 import { TerritoryValidationPanel } from "@/components/outstation/territory-validation-panel";
 import { Button } from "@/components/ui/button";
@@ -709,12 +709,12 @@ export function OutstationRequestsAdmin({
             </Button>
           )}
           badges={(
-            <div className="flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 font-semibold text-[#EA580C]">Requests: {filtered.length}</span>
-              <span className="rounded-full border border-[#DDE6F1] bg-white/85 px-3 py-2 font-semibold text-[#64748B]">Expected: {formatCurrency(totals.expected)}</span>
-              <span className="rounded-full border border-[#DDE6F1] bg-white/85 px-3 py-2 font-semibold text-[#64748B]">Claimed: {formatCurrency(totals.claimed)}</span>
-              <span className="rounded-full border border-[#A7F3D0] bg-[#ECFDF5] px-3 py-2 font-semibold text-[#047857]">Approved: {totals.approved}</span>
-            </div>
+            <>
+              <AdminInsightChip tone="orange">Requests: {filtered.length}</AdminInsightChip>
+              <AdminInsightChip tone="slate">Expected: {formatCurrency(totals.expected)}</AdminInsightChip>
+              <AdminInsightChip tone="slate">Claimed: {formatCurrency(totals.claimed)}</AdminInsightChip>
+              <AdminInsightChip tone="emerald">Approved: {totals.approved}</AdminInsightChip>
+            </>
           )}
         />
 

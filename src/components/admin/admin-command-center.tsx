@@ -607,11 +607,11 @@ export function AdminCommandCenter({
 
   return (
     <div className="space-y-6">
-        <section className="relative overflow-hidden border border-slate-950 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] shadow-[0_28px_80px_rgba(15,23,42,0.38)]">
+        <section className="relative overflow-hidden border border-[#1a1a1a] bg-[linear-gradient(135deg,#000000_0%,#070707_55%,#1C0E02_100%)] shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
           <div aria-hidden="true" className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:44px_44px]" />
           <div aria-hidden="true" className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-orange-500/25 blur-[90px]" />
-          <div aria-hidden="true" className="pointer-events-none absolute -bottom-28 right-10 h-72 w-72 rounded-full bg-sky-500/20 blur-[100px]" />
-          <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500/0 via-orange-400/80 to-sky-500/0" />
+          <div aria-hidden="true" className="pointer-events-none absolute -bottom-28 right-10 h-72 w-72 rounded-full bg-amber-500/15 blur-[100px]" />
+          <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500/0 via-orange-400/80 to-orange-500/0" />
           <div className="relative grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:p-8 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div>
               <div className="inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-100 shadow-[0_0_24px_rgba(249,115,22,0.25)]">
@@ -655,8 +655,8 @@ export function AdminCommandCenter({
             </div>
 
             {welcomeProfile ? (
-              <div className="group relative mx-auto flex h-[260px] w-full max-w-[260px] items-center justify-center border border-orange-300/25 bg-gradient-to-tr from-orange-500/20 via-white/10 to-sky-500/20 p-2 shadow-[0_24px_54px_rgba(0,0,0,0.24)] sm:h-[310px] sm:max-w-[300px] lg:mx-0 lg:h-[330px]">
-                <div className="absolute -inset-1 bg-gradient-to-br from-orange-300/35 via-white/0 to-sky-300/30 opacity-80 blur-sm transition-opacity duration-300 group-hover:opacity-100" />
+              <div className="group relative mx-auto flex h-[260px] w-full max-w-[260px] items-center justify-center border border-orange-300/25 bg-gradient-to-tr from-orange-500/20 via-white/10 to-amber-500/20 p-2 shadow-[0_24px_54px_rgba(0,0,0,0.24)] sm:h-[310px] sm:max-w-[300px] lg:mx-0 lg:h-[330px]">
+                <div className="absolute -inset-1 bg-gradient-to-br from-orange-300/35 via-white/0 to-amber-300/30 opacity-80 blur-sm transition-opacity duration-300 group-hover:opacity-100" />
                 <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-white/95 shadow-inner">
                   {profileImage ? (
                     <Image

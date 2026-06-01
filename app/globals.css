@@ -171,38 +171,60 @@ body {
 }
 
 .phoenix-admin-sidebar-scroll {
-  scrollbar-color: rgba(251, 146, 60, 0.88) transparent;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
+  /* Soft fade at the scroll edges so nav items melt away instead of being
+     hard-cut against the search box / sidebar bottom. The fade thickness is
+     toggled per-edge by data-fade-top / data-fade-bottom (set in sidebar.tsx),
+     so the first/last items stay crisp when there is nothing more to scroll. */
+  --sb-fade-top: 0px;
+  --sb-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--sb-fade-top),
+    #000 calc(100% - var(--sb-fade-bottom)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--sb-fade-top),
+    #000 calc(100% - var(--sb-fade-bottom)),
+    transparent 100%
+  );
+}
+
+.phoenix-admin-sidebar-scroll[data-fade-top="true"] {
+  --sb-fade-top: 24px;
+}
+
+.phoenix-admin-sidebar-scroll[data-fade-bottom="true"] {
+  --sb-fade-bottom: 28px;
 }
 
 .phoenix-admin-sidebar-scroll::-webkit-scrollbar {
-  width: 10px;
+  width: 8px;
 }
 
 .phoenix-admin-sidebar-scroll::-webkit-scrollbar-track {
   background: transparent;
-  border-radius: 999px;
-  margin-block: 14px;
+  margin-block: 8px;
 }
 
 .phoenix-admin-sidebar-scroll::-webkit-scrollbar-thumb {
-  background:
-    linear-gradient(180deg, rgba(255, 184, 93, 0.98), rgba(249, 115, 22, 0.98));
+  background: rgba(148, 163, 184, 0.32);
   background-clip: padding-box;
-  border: 3px solid transparent;
+  border: 2px solid transparent;
   border-radius: 999px;
-  min-height: 56px;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
-    0 0 16px rgba(249, 115, 22, 0.5);
+  min-height: 48px;
+  transition: background 0.15s ease;
 }
 
 .phoenix-admin-sidebar-scroll::-webkit-scrollbar-thumb:hover {
-  background:
-    linear-gradient(180deg, #ffd08a, #fb923c 45%, #ea580c);
+  background: rgba(249, 115, 22, 0.7);
   background-clip: padding-box;
-  border: 2px solid transparent;
 }
 
 .phoenix-employee-sidebar-scroll {
@@ -576,14 +598,6 @@ body {
   height: 100%;
   transform-origin: left center;
   width: 55%;
-}
-
-html[data-route-transition-pending] main {
-  transition: opacity 160ms ease;
-}
-
-html[data-route-transition-pending] main {
-  opacity: 0.94;
 }
 
 @keyframes phoenix-route-progress {

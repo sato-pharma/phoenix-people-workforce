@@ -111,7 +111,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
         title="Fingerprint Attendance Report"
         actions={(
           <a
-            className={`inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-transparent px-4 py-2 text-sm font-medium text-text transition hover:bg-bg-muted ${!hasDateRange || rows.length === 0 ? "pointer-events-none opacity-50" : ""}`}
+            className={`inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 backdrop-blur transition hover:border-[#FDBA74] hover:bg-white/[0.16] hover:text-white ${!hasDateRange || rows.length === 0 ? "pointer-events-none opacity-50" : ""}`}
             href={exportHref}
           >
             <Download className="h-4 w-4" />
