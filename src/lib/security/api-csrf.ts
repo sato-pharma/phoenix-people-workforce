@@ -1,35 +1,24 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { isSameOriginMutationRequest } from "@/lib/security/csrf";
-
-function normalizeLocalhost(value: string) {
-  const url = new URL(value);
-  const hostname = url.hostname.replace(/^\[(.*)\]$/, "$1").toLowerCase();
-  if (hostname === "127.0.0.1" || hostname === "::1") {
-    url.hostname = "localhost";
-  }
-  return url.origin;
-}
+import {
+  isAllowedPhoenixOrigin,
+  normalizeOrigin,
+  requestOriginCandidates,
+} from "@/lib/security/origins";
 
 function plainRequestIsSameOrigin(request: Request) {
-  const expectedOrigin = normalizeLocalhost(request.url);
-  const originHeader = request.headers.get("origin");
-  if (originHeader) {
-    try {
-      return normalizeLocalhost(originHeader) === expectedOrigin;
-    } catch {
-      return false;
-    }
-  }
+  const candidates = requestOriginCandidates(request);
+  const expectedOrigins = new Set(
+    [candidates.forwardedOrigin, candidates.hostOrigin, candidates.requestUrlOrigin]
+      .filter((origin): origin is string => Boolean(origin && isAllowedPhoenixOrigin(origin))),
+  );
 
-  const refererHeader = request.headers.get("referer");
-  if (refererHeader) {
-    try {
-      return normalizeLocalhost(refererHeader) === expectedOrigin;
-    } catch {
-      return false;
-    }
-  }
+  const originHeader = normalizeOrigin(request.headers.get("origin"));
+  if (originHeader) return expectedOrigins.has(originHeader);
+
+  const refererOrigin = normalizeOrigin(request.headers.get("referer"));
+  if (refererOrigin) return expectedOrigins.has(refererOrigin);
 
   return false;
 }

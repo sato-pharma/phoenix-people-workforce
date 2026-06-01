@@ -57,8 +57,10 @@ function assertFallbackRateLimit(bucketKey: string, limit: number, windowMs: num
 function isRateLimitSchemaMissing(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   return (
+    message.includes("api_rate_limit_consume") ||
     message.includes("api_rate_limit_buckets") ||
     message.includes("could not find the table") ||
+    message.includes("could not find the function") ||
     message.includes("schema cache") ||
     (message.includes("relation") && message.includes("does not exist"))
   );
@@ -76,6 +78,26 @@ export async function assertApiRateLimit(input: {
 
   try {
     const supabase = getSupabaseAdmin();
+    const { data: rpcData, error: rpcError } = await supabase
+      .rpc("api_rate_limit_consume", {
+        p_bucket_key: bucketKey,
+        p_limit: input.limit,
+        p_window_ms: input.windowMs,
+      })
+      .maybeSingle();
+
+    if (!rpcError && rpcData) {
+      const row = rpcData as { allowed?: boolean | null; retry_after_seconds?: number | null };
+      if (!row.allowed) {
+        throw new ApiRateLimitError(Math.max(1, Number(row.retry_after_seconds ?? 1)));
+      }
+      return;
+    }
+
+    if (rpcError && !isRateLimitSchemaMissing(rpcError)) {
+      throw rpcError;
+    }
+
     const { data, error } = await supabase
       .from("api_rate_limit_buckets")
       .select("bucket_key,request_count,reset_at")

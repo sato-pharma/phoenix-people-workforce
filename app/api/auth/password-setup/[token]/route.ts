@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { completePasswordSetup } from "@/lib/auth/password-setup";
+import {
+  assertApiRateLimit,
+  isApiRateLimitError,
+  rateLimitIdentity,
+} from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +16,25 @@ export async function POST(
 ) {
   try {
     const { token } = await context.params;
+    try {
+      await assertApiRateLimit({
+        identifier: rateLimitIdentity({ request, token }),
+        limit: 10,
+        scope: "auth:password_setup",
+        windowMs: 15 * 60 * 1000,
+      });
+    } catch (error) {
+      if (!isApiRateLimitError(error)) throw error;
+      return NextResponse.json(
+        {
+          error: "rate_limited",
+          message: "Too many password setup attempts. Please try again later.",
+          retryAfterSeconds: error.retryAfterSeconds,
+        },
+        { status: 429 },
+      );
+    }
+
     const payload = (await request.json().catch(() => ({}))) as {
       confirmPassword?: string;
       password?: string;
