@@ -259,6 +259,38 @@ function buildDataHealthFromStats(
   };
 }
 
+// Lightweight health summary for the Command Center, derived from the cheap
+// count-based platform metrics + sales linkage counts it already fetches — so the
+// page never pays for the full governance audit (which scans the entire
+// sales_records table). The exact audit lives on /admin/data-health.
+function buildDataHealthFromMetrics(
+  platformMetrics: Awaited<ReturnType<typeof getPlatformMetrics>>,
+  salesCounts: { linkedRows: number; totalRows: number },
+): DataHealthMetrics {
+  const activeEmployees = platformMetrics.workforce.activeEmployees;
+  const missingManager = platformMetrics.workforce.employeesWithoutManagers;
+  const healthyEmployees = Math.max(0, activeEmployees - missingManager);
+  const employeeHealthRate = activeEmployees > 0 ? (healthyEmployees / activeEmployees) * 100 : 100;
+  const salesLinkageRate = salesCounts.totalRows > 0 ? (salesCounts.linkedRows / salesCounts.totalRows) * 100 : 100;
+
+  return {
+    attendanceMappingIssues: platformMetrics.attendance.missingDeviceMappings,
+    attendanceReadinessRate: platformMetrics.attendance.mappingReadinessRate,
+    leaveApprovedRequests: platformMetrics.leave.approvedRequests,
+    leavePendingRequests: platformMetrics.leave.pendingRequests,
+    leaveRejectedRequests: platformMetrics.leave.rejectedRequests,
+    employeeHealthRate,
+    healthyEmployees,
+    missingJobTitle: 0,
+    missingManager,
+    salesLinkageBatch: null,
+    salesLinkageRate,
+    totalEmployees: activeEmployees,
+    totalStructure: platformMetrics.workforce.totalStructure,
+    vacantPositions: platformMetrics.workforce.openVacancies,
+  };
+}
+
 async function fetchPayrollEligibleCount(): Promise<{ count: number; error: string | null }> {
   const supabase = getSupabaseAdmin();
   try {
@@ -683,10 +715,9 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   let executiveSignals: ExecutiveSignals | null = null;
 
   try {
-    const [executiveSignalsResult, platformMetrics, dataHealthStats, salesHealth, eligibleResult, operations] = await Promise.all([
+    const [executiveSignalsResult, platformMetrics, salesHealth, eligibleResult, operations] = await Promise.all([
       executiveSignalsPromise,
       getPlatformMetrics(accessContext),
-      getDataHealthStats().catch(() => null),
       showSalesModules ? fetchSalesHealthCounts() : Promise.resolve({ error: null, linkedRows: 0, totalRows: 0 }),
       showFinancialModules ? fetchPayrollEligibleCount() : Promise.resolve({ count: 0, error: null }),
       getOperationalRecentActivity(accessContext, { limit: 5 }),
@@ -696,11 +727,11 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     dataUnavailable.push(...platformMetrics.dataUnavailable);
     if (salesHealth.error) dataUnavailable.push(salesHealth.error);
     if (eligibleResult.error) dataUnavailable.push(eligibleResult.error);
-    if (!dataHealthStats) dataUnavailable.push("Data health structure totals unavailable.");
 
-    const health = dataHealthStats
-      ? buildDataHealthFromStats(dataHealthStats, salesHealth)
-      : buildDataHealth(null, salesHealth);
+    // Derived from the cheap count-based metrics already loaded above — NOT the full
+    // governance audit (which scans the entire sales_records table and was the cause
+    // of the ~10s Command Center load). The exact audit lives on /admin/data-health.
+    const health = buildDataHealthFromMetrics(platformMetrics, salesHealth);
 
     const overview = {
       attendance: {

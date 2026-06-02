@@ -673,16 +673,37 @@ html:has(.admin-shell)::-webkit-scrollbar-button:single-button:vertical:incremen
   font-family: var(--font-display), serif;
 }
 
-/* ───────────────────────────────────────────────────────────────────────────
-   Admin shell design rule: SQUARE CORNERS everywhere.
-   Zeroes border-radius for every element inside the admin shell, except genuinely
-   circular indicators (anything using `rounded-full` — status dots, pings, avatars).
-   The employee portal is unaffected because it is not wrapped in `.admin-shell`.
-   This enforces the rule globally so current and future admin pages stay square
-   without per-file edits.
-   ─────────────────────────────────────────────────────────────────────────── */
-.admin-shell [class*="rounded"]:not([class*="rounded-full"]) {
+/* ═══════════════════════════════════════════════════════════════════════════
+   PERMANENT ADMIN-SHELL DESIGN RULES — LOCKED. Do not change or override these.
+   They apply to every current and future page inside `.admin-shell`. The employee
+   portal is unaffected (it is not wrapped in `.admin-shell`).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* RULE 1 — SQUARE CORNERS everywhere. NOTHING is rounded or semi-rounded.
+   Zeroes border-radius for EVERY element inside the admin shell — including
+   `rounded-full` pills, chips, badges, and dots. Everything is sharp/"shredded". */
+.admin-shell [class*="rounded"] {
   border-radius: 0 !important;
+}
+
+/* RULE 2 — TABLES.
+   Every <table> in the admin shell uses a header bar in the SAME flat black as the
+   sidebar/top bar (#000000), and a thin light-orange hairline on every cell (rows
+   AND columns) for a tidy, uniform grid. */
+.admin-shell table {
+  border-collapse: collapse;
+}
+
+.admin-shell thead th {
+  background-color: #000000 !important;
+  color: #f1f5f9 !important;
+  font-size: 0.78rem !important;
+  text-align: center !important;
+}
+
+.admin-shell th,
+.admin-shell td {
+  border: 1px solid rgba(249, 115, 22, 0.22) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -250,7 +250,11 @@ const dataHealthAccessContext: AccessContext = {
   scope: "system",
   source: "system",
 };
-const DATA_HEALTH_STATS_CACHE_TTL_MS = 30_000;
+// The full governance audit scans every sales_records row to build the classification
+// breakdown, so it is intentionally heavy (it only runs on /admin/data-health now that
+// the Command Center derives its summary cheaply). A longer cache keeps repeat visits
+// instant without staling the audit meaningfully — it is a read-only review surface.
+const DATA_HEALTH_STATS_CACHE_TTL_MS = 120_000;
 let dataHealthStatsCache: { data: DataHealthStats; timestamp: number } | null = null;
 
 function normalizeHealthKey(value: unknown) {
