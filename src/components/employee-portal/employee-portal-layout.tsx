@@ -14,6 +14,7 @@ import { PageTransition } from "@/components/ui/page-transition";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { isEmployeePortalOwnedRoute } from "@/lib/employee-portal/routes";
+import { systemAssets } from "@/config/system-settings";
 
 const EMPLOYEE_SIDEBAR_COLLAPSED_KEY = "phoenix-employee-sidebar-collapsed";
 const EMPLOYEE_SIDEBAR_COLLAPSED_EVENT = "phoenix-employee-sidebar-collapsed-change";
@@ -359,12 +360,6 @@ export function EmployeePortalTopNav({
 
   const employeeName = data.employee.fullName.trim();
   const firstName = employeeName.split(/\s+/)[0] || "Employee";
-  const initials = employeeName
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part.charAt(0))
-    .join("")
-    .toUpperCase() || "EM";
 
   const menuSections = buildEmployeePortalSections(visibility);
   const searchTerm = searchQuery.trim().toLowerCase();
@@ -512,9 +507,7 @@ export function EmployeePortalTopNav({
               onClick={() => setUserMenuOpen((open) => !open)}
               type="button"
             >
-              <div className="flex h-7 w-7 items-center justify-center rounded bg-gradient-to-br from-orange-500 to-orange-600 text-[10px] font-bold text-white">
-                {initials}
-              </div>
+              <Image alt="Phoenix" className="h-7 w-7 shrink-0 rounded object-cover" height={28} src={systemAssets.adminRailMark} width={28} />
               <div className="hidden pr-0.5 text-left sm:block">
                 <p className="text-xs font-semibold text-slate-800 whitespace-nowrap">{firstName}</p>
               </div>
@@ -611,9 +604,7 @@ export function EmployeePortalTopNav({
         <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-3">
           <div className="rounded border border-orange-100 bg-orange-50 p-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-gradient-to-br from-orange-500 to-orange-600 text-[10px] font-bold text-white">
-                {initials}
-              </div>
+              <Image alt="Phoenix" className="h-8 w-8 shrink-0 rounded object-cover" height={32} src={systemAssets.adminRailMark} width={32} />
               <div>
                 <p className="text-sm font-semibold text-slate-900">{data.employee.fullName}</p>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">{data.employee.roleLabel}</p>

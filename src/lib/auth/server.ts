@@ -25,6 +25,7 @@ import {
   evaluateEmployeeLifecycleGate,
   type SessionLifecycleGate,
 } from "@/lib/auth/session-lifecycle";
+import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cookies, headers } from "next/headers";
@@ -89,6 +90,8 @@ export type ViewerIdentity = {
   displayName: string;
   initials: string;
   roleLabel: string;
+  /** Profile photo for the signed-in user, or null to fall back to initials. */
+  imageUrl?: string | null;
 };
 
 export type ResolvedSessionState = {
@@ -433,6 +436,7 @@ export async function resolveViewerIdentityFromPage(accessContext?: AccessContex
       displayName: fallbackName,
       initials: buildInitials(fallbackName),
       roleLabel: fallbackRole,
+      imageUrl: employeeProfileImageForHrId(access.hrId),
     };
   }
 
@@ -464,6 +468,7 @@ export async function resolveViewerIdentityFromPage(accessContext?: AccessContex
     displayName,
     initials: buildInitials(displayName),
     roleLabel,
+    imageUrl: employeeProfileImageForHrId(row?.hr_id ?? access.hrId),
   };
 }
 

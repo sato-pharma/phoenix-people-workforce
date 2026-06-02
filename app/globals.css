@@ -217,6 +217,66 @@ body {
   background-clip: padding-box;
 }
 
+/* Page (document) scrollbar on admin pages — mirrors the sidebar scrollbar exactly
+   (thin slate thumb, transparent track, orange on hover). Scoped with :has so the
+   employee portal and login pages keep their default browser scrollbar. */
+html:has(.admin-shell) {
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+  scrollbar-width: thin;
+}
+
+html:has(.admin-shell)::-webkit-scrollbar {
+  width: 8px;
+}
+
+html:has(.admin-shell)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html:has(.admin-shell)::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.32);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  min-height: 48px;
+  transition: background 0.15s ease;
+}
+
+html:has(.admin-shell)::-webkit-scrollbar-thumb:hover {
+  background: rgba(249, 115, 22, 0.7);
+  background-clip: padding-box;
+}
+
+/* Orange up/down arrow buttons at the top and bottom of the admin scrollbars
+   (both the sidebar and the page). Only the single up arrow (top) and single down
+   arrow (bottom) are shown; all other webkit button slots stay hidden. */
+.phoenix-admin-sidebar-scroll::-webkit-scrollbar-button,
+html:has(.admin-shell)::-webkit-scrollbar-button {
+  display: none;
+}
+
+.phoenix-admin-sidebar-scroll::-webkit-scrollbar-button:single-button:vertical:decrement,
+html:has(.admin-shell)::-webkit-scrollbar-button:single-button:vertical:decrement {
+  display: block;
+  height: 12px;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 8px 8px;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20fill='%23F97316'%20d='M4%202.4%206.6%205.6%201.4%205.6z'/%3E%3C/svg%3E");
+}
+
+.phoenix-admin-sidebar-scroll::-webkit-scrollbar-button:single-button:vertical:increment,
+html:has(.admin-shell)::-webkit-scrollbar-button:single-button:vertical:increment {
+  display: block;
+  height: 12px;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 8px 8px;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20fill='%23F97316'%20d='M4%205.6%201.4%202.4%206.6%202.4z'/%3E%3C/svg%3E");
+}
+
 .phoenix-employee-sidebar-scroll {
   scrollbar-color: rgba(240, 90, 26, 0.72) rgba(255, 241, 230, 0.42);
   scrollbar-gutter: stable;
