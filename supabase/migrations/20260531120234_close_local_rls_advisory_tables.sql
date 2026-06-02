@@ -301,8 +301,16 @@ begin
   end loop;
 end $$;
 
-revoke all on table public.auth_login_attempts from authenticated;
-revoke all on table public.messages from authenticated;
+do $$
+begin
+  if to_regclass('public.auth_login_attempts') is not null then
+    revoke all on table public.auth_login_attempts from authenticated;
+  end if;
+
+  if to_regclass('public.messages') is not null then
+    revoke all on table public.messages from authenticated;
+  end if;
+end $$;
 
 grant select, insert, update, delete on table public.user_access_profiles to authenticated;
 grant select, insert, update, delete on table public.employees to authenticated;

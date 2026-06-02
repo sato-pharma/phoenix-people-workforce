@@ -805,6 +805,9 @@ begin
     execute 'drop policy if exists sales_records_admin_insert on public.sales_records';
     execute 'drop policy if exists sales_records_admin_update on public.sales_records';
     execute 'drop policy if exists sales_records_admin_delete on public.sales_records';
+    execute 'drop policy if exists sales_records_hr_admin_insert on public.sales_records';
+    execute 'drop policy if exists sales_records_hr_admin_update on public.sales_records';
+    execute 'drop policy if exists sales_records_hr_admin_delete on public.sales_records';
     execute 'drop policy if exists sales_records_hr_insert on public.sales_records';
     execute 'drop policy if exists sales_records_hr_update on public.sales_records';
     execute 'drop policy if exists sales_records_hr_delete on public.sales_records';

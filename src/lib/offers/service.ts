@@ -1,6 +1,7 @@
 import crypto from "crypto";
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { assertOfferWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { sendJobOfferEmail } from "@/lib/offers/email";
@@ -1359,6 +1360,7 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
     template,
     territory: offer.area_scope,
   });
+  invalidateExecutiveDashboardCache("offer created", ["offers", "recruitment"]);
 
   return {
     acceptUrl,
@@ -1426,6 +1428,7 @@ export async function runOfferAdminAction(
       territoryName: updated.area_scope,
     });
 
+    invalidateExecutiveDashboardCache("offer resent", ["offers", "recruitment"]);
     return {
       acceptUrl,
       dashboard: await getOfferDashboard(),
@@ -1461,6 +1464,7 @@ export async function runOfferAdminAction(
       voidedReservedEmployeeHrId: offer.reserved_employee_hr_id ?? null,
     }, actorHrId);
 
+    invalidateExecutiveDashboardCache("offer voided", ["offers", "recruitment"]);
     return {
       dashboard: await getOfferDashboard(),
       offer: (await hydrateOffers([updated]))[0],
@@ -1483,6 +1487,7 @@ export async function runOfferAdminAction(
   });
   await insertAudit(offer.id, `offer_${status}`, "hr", { revokedAt: now }, actorHrId);
 
+  invalidateExecutiveDashboardCache("offer admin action", ["offers", "recruitment"]);
   return {
     dashboard: await getOfferDashboard(),
     offer: (await hydrateOffers([updated]))[0],
@@ -1681,6 +1686,7 @@ export async function decideOffer(
     });
   }
 
+  invalidateExecutiveDashboardCache("offer candidate decision", ["offers", "recruitment"]);
   return {
     alreadyFinal: false,
     message:
@@ -1781,6 +1787,7 @@ export async function approveAcceptedOffer(
     title: "Hire approved",
     tone: "success",
   });
+  invalidateExecutiveDashboardCache("accepted offer approved", ["offers", "recruitment", "employees", "vacancies", "payroll", "probation"]);
 
   return {
     dashboard: await getOfferDashboard(),

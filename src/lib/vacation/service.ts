@@ -13,6 +13,7 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import {
   getEmployeeDirectory,
   getEmployeeDirectoryRows,
@@ -1963,6 +1964,7 @@ export async function createVacationRequest(access: AccessContext, input: Create
     }).catch(() => undefined);
   });
 
+  invalidateExecutiveDashboardCache("leave request submitted", ["leave"]);
   return request;
 }
 
@@ -2096,6 +2098,7 @@ export async function createVacationRequestAsAdmin(access: AccessContext, input:
     summary: "Vacation request created manually by admin.",
   });
 
+  invalidateExecutiveDashboardCache("leave request created by admin", ["leave"]);
   return request;
 }
 
@@ -2138,6 +2141,7 @@ export async function updateVacationRequestAsAdmin(access: AccessContext, input:
     summary: "Vacation request updated manually by admin.",
   });
 
+  invalidateExecutiveDashboardCache("leave request updated by admin", ["leave"]);
   return request;
 }
 
@@ -2172,6 +2176,7 @@ export async function deleteVacationRequestAsAdmin(access: AccessContext, reques
     summary: "Vacation request deleted manually by admin.",
   });
 
+  invalidateExecutiveDashboardCache("leave request deleted by admin", ["leave"]);
   return existing;
 }
 
@@ -2327,6 +2332,7 @@ async function applyVacationDecision(input: {
     }).catch(() => undefined);
   });
 
+  invalidateExecutiveDashboardCache("leave request decision recorded", ["leave"]);
   return updated;
 }
 

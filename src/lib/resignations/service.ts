@@ -1,5 +1,6 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { getEmployeeDirectory, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
@@ -989,6 +990,7 @@ async function createResignationForEmployee(
     "Resignation Submitted",
     "warning",
   );
+  invalidateExecutiveDashboardCache("resignation workflow created", ["resignations"]);
   return resignationId;
 }
 
@@ -1145,6 +1147,7 @@ export async function resignEmployeeAndOpenVacancy(
   );
 
   invalidateEmployeeDirectoryCache();
+  invalidateExecutiveDashboardCache("employee resigned and vacancy opened", ["resignations", "employees", "vacancies", "payroll"]);
 
   return {
     employeeHrId: result.employee_hr_id ?? employeeHrId,
@@ -1333,6 +1336,7 @@ export async function updateResignationDates(
     await updateEmployeeResignationDatesFallback(supabase, employee.hr_id, dates);
     await auditResignationDateUpdate(actor, current, dates);
     invalidateEmployeeDirectoryCache();
+    invalidateExecutiveDashboardCache("resignation dates updated", ["resignations", "employees", "vacancies"]);
 
     const updatedEmployee = await loadHistoricalResignedEmployeeByHrId(supabase, employeeHrId);
     return updatedEmployee ? mapLegacyResignationEmployee(updatedEmployee) : current;
@@ -1356,6 +1360,7 @@ export async function updateResignationDates(
   await updateEmployeeResignationDatesFallback(supabase, updatedRecord.employeeHrId, dates);
   await auditResignationDateUpdate(actor, current, dates);
   invalidateEmployeeDirectoryCache();
+  invalidateExecutiveDashboardCache("resignation dates updated", ["resignations", "employees", "vacancies"]);
 
   return updatedRecord;
 }
@@ -1480,5 +1485,6 @@ export async function runResignationWorkflow(
           : "Resignation Workflow Updated",
     action === "reject" || action === "cancel" ? "danger" : action === "approve" || action === "complete" ? "success" : "warning",
   );
+  invalidateExecutiveDashboardCache("resignation workflow updated", ["resignations", "employees", "vacancies"]);
   return record;
 }

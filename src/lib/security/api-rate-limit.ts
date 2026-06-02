@@ -55,7 +55,20 @@ function assertFallbackRateLimit(bucketKey: string, limit: number, windowMs: num
 }
 
 function isRateLimitSchemaMissing(error: unknown) {
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  const fields = [error instanceof Error ? error.message : null];
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    fields.push(
+      typeof record.code === "string" ? record.code : null,
+      typeof record.details === "string" ? record.details : null,
+      typeof record.hint === "string" ? record.hint : null,
+      typeof record.message === "string" ? record.message : null,
+      typeof record.name === "string" ? record.name : null,
+    );
+  }
+  fields.push(String(error));
+
+  const message = fields.filter(Boolean).join(" ").toLowerCase();
   return (
     message.includes("api_rate_limit_consume") ||
     message.includes("api_rate_limit_buckets") ||
