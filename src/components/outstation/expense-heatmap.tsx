@@ -35,19 +35,25 @@ export function ExpenseHeatmap({
   const mapInstanceRef = useRef<GoogleMapHandle | null>(null);
   const markersRef = useRef<GoogleMarkerHandle[]>([]);
   const [googleMaps, setGoogleMaps] = useState<GoogleMapsApi | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (!browserKey) return;
 
     let cancelled = false;
+    setError(null);
     void loadGoogleMaps(browserKey)
       .then((maps) => {
         if (cancelled) return;
         setGoogleMaps(maps as GoogleMapsApi);
         setReady(true);
       })
-      .catch(() => setReady(false));
+      .catch((cause) => {
+        if (cancelled) return;
+        setReady(false);
+        setError(cause instanceof Error ? cause.message : "Google Maps could not be loaded.");
+      });
 
     return () => {
       cancelled = true;
@@ -126,7 +132,26 @@ export function ExpenseHeatmap({
         </div>
       </div>
       <div className="p-5">
-        <div className="h-[420px] rounded-[28px] border border-[#DDE6F1] bg-[#F8FAFC] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]" ref={mapRef} />
+        <div
+          className="flex h-[420px] items-center justify-center rounded-[28px] border border-[#DDE6F1] bg-[#F8FAFC] p-6 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]"
+          ref={mapRef}
+        >
+          {!browserKey ? (
+            <div>
+              <p className="text-sm font-black text-[#0F172A]">Map unavailable</p>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-[#64748B]">
+                NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY is missing from the environment.
+              </p>
+            </div>
+          ) : error ? (
+            <div>
+              <p className="text-sm font-black text-[#0F172A]">Google Maps unavailable</p>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-[#64748B]">{error}</p>
+            </div>
+          ) : !ready ? (
+            <p className="text-sm font-semibold text-[#64748B]">Loading Google Maps...</p>
+          ) : null}
+        </div>
       </div>
     </div>
   );
