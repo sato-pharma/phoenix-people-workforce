@@ -1,4 +1,5 @@
 import { runI18nConfigTests } from "./i18n-config.test.ts";
+import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
 import { runIncentiveSchemeTests } from "./incentive-scheme.test.ts";
 import { runEmailNotificationTests } from "./email-notifications.test.ts";
 import { runEmailGovernanceTests } from "./email-governance.test.ts";
@@ -121,6 +122,7 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 }
 
 await runTest("i18n config", runI18nConfigTests);
+await runTest("navigation active path", runNavigationActivePathTests);
 await runTest("incentive scheme", runIncentiveSchemeTests);
 await runTest("email notifications", runEmailNotificationTests);
 await runTest("email governance", runEmailGovernanceTests);

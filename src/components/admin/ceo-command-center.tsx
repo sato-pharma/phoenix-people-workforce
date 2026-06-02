@@ -42,6 +42,7 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import { adminPanelClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import { CeoRiskRegister } from "@/components/admin/ceo-risk-register";
 import { CeoWeeklyBrief } from "@/components/admin/ceo-weekly-brief";
@@ -508,10 +509,7 @@ export function CeoCommandCenter({ data, loadError, viewer, generatedAtIso, brie
 
   return (
     <div className="space-y-7">
-      <section className="relative overflow-hidden rounded-[24px] border border-[#1a1a1a] bg-[linear-gradient(135deg,#000000_0%,#070707_55%,#1C0E02_100%)] p-6 shadow-[0_28px_80px_rgba(0,0,0,0.45)] ring-1 ring-white/5 sm:p-8">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-orange-400/60 to-transparent" />
-        <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-orange-500/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-24 -left-10 h-60 w-60 rounded-full bg-amber-500/15 blur-3xl" />
+      <AdminHeroFrame className="rounded-[24px] p-6 ring-1 ring-white/5 sm:p-8">
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-orange-300">
@@ -559,7 +557,7 @@ export function CeoCommandCenter({ data, loadError, viewer, generatedAtIso, brie
             <HeroStat label="Open Vacancies" unavailable={workforceDown} value={formatNumber(o.hr.vacantPositions)} />
           </div>
         </div>
-      </section>
+      </AdminHeroFrame>
 
       {unavailable.length > 0 ? (
         <div className="flex items-start gap-3 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">

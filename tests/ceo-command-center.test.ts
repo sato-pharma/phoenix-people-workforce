@@ -43,7 +43,7 @@ export function runCeoCommandCenterTests() {
 
   // 5) Server-side route guard contract — the page enforces access itself, not via the sidebar.
   //    (Real cross-role denial is exercised by the phase23 browser walkthrough; this pins the source contract.)
-  const pageSource = readFileSync("app/admin/ceo-command-center/page.tsx", "utf8");
+  const pageSource = readFileSync("app/(admin)/admin/ceo-command-center/page.tsx", "utf8");
   assert.match(pageSource, /resolveAccessContextFromPage\(\)/, "page resolves access on the server");
   assert.match(pageSource, /access\.role === "CEO"/, "CEO is allowed");
   assert.match(pageSource, /access\.role === "Super Admin"/, "Super Admin is allowed (intended)");
@@ -53,7 +53,9 @@ export function runCeoCommandCenterTests() {
     /if \(!isExecutive\)\s*\{?\s*redirect\(resolveLandingPathForRole\(access\.role\)\)/,
     "non-executive roles are redirected away from the CEO command center",
   );
-  assert.match(pageSource, /navigationMode="admin"/, "page renders inside the existing admin shell");
+  // The admin shell is now provided by the (admin) route-group layout, not per page.
+  const adminLayoutSource = readFileSync("app/(admin)/layout.tsx", "utf8");
+  assert.match(adminLayoutSource, /navigationMode="admin"/, "the admin route-group layout renders the admin shell");
 
   // 6) The CEO surface is read-only — no write/approve/export controls, no client interactivity.
   const componentSource = readFileSync("src/components/admin/ceo-command-center.tsx", "utf8");

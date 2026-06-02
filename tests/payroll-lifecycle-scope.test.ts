@@ -176,7 +176,7 @@ export function runPayrollLifecycleScopeTests() {
 
   // -- Wiring: the admin page passes its resolved access context through.
   const pageSource = readFileSync(
-    new URL("../app/admin/payslips-center/page.tsx", import.meta.url),
+    new URL("../app/(admin)/admin/payslips-center/page.tsx", import.meta.url),
     "utf8",
   );
   assert.match(

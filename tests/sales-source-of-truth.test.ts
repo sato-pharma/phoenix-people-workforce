@@ -90,7 +90,7 @@ export function runSalesSourceOfTruthTests() {
   const employeePortalSource = readFileSync("src/lib/employee-portal/service.ts", "utf8");
   assert.match(employeePortalSource, /buildPortalSalesDashboardMetrics/);
 
-  const salesPageSource = readFileSync("app/sales/page.tsx", "utf8");
+  const salesPageSource = readFileSync("app/(admin)/sales/page.tsx", "utf8");
   assert.match(salesPageSource, /getSalesDashboard/);
   const portalSalesPageSource = readFileSync("app/employee-portals/sales/page.tsx", "utf8");
   assert.match(portalSalesPageSource, /getSalesDashboard/);

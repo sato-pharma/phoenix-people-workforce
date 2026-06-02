@@ -255,7 +255,7 @@ export function runAttendanceCalendarSourceTests() {
   assert.match(policyManagerSource, /9-5 \+ 10 min grace/);
   assert.match(policyManagerSource, /scrollIntoView/);
 
-  const calendarPageSource = readFileSync("app/hr-calendar/page.tsx", "utf8");
+  const calendarPageSource = readFileSync("app/(admin)/hr-calendar/page.tsx", "utf8");
   assert.match(calendarPageSource, /getHrCalendarData/);
   const calendarComponentSource = readFileSync("src/components/hr-calendar/hr-calendar.tsx", "utf8");
   assert.match(calendarComponentSource, /buildHrCalendarEvents/);

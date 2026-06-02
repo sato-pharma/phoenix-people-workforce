@@ -26,8 +26,8 @@ export function runExpenseRiskHardeningTests() {
     "app/api/admin/outstation/calculate-manager-distance/route.ts",
     "app/api/admin/outstation/places-autocomplete/route.ts",
     "app/api/admin/outstation/place-details/route.ts",
-    "app/admin/outstation/requests/page.tsx",
-    "app/admin/outstation/heatmaps/page.tsx",
+    "app/(admin)/admin/outstation/requests/page.tsx",
+    "app/(admin)/admin/outstation/heatmaps/page.tsx",
   ].map(source).join("\n");
   assert.doesNotMatch(adminOutstationSources, /assertPermission\(access,\s*"outstation",\s*"read"\)/);
   assert.match(adminOutstationSources, /assertOutstationAdminAccess\(access,\s*"approve"\)/);

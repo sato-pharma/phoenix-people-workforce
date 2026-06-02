@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test tests/e2e/auth.setup.ts --project=setup",
     "audit:transitions": "node scripts/audit-page-transitions.mjs",
+    "optimize:brand-assets": "node scripts/optimize-brand-assets.mjs",
     "security:access-registry": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/security-access-registry.ts",
     "security:identity-health": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/security-identity-health.ts",
     "security:rls-static": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/security-rls-static.ts",
@@ -75,6 +76,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "sharp": "^0.34.5",
     "supabase": "^2.98.2",
     "tailwindcss": "^4",
     "typescript": "^5"

@@ -136,7 +136,7 @@ export function runCoachingAnalyticsTests() {
   assert.match(routeSource, /filterCoachingQuarterlySummaryByReports/);
   assert.doesNotMatch(routeSource, /function buildAnalytics/);
 
-  const adminAnalyticsPageSource = readFileSync("app/coaching/analytics/page.tsx", "utf8");
+  const adminAnalyticsPageSource = readFileSync("app/(admin)/coaching/analytics/page.tsx", "utf8");
   const portalTrainingManagerSource = readFileSync("app/employee-portals/training-manager/page.tsx", "utf8");
   assert.match(adminAnalyticsPageSource, /buildCoachingReportAnalytics/);
   assert.match(portalTrainingManagerSource, /buildCoachingReportAnalytics/);

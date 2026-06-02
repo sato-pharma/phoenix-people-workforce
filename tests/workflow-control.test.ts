@@ -230,7 +230,7 @@ export function runWorkflowControlTests() {
   const mapSrcResponsive = readFileSync(new URL("../src/components/workflow-control/workflow-map.tsx", import.meta.url), "utf8");
   assert.equal(/w-\[\d{3,}px\]/.test(mapSrcResponsive), false, "map has no fixed desktop-only width");
 
-  const pageSrc = readFileSync(new URL("../app/admin/workflow-control/page.tsx", import.meta.url), "utf8");
+  const pageSrc = readFileSync(new URL("../app/(admin)/admin/workflow-control/page.tsx", import.meta.url), "utf8");
   assert.match(pageSrc, /canAccessWorkflowControlCenter/, "page enforces the workflow-control access gate");
   assert.match(pageSrc, /redirect\("\/employee-portals"\)/, "page redirects unauthorized roles");
 

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 export function runProbationStabilizationTests() {
   const serviceSource = readFileSync("src/lib/probation/service.ts", "utf8");
-  const adminPageSource = readFileSync("app/probation/page.tsx", "utf8");
+  const adminPageSource = readFileSync("app/(admin)/probation/page.tsx", "utf8");
   const portalPageSource = readFileSync("app/employee-portals/probation/page.tsx", "utf8");
   const exportRouteSource = readFileSync("app/api/exports/route.ts", "utf8");
   const permissionsSource = readFileSync("src/lib/auth/permissions.ts", "utf8");

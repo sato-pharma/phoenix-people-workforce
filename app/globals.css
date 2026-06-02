@@ -174,34 +174,6 @@ body {
   scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  /* Soft fade at the scroll edges so nav items melt away instead of being
-     hard-cut against the search box / sidebar bottom. The fade thickness is
-     toggled per-edge by data-fade-top / data-fade-bottom (set in sidebar.tsx),
-     so the first/last items stay crisp when there is nothing more to scroll. */
-  --sb-fade-top: 0px;
-  --sb-fade-bottom: 0px;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 var(--sb-fade-top),
-    #000 calc(100% - var(--sb-fade-bottom)),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 var(--sb-fade-top),
-    #000 calc(100% - var(--sb-fade-bottom)),
-    transparent 100%
-  );
-}
-
-.phoenix-admin-sidebar-scroll[data-fade-top="true"] {
-  --sb-fade-top: 24px;
-}
-
-.phoenix-admin-sidebar-scroll[data-fade-bottom="true"] {
-  --sb-fade-bottom: 28px;
 }
 
 .phoenix-admin-sidebar-scroll::-webkit-scrollbar {
@@ -648,10 +620,5 @@ body {
   .employee-portal-nav-pending-dot,
   .phoenix-route-transition-bar {
     animation: none;
-  }
-
-  html[data-route-transition-pending] main {
-    opacity: 1;
-    transition: none;
   }
 }

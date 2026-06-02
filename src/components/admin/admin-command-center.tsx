@@ -31,6 +31,7 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import type { AdminCommandCenterData, DataHealthMetrics } from "@/lib/admin/command-center";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
@@ -607,14 +608,10 @@ export function AdminCommandCenter({
 
   return (
     <div className="space-y-6">
-        <section className="relative overflow-hidden border border-[#1a1a1a] bg-[linear-gradient(135deg,#000000_0%,#070707_55%,#1C0E02_100%)] shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
-          <div aria-hidden="true" className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:44px_44px]" />
-          <div aria-hidden="true" className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-orange-500/25 blur-[90px]" />
-          <div aria-hidden="true" className="pointer-events-none absolute -bottom-28 right-10 h-72 w-72 rounded-full bg-amber-500/15 blur-[100px]" />
-          <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500/0 via-orange-400/80 to-orange-500/0" />
+        <AdminHeroFrame>
           <div className="relative grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:p-8 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div>
-              <div className="inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-100 shadow-[0_0_24px_rgba(249,115,22,0.25)]">
+              <div className="inline-flex items-center gap-2 rounded-full border border-orange-400/40 bg-orange-500/15 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-100 shadow-[0_0_24px_rgba(249,115,22,0.25)]">
                 {welcomeProfile ? <Sparkles aria-hidden="true" className="h-3.5 w-3.5" /> : <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-orange-300" />}
                 {welcomeProfile ? "Your Phoenix day starts here" : "Phoenix Workforce"}
               </div>
@@ -717,7 +714,7 @@ export function AdminCommandCenter({
               </div>
             )}
           </div>
-        </section>
+        </AdminHeroFrame>
 
         <ActionQueue items={actionItems} />
         <DataQualityStrip health={health} show={showAdminModules && !healthDown} />

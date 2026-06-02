@@ -43,6 +43,16 @@ export type NavigationSectionItem = {
   excludedRoles?: readonly PhoenixRole[];
   roles?: readonly PhoenixRole[];
   permissions?: readonly NavigationPermission[];
+  /**
+   * Active-route matching hints (consumed by `isActivePath` in
+   * `@/lib/navigation/active-path`). `exact` highlights the item ONLY when the
+   * pathname equals its href base (prevents a parent route from staying active on
+   * its children, e.g. `/sales` vs `/sales/import`). `activeTab` highlights the
+   * item only when the sidebar's active query-param tab matches (for two items
+   * that share the same path but differ by `?tab=`/`?action=`).
+   */
+  exact?: boolean;
+  activeTab?: string;
 };
 
 export type NavigationSection = {
@@ -106,7 +116,7 @@ export const adminNavigationSections = [
     items: [
       { href: "/sales/import", icon: Database, label: "Source of Sales", permissions: [{ resource: "sales" }] },
       { href: "/sales/queue", icon: FileUp, label: "Monthly Sales", permissions: [{ resource: "sales" }] },
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }] },
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
       { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
       { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }] },
     ],
@@ -116,7 +126,7 @@ export const adminNavigationSections = [
     id: "marketing-requests",
     items: [
       { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "HCP / PH Validation", roles: ["District Manager", "SFE Manager", "Super Admin"] },
-      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["District Manager", "SFE Manager", "Super Admin"] },
+      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["District Manager", "SFE Manager", "Super Admin"], exact: true },
       { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", roles: ["District Manager", "SFE Manager", "Super Admin"] },
       { href: "/admin/marketing-requests/customer-database", icon: Database, label: "SCP / PH Database", roles: ["Super Admin"] },
     ],
@@ -125,9 +135,9 @@ export const adminNavigationSections = [
   {
     id: "payroll",
     items: [
-      { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }] },
+      { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }], exact: true },
       { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }], roles: ["Super Admin"] },
-      { href: "/payslips", icon: ScrollText, label: "My Payslips", permissions: [{ resource: "payslips" }], roles: ["HR Specialist"] },
+      { href: "/payslips", icon: ScrollText, label: "My Payslips", permissions: [{ resource: "payslips" }], roles: ["HR Specialist"], exact: true },
     ],
     label: "Payroll Management",
   },
@@ -135,9 +145,9 @@ export const adminNavigationSections = [
     id: "expenses-outstation",
     items: [
       { href: "/payroll/expenses/dashboard", icon: ChartColumnBig, label: "Outstation Expenses", permissions: [{ resource: "expenses" }] },
-      { href: "/payroll/expenses", icon: FileSpreadsheet, label: "Historical Upload", permissions: [{ resource: "expenses" }] },
+      { href: "/payroll/expenses", icon: FileSpreadsheet, label: "Historical Upload", permissions: [{ resource: "expenses" }], exact: true },
       { href: "/admin/outstation/requests", icon: MapPinned, label: "Expense Requests", permissions: [{ resource: "outstation", action: "approve" }], roles: ["Super Admin", "Finance Manager", "CEO"] },
-      { href: "/admin/outstation/requests?action=create-manager-expense", icon: PlusCircle, label: "Add Manual Expense", permissions: [{ resource: "outstation", action: "approve" }], roles: ["Super Admin", "Finance Manager", "CEO"] },
+      { href: "/admin/outstation/requests?action=create-manager-expense", icon: PlusCircle, label: "Add Manual Expense", permissions: [{ resource: "outstation", action: "approve" }], roles: ["Super Admin", "Finance Manager", "CEO"], activeTab: "create-manager-expense" },
       { href: "/admin/outstation/policy", icon: CalendarClock, label: "Outstation Policy", permissions: [{ resource: "outstation", action: "update" }], roles: ["Super Admin", "Finance Manager", "CEO"] },
       { href: "/admin/outstation/heatmaps", icon: MapPinned, label: "Outstation Heatmaps", permissions: [{ resource: "outstation", action: "approve" }], roles: ["Super Admin", "Finance Manager", "CEO"] },
     ],
@@ -168,14 +178,14 @@ export const employeePortalNavigationSections = [
   {
     id: "employee-portal",
     items: [
-      { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }] },
-      { href: "/employee-portals/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales", excludedRoles: ["Training Manager"], permissions: [{ resource: "sales" }] },
+      { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }], exact: true },
+      { href: "/employee-portals/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales", excludedRoles: ["Training Manager"], permissions: [{ resource: "sales" }], exact: true },
       { href: "/employee-portals/training-manager", icon: ChartColumnBig, label: "Coaching Dashboard", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
       { href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, label: "Create Coaching Report", permissions: [{ resource: "coaching", action: "create" }], roles: ["Training Manager"] },
       { href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
       { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "My Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["Medical Rep"] },
       { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Team Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["District Manager", "National Sales Manager"] },
-      { href: "/payslips", icon: ChartColumnBig, label: "Payroll & Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }] },
+      { href: "/payslips", icon: ChartColumnBig, label: "Payroll & Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }], exact: true },
       { href: "/employee-portals/expenses", icon: ReceiptText, label: "My Outstation Expenses", permissions: [{ resource: "expenses" }], roles: ["Medical Rep"] },
       { href: "/employee-portals/expense-dashboard", icon: ReceiptText, label: "Expense Dashboard", permissions: [{ resource: "expenses" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Training Manager", "Manager"] },
       { href: "/employee-portals/submit-expense", icon: ReceiptText, label: "Submit Expense", permissions: [{ resource: "outstation", action: "create" }], roles: ["District Manager", "National Sales Manager"] },
