@@ -2,6 +2,7 @@ import {
   canSeeHrScopedRecord,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { parseDateOnly, toDateOnlyString } from "@/lib/date-only";
 import { assertContractWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -400,6 +401,7 @@ export async function createContractRenewalRequest(
   if (error) throw new ContractRenewalValidationError(error.message);
   const record = mapRenewalRequest(data as RenewalRequestDbRow);
   await notifyContractWorkflow(record, "Contract Renewal Request Created", "warning");
+  invalidateExecutiveDashboardCache("contract renewal created", ["contracts"]);
   return record;
 }
 
@@ -562,6 +564,7 @@ export async function runContractRenewalWorkflow(
     action === "not_renew" ? "Contract Not Renewed" : action === "renew" ? "Contract Renewed" : "Contract Renewal Updated",
     action === "not_renew" ? "danger" : action === "renew" ? "success" : "warning",
   );
+  invalidateExecutiveDashboardCache("contract renewal workflow updated", ["contracts", "employees", "vacancies"]);
 
   return updated;
 }

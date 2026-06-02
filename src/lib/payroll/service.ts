@@ -1,5 +1,6 @@
 import { isDevelopment } from "@/lib/env";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import { getEmployeeDirectory, getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
@@ -1302,6 +1303,7 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
 
   const batch = mapBatch(batchData as Record<string, unknown>);
   await verifySalaryRecordPayloads(supabase, batch.id, recordPayloads);
+  invalidateExecutiveDashboardCache("payroll batch created", ["payroll"]);
 
   return {
     batch,
@@ -1324,6 +1326,7 @@ export async function deleteSalaryBatch(batchId: string) {
     throw error;
   }
 
+  invalidateExecutiveDashboardCache("payroll batch deleted", ["payroll"]);
   return true;
 }
 
@@ -1398,6 +1401,7 @@ export async function replaceSalaryBatch(
   }
 
   await verifySalaryRecordPayloads(supabase, existing.id, recordPayloads);
+  invalidateExecutiveDashboardCache("payroll batch replaced", ["payroll"]);
 
   return {
     batch: mapBatch(updatedBatchData as Record<string, unknown>),
@@ -1512,6 +1516,7 @@ export async function runPayrollWorkflow(
     oldValues: { status: currentStatus },
     summary: `Payroll workflow ${action}.`,
   });
+  invalidateExecutiveDashboardCache("payroll workflow updated", ["payroll"]);
 
   return updatedBatch;
 }

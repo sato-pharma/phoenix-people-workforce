@@ -4,6 +4,7 @@ import {
   type PayrollPaymentMode,
 } from "@/lib/payroll/policy";
 import { googleGeocodeAddress } from "@/lib/google-maps/server";
+import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { canonicalHrIdForDisplay, hrIdLookupKeys } from "@/lib/hr-id";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
@@ -1998,6 +1999,7 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
   }
 
   invalidateEmployeeDirectoryCache();
+  invalidateExecutiveDashboardCache("employee upsert", ["employees", "vacancies", "payroll"]);
 
   return rows;
 }
@@ -2062,6 +2064,7 @@ export async function bulkUpdateEmployees(
   );
 
   invalidateEmployeeDirectoryCache();
+  invalidateExecutiveDashboardCache("employee bulk update", ["employees", "vacancies", "payroll"]);
 
   return rows;
 }

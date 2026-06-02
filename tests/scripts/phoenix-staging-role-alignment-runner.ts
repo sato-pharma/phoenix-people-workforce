@@ -144,6 +144,10 @@ function requiredEnv(name: string) {
   return value;
 }
 
+function approvedStagingRef() {
+  return process.env.PHOENIX_APPROVED_STAGING_REF?.trim() || approvedSandboxRef;
+}
+
 function validTestUser(users: Record<string, unknown>, role: string) {
   const item = users[role] as { hrId?: string; loginId?: string; password?: string } | undefined;
   return Boolean(item?.hrId && item.loginId && item.password);
@@ -171,7 +175,8 @@ function assertStagingSafety(): SafetyInfo {
   if (supabaseUrl.includes(blockedProductionRef) || hostname.includes(blockedProductionRef)) {
     throw new Error("Refusing Phoenix HR production project ref.");
   }
-  if (hostname !== `${approvedSandboxRef}.supabase.co`) {
+  const approvedRef = approvedStagingRef();
+  if (hostname !== `${approvedRef}.supabase.co`) {
     throw new Error("Refusing any Supabase URL except the approved Phoenix RLS testing sandbox.");
   }
   requiredEnv("PHOENIX_STAGING_SUPABASE_ANON_KEY");
@@ -180,9 +185,9 @@ function assertStagingSafety(): SafetyInfo {
   if (databaseUrl.includes(blockedProductionRef) || databaseHostname.includes(blockedProductionRef)) {
     throw new Error("Refusing Phoenix HR production database URL.");
   }
-  const isApprovedDirectHost = databaseHostname === `db.${approvedSandboxRef}.supabase.co`;
+  const isApprovedDirectHost = databaseHostname === `db.${approvedRef}.supabase.co`;
   const isApprovedPoolerHost =
-    databaseHostname.endsWith(".pooler.supabase.com") && databaseUrl.includes(`postgres.${approvedSandboxRef}`);
+    databaseHostname.endsWith(".pooler.supabase.com") && databaseUrl.includes(`postgres.${approvedRef}`);
   if (!isApprovedDirectHost && !isApprovedPoolerHost) {
     throw new Error("Refusing database URL that does not target the approved Phoenix RLS testing sandbox.");
   }

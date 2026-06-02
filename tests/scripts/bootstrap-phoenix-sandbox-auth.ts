@@ -5,7 +5,6 @@ import postgres from "postgres";
 
 const localEnvPath = ".env.staging.rls.local";
 const sandboxRef = "oaifhavixhdtwmseshff";
-const sandboxUrl = `https://${sandboxRef}.supabase.co`;
 const productionRef = "ozucdzovmcqvepbozvqf";
 const adminLoginId = "admin-HR";
 const adminHrId = "RLS-ADMIN-HR";
@@ -47,6 +46,10 @@ function requiredEnv(name: string) {
   return value;
 }
 
+function approvedStagingRef() {
+  return process.env.PHOENIX_APPROVED_STAGING_REF?.trim() || sandboxRef;
+}
+
 function assertSafety() {
   if (requiredEnv("PHOENIX_CONFIRM_STAGING_RLS_RUN") !== "YES_STAGING_ONLY") {
     throw new Error("PHOENIX_CONFIRM_STAGING_RLS_RUN must be YES_STAGING_ONLY.");
@@ -64,7 +67,9 @@ function assertSafety() {
 
   const supabaseUrl = requiredEnv("PHOENIX_STAGING_SUPABASE_URL");
   const supabaseHostname = new URL(supabaseUrl).hostname.toLowerCase();
-  if (supabaseUrl !== sandboxUrl || supabaseHostname !== `${sandboxRef}.supabase.co`) {
+  const approvedRef = approvedStagingRef();
+  const sandboxUrl = `https://${approvedRef}.supabase.co`;
+  if (supabaseUrl !== sandboxUrl || supabaseHostname !== `${approvedRef}.supabase.co`) {
     throw new Error("Refusing any Supabase URL except the approved Phoenix RLS testing sandbox.");
   }
   if (supabaseUrl.includes(productionRef)) {
@@ -75,13 +80,13 @@ function assertSafety() {
   if (databaseUrl.includes(productionRef)) {
     throw new Error("Refusing Phoenix HR production database URL.");
   }
-  if (!databaseUrl.includes(sandboxRef)) {
+  if (!databaseUrl.includes(approvedRef)) {
     throw new Error("Database URL must contain the approved sandbox ref.");
   }
   const databaseHostname = new URL(databaseUrl).hostname.toLowerCase();
-  const directHost = databaseHostname === `db.${sandboxRef}.supabase.co`;
+  const directHost = databaseHostname === `db.${approvedRef}.supabase.co`;
   const poolerHost =
-    databaseHostname.endsWith(".pooler.supabase.com") && databaseUrl.includes(`postgres.${sandboxRef}`);
+    databaseHostname.endsWith(".pooler.supabase.com") && databaseUrl.includes(`postgres.${approvedRef}`);
   if (!directHost && !poolerHost) {
     throw new Error("Database URL must target the approved sandbox direct host or pooler user.");
   }

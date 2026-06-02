@@ -88,6 +88,10 @@ function requiredEnv(name: string) {
   return value;
 }
 
+function approvedStagingRef() {
+  return process.env.PHOENIX_APPROVED_STAGING_REF?.trim() || approvedSandboxRef;
+}
+
 function stagingUrl() {
   const confirm = requiredEnv("PHOENIX_CONFIRM_STAGING_RLS_RUN");
   if (confirm !== "YES_STAGING_ONLY") {
@@ -104,7 +108,8 @@ function stagingUrl() {
   if (url.includes(blockedProductionRef) || hostname.includes(blockedProductionRef)) {
     throw new Error("Refusing Phoenix production Supabase project.");
   }
-  if (hostname !== `${approvedSandboxRef}.supabase.co`) {
+  const approvedRef = approvedStagingRef();
+  if (hostname !== `${approvedRef}.supabase.co`) {
     throw new Error("Refusing any Supabase URL except the approved Phoenix RLS testing sandbox.");
   }
   return url;
@@ -117,7 +122,8 @@ function stagingDatabaseUrl() {
   if (url.includes(blockedProductionRef) || parsed.hostname.includes(blockedProductionRef)) {
     throw new Error("Refusing Phoenix production database URL.");
   }
-  if (!url.includes(approvedSandboxRef) && !parsed.hostname.includes(approvedSandboxRef)) {
+  const approvedRef = approvedStagingRef();
+  if (!url.includes(approvedRef) && !parsed.hostname.includes(approvedRef)) {
     throw new Error("Refusing any database URL except the approved Phoenix RLS testing sandbox.");
   }
   if (environment.includes("production")) {

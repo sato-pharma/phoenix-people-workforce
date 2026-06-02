@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { getSalesPeopleLabels, linkSalesRecords, summarizeSalesLinkage } from "@/lib/sales/employees";
 import { isDisposableSalesBatchRow, isDisposableSalesRecordRow } from "@/lib/fixture-hygiene";
 import { formatUnits } from "@/lib/sales/format";
@@ -266,6 +267,7 @@ function buildBatchReconciliation(records: ScopedRecord[]): SalesBatchReconcilia
       : 0
   );
 
+  invalidateExecutiveDashboardCache("sales import created", ["sales"]);
   return {
     importedSalesUnits,
     importedTargetUnits,
@@ -1376,6 +1378,7 @@ export async function updateSalesBatchStatus(
     summary: status === "approved" ? "Sales import approved." : "Sales import rejected.",
   });
 
+  invalidateExecutiveDashboardCache("sales import status updated", ["sales"]);
   return getSalesBatchDetail(batchId);
 }
 
@@ -1423,6 +1426,7 @@ export async function replaceSalesBatch(
     summary: "Sales import replaced.",
   });
 
+  invalidateExecutiveDashboardCache("sales import replaced", ["sales"]);
   return getSalesBatchDetail(replacementId);
 }
 
@@ -1464,5 +1468,6 @@ export async function deleteSalesBatch(batchId: string, actorUsername: string, a
     summary: "Sales import deleted.",
   });
 
+  invalidateExecutiveDashboardCache("sales import deleted", ["sales"]);
   return true;
 }

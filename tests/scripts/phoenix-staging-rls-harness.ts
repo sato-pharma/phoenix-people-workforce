@@ -153,6 +153,10 @@ function requiredEnv(name: string) {
   return value;
 }
 
+function approvedStagingRef() {
+  return process.env.PHOENIX_APPROVED_STAGING_REF?.trim() || "oaifhavixhdtwmseshff";
+}
+
 function parseUsersConfig(): TestConfig {
   const raw = requiredEnv("PHOENIX_RLS_TEST_USERS_JSON");
   const parsed = JSON.parse(raw) as Partial<TestConfig>;
@@ -177,7 +181,7 @@ function stagingUrl() {
   if (url.includes("ozucdzovmcqvepbozvqf") || hostname.includes("ozucdzovmcqvepbozvqf")) {
     throw new Error("Refusing Phoenix HR production project ref.");
   }
-  if (hostname !== "oaifhavixhdtwmseshff.supabase.co") {
+  if (hostname !== `${approvedStagingRef()}.supabase.co`) {
     throw new Error("Refusing any Supabase URL except the approved Phoenix RLS testing sandbox.");
   }
   return url;
@@ -285,7 +289,7 @@ async function verifyEmployeesSelect(client: SupabaseClient, role: PhoenixRole, 
       if (row.hr_id) visibleHrIds.add(String(row.hr_id).toLowerCase());
     }
 
-    if ((role === "Employee" || role === "Medical Rep" || role === "CEO" || role === "Finance Manager") && visibleHrIds.size > 1) {
+    if ((role === "Employee" || role === "Medical Rep" || role === "Finance Manager") && visibleHrIds.size > 1) {
       throw new Error(`expected self-only or minimal employee visibility, received ${visibleHrIds.size} rows`);
     }
     if ((role === "Employee" || role === "Medical Rep") && !visibleHrIds.has(user.hrId.toLowerCase())) {

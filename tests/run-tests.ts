@@ -100,6 +100,7 @@ import { runPhase21SecurityHardeningTests } from "./phase21-security-hardening.t
 import { runPhase22RoleMatrixSecurityTests } from "./phase22-role-matrix-security.test.ts";
 import { runCeoCommandCenterTests } from "./ceo-command-center.test.ts";
 import { runCeoBriefTests } from "./ceo-brief.test.ts";
+import { runExecutiveDashboardSnapshotTests } from "./executive-dashboard-snapshot.test.ts";
 import { runPhase23BrowserRoleWalkthroughTests } from "./phase23-browser-role-walkthrough.test.ts";
 import { runPhase24RealAuthRlsApiSmokeTests } from "./phase24-real-auth-rls-api-smoke.test.ts";
 import { runPhase25StagingRlsMutationSmokeTests } from "./phase25-staging-rls-mutation-smoke.test.ts";
@@ -110,6 +111,8 @@ import { runPhase29ProductionMigrationPreapplyReviewTests } from "./phase29-prod
 import { runPhase30ProductionMigrationApprovalGateTests } from "./phase30-production-migration-approval-gate.test.ts";
 import { runPhase32ProductionMigrationQueueReviewTests } from "./phase32-production-migration-queue-review.test.ts";
 import { runPhase33MigrationHistoryReconciliationGateTests } from "./phase33-migration-history-reconciliation-gate.test.ts";
+import { runStagingExecutiveDashboardMigrationReconciliationTests } from "./staging-executive-dashboard-migration-reconciliation.test.ts";
+import { runStagingSafeRebuildTests } from "./staging-safe-rebuild.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -223,6 +226,7 @@ await runTest("phase 21 security hardening", runPhase21SecurityHardeningTests);
 await runTest("phase 22 role matrix security", runPhase22RoleMatrixSecurityTests);
 await runTest("ceo command center", runCeoCommandCenterTests);
 await runTest("ceo brief", runCeoBriefTests);
+await runTest("executive dashboard snapshot", runExecutiveDashboardSnapshotTests);
 await runTest("phase 23 browser role walkthrough", runPhase23BrowserRoleWalkthroughTests);
 await runTest("phase 24 real auth RLS/API smoke", runPhase24RealAuthRlsApiSmokeTests);
 await runTest("phase 25 staging RLS mutation smoke", runPhase25StagingRlsMutationSmokeTests);
@@ -233,3 +237,5 @@ await runTest("phase 29 production migration pre-apply review", runPhase29Produc
 await runTest("phase 30 production migration approval gate", runPhase30ProductionMigrationApprovalGateTests);
 await runTest("phase 32 production migration queue review", runPhase32ProductionMigrationQueueReviewTests);
 await runTest("phase 33 migration history reconciliation gate", runPhase33MigrationHistoryReconciliationGateTests);
+await runTest("staging executive dashboard migration reconciliation", runStagingExecutiveDashboardMigrationReconciliationTests);
+await runTest("staging safe rebuild", runStagingSafeRebuildTests);
