@@ -23,12 +23,13 @@ import {
   PanelLeftOpen,
   Search,
   ShieldCheck,
+  Star,
   X,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Fragment, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   getNavigationSections,
@@ -56,8 +57,10 @@ export type { PermissionLookup };
 
 const EMPTY_PERMISSION_LOOKUP: PermissionLookup = {};
 
-// localStorage keys (kept stable so a user's saved layout survives this rebuild).
-const COLLAPSED_KEY_PREFIX = "phoenix-sidebar-collapsed";
+// localStorage keys. The collapsed-sections key is versioned: the v2 bump retires
+// pre-accordion "everything expanded" state so existing users get the new compact
+// accordion default instead of their stale all-open layout.
+const COLLAPSED_KEY_PREFIX = "phoenix-sidebar-collapsed-v2";
 const COLLAPSED_EVENT = "phoenix-sidebar-collapsed-change";
 const PREFS_EVENT = "phoenix-sidebar-prefs-change";
 
@@ -83,12 +86,14 @@ function parseCollapsedIds(raw: string, valid: Set<string>) {
   return out;
 }
 
+// Empty string is the "no saved preference yet" sentinel — the nav then defaults to
+// accordion mode (only the active section open) so the list starts compact.
 function readCollapsedSnapshot(key: string) {
-  if (typeof window === "undefined") return "[]";
+  if (typeof window === "undefined") return "";
   try {
-    return window.localStorage.getItem(key) ?? "[]";
+    return window.localStorage.getItem(key) ?? "";
   } catch {
-    return "[]";
+    return "";
   }
 }
 
@@ -151,6 +156,52 @@ function useBooleanPref(key: string): boolean {
   return snapshot === "true";
 }
 
+// ── Persistence: pinned favourites (ordered list of hrefs, cross-tab synced) ──
+const PINS_EVENT = "phoenix-sidebar-pins-change";
+
+function pinsStorageKey(mode: NavigationMode) {
+  return `phoenix-sidebar-pins:${mode}`;
+}
+
+function readPinsSnapshot(key: string) {
+  if (typeof window === "undefined") return "[]";
+  try {
+    return window.localStorage.getItem(key) ?? "[]";
+  } catch {
+    return "[]";
+  }
+}
+
+function parsePins(raw: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value): value is string => typeof value === "string");
+  } catch {
+    return [];
+  }
+}
+
+function subscribePins(onChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", onChange);
+  window.addEventListener(PINS_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(PINS_EVENT, onChange);
+  };
+}
+
+function writePins(key: string, hrefs: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(hrefs));
+    window.dispatchEvent(new Event(PINS_EVENT));
+  } catch {
+    // Favourites are optional; storage failures must never block navigation.
+  }
+}
+
 // ── A single navigation entry ────────────────────────────────────────────────
 function NavRow({
   active,
@@ -159,6 +210,8 @@ function NavRow({
   onActivate,
   onHover,
   onHoverEnd,
+  pinned = false,
+  onTogglePin,
   rail,
 }: {
   active: boolean;
@@ -167,6 +220,8 @@ function NavRow({
   onActivate: () => void;
   onHover?: (rect: DOMRect) => void;
   onHoverEnd?: () => void;
+  pinned?: boolean;
+  onTogglePin?: () => void;
   rail: boolean;
 }) {
   const Icon = item.icon;
@@ -211,8 +266,27 @@ function NavRow({
         >
           <Icon className="h-4 w-4" />
         </span>
-        {!rail && <span className="min-w-0 flex-1 truncate tracking-[-0.01em]">{item.label}</span>}
+        {!rail && <span className={cn("min-w-0 flex-1 truncate tracking-[-0.01em]", onTogglePin && "pr-6")}>{item.label}</span>}
       </Link>
+      {!rail && onTogglePin ? (
+        <button
+          aria-label={pinned ? `Unpin ${item.label}` : `Pin ${item.label} to favourites`}
+          className={cn(
+            "absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded transition",
+            pinned ? "opacity-100" : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100",
+            dark ? "text-slate-400 hover:text-[#F8B56B]" : "text-[#94A3B8] hover:text-[#F97316]",
+          )}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onTogglePin();
+          }}
+          title={pinned ? "Unpin" : "Pin to favourites"}
+          type="button"
+        >
+          <Star className={cn("h-3.5 w-3.5", pinned && (dark ? "fill-[#F8B56B] text-[#F8B56B]" : "fill-[#F97316] text-[#F97316]"))} />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -256,8 +330,11 @@ function SidebarNav({
   const activeSectionId = sections.find((section) => section.items.some((item) => item.href === activeHref))?.id ?? null;
 
   const collapsedKey = collapsedStorageKey(mode);
-  const collapsedSnapshot = useSyncExternalStore(subscribeCollapsed, () => readCollapsedSnapshot(collapsedKey), () => "[]");
+  const collapsedSnapshot = useSyncExternalStore(subscribeCollapsed, () => readCollapsedSnapshot(collapsedKey), () => "");
   const collapsedSectionIds = useMemo(() => {
+    // Flat scroll (GitHub-style): every section is open by default. Users may still
+    // collapse an individual group and that choice is remembered, but opening one
+    // never auto-collapses the others. The active section is always kept open.
     const next = parseCollapsedIds(collapsedSnapshot, new Set(sectionIds));
     if (activeSectionId) next.delete(activeSectionId);
     return next;
@@ -271,6 +348,26 @@ function SidebarNav({
     writeCollapsedIds(collapsedKey, next);
   }
 
+  // ── Pinned favourites ──────────────────────────────────────────────────────
+  const pinsKey = pinsStorageKey(mode);
+  const pinsSnapshot = useSyncExternalStore(subscribePins, () => readPinsSnapshot(pinsKey), () => "[]");
+  const pinnedHrefs = useMemo(() => parsePins(pinsSnapshot), [pinsSnapshot]);
+  const pinnedSet = useMemo(() => new Set(pinnedHrefs), [pinnedHrefs]);
+  const itemByHref = useMemo(() => {
+    const map = new Map<string, NavigationSectionItem>();
+    for (const section of sections) for (const item of section.items) map.set(item.href, item);
+    return map;
+  }, [sections]);
+  // Resolve pinned hrefs to live nav items (drops any the user can no longer access).
+  const pinnedItems = useMemo(
+    () => pinnedHrefs.map((href) => itemByHref.get(href)).filter((item): item is NavigationSectionItem => Boolean(item)),
+    [pinnedHrefs, itemByHref],
+  );
+  function togglePin(href: string) {
+    const next = pinnedSet.has(href) ? pinnedHrefs.filter((value) => value !== href) : [...pinnedHrefs, href];
+    writePins(pinsKey, next);
+  }
+
   function handleActivate(item: NavigationSectionItem) {
     setActiveTab(item.activeTab ?? null);
     onNavigate?.();
@@ -282,6 +379,75 @@ function SidebarNav({
         .filter((section) => section.items.length > 0)
     : sections;
 
+  // ── Scroll comfort: edge fades, auto-scroll to active, remembered position ──
+  const navRef = useRef<HTMLElement | null>(null);
+  const didRestoreScroll = useRef(false);
+  const skipInitialActiveScroll = useRef(true);
+  const scrollPersistKey = rail ? null : prefKey("scrollpos", mode);
+
+  // Fade only the edge that actually has hidden content (no fade when the list fits
+  // or you're already at an end), so items melt away instead of being hard-cut.
+  const updateFades = useCallback(() => {
+    const el = navRef.current;
+    if (!el) return;
+    el.toggleAttribute("data-fade-top", el.scrollTop > 1);
+    el.toggleAttribute("data-fade-bottom", el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+  }, []);
+
+  const handleNavScroll = useCallback(() => {
+    updateFades();
+    const el = navRef.current;
+    if (!el || !scrollPersistKey) return;
+    try {
+      window.localStorage.setItem(scrollPersistKey, String(Math.round(el.scrollTop)));
+    } catch {
+      // Persisting scroll is best-effort; never block navigation.
+    }
+  }, [scrollPersistKey, updateFades]);
+
+  // First mount: restore the remembered scroll; if none, bring the active item into
+  // view. Then sync the fades.
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el || didRestoreScroll.current) return;
+    didRestoreScroll.current = true;
+    let restored = false;
+    if (scrollPersistKey) {
+      try {
+        const saved = Number(window.localStorage.getItem(scrollPersistKey));
+        if (Number.isFinite(saved) && saved > 0) {
+          el.scrollTop = saved;
+          restored = true;
+        }
+      } catch {
+        // ignore unreadable storage
+      }
+    }
+    if (!restored) {
+      el.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+    }
+    updateFades();
+  }, [scrollPersistKey, updateFades]);
+
+  // On navigation, scroll the newly-active item into view. Skip the very first run
+  // (the mount effect above handles it, so a remembered scroll position wins).
+  useEffect(() => {
+    if (skipInitialActiveScroll.current) {
+      skipInitialActiveScroll.current = false;
+      return;
+    }
+    navRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+    updateFades();
+  }, [activeHref, updateFades]);
+
+  // Recompute fades when the visible list height changes (open/close, search) or the
+  // window resizes.
+  useEffect(() => {
+    updateFades();
+    window.addEventListener("resize", updateFades);
+    return () => window.removeEventListener("resize", updateFades);
+  }, [updateFades, visibleSections, collapsedSectionIds]);
+
   // ── Collapsed icon-rail (admin only) ──────────────────────────────────────
   if (rail) {
     const railItems = sections.flatMap((section) => section.items);
@@ -291,7 +457,7 @@ function SidebarNav({
 
     return (
       <>
-        <nav className={cn("flex-1 px-2 py-4", scrollable && "overflow-auto", scrollable && isAdmin && "phoenix-admin-sidebar-scroll")}>
+        <nav ref={navRef} onScroll={handleNavScroll} className={cn("flex-1 px-2 py-4", scrollable && "overflow-auto", scrollable && isAdmin && "phoenix-admin-sidebar-scroll")}>
           <div className="flex flex-col items-center gap-1.5">
             {railItems.map((item) => (
               <NavRow
@@ -358,48 +524,65 @@ function SidebarNav({
         </div>
       )}
 
-      <nav className={cn("flex-1 px-3 py-4", scrollable && "overflow-auto", scrollable && isAdmin && "phoenix-admin-sidebar-scroll")}>
-        {visibleSections.map((section, sectionIndex) => {
+      <nav ref={navRef} onScroll={handleNavScroll} className={cn("flex-1 px-3 py-4", scrollable && "overflow-auto", scrollable && isAdmin && "phoenix-admin-sidebar-scroll")}>
+        {!query && pinnedItems.length > 0 && (
+          <Fragment>
+            <div className={cn("sticky top-0 z-20 -mx-3 px-3", isAdmin ? "bg-[#000000]" : "bg-white")}>
+              <div className="flex w-full items-center gap-1.5 px-1.5 pb-1.5 pt-3">
+                <Star className={cn("h-3 w-3 shrink-0", isAdmin ? "fill-[#F8B56B] text-[#F8B56B]" : "fill-[#F97316] text-[#F97316]")} />
+                <span className={cn("min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.06em]", isAdmin ? "text-slate-300" : "text-[#475569]")}>
+                  Favourites
+                </span>
+              </div>
+            </div>
+            <div className="mb-2 mt-1.5 space-y-1 px-1">
+              {pinnedItems.map((item) => (
+                <NavRow
+                  active={item.href === activeHref}
+                  dark={isAdmin}
+                  item={item}
+                  key={`fav-${item.href}`}
+                  onActivate={() => handleActivate(item)}
+                  onTogglePin={() => togglePin(item.href)}
+                  pinned
+                  rail={false}
+                />
+              ))}
+            </div>
+          </Fragment>
+        )}
+        {visibleSections.map((section) => {
           const hasActive = section.items.some((item) => item.href === activeHref);
           const collapsed = !query && collapsedSectionIds.has(section.id) && !hasActive;
           const sectionContentId = `${navInstanceId}-${section.id}-items`;
 
           return (
             <Fragment key={section.id}>
-              <div className={cn("px-1", sectionIndex > 0 && "mt-5")}>
+              <div className={cn("sticky top-0 z-20 -mx-3 px-3", isAdmin ? "bg-[#000000]" : "bg-white")}>
                 <button
                   aria-controls={sectionContentId}
                   aria-expanded={!collapsed}
                   className={cn(
-                    "flex w-full items-center gap-2 border-t px-1.5 pt-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60 focus-visible:ring-offset-2",
-                    isAdmin ? "border-white/10 focus-visible:ring-offset-slate-900" : "border-[#EAE1D4] focus-visible:ring-offset-white",
+                    // Quiet section headers: separated by whitespace (no per-row
+                    // divider), lighter weight, tight tracking, one muted gray for
+                    // all. Orange is reserved for the active item, not the header.
+                    "group/sec flex w-full items-center gap-1.5 px-1.5 pb-1.5 pt-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60 focus-visible:ring-offset-2",
+                    isAdmin ? "focus-visible:ring-offset-slate-900" : "focus-visible:ring-offset-white",
                   )}
                   onClick={() => toggleSection(section.id)}
                   type="button"
                 >
                   <ChevronRight
                     className={cn(
-                      "h-3.5 w-3.5 shrink-0 transition-transform duration-300 ease-out",
-                      isAdmin
-                        ? hasActive
-                          ? "text-[#F8B56B]"
-                          : "text-slate-500"
-                        : hasActive
-                          ? "text-[#F97316]"
-                          : "text-[#94A3B8]",
+                      "h-3 w-3 shrink-0 transition-transform duration-300 ease-out",
+                      isAdmin ? "text-slate-500 group-hover/sec:text-slate-300" : "text-[#94A3B8] group-hover/sec:text-[#64748B]",
                       !collapsed && "rotate-90",
                     )}
                   />
                   <span
                     className={cn(
-                      "min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-[0.16em]",
-                      isAdmin
-                        ? hasActive
-                          ? "text-[#F8B56B]"
-                          : "text-slate-400"
-                        : hasActive
-                          ? "text-[#F97316]"
-                          : "text-[#64748B]",
+                      "min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.06em] transition-colors",
+                      isAdmin ? "text-slate-300 group-hover/sec:text-white" : "text-[#475569] group-hover/sec:text-[#0F172A]",
                     )}
                   >
                     {section.label}
@@ -424,6 +607,8 @@ function SidebarNav({
                         item={item}
                         key={`${item.href}-${item.label}`}
                         onActivate={() => handleActivate(item)}
+                        onTogglePin={() => togglePin(item.href)}
+                        pinned={pinnedSet.has(item.href)}
                         rail={false}
                       />
                     ))}
@@ -591,9 +776,12 @@ export function Sidebar({
         // Pinned to the viewport (sticky + full height) so the navigation and the
         // rail toggle stay visible while the page scrolls; the nav scrolls
         // internally only when its items exceed the viewport height.
+        // NOTE: do NOT add `relative` here — it overrides `sticky` and the sidebar
+        // scrolls away on long pages. `sticky` already establishes the positioning
+        // context for the absolute rail-toggle button below.
         "sticky top-0 z-30 hidden h-screen shrink-0 flex-col transition-[width] duration-200 lg:flex",
         isAdmin
-          ? cn("relative border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG)
+          ? cn("border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG)
           : "border-r border-[#E2E8F0] bg-white",
         railActive ? SIDEBAR_WIDTH_RAIL : SIDEBAR_WIDTH_EXPANDED,
       )}
