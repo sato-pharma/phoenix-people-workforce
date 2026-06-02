@@ -135,7 +135,7 @@ export function runExpenseMetricsTests() {
   assert.doesNotMatch(overviewSource, /listPayrollExpenses/);
   assert.doesNotMatch(overviewSource, /listPayrollExpenseReports/);
 
-  const dashboardPageSource = readFileSync("app/payroll/expenses/dashboard/page.tsx", "utf8");
+  const dashboardPageSource = readFileSync("app/(admin)/payroll/expenses/dashboard/page.tsx", "utf8");
   assert.match(dashboardPageSource, /getPayrollExpenseDashboardData/);
   assert.doesNotMatch(dashboardPageSource, /listPayrollExpenses/);
   assert.doesNotMatch(dashboardPageSource, /getEmployeeDirectory/);

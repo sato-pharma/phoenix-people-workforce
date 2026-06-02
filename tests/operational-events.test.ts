@@ -21,7 +21,7 @@ export function runOperationalEventsTests() {
     "Monitoring operational activity must not mix disposable smoke payroll years into the normal business feed.",
   );
 
-  const monitoringPageSource = readFileSync("app/admin/monitoring/page.tsx", "utf8");
+  const monitoringPageSource = readFileSync("app/(admin)/admin/monitoring/page.tsx", "utf8");
   assert.match(monitoringPageSource, /getOperationalMonitoringStats/);
   assert.doesNotMatch(monitoringPageSource, /getAdminMonitoringStats/);
 
@@ -36,7 +36,7 @@ export function runOperationalEventsTests() {
   const auditServiceSource = readFileSync("src/lib/admin/audit.ts", "utf8");
   assert.match(auditServiceSource, /getOperationalAuditLogs/);
 
-  const logsPageSource = readFileSync("app/admin/logs/page.tsx", "utf8");
+  const logsPageSource = readFileSync("app/(admin)/admin/logs/page.tsx", "utf8");
   assert.match(logsPageSource, /getAuditLogs/);
 
   const overviewSource = readFileSync("src/lib/overview/service.ts", "utf8");

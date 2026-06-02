@@ -12,8 +12,8 @@ export function runWorkflowRegistryTests() {
   const service = source("src/lib/workflow-registry/service.ts");
   const listRoute = source("app/api/admin/workflow-registry/route.ts");
   const moduleRoute = source("app/api/admin/workflow-registry/[moduleKey]/route.ts");
-  const page = source("app/admin/workflow-control/page.tsx");
-  const legacyPage = source("app/admin/workflow-registry/page.tsx");
+  const page = source("app/(admin)/admin/workflow-control/page.tsx");
+  const legacyPage = source("app/(admin)/admin/workflow-registry/page.tsx");
   const manager = source("src/components/admin/workflow-registry-manager.tsx");
 
   assert.match(migration, /create table if not exists public\.workflow_registry_modules/);

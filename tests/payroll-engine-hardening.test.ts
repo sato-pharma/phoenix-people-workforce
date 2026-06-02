@@ -32,7 +32,7 @@ const payslipUploadedSheetMigrationSource = readFileSync(
 );
 
 const adminPayslipCenterSource = readFileSync(
-  new URL("../app/admin/payslips-center/page.tsx", import.meta.url),
+  new URL("../app/(admin)/admin/payslips-center/page.tsx", import.meta.url),
   "utf8",
 );
 

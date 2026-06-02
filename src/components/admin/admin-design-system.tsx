@@ -36,6 +36,34 @@ import {
   adminHeroTitleClassName,
 } from "@/components/admin/admin-design-tokens";
 
+/**
+ * Single source of truth for the black command-center hero surface. Renders the
+ * dark gradient + the four decorative aria-hidden layers and provides
+ * `DarkSurfaceContext` so primitives (Button, AdminInsightChip) inside it pick
+ * legible-on-black styling. Used by `AdminPageHero` and by both command centers,
+ * which supply their own bespoke inner content as `children`.
+ */
+export function AdminHeroFrame({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  /** Extra surface classes (e.g. the CEO hero's ring/padding). */
+  className?: string;
+}) {
+  return (
+    <DarkSurfaceContext.Provider value={true}>
+      <section className={cn(adminHeroSurfaceClassName, className)}>
+        <div aria-hidden="true" className={adminHeroGridOverlayClassName} />
+        <div aria-hidden="true" className={adminHeroGlowOrangeClassName} />
+        <div aria-hidden="true" className={adminHeroGlowAmberClassName} />
+        <div aria-hidden="true" className={adminHeroAccentBarClassName} />
+        {children}
+      </section>
+    </DarkSurfaceContext.Provider>
+  );
+}
+
 export function AdminPageHero({
   actions,
   aside,
@@ -55,29 +83,23 @@ export function AdminPageHero({
   title: string;
 }) {
   return (
-    <DarkSurfaceContext.Provider value={true}>
-      <section className={adminHeroSurfaceClassName}>
-        <div aria-hidden="true" className={adminHeroGridOverlayClassName} />
-        <div aria-hidden="true" className={adminHeroGlowOrangeClassName} />
-        <div aria-hidden="true" className={adminHeroGlowAmberClassName} />
-        <div aria-hidden="true" className={adminHeroAccentBarClassName} />
-        <div className="relative grid gap-6 p-5 sm:p-6 lg:p-7 lg:grid-cols-[minmax(0,1fr)_auto]">
-          <div className="min-w-0 space-y-3">
-            <div className={adminHeroKickerClassName}>
-              {icon}
-              {eyebrow}
-            </div>
-            <div className="space-y-2">
-              <h1 className={adminHeroTitleClassName}>{title}</h1>
-              <p className={adminHeroDescriptionClassName}>{description}</p>
-            </div>
-            {actions ? <div className="flex flex-wrap items-center gap-2 pt-1">{actions}</div> : null}
-            {badges ? <div className="flex flex-wrap gap-2 pt-1 text-xs text-slate-300">{badges}</div> : null}
+    <AdminHeroFrame>
+      <div className="relative grid gap-6 p-5 sm:p-6 lg:p-7 lg:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0 space-y-3">
+          <div className={adminHeroKickerClassName}>
+            {icon}
+            {eyebrow}
           </div>
-          {aside ? <div className="min-w-0 lg:justify-self-end">{aside}</div> : null}
+          <div className="space-y-2">
+            <h1 className={adminHeroTitleClassName}>{title}</h1>
+            <p className={adminHeroDescriptionClassName}>{description}</p>
+          </div>
+          {actions ? <div className="flex flex-wrap items-center gap-2 pt-1">{actions}</div> : null}
+          {badges ? <div className="flex flex-wrap gap-2 pt-1 text-xs text-slate-300">{badges}</div> : null}
         </div>
-      </section>
-    </DarkSurfaceContext.Provider>
+        {aside ? <div className="min-w-0 lg:justify-self-end">{aside}</div> : null}
+      </div>
+    </AdminHeroFrame>
   );
 }
 
@@ -178,7 +200,7 @@ export function AdminStatCard({
     rose: {
       border: "hover:border-rose-300/80",
       bg: "bg-rose-200/15",
-      icon: "from-rose-50 to-rose-100 text-rose-600 shadow-[0_8px_20_rgba(244,63,94,0.15)] ring-rose-200",
+      icon: "from-rose-50 to-rose-100 text-rose-600 shadow-[0_8px_20px_rgba(244,63,94,0.15)] ring-rose-200",
       card: "border-rose-300/70 bg-gradient-to-br from-rose-100 via-rose-50 to-white text-rose-950 shadow-[0_18px_44px_rgba(244,63,94,0.16)]",
       label: "text-rose-700/80",
       value: "text-rose-950",

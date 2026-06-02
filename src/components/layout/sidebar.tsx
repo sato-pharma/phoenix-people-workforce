@@ -33,12 +33,11 @@ import { Fragment, useId, useMemo, useRef, useState, useSyncExternalStore } from
 import {
   getNavigationSections,
   navigationHomePathByMode,
-  type NavigationPermission,
-  type NavigationSection,
   type NavigationSectionItem,
 } from "@/config/system-navigation";
 import { systemAssets, systemIdentity, systemUiText } from "@/config/system-settings";
-import { type NavigationMode, type PermissionAction, type PermissionResource, type PhoenixRole } from "@/lib/auth/permissions";
+import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
+import { getActiveHref, getSections, type PermissionLookup } from "@/lib/navigation/active-path";
 import { cn } from "@/lib/utils";
 
 // ── Shared admin palette — matches the top navigation bar exactly ────────────
@@ -50,9 +49,10 @@ const ADMIN_SIDEBAR_BG = "bg-[#000000]";
 const ADMIN_SIDEBAR_BORDER = "border-[#1a1a1a]";
 
 // ── Public types ─────────────────────────────────────────────────────────────
-type SidebarPermission = NavigationPermission;
-export type PermissionLookup = Partial<Record<`${PermissionResource}:${PermissionAction}`, boolean>>;
-type PermissionLookupKey = keyof PermissionLookup;
+// PermissionLookup and the gating/active-route helpers now live in
+// `@/lib/navigation/active-path` (pure + unit-tested). Re-export the type so
+// existing importers (topbar, app-shell) keep importing it from this module.
+export type { PermissionLookup };
 
 const EMPTY_PERMISSION_LOOKUP: PermissionLookup = {};
 
@@ -63,67 +63,6 @@ const PREFS_EVENT = "phoenix-sidebar-prefs-change";
 
 const SIDEBAR_WIDTH_EXPANDED = "w-[280px]";
 const SIDEBAR_WIDTH_RAIL = "w-[76px]";
-
-// ── Visibility gating (mirrors the server permission matrix) ─────────────────
-function permissionAllowed(lookup: PermissionLookup | undefined, permission?: SidebarPermission | readonly SidebarPermission[]) {
-  if (!permission) return true;
-  const list: readonly SidebarPermission[] = Array.isArray(permission) ? permission : [permission];
-  return list.some((entry) => {
-    const action: PermissionAction = entry.action ?? "read";
-    const key: PermissionLookupKey = `${entry.resource}:${action}`;
-    if (!lookup || typeof lookup[key] === "undefined") return true;
-    return Boolean(lookup[key]);
-  });
-}
-
-function roleAllowed(role: PhoenixRole | undefined, roles?: readonly PhoenixRole[]) {
-  if (!roles) return true;
-  return Boolean(role && roles.includes(role));
-}
-
-function roleNotExcluded(role: PhoenixRole | undefined, excludedRoles?: readonly PhoenixRole[]) {
-  if (!excludedRoles) return true;
-  return !role || !excludedRoles.includes(role);
-}
-
-function getSections(mode: NavigationMode, lookup: PermissionLookup, role?: PhoenixRole): NavigationSection[] {
-  return getNavigationSections(mode)
-    .map((section) => ({
-      ...section,
-      items: section.items.filter(
-        (item) =>
-          permissionAllowed(lookup, item.permissions) &&
-          roleAllowed(role, item.roles) &&
-          (mode !== "employee-portal" || roleNotExcluded(role, item.excludedRoles)),
-      ),
-    }))
-    .filter((section) => section.items.length > 0);
-}
-
-// ── Active-route detection (special-cases query-param destinations) ──────────
-function isActivePath(pathname: string, href: string, activeTab: string | null) {
-  const baseHref = href.split("?")[0];
-  if (href.includes("tab=governance")) return pathname === baseHref && activeTab === "governance";
-  if (href.includes("tab=generate")) return pathname === baseHref && activeTab === "generate";
-  if (baseHref === "/employee-portals") return pathname === "/employee-portals";
-  if (baseHref === "/employee-portals/marketing-requests") return pathname === "/employee-portals/marketing-requests";
-  if (baseHref === "/admin/marketing-requests") return pathname === "/admin/marketing-requests";
-  if (href.includes("action=create-manager-expense")) return pathname === "/admin/outstation/requests" && activeTab === "create-manager-expense";
-  if (baseHref === "/sales") return pathname === "/sales";
-  if (baseHref === "/employee-portals/sales") return pathname === "/employee-portals/sales";
-  if (baseHref === "/payroll") return pathname === "/payroll";
-  if (baseHref === "/payslips") return pathname === "/payslips";
-  if (baseHref === "/payroll/expenses") return pathname === "/payroll/expenses";
-  return pathname === baseHref || pathname.startsWith(`${baseHref}/`);
-}
-
-function getActiveHref(pathname: string, sections: NavigationSection[], activeTab: string | null) {
-  const matches = sections
-    .flatMap((section) => section.items)
-    .filter((item) => isActivePath(pathname, item.href, activeTab))
-    .sort((left, right) => right.href.split("?")[0].length - left.href.split("?")[0].length);
-  return matches[0]?.href ?? null;
-}
 
 // ── Persistence: collapsed-section set (cross-tab synced) ─────────────────────
 function collapsedStorageKey(mode: NavigationMode) {
@@ -297,12 +236,15 @@ function SidebarNav({
   scrollable?: boolean;
 }) {
   const isAdmin = mode === "admin";
-  const sections = useMemo(() => getSections(mode, permissionLookup, currentRole), [currentRole, mode, permissionLookup]);
+  const sections = useMemo(
+    () => getSections(getNavigationSections(mode), mode, permissionLookup, currentRole),
+    [currentRole, mode, permissionLookup],
+  );
   const pathname = usePathname();
   const navInstanceId = useId();
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const [activeTab, setActiveTab] = useState<string | null>(pathname === "/payroll" ? "governance" : null);
+  const [activeTab, setActiveTab] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [railTip, setRailTip] = useState<{ label: string; top: number; left: number } | null>(null);
 
@@ -330,10 +272,7 @@ function SidebarNav({
   }
 
   function handleActivate(item: NavigationSectionItem) {
-    if (item.href.includes("tab=generate")) setActiveTab("generate");
-    else if (item.href.includes("tab=governance")) setActiveTab("governance");
-    else if (item.href.includes("action=create-manager-expense")) setActiveTab("create-manager-expense");
-    else setActiveTab(null);
+    setActiveTab(item.activeTab ?? null);
     onNavigate?.();
   }
 
@@ -352,7 +291,7 @@ function SidebarNav({
 
     return (
       <>
-        <nav className={cn("flex-1 px-2 py-4", scrollable && "overflow-auto")}>
+        <nav className={cn("flex-1 px-2 py-4", scrollable && "overflow-auto", scrollable && isAdmin && "phoenix-admin-sidebar-scroll")}>
           <div className="flex flex-col items-center gap-1.5">
             {railItems.map((item) => (
               <NavRow
@@ -419,7 +358,7 @@ function SidebarNav({
         </div>
       )}
 
-      <nav className={cn("flex-1 px-3 py-4", scrollable && "overflow-auto")}>
+      <nav className={cn("flex-1 px-3 py-4", scrollable && "overflow-auto", scrollable && isAdmin && "phoenix-admin-sidebar-scroll")}>
         {visibleSections.map((section, sectionIndex) => {
           const hasActive = section.items.some((item) => item.href === activeHref);
           const collapsed = !query && collapsedSectionIds.has(section.id) && !hasActive;
@@ -556,10 +495,10 @@ function SidebarBrand({ mode = "admin", onNavigate, rail = false }: { mode?: Nav
         <Image
           alt={`${systemIdentity.brandName} Admin`}
           className="h-auto w-full object-contain"
-          height={841}
+          height={288}
           priority
           src={systemAssets.adminSidebarLockup}
-          width={1870}
+          width={640}
         />
       </Link>
     );
@@ -649,7 +588,10 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "hidden shrink-0 flex-col transition-[width] duration-200 lg:flex",
+        // Pinned to the viewport (sticky + full height) so the navigation and the
+        // rail toggle stay visible while the page scrolls; the nav scrolls
+        // internally only when its items exceed the viewport height.
+        "sticky top-0 z-30 hidden h-screen shrink-0 flex-col transition-[width] duration-200 lg:flex",
         isAdmin
           ? cn("relative border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG)
           : "border-r border-[#E2E8F0] bg-white",
@@ -670,7 +612,7 @@ export function Sidebar({
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <SidebarBrand mode={navigationMode} rail={railActive} />
         <SidebarIntro mode={navigationMode} />
-        <SidebarNav currentRole={currentRole} mode={navigationMode} permissionLookup={permissionLookup} rail={railActive} scrollable={false} />
+        <SidebarNav currentRole={currentRole} mode={navigationMode} permissionLookup={permissionLookup} rail={railActive} />
         <SidebarFooter mode={navigationMode} />
       </div>
     </aside>

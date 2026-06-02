@@ -211,9 +211,9 @@ function verifyEmployeePortalSelfOnlyIsolation() {
 }
 
 function verifyStaticEntryPoints() {
-  const payrollPage = readFileSync("app/payroll/page.tsx", "utf8");
-  const salesPage = readFileSync("app/sales/page.tsx", "utf8");
-  const expensesDashboardPage = readFileSync("app/payroll/expenses/dashboard/page.tsx", "utf8");
+  const payrollPage = readFileSync("app/(admin)/payroll/page.tsx", "utf8");
+  const salesPage = readFileSync("app/(admin)/sales/page.tsx", "utf8");
+  const expensesDashboardPage = readFileSync("app/(admin)/payroll/expenses/dashboard/page.tsx", "utf8");
   const portalLayout = readFileSync("app/employee-portals/layout.tsx", "utf8");
   const portalService = readFileSync("src/lib/employee-portal/service.ts", "utf8");
   const payrollRoute = readFileSync("app/api/payroll/upload/route.ts", "utf8");
@@ -222,14 +222,14 @@ function verifyStaticEntryPoints() {
   const salesActionRoute = readFileSync("app/api/sales/imports/[id]/[action]/route.ts", "utf8");
   const bulkUsersRoute = readFileSync("app/api/admin/users/bulk-action/route.ts", "utf8");
   const probationPortalPage = readFileSync("app/employee-portals/probation/page.tsx", "utf8");
-  const attendancePoliciesPage = readFileSync("app/attendance/policies/page.tsx", "utf8");
-  const attendanceDeviceMappingPage = readFileSync("app/attendance/device-user-mapping/page.tsx", "utf8");
+  const attendancePoliciesPage = readFileSync("app/(admin)/attendance/policies/page.tsx", "utf8");
+  const attendanceDeviceMappingPage = readFileSync("app/(admin)/attendance/device-user-mapping/page.tsx", "utf8");
   const attendancePoliciesRoute = readFileSync("app/api/attendance/policies/route.ts", "utf8");
   const attendanceDeviceMappingRoute = readFileSync("app/api/attendance/device-user-mappings/route.ts", "utf8");
-  const adminCommandCenterPage = readFileSync("app/admin/page.tsx", "utf8");
-  const adminDataHealthPage = readFileSync("app/admin/data-health/page.tsx", "utf8");
-  const adminMonitoringPage = readFileSync("app/admin/monitoring/page.tsx", "utf8");
-  const adminLogsPage = readFileSync("app/admin/logs/page.tsx", "utf8");
+  const adminCommandCenterPage = readFileSync("app/(admin)/admin/page.tsx", "utf8");
+  const adminDataHealthPage = readFileSync("app/(admin)/admin/data-health/page.tsx", "utf8");
+  const adminMonitoringPage = readFileSync("app/(admin)/admin/monitoring/page.tsx", "utf8");
+  const adminLogsPage = readFileSync("app/(admin)/admin/logs/page.tsx", "utf8");
   const adminCommandCenter = readFileSync("src/components/admin/admin-command-center.tsx", "utf8");
   const adminCommandCenterService = readFileSync("src/lib/admin/command-center.ts", "utf8");
 
