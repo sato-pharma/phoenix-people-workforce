@@ -22,7 +22,7 @@ import { getProbationRows } from "@/lib/probation/service";
 import { buildRecruitmentOnboardingMetrics } from "@/lib/recruitment/onboarding-metrics";
 import { getSalesPlatformMetrics } from "@/lib/sales/service";
 import { buildVacationPlatformMetrics } from "@/lib/vacation/metrics";
-import { getVacationReportData } from "@/lib/vacation/service";
+import { getVacationPlatformMetricRows } from "@/lib/vacation/service";
 import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecycle";
 
 export type PlatformMetrics = {
@@ -392,8 +392,8 @@ async function getLeaveMetrics(accessContext: AccessContext): Promise<PlatformMe
     return emptyPlatformMetrics().leave;
   }
 
-  const report = await getVacationReportData(accessContext);
-  return buildVacationPlatformMetrics(report.rows);
+  const rows = await getVacationPlatformMetricRows(accessContext);
+  return buildVacationPlatformMetrics(rows);
 }
 
 async function getCommunicationMetrics(accessContext: AccessContext): Promise<PlatformMetrics["communication"]> {

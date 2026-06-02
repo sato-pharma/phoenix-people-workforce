@@ -3516,3 +3516,30 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
     summary: buildReportSummary(filteredRows),
   };
 }
+
+/**
+ * Lightweight rows for platform KPI counters (Command Center / overview).
+ *
+ * Returns the SAME scoped+decision-marked rows that `getVacationReportData`
+ * produces, but skips every enrichment the KPIs never read: evidence/timeline
+ * hydration (`enrichVacationRows`), sequential holiday fetches, overlap
+ * warnings, eligibility tables, SLA runs, and dashboard/report assembly. The
+ * resulting numbers from `buildVacationPlatformMetrics` are identical — only the
+ * dead weight is removed.
+ */
+export async function getVacationPlatformMetricRows(access: AccessContext) {
+  await assertPermission(access, "leave", "read");
+  const activeEmployees = await getEmployeeDirectoryRows();
+  const visibleEmployees = filterVacationEmployeesForAccess(access, activeEmployees);
+  const visibleEmployeeHrIds = new Set(
+    visibleEmployees
+      .map((employee) => canonicalHrId(employee.hrId))
+      .filter((value): value is string => Boolean(value)),
+  );
+  const data = await fetchVacationReportRowsFromDatabase({ access, filters: {}, visibleEmployeeHrIds });
+
+  return (data ?? [])
+    .map((row) => mapVacationRow(row as VacationRequestDbRow))
+    .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds))
+    .map((row) => ({ ...row, canDecide: canDecideVacation(access, row) }));
+}
