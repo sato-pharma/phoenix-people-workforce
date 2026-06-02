@@ -243,7 +243,7 @@ function NavRow({
           dark
             ? active
               ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-[#F97316]/30"
-              : "text-slate-300 hover:bg-white/[0.06] hover:text-white"
+              : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
             : active
               ? "bg-white text-[#0F172A] shadow-[0_1px_2px_rgba(15,23,42,0.06)] ring-1 ring-[#F4D9BE]"
               : "text-[#5A6678] hover:bg-white hover:text-[#0F172A] hover:shadow-[0_1px_2px_rgba(15,23,42,0.05)]",
@@ -529,8 +529,8 @@ function SidebarNav({
           <Fragment>
             <div className={cn("sticky top-0 z-20 -mx-3 px-3", isAdmin ? "bg-[#000000]" : "bg-white")}>
               <div className="flex w-full items-center gap-1.5 px-1.5 pb-1.5 pt-3">
-                <Star className={cn("h-3 w-3 shrink-0", isAdmin ? "fill-[#F8B56B] text-[#F8B56B]" : "fill-[#F97316] text-[#F97316]")} />
-                <span className={cn("min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.06em]", isAdmin ? "text-slate-300" : "text-[#475569]")}>
+                <Star className={cn("h-3.5 w-3.5 shrink-0", isAdmin ? "fill-[#F8B56B] text-[#F8B56B]" : "fill-[#F97316] text-[#F97316]")} />
+                <span className={cn("min-w-0 flex-1 truncate text-[13px] font-bold tracking-[-0.01em]", isAdmin ? "text-white" : "text-[#0F172A]")}>
                   Favourites
                 </span>
               </div>
@@ -574,15 +574,17 @@ function SidebarNav({
                 >
                   <ChevronRight
                     className={cn(
-                      "h-3 w-3 shrink-0 transition-transform duration-300 ease-out",
-                      isAdmin ? "text-slate-500 group-hover/sec:text-slate-300" : "text-[#94A3B8] group-hover/sec:text-[#64748B]",
+                      "h-3.5 w-3.5 shrink-0 transition-transform duration-300 ease-out",
+                      isAdmin ? "text-slate-400 group-hover/sec:text-slate-200" : "text-[#64748B] group-hover/sec:text-[#334155]",
                       !collapsed && "rotate-90",
                     )}
                   />
                   <span
                     className={cn(
-                      "min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.06em] transition-colors",
-                      isAdmin ? "text-slate-300 group-hover/sec:text-white" : "text-[#475569] group-hover/sec:text-[#0F172A]",
+                      // Prominent group titles: normal-case, bold and bright so they
+                      // lead; the menu items below sit quieter beneath them.
+                      "min-w-0 flex-1 truncate text-[13px] font-bold tracking-[-0.01em]",
+                      isAdmin ? "text-white" : "text-[#0F172A]",
                     )}
                   >
                     {section.label}

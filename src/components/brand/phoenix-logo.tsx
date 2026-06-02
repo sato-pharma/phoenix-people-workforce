@@ -6,9 +6,11 @@ import { cn } from "@/lib/utils";
 type PhoenixLogoProps = {
   compact?: boolean;
   className?: string;
+  /** On dark chrome (admin), drop the white box and use the phoenix-on-black mark. */
+  onDark?: boolean;
 };
 
-export function PhoenixLogo({ compact = false, className }: PhoenixLogoProps) {
+export function PhoenixLogo({ compact = false, className, onDark = false }: PhoenixLogoProps) {
   const iconSize = compact ? "h-11 w-11" : "h-12 w-12";
   const imageSize = compact ? "h-9 w-9" : "h-10 w-10";
 
@@ -16,18 +18,18 @@ export function PhoenixLogo({ compact = false, className }: PhoenixLogoProps) {
     <div className={cn("flex items-center gap-3", className)}>
       <div
         className={cn(
-          "flex shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-border/80",
-          "dark:bg-white dark:ring-white/20",
+          "flex shrink-0 items-center justify-center overflow-hidden rounded-xl",
+          onDark ? "" : "bg-white ring-1 ring-border/80 dark:bg-white dark:ring-white/20",
           iconSize,
         )}
       >
         <Image
           alt={systemIdentity.logoAlt}
-          className={cn("object-contain", imageSize)}
-          height={40}
+          className={cn("object-contain", onDark ? iconSize : imageSize)}
+          height={44}
           priority
-          src={systemAssets.iconLogo}
-          width={40}
+          src={onDark ? systemAssets.adminRailMark : systemAssets.iconLogo}
+          width={44}
         />
       </div>
       {!compact ? (
