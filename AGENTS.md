@@ -125,6 +125,315 @@ Current Phoenix Workforce branch policy:
 - Vercel should keep only two active deployments: production `main` and the `codex/work-from-production` preview.
 - `.vercel/` is local Vercel CLI metadata and must remain ignored/uncommitted.
 
+---
+
+# Phoenix Workforce Default Delivery Workflow
+
+Use this workflow by default for every Phoenix Workforce task in this repository.
+
+## Project Links And Environment Names
+
+- Production app: `https://phoenix-workforce.vercel.app`
+- Stable working preview alias: `https://phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects.vercel.app`
+- Current PR for CEO/staging rebuild work: `https://github.com/Phoenix-HR/phoenix-people-workforce/pull/24`
+- Current CEO/staging rebuild branch: `codex/ceo-staging-rebuild-hardening`
+- Normal working branch after PR #24 is closed/merged: `codex/work-from-production`
+- New staging Supabase URL: `https://izhmxvgiktiafqusolot.supabase.co`
+- New staging Supabase ref: `izhmxvgiktiafqusolot`
+- Old staging Supabase ref, archive only: `oaifhavixhdtwmseshff`
+- Production Supabase ref, do not touch without explicit approval: `ozucdzovmcqvepbozvqf`
+
+Never store secrets, passwords, database URLs, API keys, service-role keys, or JWT secrets in this file.
+
+## Environment Meaning
+
+- Local means this machine and localhost.
+- Preview means the Vercel deployment for the current branch.
+- Staging means the Vercel preview app connected to the new staging Supabase project `izhmxvgiktiafqusolot`.
+- Production means `https://phoenix-workforce.vercel.app` and production Supabase ref `ozucdzovmcqvepbozvqf`.
+
+Never confuse preview/staging with production.
+
+## Branch Strategy
+
+- `main` is production only.
+- Never edit `main` directly.
+- Use one active working branch per active PR.
+- Use `codex/ceo-staging-rebuild-hardening` only for PR #24 related fixes until PR #24 is merged or closed.
+- After PR #24 is merged or closed, create a fresh branch for unrelated work.
+- Small related fixes can stay in the same active PR branch.
+- Unrelated, risky, or experimental work needs a new branch.
+
+Before any work, always run:
+
+```bash
+git status
+git branch --show-current
+git log -1 --oneline
+```
+
+If the current branch is `main`, stop and switch/create a safe branch before editing.
+
+## Standard Flow For Any Function, Feature, Or Edit
+
+Follow this order:
+
+1. Check branch and worktree status.
+2. Inspect existing code and tests before editing.
+3. Make the smallest safe change.
+4. Validate locally.
+5. Stage only related files.
+6. Commit after validation passes.
+7. Push the branch.
+8. Wait for Vercel preview.
+9. Test the newest Ready preview URL.
+10. Check Vercel logs if anything fails.
+11. Update the PR with a validation summary.
+12. Merge only after explicit user approval.
+13. Production only after explicit user approval.
+
+Use this short form:
+
+```text
+Local edit -> local validation -> commit -> push branch -> newest Vercel preview -> staging smoke test -> PR validation -> merge approval -> production approval -> production smoke test
+```
+
+## Local Validation Rules
+
+For most code changes, run:
+
+```bash
+npm run lint
+npm run typecheck
+npm run test
+```
+
+Also run `npm run build` when the change touches:
+
+- App routes
+- API routes
+- Server components
+- Database-backed screens
+- Environment/config behavior
+- Deployment behavior
+- Shared frontend runtime code
+
+Do not commit broken code unless the user explicitly approves.
+
+## Commit And Push Rules
+
+Before commit:
+
+```bash
+git status
+git diff
+git diff --cached
+```
+
+Stage only files related to the task.
+
+Never stage or commit:
+
+- `.env*`
+- `.vercel/`
+- `_junk/`
+- screenshots
+- temporary scripts
+- local lock files
+- unrelated user edits
+- secrets or credentials
+
+Commit message format:
+
+```text
+fix(module): short reason
+feat(module): short feature
+chore(staging): short maintenance
+test(module): add coverage
+```
+
+Examples:
+
+```text
+fix(outstation): handle Google Maps auth failures
+fix(staging): add sales and coaching service schema
+feat(executive): add canonical dashboard snapshot
+```
+
+Always ask for approval before commit or push unless the user has already explicitly approved that action for the current task.
+
+## Vercel Preview And Staging Rules
+
+Always test the newest Vercel Ready preview.
+
+Do not rely on old pasted preview URLs. Preview URLs change after every push.
+
+Before testing, run:
+
+```bash
+vercel ls phoenix-workforce --scope phoenix-workspace-s-projects
+```
+
+Use the newest deployment with status `Ready`.
+
+If a preview URL is given by the user, verify whether it is still the newest Ready deployment before reporting success.
+
+Major smoke pages:
+
+- `/admin/ceo-command-center`
+- `/admin/data-health`
+- `/sales`
+- `/sales/queue`
+- `/coaching`
+- `/offers`
+- `/resignations`
+- `/admin/outstation/heatmaps`
+- `/admin/outstation/requests`
+- Any changed module page
+
+If a page fails:
+
+1. Reproduce with browser automation.
+2. Capture the visible error.
+3. Capture browser console errors.
+4. Check Vercel logs.
+5. Check API responses.
+6. Check Supabase table/view/RPC/grants/RLS if data-related.
+7. Test role-specific access when permissions are involved.
+
+## Supabase And Database Workflow
+
+All database changes must be migration-based.
+
+Never manually patch production.
+
+For staging database work:
+
+1. Confirm the target Supabase ref is staging: `izhmxvgiktiafqusolot`.
+2. Confirm the target is not production: `ozucdzovmcqvepbozvqf`.
+3. Create or review the migration.
+4. Apply the migration to staging only after approval.
+5. Verify migration history.
+6. Verify affected tables, views, RPCs, grants, and RLS.
+7. Smoke test affected app pages.
+
+High-risk database areas:
+
+- Payroll
+- Employees
+- Resignations
+- Probation
+- Contracts
+- Offers
+- Sales
+- Expenses
+- Permissions
+- Auth
+- RLS
+- CEO dashboards
+
+For high-risk areas, always verify:
+
+- Data exists or empty state is correct.
+- Service-role grants are server-only.
+- Browser roles are not overexposed.
+- RLS is enabled where needed.
+- RPC authorization is enforced internally.
+- Failed or unavailable sources do not show misleading zero.
+
+## Role Testing Rules
+
+For role-sensitive modules, test multiple roles.
+
+Minimum roles:
+
+- Super Admin
+- CEO
+- Relevant manager role
+- Normal employee role if employee portal behavior is affected
+
+Examples:
+
+- Sales: Super Admin, CEO, National Sales Manager, Regional Manager, District Manager
+- Coaching: Super Admin, CEO, SFE Manager, Training Manager, Medical Rep if employee review is affected
+- HR workflows: Super Admin, CEO, HR Specialist, Employee if employee portal is affected
+
+## PR Rules
+
+One PR should represent one major delivery.
+
+Related bug fixes can be added to the same PR.
+
+Unrelated work should use another branch and PR.
+
+Before a PR is considered ready:
+
+- `npm run lint` passes.
+- `npm run typecheck` passes.
+- `npm run test` passes.
+- `npm run build` passes when relevant.
+- Vercel preview is Ready.
+- Browser smoke checks pass.
+- Staging migrations are applied and verified if needed.
+- PR comment summarizes validation.
+
+Do not merge without explicit user approval.
+
+## Production Rules
+
+Production app:
+
+```text
+https://phoenix-workforce.vercel.app
+```
+
+Production Supabase ref:
+
+```text
+ozucdzovmcqvepbozvqf
+```
+
+Never do these without explicit approval:
+
+- Merge to `main`
+- Production deploy
+- Production migration
+- Production environment variable update
+- Destructive SQL
+- Rollback
+- Force push
+
+After production deploy:
+
+1. Verify the exact production domain `https://phoenix-workforce.vercel.app`.
+2. Smoke test changed pages.
+3. Check Vercel logs.
+4. Confirm no production-only errors.
+
+## Final Answer Requirements
+
+For implementation work, final responses must include:
+
+1. What changed
+2. Why it changed
+3. Validation results
+4. Risk level
+5. Staging/production impact
+6. What was committed/pushed
+7. What still needs approval
+8. Manual actions required only if unavoidable
+9. Recommended next step
+
+## Golden Rule
+
+Do not mix local, preview, staging, and production.
+
+Always follow:
+
+```text
+Local -> Validate -> Commit -> Push -> Newest Preview/Staging -> Smoke Test -> PR -> Merge Approval -> Production Approval
+```
+
 Prefer:
 - dedicated feature branches
 - isolated commits
