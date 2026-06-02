@@ -23,12 +23,10 @@ function loadLocalEnvFile() {
 loadLocalEnvFile();
 
 const baseUrl = process.env.TRANSITION_AUDIT_BASE_URL ?? "http://localhost:3000";
-const concurrency = Number(process.env.TRANSITION_AUDIT_CONCURRENCY ?? 1);
 const hardTimeoutMs = Number(process.env.TRANSITION_AUDIT_HARD_TIMEOUT_MS ?? 180000);
 const loginTimeoutMs = Number(process.env.TRANSITION_AUDIT_LOGIN_TIMEOUT_MS ?? 10000);
 const setupTimeoutMs = Number(process.env.TRANSITION_AUDIT_SETUP_TIMEOUT_MS ?? 30000);
 const maxWarmTransitionMs = Number(process.env.TRANSITION_AUDIT_MAX_WARM_MS ?? 1500);
-const routeTimeoutMs = Number(process.env.TRANSITION_AUDIT_ROUTE_TIMEOUT_MS ?? 2200);
 const routeCompletionTimeoutMs = Number(process.env.TRANSITION_AUDIT_ROUTE_COMPLETION_TIMEOUT_MS ?? 12000);
 const scoreMode = (process.env.TRANSITION_AUDIT_SCORE_MODE ?? "feedback").toLowerCase();
 const authMode = (process.env.TRANSITION_AUDIT_AUTH_MODE ?? "auto").toLowerCase();
@@ -335,31 +333,12 @@ async function authenticate(context, role, nextPath) {
   await authenticateWithDevAuth(context, role, nextPath);
 }
 
-async function runPool(items, worker) {
-  const results = [];
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      results[index] = await worker(items[index], index);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
-
 async function runSequential(items, worker) {
   const results = [];
   for (let index = 0; index < items.length; index += 1) {
     results[index] = await worker(items[index], index);
   }
   return results;
-}
-
-async function auditRoute(context, route, role) {
-  const page = await context.newPage();
-  return auditRouteInPage(page, route, role, { closePage: true });
 }
 
 async function clickNavigationLink(page, route) {
