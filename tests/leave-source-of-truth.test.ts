@@ -101,7 +101,11 @@ export function runLeaveSourceOfTruthTests() {
 
   const platformSource = readFileSync("src/lib/platform/metrics.ts", "utf8");
   assert.match(platformSource, /buildVacationPlatformMetrics/);
-  assert.match(platformSource, /getVacationReportData/);
+  // Leave KPIs source their rows from the canonical vacation service. The
+  // Command Center / overview use the lightweight, enrichment-free row fetcher
+  // (identical numbers, no holiday/SLA/evidence hydration) rather than the full
+  // report builder.
+  assert.match(platformSource, /getVacationPlatformMetricRows/);
 
   const overviewSource = readFileSync("src/lib/overview/service.ts", "utf8");
   assert.match(overviewSource, /platformMetrics\.leave\.pendingRequests/);

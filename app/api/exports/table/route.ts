@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   buildPhoenixTableWorkbook,
@@ -38,6 +39,10 @@ export async function POST(request: Request) {
     if (!access.loginId && !access.hrId) {
       return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
     }
+    // The export only re-formats rows the caller already holds, but it is an
+    // admin-surface (dashboard) feature, so gate it behind the same overview read
+    // permission as the pages that render the tables. Throws Forbidden -> 403.
+    await assertPermission(access, "overview", "read");
 
     const payload = (await request.json()) as ExportPayload;
     if (!Array.isArray(payload.columns) || payload.columns.length === 0) {
