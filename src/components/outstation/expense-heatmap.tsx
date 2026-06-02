@@ -42,10 +42,10 @@ export function ExpenseHeatmap({
     if (!browserKey) return;
 
     let cancelled = false;
-    setError(null);
     void loadGoogleMaps(browserKey)
       .then((maps) => {
         if (cancelled) return;
+        setError(null);
         setGoogleMaps(maps as GoogleMapsApi);
         setReady(true);
       })
