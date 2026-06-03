@@ -179,20 +179,25 @@ const BRICKS: MasterDefinition = {
   label: "Brick Master",
   sheetName: "Brick Master",
   title: "Brick Master",
-  description: "Bricks mapped to block, area and region. Brick ID and name are locked; edit the parent codes to re-parent.",
+  description: "Bricks belong to a block; area and region follow the block automatically (enforced by the database). Edit Block Code to move a brick.",
   columns: [
     { key: "brick_id", label: "Brick ID", locked: true, required: true, type: "code" },
     { key: "brick_name", label: "Brick Name", locked: true, required: true, type: "text" },
     { key: "block_code", label: "Block Code", locked: false, required: true, type: "code" },
-    { key: "area_code", label: "Area Code", locked: false, required: true, type: "code" },
-    { key: "region_code", label: "Region Code", locked: false, required: true, type: "code" },
   ],
+  // Composite FK (block_code, area_code, region_code) -> blocks: area + region
+  // MUST match the block, so they are copied from the block, not edited.
   parents: [
-    { parentMaster: "blocks", codeColumn: "block_code", parentKeyColumn: "block_code" },
-    { parentMaster: "areas", codeColumn: "area_code", parentKeyColumn: "area_code" },
-    { parentMaster: "regions", codeColumn: "region_code", parentKeyColumn: "region_code" },
+    {
+      parentMaster: "blocks",
+      codeColumn: "block_code",
+      parentKeyColumn: "block_code",
+      copyCodes: { area_code: "area_code", region_code: "region_code" },
+    },
   ],
   displayLookups: [
+    { key: "area_code", label: "Area Code", type: "code", viaCodeColumn: "block_code", lookupMaster: "blocks", lookupColumn: "area_code" },
+    { key: "region_code", label: "Region Code", type: "code", viaCodeColumn: "block_code", lookupMaster: "blocks", lookupColumn: "region_code" },
     { key: "area_name", label: "Area Name", type: "text", viaCodeColumn: "area_code", lookupMaster: "areas", lookupColumn: "area_name" },
     { key: "region_name", label: "Region Name", type: "text", viaCodeColumn: "region_code", lookupMaster: "regions", lookupColumn: "region_name" },
   ],
