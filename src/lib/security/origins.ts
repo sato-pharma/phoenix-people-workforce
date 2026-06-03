@@ -1,6 +1,9 @@
 const productionOrigin = "https://phoenix-workforce.vercel.app";
 const workingPreviewOrigin =
   "https://phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects.vercel.app";
+// Stable branch alias for codex/ceo-staging-rebuild-hardening (PR #24) preview.
+const stagingRebuildPreviewOrigin =
+  "https://phoenix-workforce-git-codex-41bc50-phoenix-workspace-s-projects.vercel.app";
 
 function normalizeLocalHostname(hostname: string) {
   const normalized = hostname
@@ -59,7 +62,7 @@ export function allowedPhoenixOrigins() {
     : null;
 
   return new Set(
-    [productionOrigin, workingPreviewOrigin, vercelUrl, ...configured]
+    [productionOrigin, workingPreviewOrigin, stagingRebuildPreviewOrigin, vercelUrl, ...configured]
       .map((origin) => normalizeOrigin(origin))
       .filter((origin): origin is string => Boolean(origin)),
   );
