@@ -113,7 +113,7 @@ export type AccessContext = {
   loginId?: string | null;
   role: PhoenixRole;
   scope: AccessScope;
-  source: "session" | "system" | "dev-header";
+  source: "session" | "system" | "dev-header" | "guest";
 };
 
 export type PermissionMap = Record<PhoenixRole, Partial<Record<PermissionResource, PermissionAction[]>>>;
@@ -545,6 +545,9 @@ export function resolveEmployeeIdentityId(context: Partial<Pick<AccessContext, "
 }
 
 export function resolveNavigationMode(context: AccessContext): NavigationMode {
+  if (context.source === "guest" || context.scope === "none") {
+    return "employee-portal";
+  }
   if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) {
     return "employee-portal";
   }
@@ -585,13 +588,18 @@ export function createAccessContext(input: {
 }): AccessContext {
   const role = normalizeRole(input.role);
   const hrId = normalizeHrId(input.hrId);
+  const source = input.source ?? "session";
 
   return {
     hrId,
     loginId: input.loginId ?? null,
     role,
-    scope: role === "HR Specialist" && !isDesignatedHrSpecialistHrId(hrId) ? "self" : scopeForRole(role),
-    source: input.source ?? "session",
+    scope: source === "guest"
+      ? "none"
+      : role === "HR Specialist" && !isDesignatedHrSpecialistHrId(hrId)
+        ? "self"
+        : scopeForRole(role),
+    source,
   };
 }
 
@@ -708,6 +716,7 @@ export async function canAccess(
   action: PermissionAction = "read",
 ) {
   if (context.scope === "system") return true;
+  if (context.source === "guest" || context.scope === "none") return false;
   if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) {
     return resource === "employee_profile" && (action === "read" || action === "update");
   }
@@ -781,6 +790,7 @@ export function canAccessPayroll(
   context: AccessContext,
   target: { employeeHrId?: string | null; hrId?: string | null; managerHrId?: string | null },
 ) {
+  if (context.source === "guest" || context.scope === "none") return false;
   if (context.scope === "system" || getPayrollScope(context) === "COMPANY") return true;
   return hrIdsMatch(context.hrId, target.employeeHrId ?? target.hrId);
 }
@@ -790,6 +800,7 @@ export function canAccessSales(
   record: { employeeHrId?: string | null; hrId?: string | null; managerHrId?: string | null; line?: string | null },
   viewer?: { line?: string | null },
 ) {
+  if (context.source === "guest" || context.scope === "none") return false;
   const scope = context.scope === "system" ? "COMPANY" : getSalesScope(context);
   if (scope === "COMPANY") return true;
   if (scope === "NONE") return false;
@@ -826,6 +837,7 @@ function canSeeDirectReportsByRole(role: PhoenixRole) {
 }
 
 export function canSeeEmployee(context: AccessContext, employee: Pick<EmployeeDirectoryRow, "hrId" | "managerHrId">) {
+  if (context.source === "guest" || context.scope === "none") return false;
   if (context.scope === "system" || context.role === "Super Admin" || isDesignatedHrSpecialist(context)) return true;
 
   const currentHrId = normalizeHrId(context.hrId);
@@ -848,6 +860,7 @@ export function canSeeHrScopedRecord(
     managerHrId?: string | null;
   },
 ) {
+  if (context.source === "guest" || context.scope === "none") return false;
   if (context.scope === "system" || context.role === "Super Admin" || isDesignatedHrSpecialist(context)) return true;
 
   const currentHrId = normalizeHrId(context.hrId);
@@ -873,6 +886,23 @@ export function filterEmployeeDirectoryForAccess(
   directory: EmployeeDirectoryData,
   context: AccessContext,
 ): EmployeeDirectoryData {
+  if (context.source === "guest" || context.scope === "none") {
+    return {
+      ...directory,
+      employees: [],
+      lookups: {
+        ...directory.lookups,
+        managers: [],
+      },
+      summary: {
+        activeEmployees: 0,
+        employeesWithoutManagers: 0,
+        totalEmployees: 0,
+        uniqueAreas: 0,
+        uniqueLines: 0,
+      },
+    };
+  }
   if (context.scope === "system" || context.role === "Super Admin" || isDesignatedHrSpecialist(context)) return directory;
 
   const employees = filterEmployeesForAccess(directory.employees, context);

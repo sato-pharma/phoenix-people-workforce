@@ -9,6 +9,7 @@ import {
   isOfferPublicUrlMissing,
   isOfferSchemaMissing,
   isOfferTimeout,
+  markOfferPostApprovalStatus,
   offerErrorMessage,
 } from "@/lib/offers/service";
 
@@ -40,13 +41,40 @@ export async function POST(
     const hrId = body?.hrId;
 
     const result = await approveAcceptedOffer(offerRef, access.hrId, hrId, access);
-    const accessProvisioning = await provisionNewHireAccess({
-      actor: { loginId: access.loginId ?? null, role: access.role },
-      hrIds: [result.employeeHrId],
-      source: "offer lifecycle approval",
-    });
+    let accessProvisioning;
+    let postApprovalWarning: string | null = null;
 
-    return NextResponse.json({ ...result, accessProvisioning });
+    try {
+      accessProvisioning = await provisionNewHireAccess({
+        actor: { loginId: access.loginId ?? null, role: access.role },
+        hrIds: [result.employeeHrId],
+        source: "offer lifecycle approval",
+      });
+      const failed = accessProvisioning.results.filter((item) => item.status === "failed");
+      await markOfferPostApprovalStatus(result.offer.id, {
+        accessProvisioningError: failed.map((item) => item.message).filter(Boolean).join("; ") || null,
+        accessProvisioningStatus: failed.length > 0 ? "failed" : "succeeded",
+      });
+      if (failed.length > 0) {
+        postApprovalWarning = "Hire was approved, but access provisioning needs HR repair.";
+      }
+    } catch (provisionError) {
+      postApprovalWarning = provisionError instanceof Error
+        ? provisionError.message
+        : "Hire was approved, but access provisioning failed.";
+      accessProvisioning = {
+        created: 0,
+        failed: 1,
+        results: [{ hrId: result.employeeHrId, message: postApprovalWarning, status: "failed" as const }],
+        skipped: 0,
+      };
+      await markOfferPostApprovalStatus(result.offer.id, {
+        accessProvisioningError: postApprovalWarning,
+        accessProvisioningStatus: "failed",
+      }).catch(() => undefined);
+    }
+
+    return NextResponse.json({ ...result, accessProvisioning, postApprovalWarning });
   } catch (error) {
     const { message, status } = offerApiError(error);
     return NextResponse.json({ error: "offer_approve_failed", message }, { status });

@@ -1,4 +1,5 @@
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { assertProbationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import {
   canSeeEmployee,
@@ -836,6 +837,7 @@ export async function createProbationEvaluation(input: CreateProbationEvaluation
   await ensureProbationReminderEvents(employee, employees);
   await insertHistory(record, "created", actor, null, { managerFeedback: cleanText(input.managerFeedback) });
   await notifyProbationWorkflow(record, "Probation Evaluation Created", "warning");
+  invalidateExecutiveDashboardCache("probation evaluation created", ["probation"]);
   return record;
 }
 
@@ -928,6 +930,7 @@ export async function runProbationWorkflow(
     action === "pass" || action === "terminate" ? "Probation Decision Recorded" : "Probation Review Updated",
     updated.decision === "terminate" ? "danger" : action === "pass" ? "success" : "warning",
   );
+  invalidateExecutiveDashboardCache("probation workflow updated", ["probation", "employees", "vacancies", "payroll"]);
   return updated;
 }
 

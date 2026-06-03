@@ -4,9 +4,13 @@ import { deleteSalaryBatch } from "@/lib/payroll/service";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isPayrollConflictError } from "@/lib/payroll/errors";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertPermission(access, "payroll", "delete");
     const { id } = await params;

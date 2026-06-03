@@ -30,7 +30,7 @@ export function runEmployeePortalNavigationTests() {
   const dashboardSource = readFileSync("src/components/employee-portal/employee-portal-dashboard.tsx", "utf8");
   const layoutSource = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
   const marketingDraftsSource = readFileSync("src/components/employee-portal/marketing-request-drafts.tsx", "utf8");
-  const adminPageSource = readFileSync("app/admin/page.tsx", "utf8");
+  const adminPageSource = readFileSync("app/(admin)/admin/page.tsx", "utf8");
   const vacanciesPageSource = readFileSync("app/employee-portals/vacancies/page.tsx", "utf8");
   const teamPerformancePageSource = readFileSync("app/employee-portals/team-performance/page.tsx", "utf8");
   const launchSmokeSource = readFileSync("scripts/employee-portal-launch-smoke.mjs", "utf8");

@@ -332,6 +332,15 @@ export function assertActorMayManageUser(input: {
 
 }
 
+export function assertSuperAdminUserAdminActor(actor?: AccessActor | null) {
+  // Internal system flows may provision users without an interactive actor.
+  // Any authenticated API/user-admin actor must be Super Admin only.
+  if (!actor?.loginId) return;
+  if (actor.role !== "Super Admin") {
+    throw new Error("Forbidden: only Super Admin can manage user access.");
+  }
+}
+
 export async function getAccessControlDashboard() {
   const supabase = getSupabaseAdmin();
   let result: {
@@ -473,6 +482,8 @@ export async function upsertRolePermissionOverride(
 }
 
 export async function upsertAccessUser(input: AccessUserMutation, actor?: AccessActor | null) {
+  assertSuperAdminUserAdminActor(actor);
+
   const loginId = (input.loginId || input.hrId || "").trim();
   if (!loginId) throw new Error("HR_ID or login ID is required.");
 
@@ -764,6 +775,8 @@ export async function updateAccessUserStatus(
   actor?: AccessActor | null,
   governanceReason?: string | null,
 ) {
+  assertSuperAdminUserAdminActor(actor);
+
   const supabase = getSupabaseAdmin();
   const existing = await supabaseUser(loginId);
   if (!existing) {

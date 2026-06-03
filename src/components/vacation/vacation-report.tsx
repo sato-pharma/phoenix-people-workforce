@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  FileText,
   Filter,
   Pencil,
   Plus,
@@ -46,6 +47,7 @@ import type {
   VacationReportData,
   VacationRequestRecord,
   VacationRequestStatus,
+  VacationTimelineEvent,
 } from "@/lib/vacation/types";
 import { VACATION_DAY_PARTS, VACATION_PAYMENT_STATUSES, VACATION_STATUSES, VACATION_TYPES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";
@@ -78,6 +80,10 @@ type EntitlementSortKey = "annualBalanceDays" | "daysSinceHire" | "fullName" | "
 
 type RequestSortKey = "createdAt" | "durationDays" | "employeeName" | "startDate" | "status";
 
+type PendingReportAction =
+  | { kind: "decision"; decision: "approve" | "reject"; requestId: string; status: VacationRequestStatus }
+  | { kind: "delete"; row: VacationRequestRecord };
+
 const PAGE_SIZE = 25;
 
 const DATE_PRESETS = [
@@ -98,7 +104,7 @@ function emptyAdminVacationForm(employeeHrId = ""): AdminVacationFormState {
     endDate: "",
     notes: "",
     startDate: "",
-    status: "approved",
+    status: "pending_manager",
     vacationType: "annual",
   };
 }
@@ -174,6 +180,53 @@ function eligibilityStatusLabel(status: VacationEmployeeEligibilityRow["eligibil
   if (status === "eligible") return "Eligible now";
   if (status === "first_six_months") return "Inside first 6 months";
   return "Missing hire date";
+}
+
+function vacationAttachmentUrl(row: VacationRequestRecord, kind: "compensatory" | "sick") {
+  return `/api/vacations/requests/${encodeURIComponent(row.id)}/attachments/${kind}`;
+}
+
+function VacationAttachmentLinks({
+  canReviewAttachments,
+  row,
+}: {
+  canReviewAttachments: boolean;
+  row: VacationRequestRecord;
+}) {
+  if (!canReviewAttachments) return null;
+  const attachments = [
+    row.sickAttachmentObjectPath
+      ? {
+          href: vacationAttachmentUrl(row, "sick"),
+          label: row.sickAttachmentOriginalName || "Medical document",
+        }
+      : null,
+    row.compensatoryAttachmentObjectPath
+      ? {
+          href: vacationAttachmentUrl(row, "compensatory"),
+          label: row.compensatoryAttachmentOriginalName || "Event photo",
+        }
+      : null,
+  ].filter((attachment): attachment is { href: string; label: string } => Boolean(attachment));
+
+  if (attachments.length === 0) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {attachments.map((attachment) => (
+        <a
+          className="inline-flex items-center gap-1 rounded-sm border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+          href={attachment.href}
+          key={attachment.href}
+          rel="noreferrer"
+          target="_blank"
+          title={attachment.label}
+        >
+          <FileText className="h-3 w-3" />
+          Evidence
+        </a>
+      ))}
+    </div>
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -834,16 +887,20 @@ function EntitlementCard({ row }: { row: VacationEmployeeEligibilityRow }) {
 function RequestCard({
   actingId,
   canAdminManage,
+  canReviewAttachments,
   onDecide,
   onDelete,
   onEdit,
+  onReview,
   row,
 }: {
   actingId: string | null;
   canAdminManage: boolean;
-  onDecide: (id: string, decision: "approve" | "reject") => void;
+  canReviewAttachments: boolean;
+  onDecide: (row: VacationRequestRecord, decision: "approve" | "reject") => void;
   onDelete: (row: VacationRequestRecord) => void;
   onEdit: (row: VacationRequestRecord) => void;
+  onReview: (row: VacationRequestRecord) => void;
   row: VacationRequestRecord;
 }) {
   return (
@@ -898,8 +955,10 @@ function RequestCard({
         <div className="mt-2 rounded-sm border border-orange-100 bg-orange-50/70 px-2.5 py-2 text-[11px] font-semibold leading-4 text-orange-900">
           <p>{row.compensatoryEventName ?? "Compensatory event"}</p>
           <p className="text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
+          <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} />
         </div>
       ) : null}
+      {row.vacationType === "sick" ? <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} /> : null}
       {row.vacationType === "other" && row.notes ? (
         <p className="mt-2 rounded-sm border border-amber-100 bg-amber-50/70 px-2.5 py-2 text-[11px] font-semibold leading-4 text-amber-900">
           {row.notes}
@@ -910,6 +969,21 @@ function RequestCard({
         <span>Submitted {formatDateTime(row.createdAt)}</span>
         {row.managerName ? <span>Mgr: {row.managerName}</span> : null}
       </div>
+      {(row.slaStatus.isOverdue || row.overlapWarnings.length > 0) ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {row.slaStatus.isOverdue ? <Badge variant="danger">SLA overdue</Badge> : null}
+          {row.overlapWarnings.length > 0 ? <Badge variant="warning">{row.overlapWarnings.length} warning(s)</Badge> : null}
+        </div>
+      ) : null}
+      {!canAdminManage ? (
+        <button
+          className="mt-2 flex items-center gap-1 text-[11px] font-bold text-slate-500 transition hover:text-slate-700"
+          onClick={() => onReview(row)}
+          type="button"
+        >
+          <FileText className="h-3 w-3" /> Timeline
+        </button>
+      ) : null}
 
       {/* Decision info or action buttons */}
       {row.canDecide ? (
@@ -917,7 +991,7 @@ function RequestCard({
           <Button
             className="h-8 flex-1 gap-1.5 rounded-sm bg-emerald-600 text-[11px] font-bold hover:bg-emerald-700"
             disabled={actingId === row.id}
-            onClick={() => onDecide(row.id, "approve")}
+            onClick={() => onDecide(row, "approve")}
             type="button"
           >
             <CheckCircle2 className="h-3 w-3" />
@@ -926,7 +1000,7 @@ function RequestCard({
           <Button
             className="h-8 flex-1 gap-1.5 rounded-sm bg-rose-600 text-[11px] font-bold text-white hover:bg-rose-700"
             disabled={actingId === row.id}
-            onClick={() => onDecide(row.id, "reject")}
+            onClick={() => onDecide(row, "reject")}
             type="button"
           >
             <XCircle className="h-3 w-3" />
@@ -944,6 +1018,13 @@ function RequestCard({
 
       {canAdminManage ? (
         <div className="mt-2 flex gap-2 border-t border-slate-100 pt-2">
+          <button
+            className="flex items-center gap-1 text-[11px] font-bold text-slate-500 transition hover:text-slate-700"
+            onClick={() => onReview(row)}
+            type="button"
+          >
+            <FileText className="h-3 w-3" /> Timeline
+          </button>
           <button
             className="flex items-center gap-1 text-[11px] font-bold text-slate-500 transition hover:text-slate-700"
             disabled={actingId === row.id}
@@ -1005,7 +1086,13 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   const [adminError, setAdminError] = useState<string | null>(null);
   const [adminForm, setAdminForm] = useState<AdminVacationFormState>(() => emptyAdminVacationForm(initialData?.options.employees[0]?.value));
   const [adminMode, setAdminMode] = useState<"add" | "edit" | null>(null);
+  const [decisionComment, setDecisionComment] = useState("");
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingReportAction | null>(null);
+  const [selectedRequest, setSelectedRequest] = useState<VacationRequestRecord | null>(null);
+  const [timeline, setTimeline] = useState<VacationTimelineEvent[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [evidenceReviewNote, setEvidenceReviewNote] = useState("");
 
   /* ── Pagination state ────────────────────────────── */
   const [entitlementPage, setEntitlementPage] = useState(0);
@@ -1022,7 +1109,10 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   const employeeEligibilitySummary = initialData?.employeeEligibilitySummary;
   const options = initialData?.options;
   const summary = initialData?.summary;
+  const dashboard = initialData?.dashboard;
   const canAdminManage = Boolean(initialData?.canAdminManage);
+  const canExport = Boolean(initialData?.canExport);
+  const canReviewAttachments = Boolean(initialData?.canReviewAttachments);
   const showEntitlementsTab = activeTab === "entitlements";
   const showRequestsTab = activeTab === "requests";
   const addVacationTypeOptions = VACATION_TYPES.filter((option) => option.value !== "sick" && option.value !== "compensatory");
@@ -1159,9 +1249,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
     }
   }
 
-  async function deleteAdminRequest(row: VacationRequestRecord) {
-    if (!window.confirm(`Delete vacation request ${row.id}? This removes the request record from the master report.`)) return;
-
+  async function performDeleteAdminRequest(row: VacationRequestRecord) {
     setAdminError(null);
     setActingId(row.id);
     try {
@@ -1178,6 +1266,11 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
     }
   }
 
+  function deleteAdminRequest(row: VacationRequestRecord) {
+    setDecisionComment("");
+    setPendingAction({ kind: "delete", row });
+  }
+
   function applyFilters() {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
@@ -1186,17 +1279,12 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
     router.push(buildReportUrl(activeTab, params));
   }
 
-  const decide = useCallback(async (requestId: string, decision: "approve" | "reject") => {
-    const decisionComment = decision === "reject"
-      ? window.prompt("Rejection reason") ?? null
-      : null;
-    if (decision === "reject" && decisionComment === null) return;
-
+  const performDecision = useCallback(async (requestId: string, decision: "approve" | "reject", comment: string | null) => {
     setActingId(requestId);
     setActionError(null);
     try {
       const response = await fetch(`/api/vacations/requests/${encodeURIComponent(requestId)}/decision`, {
-        body: JSON.stringify({ decision, decisionComment }),
+        body: JSON.stringify({ decision, decisionComment: comment }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -1211,6 +1299,78 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
       setActingId(null);
     }
   }, [router]);
+
+  const decide = useCallback((row: VacationRequestRecord, decision: "approve" | "reject") => {
+    setDecisionComment("");
+    setPendingAction({ decision, kind: "decision", requestId: row.id, status: row.status });
+  }, []);
+
+  async function confirmPendingAction() {
+    if (!pendingAction) return;
+    if (pendingAction.kind === "decision" && pendingAction.decision === "reject" && !decisionComment.trim()) {
+      setActionError("Rejection reason is required.");
+      return;
+    }
+
+    const action = pendingAction;
+    setPendingAction(null);
+    if (action.kind === "delete") {
+      await performDeleteAdminRequest(action.row);
+      return;
+    }
+
+    await performDecision(
+      action.requestId,
+      action.decision,
+      action.decision === "reject" ? decisionComment.trim() : null,
+    );
+  }
+
+  async function openRequestReview(row: VacationRequestRecord) {
+    setSelectedRequest(row);
+    setTimeline([]);
+    setTimelineLoading(true);
+    setEvidenceReviewNote("");
+    try {
+      const response = await fetch(`/api/vacations/requests/${encodeURIComponent(row.id)}/timeline`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "Timeline failed.");
+      setTimeline(Array.isArray(payload.timeline) ? payload.timeline : []);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Timeline failed.");
+    } finally {
+      setTimelineLoading(false);
+    }
+  }
+
+  async function submitEvidenceReview(status: "accepted" | "needs_follow_up" | "rejected") {
+    if (!selectedRequest) return;
+    const evidenceType = selectedRequest.vacationType === "compensatory" ? "compensatory" : "sick";
+    setActingId(selectedRequest.id);
+    try {
+      const response = await fetch(`/api/vacations/requests/${encodeURIComponent(selectedRequest.id)}/evidence-review`, {
+        body: JSON.stringify({ evidenceType, reviewNote: evidenceReviewNote, status }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "Evidence review failed.");
+      router.refresh();
+      await openRequestReview(selectedRequest);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Evidence review failed.");
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  const auditExportHref = useMemo(() => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value && value !== "all") params.set(key, value);
+    });
+    return `/api/vacations/report/export${params.toString() ? `?${params}` : ""}`;
+  }, [filters]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /* ─── Tab Items ─────────────────────────────────────────────────── */
@@ -1279,6 +1439,61 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
         ) : null}
 
         {/* ── Tab Bar ────────────────────────────────────────────── */}
+        {pendingAction ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 py-6 print:hidden" role="presentation">
+            <div
+              aria-modal="true"
+              className="w-full max-w-md rounded-sm border border-slate-200 bg-white p-4 shadow-xl"
+              role="dialog"
+            >
+              <h3 className="text-base font-extrabold text-slate-950">
+                {pendingAction.kind === "delete"
+                  ? "Delete vacation request"
+                  : pendingAction.decision === "approve"
+                    ? pendingAction.status === "pending_hr" ? "Final approve request" : "Approve request"
+                    : pendingAction.status === "pending_hr" ? "Final reject request" : "Reject request"}
+              </h3>
+              <p className="mt-2 text-[13px] font-medium leading-5 text-slate-600">
+                {pendingAction.kind === "delete"
+                  ? `This removes ${vacationRequestDisplayId(pendingAction.row.id)} from the master report. The admin audit log keeps the deleted record context.`
+                  : "This records the workflow decision and notifies the next responsible people."}
+              </p>
+              {pendingAction.kind === "decision" && pendingAction.decision === "reject" ? (
+                <label className="mt-3 block space-y-1.5">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Rejection reason</span>
+                  <textarea
+                    className="min-h-24 w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                    value={decisionComment}
+                    onChange={(event) => setDecisionComment(event.target.value)}
+                  />
+                </label>
+              ) : null}
+              <div className="mt-4 flex justify-end gap-2">
+                <Button
+                  className="rounded-sm border border-slate-200 bg-white text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+                  onClick={() => setPendingAction(null)}
+                  type="button"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className={cn(
+                    "rounded-sm text-[12px] font-bold text-white",
+                    pendingAction.kind === "delete" || (pendingAction.kind === "decision" && pendingAction.decision === "reject")
+                      ? "bg-rose-600 hover:bg-rose-700"
+                      : "bg-emerald-600 hover:bg-emerald-700",
+                  )}
+                  disabled={Boolean(actingId)}
+                  onClick={() => void confirmPendingAction()}
+                  type="button"
+                >
+                  Confirm
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div
           className="flex w-full gap-0.5 overflow-x-auto rounded-sm border border-slate-200 bg-slate-50 p-0.5"
           role="tablist"
@@ -1641,6 +1856,31 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               </div>
             )}
 
+            {dashboard ? (
+              <div className="grid gap-2 md:grid-cols-4">
+                <div className="rounded-sm border border-slate-200 bg-white p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Pending by stage</p>
+                  <p className="mt-1 text-xl font-black text-slate-900">{dashboard.pendingByStage.total}</p>
+                  <p className="text-[11px] font-semibold text-slate-500">Manager {dashboard.pendingByStage.manager} / HR {dashboard.pendingByStage.hr}</p>
+                </div>
+                <div className="rounded-sm border border-slate-200 bg-white p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Overdue SLA</p>
+                  <p className="mt-1 text-xl font-black text-rose-700">{dashboard.overdueBySla.total}</p>
+                  <p className="text-[11px] font-semibold text-slate-500">Manager {dashboard.overdueBySla.manager} / HR {dashboard.overdueBySla.hr}</p>
+                </div>
+                <div className="rounded-sm border border-slate-200 bg-white p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Evidence review</p>
+                  <p className="mt-1 text-xl font-black text-slate-900">{dashboard.evidence.pending + dashboard.evidence.needsFollowUp + dashboard.evidence.rejected}</p>
+                  <p className="text-[11px] font-semibold text-slate-500">Pending {dashboard.evidence.pending} / rejected {dashboard.evidence.rejected}</p>
+                </div>
+                <div className="rounded-sm border border-slate-200 bg-white p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Daily SLA run</p>
+                  <p className="mt-1 text-xl font-black text-slate-900">{dashboard.dailyEscalationRunStatus.status}</p>
+                  <p className="text-[11px] font-semibold text-slate-500">{dashboard.dailyEscalationRunStatus.runDate ?? "No run recorded"}</p>
+                </div>
+              </div>
+            ) : null}
+
             {/* Distribution bars */}
             {summary ? (
               <div className="grid gap-2 md:grid-cols-2">
@@ -1759,6 +1999,15 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     >
                       <Download className="h-3 w-3" /> CSV
                     </button>
+                    {canExport ? (
+                      <a
+                        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-orange-200 bg-orange-50 px-2.5 text-[10px] font-bold text-orange-700 transition hover:bg-orange-100 print:hidden"
+                        href={auditExportHref}
+                        title="Audit-grade XLSX export"
+                      >
+                        <Download className="h-3 w-3" /> Audit XLSX
+                      </a>
+                    ) : null}
                     <button
                       className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
                       onClick={() => window.print()}
@@ -1807,8 +2056,10 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                             <div className="mt-1.5 rounded-sm border border-orange-100 bg-orange-50/70 px-2 py-1.5 text-[10px] font-semibold leading-4 text-orange-900">
                               <p>{row.compensatoryEventName ?? "Event"}</p>
                               <p className="text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
+                              <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} />
                             </div>
                           ) : null}
+                          {row.vacationType === "sick" ? <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} /> : null}
                           {row.vacationType === "other" && row.notes ? (
                             <p className="mt-1.5 rounded-sm border border-amber-100 bg-amber-50/70 px-2 py-1.5 text-[10px] font-semibold leading-4 text-amber-900">{row.notes}</p>
                           ) : null}
@@ -1829,6 +2080,12 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <Badge variant={statusBadgeVariant(row.status)}>{statusLabel(row.status)}</Badge>
+                          {row.slaStatus.isOverdue ? (
+                            <p className="mt-1 text-[10px] font-bold text-rose-700">SLA overdue</p>
+                          ) : null}
+                          {row.overlapWarnings.length > 0 ? (
+                            <p className="mt-1 text-[10px] font-bold text-amber-700">{row.overlapWarnings.length} warning(s)</p>
+                          ) : null}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-600">{formatDateTime(row.createdAt)}</td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
@@ -1837,6 +2094,14 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                           {row.managerOfManagerName ? <p className="mt-0.5 text-[10px] text-slate-400">MoM: {row.managerOfManagerName}</p> : null}
                         </td>
                         <td className="px-3 py-2.5">
+                          <button
+                            className="mb-2 flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50"
+                            onClick={() => openRequestReview(row)}
+                            type="button"
+                          >
+                            <FileText className="h-3 w-3" /> Timeline
+                            {row.timelineEventCount > 0 ? <span className="text-slate-400">({row.timelineEventCount})</span> : null}
+                          </button>
                           {canAdminManage ? (
                             <div className="mb-2 flex flex-wrap gap-1.5">
                               <button
@@ -1862,7 +2127,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                               <button
                                 className="flex items-center gap-1 rounded-sm bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-emerald-700"
                                 disabled={actingId === row.id}
-                                onClick={() => decide(row.id, "approve")}
+                                onClick={() => decide(row, "approve")}
                                 type="button"
                               >
                                 <CheckCircle2 className="h-3 w-3" />
@@ -1871,7 +2136,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                               <button
                                 className="flex items-center gap-1 rounded-sm bg-rose-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-rose-700"
                                 disabled={actingId === row.id}
-                                onClick={() => decide(row.id, "reject")}
+                                onClick={() => decide(row, "reject")}
                                 type="button"
                               >
                                 <XCircle className="h-3 w-3" />
@@ -1912,9 +2177,11 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                       key={row.id}
                       actingId={actingId}
                       canAdminManage={canAdminManage}
+                      canReviewAttachments={canReviewAttachments}
                       onDecide={decide}
                       onDelete={deleteAdminRequest}
                       onEdit={startAdminEdit}
+                      onReview={openRequestReview}
                       row={row}
                     />
                   ))
@@ -1925,6 +2192,77 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
           </div>
         ) : null}
       </div>
+
+      {selectedRequest ? (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 p-3 print:hidden" role="dialog" aria-modal="true">
+          <div className="flex h-full w-full max-w-xl flex-col overflow-hidden rounded-sm bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">Request review</p>
+                <h3 className="mt-1 text-lg font-black text-slate-900">{vacationRequestDisplayId(selectedRequest.id)}</h3>
+                <p className="text-[12px] font-semibold text-slate-500">{selectedRequest.employeeName} / {statusLabel(selectedRequest.status)}</p>
+              </div>
+              <button className="rounded-sm p-2 text-slate-500 hover:bg-slate-100" onClick={() => setSelectedRequest(null)} type="button">
+                <XCircle className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              {selectedRequest.overlapWarnings.length > 0 ? (
+                <div className="rounded-sm border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-amber-700">Overlap intelligence</p>
+                  <div className="mt-2 space-y-1.5">
+                    {selectedRequest.overlapWarnings.map((warning) => (
+                      <p className="text-[12px] font-semibold text-amber-900" key={`${warning.code}-${warning.relatedRequestIds.join("-")}`}>{warning.message}</p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {(selectedRequest.vacationType === "sick" || selectedRequest.vacationType === "compensatory") && canReviewAttachments ? (
+                <div className="rounded-sm border border-slate-200 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Evidence review</p>
+                      <p className="mt-1 text-[12px] font-semibold text-slate-600">
+                        Current: {selectedRequest.evidenceReviews[0]?.status ?? "pending"}
+                      </p>
+                    </div>
+                    <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={selectedRequest} />
+                  </div>
+                  <textarea
+                    className="mt-3 min-h-20 w-full rounded-sm border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-300"
+                    onChange={(event) => setEvidenceReviewNote(event.target.value)}
+                    placeholder="HR review note"
+                    value={evidenceReviewNote}
+                  />
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button className="h-8 rounded-sm bg-emerald-600 text-[11px] font-bold text-white hover:bg-emerald-700" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("accepted")} type="button">Accept</Button>
+                    <Button className="h-8 rounded-sm bg-amber-500 text-[11px] font-bold text-white hover:bg-amber-600" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("needs_follow_up")} type="button">Needs follow-up</Button>
+                    <Button className="h-8 rounded-sm bg-rose-600 text-[11px] font-bold text-white hover:bg-rose-700" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("rejected")} type="button">Reject</Button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="rounded-sm border border-slate-200 p-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Approval timeline</p>
+                {timelineLoading ? (
+                  <p className="mt-3 text-sm font-semibold text-slate-500">Loading timeline...</p>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {timeline.map((event) => (
+                      <div className="border-l-2 border-orange-200 pl-3" key={event.id}>
+                        <p className="text-[12px] font-black text-slate-900">{event.message}</p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-slate-500">{formatDateTime(event.createdAt)} / {event.eventType}</p>
+                      </div>
+                    ))}
+                    {timeline.length === 0 ? <p className="text-sm font-semibold text-slate-500">No timeline events recorded yet.</p> : null}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </PageContainer>
   );
 }

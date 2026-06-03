@@ -1,5 +1,6 @@
 import { AlertCircle, ShieldCheck } from "lucide-react";
 
+import { adminPanelClassName } from "@/components/admin/admin-design-tokens";
 import type { RiskRegister, RiskRow, RiskSeverity } from "@/lib/ceo/risk";
 import { formatDateShort, formatNumber } from "@/lib/ceo/format";
 
@@ -12,7 +13,7 @@ const SEVERITY_STYLES: Record<RiskSeverity, { label: string; badge: string; bar:
 function RiskCard({ row }: { row: RiskRow }) {
   const severity = SEVERITY_STYLES[row.severity];
   return (
-    <div className="relative min-w-0 overflow-hidden rounded-[16px] border border-[#E5EAF1] bg-white p-4 shadow-[0_6px_18px_rgba(15,23,42,0.035)]">
+    <div className="relative min-w-0 overflow-hidden rounded-[16px] border border-[#E5EAF1] bg-gradient-to-br from-white to-slate-50/40 p-4 shadow-[0_6px_18px_rgba(15,23,42,0.035)] transition-shadow hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)]">
       <div className={`absolute inset-y-0 left-0 w-1 ${severity.bar}`} />
       <div className="flex flex-wrap items-start justify-between gap-2 pl-2">
         <div className="min-w-0">
@@ -47,9 +48,10 @@ function RiskCard({ row }: { row: RiskRow }) {
 
 export function CeoRiskRegister({ register }: { register: RiskRegister }) {
   return (
-    <section className="min-w-0 rounded-[18px] border border-[#D8E0EA] bg-white p-5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+    <section className={`group relative min-w-0 overflow-hidden ${adminPanelClassName} bg-gradient-to-br from-white to-slate-50/40 p-5`}>
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-400/0 via-orange-400/40 to-orange-400/0" />
       <header className="mb-4 flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50 text-slate-500">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 text-orange-600">
           <ShieldCheck className="h-4 w-4" />
         </span>
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Strategic Risk Register</h2>
@@ -59,7 +61,7 @@ export function CeoRiskRegister({ register }: { register: RiskRegister }) {
           <ShieldCheck className="h-4 w-4" /> No active strategic risks detected.
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
           {register.rows.map((row) => (
             <RiskCard key={row.id} row={row} />
           ))}

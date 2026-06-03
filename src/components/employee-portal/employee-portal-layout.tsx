@@ -9,10 +9,12 @@ import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
+import { RouteTransitionProvider } from "@/components/layout/route-transition-provider";
 import { PageTransition } from "@/components/ui/page-transition";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { isEmployeePortalOwnedRoute } from "@/lib/employee-portal/routes";
+import { systemAssets } from "@/config/system-settings";
 
 const EMPLOYEE_SIDEBAR_COLLAPSED_KEY = "phoenix-employee-sidebar-collapsed";
 const EMPLOYEE_SIDEBAR_COLLAPSED_EVENT = "phoenix-employee-sidebar-collapsed-change";
@@ -358,12 +360,6 @@ export function EmployeePortalTopNav({
 
   const employeeName = data.employee.fullName.trim();
   const firstName = employeeName.split(/\s+/)[0] || "Employee";
-  const initials = employeeName
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part.charAt(0))
-    .join("")
-    .toUpperCase() || "EM";
 
   const menuSections = buildEmployeePortalSections(visibility);
   const searchTerm = searchQuery.trim().toLowerCase();
@@ -511,9 +507,7 @@ export function EmployeePortalTopNav({
               onClick={() => setUserMenuOpen((open) => !open)}
               type="button"
             >
-              <div className="flex h-7 w-7 items-center justify-center rounded bg-gradient-to-br from-orange-500 to-orange-600 text-[10px] font-bold text-white">
-                {initials}
-              </div>
+              <Image alt="Phoenix" className="h-7 w-7 shrink-0 rounded object-cover" height={28} src={systemAssets.adminRailMark} width={28} />
               <div className="hidden pr-0.5 text-left sm:block">
                 <p className="text-xs font-semibold text-slate-800 whitespace-nowrap">{firstName}</p>
               </div>
@@ -610,9 +604,7 @@ export function EmployeePortalTopNav({
         <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-3">
           <div className="rounded border border-orange-100 bg-orange-50 p-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-gradient-to-br from-orange-500 to-orange-600 text-[10px] font-bold text-white">
-                {initials}
-              </div>
+              <Image alt="Phoenix" className="h-8 w-8 shrink-0 rounded object-cover" height={32} src={systemAssets.adminRailMark} width={32} />
               <div>
                 <p className="text-sm font-semibold text-slate-900">{data.employee.fullName}</p>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">{data.employee.roleLabel}</p>
@@ -796,23 +788,25 @@ export function EmployeePortalChrome({
   visibility: EmployeePortalNavVisibility;
 }) {
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[56px] lg:pt-[64px]">
-      <EmployeePortalRouteProgress />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.028)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.028)_1px,transparent_1px)] bg-[size:52px_52px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.65),transparent_56%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[480px] bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(255,255,255,0)_70%)]" />
-      <EmployeePortalTopNav
-        activePathOverride={activePathOverride}
-        data={data}
-        disableSessionGuard={disableSessionGuard}
-        visibility={visibility}
-      />
-      <div className="relative mx-auto flex w-full max-w-[1560px] items-start gap-4 px-3 py-5 sm:px-4 lg:gap-8 lg:px-8 lg:py-8">
-        <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
-        <main className="min-w-0 flex-1 space-y-6 lg:space-y-8">
-          <PageTransition>{children}</PageTransition>
-        </main>
+    <RouteTransitionProvider>
+      <div className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[56px] lg:pt-[64px]">
+        <EmployeePortalRouteProgress />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.028)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.028)_1px,transparent_1px)] bg-[size:52px_52px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.65),transparent_56%)]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[480px] bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(255,255,255,0)_70%)]" />
+        <EmployeePortalTopNav
+          activePathOverride={activePathOverride}
+          data={data}
+          disableSessionGuard={disableSessionGuard}
+          visibility={visibility}
+        />
+        <div className="relative mx-auto flex w-full max-w-[1560px] items-start gap-4 px-3 py-5 sm:px-4 lg:gap-8 lg:px-8 lg:py-8">
+          <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
+          <main className="min-w-0 flex-1 space-y-6 lg:space-y-8">
+            <PageTransition>{children}</PageTransition>
+          </main>
+        </div>
       </div>
-    </div>
+    </RouteTransitionProvider>
   );
 }

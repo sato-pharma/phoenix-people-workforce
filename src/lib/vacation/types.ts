@@ -46,6 +46,24 @@ export type VacationPaymentStatus = (typeof VACATION_PAYMENT_STATUSES)[number]["
 export type VacationDecision = "approve" | "reject";
 export type VacationUnpaidReason = "first_six_months" | "insufficient_balance" | "missing_hire_date";
 export type VacationWeeklyOffMode = (typeof VACATION_WEEKLY_OFF_MODES)[number]["value"];
+export type VacationEvidenceType = "compensatory" | "sick";
+export type VacationEvidenceReviewStatus = "accepted" | "needs_follow_up" | "pending" | "rejected";
+export type VacationTimelineEventType =
+  | "admin_created"
+  | "admin_deleted"
+  | "admin_updated"
+  | "evidence_reviewed"
+  | "evidence_uploaded"
+  | "hr_approved"
+  | "hr_rejected"
+  | "manager_approved"
+  | "manager_rejected"
+  | "notification_failed"
+  | "overlap_warning"
+  | "sla_escalation"
+  | "sla_reminder"
+  | "submitted"
+  | string;
 
 export type VacationRequestInput = {
   dayPart: VacationDayPart;
@@ -85,6 +103,97 @@ export type VacationWeeklyOffPolicyRecord = {
   saturday: VacationWeeklyOffMode;
   thursday: VacationWeeklyOffMode;
   updatedAt: string | null;
+};
+
+export type VacationWeeklyOffPolicySnapshot = {
+  capturedAt: string;
+  friday: VacationWeeklyOffMode;
+  jobTitle: string;
+  policyId: string | null;
+  saturday: VacationWeeklyOffMode;
+  thursday: VacationWeeklyOffMode;
+  updatedAt: string | null;
+};
+
+export type VacationEvidenceReview = {
+  createdAt: string;
+  evidenceType: VacationEvidenceType;
+  id: string;
+  requestId: string;
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  reviewedByHrId: string | null;
+  status: VacationEvidenceReviewStatus;
+  updatedAt: string;
+};
+
+export type VacationOverlapWarning = {
+  code:
+    | "employee_overlap"
+    | "evidence_required"
+    | "holiday_adjacent"
+    | "manager_absent"
+    | "team_overlap";
+  message: string;
+  relatedRequestIds: string[];
+  severity: "info" | "warning";
+};
+
+export type VacationSlaStatus = {
+  businessDaysPending: number;
+  dueAt: string | null;
+  isOverdue: boolean;
+  lastEscalatedAt: string | null;
+  lastRemindedAt: string | null;
+  stage: "approved" | "manager" | "hr" | "rejected";
+};
+
+export type VacationTimelineEvent = {
+  actorHrId: string | null;
+  actorLoginId: string | null;
+  createdAt: string;
+  eventType: VacationTimelineEventType;
+  id: string;
+  message: string;
+  metadata: Record<string, unknown>;
+  source: "decision" | "evidence" | "event" | "system";
+};
+
+export type VacationDashboardData = {
+  dailyEscalationRunStatus: {
+    finishedAt: string | null;
+    runDate: string | null;
+    status: "completed" | "failed" | "not_run" | "running";
+  };
+  evidence: {
+    accepted: number;
+    needsFollowUp: number;
+    pending: number;
+    rejected: number;
+  };
+  leaveDaysByDepartment: Array<{ departmentName: string; days: number }>;
+  leaveDaysByLine: Array<{ days: number; lineName: string }>;
+  managerBottlenecks: Array<{ managerHrId: string | null; managerName: string | null; overdue: number; pending: number }>;
+  overlapWarnings: number;
+  overdueBySla: {
+    hr: number;
+    manager: number;
+    total: number;
+  };
+  pendingByStage: {
+    hr: number;
+    manager: number;
+    total: number;
+  };
+};
+
+export type VacationAuditExportMetadata = {
+  actorHrId: string | null;
+  actorLoginId: string | null;
+  exportedAt: string;
+  filters: VacationReportFilters;
+  rowCount: number;
+  scope: string;
 };
 
 export type VacationControlData = {
@@ -139,6 +248,11 @@ export type VacationRequestRecord = VacationBalanceSnapshot & {
   status: VacationRequestStatus;
   submittedByHrId: string | null;
   vacationType: VacationType;
+  evidenceReviews: VacationEvidenceReview[];
+  overlapWarnings: VacationOverlapWarning[];
+  slaStatus: VacationSlaStatus;
+  timelineEventCount: number;
+  weeklyOffPolicySnapshot: VacationWeeklyOffPolicySnapshot | null;
 };
 
 export type VacationReportFilters = {
@@ -179,6 +293,9 @@ export type VacationEmployeeEligibilityRow = {
 
 export type VacationReportData = {
   canAdminManage: boolean;
+  canExport: boolean;
+  canReviewAttachments: boolean;
+  dashboard: VacationDashboardData;
   employeeEligibility: VacationEmployeeEligibilityRow[];
   employeeEligibilitySummary: {
     activeEmployees: number;

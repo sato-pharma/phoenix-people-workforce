@@ -122,7 +122,7 @@ export function runCommunicationSourceOfTruthTests() {
   assert.match(templateServiceSource, /templateSupportsAction/);
   assert.match(templateServiceSource, /EMAIL_TEMPLATE_KEYS\.BIRTHDAY/);
 
-  const templatePageSource = readFileSync("app/admin/email-templates/page.tsx", "utf8");
+  const templatePageSource = readFileSync("app/(admin)/admin/email-templates/page.tsx", "utf8");
   assert.match(templatePageSource, /getEmailTemplateReadinessMetrics/);
 
   const inAppSource = readFileSync("src/lib/notifications/in-app.ts", "utf8");

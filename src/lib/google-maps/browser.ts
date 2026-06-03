@@ -46,6 +46,7 @@ export type GoogleMapsApi = {
 declare global {
   interface Window {
     __phoenixGoogleMapsPromise?: Promise<GoogleMapsApi>;
+    gm_authFailure?: () => void;
     google?: { maps?: GoogleMapsApi };
   }
 }
@@ -77,6 +78,20 @@ function createBootstrapLoader(browserKey: string) {
     if (scriptPromise) return scriptPromise;
 
     scriptPromise = new Promise<void>((resolve, reject) => {
+      const previousAuthFailure = window.gm_authFailure;
+      let settled = false;
+      const rejectWithMapsConfigError = (message: string) => {
+        if (settled) return;
+        settled = true;
+        script.remove();
+        if (mapsRoot.importLibrary === bootstrapImportLibrary) {
+          delete mapsRoot.importLibrary;
+        }
+        delete mapsRoot.__ib__;
+        window.gm_authFailure = previousAuthFailure;
+        scriptPromise = null;
+        reject(new Error(message));
+      };
       const params = new URLSearchParams();
       params.set("key", browserKey);
       params.set("v", "weekly");
@@ -90,16 +105,21 @@ function createBootstrapLoader(browserKey: string) {
       script.id = "phoenix-google-maps-js";
       script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
       script.onerror = () => {
-        script.remove();
-        if (mapsRoot.importLibrary === bootstrapImportLibrary) {
-          delete mapsRoot.importLibrary;
-        }
-        delete mapsRoot.__ib__;
-        scriptPromise = null;
-        reject(new Error("Google Maps failed to load. Check API restrictions."));
+        rejectWithMapsConfigError("Google Maps failed to load. Check API restrictions.");
       };
       script.nonce = document.querySelector<HTMLScriptElement>("script[nonce]")?.nonce ?? "";
-      mapsRoot.__ib__ = resolve;
+      window.gm_authFailure = () => {
+        previousAuthFailure?.();
+        rejectWithMapsConfigError(
+          "Google Maps authentication failed. Check Google Cloud billing, enabled APIs, API restrictions, and allowed referrers.",
+        );
+      };
+      mapsRoot.__ib__ = () => {
+        if (settled) return;
+        settled = true;
+        window.gm_authFailure = previousAuthFailure;
+        resolve();
+      };
       document.head.appendChild(script);
     });
 

@@ -4,6 +4,7 @@ import {
   type PayrollPaymentMode,
 } from "@/lib/payroll/policy";
 import { googleGeocodeAddress } from "@/lib/google-maps/server";
+import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { canonicalHrIdForDisplay, hrIdLookupKeys } from "@/lib/hr-id";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
@@ -878,10 +879,11 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     employeeRows = await supabaseRest<EmployeeDbRow[]>(`employees?${fallbackParams}`);
   }
 
-  const residenceByHrId = await loadResidenceByHrId(uniqueTextValues(employeeRows, "hr_id"));
-  const pendingReplacementByHrId = await loadPendingManagerReplacementByHrId(
-    uniqueTextValues(employeeRows, "hr_id"),
-  );
+  const employeeHrIds = uniqueTextValues(employeeRows, "hr_id");
+  const [residenceByHrId, pendingReplacementByHrId] = await Promise.all([
+    loadResidenceByHrId(employeeHrIds),
+    loadPendingManagerReplacementByHrId(employeeHrIds),
+  ]);
 
   // Check if we got joined data
   const hasJoinedData = employeeRows.length > 0 && (employeeRows[0].employee_compensation || employeeRows[0].departments);
@@ -1997,6 +1999,7 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
   }
 
   invalidateEmployeeDirectoryCache();
+  invalidateExecutiveDashboardCache("employee upsert", ["employees", "vacancies", "payroll"]);
 
   return rows;
 }
@@ -2061,6 +2064,7 @@ export async function bulkUpdateEmployees(
   );
 
   invalidateEmployeeDirectoryCache();
+  invalidateExecutiveDashboardCache("employee bulk update", ["employees", "vacancies", "payroll"]);
 
   return rows;
 }

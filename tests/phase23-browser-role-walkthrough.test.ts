@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 export function runPhase23BrowserRoleWalkthroughTests() {
   const smoke = readFileSync("scripts/phase23-browser-role-walkthrough.mjs", "utf8");
   const devAuthRoute = readFileSync("app/api/dev-auth/route.ts", "utf8");
-  const employeesPage = readFileSync("app/employees/page.tsx", "utf8");
+  const employeesPage = readFileSync("app/(admin)/employees/page.tsx", "utf8");
   const permissionsSource = readFileSync("src/lib/auth/permissions.ts", "utf8");
 
   assert.match(smoke, /import \{ chromium \} from "playwright"/);
@@ -41,7 +41,9 @@ export function runPhase23BrowserRoleWalkthroughTests() {
   assert.doesNotMatch(smoke, /\.delete\(/);
 
   assert.match(devAuthRoute, /process\.env\.NODE_ENV !== "development"/);
-  assert.match(devAuthRoute, /hostname === "localhost"/);
+  assert.match(devAuthRoute, /function isLoopbackHostname/);
+  assert.match(devAuthRoute, /normalized === "localhost"/);
+  assert.match(devAuthRoute, /normalized === "127\.0\.0\.1"/);
   assert.match(devAuthRoute, /phoenixDevPreviewCookieName/);
   assert.match(devAuthRoute, /createDevPreviewSessionToken/);
 

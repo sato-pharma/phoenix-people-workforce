@@ -1,0 +1,122 @@
+const productionOrigin = "https://phoenix-workforce.vercel.app";
+const workingPreviewOrigin =
+  "https://phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects.vercel.app";
+// Stable branch alias for codex/ceo-staging-rebuild-hardening (PR #24) preview.
+const stagingRebuildPreviewOrigin =
+  "https://phoenix-workforce-git-codex-41bc50-phoenix-workspace-s-projects.vercel.app";
+
+function normalizeLocalHostname(hostname: string) {
+  const normalized = hostname
+    .trim()
+    .replace(/^\[(.*)\]$/, "$1")
+    .toLowerCase();
+
+  if (normalized === "127.0.0.1" || normalized === "::1") {
+    return "localhost";
+  }
+
+  return normalized;
+}
+
+export function normalizeOrigin(value: string | null | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw);
+    url.hostname = normalizeLocalHostname(url.hostname);
+    url.hash = "";
+    url.pathname = "";
+    url.search = "";
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+export function originFromHostParts(host: string | null | undefined, proto: string | null | undefined) {
+  const normalizedHost = String(host ?? "").trim();
+  if (!normalizedHost) return null;
+
+  const normalizedProto = String(proto ?? "").trim() || "https";
+  return normalizeOrigin(`${normalizedProto}://${normalizedHost}`);
+}
+
+function isLocalOrigin(origin: string) {
+  try {
+    const url = new URL(origin);
+    return normalizeLocalHostname(url.hostname) === "localhost";
+  } catch {
+    return false;
+  }
+}
+
+export function allowedPhoenixOrigins() {
+  const configured = String(process.env.PHOENIX_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => normalizeOrigin(origin))
+    .filter((origin): origin is string => Boolean(origin));
+
+  const vercelUrl = process.env.VERCEL_URL?.trim()
+    ? normalizeOrigin(`https://${process.env.VERCEL_URL.trim()}`)
+    : null;
+
+  return new Set(
+    [productionOrigin, workingPreviewOrigin, stagingRebuildPreviewOrigin, vercelUrl, ...configured]
+      .map((origin) => normalizeOrigin(origin))
+      .filter((origin): origin is string => Boolean(origin)),
+  );
+}
+
+export function isAllowedPhoenixOrigin(origin: string | null | undefined) {
+  const normalized = normalizeOrigin(origin);
+  if (!normalized) return false;
+  if (allowedPhoenixOrigins().has(normalized)) return true;
+  return process.env.NODE_ENV !== "production" && isLocalOrigin(normalized);
+}
+
+export function requestOriginCandidates(request: Pick<Request, "headers" | "url">) {
+  return {
+    forwardedOrigin: originFromHostParts(
+      request.headers.get("x-forwarded-host"),
+      request.headers.get("x-forwarded-proto"),
+    ),
+    hostOrigin: originFromHostParts(
+      request.headers.get("host"),
+      new URL(request.url).protocol.replace(/:$/, ""),
+    ),
+    originHeader: normalizeOrigin(request.headers.get("origin")),
+    refererOrigin: normalizeOrigin(request.headers.get("referer")),
+    requestUrlOrigin: normalizeOrigin(request.url),
+  };
+}
+
+export function trustedOriginForRedirect(request: Pick<Request, "headers" | "url">) {
+  const candidates = requestOriginCandidates(request);
+  for (const origin of [
+    candidates.forwardedOrigin,
+    candidates.originHeader,
+    candidates.hostOrigin,
+    candidates.requestUrlOrigin,
+  ]) {
+    if (origin && isAllowedPhoenixOrigin(origin)) return origin;
+  }
+
+  return productionOrigin;
+}
+
+export function rejectUntrustedForwardedOrigin(request: Pick<Request, "headers" | "url">) {
+  const candidates = requestOriginCandidates(request);
+
+  if (candidates.forwardedOrigin && !isAllowedPhoenixOrigin(candidates.forwardedOrigin)) {
+    return { origin: candidates.forwardedOrigin, reason: "untrusted_forwarded_host" };
+  }
+  if (candidates.originHeader && !isAllowedPhoenixOrigin(candidates.originHeader)) {
+    return { origin: candidates.originHeader, reason: "untrusted_origin" };
+  }
+  if (candidates.refererOrigin && !isAllowedPhoenixOrigin(candidates.refererOrigin)) {
+    return { origin: candidates.refererOrigin, reason: "untrusted_referer" };
+  }
+
+  return null;
+}

@@ -66,9 +66,6 @@ const zoneConfig: Record<
   excellence_zone: { bg: "bg-sky-50", border: "border-sky-200", color: "#0369a1", fill: "#7dd3fc", label: "Excellence", text: "text-sky-700" },
 };
 
-/** Zone-ordered gradient palette for bars/lines — dark to light (insights at a glance) */
-const zoneGradient: CoachingPerformanceZone[] = ["critical_red", "red_zone", "yellow_zone", "green_zone", "excellence_zone"];
-
 const statusLabels: Record<CoachingReportStatus, string> = {
   cancelled: "Cancelled",
   draft: "Draft",
@@ -543,12 +540,14 @@ function PeriodFilterPanel({
   }, [open]);
 
   // Quick presets
-  const now = new Date();
-  const presets = useMemo(() => [
-    { label: "This Month", fn: () => onChange({ year: String(now.getFullYear()), quarter: "", month: String(now.getMonth() + 1) }) },
-    { label: `Q${Math.ceil((now.getMonth() + 1) / 3)} ${now.getFullYear()}`, fn: () => onChange({ year: String(now.getFullYear()), quarter: String(Math.ceil((now.getMonth() + 1) / 3)), month: "" }) },
-    { label: String(now.getFullYear()), fn: () => onChange({ year: String(now.getFullYear()), quarter: "", month: "" }) },
-  ], [onChange, now]);
+  const presets = useMemo(() => {
+    const now = new Date();
+    return [
+      { label: "This Month", fn: () => onChange({ year: String(now.getFullYear()), quarter: "", month: String(now.getMonth() + 1) }) },
+      { label: `Q${Math.ceil((now.getMonth() + 1) / 3)} ${now.getFullYear()}`, fn: () => onChange({ year: String(now.getFullYear()), quarter: String(Math.ceil((now.getMonth() + 1) / 3)), month: "" }) },
+      { label: String(now.getFullYear()), fn: () => onChange({ year: String(now.getFullYear()), quarter: "", month: "" }) },
+    ];
+  }, [onChange]);
 
   return (
     <div className="relative" onKeyDown={handleKeyDown}>

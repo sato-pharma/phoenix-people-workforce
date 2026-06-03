@@ -1,0 +1,34 @@
+import { redirect } from "next/navigation";
+
+import { DatabaseMappingWorkspace } from "@/components/sales/database-mapping-workspace";
+import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { MASTER_ORDER, type MasterKey } from "@/lib/sales/master-data/definitions";
+import { listMasterRows, type MasterRowRecord } from "@/lib/sales/master-data/list";
+
+export const dynamic = "force-dynamic";
+
+export default async function DatabaseMappingPage() {
+  const accessContext = await resolveAccessContextFromPage();
+  if (resolveNavigationMode(accessContext) === "employee-portal") {
+    redirect("/employee-portals/sales");
+  }
+
+  const initialRows = MASTER_ORDER.reduce((accumulator, master) => {
+    accumulator[master] = [];
+    return accumulator;
+  }, {} as Record<MasterKey, MasterRowRecord[]>);
+  let initialError: string | null = null;
+
+  try {
+    await assertPermission(accessContext, "sales", "import");
+    const lists = await Promise.all(MASTER_ORDER.map((master) => listMasterRows(master)));
+    MASTER_ORDER.forEach((master, index) => {
+      initialRows[master] = lists[index];
+    });
+  } catch (error) {
+    initialError = error instanceof Error ? error.message : "Failed to load Database Mapping.";
+  }
+
+  return <DatabaseMappingWorkspace initialError={initialError} initialRows={initialRows} />;
+}

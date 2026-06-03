@@ -11,7 +11,6 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import ExcelJS from "exceljs";
 import * as React from "react";
 
 import {
@@ -76,6 +75,9 @@ function experienceBadgeVariant(status: CvExperienceStatus) {
 }
 
 async function downloadWorkbook(rows: CvDatabaseRow[], fileName: string) {
+  // Lazy-load exceljs (~1MB) only when an export is triggered, keeping it out
+  // of this client component's initial bundle.
+  const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("CV Database");
   sheet.columns = cvDatabaseHeaders.map((header, index) => ({
@@ -188,10 +190,9 @@ export function CvDatabaseManager() {
                 Download Template
               </Button>
               <Button
-                className="rounded-2xl bg-[#0F172A] px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)] hover:bg-[#111827]"
+                className="rounded-2xl px-3 py-2 text-xs shadow-[0_14px_30px_rgba(249,115,22,0.28)]"
                 disabled={isUploading}
                 onClick={() => fileInputRef.current?.click()}
-                variant="secondary"
               >
                 {isUploading ? <LoadingSpinner /> : <Upload className="mr-2 h-3.5 w-3.5" />}
                 Upload Sheet

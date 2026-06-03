@@ -1,4 +1,5 @@
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import {
   buildPayrollExpenseBreakdown,
   buildPayrollExpenseTrend,
@@ -694,6 +695,7 @@ export async function deletePayrollExpenseReport(reportId: string, accessContext
 
   if (reportError) throw reportError;
 
+  invalidateExecutiveDashboardCache("expense report deleted", ["expenses", "payroll"]);
   return { success: true };
 }
 
@@ -707,6 +709,7 @@ export async function clearPayrollExpenseReportRows(reportId: string, accessCont
     .eq("report_id", reportId);
 
   if (error) throw error;
+  invalidateExecutiveDashboardCache("expense report rows cleared", ["expenses", "payroll"]);
 }
 
 export async function getApprovedExpenseTotalsForPayroll(
@@ -891,7 +894,9 @@ export async function savePayrollExpenseApprovals(input: {
 
   if (error) throw error;
 
-  return (data ?? []).map((row) => mapExpense(row as Record<string, unknown>));
+  const saved = (data ?? []).map((row) => mapExpense(row as Record<string, unknown>));
+  invalidateExecutiveDashboardCache("expense approvals saved", ["expenses", "payroll"]);
+  return saved;
 }
 
 export async function importApprovedExpensesToPayroll(input: {
@@ -944,6 +949,7 @@ export async function importApprovedExpensesToPayroll(input: {
   } | null;
 
   if (!result?.target_batch_id) {
+    invalidateExecutiveDashboardCache("expenses imported to payroll", ["expenses", "payroll"]);
     return {
       importedEmployees: 0,
       importedTotal: 0,
@@ -954,6 +960,7 @@ export async function importApprovedExpensesToPayroll(input: {
     };
   }
 
+  invalidateExecutiveDashboardCache("expenses imported to payroll", ["expenses", "payroll"]);
   return {
     importedEmployees: Number(result.imported_employees ?? 0),
     importedTotal: Number(result.imported_total ?? 0),

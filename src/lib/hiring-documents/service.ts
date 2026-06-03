@@ -51,6 +51,12 @@ type HiringDocumentEmployeeNoteDbRow = {
 
 const visibleEmployeeStatuses = new Set(["active", "on_leave", "resigned", "terminated", "inactive"]);
 const validDocumentStatuses = new Set<HiringDocumentStatus>(["pending", "submitted", "missing"]);
+const HIRING_DOCUMENTS_CACHE_TTL_MS = 30_000;
+let hiringDocumentsDashboardCache: { data: HiringDocumentsDashboardData; timestamp: number } | null = null;
+
+function invalidateHiringDocumentsDashboardCache() {
+  hiringDocumentsDashboardCache = null;
+}
 
 function cleanText(value: string | null | undefined) {
   const text = value?.trim();
@@ -156,38 +162,49 @@ function summarize(employees: HiringDocumentEmployeeRow[], documents: HiringDocu
 }
 
 export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDashboardData> {
+  const now = Date.now();
+  if (
+    hiringDocumentsDashboardCache &&
+    now - hiringDocumentsDashboardCache.timestamp < HIRING_DOCUMENTS_CACHE_TTL_MS
+  ) {
+    return hiringDocumentsDashboardCache.data;
+  }
+
   const supabase = getSupabaseAdmin();
-  const { data: employeeData, error: employeeError } = await supabase
-    .from("employees")
-    .select("hr_id,full_name,job_title,hire_date,employment_status,line_id,manager_hr_id")
-    .order("full_name", { ascending: true });
+  const [employeeResult, documents] = await Promise.all([
+    supabase
+      .from("employees")
+      .select("hr_id,full_name,job_title,hire_date,employment_status,line_id,manager_hr_id")
+      .order("full_name", { ascending: true }),
+    loadDocumentDefinitions(),
+  ]);
+  const { data: employeeData, error: employeeError } = employeeResult;
 
   if (employeeError) throw new Error(employeeError.message);
 
   const employeeRows = (employeeData as EmployeeDbRow[]).filter(isVisibleEmployee);
   const employeeHrIds = employeeRows.map((row) => row.hr_id.toUpperCase());
-  const documents = await loadDocumentDefinitions();
   const [lineNames, managerNames] = await Promise.all([
     loadLines(employeeRows.map((row) => row.line_id).filter((value): value is number => typeof value === "number")),
     loadManagerNames(employeeRows.map((row) => row.manager_hr_id).filter(Boolean) as string[]),
   ]);
 
-  const statusData = employeeHrIds.length > 0
-    ? await supabase
-      .from("hiring_document_statuses")
-      .select("employee_hr_id,document_id,status,due_date,notes,updated_at")
-      .in("employee_hr_id", employeeHrIds)
-    : { data: [], error: null };
+  const [statusData, noteData] = await Promise.all([
+    employeeHrIds.length > 0
+      ? supabase
+        .from("hiring_document_statuses")
+        .select("employee_hr_id,document_id,status,due_date,notes,updated_at")
+        .in("employee_hr_id", employeeHrIds)
+      : Promise.resolve({ data: [], error: null }),
+    employeeHrIds.length > 0
+      ? supabase
+        .from("hiring_document_employee_notes")
+        .select("employee_hr_id,notes")
+        .in("employee_hr_id", employeeHrIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
 
   if (statusData.error) throw new Error(statusData.error.message);
-
-  const noteData = employeeHrIds.length > 0
-    ? await supabase
-      .from("hiring_document_employee_notes")
-      .select("employee_hr_id,notes")
-      .in("employee_hr_id", employeeHrIds)
-    : { data: [], error: null };
-
   if (noteData.error) throw new Error(noteData.error.message);
 
   const documentIds = new Set(documents.map((document) => document.id));
@@ -232,11 +249,13 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
     };
   });
 
-  return {
+  const result = {
     documents,
     employees,
     summary: summarize(employees, documents),
   };
+  hiringDocumentsDashboardCache = { data: result, timestamp: now };
+  return result;
 }
 
 export async function createHiringDocumentDefinition(input: CreateHiringDocumentDefinitionInput) {
@@ -263,6 +282,7 @@ export async function createHiringDocumentDefinition(input: CreateHiringDocument
     });
 
   if (error) throw new Error(error.message);
+  invalidateHiringDocumentsDashboardCache();
 }
 
 export async function deleteHiringDocumentDefinition(documentId: string) {
@@ -278,6 +298,7 @@ export async function deleteHiringDocumentDefinition(documentId: string) {
     .eq("id", id);
 
   if (error) throw new Error(error.message);
+  invalidateHiringDocumentsDashboardCache();
 }
 
 export async function updateHiringDocumentStatus(input: UpdateHiringDocumentStatusInput) {
@@ -302,6 +323,7 @@ export async function updateHiringDocumentStatus(input: UpdateHiringDocumentStat
     );
 
   if (error) throw new Error(error.message);
+  invalidateHiringDocumentsDashboardCache();
 }
 
 export async function updateHiringDocumentEmployeeNotes(input: UpdateHiringDocumentNotesInput) {
@@ -320,6 +342,7 @@ export async function updateHiringDocumentEmployeeNotes(input: UpdateHiringDocum
     );
 
   if (error) throw new Error(error.message);
+  invalidateHiringDocumentsDashboardCache();
 }
 
 export function filterHiringDocumentsForAccess(

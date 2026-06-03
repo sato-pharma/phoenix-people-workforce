@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   employeeDirectoryErrorMessage,
   getEmployeeDirectory,
@@ -98,6 +99,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employees", "update");
 

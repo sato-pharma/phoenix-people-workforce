@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import type { PermissionLookup } from "@/components/layout/sidebar";
+import { announceRouteTransition } from "@/components/layout/route-transition-provider";
 import { getNavigationSections, type NavigationSectionItem } from "@/config/system-navigation";
 import type { NavigationMode, PhoenixRole } from "@/lib/auth/permissions";
 
@@ -129,6 +130,7 @@ export function CommandPalette({
 
   function go(href: string) {
     setOpen(false);
+    announceRouteTransition(href);
     router.push(href);
   }
 

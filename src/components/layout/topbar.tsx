@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown, LogOut, Menu, Search, UserCog } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -9,8 +10,8 @@ import { COMMAND_PALETTE_EVENT } from "@/components/layout/command-palette";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import { MobileSidebar } from "@/components/layout/sidebar";
-import { systemUiText } from "@/config/system-settings";
-import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
+import { systemAssets, systemUiText } from "@/config/system-settings";
+import { type AccessContext, type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import type { ViewerIdentity } from "@/lib/auth/server";
 
@@ -23,6 +24,8 @@ export function Topbar({
   currentRole?: PhoenixRole;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
+  scope?: AccessContext["scope"];
+  source?: AccessContext["source"];
   viewer: ViewerIdentity;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -67,7 +70,7 @@ export function Topbar({
         </button>
 
         <div className="min-w-0 lg:hidden">
-          <PhoenixLogo compact />
+          <PhoenixLogo compact onDark={isAdminMode} />
         </div>
 
         <button
@@ -114,9 +117,13 @@ export function Topbar({
               onClick={() => setUserMenuOpen(!userMenuOpen)}
               type="button"
             >
-              <div className="flex h-9 w-9 items-center justify-center rounded bg-[#F97316]/15 text-xs font-black text-[#F97316] ring-[#F97316]/20 ring-1">
-                {viewer.initials}
-              </div>
+              <Image
+                alt="Phoenix"
+                className="h-9 w-9 shrink-0 rounded object-cover"
+                height={36}
+                src={systemAssets.adminRailMark}
+                width={36}
+              />
               <div className="hidden text-left sm:block">
                 <p className={`text-sm font-semibold ${isAdminMode ? "text-white" : "text-[#0F172A]"}`}>{viewer.displayName}</p>
                 <p className={`text-xs ${isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]"}`}>{viewer.roleLabel}</p>

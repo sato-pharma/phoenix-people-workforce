@@ -7,6 +7,7 @@ import { validateSalaryWorkbook } from "@/lib/payroll/salary-import";
 import { getPayrollSalarySourcesByHrId } from "@/lib/payroll/salary-source";
 import { getSalaryBatchById, isPayrollSchemaMissing, replaceSalaryBatch } from "@/lib/payroll/service";
 import { upsertPayrollResignationCandidates } from "@/lib/resignations/service";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
@@ -17,6 +18,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const { id } = await params;
     const access = await resolveAccessContext(request);
     await assertPermission(access, "payroll", "import");

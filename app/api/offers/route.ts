@@ -57,25 +57,57 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    if (!payload?.departmentId || !payload?.positionId || !payload?.lineId || !payload?.areaId || !payload?.managerHrId || !payload?.vacancyId) {
+      return NextResponse.json(
+        { error: "missing_offer_assignment", message: "Department, position, line, vacant area, manager, and vacancy are required." },
+        { status: 400 },
+      );
+    }
+    if (!Number.isFinite(Number(payload?.expiresInDays)) || Number(payload.expiresInDays) < 1 || Number(payload.expiresInDays) > 60) {
+      return NextResponse.json(
+        { error: "invalid_offer_expiry", message: "Offer expiry must be between 1 and 60 days." },
+        { status: 400 },
+      );
+    }
+    if (!payload?.startDate) {
+      return NextResponse.json(
+        { error: "missing_offer_start_date", message: "Hiring date is required before sending an offer." },
+        { status: 400 },
+      );
+    }
+    if (!Number.isFinite(Number(payload?.baseSalary)) || Number(payload.baseSalary) <= 0) {
+      return NextResponse.json(
+        { error: "missing_offer_base_salary", message: "Base salary must be greater than zero." },
+        { status: 400 },
+      );
+    }
 
     return NextResponse.json(
       await createOffer(
         {
           areaId: payload.areaId,
           areaScope: payload.areaScope ? String(payload.areaScope) : null,
+          baseSalary: payload.baseSalary,
           candidateEmail: String(payload.candidateEmail),
           candidateName: String(payload.candidateName),
           candidatePhone: payload.candidatePhone ? String(payload.candidatePhone) : null,
+          compensationLines: payload.compensationLines,
+          compensationNotes: payload.compensationNotes ? String(payload.compensationNotes) : null,
           createdByHrId: access.hrId,
           departmentId: payload.departmentId,
           expiresInDays: payload.expiresInDays,
+          extraCostOfLiving: payload.extraCostOfLiving,
+          fuelAllowance: payload.fuelAllowance,
           jobTitle: String(payload.jobTitle),
           lineId: payload.lineId,
           managerHrId: payload.managerHrId ? String(payload.managerHrId) : null,
           positionId: payload.positionId,
           salaryAmount: payload.salaryAmount,
+          socialInsurance: payload.socialInsurance,
           startDate: payload.startDate ? String(payload.startDate) : null,
+          taxes: payload.taxes,
           templateKey: payload.templateKey ? String(payload.templateKey) : null,
+          vacancyId: payload.vacancyId,
         },
         access,
       ),

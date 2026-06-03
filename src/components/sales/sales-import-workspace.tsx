@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  BarChart3,
   CheckCircle2,
   Database,
   FileSpreadsheet,
@@ -26,12 +27,17 @@ import { Card } from "@/components/ui/card";
 import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-products-tab";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type {
+  DistributorSalesAreaSummary,
+  DistributorSalesBrickSummary,
   DistributorSalesLineSummary,
   DistributorSalesProductSummary,
   DistributorSalesRegionSummary,
   DistributorSalesValidationIssue,
   DistributorSalesValidationResult,
   SalesDistributorOption,
+  SourceOfSalesDashboard,
+  SourceOfSalesDashboardDistributor,
+  SourceOfSalesDashboardGroup,
   SourceOfSalesProduct,
   SourceOfSalesUploadBatch,
 } from "@/lib/sales/monthly-distributor-import";
@@ -40,6 +46,7 @@ import { cn } from "@/lib/utils";
 type Props = {
   distributors: SalesDistributorOption[];
   initialBatches: SourceOfSalesUploadBatch[];
+  initialDashboard: SourceOfSalesDashboard | null;
   initialError: string | null;
   initialProducts: SourceOfSalesProduct[];
 };
@@ -54,6 +61,12 @@ type ValidationResponse = {
 
 type BatchListResponse = {
   data?: SourceOfSalesUploadBatch[];
+  error?: string;
+  success: boolean;
+};
+
+type DashboardResponse = {
+  data?: SourceOfSalesDashboard;
   error?: string;
   success: boolean;
 };
@@ -126,7 +139,7 @@ function TotalsGrid({ result }: { result: DistributorSalesValidationResult }) {
       <Metric label="Total Qty" value={numberWithDecimals(result.totals.totalQty)} />
       <Metric label="Total B. Qty" value={numberWithDecimals(result.totals.totalBonusQty)} />
       <Metric label="Total Value" value={formatCurrency(result.totals.totalValue)} />
-      <Metric label="Products" value={formatNumber(result.byProduct.length)} />
+      <Metric label="Template" value={result.templateName} />
     </div>
   );
 }
@@ -162,6 +175,41 @@ function RegionTable({ rows }: { rows: DistributorSalesRegionSummary[] }) {
   );
 }
 
+function AreaTable({ rows }: { rows: DistributorSalesAreaSummary[] }) {
+  return (
+    <SummaryTable
+      columns={["Area Name", "Area Code", "Region Code", "Rows", "Qty", "B. Qty", "Value"]}
+      rows={rows.map((row) => [
+        row.areaName,
+        row.areaCode,
+        row.regionCode,
+        formatNumber(row.rowCount),
+        numberWithDecimals(row.totalQty),
+        numberWithDecimals(row.totalBonusQty),
+        formatCurrency(row.totalValue),
+      ])}
+    />
+  );
+}
+
+function BrickTable({ rows }: { rows: DistributorSalesBrickSummary[] }) {
+  return (
+    <SummaryTable
+      columns={["Brick", "Brick ID", "Area Code", "Region Code", "Rows", "Qty", "B. Qty", "Value"]}
+      rows={rows.map((row) => [
+        row.brickName,
+        row.brickId,
+        row.areaCode,
+        row.regionCode,
+        formatNumber(row.rowCount),
+        numberWithDecimals(row.totalQty),
+        numberWithDecimals(row.totalBonusQty),
+        formatCurrency(row.totalValue),
+      ])}
+    />
+  );
+}
+
 function ProductTable({ rows }: { rows: DistributorSalesProductSummary[] }) {
   return (
     <SummaryTable
@@ -170,6 +218,48 @@ function ProductTable({ rows }: { rows: DistributorSalesProductSummary[] }) {
         row.productName,
         row.productCode,
         row.officialLine,
+        formatNumber(row.rowCount),
+        numberWithDecimals(row.totalQty),
+        numberWithDecimals(row.totalBonusQty),
+        formatCurrency(row.totalValue),
+      ])}
+    />
+  );
+}
+
+function DashboardGroupTable({
+  codeLabel,
+  rows,
+  titleLabel,
+}: {
+  codeLabel: string;
+  rows: SourceOfSalesDashboardGroup[];
+  titleLabel: string;
+}) {
+  return (
+    <SummaryTable
+      columns={[titleLabel, codeLabel, "Line / Parent", "Rows", "Qty", "B. Qty", "Value"]}
+      rows={rows.slice(0, 100).map((row) => [
+        row.label,
+        row.code ?? "-",
+        row.line ?? "-",
+        formatNumber(row.rowCount),
+        numberWithDecimals(row.totalQty),
+        numberWithDecimals(row.totalBonusQty),
+        formatCurrency(row.totalValue),
+      ])}
+    />
+  );
+}
+
+function DashboardDistributorTable({ rows }: { rows: SourceOfSalesDashboardDistributor[] }) {
+  return (
+    <SummaryTable
+      columns={["Distributor", "Code", "Sheets", "Rows", "Qty", "B. Qty", "Value"]}
+      rows={rows.map((row) => [
+        row.distributorName,
+        row.distributorCode,
+        formatNumber(row.sheetCount),
         formatNumber(row.rowCount),
         numberWithDecimals(row.totalQty),
         numberWithDecimals(row.totalBonusQty),
@@ -343,9 +433,91 @@ function UploadedSheetsTable({
   );
 }
 
-type SourceOfSalesTab = "products" | "sheets";
+function SourceOfSalesDashboardPanel({
+  dashboard,
+  onPeriodChange,
+  onRefresh,
+  refreshing,
+}: {
+  dashboard: SourceOfSalesDashboard | null;
+  onPeriodChange: (period: string) => void;
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
+  if (!dashboard) {
+    return (
+      <AdminCallout tone="danger">
+        <AlertTriangle className="mt-0.5 h-4 w-4" />
+        <p>Dashboard data could not be loaded.</p>
+      </AdminCallout>
+    );
+  }
 
-export function SalesImportWorkspace({ distributors, initialBatches, initialError, initialProducts }: Props) {
+  return (
+    <div className="space-y-5">
+      <AdminTableShell
+        action={(
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <select
+              className="h-10 rounded-xl border border-[#D8E0EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#0F172A] outline-none"
+              disabled={dashboard.availablePeriods.length === 0 || refreshing}
+              onChange={(event) => onPeriodChange(event.target.value)}
+              value={dashboard.period ?? ""}
+            >
+              {dashboard.availablePeriods.length === 0 ? (
+                <option value="">No validated month</option>
+              ) : dashboard.availablePeriods.map((period) => (
+                <option key={period} value={period}>{period}</option>
+              ))}
+            </select>
+            <Button className="gap-2" disabled={refreshing} onClick={onRefresh} variant="secondary">
+              {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Refresh
+            </Button>
+          </div>
+        )}
+        description="Validated monthly distributor sheets aggregated by the new Source of Sales allocation fields."
+        title="Monthly Source Dashboard"
+      >
+        <div className="space-y-5 p-4 md:p-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Metric label="Period" value={dashboard.period ?? "No validated data"} />
+            <Metric label="Validated Sheets" value={formatNumber(dashboard.sheetCount)} />
+            <Metric label="Total Qty" value={numberWithDecimals(dashboard.totals.totalQty)} />
+            <Metric label="Total B. Qty" value={numberWithDecimals(dashboard.totals.totalBonusQty)} />
+            <Metric label="Total Value" value={formatCurrency(dashboard.totals.totalValue)} />
+            <Metric label="Lines" value={formatNumber(dashboard.byLine.length)} />
+            <Metric label="Regions" value={formatNumber(dashboard.byRegion.length)} />
+            <Metric label="Bricks" value={formatNumber(dashboard.byBrick.length)} />
+          </div>
+        </div>
+      </AdminTableShell>
+
+      <AdminTableShell description="Totals across all validated distributor sheets for the selected month." title="By Distributor">
+        <DashboardDistributorTable rows={dashboard.byDistributor} />
+      </AdminTableShell>
+      <AdminTableShell description="Qty, bonus quantity, and value by official line." title="By Line">
+        <DashboardGroupTable codeLabel="Code" rows={dashboard.byLine} titleLabel="Line" />
+      </AdminTableShell>
+      <AdminTableShell description="Qty, bonus quantity, and value by region." title="By Region">
+        <DashboardGroupTable codeLabel="Region Code" rows={dashboard.byRegion} titleLabel="Region" />
+      </AdminTableShell>
+      <AdminTableShell description="Qty, bonus quantity, and value by area." title="By Area">
+        <DashboardGroupTable codeLabel="Area Code" rows={dashboard.byArea} titleLabel="Area" />
+      </AdminTableShell>
+      <AdminTableShell description="Qty, bonus quantity, and value by product." title="By Product">
+        <DashboardGroupTable codeLabel="Product Code" rows={dashboard.byProduct} titleLabel="Product" />
+      </AdminTableShell>
+      <AdminTableShell description="Qty, bonus quantity, and value by brick." title="By Brick">
+        <DashboardGroupTable codeLabel="Brick ID" rows={dashboard.byBrick} titleLabel="Brick" />
+      </AdminTableShell>
+    </div>
+  );
+}
+
+type SourceOfSalesTab = "dashboard" | "products" | "sheets";
+
+export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const defaultDistributor = useMemo(
     () => distributors.find((distributor) => distributor.code.toUpperCase() === "PS") ?? distributors[0] ?? null,
@@ -355,11 +527,13 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialErro
   const [selectedDistributorCode, setSelectedDistributorCode] = useState(defaultDistributor?.code ?? "");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [batches, setBatches] = useState(initialBatches);
-  const [activeTab, setActiveTab] = useState<SourceOfSalesTab>("sheets");
+  const [activeTab, setActiveTab] = useState<SourceOfSalesTab>("dashboard");
+  const [dashboard, setDashboard] = useState<SourceOfSalesDashboard | null>(initialDashboard);
   const [productsCount, setProductsCount] = useState(initialProducts.length);
   const [result, setResult] = useState<DistributorSalesValidationResult | null>(null);
   const [error, setError] = useState<string | null>(initialError);
   const [isValidating, setIsValidating] = useState(false);
+  const [isRefreshingDashboard, setIsRefreshingDashboard] = useState(false);
   const [isRefreshingBatches, setIsRefreshingBatches] = useState(false);
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
@@ -384,6 +558,37 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialErro
       return JSON.parse(text) as BatchListResponse;
     } catch {
       return { success: false, error: text };
+    }
+  }
+
+  async function readDashboardResponse(response: Response): Promise<DashboardResponse> {
+    const text = await response.text();
+    if (!text) return { success: response.ok, error: response.ok ? undefined : response.statusText };
+    try {
+      return JSON.parse(text) as DashboardResponse;
+    } catch {
+      return { success: false, error: text };
+    }
+  }
+
+  async function reloadDashboard(period?: string | null) {
+    setIsRefreshingDashboard(true);
+    try {
+      const query = period ? `?period=${encodeURIComponent(period)}` : "";
+      const response = await fetch(`/api/sales/monthly-import/dashboard${query}`, { cache: "no-store" });
+      const payload = await readDashboardResponse(response);
+      if (payload.success && payload.data) {
+        setDashboard(payload.data);
+      } else {
+        setActionMessage({ type: "error", text: payload.error ?? "Failed to refresh Source of Sales dashboard." });
+      }
+    } catch (caught) {
+      setActionMessage({
+        type: "error",
+        text: caught instanceof Error ? caught.message : "Failed to refresh Source of Sales dashboard.",
+      });
+    } finally {
+      setIsRefreshingDashboard(false);
     }
   }
 
@@ -420,6 +625,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialErro
         setActionMessage({ type: "success", text: "Uploaded sheet deleted." });
         setBatches((current) => current.filter((batch) => batch.batchId !== batchId));
         if (result?.batchId === batchId) setResult(null);
+        await reloadDashboard(dashboard?.period);
       } else {
         setActionMessage({ type: "error", text: payload.error ?? "Delete failed." });
       }
@@ -450,6 +656,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialErro
       setResult(payload.data ?? null);
       if (payload.data?.batchId) {
         await reloadBatches();
+        await reloadDashboard(payload.data.period);
       }
       if (!payload.success) {
         setError(payload.error ?? "Validation failed.");
@@ -514,12 +721,24 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialErro
             <AdminInsightChip>Distributors: {formatNumber(distributors.length)}</AdminInsightChip>
             <AdminInsightChip>Uploaded sheets: {formatNumber(batches.length)}</AdminInsightChip>
             <AdminInsightChip>Products: {formatNumber(productsCount)}</AdminInsightChip>
+            <AdminInsightChip>Dashboard month: {dashboard?.period ?? "No validated data"}</AdminInsightChip>
             {selectedDistributor ? <AdminInsightChip tone="orange">{selectedDistributor.name} / {selectedDistributor.code}</AdminInsightChip> : null}
             <AdminInsightChip tone="slate">New source tables</AdminInsightChip>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-2 rounded-2xl border border-[#D8E0EA] bg-white/90 p-2 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+          <Button
+            className={cn(
+              "gap-2 rounded-xl font-black",
+              activeTab === "dashboard" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+            )}
+            onClick={() => setActiveTab("dashboard")}
+            variant="secondary"
+          >
+            <BarChart3 className="h-4 w-4" />
+            Dashboard
+          </Button>
           <Button
             className={cn(
               "gap-2 rounded-xl font-black",
@@ -544,7 +763,14 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialErro
           </Button>
         </div>
 
-        {activeTab === "sheets" ? (
+        {activeTab === "dashboard" ? (
+          <SourceOfSalesDashboardPanel
+            dashboard={dashboard}
+            onPeriodChange={(period) => void reloadDashboard(period)}
+            onRefresh={() => void reloadDashboard(dashboard?.period)}
+            refreshing={isRefreshingDashboard}
+          />
+        ) : activeTab === "sheets" ? (
           <>
         <AdminTableShell
           description="Select the distributor, attach the monthly workbook, then run validation."
@@ -584,7 +810,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialErro
                       <span className="mt-1 block text-xs leading-5 text-[#64748B]">
                         {selectedFile
                           ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB selected`
-                          : "Overseas PS is supported in this step."}
+                          : "Overseas PS and Ibn Sina IS coded templates are supported in this step."}
                       </span>
                     </span>
                   </span>
@@ -695,10 +921,24 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialErro
             </AdminTableShell>
 
             <AdminTableShell
+              description="Qty, bonus quantity, and value grouped by Area Code and its region."
+              title="By Area"
+            >
+              <AreaTable rows={result.byArea} />
+            </AdminTableShell>
+
+            <AdminTableShell
               description="Qty, bonus quantity, and value grouped by Product Name and Product Code."
               title="By Product Name + Product Code"
             >
               <ProductTable rows={result.byProduct} />
+            </AdminTableShell>
+
+            <AdminTableShell
+              description="Qty, bonus quantity, and value grouped by Brick ID."
+              title="By Brick"
+            >
+              <BrickTable rows={result.byBrick} />
             </AdminTableShell>
 
             <IssueTable issues={result.issues} />

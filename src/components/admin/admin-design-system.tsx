@@ -4,19 +4,69 @@ import type { ReactNode } from "react";
 import { ArrowUpRight } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
+import { DarkSurfaceContext, useDarkSurface } from "@/components/ui/surface-context";
 import { cn } from "@/lib/utils";
 export {
+  adminHeroAccentBarClassName,
+  adminHeroActionPrimaryClassName,
+  adminHeroActionSecondaryClassName,
+  adminHeroChipClassName,
+  adminHeroChipOrangeClassName,
+  adminHeroDescriptionClassName,
+  adminHeroGlowAmberClassName,
+  adminHeroGlowOrangeClassName,
+  adminHeroGridOverlayClassName,
+  adminHeroKickerClassName,
+  adminHeroSkeletonClassName,
+  adminHeroSurfaceClassName,
+  adminHeroTitleClassName,
   adminInsetPanelClassName,
   adminPanelClassName,
   adminShellBackgroundClassName,
   adminSoftPanelClassName,
 } from "@/components/admin/admin-design-tokens";
 import {
-  adminPanelClassName,
+  adminHeroAccentBarClassName,
+  adminHeroDescriptionClassName,
+  adminHeroGlowAmberClassName,
+  adminHeroGlowOrangeClassName,
+  adminHeroGridOverlayClassName,
+  adminHeroKickerClassName,
+  adminHeroSurfaceClassName,
+  adminHeroTitleClassName,
 } from "@/components/admin/admin-design-tokens";
+
+/**
+ * Single source of truth for the black command-center hero surface. Renders the
+ * dark gradient + the four decorative aria-hidden layers and provides
+ * `DarkSurfaceContext` so primitives (Button, AdminInsightChip) inside it pick
+ * legible-on-black styling. Used by `AdminPageHero` and by both command centers,
+ * which supply their own bespoke inner content as `children`.
+ */
+export function AdminHeroFrame({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  /** Extra surface classes (e.g. the CEO hero's ring/padding). */
+  className?: string;
+}) {
+  return (
+    <DarkSurfaceContext.Provider value={true}>
+      <section className={cn(adminHeroSurfaceClassName, className)}>
+        <div aria-hidden="true" className={adminHeroGridOverlayClassName} />
+        <div aria-hidden="true" className={adminHeroGlowOrangeClassName} />
+        <div aria-hidden="true" className={adminHeroGlowAmberClassName} />
+        <div aria-hidden="true" className={adminHeroAccentBarClassName} />
+        {children}
+      </section>
+    </DarkSurfaceContext.Provider>
+  );
+}
 
 export function AdminPageHero({
   actions,
+  aside,
   badges,
   description,
   eyebrow,
@@ -24,6 +74,8 @@ export function AdminPageHero({
   title,
 }: {
   actions?: ReactNode;
+  /** Optional right-side slot for KPI tiles / profile (command centers). */
+  aside?: ReactNode;
   badges?: ReactNode;
   description: string;
   eyebrow: string;
@@ -31,45 +83,62 @@ export function AdminPageHero({
   title: string;
 }) {
   return (
-    <Card className={cn(adminPanelClassName, "p-0")}>
-      <div className="flex flex-col gap-4 px-4 py-4 sm:px-5 lg:px-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0 space-y-3">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-[#C2410C]">
+    <AdminHeroFrame>
+      <div className="relative grid gap-6 p-5 sm:p-6 lg:p-7 lg:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0 space-y-3">
+          <div className={adminHeroKickerClassName}>
             {icon}
             {eyebrow}
-            </div>
-            <div className="space-y-2">
-              <h1 className="max-w-4xl text-[1.45rem] font-black tracking-[-0.04em] text-[#0F172A] sm:text-[1.7rem] lg:text-[1.9rem]">
-              {title}
-              </h1>
-              <p className="max-w-3xl text-sm leading-6 text-[#475569]">{description}</p>
-            </div>
           </div>
-          {actions ? (
-            <div className="flex w-full flex-wrap items-stretch gap-2 sm:w-auto sm:items-center xl:max-w-[46%] xl:justify-end">{actions}</div>
-          ) : null}
+          <div className="space-y-2">
+            <h1 className={adminHeroTitleClassName}>{title}</h1>
+            <p className={adminHeroDescriptionClassName}>{description}</p>
+          </div>
+          {actions ? <div className="flex flex-wrap items-center gap-2 pt-1">{actions}</div> : null}
+          {badges ? <div className="flex flex-wrap gap-2 pt-1 text-xs text-slate-300">{badges}</div> : null}
         </div>
-        {badges ? <div className="flex flex-wrap gap-2 text-xs text-[#475569]">{badges}</div> : null}
+        {aside ? <div className="min-w-0 lg:justify-self-end">{aside}</div> : null}
       </div>
-    </Card>
+    </AdminHeroFrame>
   );
 }
 
 export function AdminInsightChip({
   children,
   tone = "neutral",
+  surface,
 }: {
   children: ReactNode;
-  tone?: "neutral" | "orange" | "slate";
+  tone?: "neutral" | "orange" | "slate" | "emerald";
+  /** Override auto-detection. Defaults to dark inside AdminPageHero, light elsewhere. */
+  surface?: "light" | "dark";
 }) {
-  const toneClassName = {
+  const heroDark = useDarkSurface();
+  const dark = surface ? surface === "dark" : heroDark;
+
+  const lightTone = {
     neutral: "border-slate-200/80 bg-gradient-to-r from-slate-50 to-slate-100 text-slate-600 shadow-sm",
     orange: "border-orange-200/90 bg-gradient-to-r from-orange-50/95 to-orange-100 text-orange-700 shadow-sm",
     slate: "border-slate-300/80 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 shadow-sm",
+    emerald: "border-emerald-200/90 bg-gradient-to-r from-emerald-50/95 to-emerald-100 text-emerald-700 shadow-sm",
+  }[tone];
+  const darkTone = {
+    neutral: "border-white/15 bg-white/10 text-slate-200 backdrop-blur",
+    orange: "border-orange-400/40 bg-orange-500/15 text-orange-100 backdrop-blur",
+    slate: "border-white/10 bg-white/[0.06] text-slate-300 backdrop-blur",
+    emerald: "border-emerald-400/40 bg-emerald-500/15 text-emerald-200 backdrop-blur",
   }[tone];
 
-  return <div className={cn("rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all duration-200 hover:shadow-md", toneClassName)}>{children}</div>;
+  return (
+    <div
+      className={cn(
+        "rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all duration-200",
+        dark ? cn(darkTone, "hover:border-white/30") : cn(lightTone, "hover:shadow-md"),
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function AdminStatCard({
@@ -131,7 +200,7 @@ export function AdminStatCard({
     rose: {
       border: "hover:border-rose-300/80",
       bg: "bg-rose-200/15",
-      icon: "from-rose-50 to-rose-100 text-rose-600 shadow-[0_8px_20_rgba(244,63,94,0.15)] ring-rose-200",
+      icon: "from-rose-50 to-rose-100 text-rose-600 shadow-[0_8px_20px_rgba(244,63,94,0.15)] ring-rose-200",
       card: "border-rose-300/70 bg-gradient-to-br from-rose-100 via-rose-50 to-white text-rose-950 shadow-[0_18px_44px_rgba(244,63,94,0.16)]",
       label: "text-rose-700/80",
       value: "text-rose-950",

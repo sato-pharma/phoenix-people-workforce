@@ -261,7 +261,7 @@ export function WorkflowRegistryManager({
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const modules = data?.modules ?? [];
+  const modules = useMemo(() => data?.modules ?? [], [data]);
   const selectedModule = useMemo(
     () => modules.find((module) => module.moduleKey === selectedKey) ?? modules[0] ?? null,
     [modules, selectedKey],

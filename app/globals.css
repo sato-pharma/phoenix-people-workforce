@@ -171,38 +171,110 @@ body {
 }
 
 .phoenix-admin-sidebar-scroll {
-  scrollbar-color: rgba(251, 146, 60, 0.88) transparent;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
+  /* Soft fade at the BOTTOM edge so items melt away as they scroll off instead of
+     being hard-cut. The top is handled by the sticky section headers (solid bg), so
+     only the bottom fades. Thickness toggles via data-fade-bottom (set on scroll). */
+  --sb-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - var(--sb-fade-bottom)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - var(--sb-fade-bottom)),
+    transparent 100%
+  );
+}
+
+.phoenix-admin-sidebar-scroll[data-fade-bottom] {
+  --sb-fade-bottom: 28px;
 }
 
 .phoenix-admin-sidebar-scroll::-webkit-scrollbar {
-  width: 10px;
+  width: 8px;
 }
 
 .phoenix-admin-sidebar-scroll::-webkit-scrollbar-track {
   background: transparent;
-  border-radius: 999px;
-  margin-block: 14px;
+  margin-block: 8px;
 }
 
 .phoenix-admin-sidebar-scroll::-webkit-scrollbar-thumb {
-  background:
-    linear-gradient(180deg, rgba(255, 184, 93, 0.98), rgba(249, 115, 22, 0.98));
+  background: rgba(148, 163, 184, 0.32);
   background-clip: padding-box;
-  border: 3px solid transparent;
+  border: 2px solid transparent;
   border-radius: 999px;
-  min-height: 56px;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
-    0 0 16px rgba(249, 115, 22, 0.5);
+  min-height: 48px;
+  transition: background 0.15s ease;
 }
 
 .phoenix-admin-sidebar-scroll::-webkit-scrollbar-thumb:hover {
-  background:
-    linear-gradient(180deg, #ffd08a, #fb923c 45%, #ea580c);
+  background: rgba(249, 115, 22, 0.7);
+  background-clip: padding-box;
+}
+
+/* Page (document) scrollbar on admin pages — mirrors the sidebar scrollbar exactly
+   (thin slate thumb, transparent track, orange on hover). Scoped with :has so the
+   employee portal and login pages keep their default browser scrollbar. */
+html:has(.admin-shell) {
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+  scrollbar-width: thin;
+}
+
+html:has(.admin-shell)::-webkit-scrollbar {
+  width: 8px;
+}
+
+html:has(.admin-shell)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html:has(.admin-shell)::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.32);
   background-clip: padding-box;
   border: 2px solid transparent;
+  border-radius: 999px;
+  min-height: 48px;
+  transition: background 0.15s ease;
+}
+
+html:has(.admin-shell)::-webkit-scrollbar-thumb:hover {
+  background: rgba(249, 115, 22, 0.7);
+  background-clip: padding-box;
+}
+
+/* Orange up/down arrow buttons at the top and bottom of the admin scrollbars
+   (both the sidebar and the page). Only the single up arrow (top) and single down
+   arrow (bottom) are shown; all other webkit button slots stay hidden. */
+.phoenix-admin-sidebar-scroll::-webkit-scrollbar-button,
+html:has(.admin-shell)::-webkit-scrollbar-button {
+  display: none;
+}
+
+.phoenix-admin-sidebar-scroll::-webkit-scrollbar-button:single-button:vertical:decrement,
+html:has(.admin-shell)::-webkit-scrollbar-button:single-button:vertical:decrement {
+  display: block;
+  height: 12px;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 8px 8px;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20fill='%23F97316'%20d='M4%202.4%206.6%205.6%201.4%205.6z'/%3E%3C/svg%3E");
+}
+
+.phoenix-admin-sidebar-scroll::-webkit-scrollbar-button:single-button:vertical:increment,
+html:has(.admin-shell)::-webkit-scrollbar-button:single-button:vertical:increment {
+  display: block;
+  height: 12px;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 8px 8px;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20fill='%23F97316'%20d='M4%205.6%201.4%202.4%206.6%202.4z'/%3E%3C/svg%3E");
 }
 
 .phoenix-employee-sidebar-scroll {
@@ -561,6 +633,35 @@ body {
   animation: ep-breathe-orange 1.2s ease-in-out infinite;
 }
 
+.phoenix-route-transition-indicator {
+  height: 3px;
+  inset: 0 0 auto;
+  overflow: hidden;
+  pointer-events: none;
+  position: fixed;
+  z-index: 90;
+}
+
+.phoenix-route-transition-bar {
+  animation: phoenix-route-progress 1.05s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  background: linear-gradient(90deg, transparent, #f97316 35%, #f8b56b 55%, transparent);
+  height: 100%;
+  transform-origin: left center;
+  width: 55%;
+}
+
+@keyframes phoenix-route-progress {
+  from {
+    transform: translateX(-72%) scaleX(0.72);
+  }
+  55% {
+    transform: translateX(84%) scaleX(1);
+  }
+  to {
+    transform: translateX(182%) scaleX(0.72);
+  }
+}
+
 /* Glass surface helper — use alongside bg-* for layered glass */
 .ep-glass {
   backdrop-filter: blur(14px);
@@ -572,16 +673,37 @@ body {
   font-family: var(--font-display), serif;
 }
 
-/* ───────────────────────────────────────────────────────────────────────────
-   Admin shell design rule: SQUARE CORNERS everywhere.
-   Zeroes border-radius for every element inside the admin shell, except genuinely
-   circular indicators (anything using `rounded-full` — status dots, pings, avatars).
-   The employee portal is unaffected because it is not wrapped in `.admin-shell`.
-   This enforces the rule globally so current and future admin pages stay square
-   without per-file edits.
-   ─────────────────────────────────────────────────────────────────────────── */
-.admin-shell [class*="rounded"]:not([class*="rounded-full"]) {
+/* ═══════════════════════════════════════════════════════════════════════════
+   PERMANENT ADMIN-SHELL DESIGN RULES — LOCKED. Do not change or override these.
+   They apply to every current and future page inside `.admin-shell`. The employee
+   portal is unaffected (it is not wrapped in `.admin-shell`).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* RULE 1 — SQUARE CORNERS everywhere. NOTHING is rounded or semi-rounded.
+   Zeroes border-radius for EVERY element inside the admin shell — including
+   `rounded-full` pills, chips, badges, and dots. Everything is sharp/"shredded". */
+.admin-shell [class*="rounded"] {
   border-radius: 0 !important;
+}
+
+/* RULE 2 — TABLES.
+   Every <table> in the admin shell uses a header bar in the SAME flat black as the
+   sidebar/top bar (#000000), and a thin light-orange hairline on every cell (rows
+   AND columns) for a tidy, uniform grid. */
+.admin-shell table {
+  border-collapse: collapse;
+}
+
+.admin-shell thead th {
+  background-color: #000000 !important;
+  color: #f1f5f9 !important;
+  font-size: 0.78rem !important;
+  text-align: center !important;
+}
+
+.admin-shell th,
+.admin-shell td {
+  border: 1px solid rgba(249, 115, 22, 0.22) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -594,7 +716,8 @@ body {
   .employee-portal-page-transition,
   .employee-portal-route-loading,
   .employee-portal-skeleton,
-  .employee-portal-nav-pending-dot {
+  .employee-portal-nav-pending-dot,
+  .phoenix-route-transition-bar {
     animation: none;
   }
 }
