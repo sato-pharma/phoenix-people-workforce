@@ -19,6 +19,32 @@ import { getSalesPlatformMetrics } from "@/lib/sales/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecycle";
 
+/**
+ * Resolves an employee's direct manager display name live from the employees
+ * table by HR_ID (their own manager_hr_id -> the manager's full_name). Used for
+ * the admin command-center welcome hero so every signed-in user sees their
+ * direct manager (only someone with no manager — the CEO — resolves to null).
+ */
+export async function loadDirectManagerName(employeeHrId: string | null | undefined): Promise<string | null> {
+  const target = String(employeeHrId ?? "").trim();
+  if (!target) return null;
+  const supabase = getSupabaseAdmin();
+  const { data: self } = await supabase
+    .from("employees")
+    .select("manager_hr_id")
+    .eq("hr_id", target)
+    .maybeSingle();
+  const managerHrId = String((self as { manager_hr_id?: string | null } | null)?.manager_hr_id ?? "").trim();
+  if (!managerHrId) return null;
+  const { data: manager } = await supabase
+    .from("employees")
+    .select("full_name")
+    .eq("hr_id", managerHrId)
+    .maybeSingle();
+  const fullName = (manager as { full_name?: string | null } | null)?.full_name;
+  return fullName ? String(fullName) : null;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------

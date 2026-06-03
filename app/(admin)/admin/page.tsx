@@ -6,7 +6,7 @@ import { AdminCommandCenter } from "@/components/admin/admin-command-center";
 import { Card } from "@/components/ui/card";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { canAccess, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
-import { getAdminCommandCenterData } from "@/lib/admin/command-center";
+import { getAdminCommandCenterData, loadDirectManagerName } from "@/lib/admin/command-center";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 
@@ -75,10 +75,12 @@ async function AdminCommandContent({ access }: { access: AccessContext }) {
   const data = dataResult.data;
   const loadError = dataResult.error;
 
+  const viewerHrId = formatHrIdForDisplay(access.hrId);
+  const managerName = await loadDirectManagerName(viewerHrId ?? access.hrId);
   const welcomeProfile = {
     fullName: viewer.displayName,
-    hrId: formatHrIdForDisplay(access.hrId),
-    managerName: null,
+    hrId: viewerHrId,
+    managerName,
     systemRoleLabel: viewer.roleLabel,
     titleLabel: viewer.roleLabel,
   };
