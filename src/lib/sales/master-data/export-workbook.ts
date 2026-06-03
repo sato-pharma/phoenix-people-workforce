@@ -24,6 +24,10 @@ const MUTED = "FF94A3B8";
 const LOCKED_FILL = "FFF1F5F9";
 const COMPUTED_FILL = "FFEFF6FF";
 
+// Blank unlocked rows appended below the data so new entities can be added
+// while existing identity cells stay protected. Row insertion is also enabled.
+const SPARE_ROWS = 200;
+
 type RenderColumn = {
   key: string;
   label: string;
@@ -202,6 +206,41 @@ export async function buildMasterWorkbook(
     });
   });
 
+  // Spare append rows — fully UNLOCKED so new entities (e.g. a new brick / block
+  // / area) can be added even while existing key/name cells stay protected. The
+  // auto (name) columns keep their VLOOKUP formula so typing a code still
+  // auto-fills the name on a new row.
+  const firstSpareRow = firstDataRow + rows.length;
+  for (let spareIndex = 0; spareIndex < SPARE_ROWS; spareIndex += 1) {
+    const rowNumber = firstSpareRow + spareIndex;
+    const excelRow = sheet.getRow(rowNumber);
+    renderColumns.forEach((column, index) => {
+      const cell = excelRow.getCell(index + 1);
+      const lookup = column.lookup;
+      const reference = lookup ? referenceInfo.get(lookup.lookupMaster) : undefined;
+
+      if (lookup && reference) {
+        const lookupIndex = reference.columns.indexOf(lookup.lookupColumn) + 1;
+        const codeIndex = columnIndexByKey.get(lookup.viaCodeColumn);
+        const lastLetter = columnLetter(reference.columns.length);
+        const codeLetter = codeIndex ? columnLetter(codeIndex) : "A";
+        cell.value = {
+          formula: `IFERROR(VLOOKUP(${codeLetter}${rowNumber},'${reference.sheetName}'!$A:$${lastLetter},${lookupIndex},FALSE),"")`,
+          result: "",
+        };
+        cell.protection = { locked: true };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COMPUTED_FILL } };
+      } else {
+        // Every editable AND identity (code/name) cell on a NEW row is writable.
+        cell.protection = { locked: false };
+      }
+      cell.font = { name: "Calibri", size: 10.5, color: { argb: SLATE } };
+      cell.alignment = { vertical: "middle", horizontal: column.type === "number" ? "right" : "left" };
+      cell.border = gridBorder();
+      if (column.type === "number") cell.numFmt = "#,##0.00";
+    });
+  }
+
   // Column widths
   renderColumns.forEach((column, index) => {
     const longest = rows.reduce((max, row) => {
@@ -211,12 +250,15 @@ export async function buildMasterWorkbook(
     sheet.getColumn(index + 1).width = Math.max(14, Math.min(46, longest + 4));
   });
 
-  // Lock the sheet: locked cells protected, unlocked (editable) cells writable.
+  // Protect ONLY the locked cells (existing key/name + auto formulas). Editable
+  // cells and the blank spare rows stay writable, and row insertion is allowed
+  // so new bricks/blocks/areas can be added.
   await sheet.protect("", {
     autoFilter: true,
     formatCells: false,
     formatColumns: true,
     formatRows: true,
+    insertRows: true,
     selectLockedCells: true,
     selectUnlockedCells: true,
     sort: true,
