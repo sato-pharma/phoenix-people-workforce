@@ -2,12 +2,13 @@
  * CEO Command Brief — honest executive brief from EXISTING real aggregates only.
  *
  * Phase 1.1: direction signals are MONTH-OVER-MONTH (latest vs previous trend point)
- * derived from real `getOverviewDashboard` trend arrays — never fabricated. True
+ * derived from the canonical executive dashboard snapshot — never fabricated. True
  * week-over-week KPI deltas require a snapshot baseline that is NOT captured yet
  * (`weeklySnapshotAvailable: false`), so the UI shows an explicit unavailable state.
  */
-import { getOverviewDashboard, type OverviewDashboardData } from "@/lib/overview/service";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { getExecutiveDashboardSnapshot } from "@/lib/executive/dashboard-snapshot";
+import type { OverviewDashboardData } from "@/lib/overview/service";
 
 export type TrendDirection = "up" | "down" | "flat" | "unavailable";
 export type SignalVerdict = "improved" | "worse" | "flat" | "unavailable";
@@ -106,29 +107,5 @@ export function buildBriefSignals(o: OverviewDashboardData): BriefSignal[] {
 }
 
 export async function getCeoBrief(accessContext: AccessContext): Promise<CeoBriefData> {
-  const o = await getOverviewDashboard(accessContext);
-  const upcoming = [...o.risk.alerts]
-    .filter((alert) => Number.isFinite(alert.days) && alert.days >= 0)
-    .sort((left, right) => left.days - right.days)
-    .slice(0, 6);
-  return {
-    signals: buildBriefSignals(o),
-    impact: { revenue: o.financial.revenue, peopleCost: o.financial.peopleCost, grossMargin: o.financial.grossMargin },
-    activity: o.activity.recent.map((row) => ({
-      description: row.description,
-      module: row.module,
-      status: row.status,
-      timestamp: row.timestamp,
-      userName: row.userName,
-    })),
-    upcoming,
-    alerts: o.risk.alerts,
-    workforce: {
-      activeEmployees: o.hr.activeEmployees,
-      totalStructure: o.hr.activeEmployees + o.vacancies.openVacancies,
-      vacantPositions: o.vacancies.openVacancies,
-    },
-    salesAchievementPct: o.sales.achievementRate * 100,
-    weeklySnapshotAvailable: false,
-  };
+  return (await getExecutiveDashboardSnapshot(accessContext)).brief;
 }

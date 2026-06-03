@@ -184,6 +184,9 @@ export function runRecruitmentOnboardingMetricsTests() {
 
   const offerSource = readFileSync("src/lib/offers/service.ts", "utf8");
   assert.match(offerSource, /summarizeOfferLifecycleRows/);
+  assert.match(offerSource, /phx_reserve_offer_employee_hr_id/);
+  assert.match(offerSource, /reserved_employee_hr_id: reservedEmployeeHrId/);
+  assert.match(offerSource, /offer\.reserved_employee_hr_id/);
   assert.match(offerSource, /phx_approve_accepted_offer/);
   assert.match(offerSource, /closeVacancyForOffer/);
 

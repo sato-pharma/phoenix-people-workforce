@@ -20,11 +20,13 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
+import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { cn } from "@/lib/utils";
 import type { DataHealthStats, SalaryFlag, SalaryFlagsResult } from "@/lib/admin/service";
+import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import { formatCurrency } from "@/lib/sales/format";
 
 const PAGE_SIZE = 12;
@@ -33,9 +35,6 @@ type DataHealthDashboardProps = {
   stats: DataHealthStats;
   salaryFlags: SalaryFlagsResult | null;
 };
-
-const shellClassName =
-  "relative isolate overflow-hidden rounded-[28px] border border-slate-200/70 bg-gradient-to-b from-white to-slate-50/70 p-4 shadow-[0_10px_30px_rgba(15,23,42,0.06)] sm:p-6";
 
 type SummaryCardProps = {
   color: "blue" | "green" | "orange" | "rose";
@@ -121,6 +120,51 @@ function formatDate(iso: string) {
     return iso;
   }
 }
+
+// ── Command-Center-style section label (orange accent bar + eyebrow + title) ──
+function SectionLabel({ action, eyebrow, title }: { action?: ReactNode; eyebrow: string; title: string }) {
+  return (
+    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex items-start gap-3">
+        <span aria-hidden="true" className="mt-1 h-9 w-1.5 shrink-0 bg-gradient-to-b from-orange-500 to-amber-400" />
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-600">{eyebrow}</p>
+          <h2 className="mt-1 text-xl font-bold tracking-[-0.025em] text-slate-950">{title}</h2>
+        </div>
+      </div>
+      {action ? <div className="flex flex-wrap gap-2">{action}</div> : null}
+    </div>
+  );
+}
+
+// Premium card accents (top bar gradient + glow + gradient icon + value tint) to
+// match the Command Center KPI/module cards.
+const cardAccent: Record<SummaryCardProps["color"], { bar: string; glow: string; icon: string; value: string }> = {
+  blue: {
+    bar: "from-sky-500 via-sky-400 to-sky-300",
+    glow: "bg-sky-400/20",
+    icon: "bg-gradient-to-br from-sky-100 to-sky-50 text-sky-700 ring-sky-200/70",
+    value: "text-sky-950",
+  },
+  green: {
+    bar: "from-emerald-500 via-emerald-400 to-emerald-300",
+    glow: "bg-emerald-400/20",
+    icon: "bg-gradient-to-br from-emerald-100 to-emerald-50 text-emerald-700 ring-emerald-200/70",
+    value: "text-emerald-950",
+  },
+  orange: {
+    bar: "from-orange-500 via-orange-400 to-amber-300",
+    glow: "bg-orange-400/25",
+    icon: "bg-gradient-to-br from-orange-100 to-orange-50 text-orange-700 ring-orange-200/70",
+    value: "text-orange-950",
+  },
+  rose: {
+    bar: "from-rose-500 via-rose-400 to-rose-300",
+    glow: "bg-rose-400/20",
+    icon: "bg-gradient-to-br from-rose-100 to-rose-50 text-rose-700 ring-rose-200/70",
+    value: "text-rose-950",
+  },
+};
 
 export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: DataHealthDashboardProps) {
   const [selectedView, setSelectedView] = useState<DetailViewKey>("active-missing-access");
@@ -421,12 +465,138 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
     },
   }[selectedView];
 
+  // Build the export payload for whichever detail table is currently shown.
+  const exportData: { columns: ExportColumn[]; rows: ExportRow[] } = (() => {
+    if (employeeDetailViews.has(selectedView)) {
+      const arr = {
+        "active-missing-access": activeMissingAccessIssues,
+        "employee-issues": employeeIssues,
+        "non-login-nodes": nonLoginIssues,
+        "historical-records": historicalIssues,
+      }[selectedView as "active-missing-access" | "employee-issues" | "non-login-nodes" | "historical-records"];
+      return {
+        columns: [
+          { key: "hr_id", label: "HR_ID" },
+          { key: "full_name", label: "Employee Name" },
+          { key: "node_type", label: "Node Type" },
+          { key: "auth", label: "Auth" },
+          { key: "access", label: "Access" },
+          { key: "manager_hr_id", label: "Manager HR_ID" },
+          { key: "status", label: "Status" },
+        ],
+        rows: arr.map((issue) => ({
+          hr_id: issue.hr_id,
+          full_name: issue.full_name,
+          node_type: issue.node_type,
+          auth: issue.has_auth_user ? "yes" : "no",
+          access: issue.has_access_profile ? "yes" : "no",
+          manager_hr_id: issue.manager_hr_id ?? "-",
+          status: issue.health_status,
+        })),
+      };
+    }
+    if (salesDetailViews.has(selectedView)) {
+      const arr = {
+        "sales-issues": stats.salesIssues,
+        "non-assignable-sales": nonAssignableSalesIssues,
+        "vacant-territory-sales": vacantTerritorySalesIssues,
+        "line-level-sales": lineLevelSalesIssues,
+        "other-sales-exceptions": otherSalesIssues,
+      }[selectedView as "sales-issues" | "non-assignable-sales" | "vacant-territory-sales" | "line-level-sales" | "other-sales-exceptions"];
+      return {
+        columns: [
+          { key: "employee_hr_id", label: "Employee HR_ID" },
+          { key: "manager_hr_id", label: "Manager HR_ID" },
+          { key: "line", label: "Line" },
+          { key: "territory", label: "Territory" },
+          { key: "product", label: "Product" },
+          { key: "sales_value", label: "Sales", numeric: true },
+          { key: "status", label: "Status" },
+          { key: "reason", label: "Reason" },
+        ],
+        rows: arr.map((issue) => ({
+          employee_hr_id: issue.employee_hr_id ?? "-",
+          manager_hr_id: issue.manager_hr_id ?? "-",
+          line: issue.line ?? "-",
+          territory: issue.territory ?? "-",
+          product: issue.product,
+          sales_value: issue.sales_value,
+          status: issue.linkage_health_status,
+          reason: issue.reason,
+        })),
+      };
+    }
+    if (selectedView === "vacancy-nodes") {
+      return {
+        columns: [
+          { key: "vacancy_code", label: "Vacancy Code" },
+          { key: "line_name", label: "Line" },
+          { key: "area_name", label: "Area" },
+          { key: "manager_hr_id", label: "Manager HR_ID" },
+          { key: "status", label: "Status" },
+        ],
+        rows: vacancyAudit.map((vacancy) => ({
+          vacancy_code: vacancy.vacancy_code ?? vacancy.vacancy_id ?? "-",
+          line_name: vacancy.line_name ?? "-",
+          area_name: vacancy.area_name ?? "-",
+          manager_hr_id: vacancy.manager_hr_id ?? "-",
+          status: vacancy.status ?? "vacant",
+        })),
+      };
+    }
+    if (selectedView === "orphan-hrids") {
+      return {
+        columns: [
+          { key: "source", label: "Source" },
+          { key: "hr_id", label: "HR_ID" },
+          { key: "rows_count", label: "Count", numeric: true },
+          { key: "sample_name", label: "Sample Name" },
+        ],
+        rows: stats.orphanAudit.map((orphan) => ({
+          source: orphan.source,
+          hr_id: orphan.hr_id,
+          rows_count: orphan.rows_count,
+          sample_name: orphan.sample_name ?? "-",
+        })),
+      };
+    }
+    return {
+      columns: [
+        { key: "hrId", label: "HR_ID" },
+        { key: "flagType", label: "Flag Type" },
+        { key: "severity", label: "Severity" },
+        { key: "message", label: "Message" },
+        { key: "createdAt", label: "Created At" },
+        { key: "resolved", label: "Resolved" },
+      ],
+      rows: flags.map((flag) => ({
+        hrId: flag.hrId ?? "-",
+        flagType: flag.flagType?.replace(/_/g, " ") ?? "unknown",
+        severity: flag.severity ?? "-",
+        message: flag.message ?? "-",
+        createdAt: formatDate(flag.createdAt),
+        resolved: flag.resolvedAt ? "yes" : "no",
+      })),
+    };
+  })();
+
+  const exportButton = (
+    <ExportXlsxButton
+      columns={exportData.columns}
+      rows={exportData.rows}
+      sheetName={selectedMeta.title}
+      subtitle={selectedMeta.description}
+      title={selectedMeta.title}
+    />
+  );
+
   let detailContent = <></>;
   let detailAction = (
     <div className="flex flex-wrap items-center gap-2">
       <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
         {selectedMeta.count} records
       </span>
+      {exportButton}
     </div>
   );
 
@@ -705,6 +875,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
           />
           Show resolved
         </label>
+        {exportButton}
       </div>
     );
 
@@ -795,16 +966,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
   }
 
   return (
-    <div className={shellClassName}>
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-40 -top-44 h-[520px] w-[520px] rounded-full bg-orange-500/6 blur-3xl"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -left-40 -bottom-44 h-[520px] w-[520px] rounded-full bg-blue-500/6 blur-3xl"
-      />
-      <div className="relative z-10 space-y-6">
+    <div className="space-y-6">
         <AdminPageHero
           badges={(
             <>
@@ -819,71 +981,62 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
           title="Data Health Governance"
         />
 
-      <div className="space-y-4">
-        <div>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-500">Priority Queues</h2>
-              <p className="mt-1 text-sm text-slate-500">Tap a card and the page focuses its detail queue below.</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {priorityCards.map((card) => (
-              <QueueCard
-                active={selectedView === card.key}
-                color={card.color}
-                count={card.count}
-                description={card.description}
-                icon={card.icon}
-                key={card.key}
-                onClick={() => openDetail(card.key)}
-                title={card.title}
-              />
-            ))}
-          </div>
+      <section>
+        <SectionLabel eyebrow="Needs attention" title="Priority Queues" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {priorityCards.map((card) => (
+            <QueueCard
+              active={selectedView === card.key}
+              color={card.color}
+              count={card.count}
+              description={card.description}
+              icon={card.icon}
+              key={card.key}
+              onClick={() => openDetail(card.key)}
+              title={card.title}
+            />
+          ))}
         </div>
+      </section>
 
-        <div>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-500">Supporting Views</h2>
-              <p className="mt-1 text-sm text-slate-500">Keep the rest as compact drill-down cards instead of permanent tables.</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {supportingCards.map((card) => (
-              <QueueCard
-                active={selectedView === card.key}
-                color={card.color}
-                count={card.count}
-                description={card.description}
-                icon={card.icon}
-                key={card.key}
-                onClick={() => openDetail(card.key)}
-                title={card.title}
-              />
-            ))}
-          </div>
+      <section>
+        <SectionLabel eyebrow="Drill-down" title="Supporting Views" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {supportingCards.map((card) => (
+            <QueueCard
+              active={selectedView === card.key}
+              color={card.color}
+              count={card.count}
+              description={card.description}
+              icon={card.icon}
+              key={card.key}
+              onClick={() => openDetail(card.key)}
+              title={card.title}
+            />
+          ))}
         </div>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <SummaryCard color="blue" icon={Users} title="Total Structure" value={stats.summary.structureNodes} />
-        <SummaryCard color="green" icon={Users} title="Active Employees" value={stats.summary.activeEmployees} />
-        <SummaryCard color="green" icon={Heart} title="Healthy Records" value={stats.summary.healthyEmployees} />
-        <SummaryCard
-          color={stats.summary.healthRate > 95 ? "green" : stats.summary.healthRate > 80 ? "orange" : "rose"}
-          icon={TrendingUp}
-          title="Health Rate"
-          value={`${stats.summary.healthRate.toFixed(1)}%`}
-        />
-        <SummaryCard
-          color={stats.summary.unresolvedSalesExceptions > 0 ? "rose" : "green"}
-          icon={Activity}
-          title="Assigned Sales"
-          value={`${stats.salesClassification.assigned_employee_sales.records} / ${formatCurrency(stats.salesClassification.assigned_employee_sales.salesValue)}`}
-        />
-      </div>
+      <section>
+        <SectionLabel eyebrow="Overview" title="Health Summary" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <SummaryCard color="blue" icon={Users} title="Total Structure" value={stats.summary.structureNodes} />
+          <SummaryCard color="green" icon={Users} title="Active Employees" value={stats.summary.activeEmployees} />
+          <SummaryCard color="green" icon={Heart} title="Healthy Records" value={stats.summary.healthyEmployees} />
+          <SummaryCard
+            color={stats.summary.healthRate > 95 ? "green" : stats.summary.healthRate > 80 ? "orange" : "rose"}
+            icon={TrendingUp}
+            title="Health Rate"
+            value={`${stats.summary.healthRate.toFixed(1)}%`}
+          />
+          <SummaryCard
+            color={stats.summary.unresolvedSalesExceptions > 0 ? "rose" : "green"}
+            icon={Activity}
+            title="Assigned Sales"
+            value={`${stats.salesClassification.assigned_employee_sales.records} / ${formatCurrency(stats.salesClassification.assigned_employee_sales.salesValue)}`}
+          />
+        </div>
+      </section>
 
       <div ref={detailRef}>
         <AdminTableShell
@@ -893,7 +1046,6 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
         >
           {detailContent}
         </AdminTableShell>
-      </div>
       </div>
     </div>
   );
@@ -908,75 +1060,52 @@ function QueueCard({
   onClick,
   title,
 }: QueueCardProps) {
-  const colorMap: Record<QueueCardProps["color"], string> = {
-    blue: "bg-blue-50 text-blue-700 ring-blue-200",
-    green: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    orange: "bg-orange-50 text-orange-700 ring-orange-200",
-    rose: "bg-rose-50 text-rose-700 ring-rose-200",
-  };
+  const accent = cardAccent[color];
 
   return (
     <button
       className={cn(
-        "group relative text-left",
-        "rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.06)] transition-all duration-200",
-        "hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_16px_40px_rgba(15,23,42,0.10)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-200 active:translate-y-0",
-        active && "border-orange-200 bg-orange-50/40 shadow-[0_16px_46px_rgba(249,115,22,0.12)]",
+        "group relative overflow-hidden border border-slate-200 bg-white p-5 text-left shadow-[0_6px_20px_rgba(15,23,42,0.07)] transition duration-200",
+        "hover:-translate-y-1 hover:border-orange-200/70 hover:shadow-[0_16px_38px_rgba(15,23,42,0.13)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 active:translate-y-0",
+        active && "border-orange-300/70 shadow-[0_16px_44px_rgba(249,115,22,0.14)] ring-1 ring-orange-200",
       )}
       onClick={onClick}
       type="button"
     >
-      <div className="flex items-start justify-between gap-3">
+      <div aria-hidden="true" className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r opacity-70 transition-opacity duration-200 group-hover:opacity-100", accent.bar)} />
+      <div aria-hidden="true" className={cn("pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full blur-2xl", accent.glow)} />
+      <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
-            {title}
-          </p>
-          <p className="mt-2 break-words text-3xl font-black tracking-tight text-slate-900">
-            {count}
-          </p>
+          <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
+          <p className={cn("mt-2.5 break-words text-3xl font-black tracking-[-0.035em]", accent.value)}>{count}</p>
         </div>
-        <div
-          className={cn(
-            "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-transform duration-200 group-hover:scale-[1.03]",
-            colorMap[color],
-          )}
-        >
-          <Icon className="h-5 w-5" />
+        <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center shadow-sm ring-1", accent.icon)}>
+          <Icon aria-hidden="true" className="h-6 w-6" />
         </div>
       </div>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{description}</p>
-      <div className="mt-4 flex items-center gap-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-700">
+      <p className="relative mt-3 text-xs leading-5 text-slate-500">{description}</p>
+      <div className="relative mt-4 flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-700">
         View details
-        <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
+        <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
       </div>
     </button>
   );
 }
 
 function SummaryCard({ color, icon: Icon, title, value }: SummaryCardProps) {
-  const colorMap: Record<SummaryCardProps["color"], string> = {
-    blue: "bg-blue-50 text-blue-700 ring-blue-200",
-    green: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    orange: "bg-orange-50 text-orange-700 ring-orange-200",
-    rose: "bg-rose-50 text-rose-700 ring-rose-200",
-  };
+  const accent = cardAccent[color];
 
   return (
-    <Card className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_16px_40px_rgba(15,23,42,0.10)]">
-      <div className="flex items-start justify-between gap-3">
+    <Card className="group relative overflow-hidden border border-slate-200 bg-white p-5 shadow-[0_6px_20px_rgba(15,23,42,0.07)] transition duration-200 hover:-translate-y-1 hover:border-orange-200/70 hover:shadow-[0_16px_38px_rgba(15,23,42,0.13)]">
+      <div aria-hidden="true" className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r opacity-70 transition-opacity duration-200 group-hover:opacity-100", accent.bar)} />
+      <div aria-hidden="true" className={cn("pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full blur-2xl", accent.glow)} />
+      <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">{title}</p>
-          <p className="mt-2 break-words text-base font-black tracking-tight text-slate-900">
-            {value}
-          </p>
+          <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
+          <p className={cn("mt-2.5 break-words text-xl font-black tracking-[-0.03em]", accent.value)}>{value}</p>
         </div>
-        <div
-          className={cn(
-            "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-transform duration-200 group-hover:scale-[1.03]",
-            colorMap[color],
-          )}
-        >
-          <Icon className="h-5 w-5" />
+        <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center shadow-sm ring-1", accent.icon)}>
+          <Icon aria-hidden="true" className="h-6 w-6" />
         </div>
       </div>
     </Card>

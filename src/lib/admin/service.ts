@@ -193,7 +193,8 @@ export async function getSalaryFlags(showResolved = false): Promise<SalaryFlagsR
   let query = supabase
     .from("salary_flags")
     .select("id, hr_id, flag_type, severity, message, resolved_at, resolved_by, created_at", { count: "exact" })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(500);
 
   if (!showResolved) {
     query = query.is("resolved_at", null);
@@ -249,6 +250,12 @@ const dataHealthAccessContext: AccessContext = {
   scope: "system",
   source: "system",
 };
+// The full governance audit scans every sales_records row to build the classification
+// breakdown, so it is intentionally heavy (it only runs on /admin/data-health now that
+// the Command Center derives its summary cheaply). A longer cache keeps repeat visits
+// instant without staling the audit meaningfully — it is a read-only review surface.
+const DATA_HEALTH_STATS_CACHE_TTL_MS = 120_000;
+let dataHealthStatsCache: { data: DataHealthStats; timestamp: number } | null = null;
 
 function normalizeHealthKey(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
@@ -355,6 +362,11 @@ function salesOwnershipRecordFromRow(row: Record<string, unknown>): SalesOwnersh
 }
 
 export async function getDataHealthStats(): Promise<DataHealthStats> {
+  const now = Date.now();
+  if (dataHealthStatsCache && now - dataHealthStatsCache.timestamp < DATA_HEALTH_STATS_CACHE_TTL_MS) {
+    return dataHealthStatsCache.data;
+  }
+
   const supabase = getSupabaseAdmin();
 
   const [
@@ -580,7 +592,7 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
     vacancy_code: rowText(row, "vacancy_code"),
     vacancy_id: rowText(row, "id"),
   }));
-  return {
+  const result: DataHealthStats = {
     summary: {
       activeEmployees: sharedActiveEmployees,
       activeEmployeesMissingAuthAccess,
@@ -607,4 +619,6 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
     orphanAudit: orphans,
     vacancyAudit,
   };
+  dataHealthStatsCache = { data: result, timestamp: now };
+  return result;
 }

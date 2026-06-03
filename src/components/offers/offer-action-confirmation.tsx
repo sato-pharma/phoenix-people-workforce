@@ -97,6 +97,11 @@ export function OfferActionConfirmation({
             <div className="mt-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
               Offer ID {currentOffer.offerCode}
             </div>
+            {currentOffer.employeeHrId || currentOffer.reservedEmployeeHrId ? (
+              <div className="mt-2 text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">
+                HR ID {currentOffer.employeeHrId ?? currentOffer.reservedEmployeeHrId}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {showAction ? (

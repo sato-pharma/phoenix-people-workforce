@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { calculateOutstationExpense } from "@/lib/outstation/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { parseCarEvidenceMetadata } from "@/app/api/outstation/request-body";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type {
   OutstationExpenseType,
   OutstationTransportationType,
@@ -14,6 +15,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertPermission(access, "outstation", "create");
 

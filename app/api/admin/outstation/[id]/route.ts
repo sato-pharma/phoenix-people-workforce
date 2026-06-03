@@ -8,6 +8,7 @@ import {
   getOutstationRequestById,
   rejectOutstationRequestAsAdmin,
 } from "@/lib/outstation/service";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 
 export const runtime = "nodejs";
@@ -60,6 +61,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertOutstationAdminAccess(access, "approve");
     const { id: rawId } = await params;
@@ -97,6 +101,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertOutstationAdminAccess(access, "approve");
     const { id: rawId } = await params;
@@ -138,6 +145,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertOutstationAdminAccess(access, "delete");
     const { id: rawId } = await params;

@@ -84,8 +84,13 @@ export function runOfferVacancyMatchingTests() {
     "fill payload must clear replacement_for_hr_id",
   );
 
-  // -- Wiring: all three callers pass department_id.
-  assert.match(offerSource, /department_id: offer\.department_id/, "offer approval must pass department_id");
+  // -- Wiring: offer approval is now handled atomically in SQL and must use department-safe vacancy matching.
+  const hardeningMigration = readFileSync(
+    new URL("../supabase/migrations/20260531235753_offer_lifecycle_10_10_hardening.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(hardeningMigration, /pv\.department_id = v_offer\.department_id/, "offer approval must match vacancy department");
+  assert.match(hardeningMigration, /Ambiguous vacancy match/, "legacy ambiguous vacancy matches must be rejected");
 
   const directorySource = readFileSync(
     new URL("../src/lib/employees/employee-directory.ts", import.meta.url),

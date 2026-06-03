@@ -2,6 +2,7 @@ import { EmployeePortalServerShell } from "@/components/employee-portal/employee
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { AppShell } from "@/components/layout/app-shell";
+import { redirect } from "next/navigation";
 
 export default async function LeaveManagementLayout({
   children,
@@ -9,6 +10,10 @@ export default async function LeaveManagementLayout({
   children: React.ReactNode;
 }) {
   const access = await resolveAccessContextFromPage();
+
+  if (!access.loginId && !access.hrId) {
+    redirect("/login");
+  }
 
   await assertPermission(access, "employee_profile", "read");
 

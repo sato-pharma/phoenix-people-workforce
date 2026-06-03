@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import ExcelJS from "exceljs";
 import {
   ArrowUpDown,
   CalendarDays,
@@ -164,6 +163,9 @@ function rowsForExpenseWorkbook(rows: OutstationExpenseRequest[], fallbackEmploy
 }
 
 async function downloadExpenseWorkbook(rows: OutstationExpenseRequest[], fallbackEmployeeName: string) {
+  // Lazy-load exceljs (~1MB) only when an export is triggered, keeping it out
+  // of this client component's initial bundle.
+  const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Expense Input");
   const widths = [14, 28, 14, 18, 34, 34, 14, 14, 18, 20, 20, 14, 18, 42, 16];

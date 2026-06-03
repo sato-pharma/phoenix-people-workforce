@@ -50,6 +50,12 @@ These scripts validate database state and RLS policies. They connect to Supabase
 | `db:validate:role-alignment:local:dry-run` | Local role alignment (dry run) | Caution | Local |
 | `db:validate:role-alignment:local:mutations` | Local role alignment with mutations | Caution | Local |
 | `db:preflight:role-alignment:production` | Production role alignment preflight | **Danger** | Production |
+| `db:staging:rebuild:plan` | Print safe fresh-staging rebuild plan and git status | Safe | Local |
+| `db:staging:rebuild:archive-current` | Create an archive-preserved metadata manifest while keeping old staging online | Caution | Staging |
+| `db:staging:rebuild:backup-current` | Optional full dump export when Supabase CLI dumps are known to complete | Caution | Staging |
+| `db:staging:rebuild:dry-run-new` | Dry-run the full migration chain against a separate new staging target | Caution | New staging |
+| `db:staging:rebuild:apply-new` | Apply the full migration chain to a separate new staging target after archive/backup confirmation | Caution | New staging |
+| `db:staging:rebuild:verify-new` | Verify new staging migration history and executive RPC grants | Caution | New staging |
 
 ## Migration Pipeline Scripts (Phase 25-36)
 

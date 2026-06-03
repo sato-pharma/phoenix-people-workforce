@@ -9,14 +9,18 @@ import {
 export type OfferLetterEmailProps = {
   acceptUrl: string;
   actionLinksEnabled?: boolean;
+  baseSalary: string;
+  basicSalary: string;
   candidateName: string;
   declineUrl: string;
   expiresAt?: string | null;
   issueDate: string;
   jobTitle: string;
+  netSalary: string;
   offerCode: string;
   reportingLine: string;
   reportingManager: string;
+  reviewUrl: string;
   startDate: string;
   totalMonthlyPackage: string;
   territory: string;
@@ -25,7 +29,7 @@ export type OfferLetterEmailProps = {
 function offerBodyText(props: OfferLetterEmailProps) {
   return `On behalf of Sato Pharmaceuticals, we are delighted to offer you the ${props.jobTitle} position, reporting to ${props.reportingManager}. You will be assigned to ${props.territory}, with a planned start date of ${props.startDate}.
 
-Please review the offer details below and confirm your decision using the secure action link.`;
+Please review the offer details below. If you are interested, use the secure review button to open your detailed offer page and choose your response there.`;
 }
 
 function offerBodyHtml(props: OfferLetterEmailProps) {
@@ -43,12 +47,14 @@ function offerBodyHtml(props: OfferLetterEmailProps) {
 function metadataRows(props: OfferLetterEmailProps) {
   return [
     { label: "Offer ID", value: props.offerCode },
-    { label: "Job Title", value: props.jobTitle },
+    { label: "Position", value: props.jobTitle },
     { label: "Line", value: props.reportingLine },
     { label: "Area", value: props.territory },
     { label: "Direct Manager", value: props.reportingManager },
-    { label: "Start Date", value: props.startDate },
-    { label: "Total Monthly Package", value: props.totalMonthlyPackage },
+    { label: "Hiring Date", value: props.startDate },
+    { label: "Base Salary", value: props.baseSalary },
+    { label: "Basic Salary", value: props.basicSalary },
+    { label: "Net Salary", value: props.netSalary },
     { label: "Issued Date", value: props.issueDate },
   ];
 }
@@ -56,7 +62,7 @@ function metadataRows(props: OfferLetterEmailProps) {
 export function OfferLetterEmail(props: OfferLetterEmailProps) {
   return (
     <PhoenixEmailLayout
-      action={props.actionLinksEnabled === false ? undefined : { href: props.acceptUrl, label: "Accept & Join Sato" }}
+      action={props.actionLinksEnabled === false ? undefined : { href: props.reviewUrl, label: "Interested - Review Details" }}
       bodyHtml={offerBodyHtml(props)}
       greeting={`Dear ${props.candidateName},`}
       metadataRows={metadataRows(props)}
@@ -69,9 +75,9 @@ export function OfferLetterEmail(props: OfferLetterEmailProps) {
 
 export function renderOfferLetterEmailHtml(props: OfferLetterEmailProps) {
   return renderPhoenixEmailHtml({
-    action: props.actionLinksEnabled === false ? undefined : { href: props.acceptUrl, label: "Accept & Join Sato" },
+    action: props.actionLinksEnabled === false ? undefined : { href: props.reviewUrl, label: "Interested - Review Details" },
     bodyHtml: offerBodyHtml(props),
-    closingText: "You can contact HR for any clarification before making your decision.",
+    closingText: "We are excited about the possibility of welcoming you to the team. HR is available for any clarification before you decide.",
     greeting: `Dear ${props.candidateName},`,
     metadataRows: metadataRows(props),
     previewText: `Official ${props.jobTitle} offer from Phoenix Workforce.`,
@@ -82,13 +88,13 @@ export function renderOfferLetterEmailHtml(props: OfferLetterEmailProps) {
 
 export function renderOfferLetterEmailText(props: OfferLetterEmailProps) {
   return renderPhoenixEmailText({
-    action: props.actionLinksEnabled === false ? undefined : { href: props.acceptUrl, label: "Accept & Join Sato" },
+    action: props.actionLinksEnabled === false ? undefined : { href: props.reviewUrl, label: "Interested - Review Details" },
     bodyText: [
       offerBodyText(props),
       "",
-      props.actionLinksEnabled === false ? "Offer action links are inactive in local test mode." : `Decline Offer: ${props.declineUrl}`,
+      props.actionLinksEnabled === false ? "Offer action links are inactive in local test mode." : `Review Offer Details: ${props.reviewUrl}`,
     ].join("\n"),
-    closingText: "You can contact HR for any clarification before making your decision.",
+    closingText: "We are excited about the possibility of welcoming you to the team. HR is available for any clarification before you decide.",
     greeting: `Dear ${props.candidateName},`,
     metadataRows: metadataRows(props),
     title: `${props.jobTitle} Job Offer`,

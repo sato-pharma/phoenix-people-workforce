@@ -151,7 +151,17 @@ function setIfPresent(map: Map<string, EmployeeNodeInput>, value: unknown, emplo
   if (key && !map.has(key)) map.set(key, employee);
 }
 
+// Indexing a context is a pure function of the (read-only) context object, but it
+// iterates the whole employee directory to build four lookup maps. classifySalesOwnership
+// calls it on every record, so without memoisation a dashboard re-indexes the directory
+// once per sales row — an O(records × employees) blow-up (≈39s for ~3k rows). Cache the
+// indexed result by input identity; callers build the context once and never mutate it.
+const indexedSalesOwnershipContextCache = new WeakMap<SalesOwnershipContext, IndexedSalesOwnershipContext>();
+
 export function buildSalesOwnershipContext(context: SalesOwnershipContext = {}): IndexedSalesOwnershipContext {
+  const cached = indexedSalesOwnershipContextCache.get(context);
+  if (cached) return cached;
+
   const employeeByHrId = new Map<string, EmployeeNodeInput>();
   const employeeByCrmId = new Map<string, EmployeeNodeInput>();
   const employeeByLookupKey = new Map<string, EmployeeNodeInput>();
@@ -169,13 +179,15 @@ export function buildSalesOwnershipContext(context: SalesOwnershipContext = {}):
     setIfPresent(employeeByName, getText(employee, ["fullName", "full_name", "employeeName", "employee_name", "name"]), employee);
   }
 
-  return {
+  const indexed: IndexedSalesOwnershipContext = {
     ...context,
     employeeByCrmId,
     employeeByHrId,
     employeeByLookupKey,
     employeeByName,
   };
+  indexedSalesOwnershipContextCache.set(context, indexed);
+  return indexed;
 }
 
 function lookupEmployee(map: ReadonlyMap<string, EmployeeNodeInput>, value: unknown) {

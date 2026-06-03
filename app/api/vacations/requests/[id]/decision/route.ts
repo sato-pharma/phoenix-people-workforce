@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   decideVacationRequest,
   decideVacationRequestByToken,
@@ -8,6 +10,7 @@ import {
   parseVacationDecision,
   vacationErrorMessage,
 } from "@/lib/vacation/service";
+import { assertVacationRouteRateLimit } from "@/lib/vacation/route-guards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,8 +42,18 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    await assertVacationRouteRateLimit({
+      actor: access.loginId ?? access.hrId,
+      limit: 30,
+      request,
+      scope: "vacation:decision",
+      windowMs: 60_000,
+    });
     const body = await request.json();
     const decision = parseVacationDecision(body.decision);
     if (!decision) {
@@ -62,6 +75,12 @@ export async function POST(
     if (isVacationSchemaMissing(error)) {
       return NextResponse.json({ error: "vacation_schema_missing", message, success: false }, { status: 409 });
     }
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message, success: false },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     return NextResponse.json({ error: "vacation_decision_failed", message, success: false }, { status: 400 });
   }
 }
@@ -75,6 +94,13 @@ export async function GET(
     const url = new URL(request.url);
     const decision = parseVacationDecision(url.searchParams.get("decision"));
     const token = url.searchParams.get("token");
+    await assertVacationRouteRateLimit({
+      limit: 12,
+      request,
+      scope: "vacation:token-decision",
+      token,
+      windowMs: 60_000,
+    });
 
     if (!decision || !token) {
       return new Response(
@@ -98,6 +124,16 @@ export async function GET(
       { headers: { "Content-Type": "text/html; charset=utf-8" } },
     );
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return new Response(
+        resultHtml({
+          message: "Too many approval attempts. Please try again shortly.",
+          success: false,
+          title: "Vacation Decision Rate Limited",
+        }),
+        { headers: { "Content-Type": "text/html; charset=utf-8", "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     return new Response(
       resultHtml({
         message: vacationErrorMessage(error) || "Unable to decide vacation request.",

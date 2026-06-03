@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { listSalesHistory, listSalesQueue } from "@/lib/sales/service";
+import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 
 export const runtime = "nodejs";
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const accessContext = await resolveAccessContext(request);
+    await assertPermission(accessContext, "sales", "read");
     const url = new URL(request.url);
     const view = url.searchParams.get("view");
     const data = view === "queue" ? await listSalesQueue(accessContext) : await listSalesHistory(accessContext);

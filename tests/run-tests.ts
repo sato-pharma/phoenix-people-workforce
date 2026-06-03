@@ -1,4 +1,5 @@
 import { runI18nConfigTests } from "./i18n-config.test.ts";
+import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
 import { runIncentiveSchemeTests } from "./incentive-scheme.test.ts";
 import { runEmailNotificationTests } from "./email-notifications.test.ts";
 import { runEmailGovernanceTests } from "./email-governance.test.ts";
@@ -41,6 +42,7 @@ import { runWorkforceLifecycleSeatTests } from "./workforce-lifecycle-seat.test.
 import { runWorkforceHierarchyContinuityTests } from "./workforce-hierarchy-continuity.test.ts";
 import { runPayrollLifecycleScopeTests } from "./payroll-lifecycle-scope.test.ts";
 import { runOfferVacancyMatchingTests } from "./offer-vacancy-matching.test.ts";
+import { runOfferLifecycleHardeningTests } from "./offer-lifecycle-hardening.test.ts";
 import { runNotificationRecipientIsolationTests } from "./notification-recipient-isolation.test.ts";
 import { runWorkflowControlTests } from "./workflow-control.test.ts";
 import { runWorkflowControlGovernanceTests } from "./workflow-control-governance.test.ts";
@@ -74,10 +76,13 @@ import { runVacancyReportSourceTests } from "./vacancy-report-source.test.ts";
 import { runProbationStabilizationTests } from "./probation-stabilization.test.ts";
 import { runGoogleRoutesShortestTests } from "./google-routes-shortest.test.ts";
 import { runAccessGovernanceHardeningTests } from "./access-governance-hardening.test.ts";
+import { runAccessIdentityHardeningTests } from "./access-identity-hardening.test.ts";
+import { runAccessRegistryCoverageTests } from "./access-registry-coverage.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
 import { runVacationCalculationTests } from "./vacation-calculations.test.ts";
 import { runVacationModuleTests } from "./vacation-module.test.ts";
+import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
 import { runContractRenewalHardeningTests } from "./contract-renewal-hardening.test.ts";
 import { runContractNonRenewalTerminalTests } from "./contract-non-renewal-terminal.test.ts";
 import { runContractNonRenewalMigrationReadinessTests } from "./contract-non-renewal-migration-readiness.test.ts";
@@ -95,6 +100,7 @@ import { runPhase21SecurityHardeningTests } from "./phase21-security-hardening.t
 import { runPhase22RoleMatrixSecurityTests } from "./phase22-role-matrix-security.test.ts";
 import { runCeoCommandCenterTests } from "./ceo-command-center.test.ts";
 import { runCeoBriefTests } from "./ceo-brief.test.ts";
+import { runExecutiveDashboardSnapshotTests } from "./executive-dashboard-snapshot.test.ts";
 import { runPhase23BrowserRoleWalkthroughTests } from "./phase23-browser-role-walkthrough.test.ts";
 import { runPhase24RealAuthRlsApiSmokeTests } from "./phase24-real-auth-rls-api-smoke.test.ts";
 import { runPhase25StagingRlsMutationSmokeTests } from "./phase25-staging-rls-mutation-smoke.test.ts";
@@ -105,6 +111,8 @@ import { runPhase29ProductionMigrationPreapplyReviewTests } from "./phase29-prod
 import { runPhase30ProductionMigrationApprovalGateTests } from "./phase30-production-migration-approval-gate.test.ts";
 import { runPhase32ProductionMigrationQueueReviewTests } from "./phase32-production-migration-queue-review.test.ts";
 import { runPhase33MigrationHistoryReconciliationGateTests } from "./phase33-migration-history-reconciliation-gate.test.ts";
+import { runStagingExecutiveDashboardMigrationReconciliationTests } from "./staging-executive-dashboard-migration-reconciliation.test.ts";
+import { runStagingSafeRebuildTests } from "./staging-safe-rebuild.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -117,6 +125,7 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 }
 
 await runTest("i18n config", runI18nConfigTests);
+await runTest("navigation active path", runNavigationActivePathTests);
 await runTest("incentive scheme", runIncentiveSchemeTests);
 await runTest("email notifications", runEmailNotificationTests);
 await runTest("email governance", runEmailGovernanceTests);
@@ -162,6 +171,7 @@ await runTest("workforce lifecycle seat", runWorkforceLifecycleSeatTests);
 await runTest("workforce hierarchy continuity", runWorkforceHierarchyContinuityTests);
 await runTest("payroll lifecycle scope", runPayrollLifecycleScopeTests);
 await runTest("offer vacancy matching", runOfferVacancyMatchingTests);
+await runTest("offer lifecycle hardening", runOfferLifecycleHardeningTests);
 await runTest("notification recipient isolation", runNotificationRecipientIsolationTests);
 await runTest("workflow control center", runWorkflowControlTests);
 await runTest("workflow control governance", runWorkflowControlGovernanceTests);
@@ -192,10 +202,13 @@ await runTest("employee record health", runEmployeeRecordHealthTests);
 await runTest("employee salary details", runEmployeeSalaryDetailsTests);
 await runTest("resignation date edit", runResignationDateEditTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
+await runTest("access registry coverage", runAccessRegistryCoverageTests);
+await runTest("access identity hardening", runAccessIdentityHardeningTests);
 await runTest("workflow registry", runWorkflowRegistryTests);
 await runTest("workflow registry enforcement", runWorkflowRegistryEnforcementTests);
 await runTest("vacation calculations", runVacationCalculationTests);
 await runTest("vacation module", runVacationModuleTests);
+await runTest("csrf route coverage", runCsrfRouteCoverageTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);
 await runTest("contract non-renewal terminal lifecycle", runContractNonRenewalTerminalTests);
 await runTest("contract non-renewal migration readiness", runContractNonRenewalMigrationReadinessTests);
@@ -213,6 +226,7 @@ await runTest("phase 21 security hardening", runPhase21SecurityHardeningTests);
 await runTest("phase 22 role matrix security", runPhase22RoleMatrixSecurityTests);
 await runTest("ceo command center", runCeoCommandCenterTests);
 await runTest("ceo brief", runCeoBriefTests);
+await runTest("executive dashboard snapshot", runExecutiveDashboardSnapshotTests);
 await runTest("phase 23 browser role walkthrough", runPhase23BrowserRoleWalkthroughTests);
 await runTest("phase 24 real auth RLS/API smoke", runPhase24RealAuthRlsApiSmokeTests);
 await runTest("phase 25 staging RLS mutation smoke", runPhase25StagingRlsMutationSmokeTests);
@@ -223,3 +237,5 @@ await runTest("phase 29 production migration pre-apply review", runPhase29Produc
 await runTest("phase 30 production migration approval gate", runPhase30ProductionMigrationApprovalGateTests);
 await runTest("phase 32 production migration queue review", runPhase32ProductionMigrationQueueReviewTests);
 await runTest("phase 33 migration history reconciliation gate", runPhase33MigrationHistoryReconciliationGateTests);
+await runTest("staging executive dashboard migration reconciliation", runStagingExecutiveDashboardMigrationReconciliationTests);
+await runTest("staging safe rebuild", runStagingSafeRebuildTests);

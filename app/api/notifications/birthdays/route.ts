@@ -39,7 +39,7 @@ function isAuthorized(request: Request) {
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-async function runBirthdayNotifications(request: Request) {
+export async function runBirthdayNotifications(request: Request) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "unauthorized", message: "Birthday notification run is not authorized." }, { status: 401 });
   }

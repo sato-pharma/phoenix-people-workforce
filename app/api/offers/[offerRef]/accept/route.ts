@@ -6,12 +6,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ offerRef: string }> },
 ) {
   try {
     const { offerRef } = await params;
-    const result = await decideOffer(offerRef, "accepted");
+    const result = await decideOffer(offerRef, "accepted", {
+      ip: request.headers.get("x-forwarded-for")?.split(",")[0] ?? request.headers.get("x-real-ip"),
+      userAgent: request.headers.get("user-agent"),
+    });
     return NextResponse.json(result);
   } catch (error) {
     const message =

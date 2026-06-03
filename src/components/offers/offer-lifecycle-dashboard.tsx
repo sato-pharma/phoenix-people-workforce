@@ -7,8 +7,10 @@ import {
   Clock3,
   Copy,
   Mail,
+  Plus,
   RefreshCw,
   Send,
+  Trash2,
   UserCheck,
   XCircle,
 } from "lucide-react";
@@ -32,6 +34,8 @@ import type {
   OfferStatus,
 } from "@/lib/offers/service";
 import { offerTemplates } from "@/lib/offers/templates";
+import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
+import { resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 type Props = {
   initialData?: OfferDashboardData | null;
   initialError?: string | null;
@@ -58,33 +62,55 @@ function OffersShell({ children }: { children: React.ReactNode }) {
 }
 
 type OfferForm = {
+  baseSalary: string;
   candidateEmail: string;
   candidateName: string;
   candidatePhone: string;
+  compensationLines: Array<{
+    category: "earning" | "deduction";
+    id: string;
+    label: string;
+    notes: string;
+    value: string;
+  }>;
+  compensationNotes: string;
   areaScope: string;
   areaId: string;
   departmentId: string;
   expiresInDays: string;
+  extraCostOfLiving: string;
+  fuelAllowance: string;
   lineId: string;
   managerHrId: string;
   positionId: string;
+  socialInsurance: string;
   startDate: string;
+  taxes: string;
   templateKey: string;
+  vacancyId: string;
 };
 
 const emptyForm: OfferForm = {
   areaId: "",
   areaScope: "",
+  baseSalary: "",
   candidateEmail: "",
   candidateName: "",
   candidatePhone: "",
+  compensationLines: [],
+  compensationNotes: "",
   departmentId: "",
   expiresInDays: "7",
+  extraCostOfLiving: "",
+  fuelAllowance: "",
   lineId: "",
   managerHrId: "",
   positionId: "",
+  socialInsurance: "",
   startDate: "",
+  taxes: "",
   templateKey: "medical_sales_representative",
+  vacancyId: "",
 };
 
 function formatDate(value: string | null | undefined) {
@@ -105,15 +131,42 @@ function formatMoney(value: number | null) {
   }).format(value);
 }
 
+function numericField(value: string) {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function moneyInput(value: number | null | undefined) {
+  return value === null || value === undefined || !Number.isFinite(Number(value))
+    ? ""
+    : String(Math.round(Number(value)));
+}
+
 function formatPercent(value: number) {
   return `${Math.round((Number.isFinite(value) ? value : 0) * 100)}%`;
 }
 
 function statusVariant(status: OfferStatus) {
-  if (status === "accepted") return "success" as const;
+  if (status === "accepted" || status === "hired") return "success" as const;
   if (status === "sent") return "warning" as const;
-  if (status === "rejected" || status === "expired") return "danger" as const;
+  if (status === "rejected" || status === "expired" || status === "withdrawn" || status === "cancelled" || status === "voided") return "danger" as const;
   return "neutral" as const;
+}
+
+function createCompensationLine() {
+  return {
+    category: "earning" as const,
+    id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `line-${Date.now()}`,
+    label: "",
+    notes: "",
+    value: "",
+  };
+}
+
+function compensationLineAmount(value: string) {
+  const parsed = numericField(value);
+  return parsed && parsed > 0 ? parsed : 0;
 }
 
 function statusLabel(status: OfferStatus) {
@@ -189,12 +242,18 @@ function OfferRow({
   approving,
   offer,
   onApprove,
+  onWorkflow,
 }: {
   approving: boolean;
   offer: OfferLifecycleRow;
   onApprove: (offer: OfferLifecycleRow) => void;
+  onWorkflow: (offer: OfferLifecycleRow, action: "cancel" | "resend" | "void" | "withdraw") => void;
 }) {
   const canApprove = offer.status === "accepted" && offer.onboardingStatus !== "approved_hired";
+  const canResend = offer.status === "sent";
+  const canWithdraw = offer.status === "sent";
+  const canCancel = offer.status === "draft";
+  const canVoid = offer.status === "accepted" && offer.onboardingStatus !== "approved_hired" && !offer.employeeHrId;
 
   return (
     <tr className="border-b border-[#E2E8F0] transition-colors last:border-0 hover:bg-[#FFF7ED]/65">
@@ -209,20 +268,54 @@ function OfferRow({
       <td className="px-4 py-3">
         <Badge variant={statusVariant(offer.status)}>{statusLabel(offer.status)}</Badge>
       </td>
-      <td className="px-4 py-3 text-sm text-text-secondary">{formatMoney(offer.salaryAmount)}</td>
+      <td className="px-4 py-3 text-sm font-semibold text-text">
+        {offer.employeeHrId ?? offer.reservedEmployeeHrId ?? "-"}
+      </td>
+      <td className="px-4 py-3 text-sm text-text-secondary">{formatMoney(offer.netSalary ?? offer.salaryAmount)}</td>
       <td className="px-4 py-3 text-sm text-text-secondary">{formatDate(offer.expiresAt)}</td>
       <td className="px-4 py-3 text-sm text-text-secondary">
-        {offer.status === "accepted" ? "Hired pipeline" : offer.onboardingStatus.replace(/_/g, " ")}
+        {offer.status === "accepted" ? "Hired pipeline" : offer.status === "hired" ? "Employee created" : offer.onboardingStatus.replace(/_/g, " ")}
       </td>
       <td className="px-4 py-3">
         {canApprove ? (
-          <Button className="h-8 gap-2 rounded-xl px-3 text-xs" disabled={approving} onClick={() => onApprove(offer)}>
-            {approving ? <LoadingSpinner /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-            Approve hire
-          </Button>
+          <div className="flex flex-wrap gap-1.5">
+            <Button className="h-8 gap-2 rounded-xl px-3 text-xs" disabled={approving} onClick={() => onApprove(offer)}>
+              {approving ? <LoadingSpinner /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              Approve hire
+            </Button>
+            {canVoid ? (
+              <Button className="h-8 gap-1.5 rounded-xl px-2.5 text-xs" disabled={approving} onClick={() => onWorkflow(offer, "void")} variant="secondary">
+                Void
+              </Button>
+            ) : null}
+          </div>
+        ) : canResend || canWithdraw || canCancel || canVoid ? (
+          <div className="flex flex-wrap gap-1.5">
+            {canResend ? (
+              <Button className="h-8 gap-1.5 rounded-xl px-2.5 text-xs" disabled={approving} onClick={() => onWorkflow(offer, "resend")} variant="secondary">
+                {approving ? <LoadingSpinner /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Resend
+              </Button>
+            ) : null}
+            {canWithdraw ? (
+              <Button className="h-8 gap-1.5 rounded-xl px-2.5 text-xs" disabled={approving} onClick={() => onWorkflow(offer, "withdraw")} variant="secondary">
+                Withdraw
+              </Button>
+            ) : null}
+            {canCancel ? (
+              <Button className="h-8 gap-1.5 rounded-xl px-2.5 text-xs" disabled={approving} onClick={() => onWorkflow(offer, "cancel")} variant="secondary">
+                Cancel
+              </Button>
+            ) : null}
+            {canVoid ? (
+              <Button className="h-8 gap-1.5 rounded-xl px-2.5 text-xs" disabled={approving} onClick={() => onWorkflow(offer, "void")} variant="secondary">
+                Void
+              </Button>
+            ) : null}
+          </div>
         ) : (
           <span className="text-xs font-medium text-text-secondary">
-            {offer.onboardingStatus === "approved_hired" ? "Approved" : "-"}
+            {offer.status === "hired" || offer.onboardingStatus === "approved_hired" ? "Approved" : "-"}
           </span>
         )}
       </td>
@@ -242,39 +335,105 @@ export function OfferLifecycleDashboard({
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [approvingId, setApprovingId] = React.useState<string | null>(null);
-  const [createdLinks, setCreatedLinks] = React.useState<{ acceptUrl: string; rejectUrl: string } | null>(null);
+  const [createdLinks, setCreatedLinks] = React.useState<{ acceptUrl: string; rejectUrl: string; reviewUrl?: string } | null>(null);
   const [emailStatus, setEmailStatus] = React.useState<string | null>(null);
+  const [search, setSearch] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState<OfferStatus | "all">("all");
 
-  const rows = data?.rows ?? [];
+  const visibleRows = React.useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const rows = data?.rows ?? [];
+    return rows.filter((offer) => {
+      const statusMatches = statusFilter === "all" || offer.status === statusFilter;
+      if (!statusMatches) return false;
+      if (!query) return true;
+      return [
+        offer.candidateName,
+        offer.candidateEmail,
+        offer.jobTitle,
+        offer.offerCode,
+        offer.employeeHrId,
+        offer.reservedEmployeeHrId,
+        offer.areaScope,
+      ].some((value) => String(value ?? "").toLowerCase().includes(query));
+    });
+  }, [data?.rows, search, statusFilter]);
   const lookups = data?.lookups ?? initialLookups;
   const selectedTemplate = offerTemplates.find((template) => template.value === form.templateKey) ?? null;
-
-  // Derived values for Medical Rep vacancies
-  const medicalRepVacancies = React.useMemo(
-    () => lookups?.medicalRepVacancies ?? [],
-    [lookups?.medicalRepVacancies],
+  const openVacancies = React.useMemo(
+    () => lookups?.openVacancies ?? lookups?.medicalRepVacancies ?? [],
+    [lookups?.medicalRepVacancies, lookups?.openVacancies],
   );
-  const isMedicalRep =
-    form.templateKey === "medical_sales_representative" ||
-    (selectedTemplate?.label ?? "").includes("Medical Representative");
+  const selectedPosition = lookups?.positions.find((position) => position.value === form.positionId);
+  const selectedJobTitle = selectedPosition?.label ?? selectedTemplate?.label ?? "Job Offer";
 
-  const vacantLines = React.useMemo(() => {
+  const departmentOptions = React.useMemo(() => {
+    const allowed = new Set(openVacancies.map((vacancy) => vacancy.departmentId).filter(Boolean).map(String));
+    const base = lookups?.departments ?? [];
+    return allowed.size > 0 ? base.filter((department) => allowed.has(department.value)) : base;
+  }, [lookups?.departments, openVacancies]);
+
+  const positionOptions = React.useMemo(() => {
+    const allowed = new Set(
+      openVacancies
+        .filter((vacancy) => !form.departmentId || String(vacancy.departmentId) === form.departmentId)
+        .map((vacancy) => vacancy.positionId)
+        .filter(Boolean)
+        .map(String),
+    );
+    const base = lookups?.positions ?? [];
+    return allowed.size > 0 ? base.filter((position) => allowed.has(position.value)) : base;
+  }, [form.departmentId, lookups?.positions, openVacancies]);
+
+  const lineOptions = React.useMemo(() => {
     const linesMap = new Map<string, string>();
-    medicalRepVacancies.forEach((v) => {
-      if (v.lineId && v.lineName) {
-        linesMap.set(String(v.lineId), v.lineName);
-      }
-    });
-    return Array.from(linesMap.entries())
-      .map(([value, label]) => ({ label, value }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [medicalRepVacancies]);
+    openVacancies
+      .filter((vacancy) => !form.departmentId || String(vacancy.departmentId) === form.departmentId)
+      .filter((vacancy) => !form.positionId || String(vacancy.positionId) === form.positionId)
+      .forEach((vacancy) => {
+        if (vacancy.lineId && vacancy.lineName) {
+          linesMap.set(String(vacancy.lineId), vacancy.lineName);
+        }
+      });
+    const fromVacancies = Array.from(linesMap.entries()).map(([value, label]) => ({ label, value }));
+    return fromVacancies.length > 0 ? fromVacancies.sort((a, b) => a.label.localeCompare(b.label)) : lookups?.lines ?? [];
+  }, [form.departmentId, form.positionId, lookups?.lines, openVacancies]);
 
   const filteredVacantAreas = React.useMemo(() => {
-    return medicalRepVacancies.filter(
-      (vacancy) => String(vacancy.lineId) === String(form.lineId),
-    );
-  }, [medicalRepVacancies, form.lineId]);
+    return openVacancies
+      .filter((vacancy) => !form.departmentId || String(vacancy.departmentId) === form.departmentId)
+      .filter((vacancy) => !form.positionId || String(vacancy.positionId) === form.positionId)
+      .filter((vacancy) => !form.lineId || String(vacancy.lineId) === form.lineId);
+  }, [form.departmentId, form.lineId, form.positionId, openVacancies]);
+
+  const standardAllowances = React.useMemo(
+    () => resolveStandardSalaryAllowances({ jobTitle: selectedJobTitle }),
+    [selectedJobTitle],
+  );
+  const compensationPreview = React.useMemo(() => {
+    const extraCostOfLiving = numericField(form.extraCostOfLiving) ?? standardAllowances.extraCostOfLiving;
+    const fuelAllowance = numericField(form.fuelAllowance) ?? standardAllowances.fuelAllowance;
+    const fixedSalary = resolveFixedSalaryAmounts({
+      baseSalary: numericField(form.baseSalary),
+      employmentIncomeTax: numericField(form.taxes),
+      extraCostOfLiving,
+      fuelAllowance,
+      socialInsurance: numericField(form.socialInsurance),
+    });
+    const customEarnings = form.compensationLines
+      .filter((line) => line.category === "earning")
+      .reduce((sum, line) => sum + compensationLineAmount(line.value), 0);
+    const customDeductions = form.compensationLines
+      .filter((line) => line.category === "deduction")
+      .reduce((sum, line) => sum + compensationLineAmount(line.value), 0);
+
+    return {
+      ...fixedSalary,
+      customDeductions,
+      customEarnings,
+      netSalary: Math.max(0, fixedSalary.netSalary + customEarnings - customDeductions),
+    };
+  }, [form.baseSalary, form.compensationLines, form.extraCostOfLiving, form.fuelAllowance, form.socialInsurance, form.taxes, standardAllowances]);
 
   async function loadOffers() {
     setIsLoading(true);
@@ -304,12 +463,31 @@ export function OfferLifecycleDashboard({
         body: JSON.stringify({
           ...form,
           areaId: form.areaId ? Number(form.areaId) : null,
+          baseSalary: numericField(form.baseSalary),
+          basicSalary: compensationPreview.basicSalary,
+          compensationLines: form.compensationLines
+            .filter((line) => line.label.trim() && compensationLineAmount(line.value) > 0)
+            .map((line) => ({
+              category: line.category,
+              id: line.id,
+              label: line.label.trim(),
+              notes: line.notes.trim() || null,
+              value: compensationLineAmount(line.value),
+              valueType: "amount",
+            })),
+          compensationNotes: form.compensationNotes || null,
           departmentId: form.departmentId ? Number(form.departmentId) : null,
           expiresInDays: Number(form.expiresInDays),
+          extraCostOfLiving: numericField(form.extraCostOfLiving) ?? standardAllowances.extraCostOfLiving,
+          fuelAllowance: numericField(form.fuelAllowance) ?? standardAllowances.fuelAllowance,
           lineId: form.lineId ? Number(form.lineId) : null,
           positionId: form.positionId ? Number(form.positionId) : null,
-          jobTitle: selectedTemplate?.label ?? "Job Offer",
-          salaryAmount: selectedTemplate?.monthlyPackage ?? null,
+          jobTitle: selectedJobTitle,
+          netSalary: compensationPreview.netSalary,
+          salaryAmount: compensationPreview.netSalary,
+          socialInsurance: numericField(form.socialInsurance),
+          taxes: numericField(form.taxes),
+          vacancyId: form.vacancyId ? Number(form.vacancyId) : null,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -317,7 +495,7 @@ export function OfferLifecycleDashboard({
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.message ?? "Offer could not be created.");
       setData(payload.dashboard);
-      setCreatedLinks({ acceptUrl: payload.acceptUrl, rejectUrl: payload.rejectUrl });
+      setCreatedLinks({ acceptUrl: payload.acceptUrl, rejectUrl: payload.rejectUrl, reviewUrl: payload.reviewUrl });
       setEmailStatus(
         payload.email?.skipped
           ? `Email not sent: ${payload.email.reason ?? "notification skipped"}`
@@ -336,6 +514,31 @@ export function OfferLifecycleDashboard({
     await navigator.clipboard?.writeText(value);
   }
 
+  function exportCsv() {
+    const headers = ["Offer Code", "Candidate", "Email", "Role", "Status", "HR ID", "Salary", "Start Date", "Updated"];
+    const csvRows = visibleRows.map((offer) => [
+      offer.offerCode,
+      offer.candidateName,
+      offer.candidateEmail,
+      offer.jobTitle,
+      offer.status,
+      offer.employeeHrId ?? offer.reservedEmployeeHrId ?? "",
+      offer.netSalary ?? offer.salaryAmount ?? "",
+      offer.startDate ?? "",
+      offer.updatedAt,
+    ]);
+    const csv = [headers, ...csvRows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `offers-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function approveOffer(offer: OfferLifecycleRow) {
     setApprovingId(offer.id);
     setError(null);
@@ -352,13 +555,62 @@ export function OfferLifecycleDashboard({
     }
   }
 
+  function updateCompensationLine(id: string, field: "category" | "label" | "notes" | "value", value: string) {
+    setForm((prev) => ({
+      ...prev,
+      compensationLines: prev.compensationLines.map((line) =>
+        line.id === id
+          ? { ...line, [field]: field === "category" && value === "deduction" ? "deduction" : field === "category" ? "earning" : value }
+          : line,
+      ),
+    }));
+  }
+
+  async function runWorkflowAction(offer: OfferLifecycleRow, action: "cancel" | "resend" | "void" | "withdraw") {
+    setApprovingId(offer.id);
+    setError(null);
+    setCreatedLinks(null);
+    setEmailStatus(null);
+
+    try {
+      const reason =
+        action === "void"
+          ? window.prompt("Enter the HR reason for voiding this accepted offer.")
+          : null;
+      if (action === "void" && !reason?.trim()) {
+        setApprovingId(null);
+        return;
+      }
+      const response = await fetch(`/api/offers/${offer.id}/workflow`, {
+        body: JSON.stringify({ action, reason }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.message ?? "Offer action failed.");
+      setData(payload.dashboard);
+      if (action === "resend") {
+        setCreatedLinks({ acceptUrl: payload.acceptUrl, rejectUrl: payload.rejectUrl, reviewUrl: payload.reviewUrl });
+        setEmailStatus(
+          payload.email?.skipped
+            ? `Email not sent: ${payload.email.reason ?? "notification skipped"}`
+            : `Email sent${payload.email?.id ? `: ${payload.email.id}` : ""}`,
+        );
+      }
+    } catch (workflowError) {
+      setError(workflowError instanceof Error ? workflowError.message : "Offer action failed.");
+    } finally {
+      setApprovingId(null);
+    }
+  }
+
   return (
     <OffersShell>
     <div className="space-y-6">
       <AdminPageHero
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button className="gap-2 rounded-2xl bg-[#0F172A] px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)] hover:bg-[#111827]" onClick={() => setIsModalOpen(true)}>
+            <Button className="gap-2 rounded-2xl px-3 py-2 text-xs shadow-[0_14px_30px_rgba(249,115,22,0.28)]" onClick={() => setIsModalOpen(true)}>
               <Send className="h-4 w-4" />
               Create offer
             </Button>
@@ -425,6 +677,27 @@ export function OfferLifecycleDashboard({
         description="Accepted offers move to the hired pipeline and initialize onboarding."
         title="Offer Pipeline"
       >
+        <div className="flex flex-wrap items-center gap-2 border-b border-[#E2E8F0] bg-white px-4 py-3">
+          <Input
+            className="h-9 max-w-xs rounded-xl border-[#DDE6F1]"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search offers"
+            value={search}
+          />
+          <select
+            className="h-9 rounded-xl border border-[#DDE6F1] bg-white px-3 text-sm text-text"
+            onChange={(event) => setStatusFilter(event.target.value as OfferStatus | "all")}
+            value={statusFilter}
+          >
+            {["all", "sent", "accepted", "hired", "rejected", "expired", "withdrawn", "cancelled", "voided"].map((status) => (
+              <option key={status} value={status}>{statusLabel(status as OfferStatus)}</option>
+            ))}
+          </select>
+          <Button className="h-9 gap-2 rounded-xl px-3 text-xs" onClick={exportCsv} type="button" variant="secondary">
+            <Copy className="h-3.5 w-3.5" />
+            Export
+          </Button>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
@@ -432,6 +705,7 @@ export function OfferLifecycleDashboard({
                 <th className="px-4 py-3">Candidate</th>
                 <th className="px-4 py-3">Role</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">HR ID</th>
                 <th className="px-4 py-3">Salary</th>
                 <th className="px-4 py-3">Expires</th>
                 <th className="px-4 py-3">Next step</th>
@@ -439,19 +713,20 @@ export function OfferLifecycleDashboard({
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {visibleRows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-10 text-center text-sm text-text-secondary" colSpan={7}>
+                  <td className="px-4 py-10 text-center text-sm text-text-secondary" colSpan={8}>
                     No offers yet.
                   </td>
                 </tr>
               ) : (
-                rows.map((offer) => (
+                visibleRows.map((offer) => (
                   <OfferRow
                     approving={approvingId === offer.id}
                     key={offer.id}
                     offer={offer}
                     onApprove={approveOffer}
+                    onWorkflow={runWorkflowAction}
                   />
                 ))
               )}
@@ -484,155 +759,198 @@ export function OfferLifecycleDashboard({
 
             <form className="grid max-h-[calc(92vh-88px)] gap-0 overflow-y-auto lg:grid-cols-[1fr_330px]" onSubmit={submitOffer}>
               <div className="space-y-4 p-5 sm:p-6">
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-text-secondary">Position template</span>
-              <select
-                className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm text-text shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                onChange={(event) => {
-                  setForm((prev) => ({
-                    ...prev,
-                    templateKey: event.target.value,
-                  }));
-                }}
-                value={form.templateKey}
-              >
-                {offerTemplates.map((template) => (
-                  <option key={template.value} value={template.value}>
-                    {template.label}
-                  </option>
-                ))}
-              </select>
-            </label>
             <Field label="Candidate name" onChange={(value) => setForm((prev) => ({ ...prev, candidateName: value }))} required value={form.candidateName} />
             <Field label="Candidate email" onChange={(value) => setForm((prev) => ({ ...prev, candidateEmail: value }))} required type="email" value={form.candidateEmail} />
             <Field label="Phone" onChange={(value) => setForm((prev) => ({ ...prev, candidatePhone: value }))} value={form.candidatePhone} />
-            <Field label="Assigned territory" onChange={(value) => setForm((prev) => ({ ...prev, areaScope: value }))} placeholder="Example: Haram - Faisal" required value={form.areaScope} />
             <div className="grid gap-4 sm:grid-cols-2">
               <SelectField
-                label="Line"
+                label="Department"
                 onChange={(value) => {
                   setForm((prev) => ({
                     ...prev,
-                    lineId: value,
-                    areaId: "", // Reset area when line changes
+                    areaId: "",
+                    areaScope: "",
+                    departmentId: value,
+                    lineId: "",
+                    managerHrId: "",
+                    positionId: "",
+                    vacancyId: "",
                   }));
                 }}
-                options={isMedicalRep ? vacantLines : lookups?.lines ?? []}
-                value={form.lineId}
+                options={departmentOptions}
+                value={form.departmentId}
               />
               <SelectField
-                disabled={!form.lineId}
-                label="Internal area"
-                onChange={(value) => {
-                  if (value === "empty") return;
-                  if (isMedicalRep) {
-                    const vacancy = filteredVacantAreas.find(
-                      (v) =>
-                        String(v.areaId) === value && String(v.lineId) === String(form.lineId),
-                    );
-                    if (vacancy) {
-                      setForm((prev) => ({
-                        ...prev,
-                        areaId: String(vacancy.areaId),
-                        areaScope: vacancy.areaName ?? "",
-                        departmentId: vacancy.departmentId ? String(vacancy.departmentId) : "",
-                        lineId: String(vacancy.lineId),
-                        managerHrId: vacancy.managerHrId ?? "",
-                        positionId: vacancy.positionId ? String(vacancy.positionId) : "",
-                      }));
-                    } else {
-                      setForm((prev) => ({ ...prev, areaId: value }));
-                    }
-                  } else {
-                    const selectedArea = (lookups?.areas ?? []).find((a) => a.value === value);
-                    if (selectedArea) {
-                      setForm((prev) => ({
-                        ...prev,
-                        areaId: value,
-                        lineId: String(selectedArea.lineId ?? prev.lineId),
-                        managerHrId: selectedArea.managerHrId ?? prev.managerHrId,
-                        positionId: String(selectedArea.positionId ?? prev.positionId),
-                      }));
-                    } else {
-                      setForm((prev) => ({ ...prev, areaId: value }));
-                    }
-                  }
-                }}
-                options={
-                  isMedicalRep
-                    ? filteredVacantAreas.length > 0
-                      ? filteredVacantAreas.map((v) => ({
-                          label: v.managerName
-                            ? `${v.areaName} — ${v.positionTitle} — Manager: ${v.managerName}`
-                            : `${v.areaName} — ${v.positionTitle}`,
-                          value: String(v.areaId),
-                        }))
-                      : form.lineId
-                        ? [{ label: "No open vacancies for this line", value: "empty" }]
-                        : []
-                    : (lookups?.areas ?? []).filter(
-                        (a) => !form.lineId || String(a.lineId) === String(form.lineId),
-                      )
-                }
-                placeholder={!form.lineId ? "Select line first" : undefined}
-                value={form.areaId}
+                disabled={!form.departmentId}
+                label="Position"
+                onChange={(value) => setForm((prev) => ({
+                  ...prev,
+                  areaId: "",
+                  areaScope: "",
+                  lineId: "",
+                  managerHrId: "",
+                  positionId: value,
+                  vacancyId: "",
+                }))}
+                options={positionOptions}
+                placeholder={!form.departmentId ? "Select department first" : undefined}
+                value={form.positionId}
               />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <SelectField label="Department" onChange={(value) => setForm((prev) => ({ ...prev, departmentId: value }))} options={lookups?.departments ?? []} value={form.departmentId} />
-              <SelectField label="Position" onChange={(value) => setForm((prev) => ({ ...prev, positionId: value }))} options={lookups?.positions ?? []} value={form.positionId} />
+              <SelectField disabled={!form.positionId} label="Line" onChange={(value) => setForm((prev) => ({ ...prev, areaId: "", areaScope: "", lineId: value, managerHrId: "", vacancyId: "" }))} options={lineOptions} placeholder={!form.positionId ? "Select position first" : undefined} value={form.lineId} />
+              <SelectField
+                disabled={!form.lineId}
+                label="Vacant area"
+                onChange={(value) => {
+                  if (value === "empty") return;
+                  const vacancy = filteredVacantAreas.find((v) => String(v.vacancyId) === value);
+                  if (!vacancy) return;
+                  setForm((prev) => ({
+                    ...prev,
+                    areaId: vacancy.areaId ? String(vacancy.areaId) : "",
+                    areaScope: vacancy.areaName ?? "",
+                    departmentId: vacancy.departmentId ? String(vacancy.departmentId) : prev.departmentId,
+                    lineId: vacancy.lineId ? String(vacancy.lineId) : prev.lineId,
+                    managerHrId: vacancy.managerHrId ?? "",
+                    positionId: vacancy.positionId ? String(vacancy.positionId) : prev.positionId,
+                    vacancyId: String(vacancy.vacancyId),
+                  }));
+                }}
+                options={
+                  filteredVacantAreas.length > 0
+                    ? filteredVacantAreas.map((v) => ({
+                        label: `${v.areaName ?? "Unknown Area"} - ${v.vacancyCode}${v.managerName ? ` - Manager: ${v.managerName}` : ""}`,
+                        value: String(v.vacancyId),
+                      }))
+                    : form.lineId
+                      ? [{ label: "No open vacancies for this selection", value: "empty" }]
+                      : []
+                }
+                placeholder={!form.lineId ? "Select line first" : undefined}
+                value={form.vacancyId}
+              />
             </div>
             <SelectField label="Manager" onChange={(value) => setForm((prev) => ({ ...prev, managerHrId: value }))} options={lookups?.managers ?? []} value={form.managerHrId} />
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Start date" onChange={(value) => setForm((prev) => ({ ...prev, startDate: value }))} type="date" value={form.startDate} />
+              <Field label="Hiring date" onChange={(value) => setForm((prev) => ({ ...prev, startDate: value }))} required type="date" value={form.startDate} />
               <Field label="Expiry days" onChange={(value) => setForm((prev) => ({ ...prev, expiresInDays: value }))} required type="number" value={form.expiresInDays} />
             </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Base salary" onChange={(value) => setForm((prev) => ({ ...prev, baseSalary: value }))} required type="number" value={form.baseSalary} />
+              <Field label="ECoL override" onChange={(value) => setForm((prev) => ({ ...prev, extraCostOfLiving: value }))} placeholder={moneyInput(standardAllowances.extraCostOfLiving)} type="number" value={form.extraCostOfLiving} />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Fuel override" onChange={(value) => setForm((prev) => ({ ...prev, fuelAllowance: value }))} placeholder={moneyInput(standardAllowances.fuelAllowance)} type="number" value={form.fuelAllowance} />
+              <Field label="Social insurance" onChange={(value) => setForm((prev) => ({ ...prev, socialInsurance: value }))} type="number" value={form.socialInsurance} />
+            </div>
+            <Field label="Tax" onChange={(value) => setForm((prev) => ({ ...prev, taxes: value }))} type="number" value={form.taxes} />
+            <div className="rounded-2xl border border-[#DDE6F1] bg-[#F8FAFC] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-[#0F172A]">Compensation exceptions</h3>
+                  <p className="mt-1 text-xs text-[#64748B]">Structured lines affect the accepted offer and payroll after hire.</p>
+                </div>
+                <Button
+                  className="h-9 gap-1.5 rounded-xl px-3 text-xs"
+                  onClick={() => setForm((prev) => ({ ...prev, compensationLines: [...prev.compensationLines, createCompensationLine()] }))}
+                  type="button"
+                  variant="secondary"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add
+                </Button>
+              </div>
+              <div className="mt-4 space-y-3">
+                {form.compensationLines.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-white px-3 py-4 text-xs text-[#64748B]">
+                    No custom compensation lines.
+                  </div>
+                ) : null}
+                {form.compensationLines.map((line) => (
+                  <div className="grid gap-3 rounded-xl border border-[#E2E8F0] bg-white p-3 sm:grid-cols-[120px_1fr_120px_auto]" key={line.id}>
+                    <SelectField
+                      label="Type"
+                      onChange={(value) => updateCompensationLine(line.id, "category", value)}
+                      options={[
+                        { label: "Earning", value: "earning" },
+                        { label: "Deduction", value: "deduction" },
+                      ]}
+                      value={line.category}
+                    />
+                    <Field label="Label" onChange={(value) => updateCompensationLine(line.id, "label", value)} placeholder="Special allowance" value={line.label} />
+                    <Field label="Amount" onChange={(value) => updateCompensationLine(line.id, "value", value)} type="number" value={line.value} />
+                    <button
+                      aria-label="Remove compensation line"
+                      className="mt-6 flex h-10 w-10 items-center justify-center rounded-xl border border-red-100 text-red-600 hover:bg-red-50"
+                      onClick={() => setForm((prev) => ({ ...prev, compensationLines: prev.compensationLines.filter((item) => item.id !== line.id) }))}
+                      type="button"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                    <div className="sm:col-span-4">
+                      <Field label="Notes" onChange={(value) => updateCompensationLine(line.id, "notes", value)} value={line.notes} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-text-secondary">Compensation exception notes</span>
+              <textarea
+                className="min-h-20 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 py-2 text-sm text-text shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                onChange={(event) => setForm((prev) => ({ ...prev, compensationNotes: event.target.value }))}
+                value={form.compensationNotes}
+              />
+            </label>
               </div>
 
               <aside className="border-t border-[#E2E8F0] bg-[#F8FAFC]/85 p-5 lg:border-l lg:border-t-0 sm:p-6">
                 <div className="rounded-2xl border border-orange-100 bg-white p-4 shadow-sm">
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Compensation</p>
-                  <h3 className="mt-2 text-base font-black text-[#0F172A]">{selectedTemplate?.label ?? "Selected position"}</h3>
-                  {selectedTemplate && (
-                    <div className="mt-4 space-y-3 text-sm text-[#0F172A]">
-                      <div className="flex items-center justify-between gap-3">
-                        <span>Basic salary</span>
-                        <span className="font-bold">{formatMoney(selectedTemplate.basicSalary)}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span>{selectedTemplate.internalTransportationAllowance ? "Internal transportation" : "Transportation"}</span>
-                        <span className="font-bold">
-                          {formatMoney(selectedTemplate.internalTransportationAllowance ?? selectedTemplate.transportationAllowance ?? null)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span>Cost of living</span>
-                        <span className="font-bold">{formatMoney(selectedTemplate.costOfLivingAllowance)}</span>
-                      </div>
-                      {selectedTemplate.regionalTravelExpenses ? (
-                        <div className="flex items-center justify-between gap-3">
-                          <span>Regional travel</span>
-                          <span className="font-bold">{formatMoney(selectedTemplate.regionalTravelExpenses)}</span>
-                        </div>
-                      ) : null}
-                      <div className="border-t border-[#E2E8F0] pt-3">
-                        <div className="flex items-center justify-between gap-3 text-[#0F172A]">
-                          <span className="font-black">Monthly package</span>
-                          <span className="font-black">{formatMoney(selectedTemplate.monthlyPackage)}</span>
-                        </div>
+                  <h3 className="mt-2 text-base font-black text-[#0F172A]">{selectedJobTitle}</h3>
+                  <div className="mt-4 space-y-3 text-sm text-[#0F172A]">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Base salary</span>
+                      <span className="font-bold">{formatMoney(compensationPreview.baseSalary)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Basic salary</span>
+                      <span className="font-bold">{formatMoney(compensationPreview.basicSalary)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>ECoL</span>
+                      <span className="font-bold">{formatMoney(numericField(form.extraCostOfLiving) ?? standardAllowances.extraCostOfLiving)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Fuel allowance</span>
+                      <span className="font-bold">{formatMoney(numericField(form.fuelAllowance) ?? standardAllowances.fuelAllowance)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Custom earnings</span>
+                      <span className="font-bold">{formatMoney(compensationPreview.customEarnings)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Custom deductions</span>
+                      <span className="font-bold">{formatMoney(compensationPreview.customDeductions)}</span>
+                    </div>
+                    <div className="border-t border-[#E2E8F0] pt-3">
+                      <div className="flex items-center justify-between gap-3 text-[#0F172A]">
+                        <span className="font-black">Net salary</span>
+                        <span className="font-black">{formatMoney(compensationPreview.netSalary)}</span>
                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 <div className="mt-4 rounded-2xl border border-[#E2E8F0] bg-white p-4 text-sm text-[#64748B] shadow-sm">
                   <div className="font-bold text-[#0F172A]">Offer preview</div>
                   <p className="mt-2 leading-6">
-                    {form.candidateName || "Candidate"} - {selectedTemplate?.label ?? "Position"}
+                    {form.candidateName || "Candidate"} - {selectedJobTitle}
                     {form.areaScope ? ` - ${form.areaScope}` : ""}
                   </p>
                   <p className="mt-2 text-xs leading-5 text-[#64748B]">
-                    Secure accept/reject links will be generated and the candidate response will update the pipeline automatically.
+                    Candidate response is collected from the secure offer details page.
                   </p>
                 </div>
 
@@ -657,8 +975,8 @@ export function OfferLifecycleDashboard({
           {emailStatus && (
             <div className="mt-1 text-xs font-semibold text-emerald-800">{emailStatus}</div>
           )}
-          <button className="mt-3 flex w-full items-center justify-between gap-2 text-left" onClick={() => copyLink(createdLinks.acceptUrl)} type="button">
-            <span className="truncate">Accept link</span>
+          <button className="mt-3 flex w-full items-center justify-between gap-2 text-left" onClick={() => copyLink(createdLinks.reviewUrl ?? createdLinks.acceptUrl)} type="button">
+            <span className="truncate">Review details link</span>
             <Copy className="h-4 w-4 shrink-0" />
           </button>
           <button className="mt-2 flex w-full items-center justify-between gap-2 text-left" onClick={() => copyLink(createdLinks.rejectUrl)} type="button">

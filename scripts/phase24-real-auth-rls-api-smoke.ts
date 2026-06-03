@@ -375,7 +375,7 @@ function verifyApiGuardSources() {
   assertSourceContains("app/api/admin/users/bulk-action/route.ts", "Users & Access bulk route", [
     /assertPermission\(access, "user_admin", "update"\)/,
   ]);
-  assertSourceContains("app/employees/page.tsx", "employees page", [
+  assertSourceContains("app/(admin)/employees/page.tsx", "employees page", [
     /canAccess\(access, "employees", "read"\)/,
     /redirect\("\/employee-portals"\)/,
   ]);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 
 import {
+  buildSourceOfSalesDashboard,
   normalizeSourceOfSalesProductInput,
   validateDistributorSalesWorkbookBuffer,
   type SalesReferenceData,
@@ -10,7 +11,10 @@ import {
 import { SalesWorkflowError } from "../src/lib/sales/contracts.ts";
 
 const references: SalesReferenceData = {
-  distributors: [{ code: "PS", name: "overseas" }],
+  distributors: [
+    { code: "PS", name: "overseas" },
+    { code: "IS", name: "Ibn sina" },
+  ],
   products: [
     {
       factoryPrice: 10,
@@ -35,36 +39,89 @@ const references: SalesReferenceData = {
     { areaCode: "A1", areaName: "Area One", regionCode: "CA", regionName: "Cairo" },
     { areaCode: "A2", areaName: "Area Two", regionCode: "AB", regionName: "Alex" },
   ],
+  areas: [
+    { areaCode: "A1", areaName: "Area One", regionCode: "CA", regionName: "Cairo" },
+    { areaCode: "A2", areaName: "Area Two", regionCode: "AB", regionName: "Alex" },
+  ],
+  blocks: [
+    {
+      areaCode: "A1",
+      areaName: "Area One",
+      blockCode: "BL-1",
+      blockName: "Block One",
+      regionCode: "CA",
+      regionName: "Cairo",
+    },
+  ],
+  bricks: [
+    {
+      areaCode: "A1",
+      areaName: "Area One",
+      blockCode: "BL-1",
+      blockName: "Block One",
+      brickId: "B-1",
+      brickName: "Brick One",
+      regionCode: "CA",
+      regionName: "Cairo",
+    },
+    {
+      areaCode: "A2",
+      areaName: "Area Two",
+      blockCode: "BL-2",
+      blockName: "Block Two",
+      brickId: "B-2",
+      brickName: "Brick Two",
+      regionCode: "AB",
+      regionName: "Alex",
+    },
+  ],
 };
 
-async function buildWorkbookBuffer(rows: unknown[][]) {
+async function buildWorkbookBuffer(headers: string[], rows: unknown[][]) {
   const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet("Sheet1");
-  sheet.addRow([
-    "Branch",
-    "Branch Name",
-    "Vendor Name",
-    "Customer",
-    "Customer Name",
-    "Customer Address",
-    "Sal. District",
-    "Sal. Dist. Desc.",
-    "Region Name",
-    "Region Code",
-    "Invoice Serial",
-    "Invoice Date",
-    "Trans. Type",
-    "Mat. Code",
-    "Mat. Desc.",
-    "Product Name",
-    "Product Code",
-    "Qty",
-    "B. Qty",
-    "Value",
-    "Distrb code",
-  ]);
+  const sheet = workbook.addWorksheet("Data");
+  sheet.addRow(headers);
   rows.forEach((row) => sheet.addRow(row));
   return workbook.xlsx.writeBuffer();
+}
+
+async function buildPsWorkbookBuffer(rows: unknown[][]) {
+  return buildWorkbookBuffer(
+    [
+      "Branch",
+      "Branch Name",
+      "Invoice Date",
+      "Qty",
+      "B. Qty",
+      "Value",
+      "Product ID",
+      "Brick ID",
+      "Area ID",
+      "Region ID",
+      "Distrub ID",
+    ],
+    rows,
+  );
+}
+
+async function buildIbnSinaWorkbookBuffer(rows: unknown[][]) {
+  return buildWorkbookBuffer(
+    [
+      "old brick",
+      "Quantity",
+      "Item Name",
+      "Net",
+      "Date",
+      "Free Unit",
+      "type",
+      "Product ID",
+      "Brick ID2",
+      "Area ID",
+      "Region ID",
+      "Distrub ID",
+    ],
+    rows,
+  );
 }
 
 export async function runSalesDistributorImportTests() {
@@ -105,58 +162,141 @@ export async function runSalesDistributorImportTests() {
     SalesWorkflowError,
   );
 
-  const buffer = await buildWorkbookBuffer([
-    ["B1", "Branch", "Vendor", "C1", "Customer", "Address", "D", "Desc", "Cairo", "CA", "INV1", new Date("2026-04-01T00:00:00Z"), "Sales", "M1", "Mat", "Product A", "P-A", 10, 1, 100, "PS"],
-    ["B1", "Branch", "Vendor", "C2", "Customer", "Address", "D", "Desc", "Alex", "AB", "INV2", new Date("2026-04-02T00:00:00Z"), "Sales", "M2", "Mat", "Product B", "P-B", 5, 2, 250, "PS"],
-    ["B1", "Branch", "Vendor", "C3", "Customer", "Address", "D", "Desc", "#N/A", "#N/A", "INV3", new Date("2026-04-03T00:00:00Z"), "Sales", "M1", "Mat", "Product A", "P-A", 3, 0, 30, "PS"],
+  const psBuffer = await buildPsWorkbookBuffer([
+    ["B1", "Branch", new Date("2026-04-01T00:00:00Z"), 10, 1, 100, "P-A", "B-1", "A1", "CA", "PS"],
+    ["B1", "Branch", new Date("2026-04-02T00:00:00Z"), 5, 2, 250, "P-B", "B-2", "A2", "AB", "PS"],
+    ["B1", "Branch", new Date("2026-04-03T00:00:00Z"), 3, 0, 30, "P-A", "#N/A", "A1", "CA", "PS"],
   ]);
 
-  const result = await validateDistributorSalesWorkbookBuffer({
-    buffer: buffer as unknown as ArrayBuffer,
+  const psResult = await validateDistributorSalesWorkbookBuffer({
+    buffer: psBuffer as unknown as ArrayBuffer,
     distributorCode: "PS",
-    fileName: "POS REFERENCE.xlsx",
+    fileName: "customer sales - Copy.XLSX",
     references,
   });
 
-  assert.equal(result.status, "blocked");
-  assert.equal(result.rowCount, 3);
-  assert.equal(result.failedRows, 1);
-  assert.equal(result.totals.totalQty, 18);
-  assert.equal(result.totals.totalBonusQty, 3);
-  assert.equal(result.totals.totalValue, 380);
-  assert.equal(result.period, "2026-04");
+  assert.equal(psResult.templateKey, "overseas_ps");
+  assert.equal(psResult.status, "blocked");
+  assert.equal(psResult.rowCount, 3);
+  assert.equal(psResult.failedRows, 1);
+  assert.equal(psResult.totals.totalQty, 18);
+  assert.equal(psResult.totals.totalBonusQty, 3);
+  assert.equal(psResult.totals.totalValue, 380);
+  assert.equal(psResult.period, "2026-04");
+  assert.equal(psResult.byArea.find((row) => row.areaCode === "A1")?.totalQty, 13);
+  assert.equal(psResult.byBrick.find((row) => row.brickId === "B-1")?.totalValue, 100);
+  assert.equal(psResult.byProduct.find((row) => row.productCode === "P-A")?.officialLine, "CNS");
+  assert.ok(psResult.issues.some((issue) => issue.field === "Brick ID" && issue.value === "#N/A"));
 
-  const cns = result.byLine.find((row) => row.line === "CNS");
-  assert.equal(cns?.totalQty, 13);
-  assert.equal(cns?.totalBonusQty, 1);
-  assert.equal(cns?.totalValue, 130);
+  const ibnBuffer = await buildIbnSinaWorkbookBuffer([
+    ["10101", 24, "Product A", 240, "2026/04/30", 0, "#N/A", "P-A", "B-1", "A1", "CA", "IS"],
+    ["10102", 2, "Product B", 100, "2026/04/29", 1, "#N/A", "P-B", "B-2", "A2", "AB", "IS"],
+  ]);
 
-  const unknownRegion = result.byRegion.find((row) => row.regionCode === "#N/A");
-  assert.equal(unknownRegion?.regionName, "#N/A");
-  assert.equal(unknownRegion?.totalQty, 3);
-  assert.equal(unknownRegion?.totalValue, 30);
+  const ibnResult = await validateDistributorSalesWorkbookBuffer({
+    buffer: ibnBuffer as unknown as ArrayBuffer,
+    distributorCode: "IS",
+    fileName: "ibnsina 4.xlsx",
+    references,
+  });
 
-  const productA = result.byProduct.find((row) => row.productCode === "P-A");
-  assert.equal(productA?.officialLine, "CNS");
-  assert.equal(productA?.totalQty, 13);
-  assert.equal(productA?.totalBonusQty, 1);
-  assert.equal(productA?.totalValue, 130);
-  assert.ok(result.issues.some((issue) => issue.field === "Region Code" && issue.value === "#N/A"));
+  assert.equal(ibnResult.templateKey, "ibn_sina_is");
+  assert.equal(ibnResult.status, "validated");
+  assert.equal(ibnResult.failedRows, 0);
+  assert.equal(ibnResult.warningRows, 0);
+  assert.equal(ibnResult.totals.totalQty, 26);
+  assert.equal(ibnResult.totals.totalBonusQty, 1);
+  assert.equal(ibnResult.totals.totalValue, 340);
+  assert.equal(ibnResult.byLine.find((row) => row.line === "CNS")?.totalQty, 24);
 
-  const mismatchBuffer = await buildWorkbookBuffer([
-    ["B1", "Branch", "Vendor", "C4", "Customer", "Address", "D", "Desc", "Wrong Region", "CA", "INV4", new Date("2026-04-04T00:00:00Z"), "Sales", "M1", "Mat", "Product A", "P-A", 1, 0, 10, "PS"],
-    ["B1", "Branch", "Vendor", "C5", "Customer", "Address", "D", "Desc", "Cairo", "CA", "INV5", new Date("2026-04-05T00:00:00Z"), "Sales", "M1", "Mat", "Wrong Product", "P-A", 2, 0, 20, "PS"],
+  const mismatchBuffer = await buildPsWorkbookBuffer([
+    ["B1", "Branch", new Date("2026-04-04T00:00:00Z"), 1, 0, 10, "P-A", "B-1", "A1", "AB", "PS"],
   ]);
 
   const mismatchResult = await validateDistributorSalesWorkbookBuffer({
     buffer: mismatchBuffer as unknown as ArrayBuffer,
     distributorCode: "PS",
-    fileName: "POS REFERENCE.xlsx",
+    fileName: "customer sales - Copy.XLSX",
     references,
   });
 
-  assert.equal(mismatchResult.status, "blocked");
-  assert.equal(mismatchResult.failedRows, 2);
-  assert.ok(mismatchResult.issues.some((issue) => issue.field === "Region Name" && issue.value === "Wrong Region"));
-  assert.ok(mismatchResult.issues.some((issue) => issue.field === "Product Name" && issue.value === "Wrong Product"));
+  assert.equal(mismatchResult.status, "validated");
+  assert.equal(mismatchResult.failedRows, 0);
+  assert.equal(mismatchResult.warningRows, 1);
+  assert.ok(mismatchResult.issues.some((issue) => issue.severity === "warning" && issue.field === "Area ID"));
+
+  const dashboard = buildSourceOfSalesDashboard({
+    availablePeriods: ["2026-04"],
+    batches: [
+      {
+        batchId: "batch-1",
+        blockingReasons: [],
+        createdAt: "2026-05-01T00:00:00Z",
+        distributorCode: "PS",
+        distributorName: "overseas",
+        failedRows: 0,
+        fileName: "ps.xlsx",
+        importableRows: 2,
+        period: "2026-04",
+        rowCount: 2,
+        status: "validated",
+        templateKey: "overseas_ps",
+        totalBonusQty: 1,
+        totalQty: 15,
+        totalValue: 350,
+        uploadedBy: "tester",
+        warningRows: 0,
+      },
+      {
+        batchId: "batch-2",
+        blockingReasons: [],
+        createdAt: "2026-05-01T00:00:00Z",
+        distributorCode: "IS",
+        distributorName: "Ibn sina",
+        failedRows: 0,
+        fileName: "is.xlsx",
+        importableRows: 1,
+        period: "2026-04",
+        rowCount: 1,
+        status: "validated",
+        templateKey: "ibn_sina_is",
+        totalBonusQty: 0,
+        totalQty: 24,
+        totalValue: 240,
+        uploadedBy: "tester",
+        warningRows: 0,
+      },
+    ],
+    period: "2026-04",
+    summaries: [
+      {
+        groupCode: null,
+        groupKey: "CNS",
+        groupLabel: "CNS",
+        groupType: "line",
+        officialLine: "CNS",
+        rowCount: 3,
+        totalBonusQty: 1,
+        totalQty: 39,
+        totalValue: 590,
+      },
+      {
+        groupCode: "A1",
+        groupKey: "A1|Area One|CA",
+        groupLabel: "Area One",
+        groupType: "area",
+        officialLine: "CA",
+        rowCount: 2,
+        totalBonusQty: 1,
+        totalQty: 34,
+        totalValue: 340,
+      },
+    ],
+  });
+
+  assert.equal(dashboard.sheetCount, 2);
+  assert.equal(dashboard.totals.totalQty, 39);
+  assert.equal(dashboard.byDistributor.length, 2);
+  assert.equal(dashboard.byLine[0]?.label, "CNS");
+  assert.equal(dashboard.byArea[0]?.code, "A1");
 }

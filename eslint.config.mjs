@@ -16,6 +16,11 @@ const eslintConfig = defineConfig([
     "build/**",
     "**/build/**",
     "next-env.d.ts",
+    // Local-only working directories that are not part of the project source.
+    // `.codex-worktrees` holds full checkouts of other branches and must never be
+    // linted by this project's CI (it produces thousands of unrelated findings).
+    ".codex-worktrees/**",
+    ".vercel/**",
   ]),
 ]);
 

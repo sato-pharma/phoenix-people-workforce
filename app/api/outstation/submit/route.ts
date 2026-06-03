@@ -7,6 +7,7 @@ import {
   parseCarEvidenceImageDataUrl,
   parseCarEvidenceMetadata,
 } from "@/app/api/outstation/request-body";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type {
   OutstationExpenseType,
   OutstationTransportationType,
@@ -42,6 +43,9 @@ function outstationSubmitStatus(error: unknown) {
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertPermission(access, "outstation", "create");
 

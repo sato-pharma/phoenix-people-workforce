@@ -4,12 +4,20 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import {
+  refreshAppSessionIdle,
+  validateAppSession,
+  type AppSessionRow,
+  type AppSessionRejectionReason,
+} from "@/lib/auth/app-sessions";
+import {
   accessContextFromDevPreviewToken,
   phoenixDevPreviewCookieName,
 } from "@/lib/auth/dev-preview";
 import {
   getCookieValue,
   phoenixSessionCookieName,
+  sessionIdleTimeoutSecondsForRole,
+  type SessionPayload,
   verifySessionToken,
 } from "@/lib/auth/session";
 import { writeAuthAudit } from "@/lib/auth/audit";
@@ -17,6 +25,7 @@ import {
   evaluateEmployeeLifecycleGate,
   type SessionLifecycleGate,
 } from "@/lib/auth/session-lifecycle";
+import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cookies, headers } from "next/headers";
@@ -65,7 +74,7 @@ function isLocalDevelopmentRequest(headerStore: Pick<Headers, "get">) {
 const anonymousAccessContext = createAccessContext({
   hrId: null,
   role: "Employee",
-  source: "session",
+  source: "guest",
 });
 
 type SessionUserRow = {
@@ -81,6 +90,14 @@ export type ViewerIdentity = {
   displayName: string;
   initials: string;
   roleLabel: string;
+  /** Profile photo for the signed-in user, or null to fall back to initials. */
+  imageUrl?: string | null;
+};
+
+export type ResolvedSessionState = {
+  access: AccessContext;
+  appSession: AppSessionRow;
+  payload: SessionPayload;
 };
 
 /**
@@ -123,9 +140,65 @@ async function resolveEmployeeLifecycleGate(
   }
 }
 
-async function resolveSessionAccessContext(token: string | null | undefined) {
+async function auditSessionRejection(input: {
+  entityId: string | null;
+  loginId: string | null;
+  newValues: Record<string, unknown>;
+  oldValues?: Record<string, unknown>;
+  summary: string;
+}) {
+  await writeAuthAudit({
+    actorLoginId: input.loginId,
+    entityId: input.entityId,
+    newValues: input.newValues,
+    oldValues: input.oldValues,
+    summary: input.summary,
+  }).catch(() => undefined);
+}
+
+function appSessionRejectionSummary(reason: AppSessionRejectionReason) {
+  switch (reason) {
+    case "absolute_expired":
+      return "Session rejected: absolute expiry reached";
+    case "idle_expired":
+      return "Session rejected: idle expiry reached";
+    case "login_id_mismatch":
+      return "Session rejected: app session login mismatch";
+    case "missing_app_session":
+      return "Session rejected: app session not found";
+    case "revoked":
+      return "Session rejected: app session revoked";
+    case "role_changed":
+      return "Session rejected: app session role changed";
+    case "session_version_mismatch":
+      return "Session rejected: app session version mismatch";
+    default:
+      return "Session rejected: app session invalid";
+  }
+}
+
+export async function resolveSessionState(
+  token: string | null | undefined,
+  options: { refreshIdle?: boolean } = {},
+): Promise<ResolvedSessionState | null> {
   const payload = verifySessionToken(token);
   if (!payload) return null;
+
+  const appSession = await validateAppSession(payload);
+  if (!appSession.ok) {
+    await auditSessionRejection({
+      entityId: payload.loginId,
+      loginId: payload.loginId,
+      newValues: {
+        reason: appSession.reason,
+        revokedReason: appSession.row?.revoked_reason ?? null,
+        sessionId: payload.sid,
+        sessionVersion: payload.ver,
+      },
+      summary: appSessionRejectionSummary(appSession.reason),
+    });
+    return null;
+  }
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -140,25 +213,25 @@ async function resolveSessionAccessContext(token: string | null | undefined) {
 
   const row = data as SessionUserRow | null;
   if (!row) {
-    await writeAuthAudit({
-      actorLoginId: payload.loginId,
+    await auditSessionRejection({
       entityId: payload.loginId,
+      loginId: payload.loginId,
       newValues: {
         reason: "missing_user",
         sessionId: payload.sid,
         sessionVersion: payload.ver,
       },
       summary: "Session rejected: account not found",
-    }).catch(() => undefined);
+    });
     return null;
   }
 
   const role = parseRoleStrict(row.role);
   const sessionVersion = Number.isFinite(row.session_version) ? Number(row.session_version) : 1;
   if (!row.is_active) {
-    await writeAuthAudit({
-      actorLoginId: row.login_id,
+    await auditSessionRejection({
       entityId: row.login_id,
+      loginId: row.login_id,
       newValues: {
         reason: "inactive_user",
         sessionId: payload.sid,
@@ -167,14 +240,14 @@ async function resolveSessionAccessContext(token: string | null | undefined) {
         role,
       },
       summary: "Session rejected: account inactive",
-    }).catch(() => undefined);
+    });
     return null;
   }
 
   if (role !== payload.role) {
-    await writeAuthAudit({
-      actorLoginId: row.login_id,
+    await auditSessionRejection({
       entityId: row.login_id,
+      loginId: row.login_id,
       newValues: {
         currentRole: role,
         previousRole: payload.role,
@@ -182,14 +255,14 @@ async function resolveSessionAccessContext(token: string | null | undefined) {
         sessionId: payload.sid,
       },
       summary: "Session rejected: role changed",
-    }).catch(() => undefined);
+    });
     return null;
   }
 
   if (sessionVersion !== payload.ver) {
-    await writeAuthAudit({
-      actorLoginId: row.login_id,
+    await auditSessionRejection({
       entityId: row.login_id,
+      loginId: row.login_id,
       newValues: {
         currentVersion: sessionVersion,
         previousVersion: payload.ver,
@@ -197,7 +270,7 @@ async function resolveSessionAccessContext(token: string | null | undefined) {
         sessionId: payload.sid,
       },
       summary: "Session rejected: session version mismatch",
-    }).catch(() => undefined);
+    });
     return null;
   }
 
@@ -209,9 +282,9 @@ async function resolveSessionAccessContext(token: string | null | undefined) {
   // src/lib/auth/session-lifecycle.ts. (Read-only; no mutation.)
   const lifecycleGate = await resolveEmployeeLifecycleGate(supabase, row.hr_id);
   if (!lifecycleGate.allowed) {
-    await writeAuthAudit({
-      actorLoginId: row.login_id,
+    await auditSessionRejection({
       entityId: row.login_id,
+      loginId: row.login_id,
       newValues: {
         ...(lifecycleGate.employmentStatus ? { employmentStatus: lifecycleGate.employmentStatus } : {}),
         reason: lifecycleGate.reason,
@@ -224,16 +297,48 @@ async function resolveSessionAccessContext(token: string | null | undefined) {
         lifecycleGate.reason === "employee_terminal"
           ? "Session rejected: linked employee is no longer active"
           : "Session rejected: employee lifecycle lookup failed",
-    }).catch(() => undefined);
+    });
     return null;
   }
 
-  return createAccessContext({
+  if (options.refreshIdle) {
+    const refreshed = await refreshAppSessionIdle({
+      idleTimeoutSeconds: sessionIdleTimeoutSecondsForRole(role),
+      sessionId: payload.sid,
+    });
+    if (!refreshed) {
+      await auditSessionRejection({
+        entityId: row.login_id,
+        loginId: row.login_id,
+        newValues: {
+          reason: "refresh_rejected",
+          sessionId: payload.sid,
+        },
+        summary: "Session rejected: app session refresh failed",
+      });
+      return null;
+    }
+    appSession.row.idle_expires_at = refreshed.idleExpiresAt;
+    appSession.row.absolute_expires_at = refreshed.absoluteExpiresAt;
+  }
+
+  const access = createAccessContext({
     hrId: row.hr_id,
     loginId: row.login_id,
     role,
     source: "session",
   });
+
+  return {
+    access,
+    appSession: appSession.row,
+    payload,
+  };
+}
+
+export async function resolveSessionAccessContext(token: string | null | undefined) {
+  const state = await resolveSessionState(token);
+  return state?.access ?? null;
 }
 
 export async function resolveAccessContext(request: Request): Promise<AccessContext> {
@@ -331,6 +436,7 @@ export async function resolveViewerIdentityFromPage(accessContext?: AccessContex
       displayName: fallbackName,
       initials: buildInitials(fallbackName),
       roleLabel: fallbackRole,
+      imageUrl: employeeProfileImageForHrId(access.hrId),
     };
   }
 
@@ -362,6 +468,7 @@ export async function resolveViewerIdentityFromPage(accessContext?: AccessContex
     displayName,
     initials: buildInitials(displayName),
     roleLabel,
+    imageUrl: employeeProfileImageForHrId(row?.hr_id ?? access.hrId),
   };
 }
 
