@@ -2,6 +2,7 @@ import crypto from "crypto";
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
+import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { assertOfferWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { sendJobOfferEmail } from "@/lib/offers/email";
@@ -1299,7 +1300,9 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
     candidate_phone: compact(input.candidatePhone),
     compensation_lines: compensation.compensationLines,
     compensation_notes: compact(input.compensationNotes),
-    created_by_hr_id: compact(input.createdByHrId),
+    // Canonicalize to the stored (uppercase) employees.hr_id so the
+    // created_by_hr_id FK matches (session hrId can be lowercased).
+    created_by_hr_id: formatHrIdForDisplay(input.createdByHrId),
     department_id: numberOrNull(input.departmentId),
     expires_at: daysFromNow(expiresInDays),
     extra_cost_of_living: compensation.extraCostOfLiving,
