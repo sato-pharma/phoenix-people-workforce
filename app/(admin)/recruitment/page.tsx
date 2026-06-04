@@ -8,6 +8,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { listCandidates } from "@/lib/recruitment/candidates";
 import { getRecruitmentDashboard, type RecruitmentDashboard } from "@/lib/recruitment/dashboard";
+import { isDriveConfigured } from "@/lib/recruitment/file-storage";
 import { listOpenVacanciesForRequisition } from "@/lib/recruitment/requisitions";
 import type { Candidate } from "@/lib/recruitment/types";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
@@ -81,6 +82,7 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
       canViewCandidates={canViewCandidates}
       candidates={candidates}
       dashboard={dashboard}
+      filesEnabled={isDriveConfigured()}
       initialError={initialError}
       managers={managers}
       openVacancies={openVacancies}

@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
-import type { Candidate, Interview, InterviewType, RecruitmentActionKey, Requisition } from "@/lib/recruitment/types";
+import type { Candidate, Interview, InterviewType, RecruitmentActionKey, RecruitmentFile, Requisition } from "@/lib/recruitment/types";
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
 import type { OnboardingItem } from "@/lib/recruitment/onboarding";
 import type { OfferLetterVersion } from "@/lib/recruitment/offer-letters";
@@ -38,6 +38,7 @@ type Props = {
   canViewCandidates: boolean;
   candidates: Candidate[];
   dashboard: RecruitmentDashboard | null;
+  filesEnabled: boolean;
   initialError: string | null;
   managers: ManagerOption[];
   openVacancies: VacancyReportRow[];
@@ -171,6 +172,9 @@ export function RecruitmentWorkspace(props: Props) {
           applications={applications}
           canApprove={props.canApprove}
           canManage={props.canManage}
+          canManageCandidates={props.canManageCandidates}
+          canViewCandidates={props.canViewCandidates}
+          filesEnabled={props.filesEnabled}
           managers={props.managers}
           pending={pending}
           run={run}
@@ -207,6 +211,9 @@ function PipelineTab({
   applications,
   canApprove,
   canManage,
+  canManageCandidates,
+  canViewCandidates,
+  filesEnabled,
   managers,
   pending,
   run,
@@ -214,6 +221,9 @@ function PipelineTab({
   applications: ApplicationWithContext[];
   canApprove: boolean;
   canManage: boolean;
+  canManageCandidates: boolean;
+  canViewCandidates: boolean;
+  filesEnabled: boolean;
   managers: ManagerOption[];
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
@@ -230,6 +240,8 @@ function PipelineTab({
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
   const [offerLetters, setOfferLetters] = useState<OfferLetterVersion[]>([]);
   const [offerLettersError, setOfferLettersError] = useState<string | null>(null);
+  const [candidateFiles, setCandidateFiles] = useState<RecruitmentFile[]>([]);
+  const [candidateFilesError, setCandidateFilesError] = useState<string | null>(null);
 
   const loadInterviews = async (appId: string) => {
     try {
@@ -270,6 +282,19 @@ function PipelineTab({
     }
   };
 
+  const loadCandidateFiles = async (candidateId: string) => {
+    try {
+      const res = await fetch(`/api/recruitment/candidates/${candidateId}/files`);
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to load files.");
+      setCandidateFiles(Array.isArray(data.files) ? (data.files as RecruitmentFile[]) : []);
+      setCandidateFilesError(null);
+    } catch (caught) {
+      setCandidateFiles([]);
+      setCandidateFilesError(caught instanceof Error ? caught.message : "Failed to load files.");
+    }
+  };
+
   const selectApplication = (appId: string) => {
     setSelectedId(appId);
     void loadInterviews(appId);
@@ -277,6 +302,8 @@ function PipelineTab({
     const application = applications.find((row) => row.id === appId);
     if (application?.offerId) void loadOfferLetters(application.offerId);
     else setOfferLetters([]);
+    if (canViewCandidates && application?.candidateId) void loadCandidateFiles(application.candidateId);
+    else setCandidateFiles([]);
   };
 
   const selected = applications.find((application) => application.id === selectedId) ?? null;
@@ -481,6 +508,17 @@ function PipelineTab({
                   if (selected.offerId) void loadOfferLetters(selected.offerId);
                 }}
                 versions={offerLetters}
+              />
+            ) : null}
+
+            {canViewCandidates && selected.candidateId ? (
+              <FilesSection
+                candidateId={selected.candidateId}
+                canUpload={canManageCandidates}
+                error={candidateFilesError}
+                files={candidateFiles}
+                filesEnabled={filesEnabled}
+                onReload={() => loadCandidateFiles(selected.candidateId)}
               />
             ) : null}
           </div>
@@ -1193,6 +1231,90 @@ function OfferLetterSection({
         <Button disabled={busy} onClick={() => void generate()}>
           Generate letter
         </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function FilesSection({
+  candidateId,
+  canUpload,
+  error,
+  files,
+  filesEnabled,
+  onReload,
+}: {
+  candidateId: string;
+  canUpload: boolean;
+  error: string | null;
+  files: RecruitmentFile[];
+  filesEnabled: boolean;
+  onReload: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const upload = async () => {
+    const file = fileRef.current?.files?.[0];
+    if (!file) {
+      setErr("Choose a file first.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("kind", "cv");
+      const res = await fetch(`/api/recruitment/candidates/${candidateId}/files`, { method: "POST", body: formData });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Upload failed.");
+      if (fileRef.current) fileRef.current.value = "";
+      onReload();
+    } catch (caught) {
+      setErr(caught instanceof Error ? caught.message : "Upload failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 border-t border-slate-200 pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Files</p>
+      {(error ?? err) ? <p className="text-xs text-rose-600">{error ?? err}</p> : null}
+      {files.length === 0 ? (
+        <p className="text-xs text-slate-500">No files.</p>
+      ) : (
+        <ul className="space-y-1 text-xs">
+          {files.map((file) => (
+            <li key={file.id} className="flex items-center justify-between gap-2">
+              <span>
+                {file.fileName} <span className="text-slate-400">({file.kind})</span>
+              </span>
+              <Button
+                variant="secondary"
+                onClick={() => window.open(`/api/recruitment/files/${file.id}/download`, "_blank")}
+              >
+                Download
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {canUpload ? (
+        filesEnabled ? (
+          <div className="flex items-center gap-2">
+            <input ref={fileRef} className="text-xs" type="file" />
+            <Button variant="secondary" disabled={busy} onClick={() => void upload()}>
+              Upload
+            </Button>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">
+            File uploads need Google Drive credentials. Candidates can still include a CV link.
+          </p>
+        )
       ) : null}
     </div>
   );

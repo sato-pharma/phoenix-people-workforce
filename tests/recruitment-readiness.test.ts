@@ -114,6 +114,15 @@ export function runRecruitmentReadinessTests() {
   assert.match(offerLettersMigration, /create table if not exists public\.recruitment_offer_letters/);
   assert.match(offerLettersMigration, /revoke all on public\.recruitment_offer_letters from anon, authenticated/);
 
+  // --- Candidate files / Google Drive (dependency-free, dormant) --------
+  const filesEntry = findAccessRegistryEntry("/api/recruitment/files/abc/download", "GET");
+  assert.ok(filesEntry, "file download route must be registered");
+  assert.ok(filesEntry?.audit.required, "file download must require audit classification");
+  const driveStorage = read("src/lib/recruitment/drive-storage.ts");
+  assert.match(driveStorage, /node:crypto/, "Drive adapter must be dependency-free (signs the JWT with node:crypto)");
+  const pkg = JSON.parse(read("package.json")) as { dependencies?: Record<string, string> };
+  assert.equal(pkg.dependencies?.googleapis, undefined, "no googleapis dependency should be added");
+
   // --- Daily cron composition (no new Vercel cron) -----------------------
   const daily = read("app/api/notifications/daily/route.ts");
   assert.match(daily, /runRecruitmentDailyNotifications/, "recruitment daily work must ride the existing cron");
