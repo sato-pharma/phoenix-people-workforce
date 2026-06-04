@@ -420,6 +420,22 @@ function PipelineTab({
             {canApprove && (selected.stage === "offer_accepted" || selected.stage === "pre_boarding") ? (
               <div className="space-y-2 border-t border-slate-200 pt-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Approve &amp; hire</p>
+                {selected.seniorApprovalStatus === "approved" ? (
+                  <p className="text-xs text-emerald-600">Senior sign-off complete.</p>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    disabled={pending}
+                    onClick={() =>
+                      run(async () => {
+                        await postJson(`/api/recruitment/applications/${selected.id}/senior-approval`, {});
+                        return "Senior sign-off recorded.";
+                      })
+                    }
+                  >
+                    Senior sign-off (Super Admin)
+                  </Button>
+                )}
                 <Input placeholder="Manual HR ID (optional)" value={manualHrId} onChange={(e) => setManualHrId(e.target.value)} />
                 <Button
                   disabled={pending}

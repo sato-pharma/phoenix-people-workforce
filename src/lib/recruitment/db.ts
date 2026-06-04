@@ -137,6 +137,7 @@ export function mapApplication(row: ApplicationDbRow): Application {
     currentOwnerHrId: textOrNull(row.current_owner_hr_id),
     decisionReason: textOrNull(row.decision_reason),
     rejectedReason: textOrNull(row.rejected_reason),
+    seniorApprovalStatus: textOrNull(row.senior_approval_status),
     lastStageChangedAt: String(row.last_stage_changed_at ?? row.updated_at ?? ""),
     createdBy: textOrNull(row.created_by),
     createdAt: String(row.created_at ?? ""),
