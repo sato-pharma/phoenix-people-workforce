@@ -99,15 +99,20 @@ export async function runSosNormalizerTests() {
   assert.equal(suggestProduct("zzz unrelated gibberish", products), null);
 
   const exceptions: NormalizeException[] = [
-    { rawProduct: "583450", rawProductName: "TEBOFORTIN FORTE", rawTerritory: "NASR CITY", rawCustomerCode: "C1", rawRowNumber: 2, reason: "product" },
-    { rawProduct: "583450", rawProductName: "TEBOFORTIN FORTE", rawTerritory: "NADI", rawCustomerCode: "C2", rawRowNumber: 3, reason: "product" },
-    { rawProduct: "", rawProductName: "", rawTerritory: "العصافرة قبلي", rawCustomerCode: "C3", rawRowNumber: 4, reason: "brick" },
+    { rawProduct: "583450", rawProductName: "TEBOFORTIN FORTE", rawTerritory: "NASR CITY", rawCustomerCode: "C1", rawCustomerName: "Pharma A", rawRowNumber: 2, reason: "product" },
+    { rawProduct: "583450", rawProductName: "TEBOFORTIN FORTE", rawTerritory: "NADI", rawCustomerCode: "C2", rawCustomerName: "Pharma B", rawRowNumber: 3, reason: "product" },
+    { rawProduct: "", rawProductName: "", rawTerritory: "العصافرة قبلي", rawCustomerCode: "C3", rawCustomerName: "Pharma C", rawRowNumber: 4, reason: "brick" },
+    { rawProduct: "", rawProductName: "", rawTerritory: "Eskndrya", rawCustomerCode: "C3", rawCustomerName: "Pharma C", rawRowNumber: 5, reason: "brick" },
   ];
   const du = distinctUnknowns(exceptions, products);
   assert.equal(du.products.length, 1); // 2 rows collapse to ONE distinct code
   assert.equal(du.products[0]!.raw, "583450");
   assert.equal(du.products[0]!.count, 2);
   assert.equal(du.products[0]!.suggestionCode, "TE002"); // auto-suggested
-  assert.equal(du.territories.length, 1);
-  assert.equal(du.territories[0]!.count, 1);
+  assert.equal(du.territories.length, 2); // العصافرة + Eskndrya
+  // brick-reason rows surface the distinct PHARMACY (C3 appears twice → one customer, count 2)
+  assert.equal(du.customers.length, 1);
+  assert.equal(du.customers[0]!.raw, "C3");
+  assert.equal(du.customers[0]!.count, 2);
+  assert.equal(du.customers[0]!.rawName, "Pharma C");
 }
