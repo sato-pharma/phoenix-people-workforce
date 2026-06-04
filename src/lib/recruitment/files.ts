@@ -70,7 +70,7 @@ export async function uploadCandidateFile(
 }
 
 export type FileDownload =
-  | { kind: "drive"; bytes: Buffer; mimeType: string; fileName: string }
+  | { kind: "binary"; bytes: Buffer; mimeType: string; fileName: string }
   | { kind: "external"; url: string };
 
 export async function getFileForDownload(fileId: string): Promise<FileDownload | null> {
@@ -87,7 +87,7 @@ export async function getFileForDownload(fileId: string): Promise<FileDownload |
   if (file.driveFileId) {
     const downloaded = await getRecruitmentFileStorage().downloadFile(file.driveFileId);
     return {
-      kind: "drive",
+      kind: "binary",
       bytes: downloaded.bytes,
       mimeType: downloaded.mimeType,
       fileName: downloaded.fileName || file.fileName,

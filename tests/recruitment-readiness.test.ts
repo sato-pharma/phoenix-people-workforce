@@ -123,6 +123,16 @@ export function runRecruitmentReadinessTests() {
   const pkg = JSON.parse(read("package.json")) as { dependencies?: Record<string, string> };
   assert.equal(pkg.dependencies?.googleapis, undefined, "no googleapis dependency should be added");
 
+  // --- Supabase Storage (primary file backend) --------------------------
+  const filesBucketMigration = read("supabase/migrations/20260605140000_recruitment_files_bucket.sql");
+  assert.match(filesBucketMigration, /storage\.buckets/);
+  assert.match(filesBucketMigration, /'recruitment-files'/);
+  assert.match(filesBucketMigration, /recruitment_files_service_role/);
+  const supabaseStorage = read("src/lib/recruitment/supabase-storage.ts");
+  assert.match(supabaseStorage, /getSupabaseAdmin/, "Supabase adapter must use the service-role client");
+  const fileStorage = read("src/lib/recruitment/file-storage.ts");
+  assert.match(fileStorage, /isSupabaseStorageConfigured/, "file storage must prefer Supabase Storage");
+
   // --- Threshold offer approval (Phase 4b) ------------------------------
   const seniorEntry = findAccessRegistryEntry("/api/recruitment/applications/abc/senior-approval", "POST");
   assert.ok(seniorEntry, "senior-approval route must be registered");
