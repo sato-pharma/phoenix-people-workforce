@@ -1,52 +1,54 @@
-// Recruitment / ATS — candidate/application file storage abstraction.
+// Recruitment / ATS — candidate file storage abstraction.
 //
-// Storage backend (LOCKED) = Google Drive via a service account. Because that is
-// net-new infrastructure (a `googleapis` dependency + a service-account key env
-// var + a root folder id), the real Drive adapter is the first task of Phase 2.
-//
-// Phase 1 ships a reference-only adapter: a CV/document is captured as a filename
-// plus an optional external URL and persisted as metadata in `recruitment_files`.
-// The Phase-2 Drive adapter will implement this same interface and serve files
-// only through permission-gated routes (never "anyone with the link" sharing).
+// Backend (LOCKED) = Google Drive via a service account. The adapter is built
+// dependency-free (see drive-storage.ts) and stays DORMANT until the env vars
+// are present; until then getRecruitmentFileStorage() returns a reference-only
+// adapter that rejects binary uploads (candidates keep a CV link instead).
 
-import type { RecruitmentFile } from "@/lib/recruitment/types";
-
-export type RecruitmentFileReference = {
-  kind: string;
+export type UploadFileInput = {
   fileName: string;
-  mimeType?: string | null;
-  sizeBytes?: number | null;
-  externalUrl?: string | null;
+  mimeType: string;
+  bytes: ArrayBuffer | Buffer;
 };
 
-export type StoredRecruitmentFile = {
+export type StoredFile = {
   driveFileId: string | null;
   externalUrl: string | null;
 };
 
+export type DownloadedFile = {
+  bytes: Buffer;
+  mimeType: string;
+  fileName: string;
+};
+
 export interface RecruitmentFileStorageAdapter {
   readonly id: string;
-  // Persists the binary and returns the backend handle. Phase 1 stores nothing
-  // and just echoes the reference.
-  persist(reference: RecruitmentFileReference): Promise<StoredRecruitmentFile>;
-  // Returns a short-lived download URL for a stored file, or null if the file is
-  // reference-only (Phase 1).
-  resolveDownloadUrl(file: Pick<RecruitmentFile, "driveFileId" | "externalUrl">): Promise<string | null>;
+  readonly supportsUpload: boolean;
+  uploadFile(input: UploadFileInput): Promise<StoredFile>;
+  downloadFile(driveFileId: string): Promise<DownloadedFile>;
 }
 
-// Phase 1 adapter: no binary upload, metadata-only.
+const uploadsDisabledMessage =
+  "File uploads are not configured. Add the Google Drive service-account credentials to enable uploads.";
+
 export const referenceOnlyFileStorage: RecruitmentFileStorageAdapter = {
   id: "reference-only",
-  async persist(reference) {
-    return { driveFileId: null, externalUrl: reference.externalUrl ?? null };
+  supportsUpload: false,
+  async uploadFile() {
+    throw new Error(uploadsDisabledMessage);
   },
-  async resolveDownloadUrl(file) {
-    return file.externalUrl ?? null;
+  async downloadFile() {
+    throw new Error(uploadsDisabledMessage);
   },
 };
 
-// Single accessor so the rest of the module never imports a concrete adapter.
-// Phase 2 swaps this to the Drive adapter behind an env flag.
+// Imported for its value; drive-storage only imports our types (erased), so there
+// is no runtime import cycle.
+import { googleDriveFileStorage, isDriveConfigured } from "@/lib/recruitment/drive-storage";
+
+export { isDriveConfigured };
+
 export function getRecruitmentFileStorage(): RecruitmentFileStorageAdapter {
-  return referenceOnlyFileStorage;
+  return isDriveConfigured() ? googleDriveFileStorage : referenceOnlyFileStorage;
 }
