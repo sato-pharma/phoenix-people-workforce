@@ -94,21 +94,22 @@ function totalBgFor(variant: RowVariant) {
   return "";
 }
 
-function ProductCells({ bandTint, cell, variant }: { bandTint: boolean; cell: MonthlyClosingCell; variant: RowVariant }) {
-  const bg = variant === "area" && bandTint ? "bg-orange-50/50" : "";
+function ProductCells({ bandTint, cell, rowBg, variant }: { bandTint: boolean; cell: MonthlyClosingCell; rowBg?: string; variant: RowVariant }) {
+  const bg = rowBg ?? (variant === "area" && bandTint ? "bg-orange-50/50" : "");
+  const achBg = rowBg ?? achBgFor(variant);
   return (
     <>
       <NumCell bg={bg} value={cell.salesUnits} variant={variant} />
       <NumCell bg={bg} kind="value" value={cell.salesValue} variant={variant} />
       <NumCell bg={bg} muted value={cell.targetUnits} variant={variant} />
       <NumCell bg={bg} kind="value" muted value={cell.targetValue} variant={variant} />
-      <AchCell bg={achBgFor(variant)} value={cell.achievement} variant={variant} />
+      <AchCell bg={achBg} value={cell.achievement} variant={variant} />
     </>
   );
 }
 
-function TotalCells({ cell, variant }: { cell: MonthlyClosingCell; variant: RowVariant }) {
-  const bg = totalBgFor(variant);
+function TotalCells({ cell, rowBg, variant }: { cell: MonthlyClosingCell; rowBg?: string; variant: RowVariant }) {
+  const bg = rowBg ?? totalBgFor(variant);
   return (
     <>
       <NumCell bg={bg} kind="value" value={cell.salesValue} variant={variant} />
@@ -141,16 +142,21 @@ const STICKY2 = "sticky z-20";
 function RegionBlock({ region }: { region: MonthlyClosingRegionGroup }) {
   return (
     <>
-      {region.areas.map((area) => (
-        <tr className="transition-colors hover:bg-orange-50/40" key={area.areaCode}>
-          <td className={`${STICKY1} whitespace-nowrap bg-white px-3 py-2.5 font-semibold text-slate-900`}>{area.areaCode}</td>
-          <td className={`${STICKY2} truncate bg-white px-3 py-2.5 text-slate-600`} style={{ left: COL.area }}>{area.areaName}</td>
-          {area.cells.map((cell, index) => (
-            <ProductCells bandTint={index % 2 === 1} cell={cell} key={`${area.areaCode}-${index}`} variant="area" />
-          ))}
-          <TotalCells cell={area.rowTotal} variant="area" />
-        </tr>
-      ))}
+      {region.areas.map((area) => {
+        // Direct (company) rows get a distinct blue band across the WHOLE row so they stand
+        // apart from the orange area/region palette.
+        const directBg = "bg-[#CFE0FB]";
+        return (
+          <tr className={area.isDirect ? "" : "transition-colors hover:bg-orange-50/40"} key={area.areaCode}>
+            <td className={`${STICKY1} whitespace-nowrap px-3 py-2.5 font-semibold ${area.isDirect ? `${directBg} uppercase tracking-wide text-[#1D4ED8]` : "bg-white text-slate-900"}`}>{area.isDirect ? "◆ Direct" : area.areaCode}</td>
+            <td className={`${STICKY2} truncate px-3 py-2.5 ${area.isDirect ? `${directBg} font-bold text-[#1D4ED8]` : "bg-white text-slate-600"}`} style={{ left: COL.area }}>{area.isDirect ? "Direct orders (company)" : area.areaName}</td>
+            {area.cells.map((cell, index) => (
+              <ProductCells bandTint={index % 2 === 1} cell={cell} key={`${area.areaCode}-${index}`} rowBg={area.isDirect ? directBg : undefined} variant="area" />
+            ))}
+            <TotalCells cell={area.rowTotal} rowBg={area.isDirect ? directBg : undefined} variant="area" />
+          </tr>
+        );
+      })}
       <tr className="bg-[#FDEAD0]">
         <td className={`${STICKY1} whitespace-nowrap bg-[#FDEAD0] px-3 py-2.5 font-black uppercase tracking-wide text-slate-900`}>{region.regionCode}</td>
         <td className={`${STICKY2} truncate bg-[#FDEAD0] px-3 py-2.5 font-black text-slate-900`} style={{ left: COL.area }}>{region.regionName}</td>
@@ -264,6 +270,26 @@ function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix }) {
               ))}
               <TotalCells cell={matrix.grandTotal.rowTotal} variant="grand" />
             </tr>
+            {matrix.directNational ? (
+              <tr>
+                <td className={`${STICKY1} whitespace-nowrap bg-[#B6CEF8] px-3 py-2.5 font-black uppercase tracking-wide text-[#1E3A8A]`}>◆ DIR</td>
+                <td className={`${STICKY2} whitespace-nowrap bg-[#B6CEF8] px-3 py-2.5 font-black text-[#1E3A8A]`} style={{ left: COL.area }}>Direct – National</td>
+                {matrix.directNational.cells.map((cell, index) => (
+                  <ProductCells bandTint={index % 2 === 1} cell={cell} key={`dn-${matrix.columns[index]?.productCode ?? index}`} rowBg="bg-[#B6CEF8]" variant="subtotal" />
+                ))}
+                <TotalCells cell={matrix.directNational.rowTotal} rowBg="bg-[#B6CEF8]" variant="subtotal" />
+              </tr>
+            ) : null}
+            {matrix.companyTotal ? (
+              <tr className="bg-[#0B0B0B]">
+                <td className={`${STICKY1} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black uppercase tracking-wide text-[#FDBA74]`}>TOT</td>
+                <td className={`${STICKY2} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black text-[#FDBA74]`} style={{ left: COL.area }}>Grand Total (incl. Direct)</td>
+                {matrix.companyTotal.cells.map((cell, index) => (
+                  <ProductCells bandTint={index % 2 === 1} cell={cell} key={`ct-${matrix.columns[index]?.productCode ?? index}`} variant="grand" />
+                ))}
+                <TotalCells cell={matrix.companyTotal.rowTotal} variant="grand" />
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -297,8 +323,12 @@ export function MonthlyClosingWorkspace({ initialError, initialMatrix }: Props) 
     if (!matrix) return { areas: [], products: [], regions: [] };
     return {
       regions: matrix.regions.map((region) => ({ code: region.regionCode, label: `${region.regionName} (${region.regionCode})` })),
+      // Exclude the synthetic per-region "Direct" rows — they share the code "DIRECT" across
+      // regions and are not a filterable area.
       areas: matrix.regions.flatMap((region) =>
-        region.areas.map((area) => ({ code: area.areaCode, label: `${area.areaName} (${area.areaCode})`, regionCode: region.regionCode })),
+        region.areas
+          .filter((area) => !area.isDirect)
+          .map((area) => ({ code: area.areaCode, label: `${area.areaName} (${area.areaCode})`, regionCode: region.regionCode })),
       ),
       products: matrix.columns.map((column) => ({ code: column.productCode, label: `${column.productName} (${column.productCode})` })),
     };
