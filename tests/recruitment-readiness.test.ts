@@ -90,6 +90,21 @@ export function runRecruitmentReadinessTests() {
   assert.match(onboardingMigration, /create table if not exists public\.recruitment_onboarding_items/);
   assert.match(onboardingMigration, /revoke all on public\.recruitment_onboarding_items from anon, authenticated/);
 
+  // --- Public application funnel (Phase 4) ------------------------------
+  const applyEntry = findAccessRegistryEntry("/api/recruitment/apply/sometoken", "POST");
+  assert.ok(applyEntry, "public apply route must be registered");
+  assert.equal(applyEntry?.authMode, "public-token", "public apply must be a token route, not a session route");
+  assert.equal(applyEntry?.csrf.required, false, "public apply is token-protected (no CSRF), matching the offer token routes");
+
+  const postingsMigration = read("supabase/migrations/20260604190000_recruitment_job_postings.sql");
+  assert.match(postingsMigration, /create table if not exists public\.recruitment_job_postings/);
+  assert.match(postingsMigration, /add column if not exists submitted_ip_hash/);
+  assert.match(postingsMigration, /revoke all on public\.recruitment_job_postings from anon, authenticated/);
+
+  const postings = read("src/lib/recruitment/postings.ts");
+  assert.match(postings, /systemAccessContext/, "public submit must run under a system context");
+  assert.match(postings, /submitted_ip_hash/, "public submit must record a hashed IP for rate limiting");
+
   // --- Daily cron composition (no new Vercel cron) -----------------------
   const daily = read("app/api/notifications/daily/route.ts");
   assert.match(daily, /runRecruitmentDailyNotifications/, "recruitment daily work must ride the existing cron");

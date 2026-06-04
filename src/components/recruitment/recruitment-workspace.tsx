@@ -619,6 +619,21 @@ function RequisitionsTab({
                               {item.label}
                             </Button>
                           ))}
+                          {["req_open", "req_published"].includes(requisition.status) ? (
+                            <Button
+                              variant="secondary"
+                              disabled={pending}
+                              onClick={() =>
+                                run(async () => {
+                                  const data = await postJson(`/api/recruitment/requisitions/${requisition.id}/posting`, {});
+                                  const path = typeof data.path === "string" ? data.path : "";
+                                  return `Application link: ${window.location.origin}${path}`;
+                                })
+                              }
+                            >
+                              Application link
+                            </Button>
+                          ) : null}
                         </div>
                       ) : (
                         <span className="text-xs text-slate-400">View only</span>

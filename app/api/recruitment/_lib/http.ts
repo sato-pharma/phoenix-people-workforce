@@ -41,7 +41,14 @@ export function recruitmentApiError(error: unknown, fallback: string) {
     if (normalized.includes("not found")) {
       status = 404;
       code = "not_found";
-    } else if (normalized.includes("already has") || normalized.includes("already exists")) {
+    } else if (normalized.includes("too many")) {
+      status = 429;
+      code = "rate_limited";
+    } else if (
+      normalized.includes("already has") ||
+      normalized.includes("already exists") ||
+      normalized.includes("no longer accepting")
+    ) {
       status = 409;
       code = "conflict";
     }
