@@ -21,7 +21,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
-import type { Candidate, RecruitmentActionKey, Requisition } from "@/lib/recruitment/types";
+import type { Candidate, Interview, InterviewType, RecruitmentActionKey, Requisition } from "@/lib/recruitment/types";
+import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 
 type ManagerOption = { hrId: string; fullName: string };
@@ -168,6 +169,7 @@ export function RecruitmentWorkspace(props: Props) {
           applications={applications}
           canApprove={props.canApprove}
           canManage={props.canManage}
+          managers={props.managers}
           pending={pending}
           run={run}
         />
@@ -203,12 +205,14 @@ function PipelineTab({
   applications,
   canApprove,
   canManage,
+  managers,
   pending,
   run,
 }: {
   applications: ApplicationWithContext[];
   canApprove: boolean;
   canManage: boolean;
+  managers: ManagerOption[];
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
 }) {
@@ -218,6 +222,26 @@ function PipelineTab({
   const [startDate, setStartDate] = useState("");
   const [expiresInDays, setExpiresInDays] = useState("7");
   const [manualHrId, setManualHrId] = useState("");
+  const [interviews, setInterviews] = useState<Interview[]>([]);
+  const [interviewsError, setInterviewsError] = useState<string | null>(null);
+
+  const loadInterviews = async (appId: string) => {
+    try {
+      const res = await fetch(`/api/recruitment/applications/${appId}/interviews`);
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to load interviews.");
+      setInterviews(Array.isArray(data.interviews) ? (data.interviews as Interview[]) : []);
+      setInterviewsError(null);
+    } catch (caught) {
+      setInterviews([]);
+      setInterviewsError(caught instanceof Error ? caught.message : "Failed to load interviews.");
+    }
+  };
+
+  const selectApplication = (appId: string) => {
+    setSelectedId(appId);
+    void loadInterviews(appId);
+  };
 
   const selected = applications.find((application) => application.id === selectedId) ?? null;
   const next = selected ? nextStageAction[selected.stage] : undefined;
@@ -246,7 +270,7 @@ function PipelineTab({
                   <tr
                     key={application.id}
                     className={selectedId === application.id ? "bg-orange-50" : "cursor-pointer"}
-                    onClick={() => setSelectedId(application.id)}
+                    onClick={() => selectApplication(application.id)}
                   >
                     <td className="px-3 py-2 font-medium text-slate-900">
                       {application.candidate?.fullName ?? "Unknown candidate"}
@@ -395,6 +419,15 @@ function PipelineTab({
                 </div>
               </div>
             ) : null}
+
+            <InterviewsSection
+              applicationId={selected.id}
+              canManage={canManage}
+              error={interviewsError}
+              interviews={interviews}
+              managers={managers}
+              onReload={() => loadInterviews(selected.id)}
+            />
           </div>
         )}
       </div>
@@ -739,6 +772,184 @@ function CandidatesTab({
           </table>
         </div>
       </AdminTableShell>
+    </div>
+  );
+}
+
+function InterviewsSection({
+  applicationId,
+  canManage,
+  error,
+  interviews,
+  managers,
+  onReload,
+}: {
+  applicationId: string;
+  canManage: boolean;
+  error: string | null;
+  interviews: Interview[];
+  managers: ManagerOption[];
+  onReload: () => void;
+}) {
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [type, setType] = useState<InterviewType>("hr");
+  const [interviewerHrId, setInterviewerHrId] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+  const [scores, setScores] = useState<Record<string, string>>({});
+  const [outcome, setOutcome] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const schedule = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/recruitment/applications/${applicationId}/interviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          interviewType: type,
+          interviewerHrId: interviewerHrId || undefined,
+          scheduledAt: scheduledAt || undefined,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to schedule.");
+      setInterviewerHrId("");
+      setScheduledAt("");
+      onReload();
+    } catch (caught) {
+      setErr(caught instanceof Error ? caught.message : "Failed to schedule.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openRecord = (interview: Interview) => {
+    setRecordingId(interview.id);
+    const initial: Record<string, string> = {};
+    for (const [key, value] of Object.entries(interview.score ?? {})) initial[key] = String(value);
+    setScores(initial);
+    setOutcome(interview.outcome ?? "");
+    setNotes(interview.notes ?? "");
+  };
+
+  const saveRecord = async (interview: Interview) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const numericScores: Record<string, number> = {};
+      for (const [key, value] of Object.entries(scores)) {
+        const n = Number(value);
+        if (Number.isFinite(n) && value !== "") numericScores[key] = n;
+      }
+      const res = await fetch(`/api/recruitment/interviews/${interview.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outcome: outcome || null, score: numericScores, notes: notes || null }),
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to record.");
+      setRecordingId(null);
+      onReload();
+    } catch (caught) {
+      setErr(caught instanceof Error ? caught.message : "Failed to record.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 border-t border-slate-200 pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Interviews</p>
+      {(error ?? err) ? <p className="text-xs text-rose-600">{error ?? err}</p> : null}
+
+      {interviews.length === 0 ? (
+        <p className="text-xs text-slate-500">No interviews scheduled.</p>
+      ) : (
+        <ul className="space-y-2">
+          {interviews.map((interview) => {
+            const summary = summarizeScorecard(interview.interviewType, interview.score ?? {});
+            return (
+              <li key={interview.id} className="border border-slate-200 p-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-slate-800">{titleCase(interview.interviewType)}</span>
+                  <span className="text-slate-500">
+                    {interview.scheduledAt ? new Date(interview.scheduledAt).toLocaleString() : "Unscheduled"}
+                  </span>
+                </div>
+                <div className="text-slate-500">
+                  Outcome: {interview.outcome ? titleCase(interview.outcome) : "—"}
+                  {summary.average !== null ? ` · Avg ${summary.average}/5` : ""}
+                </div>
+                {canManage ? (
+                  recordingId === interview.id ? (
+                    <div className="mt-2 space-y-1.5">
+                      {interviewScorecardCriteria[interview.interviewType].map((criterion) => (
+                        <label key={criterion.key} className="flex items-center justify-between gap-2">
+                          <span>{criterion.label}</span>
+                          <input
+                            className="w-16 border border-slate-300 px-2 py-1"
+                            max={5}
+                            min={1}
+                            type="number"
+                            value={scores[criterion.key] ?? ""}
+                            onChange={(e) => setScores((prev) => ({ ...prev, [criterion.key]: e.target.value }))}
+                          />
+                        </label>
+                      ))}
+                      <select className={fieldClass} value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+                        <option value="">Outcome…</option>
+                        {interviewOutcomes.map((value) => (
+                          <option key={value} value={value}>
+                            {titleCase(value)}
+                          </option>
+                        ))}
+                      </select>
+                      <textarea className={fieldClass} placeholder="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+                      <div className="flex gap-2">
+                        <Button disabled={busy} onClick={() => void saveRecord(interview)}>
+                          Save
+                        </Button>
+                        <Button variant="ghost" disabled={busy} onClick={() => setRecordingId(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button className="mt-1" variant="secondary" onClick={() => openRecord(interview)}>
+                      Record outcome
+                    </Button>
+                  )
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {canManage ? (
+        <div className="space-y-1.5 pt-1">
+          <select className={fieldClass} value={type} onChange={(e) => setType(e.target.value as InterviewType)}>
+            <option value="phone">Phone screen</option>
+            <option value="hr">HR interview</option>
+            <option value="hiring_manager">Hiring manager interview</option>
+          </select>
+          <select className={fieldClass} value={interviewerHrId} onChange={(e) => setInterviewerHrId(e.target.value)}>
+            <option value="">Interviewer…</option>
+            {managers.map((manager) => (
+              <option key={manager.hrId} value={manager.hrId}>
+                {manager.fullName} ({manager.hrId})
+              </option>
+            ))}
+          </select>
+          <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
+          <Button disabled={busy} onClick={() => void schedule()}>
+            Schedule interview
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

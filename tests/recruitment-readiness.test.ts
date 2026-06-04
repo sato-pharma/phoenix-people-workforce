@@ -72,6 +72,8 @@ export function runRecruitmentReadinessTests() {
   assert.ok(candidateEntry?.csrf.required, "candidate mutations require CSRF");
   const templateEntry = findAccessRegistryEntry("/api/recruitment/candidates/template", "GET");
   assert.ok(templateEntry?.audit.required, "candidate template download must require audit classification");
+  const interviewEntry = findAccessRegistryEntry("/api/recruitment/interviews/x", "PATCH");
+  assert.ok(interviewEntry?.csrf.required, "interview record route must require CSRF");
 
   // --- Offer-engine reuse (do not rewrite the engine) --------------------
   const applications = read("src/lib/recruitment/applications.ts");
@@ -83,6 +85,8 @@ export function runRecruitmentReadinessTests() {
   // --- Daily cron composition (no new Vercel cron) -----------------------
   const daily = read("app/api/notifications/daily/route.ts");
   assert.match(daily, /runRecruitmentDailyNotifications/, "recruitment daily work must ride the existing cron");
+  const notifications = read("src/lib/recruitment/notifications.ts");
+  assert.match(notifications, /listInterviewsDueForReminder/, "daily run must send interview reminders");
   const vercel = JSON.parse(read("vercel.json")) as { crons?: Array<{ path?: string }> };
   const cronPaths = (vercel.crons ?? []).map((cron) => cron.path ?? "");
   assert.ok(

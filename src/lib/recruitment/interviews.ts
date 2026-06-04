@@ -10,6 +10,7 @@ import {
   type InterviewDbRow,
 } from "@/lib/recruitment/db";
 import { interviewTypes, type Interview, type InterviewType } from "@/lib/recruitment/types";
+import { isInterviewOutcome, normalizeScorecard } from "@/lib/recruitment/scorecards";
 
 export type CreateInterviewInput = {
   interviewType: InterviewType;
@@ -68,4 +69,87 @@ export async function createInterview(
     .single();
   if (error) throw error;
   return mapInterview(data as InterviewDbRow);
+}
+
+async function getInterviewRow(id: string): Promise<Interview> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("recruitment_interviews")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Interview not found.");
+  return mapInterview(data as InterviewDbRow);
+}
+
+export type RecordInterviewInput = {
+  outcome?: string | null;
+  score?: Record<string, unknown> | null;
+  notes?: string | null;
+  scheduledAt?: string | null;
+  location?: string | null;
+  meetingLink?: string | null;
+};
+
+export async function recordInterviewOutcome(
+  access: AccessContext,
+  interviewId: string,
+  input: RecordInterviewInput,
+): Promise<Interview> {
+  const interview = await getInterviewRow(interviewId);
+  // Scope via the parent application (throws Forbidden if out of scope).
+  const application = await getApplication(access, interview.applicationId);
+  if (!application) throw new Error("Application not found.");
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.outcome !== undefined) {
+    const outcome = textOrNull(input.outcome);
+    if (outcome && !isInterviewOutcome(outcome)) throw new Error("Invalid interview outcome.");
+    patch.outcome = outcome;
+  }
+  if (input.score !== undefined && input.score !== null) {
+    patch.score = normalizeScorecard(interview.interviewType, input.score);
+  }
+  if (input.notes !== undefined) patch.notes = textOrNull(input.notes);
+  if (input.scheduledAt !== undefined) patch.scheduled_at = textOrNull(input.scheduledAt);
+  if (input.location !== undefined) patch.location = textOrNull(input.location);
+  if (input.meetingLink !== undefined) patch.meeting_link = textOrNull(input.meetingLink);
+
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("recruitment_interviews")
+    .update(patch)
+    .eq("id", interviewId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapInterview(data as InterviewDbRow);
+}
+
+export type InterviewReminder = {
+  id: string;
+  applicationId: string;
+  interviewType: InterviewType;
+  interviewerHrId: string | null;
+  scheduledAt: string | null;
+};
+
+// Scheduled within [fromIso, toIso) and not yet recorded — for daily reminders.
+export async function listInterviewsDueForReminder(fromIso: string, toIso: string): Promise<InterviewReminder[]> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("recruitment_interviews")
+    .select("id,application_id,interview_type,interviewer_hr_id,scheduled_at,outcome")
+    .gte("scheduled_at", fromIso)
+    .lt("scheduled_at", toIso)
+    .is("outcome", null);
+  if (error) throw error;
+  return ((data ?? []) as InterviewDbRow[]).map((row) => ({
+    id: String(row.id),
+    applicationId: String(row.application_id),
+    interviewType: (textOrNull(row.interview_type) ?? "hr") as InterviewType,
+    interviewerHrId: textOrNull(row.interviewer_hr_id),
+    scheduledAt: textOrNull(row.scheduled_at),
+  }));
 }
