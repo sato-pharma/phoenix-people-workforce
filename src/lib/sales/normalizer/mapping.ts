@@ -20,7 +20,7 @@ export type DistinctUnknown = {
   suggestionLabel: string | null;
 };
 
-export type DistinctUnknowns = { products: DistinctUnknown[]; territories: DistinctUnknown[] };
+export type DistinctUnknowns = { customers: DistinctUnknown[]; products: DistinctUnknown[]; territories: DistinctUnknown[] };
 
 function tokens(value: string): Set<string> {
   return new Set(normalizeAliasKey(value).split(" ").filter((t) => t.length >= 2));
@@ -44,6 +44,7 @@ export function suggestProduct(rawName: string, products: ProductRef[]): { code:
 export function distinctUnknowns(exceptions: NormalizeException[], products: ProductRef[]): DistinctUnknowns {
   const productMap = new Map<string, DistinctUnknown>();
   const territoryMap = new Map<string, DistinctUnknown>();
+  const customerMap = new Map<string, DistinctUnknown>();
   for (const ex of exceptions) {
     if ((ex.reason === "product" || ex.reason === "both") && ex.rawProduct) {
       let entry = productMap.get(ex.rawProduct);
@@ -55,51 +56,74 @@ export function distinctUnknowns(exceptions: NormalizeException[], products: Pro
       entry.count += 1;
       if (!entry.rawName && ex.rawProductName) entry.rawName = ex.rawProductName;
     }
-    if ((ex.reason === "brick" || ex.reason === "both") && ex.rawTerritory) {
-      const key = normalizeAliasKey(ex.rawTerritory);
-      let entry = territoryMap.get(key);
-      if (!entry) { entry = { count: 0, raw: ex.rawTerritory, rawName: "", suggestionCode: null, suggestionLabel: null }; territoryMap.set(key, entry); }
-      entry.count += 1;
+    if (ex.reason === "brick" || ex.reason === "both") {
+      if (ex.rawTerritory) {
+        const key = normalizeAliasKey(ex.rawTerritory);
+        let entry = territoryMap.get(key);
+        if (!entry) { entry = { count: 0, raw: ex.rawTerritory, rawName: "", suggestionCode: null, suggestionLabel: null }; territoryMap.set(key, entry); }
+        entry.count += 1;
+      }
+      // Per-pharmacy crosswalk — the reliable path when the distributor's area text is junk.
+      if (ex.rawCustomerCode) {
+        let entry = customerMap.get(ex.rawCustomerCode);
+        if (!entry) { entry = { count: 0, raw: ex.rawCustomerCode, rawName: ex.rawCustomerName, suggestionCode: null, suggestionLabel: null }; customerMap.set(ex.rawCustomerCode, entry); }
+        entry.count += 1;
+        if (!entry.rawName && ex.rawCustomerName) entry.rawName = ex.rawCustomerName;
+      }
     }
   }
   const sorted = (m: Map<string, DistinctUnknown>) => [...m.values()].sort((a, b) => b.count - a.count);
-  return { products: sorted(productMap), territories: sorted(territoryMap) };
+  return { customers: sorted(customerMap), products: sorted(productMap), territories: sorted(territoryMap) };
 }
 
 // ── write path (insert-if-absent, validated against the masters) ──
 
-export type MappingInput = { code: string; raw: string; type: "product" | "territory" };
+export type MappingInput = { code: string; distributorCode?: string; raw: string; type: "product" | "territory" | "customer" };
 
 export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: number; skipped: number; invalid: number }> {
   const refs = await loadSalesReferenceData();
   const productCodes = new Set(refs.products.map((p) => normalizeCodeKey(p.productCode)));
   productCodes.add(IGNORE_PRODUCT_CODE); // "neglect this item" is a valid product target
-  const brickIds = new Set((refs.bricks ?? []).map((b) => normalizeCodeKey(b.brickId)));
+  const brickById = new Map((refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), b]));
   const supabase = getSupabaseAdmin();
 
-  const [existProd, existTerr] = await Promise.all([
+  const [existProd, existTerr, existCust] = await Promise.all([
     supabase.from("source_of_sales_product_aliases").select("normalized_alias").eq("active", true),
     supabase.from("source_of_sales_territory_aliases").select("normalized_alias").eq("active", true),
+    supabase.from("source_of_sales_customer_map").select("distributor_code,customer_code").eq("active", true),
   ]);
   const haveProd = new Set(((existProd.data ?? []) as Array<{ normalized_alias?: string }>).map((r) => normalizeAliasKey(r.normalized_alias)));
   const haveTerr = new Set(((existTerr.data ?? []) as Array<{ normalized_alias?: string }>).map((r) => normalizeAliasKey(r.normalized_alias)));
+  const haveCust = new Set(((existCust.error ? [] : existCust.data ?? []) as Array<{ distributor_code?: string; customer_code?: string }>).map((r) => `${normalizeCodeKey(r.distributor_code)} ${normalizeCodeKey(r.customer_code)}`));
 
   const productRows: Record<string, unknown>[] = [];
   const territoryRows: Record<string, unknown>[] = [];
+  const customerRows: Record<string, unknown>[] = [];
   let skipped = 0;
   let invalid = 0;
   for (const mapping of mappings) {
     const raw = String(mapping.raw ?? "").trim();
     const code = normalizeCodeKey(mapping.code);
+    if (!raw || !code) { invalid += 1; continue; }
+    if (mapping.type === "customer") {
+      const dist = normalizeCodeKey(mapping.distributorCode);
+      const brick = brickById.get(code);
+      if (!dist || !brick) { invalid += 1; continue; }
+      const ck = `${dist} ${normalizeCodeKey(raw)}`;
+      if (haveCust.has(ck)) { skipped += 1; continue; }
+      haveCust.add(ck);
+      customerRows.push({ distributor_code: dist, customer_code: raw, brick_id: brick.brickId, area_code: brick.areaCode, region_code: brick.regionCode, source: "normalizer", active: true });
+      continue;
+    }
     const key = normalizeAliasKey(raw);
-    if (!raw || !code || !key) { invalid += 1; continue; }
+    if (!key) { invalid += 1; continue; }
     if (mapping.type === "product") {
       if (!productCodes.has(code)) { invalid += 1; continue; }
       if (haveProd.has(key)) { skipped += 1; continue; }
       haveProd.add(key);
       productRows.push({ alias: raw, normalized_alias: key, product_code: code, active: true, source_file: "normalizer" });
     } else {
-      if (!brickIds.has(code)) { invalid += 1; continue; }
+      if (!brickById.has(code)) { invalid += 1; continue; }
       if (haveTerr.has(key)) { skipped += 1; continue; }
       haveTerr.add(key);
       territoryRows.push({ alias: raw, normalized_alias: key, target_type: "brick", target_code: code, active: true, source_file: "normalizer" });
@@ -107,7 +131,8 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
   }
   if (productRows.length) { const { error } = await supabase.from("source_of_sales_product_aliases").insert(productRows); if (error) throw error; }
   if (territoryRows.length) { const { error } = await supabase.from("source_of_sales_territory_aliases").insert(territoryRows); if (error) throw error; }
-  return { saved: productRows.length + territoryRows.length, skipped, invalid };
+  if (customerRows.length) { const { error } = await supabase.from("source_of_sales_customer_map").insert(customerRows); if (error) throw error; }
+  return { saved: productRows.length + territoryRows.length + customerRows.length, skipped, invalid };
 }
 
 // ── Excel bulk round-trip ──

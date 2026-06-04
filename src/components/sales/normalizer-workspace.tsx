@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Download, Loader2, Save, Sparkles, Upload } from "lucide-react";
+import { AlertTriangle, Check, ClipboardPaste, Copy, Download, Loader2, Save, Sparkles, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
@@ -16,29 +16,53 @@ type Preview = {
   distributorName: string; period: string | null;
   periods: { period: string; rows: number }[];
   sampleCoded: CodedRow[];
-  unknownProducts: Unknown[]; unknownTerritories: Unknown[];
+  unknownProducts: Unknown[]; unknownTerritories: Unknown[]; unknownCustomers: Unknown[];
   summary: { totalRows: number; productResolved: number; brickResolved: number; fullyCoded: number; ignored: number };
 };
 
 const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : "—");
 
+// One-click copy of a raw value (so it can be pasted into the Phoenix search).
+function CopyBtn({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  if (!text) return null;
+  return (
+    <button
+      className="ml-1 inline-flex shrink-0 items-center text-slate-400 transition hover:text-[#1D4ED8]"
+      onClick={async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1000); } catch { /* clipboard blocked */ } }}
+      title="Copy"
+      type="button"
+    >{done ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}</button>
+  );
+}
+
 // Type-to-search combobox — filter hundreds of bricks/products by typing instead of scrolling.
+// Includes a paste button: paste a copied raw value to instantly filter the list.
 function ComboBox({ onChange, options, placeholder, value }: { onChange: (v: string) => void; options: { label: string; value: string }[]; placeholder: string; value: string }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const selected = options.find((o) => o.value === value);
   const q = query.trim().toLowerCase();
   const filtered = open ? (q ? options.filter((o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q)) : options).slice(0, 60) : [];
   return (
     <div className="relative min-w-[240px]">
       <input
-        className="h-9 w-full rounded-lg border border-[#D8E0EA] bg-white px-2 text-sm outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+        className="h-9 w-full rounded-lg border border-[#D8E0EA] bg-white px-2 pr-8 text-sm outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => { setOpen(true); setQuery(""); }}
         placeholder={placeholder}
+        ref={inputRef}
         value={open ? query : selected?.label ?? ""}
       />
+      <button
+        className="absolute right-1.5 top-2 text-slate-400 transition hover:text-[#1D4ED8]"
+        onClick={async () => { try { const t = await navigator.clipboard.readText(); if (t) { setQuery(t); setOpen(true); inputRef.current?.focus(); } } catch { /* clipboard blocked */ } }}
+        onMouseDown={(e) => e.preventDefault()}
+        title="Paste to search"
+        type="button"
+      ><ClipboardPaste className="h-3.5 w-3.5" /></button>
       {open ? (
         <div className="absolute left-0 right-0 z-50 mt-1 max-h-64 overflow-auto border border-[#D8E0EA] bg-white shadow-lg">
           {filtered.map((o) => (
@@ -56,7 +80,7 @@ function ComboBox({ onChange, options, placeholder, value }: { onChange: (v: str
   );
 }
 
-export function NormalizerWorkspace({ distributors, references }: { distributors: DistributorOption[]; references: MappingReferences }) {
+export function NormalizerWorkspace({ aiEnabled, distributors, references }: { aiEnabled: boolean; distributors: DistributorOption[]; references: MappingReferences }) {
   const [distributorCode, setDistributorCode] = useState(distributors[0]?.code ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -110,9 +134,10 @@ export function NormalizerWorkspace({ distributors, references }: { distributors
 
   async function saveMappings() {
     if (!preview) return;
-    const mappings: { type: "product" | "territory"; raw: string; code: string }[] = [];
+    const mappings: { type: "product" | "territory" | "customer"; raw: string; code: string; distributorCode?: string }[] = [];
     preview.unknownProducts.forEach((u) => { const c = picks[`p:${u.raw}`]; if (c) mappings.push({ type: "product", raw: u.raw, code: c }); });
     preview.unknownTerritories.forEach((u) => { const c = picks[`t:${u.raw}`]; if (c) mappings.push({ type: "territory", raw: u.raw, code: c }); });
+    preview.unknownCustomers.forEach((u) => { const c = picks[`c:${u.raw}`]; if (c) mappings.push({ type: "customer", raw: u.raw, code: c, distributorCode }); });
     if (mappings.length === 0) { setError("Pick at least one Phoenix code to save."); return; }
     setBusy("save"); setError(null); setNotice(null);
     try {
@@ -122,6 +147,25 @@ export function NormalizerWorkspace({ distributors, references }: { distributors
       setNotice(`Learned ${json.data.saved} mapping(s). Re-analyzing…`);
       await analyze(true);
     } catch (e) { setError(e instanceof Error ? e.message : "Save failed."); }
+    finally { setBusy(null); }
+  }
+
+  async function aiSuggestAll() {
+    if (!preview) return;
+    setBusy("ai"); setError(null); setNotice(null);
+    try {
+      let filled = 0;
+      for (const [kind, list, prefix] of [["product", preview.unknownProducts, "p"], ["territory", preview.unknownTerritories, "t"]] as const) {
+        if (list.length === 0) continue;
+        const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, unknowns: list.map((u) => ({ raw: u.raw, rawName: u.rawName })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
+        const json = await res.json();
+        if (json.success) {
+          const sugg = (json.data.suggestions ?? []) as { raw: string; code: string }[];
+          if (sugg.length) { setPicks((p) => { const n = { ...p }; sugg.forEach((s) => { n[`${prefix}:${s.raw}`] = s.code; }); return n; }); filled += sugg.length; }
+        } else if (json.error) { setError(json.error); }
+      }
+      setNotice(filled ? `AI pre-filled ${filled} suggestion(s) — review the dropdowns, fix any wrong ones, then Save.` : "AI found no confident matches — map them by hand.");
+    } catch (e) { setError(e instanceof Error ? e.message : "AI suggest failed."); }
     finally { setBusy(null); }
   }
 
@@ -151,7 +195,7 @@ export function NormalizerWorkspace({ distributors, references }: { distributors
   }
 
   const s = preview?.summary;
-  const distinctCount = (preview?.unknownProducts.length ?? 0) + (preview?.unknownTerritories.length ?? 0);
+  const distinctCount = (preview?.unknownProducts.length ?? 0) + (preview?.unknownTerritories.length ?? 0) + (preview?.unknownCustomers.length ?? 0);
   const productOptions = [{ label: "🚫 Ignore — we don't sell this", value: "IGNORE" }, ...references.products.map((p) => ({ label: `${p.name} (${p.code})`, value: p.code }))];
   const brickOptions = references.bricks.map((b) => ({ label: `${b.id} — ${b.name}`, value: b.id }));
   const selectClass = "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
@@ -280,6 +324,11 @@ export function NormalizerWorkspace({ distributors, references }: { distributors
                         {busy === "learn" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload filled list
                       </button>
                       <input accept=".xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void learnFromExcel(f); }} ref={mapFileRef} type="file" />
+                      {aiEnabled ? (
+                        <button className="inline-flex h-9 items-center gap-2 border border-[#7C3AED] bg-[#7C3AED] px-3 text-xs font-bold text-white transition hover:bg-[#6D28D9] disabled:opacity-50" disabled={busy !== null} onClick={() => void aiSuggestAll()} title="Let AI pre-fill the dropdowns" type="button">
+                          {busy === "ai" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} AI suggest
+                        </button>
+                      ) : null}
                       <button className="inline-flex h-9 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-3 text-xs font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50" disabled={busy !== null} onClick={() => void saveMappings()} type="button">
                         {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save mappings
                       </button>
@@ -294,8 +343,8 @@ export function NormalizerWorkspace({ distributors, references }: { distributors
                         <tbody>
                           {preview.unknownProducts.map((u) => (
                             <tr className="border-t border-slate-100" key={u.raw}>
-                              <td className="px-3 py-1.5 font-semibold text-slate-900">{u.raw}</td>
-                              <td className="px-3 py-1.5 text-slate-600">{u.rawName}</td>
+                              <td className="px-3 py-1.5 font-semibold text-slate-900"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
+                              <td className="px-3 py-1.5 text-slate-600"><span className="inline-flex items-center">{u.rawName}<CopyBtn text={u.rawName} /></span></td>
                               <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{u.count}</td>
                               <td className="px-3 py-1.5">
                                 <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`p:${u.raw}`]: v }))} options={productOptions} placeholder="Type product or code…" value={picks[`p:${u.raw}`] ?? ""} />
@@ -315,10 +364,31 @@ export function NormalizerWorkspace({ distributors, references }: { distributors
                         <tbody>
                           {preview.unknownTerritories.map((u) => (
                             <tr className="border-t border-slate-100" key={u.raw}>
-                              <td className="px-3 py-1.5 text-slate-700">{u.raw}</td>
+                              <td className="px-3 py-1.5 text-slate-700"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
                               <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{u.count}</td>
                               <td className="px-3 py-1.5">
                                 <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`t:${u.raw}`]: v }))} options={brickOptions} placeholder="Type brick id or name…" value={picks[`t:${u.raw}`] ?? ""} />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+
+                  {preview.unknownCustomers.length > 0 ? (
+                    <div className="overflow-x-auto border border-[#E2E8F0]">
+                      <p className="bg-[#0B0B0B] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#FDBA74]">Unknown customers / pharmacies ({preview.unknownCustomers.length}) — map by pharmacy when the area text is unreliable</p>
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-100"><tr>{["Customer code", "Pharmacy name", "Rows", "Phoenix brick"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {preview.unknownCustomers.map((u) => (
+                            <tr className="border-t border-slate-100" key={u.raw}>
+                              <td className="px-3 py-1.5 font-semibold text-slate-900"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
+                              <td className="px-3 py-1.5 text-slate-600"><span className="inline-flex items-center">{u.rawName}<CopyBtn text={u.rawName} /></span></td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{u.count}</td>
+                              <td className="px-3 py-1.5">
+                                <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`c:${u.raw}`]: v }))} options={brickOptions} placeholder="Type brick id or name…" value={picks[`c:${u.raw}`] ?? ""} />
                               </td>
                             </tr>
                           ))}

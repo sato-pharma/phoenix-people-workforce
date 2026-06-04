@@ -51,6 +51,7 @@ export async function learnFromCleanedFile(distributorCode: string, file: File):
   const brickIdCol = colOf(PHOENIX_BRICK_COLUMNS);
   const rawProductCols = profile.productColumns.map((n) => colOf([n])).filter(Boolean); // code + name both → product
   const primaryTerritory = profile.territoryColumns?.[0] ? colOf([profile.territoryColumns[0]]) : 0; // most specific only
+  const customerCol = profile.customerCodeColumns?.[0] ? colOf([profile.customerCodeColumns[0]]) : 0;
 
   const seen = new Set<string>();
   const mappings: MappingInput[] = [];
@@ -65,9 +66,15 @@ export async function learnFromCleanedFile(distributorCode: string, file: File):
       for (const ci of rawProductCols) { const raw = text(row, ci); const key = `p:${raw.toLowerCase()}`; if (raw && !seen.has(key)) { seen.add(key); mappings.push({ code: pid, raw, type: "product" }); } }
     }
     const bid = normalizeCodeKey(text(row, brickIdCol));
-    if (bid && brickIds.has(bid) && primaryTerritory) {
-      const raw = text(row, primaryTerritory); const key = `t:${raw.toLowerCase()}`;
-      if (raw && !seen.has(key)) { seen.add(key); mappings.push({ code: bid, raw, type: "territory" }); }
+    if (bid && brickIds.has(bid)) {
+      if (primaryTerritory) {
+        const raw = text(row, primaryTerritory); const key = `t:${raw.toLowerCase()}`;
+        if (raw && !seen.has(key)) { seen.add(key); mappings.push({ code: bid, raw, type: "territory" }); }
+      }
+      if (customerCol) {
+        const raw = text(row, customerCol); const key = `c:${raw.toLowerCase()}`;
+        if (raw && !seen.has(key)) { seen.add(key); mappings.push({ code: bid, distributorCode, raw, type: "customer" }); }
+      }
     }
   }
   const result = await saveMappings(mappings);
@@ -99,6 +106,7 @@ export type NormalizePreview = {
   periods: { period: string; rows: number }[];
   sampleCoded: CodedRow[];
   summary: NormalizeResult["summary"];
+  unknownCustomers: DistinctUnknown[];
   unknownProducts: DistinctUnknown[];
   unknownTerritories: DistinctUnknown[];
 };
@@ -123,6 +131,7 @@ export function summarizePreview(distributorCode: string, distributorName: strin
     periods: [...periodCounts.entries()].map(([period, rows]) => ({ period, rows })).sort((a, b) => a.period.localeCompare(b.period)),
     sampleCoded: result.coded.slice(0, 50),
     summary: result.summary,
+    unknownCustomers: distinct.customers.slice(0, 500),
     unknownProducts: distinct.products.slice(0, 500),
     unknownTerritories: distinct.territories.slice(0, 500),
   };
