@@ -114,7 +114,10 @@ export type NormalizePreview = {
 export async function normalizeUploadedFile(distributorCode: string, file: File): Promise<{ result: NormalizeResult; period: string | null; distributorName: string; products: ProductRef[] }> {
   const profile = rawProfileForDistributor(distributorCode);
   if (!profile) throw new Error(`No normalizer profile for distributor ${distributorCode}.`);
-  const [refs, maps, buffer] = await Promise.all([loadSalesReferenceData(), loadCrosswalks(), file.arrayBuffer()]);
+  // Load the masters once and hand them to loadCrosswalks (which would otherwise reload them) — halves
+  // the reference round-trips per analyze.
+  const [refs, buffer] = await Promise.all([loadSalesReferenceData(), file.arrayBuffer()]);
+  const maps = await loadCrosswalks(refs);
   const result = await normalizeRawWorkbook(buffer, profile, maps);
   const products: ProductRef[] = refs.products.map((p) => ({ code: p.productCode, family: p.family, name: p.productName }));
   return { result, period: dominantPeriod(result.coded), distributorName: profile.distributorName, products };
