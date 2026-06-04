@@ -243,6 +243,7 @@ type ParsedDistributorRow = {
   clientName: string | null;
   discount: number;
   distributorCode: string;
+  isDirect: boolean;
   invoicePeriod: string | null;
   officialLine: string;
   productCode: string;
@@ -283,10 +284,24 @@ type DistributorSalesTemplate = {
   // row value is reduced by the discount (value = Qty x factory_price x (1 - discount)).
   discountField?: string;
   distributorCodes: string[];
-  fields: Record<DistributorSalesTemplateField, string>;
+  // areaCode / brickId are optional so a region-only channel (Direct) can omit them; the
+  // other coded fields are always required.
+  fields: Partial<Record<DistributorSalesTemplateField, string>> & {
+    distributorCode: string;
+    invoiceDate: string;
+    productCode: string;
+    qty: string;
+    regionCode: string;
+  };
   key: string;
   name: string;
   optionalFields?: Partial<Record<OptionalTemplateField, string[]>>;
+  // Region-only channel (Direct): no area/brick, and the row value is taken from the sheet's
+  // own value column (valueField) instead of being recomputed from Qty x factory_price.
+  regionOnly?: boolean;
+  // When set, the row value is read from this column verbatim (the Direct channel). The
+  // factory-price recompute is skipped and the row is flagged is_direct.
+  valueField?: string;
 };
 
 const OVERSEAS_PS_TEMPLATE: DistributorSalesTemplate = {
@@ -380,11 +395,37 @@ const EPDA_SATO_EPS_TEMPLATE: DistributorSalesTemplate = {
   },
 };
 
+// Direct (company) channel — orders shipped straight from the company, not through a
+// distributor. Region-only (no area/brick), and the SALE VALUE is taken from the sheet's own
+// "Value" column (real per-deal pricing; e.g. Satoslim has Price 0 but a real Value), never
+// recomputed from factory price. Quantity is "QTY" (Bonus excluded). Region "National" is a
+// special bucket for orders tied to no region.
+const DIRECT_TEMPLATE: DistributorSalesTemplate = {
+  bonusField: "Bonus",
+  customerFields: { address: [], code: [], name: ["Pharmacy Name"] },
+  distributorCodes: ["Direct"],
+  fields: {
+    distributorCode: "Distrub ID",
+    invoiceDate: "Date",
+    productCode: "Product ID",
+    qty: "QTY",
+    regionCode: "Region ID",
+  },
+  key: "direct_orders",
+  name: "Direct (Company) channel template",
+  optionalFields: {
+    productName: ["Product"],
+  },
+  regionOnly: true,
+  valueField: "Value",
+};
+
 const DISTRIBUTOR_SALES_TEMPLATES = [
   OVERSEAS_PS_TEMPLATE,
   IBN_SINA_IS_TEMPLATE,
   IBN_SINA_SATO_ISS_TEMPLATE,
   EPDA_SATO_EPS_TEMPLATE,
+  DIRECT_TEMPLATE,
 ] as const;
 
 function normalizeKey(value: unknown) {
@@ -430,7 +471,7 @@ function requiredHeadersForTemplate(template: DistributorSalesTemplate) {
 function templateForDistributor(distributorCode: string) {
   const code = normalizeCode(distributorCode);
   const matchingTemplates = DISTRIBUTOR_SALES_TEMPLATES.filter((template) =>
-    template.distributorCodes.includes(code),
+    template.distributorCodes.map(normalizeCode).includes(code),
   );
   return matchingTemplates.length > 0 ? matchingTemplates : [...DISTRIBUTOR_SALES_TEMPLATES];
 }
@@ -914,6 +955,12 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const discountRate = isBonusRow ? 1 : discountFraction(rawDiscount);
     const period = invoicePeriod(rawInvoiceDate);
 
+    // Direct (company) channel: the row value is read STRAIGHT from the sheet's value column
+    // (real per-deal pricing), never recomputed from factory price. The row is flagged direct
+    // so the closing/executive RPCs use the stored value and skip the factory recompute.
+    const isDirect = Boolean(headerMap.template.valueField);
+    const rawSheetValue = valueAtHeader(row, headerMap, headerMap.template.valueField);
+
     const productReference = !isNotAvailable(rawProductCode) ? maps.productByCode.get(productCode) : undefined;
     const regionReference = !isNotAvailable(rawRegionCode) ? maps.regionByCode.get(regionCode) : undefined;
     const areaReference = !isNotAvailable(rawAreaCode) ? maps.areaByCode.get(areaCode) : undefined;
@@ -922,10 +969,13 @@ async function parseDistributorSalesWorkbookBuffer(input: {
 
     // Value is computed from Qty only (bonus/free units neglected) times the
     // product factory price, reduced by the per-row discount. The distributor
-    // sheet's own Value/Net column is intentionally ignored.
-    const value = Number.isFinite(qty)
-      ? qty * (productReference?.factoryPrice ?? 0) * (1 - discountRate)
-      : Number.NaN;
+    // sheet's own Value/Net column is intentionally ignored — EXCEPT for the Direct
+    // channel, which is the only sheet whose own Value column is the source of truth.
+    const value = isDirect
+      ? parseNumber(rawSheetValue, { emptyAsZero: true })
+      : Number.isFinite(qty)
+        ? qty * (productReference?.factoryPrice ?? 0) * (1 - discountRate)
+        : Number.NaN;
 
     const regionName = normalizeDisplay(rawRegionName)
       || regionReference?.regionName
@@ -952,15 +1002,17 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       || productCode
       || "Unknown";
 
-    const naFields = [
-      [headerMap.template.fields.areaCode, rawAreaCode],
-      [headerMap.template.fields.brickId, rawBrickId],
+    // Region-only channels (Direct) carry no Area/Brick, so those are neither checked for
+    // #N/A nor required. Region, product, distributor, date and qty are always required.
+    const naFields: Array<[string, unknown]> = [
       [headerMap.template.fields.regionCode, rawRegionCode],
       [headerMap.template.fields.productCode, rawProductCode],
       [headerMap.template.fields.distributorCode, rawDistributorCode],
       [headerMap.template.fields.invoiceDate, rawInvoiceDate],
       [headerMap.template.fields.qty, rawQty],
-    ] as const;
+    ];
+    if (headerMap.template.fields.areaCode) naFields.push([headerMap.template.fields.areaCode, rawAreaCode]);
+    if (headerMap.template.fields.brickId) naFields.push([headerMap.template.fields.brickId, rawBrickId]);
 
     naFields.forEach(([field, raw]) => {
       if (isNotAvailable(raw)) {
@@ -974,8 +1026,10 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       }
     });
 
-    if (!areaCode) addIssue(rowIssues, rowNumber, headerMap.template.fields.areaCode, rawAreaCode, "Area code is required.");
-    if (!brickId) addIssue(rowIssues, rowNumber, headerMap.template.fields.brickId, rawBrickId, "Brick ID is required.");
+    if (!headerMap.template.regionOnly) {
+      if (!areaCode) addIssue(rowIssues, rowNumber, headerMap.template.fields.areaCode ?? "Area ID", rawAreaCode, "Area code is required.");
+      if (!brickId) addIssue(rowIssues, rowNumber, headerMap.template.fields.brickId ?? "Brick ID", rawBrickId, "Brick ID is required.");
+    }
     if (!regionCode) addIssue(rowIssues, rowNumber, headerMap.template.fields.regionCode, rawRegionCode, "Region code is required.");
     if (!productCode) addIssue(rowIssues, rowNumber, headerMap.template.fields.productCode, rawProductCode, "Product code is required.");
     if (!rowDistributorCode) addIssue(rowIssues, rowNumber, headerMap.template.fields.distributorCode, rawDistributorCode, "Distributor code is required.");
@@ -1014,7 +1068,7 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       addIssue(
         rowIssues,
         rowNumber,
-        headerMap.template.fields.areaCode,
+        headerMap.template.fields.areaCode ?? "Area ID",
         rawAreaCode,
         `Area Code ${areaCode} is not in the area source-of-truth table. Uploaded code is kept for allocation.`,
         "warning",
@@ -1024,7 +1078,7 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       addIssue(
         rowIssues,
         rowNumber,
-        headerMap.template.fields.brickId,
+        headerMap.template.fields.brickId ?? "Brick ID",
         rawBrickId,
         `Brick ID ${brickId} is not in the brick source-of-truth table. Uploaded code is kept for allocation.`,
         "warning",
@@ -1058,7 +1112,7 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       addIssue(
         rowIssues,
         rowNumber,
-        headerMap.template.fields.areaCode,
+        headerMap.template.fields.areaCode ?? "Area ID",
         rawAreaCode,
         `Area Code ${areaCode} belongs to Region Code ${areaReference.regionCode} in the source table, but the upload says ${regionCode}. Uploaded hierarchy is kept.`,
         "warning",
@@ -1068,7 +1122,7 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       addIssue(
         rowIssues,
         rowNumber,
-        headerMap.template.fields.brickId,
+        headerMap.template.fields.brickId ?? "Brick ID",
         rawBrickId,
         `Brick ID ${brickId} belongs to Area Code ${brickReference.areaCode} in the source table, but the upload says ${areaCode}. Uploaded hierarchy is kept.`,
         "warning",
@@ -1089,6 +1143,7 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       clientName,
       discount: discountRate,
       distributorCode: rowDistributorCode,
+      isDirect,
       invoicePeriod: period,
       officialLine: productReference?.line ?? "Unknown",
       productCode: productCode || normalizeDisplay(rawProductCode),
@@ -1833,6 +1888,7 @@ async function insertSourceOfSalesRows(
     bonus_qty: Number.isFinite(row.bonusQty) ? row.bonusQty : 0,
     discount: Number.isFinite(row.discount) ? row.discount : 0,
     value: Number.isFinite(row.value) ? row.value : 0,
+    is_direct: row.isDirect ?? false,
     validation_state: row.validationState,
     validation_issues: row.validationIssues,
     raw_row: row.rawRow,
@@ -1979,6 +2035,8 @@ export type MonthlyClosingAreaRow = {
   areaCode: string;
   areaName: string;
   cells: MonthlyClosingCell[];
+  // True for the synthetic "Direct" row injected inside a region (company direct sales).
+  isDirect?: boolean;
   kind: "area";
   regionCode: string;
   regionName: string;
@@ -2010,6 +2068,10 @@ export type MonthlyClosingMatrix = {
   availableLines: string[];
   availablePeriods: string[];
   columns: MonthlyClosingColumn[];
+  // Direct (company) "National" bucket — orders tied to no region, shown as its own row after
+  // the national grand total. Null when there is no national-direct data.
+  companyTotal?: MonthlyClosingGrandTotalRow | null;
+  directNational?: MonthlyClosingSubtotalRow | null;
   grandTotal: MonthlyClosingGrandTotalRow;
   line: string | null;
   period: string | null;
@@ -2019,6 +2081,14 @@ export type MonthlyClosingMatrix = {
 export type MonthlyClosingAggregateCell = {
   areaCode: string;
   productCode: string;
+  salesUnits: number;
+  salesValue: number;
+};
+
+// One direct-sales aggregate cell (region × product). Region may be a real code or "NATIONAL".
+export type MonthlyClosingDirectCell = {
+  productCode: string;
+  regionCode: string;
   salesUnits: number;
   salesValue: number;
 };
@@ -2169,6 +2239,118 @@ export function buildMonthlyClosingMatrix(input: {
 }
 
 /**
+ * Pure injector. Adds the Direct (company) channel on top of the distributor matrix:
+ *  - direct sales in a REAL region become a synthetic "Direct" area row inside that region, so
+ *    the region subtotal (and hence the grand total) = its areas + Direct;
+ *  - direct sales tagged "National" become a separate "Direct – National" row, and the
+ *    companyTotal = grand total + Direct National.
+ * Direct value comes straight from the sheet (already aggregated by the direct RPC); no
+ * factory-price recompute. Returns a new matrix; when there are no direct cells the matrix is
+ * unchanged (directNational / companyTotal = null).
+ */
+export function injectDirectIntoMatrix(
+  matrix: MonthlyClosingMatrix,
+  directCells: MonthlyClosingDirectCell[],
+): MonthlyClosingMatrix {
+  if (directCells.length === 0) {
+    return { ...matrix, companyTotal: null, directNational: null };
+  }
+
+  const NATIONAL = "NATIONAL";
+  const columns = matrix.columns;
+  const colIndex = new Map(columns.map((column, index) => [column.productCode, index]));
+
+  // Aggregate direct cells per region (uppercased) into per-column cells.
+  const byRegion = new Map<string, MonthlyClosingCell[]>();
+  const cellsFor = (region: string) => {
+    let arr = byRegion.get(region);
+    if (!arr) { arr = columns.map(() => emptyClosingCell()); byRegion.set(region, arr); }
+    return arr;
+  };
+  directCells.forEach((cell) => {
+    const region = normalizeCode(cell.regionCode);
+    const index = colIndex.get(normalizeCode(cell.productCode));
+    if (index === undefined) return; // product not part of this line's columns
+    const target = cellsFor(region)[index];
+    target.salesUnits += cell.salesUnits;
+    target.salesValue += cell.salesValue;
+  });
+
+  const regionNameByCode = new Map(matrix.regions.map((region) => [region.regionCode, region.regionName]));
+  const makeDirectArea = (regionCode: string, cells: MonthlyClosingCell[]): MonthlyClosingAreaRow => ({
+    areaCode: "DIRECT",
+    areaName: "Direct",
+    cells: cells.map(roundedClosingCell),
+    isDirect: true,
+    kind: "area",
+    regionCode,
+    regionName: regionNameByCode.get(regionCode) ?? regionCode,
+    rowTotal: sumClosingRowTotal(cells),
+  });
+  const subtotalOf = (regionCode: string, regionName: string, areas: MonthlyClosingAreaRow[]): MonthlyClosingSubtotalRow => {
+    const cells = columns.map((_column, index) => {
+      const cell = emptyClosingCell();
+      areas.forEach((area) => addClosingSales(cell, area.cells[index]));
+      return roundedClosingCell(cell);
+    });
+    return { cells, kind: "regionSubtotal", regionCode, regionName, rowTotal: sumClosingRowTotal(cells) };
+  };
+
+  // Append the Direct area to each existing region that has direct sales.
+  const present = new Set(matrix.regions.map((region) => region.regionCode));
+  const regions: MonthlyClosingRegionGroup[] = matrix.regions.map((region) => {
+    const direct = byRegion.get(region.regionCode);
+    if (!direct) return region;
+    const areas = [...region.areas, makeDirectArea(region.regionCode, direct)];
+    return { ...region, areas, subtotal: subtotalOf(region.regionCode, region.regionName, areas) };
+  });
+
+  // Real direct regions absent from the distributor matrix (no distributor areas there).
+  byRegion.forEach((cells, regionCode) => {
+    if (regionCode === NATIONAL || present.has(regionCode)) return;
+    const regionName = regionNameByCode.get(regionCode) ?? regionCode;
+    const areas = [makeDirectArea(regionCode, cells)];
+    regions.push({ areas, regionCode, regionName, subtotal: subtotalOf(regionCode, regionName, areas) });
+  });
+
+  // Grand total = sum of every region's areas (now including the regional Direct rows).
+  const grandCells = columns.map((_column, index) => {
+    const cell = emptyClosingCell();
+    regions.forEach((region) => region.areas.forEach((area) => addClosingSales(cell, area.cells[index])));
+    return roundedClosingCell(cell);
+  });
+  const grandTotal: MonthlyClosingGrandTotalRow = {
+    cells: grandCells,
+    kind: "grandTotal",
+    rowTotal: sumClosingRowTotal(grandCells),
+  };
+
+  // Direct – National row (no region) + the final company total.
+  const nationalCells = byRegion.get(NATIONAL);
+  let directNational: MonthlyClosingSubtotalRow | null = null;
+  let companyTotal: MonthlyClosingGrandTotalRow | null = null;
+  if (nationalCells) {
+    const rounded = nationalCells.map(roundedClosingCell);
+    directNational = {
+      cells: rounded,
+      kind: "regionSubtotal",
+      regionCode: "NATIONAL",
+      regionName: "Direct – National",
+      rowTotal: sumClosingRowTotal(nationalCells),
+    };
+    const companyCells = columns.map((_column, index) => {
+      const cell = emptyClosingCell();
+      addClosingSales(cell, grandCells[index]);
+      addClosingSales(cell, rounded[index]);
+      return roundedClosingCell(cell);
+    });
+    companyTotal = { cells: companyCells, kind: "grandTotal", rowTotal: sumClosingRowTotal(companyCells) };
+  }
+
+  return { ...matrix, companyTotal, directNational, grandTotal, regions };
+}
+
+/**
  * Pure client-side filter. Keeps the selected regions/areas/products (+ free-text area
  * search) and RE-DERIVES region subtotals and the national grand total from the surviving
  * AREA rows only — so the filtered totals stay exact and each area is still counted once.
@@ -2240,10 +2422,31 @@ export function filterMonthlyClosingMatrix(
     return roundedClosingCell(cell);
   });
 
+  // Carry the Direct – National row through (project to the kept columns) and recompute the
+  // company total = filtered grand total + Direct National.
+  const directNational = matrix.directNational
+    ? (() => {
+      const cells = projectCells(matrix.directNational!.cells);
+      return { ...matrix.directNational!, cells, rowTotal: sumClosingRowTotal(cells) };
+    })()
+    : null;
+  let companyTotal: MonthlyClosingGrandTotalRow | null = null;
+  if (directNational) {
+    const companyCells = columns.map((_column, columnIndex) => {
+      const cell = emptyClosingCell();
+      addClosingSales(cell, grandCells[columnIndex]);
+      addClosingSales(cell, directNational.cells[columnIndex]);
+      return roundedClosingCell(cell);
+    });
+    companyTotal = { cells: companyCells, kind: "grandTotal", rowTotal: sumClosingRowTotal(companyCells) };
+  }
+
   return {
     availableLines: matrix.availableLines,
     availablePeriods: matrix.availablePeriods,
     columns,
+    companyTotal,
+    directNational,
     grandTotal: {
       cells: grandCells,
       kind: "grandTotal",
@@ -2388,10 +2591,11 @@ export async function loadMonthlyClosing(input?: {
   }
 
   const supabase = getSupabaseAdmin();
-  const [areas, products, aggregateData] = await Promise.all([
+  const [areas, products, aggregateData, directData] = await Promise.all([
     listActiveSalesAreas(),
     listLineProductsForClosing(selectedLine),
     rpcAll(supabase, "phx_monthly_closing_matrix", { p_line: selectedLine, p_period: selectedPeriod }, ["area_code", "product_code"]),
+    rpcAll(supabase, "phx_monthly_closing_direct", { p_line: selectedLine, p_period: selectedPeriod }, ["region_code", "product_code"]),
   ]);
 
   const cells: MonthlyClosingAggregateCell[] = (aggregateData as Record<string, unknown>[]).map((row) => ({
@@ -2401,7 +2605,14 @@ export async function loadMonthlyClosing(input?: {
     salesValue: Number(row.sales_value ?? 0),
   }));
 
-  return buildMonthlyClosingMatrix({
+  const directCells: MonthlyClosingDirectCell[] = (directData as Record<string, unknown>[]).map((row) => ({
+    productCode: String(row.product_code ?? ""),
+    regionCode: String(row.region_code ?? ""),
+    salesUnits: Number(row.sales_units ?? 0),
+    salesValue: Number(row.sales_value ?? 0),
+  }));
+
+  const matrix = buildMonthlyClosingMatrix({
     areas,
     availableLines,
     availablePeriods,
@@ -2410,4 +2621,6 @@ export async function loadMonthlyClosing(input?: {
     period: selectedPeriod,
     products,
   });
+
+  return injectDirectIntoMatrix(matrix, directCells);
 }

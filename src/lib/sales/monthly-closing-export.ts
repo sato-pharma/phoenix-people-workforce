@@ -14,6 +14,8 @@ const BLACK = "FF000000";
 const ORANGE = "FFF97316";
 const AMBER = "FFFDE7C7";
 const ACH_ORANGE = "FFF2B05A"; // darker orange tint for the Achievement % column
+const DIRECT_FILL = "FFB6CEF8"; // blue band for the Direct (company) channel rows
+const DIRECT_TEXT = "FF1E3A8A";
 const ORANGE_LINE = "FFF8B56B";
 const WHITE = "FFFFFFFF";
 const SLATE = "FF334155";
@@ -297,23 +299,25 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
 
   let rowIndex = 5;
   let zebra = false;
+  // Set while writing a Direct (company) row so its whole band reads blue + bold.
+  let rowAccent: string | null = null;
   const num = (cell: ExcelJS.Cell, value: CellValue, fmt: string, tone: Tone, ach = false) => {
-    const textColor = tone === "grand" ? WHITE : SLATE;
-    cell.font = { bold: tone !== "area", color: { argb: textColor }, name: "Calibri", size: 10.5 };
+    const textColor = rowAccent ? DIRECT_TEXT : tone === "grand" ? WHITE : SLATE;
+    cell.font = { bold: tone !== "area" || Boolean(rowAccent), color: { argb: textColor }, name: "Calibri", size: 10.5 };
     cell.alignment = { horizontal: "right", vertical: "middle" };
     cell.border = gridBorder();
     // Achievement % columns get a darker-orange tint (kept on the dark national row).
-    const fill = ach && tone !== "grand" ? ACH_ORANGE : fillFor(tone, zebra);
+    const fill = rowAccent ?? (ach && tone !== "grand" ? ACH_ORANGE : fillFor(tone, zebra));
     if (fill) cell.fill = { fgColor: { argb: fill }, pattern: "solid", type: "pattern" };
     setCell(cell, value, fmt);
   };
   const label = (cell: ExcelJS.Cell, text: string, tone: Tone) => {
-    const textColor = tone === "grand" ? WHITE : tone === "subtotal" ? BLACK : SLATE;
+    const textColor = rowAccent ? DIRECT_TEXT : tone === "grand" ? WHITE : tone === "subtotal" ? BLACK : SLATE;
     cell.value = text;
-    cell.font = { bold: tone !== "area", color: { argb: textColor }, name: "Calibri", size: 10.5 };
+    cell.font = { bold: tone !== "area" || Boolean(rowAccent), color: { argb: textColor }, name: "Calibri", size: 10.5 };
     cell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
     cell.border = gridBorder();
-    const fill = fillFor(tone, zebra);
+    const fill = rowAccent ?? fillFor(tone, zebra);
     if (fill) cell.fill = { fgColor: { argb: fill }, pattern: "solid", type: "pattern" };
   };
 
@@ -324,35 +328,50 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
     return base; // grand
   };
 
-  const writeRow = (level: Tone, key: string, name: string, cells: MonthlyClosingCell[], rowTotal: MonthlyClosingCell, tone: Tone) => {
+  // `isStatic` rows (Direct channel) are written as plain cached values, not Data-sheet
+  // formulas, because Direct value is taken straight from the sheet (it has no Data block).
+  const writeRow = (level: Tone, key: string, name: string, cells: MonthlyClosingCell[], rowTotal: MonthlyClosingCell, tone: Tone, isStatic = false, accent: string | null = null) => {
+    rowAccent = accent;
     const row = sheet.getRow(rowIndex);
     label(row.getCell(1), key, tone);
     label(row.getCell(2), name, tone);
     products.forEach((product, index) => {
       const start = productStart(index);
       const cell = cells[index];
-      num(row.getCell(start), F(sumifs(ref.dpUnits, valueCrit(level, key, product.productCode)), cell?.salesUnits ?? 0), UNITS_FMT, tone);
-      num(row.getCell(start + 1), F(sumifs(ref.dpValue, valueCrit(level, key, product.productCode)), cell?.salesValue ?? 0), VALUE_FMT, tone);
+      const units = isStatic ? (cell?.salesUnits ?? 0) : F(sumifs(ref.dpUnits, valueCrit(level, key, product.productCode)), cell?.salesUnits ?? 0);
+      const value = isStatic ? (cell?.salesValue ?? 0) : F(sumifs(ref.dpValue, valueCrit(level, key, product.productCode)), cell?.salesValue ?? 0);
+      num(row.getCell(start), units, UNITS_FMT, tone);
+      num(row.getCell(start + 1), value, VALUE_FMT, tone);
       num(row.getCell(start + 2), null, UNITS_FMT, tone);
       num(row.getCell(start + 3), null, VALUE_FMT, tone);
       num(row.getCell(start + 4), null, PCT_FMT, tone, true);
     });
-    const rowTotalFormula = level === "grand" ? sumAll(ref.dpValue) : sumifs(ref.dpValue, valueCrit(level, key));
-    num(row.getCell(grandStart), F(rowTotalFormula, rowTotal.salesValue), VALUE_FMT, tone);
+    const totalValue = isStatic
+      ? rowTotal.salesValue
+      : F(level === "grand" ? sumAll(ref.dpValue) : sumifs(ref.dpValue, valueCrit(level, key)), rowTotal.salesValue);
+    num(row.getCell(grandStart), totalValue, VALUE_FMT, tone);
     num(row.getCell(grandStart + 1), null, VALUE_FMT, tone);
     num(row.getCell(grandStart + 2), null, PCT_FMT, tone, true);
+    rowAccent = null;
     rowIndex += 1;
   };
 
   matrix.regions.forEach((region) => {
     region.areas.forEach((area) => {
-      writeRow("area", area.areaCode, area.areaName, area.cells, area.rowTotal, "area");
+      const isDirect = Boolean(area.isDirect);
+      writeRow("area", isDirect ? "◆ Direct" : area.areaCode, isDirect ? "Direct orders (company)" : area.areaName, area.cells, area.rowTotal, "area", isDirect, isDirect ? DIRECT_FILL : null);
       zebra = !zebra;
     });
     writeRow("subtotal", region.regionCode, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal, "subtotal");
     zebra = false;
   });
   writeRow("grand", "", "National Grand Total", matrix.grandTotal.cells, matrix.grandTotal.rowTotal, "grand");
+  if (matrix.directNational) {
+    writeRow("subtotal", "◆ DIRECT", "Direct – National", matrix.directNational.cells, matrix.directNational.rowTotal, "subtotal", true, DIRECT_FILL);
+  }
+  if (matrix.companyTotal) {
+    writeRow("grand", "", "Grand Total (incl. Direct)", matrix.companyTotal.cells, matrix.companyTotal.rowTotal, "grand", true);
+  }
 
   sheet.getColumn(1).width = 12;
   sheet.getColumn(2).width = 26;
