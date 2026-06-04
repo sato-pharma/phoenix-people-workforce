@@ -43,12 +43,21 @@ export const referenceOnlyFileStorage: RecruitmentFileStorageAdapter = {
   },
 };
 
-// Imported for its value; drive-storage only imports our types (erased), so there
-// is no runtime import cycle.
+// Imported for their values; the adapters only import our types (erased), so
+// there is no runtime import cycle.
 import { googleDriveFileStorage, isDriveConfigured } from "@/lib/recruitment/drive-storage";
+import { isSupabaseStorageConfigured, supabaseFileStorage } from "@/lib/recruitment/supabase-storage";
 
-export { isDriveConfigured };
+export { isDriveConfigured, isSupabaseStorageConfigured };
 
+export function isFileUploadEnabled(): boolean {
+  return isSupabaseStorageConfigured() || isDriveConfigured();
+}
+
+// Supabase Storage is the primary backend; Google Drive is a fallback if it is
+// ever configured; otherwise uploads are disabled (CV-as-link only).
 export function getRecruitmentFileStorage(): RecruitmentFileStorageAdapter {
-  return isDriveConfigured() ? googleDriveFileStorage : referenceOnlyFileStorage;
+  if (isSupabaseStorageConfigured()) return supabaseFileStorage;
+  if (isDriveConfigured()) return googleDriveFileStorage;
+  return referenceOnlyFileStorage;
 }
