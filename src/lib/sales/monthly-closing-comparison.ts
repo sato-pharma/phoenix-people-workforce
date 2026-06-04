@@ -413,6 +413,137 @@ export function buildInsights(comparison: Omit<MonthlyClosingComparison, "insigh
   return bullets;
 }
 
+// ── Shared assembly ──────────────────────────────────────────────────────────
+
+export type AssembleComparisonInput = {
+  brickRows: BrickRow[];
+  customerRows: CustomerRow[];
+  distProductRows: DistProductRow[];
+  line: string | null;
+  maps: { areaName: Map<string, string>; areaRegion: Map<string, string>; distributorName: Map<string, string>; regionName: Map<string, string> };
+  masterAreas: { areaCode: string; areaName: string; regionCode: string }[];
+  masterBricks: { areaCode: string; brickId: string; brickName: string; regionCode: string }[];
+  period: string | null;
+};
+
+// Turns the mapped leaf rows + masters into the full comparison. Shared by the Monthly Closing
+// loader (one line) and the Executive Report loader (all lines, line label "All Lines"). Every
+// higher-level number is DERIVED from the leaf rows the RPCs return — never by summing
+// subtotals (no double counting).
+export function assembleComparison(input: AssembleComparisonInput): MonthlyClosingComparison {
+  const { brickRows, customerRows, distProductRows, line, masterAreas, masterBricks, period } = input;
+  const { areaName, areaRegion, distributorName, regionName } = input.maps;
+  const baseMaps: ComparisonNameMaps = { areaName, distributorName, regionName };
+
+  const distributors = distinctDistributors(distProductRows, baseMaps);
+  const distributorCodes = distributors.map((d) => d.code);
+  const byDistributor = rollupByDistributor({ brickRows, customerRows, distProductRows, maps: baseMaps });
+  const nationalValue = byDistributor.reduce((sum, d) => sum + d.value, 0);
+  const nationalUnits = byDistributor.reduce((sum, d) => sum + d.units, 0);
+
+  // Aggregations for grids / rankings (derive from the leaf rows).
+  const productAgg = new Map<string, { units: number; value: number; name: string }>();
+  const regionAgg = new Map<string, { units: number; value: number }>();
+  const areaAgg = new Map<string, { units: number; value: number }>();
+  distProductRows.forEach((row) => {
+    const p = productAgg.get(row.productCode) ?? { name: row.productName, units: 0, value: 0 };
+    p.units += row.units; p.value += row.value; productAgg.set(row.productCode, p);
+    const r = regionAgg.get(row.regionCode) ?? { units: 0, value: 0 };
+    r.units += row.units; r.value += row.value; regionAgg.set(row.regionCode, r);
+    const a = areaAgg.get(row.areaCode) ?? { units: 0, value: 0 };
+    a.units += row.units; a.value += row.value; areaAgg.set(row.areaCode, a);
+  });
+  const brickAgg = new Map<string, { units: number; value: number }>();
+  brickRows.forEach((row) => {
+    const entry = brickAgg.get(row.brickId) ?? { units: 0, value: 0 };
+    entry.units += row.units; entry.value += row.value; brickAgg.set(row.brickId, entry);
+  });
+  const customerAgg = new Map<string, { name: string; units: number; value: number; distributorCode: string }>();
+  customerRows.forEach((row) => {
+    const key = `${row.clientCode} ${row.distributorCode}`;
+    const entry = customerAgg.get(key) ?? { distributorCode: row.distributorCode, name: row.clientName, units: 0, value: 0 };
+    entry.units += row.units; entry.value += row.value; customerAgg.set(key, entry);
+  });
+
+  const productByDistributor = buildValueGrid(
+    distProductRows.map((row) => ({ distributorCode: row.distributorCode, key: row.productCode, label: row.productName, value: row.value })),
+    distributorCodes, baseMaps,
+  );
+  const regionByDistributor = buildValueGrid(
+    distProductRows.map((row) => ({ distributorCode: row.distributorCode, key: row.regionCode, label: nameOf(regionName, row.regionCode), value: row.value })),
+    distributorCodes, baseMaps,
+  );
+  const areaByDistributor = buildValueGrid(
+    distProductRows.map((row) => ({ distributorCode: row.distributorCode, key: row.areaCode, label: nameOf(areaName, row.areaCode), value: row.value })),
+    distributorCodes, baseMaps,
+  );
+
+  const soldAreaCodes = new Set([...areaAgg.entries()].filter(([, v]) => v.value > 0 || v.units > 0).map(([code]) => code));
+  const soldBrickIds = new Set([...brickAgg.entries()].filter(([, v]) => v.value > 0 || v.units > 0).map(([code]) => code));
+
+  // Fact blocks for the workbook's hidden Data sheet (the formulas' source of truth).
+  const brickNameMap = new Map(masterBricks.map((b) => [b.brickId, b.brickName]));
+  const productByDistMap = new Map<string, { distributorCode: string; productCode: string; value: number }>();
+  const areaByDistMap = new Map<string, { areaCode: string; distributorCode: string; value: number }>();
+  distProductRows.forEach((row) => {
+    const pKey = `${row.distributorCode} ${row.productCode}`;
+    const p = productByDistMap.get(pKey) ?? { distributorCode: row.distributorCode, productCode: row.productCode, value: 0 };
+    p.value += row.value; productByDistMap.set(pKey, p);
+    const aKey = `${row.distributorCode} ${row.areaCode}`;
+    const a = areaByDistMap.get(aKey) ?? { areaCode: row.areaCode, distributorCode: row.distributorCode, value: 0 };
+    a.value += row.value; areaByDistMap.set(aKey, a);
+  });
+  const exportData: ClosingExportData = {
+    areaByDist: [...areaByDistMap.values()].map((a) => ({ areaCode: a.areaCode, distributorCode: a.distributorCode, value: round(a.value) })),
+    bricks: brickRows.map((b) => ({ brickId: b.brickId, brickName: nameOf(brickNameMap, b.brickId), distributorCode: b.distributorCode, units: round(b.units), value: round(b.value) })),
+    customers: customerRows.map((cr) => ({ clientCode: cr.clientCode, clientName: cr.clientName, distributorCode: cr.distributorCode, units: round(cr.units), value: round(cr.value) })),
+    distProduct: distProductRows.map((row) => ({
+      areaCode: row.areaCode, areaName: nameOf(areaName, row.areaCode), distributorCode: row.distributorCode, distributorName: nameOf(distributorName, row.distributorCode),
+      productCode: row.productCode, productName: row.productName, regionCode: row.regionCode, regionName: nameOf(regionName, row.regionCode), units: round(row.units), value: round(row.value),
+    })),
+    masterAreas: masterAreas.map((a) => ({ areaCode: a.areaCode, areaName: a.areaName, regionName: nameOf(regionName, a.regionCode) })),
+    masterBricks: masterBricks.map((b) => ({ areaName: nameOf(areaName, b.areaCode), brickId: b.brickId, brickName: b.brickName, regionName: nameOf(regionName, b.regionCode) })),
+    productByDist: [...productByDistMap.values()].map((p) => ({ distributorCode: p.distributorCode, productCode: p.productCode, value: round(p.value) })),
+  };
+
+  const base: Omit<MonthlyClosingComparison, "insights"> = {
+    areaByDistributor,
+    data: exportData,
+    avgPrice: avgRealizedPrice(distProductRows, baseMaps),
+    byDistributor,
+    coverage: coverage(byDistributor, masterAreas.length, masterBricks.length),
+    distributors,
+    line,
+    mix: {
+      distributor: computeMix(byDistributor.map((d) => ({ label: d.distributorName, value: d.value }))),
+      product: computeMix([...productAgg.entries()].map(([, v]) => ({ label: v.name, value: v.value }))),
+      region: computeMix([...regionAgg.entries()].map(([code, v]) => ({ label: nameOf(regionName, code), value: v.value }))),
+    },
+    national: { areaCount: soldAreaCodes.size, customerCount: customerAgg.size, productCount: productAgg.size, units: round(nationalUnits), value: round(nationalValue) },
+    pareto: { customers: pareto([...customerAgg.values()].map((c) => ({ label: c.name, value: c.value })), 10) },
+    period,
+    productByDistributor,
+    rankings: {
+      areas: topN([...areaAgg.entries()].map(([code, v]) => ({ key: code, label: nameOf(areaName, code), sublabel: nameOf(regionName, areaRegion.get(code) ?? ""), units: v.units, value: v.value })), 10),
+      bricks: topN([...brickAgg.entries()].map(([code, v]) => ({ key: code, label: nameOf(brickNameMap, code), sublabel: code, units: v.units, value: v.value })), 10),
+      customers: topN([...customerAgg.values()].map((c) => ({ key: c.name, label: c.name, sublabel: nameOf(distributorName, c.distributorCode), units: c.units, value: c.value })), 10),
+      products: topN([...productAgg.entries()].map(([code, v]) => ({ key: code, label: v.name, sublabel: code, units: v.units, value: v.value })), 10),
+      regions: topN([...regionAgg.entries()].map(([code, v]) => ({ key: code, label: nameOf(regionName, code), units: v.units, value: v.value })), 10),
+    },
+    regionByDistributor,
+    totalAreas: masterAreas.length,
+    totalBricks: masterBricks.length,
+    whiteSpace: {
+      productGaps: productGaps(distProductRows, [...regionName.keys()], baseMaps),
+      singleDistributorAreas: singleDistributorAreas(distProductRows, { ...baseMaps, areaName, areaRegion }),
+      zeroSalesAreas: whiteSpaceAreas(masterAreas, soldAreaCodes, baseMaps),
+      zeroSalesBricks: whiteSpaceBricks(masterBricks, soldBrickIds, { ...baseMaps, areaName }),
+    },
+  };
+
+  return { ...base, insights: buildInsights(base) };
+}
+
 // ── Server orchestrator ──────────────────────────────────────────────────────
 
 function emptyComparison(line: string | null, period: string | null): MonthlyClosingComparison {
@@ -454,8 +585,6 @@ export async function loadMonthlyClosingComparison(line: string | null, period: 
   });
   references.distributors.forEach((d) => { if (d.code) distributorName.set(d.code, d.name || d.code); });
 
-  const baseMaps: ComparisonNameMaps = { areaName, distributorName, regionName };
-
   const masterAreas = (references.areas ?? []).map((a) => ({ areaCode: a.areaCode, areaName: a.areaName || a.areaCode, regionCode: a.regionCode }));
   const masterBricks = ((brickMasterResult.error ? [] : brickMasterResult.data ?? []) as Array<Record<string, unknown>>).map((b) => ({
     areaCode: String(b.area_code ?? ""), brickId: String(b.brick_id ?? ""), brickName: String(b.brick_name ?? "") || String(b.brick_id ?? ""), regionCode: String(b.region_code ?? ""),
@@ -476,111 +605,14 @@ export async function loadMonthlyClosingComparison(line: string | null, period: 
     regionCode: String(row.region_code ?? ""), units: Number(row.units ?? 0), value: Number(row.value ?? 0),
   }));
 
-  const distributors = distinctDistributors(distProductRows, baseMaps);
-  const distributorCodes = distributors.map((d) => d.code);
-  const byDistributor = rollupByDistributor({ brickRows, customerRows, distProductRows, maps: baseMaps });
-  const nationalValue = byDistributor.reduce((sum, d) => sum + d.value, 0);
-  const nationalUnits = byDistributor.reduce((sum, d) => sum + d.units, 0);
-
-  // Aggregations for grids / rankings (derive from the leaf rows).
-  const productAgg = new Map<string, { units: number; value: number; name: string }>();
-  const regionAgg = new Map<string, { units: number; value: number }>();
-  const areaAgg = new Map<string, { units: number; value: number }>();
-  distProductRows.forEach((row) => {
-    const p = productAgg.get(row.productCode) ?? { name: row.productName, units: 0, value: 0 };
-    p.units += row.units; p.value += row.value; productAgg.set(row.productCode, p);
-    const r = regionAgg.get(row.regionCode) ?? { units: 0, value: 0 };
-    r.units += row.units; r.value += row.value; regionAgg.set(row.regionCode, r);
-    const a = areaAgg.get(row.areaCode) ?? { units: 0, value: 0 };
-    a.units += row.units; a.value += row.value; areaAgg.set(row.areaCode, a);
-  });
-  const brickAgg = new Map<string, { units: number; value: number }>();
-  brickRows.forEach((row) => {
-    const entry = brickAgg.get(row.brickId) ?? { units: 0, value: 0 };
-    entry.units += row.units; entry.value += row.value; brickAgg.set(row.brickId, entry);
-  });
-  const customerAgg = new Map<string, { name: string; units: number; value: number; distributorCode: string }>();
-  customerRows.forEach((row) => {
-    const key = `${row.clientCode} ${row.distributorCode}`;
-    const entry = customerAgg.get(key) ?? { distributorCode: row.distributorCode, name: row.clientName, units: 0, value: 0 };
-    entry.units += row.units; entry.value += row.value; customerAgg.set(key, entry);
-  });
-
-  const productByDistributor = buildValueGrid(
-    distProductRows.map((row) => ({ distributorCode: row.distributorCode, key: row.productCode, label: row.productName, value: row.value })),
-    distributorCodes, baseMaps,
-  );
-  const regionByDistributor = buildValueGrid(
-    distProductRows.map((row) => ({ distributorCode: row.distributorCode, key: row.regionCode, label: nameOf(regionName, row.regionCode), value: row.value })),
-    distributorCodes, baseMaps,
-  );
-  const areaByDistributor = buildValueGrid(
-    distProductRows.map((row) => ({ distributorCode: row.distributorCode, key: row.areaCode, label: nameOf(areaName, row.areaCode), value: row.value })),
-    distributorCodes, baseMaps,
-  );
-
-  const soldAreaCodes = new Set([...areaAgg.entries()].filter(([, v]) => v.value > 0 || v.units > 0).map(([code]) => code));
-  const soldBrickIds = new Set([...brickAgg.entries()].filter(([, v]) => v.value > 0 || v.units > 0).map(([code]) => code));
-
-  // Fact blocks for the workbook's hidden Data sheet (the formulas' source of truth).
-  const brickNameMap = new Map(masterBricks.map((b) => [b.brickId, b.brickName]));
-  const productByDistMap = new Map<string, { distributorCode: string; productCode: string; value: number }>();
-  const areaByDistMap = new Map<string, { areaCode: string; distributorCode: string; value: number }>();
-  distProductRows.forEach((row) => {
-    const pKey = `${row.distributorCode} ${row.productCode}`;
-    const p = productByDistMap.get(pKey) ?? { distributorCode: row.distributorCode, productCode: row.productCode, value: 0 };
-    p.value += row.value; productByDistMap.set(pKey, p);
-    const aKey = `${row.distributorCode} ${row.areaCode}`;
-    const a = areaByDistMap.get(aKey) ?? { areaCode: row.areaCode, distributorCode: row.distributorCode, value: 0 };
-    a.value += row.value; areaByDistMap.set(aKey, a);
-  });
-  const exportData: ClosingExportData = {
-    areaByDist: [...areaByDistMap.values()].map((a) => ({ areaCode: a.areaCode, distributorCode: a.distributorCode, value: round(a.value) })),
-    bricks: brickRows.map((b) => ({ brickId: b.brickId, brickName: nameOf(brickNameMap, b.brickId), distributorCode: b.distributorCode, units: round(b.units), value: round(b.value) })),
-    customers: customerRows.map((cr) => ({ clientCode: cr.clientCode, clientName: cr.clientName, distributorCode: cr.distributorCode, units: round(cr.units), value: round(cr.value) })),
-    distProduct: distProductRows.map((row) => ({
-      areaCode: row.areaCode, areaName: nameOf(areaName, row.areaCode), distributorCode: row.distributorCode, distributorName: nameOf(distributorName, row.distributorCode),
-      productCode: row.productCode, productName: row.productName, regionCode: row.regionCode, regionName: nameOf(regionName, row.regionCode), units: round(row.units), value: round(row.value),
-    })),
-    masterAreas: masterAreas.map((a) => ({ areaCode: a.areaCode, areaName: a.areaName, regionName: nameOf(regionName, a.regionCode) })),
-    masterBricks: masterBricks.map((b) => ({ areaName: nameOf(areaName, b.areaCode), brickId: b.brickId, brickName: b.brickName, regionName: nameOf(regionName, b.regionCode) })),
-    productByDist: [...productByDistMap.values()].map((p) => ({ distributorCode: p.distributorCode, productCode: p.productCode, value: round(p.value) })),
-  };
-
-  const base: Omit<MonthlyClosingComparison, "insights"> = {
-    areaByDistributor,
-    data: exportData,
-    avgPrice: avgRealizedPrice(distProductRows, baseMaps),
-    byDistributor,
-    coverage: coverage(byDistributor, masterAreas.length, masterBricks.length),
-    distributors,
+  return assembleComparison({
+    brickRows,
+    customerRows,
+    distProductRows,
     line,
-    mix: {
-      distributor: computeMix(byDistributor.map((d) => ({ label: d.distributorName, value: d.value }))),
-      product: computeMix([...productAgg.entries()].map(([, v]) => ({ label: v.name, value: v.value }))),
-      region: computeMix([...regionAgg.entries()].map(([code, v]) => ({ label: nameOf(regionName, code), value: v.value }))),
-    },
-    national: { areaCount: soldAreaCodes.size, customerCount: customerAgg.size, productCount: productAgg.size, units: round(nationalUnits), value: round(nationalValue) },
-    pareto: { customers: pareto([...customerAgg.values()].map((c) => ({ label: c.name, value: c.value })), 10) },
+    maps: { areaName, areaRegion, distributorName, regionName },
+    masterAreas,
+    masterBricks,
     period,
-    productByDistributor,
-    rankings: {
-      areas: topN([...areaAgg.entries()].map(([code, v]) => ({ key: code, label: nameOf(areaName, code), sublabel: nameOf(regionName, areaRegion.get(code) ?? ""), units: v.units, value: v.value })), 10),
-      bricks: topN([...brickAgg.entries()].map(([code, v]) => ({ key: code, label: code, units: v.units, value: v.value })), 10),
-      customers: topN([...customerAgg.values()].map((c) => ({ key: c.name, label: c.name, sublabel: nameOf(distributorName, c.distributorCode), units: c.units, value: c.value })), 10),
-      products: topN([...productAgg.entries()].map(([code, v]) => ({ key: code, label: v.name, sublabel: code, units: v.units, value: v.value })), 10),
-      regions: topN([...regionAgg.entries()].map(([code, v]) => ({ key: code, label: nameOf(regionName, code), units: v.units, value: v.value })), 10),
-    },
-    regionByDistributor,
-    totalAreas: masterAreas.length,
-    totalBricks: masterBricks.length,
-    whiteSpace: {
-      productGaps: productGaps(distProductRows, [...regionName.keys()], baseMaps),
-      singleDistributorAreas: singleDistributorAreas(distProductRows, { ...baseMaps, areaName, areaRegion }),
-      zeroSalesAreas: whiteSpaceAreas(masterAreas, soldAreaCodes, baseMaps),
-      zeroSalesBricks: whiteSpaceBricks(masterBricks, soldBrickIds, { ...baseMaps, areaName }),
-    },
-  };
-
-  return { ...base, insights: buildInsights(base) };
+  });
 }

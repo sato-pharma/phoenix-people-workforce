@@ -1,6 +1,7 @@
 import {
   BellRing,
   BriefcaseBusiness,
+  Building2,
   CalendarClock,
   CalendarDays,
   ChartColumnBig,
@@ -118,6 +119,7 @@ export const adminNavigationSections = [
       { href: "/sales/database-mapping", icon: Database, label: "Database Mapping", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/customer-directory", icon: UsersRound, label: "Customer Directory", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales/executive-report", icon: Building2, label: "Executive Report", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/queue", icon: FileUp, label: "Monthly Sales", permissions: [{ resource: "sales" }] },
       { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
       { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },

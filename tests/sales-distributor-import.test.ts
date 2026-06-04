@@ -17,6 +17,7 @@ const references: SalesReferenceData = {
     { code: "PS", name: "overseas" },
     { code: "IS", name: "Ibn sina" },
     { code: "IS-S", name: "Ibn Sina-Sato" },
+    { code: "EP-S", name: "EPDA Pharmacies" },
   ],
   products: [
     {
@@ -144,6 +145,15 @@ async function buildSatoWorkbookBuffer(rows: unknown[][]) {
       "Region ID",
       "Distrub ID",
     ],
+    rows,
+  );
+}
+
+async function buildEpdaWorkbookBuffer(rows: unknown[][]) {
+  // EPDA Pharmacies (EP-S): quantity is "qnt", date is "inv_date", and is_bonus marks a
+  // free-goods line that must add no value and no sales quantity.
+  return buildWorkbookBuffer(
+    ["inv_date", "cust_code", "cust_name", "cust_address", "is_bonus", "qnt", "Discount%", "class_name", "Product ID", "Brick ID", "Area ID", "Region ID", "Distrub ID"],
     rows,
   );
 }
@@ -306,6 +316,29 @@ export async function runSalesDistributorImportTests() {
   assert.equal(satoResult.totals.totalQty, 14);
   assert.equal(satoResult.totals.totalBonusQty, 0); // no free-unit column
   assert.equal(satoResult.totals.totalValue, 300); // 10*10 + 4*50, Net ignored
+
+  // EPDA Pharmacies (EP-S): recognised; value = qnt × price; the is_bonus line adds nothing.
+  // The first row carries a US text date on the 1st of the month — exactly the shape
+  // the EP-S system export uses. A timezone-unsafe period parse would roll "4/1/2026"
+  // back to March on a host ahead of UTC and wrongly split the sheet into two months.
+  const epdaBuffer = await buildEpdaWorkbookBuffer([
+    ["4/1/2026", "C1", "Pharmacy A", "Addr A", 0, 10, null, "Product A", "P-A", "B-1", "A1", "CA", "EP-S"],
+    [new Date("2026-04-02T00:00:00Z"), "C1", "Pharmacy A", "Addr A", 1, 5, null, "Product A", "P-A", "B-1", "A1", "CA", "EP-S"], // bonus line
+    [new Date("2026-04-03T00:00:00Z"), "C2", "Pharmacy B", "Addr B", 0, 4, null, "Product B", "P-B", "B-2", "A2", "AB", "EP-S"],
+  ]);
+  const epdaResult = await validateDistributorSalesWorkbookBuffer({
+    buffer: epdaBuffer as unknown as ArrayBuffer,
+    distributorCode: "EP-S",
+    fileName: "ساتو فارما صيدليات.xlsx",
+    references,
+  });
+  assert.equal(epdaResult.templateKey, "epda_pharmacies_eps");
+  assert.equal(epdaResult.status, "validated");
+  assert.equal(epdaResult.period, "2026-04"); // single month: the 1st-of-month text date stays in April
+  assert.deepEqual(epdaResult.blockingReasons, []); // no "multiple invoice months" block
+  assert.equal(epdaResult.totals.totalQty, 19); // 10 + 5 (bonus qty still counts) + 4 = full qnt column
+  assert.equal(epdaResult.totals.totalBonusQty, 5); // the bonus line's qnt, recorded for visibility
+  assert.equal(epdaResult.totals.totalValue, 300); // 10*10 + 0 (free goods, 100% discount) + 4*50
 
   const dashboard = buildSourceOfSalesDashboard({
     availablePeriods: ["2026-04"],

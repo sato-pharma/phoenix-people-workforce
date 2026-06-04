@@ -272,6 +272,10 @@ type DistributorSalesTemplate = {
   // Optional bonus / free-unit column. Bonus is neglected in both quantity and value
   // (Qty only), so it is informational; feeds without a free-unit column simply omit it.
   bonusField?: string;
+  // Optional per-row "this whole line is a bonus / free-goods line" flag column (e.g.
+  // is_bonus = 1). When truthy, the row's qty is treated as bonus: it adds NO value and
+  // does NOT count as sales quantity (qty-only rule).
+  bonusFlagField?: string;
   // Optional per-customer columns (each a list of header fallbacks). Used to capture the
   // client identity for the Customer Directory; never affects validation.
   customerFields?: { address: string[]; code: string[]; name: string[] };
@@ -352,10 +356,35 @@ const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplate = {
   },
 };
 
+// EPDA "Pharmacies" direct feed (code EP-S). Coded format like IS-S, but quantity is "qnt",
+// the date is "inv_date", and each line carries an is_bonus flag (free-goods lines add no
+// value). Captures the customer fields (cust_code / cust_name / cust_address).
+const EPDA_SATO_EPS_TEMPLATE: DistributorSalesTemplate = {
+  bonusFlagField: "is_bonus",
+  customerFields: { address: ["cust_address"], code: ["cust_code"], name: ["cust_name"] },
+  discountField: "Discount%",
+  distributorCodes: ["EP-S"],
+  fields: {
+    areaCode: "Area ID",
+    brickId: "Brick ID",
+    distributorCode: "Distrub ID",
+    invoiceDate: "inv_date",
+    productCode: "Product ID",
+    qty: "qnt",
+    regionCode: "Region ID",
+  },
+  key: "epda_pharmacies_eps",
+  name: "EPDA Pharmacies EP-S coded template",
+  optionalFields: {
+    productName: ["class_name"],
+  },
+};
+
 const DISTRIBUTOR_SALES_TEMPLATES = [
   OVERSEAS_PS_TEMPLATE,
   IBN_SINA_IS_TEMPLATE,
   IBN_SINA_SATO_ISS_TEMPLATE,
+  EPDA_SATO_EPS_TEMPLATE,
 ] as const;
 
 function normalizeKey(value: unknown) {
@@ -589,24 +618,54 @@ function excelSerialToDate(serial: number) {
   return new Date(Date.UTC(1899, 11, 30) + serial * 86_400_000);
 }
 
+function periodFromYearMonth(year: number, month: number): string | null {
+  if (!Number.isInteger(year) || year < 1900 || year > 9999) return null;
+  if (!Number.isInteger(month) || month < 1 || month > 12) return null;
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+// Derives the YYYY-MM invoice period without timezone drift. Excel date objects
+// and serial numbers are normalized to UTC midnight (read with UTC getters), while
+// text dates are parsed directly from their civil components — never via
+// `new Date(text)`, which interprets slash dates as *local* midnight and would roll
+// day-1 invoices back to the previous month on any host ahead of UTC.
 function invoicePeriod(value: unknown) {
-  let date: Date | null = null;
   if (value instanceof Date) {
-    date = value;
-  } else if (typeof value === "number" && Number.isFinite(value)) {
-    date = excelSerialToDate(value);
-  } else {
-    const text = normalizeDisplay(value);
-    if (text) {
-      const parsed = new Date(text);
-      if (!Number.isNaN(parsed.getTime())) date = parsed;
-    }
+    if (Number.isNaN(value.getTime())) return null;
+    return periodFromYearMonth(value.getUTCFullYear(), value.getUTCMonth() + 1);
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const date = excelSerialToDate(value);
+    return periodFromYearMonth(date.getUTCFullYear(), date.getUTCMonth() + 1);
   }
 
-  if (!date || Number.isNaN(date.getTime())) return null;
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
+  const text = normalizeDisplay(value);
+  if (!text) return null;
+
+  // ISO-like: YYYY-MM-DD (or YYYY/MM/DD). Year and month are unambiguous.
+  const iso = text.match(/^(\d{4})[-/.](\d{1,2})(?:[-/.]\d{1,2})?/);
+  if (iso) return periodFromYearMonth(Number(iso[1]), Number(iso[2]));
+
+  // Day/Month/Year or Month/Day/Year with a separator. Distributor system exports
+  // use US month-first (e.g. "4/27/2026"); disambiguate by the >12 rule and fall
+  // back to month-first when both parts are 1..12.
+  const dmy = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+  if (dmy) {
+    const first = Number(dmy[1]);
+    const second = Number(dmy[2]);
+    let year = Number(dmy[3]);
+    if (year < 100) year += 2000;
+    let month: number;
+    if (first > 12 && second <= 12) month = second;
+    else if (second > 12 && first <= 12) month = first;
+    else month = first;
+    return periodFromYearMonth(year, month);
+  }
+
+  // Last resort: native parse, read in UTC for consistency with the date paths above.
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return periodFromYearMonth(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1);
 }
 
 function addIssue(
@@ -838,9 +897,21 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const regionCode = normalizeCode(rawRegionCode);
     const productCode = normalizeCode(rawProductCode);
     const rowDistributorCode = normalizeCode(rawDistributorCode);
-    const qty = parseNumber(rawQty);
-    const bonusQty = parseNumber(rawBonusQty, { emptyAsZero: true });
-    const discountRate = discountFraction(rawDiscount);
+    const parsedQty = parseNumber(rawQty);
+    let bonusQty = parseNumber(rawBonusQty, { emptyAsZero: true });
+    // Whole-line bonus flag (e.g. is_bonus = 1): the line is free goods. Its quantity
+    // STILL counts toward total quantity — it is part of the qty column the distributor
+    // reports — but free units carry no revenue. We bill them at a 100% discount so the
+    // value is zero in both the importer total and the value-recompute RPCs, while the
+    // qty stays intact. The free units are also recorded under bonus qty for visibility.
+    const rawBonusFlag = valueAtHeader(row, headerMap, headerMap.template.bonusFlagField);
+    const isBonusRow = Boolean(headerMap.template.bonusFlagField)
+      && ["1", "true", "yes", "y"].includes(normalizeDisplay(rawBonusFlag).toLowerCase());
+    const qty = parsedQty;
+    if (isBonusRow) {
+      bonusQty += Number.isFinite(parsedQty) ? parsedQty : 0;
+    }
+    const discountRate = isBonusRow ? 1 : discountFraction(rawDiscount);
     const period = invoicePeriod(rawInvoiceDate);
 
     const productReference = !isNotAvailable(rawProductCode) ? maps.productByCode.get(productCode) : undefined;
@@ -1122,12 +1193,12 @@ export async function loadSalesReferenceData(): Promise<SalesReferenceData> {
       .order("area_code", { ascending: true }),
     supabase
       .from("source_of_sales_blocks")
-      .select("block_code,block_name,area_code,area_name,region_code,region_name")
+      .select("block_code,description,area_code,region_code")
       .eq("active", true)
       .order("block_code", { ascending: true }),
     supabase
       .from("source_of_sales_bricks")
-      .select("brick_id,brick_name,block_code,block_name,area_code,area_name,region_code,region_name")
+      .select("brick_id,brick_name,block_code,area_code,region_code")
       .eq("active", true)
       .order("brick_id", { ascending: true }),
     supabase
@@ -1147,29 +1218,6 @@ export async function loadSalesReferenceData(): Promise<SalesReferenceData> {
 
   let areas: SalesAreaReference[] = [];
   let regions: SalesAreaRegionReference[] = [];
-  const blocks: SalesBlockReference[] = blocksResult.error
-    ? []
-    : (blocksResult.data ?? []).map((row) => ({
-      areaCode: String(row.area_code ?? ""),
-      areaName: String(row.area_name ?? ""),
-      blockCode: String(row.block_code ?? ""),
-      blockName: String(row.block_name ?? ""),
-      regionCode: String(row.region_code ?? ""),
-      regionName: String(row.region_name ?? ""),
-    }));
-  const bricks: SalesBrickReference[] = bricksResult.error
-    ? []
-    : (bricksResult.data ?? []).map((row) => ({
-      areaCode: String(row.area_code ?? ""),
-      areaName: String(row.area_name ?? ""),
-      blockCode: String(row.block_code ?? ""),
-      blockName: String(row.block_name ?? ""),
-      brickId: String(row.brick_id ?? ""),
-      brickName: String(row.brick_name ?? ""),
-      regionCode: String(row.region_code ?? ""),
-      regionName: String(row.region_name ?? ""),
-    }));
-
   if (!areasResult.error) {
     areas = (areasResult.data ?? []).map((row) => ({
       areaCode: String(row.area_code ?? ""),
@@ -1208,6 +1256,62 @@ export async function loadSalesReferenceData(): Promise<SalesReferenceData> {
       return true;
     });
   }
+
+  // Production's bricks/blocks tables only carry codes (no area_name/region_name/
+  // block_name columns), so those names are derived from the region/area/block masters
+  // by code. Selecting the missing columns directly would error the whole query and
+  // wipe out every brick name (the brick label would fall back to its raw ID).
+  const regionNameByCode = new Map<string, string>();
+  for (const region of regions) {
+    const code = normalizeCode(region.regionCode);
+    if (code && region.regionName) regionNameByCode.set(code, region.regionName);
+  }
+  for (const area of areas) {
+    const code = normalizeCode(area.regionCode);
+    if (code && area.regionName && !regionNameByCode.has(code)) regionNameByCode.set(code, area.regionName);
+  }
+  const areaNameByCode = new Map<string, string>();
+  for (const area of areas) {
+    const code = normalizeCode(area.areaCode);
+    if (code && area.areaName) areaNameByCode.set(code, area.areaName);
+  }
+
+  const blocks: SalesBlockReference[] = blocksResult.error
+    ? []
+    : (blocksResult.data ?? []).map((row) => {
+      const areaCode = String(row.area_code ?? "");
+      const regionCode = String(row.region_code ?? "");
+      return {
+        areaCode,
+        areaName: areaNameByCode.get(normalizeCode(areaCode)) ?? "",
+        blockCode: String(row.block_code ?? ""),
+        blockName: String(row.description ?? ""),
+        regionCode,
+        regionName: regionNameByCode.get(normalizeCode(regionCode)) ?? "",
+      };
+    });
+  const blockNameByCode = new Map<string, string>();
+  for (const block of blocks) {
+    const code = normalizeCode(block.blockCode);
+    if (code && block.blockName) blockNameByCode.set(code, block.blockName);
+  }
+  const bricks: SalesBrickReference[] = bricksResult.error
+    ? []
+    : (bricksResult.data ?? []).map((row) => {
+      const areaCode = String(row.area_code ?? "");
+      const regionCode = String(row.region_code ?? "");
+      const blockCode = String(row.block_code ?? "");
+      return {
+        areaCode,
+        areaName: areaNameByCode.get(normalizeCode(areaCode)) ?? "",
+        blockCode,
+        blockName: blockNameByCode.get(normalizeCode(blockCode)) ?? "",
+        brickId: String(row.brick_id ?? ""),
+        brickName: String(row.brick_name ?? ""),
+        regionCode,
+        regionName: regionNameByCode.get(normalizeCode(regionCode)) ?? "",
+      };
+    });
 
   return {
     areas,
@@ -1607,12 +1711,35 @@ export async function loadSourceOfSalesDashboard(period?: string | null): Promis
 
   if (summariesResult.error) throw summariesResult.error;
 
-  return buildSourceOfSalesDashboard({
+  const dashboard = buildSourceOfSalesDashboard({
     availablePeriods,
     batches,
     period: selectedPeriod,
     summaries: (summariesResult.data ?? []).map((row) => mapSourceOfSalesSummary(row as Record<string, unknown>)),
   });
+
+  // Resolve brick display names live from the master. Historical imports were saved
+  // while the brick reference query was failing, so their stored brick label is the raw
+  // ID. Overriding the label here self-heals the table without a re-import.
+  const brickNamesResult = await supabase
+    .from("source_of_sales_bricks")
+    .select("brick_id,brick_name")
+    .eq("active", true);
+  if (!brickNamesResult.error) {
+    const brickNameById = new Map<string, string>();
+    for (const row of brickNamesResult.data ?? []) {
+      const code = normalizeCode(String(row.brick_id ?? ""));
+      const name = String(row.brick_name ?? "");
+      if (code && name) brickNameById.set(code, name);
+    }
+    const byBrick = dashboard.byBrick.map((group) => {
+      const name = group.code ? brickNameById.get(normalizeCode(group.code)) : undefined;
+      return name && name !== group.label ? { ...group, label: name } : group;
+    });
+    return { ...dashboard, byBrick };
+  }
+
+  return dashboard;
 }
 
 function sourceOfSalesSummaryRows(batchId: string, result: DistributorSalesValidationResult) {
