@@ -1,0 +1,101 @@
+import { assertPermission } from "@/lib/auth/permissions";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { buildPhoenixTableWorkbook, type ExportColumn, type ExportRow } from "@/lib/export/table-workbook";
+import { loadCustomerDirectoryRows, type CustomerDirectoryFilters } from "@/lib/sales/customer-directory";
+import { NextResponse } from "next/server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const COLUMNS: ExportColumn[] = [
+  { key: "clientCode", label: "Customer Code", width: 16 },
+  { key: "clientName", label: "Customer Name", width: 34 },
+  { key: "clientAddress", label: "Address", width: 44 },
+  { key: "distributorName", label: "Distributor", width: 18 },
+  { key: "brickId", label: "Brick ID", width: 12 },
+  { key: "brickName", label: "Brick Name", width: 26 },
+  { key: "area", label: "Area", width: 20 },
+  { key: "region", label: "Region", width: 16 },
+  { key: "totalUnits", label: "Units", numeric: true, width: 12 },
+  { key: "totalValue", label: "Value (EGP)", numeric: true, width: 16 },
+];
+
+function scopeLabel(filters: CustomerDirectoryFilters) {
+  const parts: string[] = [];
+  if (filters.fromPeriod || filters.toPeriod) {
+    parts.push(`Period ${filters.fromPeriod || "start"} → ${filters.toPeriod || "latest"}`);
+  } else {
+    parts.push("All time");
+  }
+  if (filters.distributorCodes?.length) parts.push(`${filters.distributorCodes.length} distributor(s)`);
+  if (filters.regionCodes?.length) parts.push(`${filters.regionCodes.length} region(s)`);
+  if (filters.areaCodes?.length) parts.push(`${filters.areaCodes.length} area(s)`);
+  if (filters.brickCodes?.length) parts.push(`${filters.brickCodes.length} brick(s)`);
+  if (filters.search?.trim()) parts.push(`search "${filters.search.trim()}"`);
+  return parts.join("  ·  ");
+}
+
+export async function POST(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    if (access.role !== "Super Admin" && access.scope !== "system") {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: Customer Directory export is restricted to the admin account." },
+        { status: 403 },
+      );
+    }
+    await assertPermission(access, "sales", "export");
+
+    const body = (await request.json().catch(() => ({}))) as CustomerDirectoryFilters;
+    const filters: CustomerDirectoryFilters = {
+      areaCodes: Array.isArray(body.areaCodes) ? body.areaCodes : [],
+      brickCodes: Array.isArray(body.brickCodes) ? body.brickCodes : [],
+      distributorCodes: Array.isArray(body.distributorCodes) ? body.distributorCodes : [],
+      fromPeriod: typeof body.fromPeriod === "string" ? body.fromPeriod : null,
+      regionCodes: Array.isArray(body.regionCodes) ? body.regionCodes : [],
+      search: typeof body.search === "string" ? body.search : "",
+      toPeriod: typeof body.toPeriod === "string" ? body.toPeriod : null,
+    };
+
+    const rows = await loadCustomerDirectoryRows(filters);
+    const exportRows: ExportRow[] = rows.map((row) => ({
+      area: row.areaName,
+      brickId: row.brickId,
+      brickName: row.brickName,
+      clientAddress: row.clientAddress,
+      clientCode: row.clientCode,
+      clientName: row.clientName,
+      distributorName: row.distributorName,
+      region: row.regionName,
+      totalUnits: Number(row.totalUnits.toFixed(0)),
+      totalValue: Number(row.totalValue.toFixed(2)),
+    }));
+
+    const buffer = await buildPhoenixTableWorkbook({
+      columns: COLUMNS,
+      rows: exportRows,
+      sheetName: "Customer Directory",
+      subtitle: `Customer Directory  ·  ${scopeLabel(filters)}  ·  ${exportRows.length} customers  ·  Values in EGP`,
+      title: "Phoenix Workforce — Customer Directory",
+    });
+
+    return new Response(new Uint8Array(buffer), {
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Disposition": `attachment; filename="phoenix-customer-directory.xlsx"`,
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+    });
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return NextResponse.json(
+        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { status: 403 },
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : "Failed to export Customer Directory." },
+      { status: 500 },
+    );
+  }
+}
