@@ -74,6 +74,8 @@ export function runRecruitmentReadinessTests() {
   assert.ok(templateEntry?.audit.required, "candidate template download must require audit classification");
   const interviewEntry = findAccessRegistryEntry("/api/recruitment/interviews/x", "PATCH");
   assert.ok(interviewEntry?.csrf.required, "interview record route must require CSRF");
+  const onboardingEntry = findAccessRegistryEntry("/api/recruitment/onboarding/x", "PATCH");
+  assert.ok(onboardingEntry?.csrf.required, "onboarding update route must require CSRF");
 
   // --- Offer-engine reuse (do not rewrite the engine) --------------------
   const applications = read("src/lib/recruitment/applications.ts");
@@ -81,6 +83,12 @@ export function runRecruitmentReadinessTests() {
   assert.match(applications, /approveAcceptedOffer\(/, "must reuse approveAcceptedOffer for convert");
   assert.match(applications, /\.from\("job_offers"\)[\s\S]*application_id/, "must link offer back to application");
   assert.match(applications, /reconcileOfferStatuses/, "must reconcile candidate decisions");
+  assert.match(applications, /ensureOnboardingChecklist/, "pre-boarding must seed the onboarding checklist");
+  assert.match(applications, /areRequiredDocumentsApproved/, "hire must gate on approved documents");
+
+  const onboardingMigration = read("supabase/migrations/20260604180000_recruitment_onboarding.sql");
+  assert.match(onboardingMigration, /create table if not exists public\.recruitment_onboarding_items/);
+  assert.match(onboardingMigration, /revoke all on public\.recruitment_onboarding_items from anon, authenticated/);
 
   // --- Daily cron composition (no new Vercel cron) -----------------------
   const daily = read("app/api/notifications/daily/route.ts");

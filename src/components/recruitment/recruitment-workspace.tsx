@@ -23,6 +23,7 @@ import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import type { Candidate, Interview, InterviewType, RecruitmentActionKey, Requisition } from "@/lib/recruitment/types";
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
+import type { OnboardingItem } from "@/lib/recruitment/onboarding";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 
 type ManagerOption = { hrId: string; fullName: string };
@@ -224,6 +225,8 @@ function PipelineTab({
   const [manualHrId, setManualHrId] = useState("");
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [interviewsError, setInterviewsError] = useState<string | null>(null);
+  const [onboardingItems, setOnboardingItems] = useState<OnboardingItem[]>([]);
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
 
   const loadInterviews = async (appId: string) => {
     try {
@@ -238,9 +241,23 @@ function PipelineTab({
     }
   };
 
+  const loadOnboarding = async (appId: string) => {
+    try {
+      const res = await fetch(`/api/recruitment/applications/${appId}/onboarding`);
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to load onboarding.");
+      setOnboardingItems(Array.isArray(data.items) ? (data.items as OnboardingItem[]) : []);
+      setOnboardingError(null);
+    } catch (caught) {
+      setOnboardingItems([]);
+      setOnboardingError(caught instanceof Error ? caught.message : "Failed to load onboarding.");
+    }
+  };
+
   const selectApplication = (appId: string) => {
     setSelectedId(appId);
     void loadInterviews(appId);
+    void loadOnboarding(appId);
   };
 
   const selected = applications.find((application) => application.id === selectedId) ?? null;
@@ -427,6 +444,13 @@ function PipelineTab({
               interviews={interviews}
               managers={managers}
               onReload={() => loadInterviews(selected.id)}
+            />
+
+            <OnboardingSection
+              canManage={canManage}
+              error={onboardingError}
+              items={onboardingItems}
+              onReload={() => loadOnboarding(selected.id)}
             />
           </div>
         )}
@@ -948,6 +972,115 @@ function InterviewsSection({
           <Button disabled={busy} onClick={() => void schedule()}>
             Schedule interview
           </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function OnboardingSection({
+  canManage,
+  error,
+  items,
+  onReload,
+}: {
+  canManage: boolean;
+  error: string | null;
+  items: OnboardingItem[];
+  onReload: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const patch = async (itemId: string, body: Record<string, unknown>) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/recruitment/onboarding/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Update failed.");
+      onReload();
+    } catch (caught) {
+      setErr(caught instanceof Error ? caught.message : "Update failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (items.length === 0) {
+    return (
+      <div className="space-y-1 border-t border-slate-200 pt-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Onboarding</p>
+        <p className="text-xs text-slate-500">Move the candidate to pre-boarding to start the document checklist.</p>
+      </div>
+    );
+  }
+
+  const documents = items.filter((item) => item.category === "document");
+  const joining = items.filter((item) => item.category === "joining");
+
+  return (
+    <div className="space-y-2 border-t border-slate-200 pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Onboarding</p>
+      {(error ?? err) ? <p className="text-xs text-rose-600">{error ?? err}</p> : null}
+
+      {documents.length > 0 ? (
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold text-slate-600">Documents</p>
+          <ul className="space-y-1">
+            {documents.map((item) => (
+              <li key={item.id} className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
+                <span>{item.label}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-slate-500">{titleCase(item.status)}</span>
+                  {canManage ? (
+                    <>
+                      <Button variant="secondary" disabled={busy} onClick={() => void patch(item.id, { status: "approved" })}>
+                        Approve
+                      </Button>
+                      <Button variant="ghost" disabled={busy} onClick={() => void patch(item.id, { status: "rejected" })}>
+                        Reject
+                      </Button>
+                      <Button variant="ghost" disabled={busy} onClick={() => void patch(item.id, { status: "waived" })}>
+                        Waive
+                      </Button>
+                    </>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {joining.length > 0 ? (
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold text-slate-600">Joining tasks</p>
+          <ul className="space-y-1">
+            {joining.map((item) => (
+              <li key={item.id} className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
+                <span>{item.label}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-slate-500">{titleCase(item.status)}</span>
+                  {canManage ? (
+                    item.status === "completed" ? (
+                      <Button variant="ghost" disabled={busy} onClick={() => void patch(item.id, { status: "pending" })}>
+                        Reset
+                      </Button>
+                    ) : (
+                      <Button variant="secondary" disabled={busy} onClick={() => void patch(item.id, { status: "completed" })}>
+                        Mark done
+                      </Button>
+                    )
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
     </div>
