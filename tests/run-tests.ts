@@ -17,6 +17,7 @@ import { runRecruitmentCandidateMatchingTests } from "./recruitment-candidate-ma
 import { runRecruitmentPipelineStateMachineTests } from "./recruitment-pipeline-state-machine.test.ts";
 import { runRecruitmentReadinessTests } from "./recruitment-readiness.test.ts";
 import { runRecruitmentScorecardsTests } from "./recruitment-scorecards.test.ts";
+import { runRecruitmentOnboardingTests } from "./recruitment-onboarding.test.ts";
 import { runAttendanceCalendarSourceTests } from "./attendance-calendar-source.test.ts";
 import { runDeductionsGovernanceFoundationTests } from "./deductions-governance-foundation.test.ts";
 import { runDeductionsGovernanceServiceTests } from "./deductions-governance-service.test.ts";
@@ -152,6 +153,7 @@ await runTest("recruitment candidate matching", runRecruitmentCandidateMatchingT
 await runTest("recruitment pipeline state machine", runRecruitmentPipelineStateMachineTests);
 await runTest("recruitment readiness", runRecruitmentReadinessTests);
 await runTest("recruitment scorecards", runRecruitmentScorecardsTests);
+await runTest("recruitment onboarding", runRecruitmentOnboardingTests);
 await runTest("attendance calendar source", runAttendanceCalendarSourceTests);
 await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
 await runTest("deductions governance foundation", runDeductionsGovernanceFoundationTests);

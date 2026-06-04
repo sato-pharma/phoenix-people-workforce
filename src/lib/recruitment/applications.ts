@@ -39,6 +39,7 @@ import {
   listRequisitions,
   markRequisitionFilled,
 } from "@/lib/recruitment/requisitions";
+import { areRequiredDocumentsApproved, ensureOnboardingChecklist } from "@/lib/recruitment/onboarding";
 import {
   isTerminalApplicationStage,
   type Application,
@@ -254,6 +255,11 @@ export async function runApplicationTransition(
     actorHrId: access.hrId ?? null,
     reason: input.reason,
   });
+
+  // Entering pre-boarding seeds the document + joining checklist (stages 17-20).
+  if (actionKey === "app_to_pre_boarding") {
+    await ensureOnboardingChecklist(id);
+  }
   return updated;
 }
 
@@ -427,6 +433,15 @@ export async function approveAndConvert(
     role: access.role,
     status: application.stage,
   });
+
+  // Onboarding gate: if the candidate went through pre-boarding, every required
+  // document must be approved/waived before the hire is allowed (stage 18).
+  if (application.stage === "pre_boarding") {
+    const documentsApproved = await areRequiredDocumentsApproved(application.id);
+    if (!documentsApproved) {
+      throw new Error("All required onboarding documents must be approved before hiring.");
+    }
+  }
 
   const approval = await approveAcceptedOffer(
     application.offerId,
