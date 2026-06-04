@@ -100,8 +100,8 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     return f;
   }
 
-  async function analyze(keepNotice = false) {
-    if (!file) { setError("Choose a raw distributor file first."); return; }
+  async function analyze(keepNotice = false): Promise<Preview | null> {
+    if (!file) { setError("Choose a raw distributor file first."); return null; }
     setBusy("analyze"); setError(null); if (!keepNotice) setNotice(null);
     try {
       const res = await fetch("/api/sales/normalizer/preview", { body: fd(), method: "POST" });
@@ -112,8 +112,11 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
         const seed: Record<string, string> = {};
         p.unknownProducts.forEach((u) => { if (u.suggestionCode) seed[`p:${u.raw}`] = u.suggestionCode; });
         setPicks(seed);
-      } else setError(json.error ?? "Failed to analyze.");
-    } catch (e) { setError(e instanceof Error ? e.message : "Failed to analyze."); }
+        return p;
+      }
+      setError(json.error ?? "Failed to analyze.");
+      return null;
+    } catch (e) { setError(e instanceof Error ? e.message : "Failed to analyze."); return null; }
     finally { setBusy(null); }
   }
 
@@ -144,8 +147,14 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
       const res = await fetch("/api/sales/normalizer/mappings/save", { body: JSON.stringify({ mappings }), headers: { "Content-Type": "application/json" }, method: "POST" });
       const json = await res.json();
       if (!json.success) { setError(json.error ?? "Save failed."); return; }
-      setNotice(`Learned ${json.data.saved} mapping(s). Re-analyzing…`);
-      await analyze(true);
+      setNotice(`Saved ${json.data.saved} mapping(s). Refreshing coverage…`);
+      const p = await analyze(true);
+      if (p) {
+        const remaining = p.unknownProducts.length + p.unknownTerritories.length + p.unknownCustomers.length;
+        setNotice(remaining === 0
+          ? `Saved ${json.data.saved} mapping(s). Everything is mapped now.`
+          : `Saved ${json.data.saved} mapping(s). ${remaining} item(s) still need mapping.`);
+      } else setNotice(null);
     } catch (e) { setError(e instanceof Error ? e.message : "Save failed."); }
     finally { setBusy(null); }
   }
@@ -154,7 +163,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     if (!preview) return;
     setBusy("ai"); setError(null); setNotice(null);
     try {
-      let filled = 0;
+      let filled = 0; let failed = false;
       for (const [kind, list, prefix] of [["product", preview.unknownProducts, "p"], ["territory", preview.unknownTerritories, "t"]] as const) {
         if (list.length === 0) continue;
         const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, unknowns: list.map((u) => ({ raw: u.raw, rawName: u.rawName })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
@@ -162,9 +171,10 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
         if (json.success) {
           const sugg = (json.data.suggestions ?? []) as { raw: string; code: string }[];
           if (sugg.length) { setPicks((p) => { const n = { ...p }; sugg.forEach((s) => { n[`${prefix}:${s.raw}`] = s.code; }); return n; }); filled += sugg.length; }
-        } else if (json.error) { setError(json.error); }
+        } else { failed = true; if (json.error) setError(json.error); }
       }
-      setNotice(filled ? `AI pre-filled ${filled} suggestion(s) — review the dropdowns, fix any wrong ones, then Save.` : "AI found no confident matches — map them by hand.");
+      if (filled) setNotice(`AI pre-filled ${filled} suggestion(s) — review the dropdowns, fix any wrong ones, then Save.`);
+      else if (!failed) setNotice("AI found no confident matches — map them by hand.");
     } catch (e) { setError(e instanceof Error ? e.message : "AI suggest failed."); }
     finally { setBusy(null); }
   }

@@ -129,10 +129,30 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
       territoryRows.push({ alias: raw, normalized_alias: key, target_type: "brick", target_code: code, active: true, source_file: "normalizer" });
     }
   }
-  if (productRows.length) { const { error } = await supabase.from("source_of_sales_product_aliases").insert(productRows); if (error) throw error; }
-  if (territoryRows.length) { const { error } = await supabase.from("source_of_sales_territory_aliases").insert(territoryRows); if (error) throw error; }
-  if (customerRows.length) { const { error } = await supabase.from("source_of_sales_customer_map").insert(customerRows); if (error) throw error; }
-  return { saved: productRows.length + territoryRows.length + customerRows.length, skipped, invalid };
+  // Insert-if-absent via the DB's own conflict handling (ON CONFLICT DO NOTHING). This is immune to
+  // normalization drift between the bootstrap rows and normalizeAliasKey, and to races — a duplicate is
+  // silently skipped by Postgres instead of throwing. .select() returns only the rows actually inserted.
+  const failed = (label: string, error: { message?: string; details?: string; hint?: string }) =>
+    new Error(`${label}: ${[error.message, error.details, error.hint].filter(Boolean).join(" — ") || "insert failed"}`);
+  let saved = 0;
+  if (productRows.length) {
+    const { data, error } = await supabase.from("source_of_sales_product_aliases").upsert(productRows, { onConflict: "normalized_alias", ignoreDuplicates: true }).select("id");
+    if (error) throw failed("product aliases", error);
+    saved += data?.length ?? 0;
+  }
+  if (territoryRows.length) {
+    const { data, error } = await supabase.from("source_of_sales_territory_aliases").upsert(territoryRows, { onConflict: "normalized_alias,target_type,target_code", ignoreDuplicates: true }).select("id");
+    if (error) throw failed("territory aliases", error);
+    saved += data?.length ?? 0;
+  }
+  if (customerRows.length) {
+    const { data, error } = await supabase.from("source_of_sales_customer_map").upsert(customerRows, { onConflict: "distributor_code,customer_code", ignoreDuplicates: true }).select("id");
+    if (error) throw failed("customer map", error);
+    saved += data?.length ?? 0;
+  }
+  // rows that collided with an existing (possibly inactive) row count as skipped, not saved
+  skipped += productRows.length + territoryRows.length + customerRows.length - saved;
+  return { saved, skipped, invalid };
 }
 
 // ── Excel bulk round-trip ──

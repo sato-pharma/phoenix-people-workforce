@@ -7,10 +7,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // plus the learned alias tables (product / territory / area / region) that are ALREADY populated
 // in the database. Keyed via the same normalize functions the resolvers use, so matching is
 // consistent regardless of how the stored normalized_alias was produced.
-export async function loadCrosswalks(): Promise<Crosswalks> {
+export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSalesReferenceData>>): Promise<Crosswalks> {
   const supabase = getSupabaseAdmin();
   const [refs, prodA, terrA, areaA, regionA, custMap] = await Promise.all([
-    loadSalesReferenceData(),
+    preRefs ?? loadSalesReferenceData(),
     supabase.from("source_of_sales_product_aliases").select("alias,product_code").eq("active", true),
     supabase.from("source_of_sales_territory_aliases").select("alias,target_type,target_code").eq("active", true),
     supabase.from("source_of_sales_area_aliases").select("alias,area_code,region_code").eq("active", true),
