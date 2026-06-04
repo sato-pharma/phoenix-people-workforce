@@ -24,6 +24,7 @@ import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import type { Candidate, Interview, InterviewType, RecruitmentActionKey, Requisition } from "@/lib/recruitment/types";
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
 import type { OnboardingItem } from "@/lib/recruitment/onboarding";
+import type { OfferLetterVersion } from "@/lib/recruitment/offer-letters";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 
 type ManagerOption = { hrId: string; fullName: string };
@@ -227,6 +228,8 @@ function PipelineTab({
   const [interviewsError, setInterviewsError] = useState<string | null>(null);
   const [onboardingItems, setOnboardingItems] = useState<OnboardingItem[]>([]);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
+  const [offerLetters, setOfferLetters] = useState<OfferLetterVersion[]>([]);
+  const [offerLettersError, setOfferLettersError] = useState<string | null>(null);
 
   const loadInterviews = async (appId: string) => {
     try {
@@ -254,10 +257,26 @@ function PipelineTab({
     }
   };
 
+  const loadOfferLetters = async (offerId: string) => {
+    try {
+      const res = await fetch(`/api/recruitment/offers/${offerId}/letter`);
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to load offer letters.");
+      setOfferLetters(Array.isArray(data.versions) ? (data.versions as OfferLetterVersion[]) : []);
+      setOfferLettersError(null);
+    } catch (caught) {
+      setOfferLetters([]);
+      setOfferLettersError(caught instanceof Error ? caught.message : "Failed to load offer letters.");
+    }
+  };
+
   const selectApplication = (appId: string) => {
     setSelectedId(appId);
     void loadInterviews(appId);
     void loadOnboarding(appId);
+    const application = applications.find((row) => row.id === appId);
+    if (application?.offerId) void loadOfferLetters(application.offerId);
+    else setOfferLetters([]);
   };
 
   const selected = applications.find((application) => application.id === selectedId) ?? null;
@@ -452,6 +471,18 @@ function PipelineTab({
               items={onboardingItems}
               onReload={() => loadOnboarding(selected.id)}
             />
+
+            {selected.offerId ? (
+              <OfferLetterSection
+                canManage={canManage}
+                error={offerLettersError}
+                offerId={selected.offerId}
+                onReload={() => {
+                  if (selected.offerId) void loadOfferLetters(selected.offerId);
+                }}
+                versions={offerLetters}
+              />
+            ) : null}
           </div>
         )}
       </div>
@@ -1097,6 +1128,71 @@ function OnboardingSection({
             ))}
           </ul>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function OfferLetterSection({
+  canManage,
+  error,
+  offerId,
+  onReload,
+  versions,
+}: {
+  canManage: boolean;
+  error: string | null;
+  offerId: string;
+  onReload: () => void;
+  versions: OfferLetterVersion[];
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const generate = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/recruitment/offers/${offerId}/letter`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to generate letter.");
+      onReload();
+    } catch (caught) {
+      setErr(caught instanceof Error ? caught.message : "Failed to generate letter.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 border-t border-slate-200 pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Offer letter</p>
+      {(error ?? err) ? <p className="text-xs text-rose-600">{error ?? err}</p> : null}
+      {versions.length === 0 ? (
+        <p className="text-xs text-slate-500">No letter generated yet.</p>
+      ) : (
+        <ul className="space-y-1 text-xs">
+          {versions.map((versionItem) => (
+            <li key={versionItem.id} className="flex items-center justify-between gap-2">
+              <span>Version {versionItem.version}</span>
+              <Button
+                variant="secondary"
+                onClick={() => window.open(`/api/recruitment/offer-letter/${versionItem.id}`, "_blank")}
+              >
+                Open / Save PDF
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {canManage ? (
+        <Button disabled={busy} onClick={() => void generate()}>
+          Generate letter
+        </Button>
       ) : null}
     </div>
   );

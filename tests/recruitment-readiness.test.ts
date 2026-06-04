@@ -105,6 +105,15 @@ export function runRecruitmentReadinessTests() {
   assert.match(postings, /systemAccessContext/, "public submit must run under a system context");
   assert.match(postings, /submitted_ip_hash/, "public submit must record a hashed IP for rate limiting");
 
+  // --- Offer letters (Phase 4c) -----------------------------------------
+  const offerLetterEntry = findAccessRegistryEntry("/api/recruitment/offers/o1/letter", "POST");
+  assert.ok(offerLetterEntry, "offer-letter generate route must be registered");
+  const offerLetterDocEntry = findAccessRegistryEntry("/api/recruitment/offer-letter/v1", "GET");
+  assert.ok(offerLetterDocEntry, "offer-letter document route must be registered");
+  const offerLettersMigration = read("supabase/migrations/20260605120000_recruitment_offer_letters.sql");
+  assert.match(offerLettersMigration, /create table if not exists public\.recruitment_offer_letters/);
+  assert.match(offerLettersMigration, /revoke all on public\.recruitment_offer_letters from anon, authenticated/);
+
   // --- Daily cron composition (no new Vercel cron) -----------------------
   const daily = read("app/api/notifications/daily/route.ts");
   assert.match(daily, /runRecruitmentDailyNotifications/, "recruitment daily work must ride the existing cron");
