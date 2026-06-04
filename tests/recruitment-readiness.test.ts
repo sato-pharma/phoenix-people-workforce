@@ -123,6 +123,13 @@ export function runRecruitmentReadinessTests() {
   const pkg = JSON.parse(read("package.json")) as { dependencies?: Record<string, string> };
   assert.equal(pkg.dependencies?.googleapis, undefined, "no googleapis dependency should be added");
 
+  // --- Threshold offer approval (Phase 4b) ------------------------------
+  const seniorEntry = findAccessRegistryEntry("/api/recruitment/applications/abc/senior-approval", "POST");
+  assert.ok(seniorEntry, "senior-approval route must be registered");
+  const seniorMigration = read("supabase/migrations/20260605130000_recruitment_senior_approval.sql");
+  assert.match(seniorMigration, /senior_approval_status/);
+  assert.match(applications, /requiresSeniorApproval/, "convert must gate above-band offers on Super Admin sign-off");
+
   // --- Daily cron composition (no new Vercel cron) -----------------------
   const daily = read("app/api/notifications/daily/route.ts");
   assert.match(daily, /runRecruitmentDailyNotifications/, "recruitment daily work must ride the existing cron");

@@ -84,6 +84,18 @@ const plainTransitionNextStatus: Partial<Record<RecruitmentActionKey, Applicatio
   app_withdraw: "application_withdrawn",
 };
 
+const defaultSeniorApprovalNetThreshold = 20000;
+
+// Pure: above-band offers require a Super Admin senior sign-off before hire.
+export function requiresSeniorApproval(netSalary: number | null, threshold: number): boolean {
+  return typeof netSalary === "number" && Number.isFinite(netSalary) && netSalary > threshold;
+}
+
+function seniorApprovalNetThreshold(): number {
+  const raw = Number(process.env.RECRUITMENT_SENIOR_APPROVAL_NET_THRESHOLD);
+  return Number.isFinite(raw) && raw > 0 ? raw : defaultSeniorApprovalNetThreshold;
+}
+
 async function loadApplicationRow(id: string): Promise<Application> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
@@ -414,6 +426,38 @@ export async function reconcileOfferStatuses(): Promise<number> {
   return advanced;
 }
 
+// Stage 13 (threshold) — Super Admin senior sign-off for above-band offers.
+export async function approveSeniorOffer(id: string, access: AccessContext): Promise<Application> {
+  if (access.role !== "Super Admin" && access.scope !== "system") {
+    throw new Error("Forbidden: only Super Admin can provide senior offer sign-off.");
+  }
+  const application = await loadApplicationRow(id);
+  await getRequisition(access, application.requisitionId);
+
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("recruitment_applications")
+    .update({
+      senior_approval_status: "approved",
+      senior_approved_by: access.hrId ?? access.loginId ?? null,
+      senior_approved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+
+  await writeApplicationEvent({
+    applicationId: id,
+    fromStage: application.stage,
+    toStage: application.stage,
+    action: "senior_approval",
+    actorHrId: access.hrId ?? null,
+  });
+  return mapApplication(data as ApplicationDbRow);
+}
+
 // Stage 21 — approve the accepted offer (reuses the atomic convert RPC) and
 // close the requisition. Probation is intentionally NOT created here: the
 // probation window is derived from hire_date elsewhere, and the manager
@@ -440,6 +484,21 @@ export async function approveAndConvert(
     const documentsApproved = await areRequiredDocumentsApproved(application.id);
     if (!documentsApproved) {
       throw new Error("All required onboarding documents must be approved before hiring.");
+    }
+  }
+
+  // Threshold gate: above-band offers need a Super Admin sign-off first (a
+  // Super Admin converting directly satisfies the senior-approval requirement).
+  if (application.offerId && access.role !== "Super Admin") {
+    const supabaseCheck = recruitmentDb();
+    const { data: offerRow } = await supabaseCheck
+      .from("job_offers")
+      .select("net_salary")
+      .eq("id", application.offerId)
+      .maybeSingle();
+    const net = numberOrNull((offerRow as Record<string, unknown> | null)?.net_salary ?? null);
+    if (requiresSeniorApproval(net, seniorApprovalNetThreshold()) && application.seniorApprovalStatus !== "approved") {
+      throw new Error("This offer exceeds the approval threshold and requires Super Admin sign-off before hiring.");
     }
   }
 

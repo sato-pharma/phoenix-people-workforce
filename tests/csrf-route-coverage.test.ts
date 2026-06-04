@@ -33,6 +33,7 @@ const csrfProtectedMutationRoutes = [
   "../app/api/recruitment/applications/[id]/workflow/route.ts",
   "../app/api/recruitment/applications/route.ts",
   "../app/api/recruitment/applications/[id]/interviews/route.ts",
+  "../app/api/recruitment/applications/[id]/senior-approval/route.ts",
   "../app/api/recruitment/interviews/[id]/route.ts",
   "../app/api/recruitment/onboarding/[id]/route.ts",
   "../app/api/recruitment/candidates/import/route.ts",

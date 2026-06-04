@@ -155,6 +155,7 @@ export type Application = {
   currentOwnerHrId: string | null;
   decisionReason: string | null;
   rejectedReason: string | null;
+  seniorApprovalStatus: string | null;
   lastStageChangedAt: string;
   createdBy: string | null;
   createdAt: string;
