@@ -116,6 +116,8 @@ export const adminNavigationSections = [
     items: [
       { href: "/sales/import", icon: Database, label: "Source of Sales", permissions: [{ resource: "sales" }] },
       { href: "/sales/database-mapping", icon: Database, label: "Database Mapping", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales/customer-directory", icon: UsersRound, label: "Customer Directory", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/queue", icon: FileUp, label: "Monthly Sales", permissions: [{ resource: "sales" }] },
       { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
       { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },

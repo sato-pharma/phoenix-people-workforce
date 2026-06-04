@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 
 export type SalesDistributorOption = {
@@ -238,6 +238,10 @@ type ParsedDistributorRow = {
   bonusQty: number;
   brickId: string;
   brickName: string;
+  clientAddress: string | null;
+  clientCode: string | null;
+  clientName: string | null;
+  discount: number;
   distributorCode: string;
   invoicePeriod: string | null;
   officialLine: string;
@@ -255,18 +259,25 @@ type ParsedDistributorRow = {
 
 type DistributorSalesTemplateField =
   | "areaCode"
-  | "bonusQty"
   | "brickId"
   | "distributorCode"
   | "invoiceDate"
   | "productCode"
   | "qty"
-  | "regionCode"
-  | "value";
+  | "regionCode";
 
 type OptionalTemplateField = "areaName" | "brickName" | "productName" | "regionName";
 
 type DistributorSalesTemplate = {
+  // Optional bonus / free-unit column. Bonus is neglected in both quantity and value
+  // (Qty only), so it is informational; feeds without a free-unit column simply omit it.
+  bonusField?: string;
+  // Optional per-customer columns (each a list of header fallbacks). Used to capture the
+  // client identity for the Customer Directory; never affects validation.
+  customerFields?: { address: string[]; code: string[]; name: string[] };
+  // Optional per-row discount column. Blank/0 means no discount; otherwise the
+  // row value is reduced by the discount (value = Qty x factory_price x (1 - discount)).
+  discountField?: string;
   distributorCodes: string[];
   fields: Record<DistributorSalesTemplateField, string>;
   key: string;
@@ -275,17 +286,18 @@ type DistributorSalesTemplate = {
 };
 
 const OVERSEAS_PS_TEMPLATE: DistributorSalesTemplate = {
+  bonusField: "B. Qty",
+  customerFields: { address: ["Customer Address"], code: ["Customer"], name: ["Customer Name"] },
+  discountField: "Discount%",
   distributorCodes: ["PS"],
   fields: {
     areaCode: "Area ID",
-    bonusQty: "B. Qty",
     brickId: "Brick ID",
     distributorCode: "Distrub ID",
     invoiceDate: "Invoice Date",
     productCode: "Product ID",
     qty: "Qty",
     regionCode: "Region ID",
-    value: "Value",
   },
   key: "overseas_ps",
   name: "Overseas PS coded template",
@@ -295,17 +307,18 @@ const OVERSEAS_PS_TEMPLATE: DistributorSalesTemplate = {
 };
 
 const IBN_SINA_IS_TEMPLATE: DistributorSalesTemplate = {
+  bonusField: "Free Unit",
+  customerFields: { address: ["Address_En", "Address_Ar"], code: ["Client Code"], name: ["Client Name"] },
+  discountField: "Discount%",
   distributorCodes: ["IS"],
   fields: {
     areaCode: "Area ID",
-    bonusQty: "Free Unit",
     brickId: "Brick ID2",
     distributorCode: "Distrub ID",
     invoiceDate: "Date",
     productCode: "Product ID",
     qty: "Quantity",
     regionCode: "Region ID",
-    value: "Net",
   },
   key: "ibn_sina_is",
   name: "Ibn Sina IS coded template",
@@ -315,9 +328,34 @@ const IBN_SINA_IS_TEMPLATE: DistributorSalesTemplate = {
   },
 };
 
+// Ibn Sina "Sato" branch (PAS feed) — treated as its own distributor (code IS-S). Same
+// coded format as IS, but the brick column is "Brick ID", quantity is "Quantity", and
+// there is NO free-unit column (bonus is neglected anyway).
+const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplate = {
+  customerFields: { address: ["Address_En", "Address_Ar"], code: ["Client Code"], name: ["Client Name"] },
+  discountField: "Discount%",
+  distributorCodes: ["IS-S"],
+  fields: {
+    areaCode: "Area ID",
+    brickId: "Brick ID",
+    distributorCode: "Distrub ID",
+    invoiceDate: "Date",
+    productCode: "Product ID",
+    qty: "Quantity",
+    regionCode: "Region ID",
+  },
+  key: "ibn_sina_sato_iss",
+  name: "Ibn Sina Sato IS-S coded template",
+  optionalFields: {
+    brickName: ["Brick Name"],
+    productName: ["Item Name"],
+  },
+};
+
 const DISTRIBUTOR_SALES_TEMPLATES = [
   OVERSEAS_PS_TEMPLATE,
   IBN_SINA_IS_TEMPLATE,
+  IBN_SINA_SATO_ISS_TEMPLATE,
 ] as const;
 
 function normalizeKey(value: unknown) {
@@ -429,6 +467,17 @@ function optionalValueAt(row: ExcelJS.Row, headerMap: HeaderMap, field: Optional
   return null;
 }
 
+// Reads a customer field (code / name / address) by walking the template's header
+// fallbacks; returns the first non-empty display value, or null. Never affects validation.
+function customerValueAt(row: ExcelJS.Row, headerMap: HeaderMap, field: "address" | "code" | "name") {
+  const headers = headerMap.template.customerFields?.[field] ?? [];
+  for (const header of headers) {
+    const normalized = normalizeDisplay(valueAtHeader(row, headerMap, header));
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
 function hasAnyImportValue(row: ExcelJS.Row, headerMap: HeaderMap) {
   return requiredHeadersForTemplate(headerMap.template).some(
     (header) => normalizeDisplay(valueAtHeader(row, headerMap, header)) !== "",
@@ -458,6 +507,18 @@ function parseOptionalInteger(value: unknown) {
   if (!text) return null;
   const parsed = Number(text.replace(/,/g, ""));
   return Number.isInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
+}
+
+// Reads a per-row discount and returns it as a fraction (0.25 for 25%).
+// Blank/0/non-numeric => 0 (no discount). Excel stores "25%" as 0.25, so any
+// value with magnitude <= 1 is already a fraction; a whole number (e.g. 25) is
+// treated as a percent. The sheet Value/Net column is never read.
+function discountFraction(value: unknown) {
+  const text = normalizeDisplay(value).replace(/%/g, "").replace(/,/g, "");
+  if (!text) return 0;
+  const parsed = Number(text);
+  if (!Number.isFinite(parsed) || parsed === 0) return 0;
+  return Math.abs(parsed) > 1 ? parsed / 100 : parsed;
 }
 
 function requireSourceOfSalesProductField(
@@ -763,10 +824,14 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const rawProductCode = valueAt(row, headerMap, "productCode");
     const rawProductName = optionalValueAt(row, headerMap, "productName");
     const rawQty = valueAt(row, headerMap, "qty");
-    const rawBonusQty = valueAt(row, headerMap, "bonusQty");
-    const rawValue = valueAt(row, headerMap, "value");
+    const rawBonusQty = valueAtHeader(row, headerMap, headerMap.template.bonusField);
+    const rawDiscount = valueAtHeader(row, headerMap, headerMap.template.discountField);
     const rawDistributorCode = valueAt(row, headerMap, "distributorCode");
     const rawInvoiceDate = valueAt(row, headerMap, "invoiceDate");
+
+    const clientCode = customerValueAt(row, headerMap, "code");
+    const clientName = customerValueAt(row, headerMap, "name");
+    const clientAddress = customerValueAt(row, headerMap, "address");
 
     const areaCode = normalizeCode(rawAreaCode);
     const brickId = normalizeCode(rawBrickId);
@@ -775,7 +840,7 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const rowDistributorCode = normalizeCode(rawDistributorCode);
     const qty = parseNumber(rawQty);
     const bonusQty = parseNumber(rawBonusQty, { emptyAsZero: true });
-    const value = parseNumber(rawValue);
+    const discountRate = discountFraction(rawDiscount);
     const period = invoicePeriod(rawInvoiceDate);
 
     const productReference = !isNotAvailable(rawProductCode) ? maps.productByCode.get(productCode) : undefined;
@@ -783,6 +848,13 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const areaReference = !isNotAvailable(rawAreaCode) ? maps.areaByCode.get(areaCode) : undefined;
     const brickReference = !isNotAvailable(rawBrickId) ? maps.brickById.get(brickId) : undefined;
     const blockReference = brickReference ? maps.blockByCode.get(normalizeCode(brickReference.blockCode)) : undefined;
+
+    // Value is computed from Qty only (bonus/free units neglected) times the
+    // product factory price, reduced by the per-row discount. The distributor
+    // sheet's own Value/Net column is intentionally ignored.
+    const value = Number.isFinite(qty)
+      ? qty * (productReference?.factoryPrice ?? 0) * (1 - discountRate)
+      : Number.NaN;
 
     const regionName = normalizeDisplay(rawRegionName)
       || regionReference?.regionName
@@ -817,8 +889,6 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       [headerMap.template.fields.distributorCode, rawDistributorCode],
       [headerMap.template.fields.invoiceDate, rawInvoiceDate],
       [headerMap.template.fields.qty, rawQty],
-      [headerMap.template.fields.bonusQty, rawBonusQty],
-      [headerMap.template.fields.value, rawValue],
     ] as const;
 
     naFields.forEach(([field, raw]) => {
@@ -848,8 +918,6 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       );
     }
     if (!Number.isFinite(qty)) addIssue(rowIssues, rowNumber, headerMap.template.fields.qty, rawQty, "Qty must be numeric.");
-    if (!Number.isFinite(bonusQty)) addIssue(rowIssues, rowNumber, headerMap.template.fields.bonusQty, rawBonusQty, "Bonus quantity must be numeric.");
-    if (!Number.isFinite(value)) addIssue(rowIssues, rowNumber, headerMap.template.fields.value, rawValue, "Value must be numeric.");
     if (!period) addIssue(rowIssues, rowNumber, headerMap.template.fields.invoiceDate, rawInvoiceDate, "Invoice Date must be a valid date.");
 
     if (productCode && !isNotAvailable(rawProductCode) && !productReference) {
@@ -945,6 +1013,10 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       bonusQty,
       brickId: brickId || normalizeDisplay(rawBrickId),
       brickName,
+      clientAddress,
+      clientCode,
+      clientName,
+      discount: discountRate,
       distributorCode: rowDistributorCode,
       invoicePeriod: period,
       officialLine: productReference?.line ?? "Unknown",
@@ -1619,6 +1691,9 @@ async function insertSourceOfSalesRows(
     batch_id: batchId,
     block_code: row.blockCode,
     brick_id: row.brickId,
+    client_address: row.clientAddress,
+    client_code: row.clientCode,
+    client_name: row.clientName,
     row_number: row.rowNumber,
     distributor_code: row.distributorCode,
     invoice_period: row.invoicePeriod,
@@ -1629,6 +1704,7 @@ async function insertSourceOfSalesRows(
     official_line: row.officialLine,
     qty: Number.isFinite(row.qty) ? row.qty : 0,
     bonus_qty: Number.isFinite(row.bonusQty) ? row.bonusQty : 0,
+    discount: Number.isFinite(row.discount) ? row.discount : 0,
     value: Number.isFinite(row.value) ? row.value : 0,
     validation_state: row.validationState,
     validation_issues: row.validationIssues,
@@ -1749,4 +1825,462 @@ export async function deleteSourceOfSalesUploadBatch(input: {
   });
 
   return true;
+}
+
+// =====================================================================================
+// Monthly Closing — manager-facing Sales-vs-Target report built from the uploaded
+// distributor data. Phase 1 surfaces Sales Units/Value per Area x Product for one Line
+// and one Month, rolled up Area -> Region (subtotal) -> National (grand total). Target/
+// Achievement slots are reserved but stay null until the Phase 2 targets upload exists.
+// =====================================================================================
+
+export type MonthlyClosingCell = {
+  achievement: number | null;
+  salesUnits: number;
+  salesValue: number;
+  targetUnits: number | null;
+  targetValue: number | null;
+};
+
+export type MonthlyClosingColumn = {
+  family: string;
+  productCode: string;
+  productName: string;
+};
+
+export type MonthlyClosingAreaRow = {
+  areaCode: string;
+  areaName: string;
+  cells: MonthlyClosingCell[];
+  kind: "area";
+  regionCode: string;
+  regionName: string;
+  rowTotal: MonthlyClosingCell;
+};
+
+export type MonthlyClosingSubtotalRow = {
+  cells: MonthlyClosingCell[];
+  kind: "regionSubtotal";
+  regionCode: string;
+  regionName: string;
+  rowTotal: MonthlyClosingCell;
+};
+
+export type MonthlyClosingRegionGroup = {
+  areas: MonthlyClosingAreaRow[];
+  regionCode: string;
+  regionName: string;
+  subtotal: MonthlyClosingSubtotalRow;
+};
+
+export type MonthlyClosingGrandTotalRow = {
+  cells: MonthlyClosingCell[];
+  kind: "grandTotal";
+  rowTotal: MonthlyClosingCell;
+};
+
+export type MonthlyClosingMatrix = {
+  availableLines: string[];
+  availablePeriods: string[];
+  columns: MonthlyClosingColumn[];
+  grandTotal: MonthlyClosingGrandTotalRow;
+  line: string | null;
+  period: string | null;
+  regions: MonthlyClosingRegionGroup[];
+};
+
+export type MonthlyClosingAggregateCell = {
+  areaCode: string;
+  productCode: string;
+  salesUnits: number;
+  salesValue: number;
+};
+
+const MONTHLY_CLOSING_REGION_ORDER = ["CA", "GZ", "UE", "AB", "D1", "D2", "OT"] as const;
+
+function monthlyClosingRegionRank(regionCode: string) {
+  const index = MONTHLY_CLOSING_REGION_ORDER.indexOf(regionCode as (typeof MONTHLY_CLOSING_REGION_ORDER)[number]);
+  return index === -1 ? MONTHLY_CLOSING_REGION_ORDER.length : index;
+}
+
+function emptyClosingCell(): MonthlyClosingCell {
+  return { achievement: null, salesUnits: 0, salesValue: 0, targetUnits: null, targetValue: null };
+}
+
+// Roll-up adds ONLY the sales figures; target/achievement are derived later (Phase 2).
+function addClosingSales(target: MonthlyClosingCell, source: MonthlyClosingCell) {
+  target.salesUnits += source.salesUnits;
+  target.salesValue += source.salesValue;
+}
+
+function roundedClosingCell(cell: MonthlyClosingCell): MonthlyClosingCell {
+  return {
+    achievement: cell.achievement,
+    salesUnits: Number(cell.salesUnits.toFixed(6)),
+    salesValue: Number(cell.salesValue.toFixed(6)),
+    targetUnits: cell.targetUnits,
+    targetValue: cell.targetValue,
+  };
+}
+
+function sumClosingRowTotal(cells: MonthlyClosingCell[]): MonthlyClosingCell {
+  const total = emptyClosingCell();
+  cells.forEach((cell) => addClosingSales(total, cell));
+  return roundedClosingCell(total);
+}
+
+/**
+ * Pure matrix builder. Aggregates ONLY at the area layer; region subtotals and the
+ * national grand total are derived from the area rows, so each area is counted exactly
+ * once and region/total rows never get summed on top of the areas (no double counting).
+ */
+export function buildMonthlyClosingMatrix(input: {
+  areas: SalesAreaReference[];
+  availableLines: string[];
+  availablePeriods: string[];
+  cells: MonthlyClosingAggregateCell[];
+  line: string | null;
+  period: string | null;
+  products: SalesProductReference[];
+}): MonthlyClosingMatrix {
+  const columns: MonthlyClosingColumn[] = input.products
+    .map((product) => ({
+      family: normalizeDisplay(product.family),
+      productCode: normalizeCode(product.productCode),
+      productName: normalizeDisplay(product.productName) || normalizeCode(product.productCode),
+    }))
+    .sort(
+      (left, right) =>
+        left.family.localeCompare(right.family) || left.productName.localeCompare(right.productName),
+    );
+
+  const cellLookup = new Map<string, MonthlyClosingAggregateCell>();
+  input.cells.forEach((cell) => {
+    cellLookup.set(`${normalizeCode(cell.areaCode)} ${normalizeCode(cell.productCode)}`, cell);
+  });
+
+  const sortedAreas = [...input.areas].sort((left, right) => {
+    const leftRegion = normalizeCode(left.regionCode);
+    const rightRegion = normalizeCode(right.regionCode);
+    const rankDelta = monthlyClosingRegionRank(leftRegion) - monthlyClosingRegionRank(rightRegion);
+    if (rankDelta !== 0) return rankDelta;
+    if (leftRegion !== rightRegion) return leftRegion.localeCompare(rightRegion);
+    return normalizeCode(left.areaCode).localeCompare(normalizeCode(right.areaCode));
+  });
+
+  const areaRowsByRegion = new Map<string, MonthlyClosingAreaRow[]>();
+  const regionNames = new Map<string, string>();
+
+  sortedAreas.forEach((area) => {
+    const regionCode = normalizeCode(area.regionCode);
+    const areaCode = normalizeCode(area.areaCode);
+    const cells = columns.map((column) => {
+      const aggregate = cellLookup.get(`${areaCode} ${column.productCode}`);
+      const cell = emptyClosingCell();
+      if (aggregate) {
+        cell.salesUnits = aggregate.salesUnits;
+        cell.salesValue = aggregate.salesValue;
+      }
+      return roundedClosingCell(cell);
+    });
+    const row: MonthlyClosingAreaRow = {
+      areaCode,
+      areaName: normalizeDisplay(area.areaName) || areaCode,
+      cells,
+      kind: "area",
+      regionCode,
+      regionName: normalizeDisplay(area.regionName) || regionCode,
+      rowTotal: sumClosingRowTotal(cells),
+    };
+    if (!areaRowsByRegion.has(regionCode)) areaRowsByRegion.set(regionCode, []);
+    areaRowsByRegion.get(regionCode)?.push(row);
+    if (!regionNames.has(regionCode)) regionNames.set(regionCode, row.regionName);
+  });
+
+  const regions: MonthlyClosingRegionGroup[] = [...areaRowsByRegion.entries()].map(([regionCode, areas]) => {
+    const subtotalCells = columns.map((_column, columnIndex) => {
+      const cell = emptyClosingCell();
+      areas.forEach((area) => addClosingSales(cell, area.cells[columnIndex]));
+      return roundedClosingCell(cell);
+    });
+    const regionName = regionNames.get(regionCode) ?? regionCode;
+    return {
+      areas,
+      regionCode,
+      regionName,
+      subtotal: {
+        cells: subtotalCells,
+        kind: "regionSubtotal",
+        regionCode,
+        regionName,
+        rowTotal: sumClosingRowTotal(subtotalCells),
+      },
+    };
+  });
+
+  const grandCells = columns.map((_column, columnIndex) => {
+    const cell = emptyClosingCell();
+    regions.forEach((region) => {
+      region.areas.forEach((area) => addClosingSales(cell, area.cells[columnIndex]));
+    });
+    return roundedClosingCell(cell);
+  });
+
+  return {
+    availableLines: input.availableLines,
+    availablePeriods: input.availablePeriods,
+    columns,
+    grandTotal: {
+      cells: grandCells,
+      kind: "grandTotal",
+      rowTotal: sumClosingRowTotal(grandCells),
+    },
+    line: input.line,
+    period: input.period,
+    regions,
+  };
+}
+
+/**
+ * Pure client-side filter. Keeps the selected regions/areas/products (+ free-text area
+ * search) and RE-DERIVES region subtotals and the national grand total from the surviving
+ * AREA rows only — so the filtered totals stay exact and each area is still counted once.
+ * Empty selections mean "all". This mirrors buildMonthlyClosingMatrix's roll-up.
+ */
+export function filterMonthlyClosingMatrix(
+  matrix: MonthlyClosingMatrix,
+  filter: { areaCodes?: string[]; productCodes?: string[]; regionCodes?: string[]; search?: string },
+): MonthlyClosingMatrix {
+  const regionSet = new Set((filter.regionCodes ?? []).map((code) => normalizeCode(code)));
+  const areaSet = new Set((filter.areaCodes ?? []).map((code) => normalizeCode(code)));
+  const productSet = new Set((filter.productCodes ?? []).map((code) => normalizeCode(code)));
+  const search = normalizeKey(filter.search ?? "");
+
+  const keptColumnIndexes: number[] = [];
+  const columns: MonthlyClosingColumn[] = [];
+  matrix.columns.forEach((column, index) => {
+    if (productSet.size === 0 || productSet.has(normalizeCode(column.productCode))) {
+      keptColumnIndexes.push(index);
+      columns.push(column);
+    }
+  });
+
+  const projectCells = (cells: MonthlyClosingCell[]) => keptColumnIndexes.map((index) => cells[index]);
+
+  const regions: MonthlyClosingRegionGroup[] = [];
+  matrix.regions.forEach((region) => {
+    if (regionSet.size > 0 && !regionSet.has(normalizeCode(region.regionCode))) return;
+
+    const areas = region.areas
+      .filter((area) => {
+        if (areaSet.size > 0 && !areaSet.has(normalizeCode(area.areaCode))) return false;
+        if (search) {
+          const haystack = `${normalizeKey(area.areaCode)} ${normalizeKey(area.areaName)}`;
+          if (!haystack.includes(search)) return false;
+        }
+        return true;
+      })
+      .map((area) => {
+        const cells = projectCells(area.cells);
+        return { ...area, cells, rowTotal: sumClosingRowTotal(cells) };
+      });
+
+    if (areas.length === 0) return;
+
+    const subtotalCells = columns.map((_column, columnIndex) => {
+      const cell = emptyClosingCell();
+      areas.forEach((area) => addClosingSales(cell, area.cells[columnIndex]));
+      return roundedClosingCell(cell);
+    });
+
+    regions.push({
+      areas,
+      regionCode: region.regionCode,
+      regionName: region.regionName,
+      subtotal: {
+        cells: subtotalCells,
+        kind: "regionSubtotal",
+        regionCode: region.regionCode,
+        regionName: region.regionName,
+        rowTotal: sumClosingRowTotal(subtotalCells),
+      },
+    });
+  });
+
+  const grandCells = columns.map((_column, columnIndex) => {
+    const cell = emptyClosingCell();
+    regions.forEach((region) => region.areas.forEach((area) => addClosingSales(cell, area.cells[columnIndex])));
+    return roundedClosingCell(cell);
+  });
+
+  return {
+    availableLines: matrix.availableLines,
+    availablePeriods: matrix.availablePeriods,
+    columns,
+    grandTotal: {
+      cells: grandCells,
+      kind: "grandTotal",
+      rowTotal: sumClosingRowTotal(grandCells),
+    },
+    line: matrix.line,
+    period: matrix.period,
+    regions,
+  };
+}
+
+export async function listMonthlyClosingLines(): Promise<string[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_products")
+    .select("line")
+    .eq("active", true);
+
+  if (error) throw error;
+
+  const lines = new Set<string>();
+  (data ?? []).forEach((row) => {
+    const line = normalizeDisplay((row as Record<string, unknown>).line);
+    if (line) lines.add(line);
+  });
+  return [...lines].sort((left, right) => left.localeCompare(right));
+}
+
+export async function listMonthlyClosingPeriods(): Promise<string[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_import_batches")
+    .select("period")
+    .eq("status", "validated")
+    .not("period", "is", null)
+    .order("period", { ascending: false });
+
+  if (error) throw error;
+
+  return [...new Set((data ?? []).map((row) => String((row as Record<string, unknown>).period ?? "")).filter(Boolean))]
+    .sort((left, right) => right.localeCompare(left));
+}
+
+async function listActiveSalesAreas(): Promise<SalesAreaReference[]> {
+  const supabase = getSupabaseAdmin();
+  // Region name is sourced from the regions master and joined by region_code. The areas
+  // table does NOT carry region_name in every Supabase project (schema diverges across
+  // staging/production), so we never select it from source_of_sales_areas.
+  const [areasResult, regionsResult] = await Promise.all([
+    supabase
+      .from("source_of_sales_areas")
+      .select("area_code,area_name,region_code")
+      .eq("active", true)
+      .order("region_code", { ascending: true })
+      .order("area_code", { ascending: true }),
+    supabase
+      .from("source_of_sales_regions")
+      .select("region_code,region_name")
+      .eq("active", true),
+  ]);
+
+  if (areasResult.error) throw areasResult.error;
+  if (regionsResult.error) throw regionsResult.error;
+
+  const regionNames = new Map<string, string>();
+  (regionsResult.data ?? []).forEach((row) => {
+    const record = row as Record<string, unknown>;
+    const code = normalizeCode(record.region_code);
+    if (code) regionNames.set(code, String(record.region_name ?? ""));
+  });
+
+  return (areasResult.data ?? []).map((row) => {
+    const record = row as Record<string, unknown>;
+    const regionCode = String(record.region_code ?? "");
+    return {
+      areaCode: String(record.area_code ?? ""),
+      areaName: String(record.area_name ?? ""),
+      regionCode,
+      regionName: regionNames.get(normalizeCode(regionCode)) ?? "",
+    };
+  });
+}
+
+async function listLineProductsForClosing(line: string): Promise<SalesProductReference[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_products")
+    .select("product_code,product_name,factory_price,family,family_code,source,line,normalized_line")
+    .eq("active", true)
+    .eq("normalized_line", normalizeKey(line))
+    .order("family", { ascending: true })
+    .order("product_name", { ascending: true });
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => {
+    const record = row as Record<string, unknown>;
+    return {
+      factoryPrice: Number(record.factory_price ?? 0),
+      family: String(record.family ?? ""),
+      familyCode: String(record.family_code ?? ""),
+      line: String(record.line ?? ""),
+      productCode: String(record.product_code ?? ""),
+      productName: String(record.product_name ?? ""),
+      source: String(record.source ?? ""),
+    };
+  });
+}
+
+export async function loadMonthlyClosing(input?: {
+  line?: string | null;
+  period?: string | null;
+}): Promise<MonthlyClosingMatrix> {
+  const [availableLines, availablePeriods] = await Promise.all([
+    listMonthlyClosingLines(),
+    listMonthlyClosingPeriods(),
+  ]);
+
+  const selectedLine = input?.line && availableLines.includes(input.line)
+    ? input.line
+    : availableLines[0] ?? null;
+  const selectedPeriod = input?.period && availablePeriods.includes(input.period)
+    ? input.period
+    : availablePeriods[0] ?? null;
+
+  // Without a line or a validated month there is nothing to aggregate — still return the
+  // area skeleton + product columns so the UI renders an empty (zeroed) matrix cleanly.
+  if (!selectedLine || !selectedPeriod) {
+    const [areas, products] = await Promise.all([
+      listActiveSalesAreas(),
+      selectedLine ? listLineProductsForClosing(selectedLine) : Promise.resolve<SalesProductReference[]>([]),
+    ]);
+    return buildMonthlyClosingMatrix({
+      areas,
+      availableLines,
+      availablePeriods,
+      cells: [],
+      line: selectedLine,
+      period: selectedPeriod,
+      products,
+    });
+  }
+
+  const supabase = getSupabaseAdmin();
+  const [areas, products, aggregateData] = await Promise.all([
+    listActiveSalesAreas(),
+    listLineProductsForClosing(selectedLine),
+    rpcAll(supabase, "phx_monthly_closing_matrix", { p_line: selectedLine, p_period: selectedPeriod }, ["area_code", "product_code"]),
+  ]);
+
+  const cells: MonthlyClosingAggregateCell[] = (aggregateData as Record<string, unknown>[]).map((row) => ({
+    areaCode: String(row.area_code ?? ""),
+    productCode: String(row.product_code ?? ""),
+    salesUnits: Number(row.sales_units ?? 0),
+    salesValue: Number(row.sales_value ?? 0),
+  }));
+
+  return buildMonthlyClosingMatrix({
+    areas,
+    availableLines,
+    availablePeriods,
+    cells,
+    line: selectedLine,
+    period: selectedPeriod,
+    products,
+  });
 }

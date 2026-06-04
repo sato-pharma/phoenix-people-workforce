@@ -13,6 +13,7 @@ import {
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { CommandPalette } from "@/components/layout/command-palette";
+import { DocumentTitleSync } from "@/components/layout/document-title-sync";
 import { RouteTransitionProvider } from "@/components/layout/route-transition-provider";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
@@ -64,6 +65,7 @@ export async function AppShell({
     <RouteTransitionProvider>
       <div className={`min-h-screen text-[#0F172A] ${isAdminMode ? `admin-shell ${adminShellBackgroundClassName}` : "bg-[#F8FAFC]"}`}>
         <SessionSecurityGuard />
+        <DocumentTitleSync mode={resolvedNavigationMode} />
         <CommandPalette
           currentRole={access.role}
           navigationMode={resolvedNavigationMode}
