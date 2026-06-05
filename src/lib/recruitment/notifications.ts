@@ -4,8 +4,9 @@
 // Phase 1: reflect candidate offer decisions onto linked applications.
 // Phase 2: remind interviewers of interviews scheduled for the next day.
 
-import { enqueueInAppNotification } from "@/lib/notifications/in-app";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { reconcileOfferStatuses } from "@/lib/recruitment/applications";
+import { interviewTypeLabel } from "@/lib/recruitment/interview-notifications";
 import { listInterviewsDueForReminder } from "@/lib/recruitment/interviews";
 
 export type RecruitmentDailyResult =
@@ -23,15 +24,25 @@ async function sendInterviewReminders(): Promise<number> {
   let sent = 0;
   for (const interview of due) {
     if (!interview.interviewerHrId) continue;
-    const result = await enqueueInAppNotification({
+    const at = interview.scheduledAt
+      ? new Date(interview.scheduledAt).toLocaleTimeString("en-GB", {
+          timeZone: "Africa/Cairo",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "";
+    const result = await createSystemNotification({
+      actionUrl: "/recruitment",
       category: "recruitment",
-      dedupeKey: `recruitment_interview_reminder:${interview.id}:${day}`,
-      href: "/recruitment",
-      message: `You have a ${interview.interviewType.replace(/_/g, " ")} interview scheduled tomorrow.`,
+      eventType: "interview_reminder",
+      message: `Reminder: you have a ${interviewTypeLabel(interview.interviewType).toLowerCase()} interview tomorrow${at ? ` at ${at}` : ""}.`,
+      metadata: { idempotencyKey: `recruitment_interview_reminder:${interview.id}:${day}`, interviewId: interview.id },
+      module: "recruitment",
+      priority: "normal",
       recipientHrId: interview.interviewerHrId,
       title: "Interview reminder",
     });
-    if (!result.skipped) sent += 1;
+    if (result.deliveries.some((delivery) => delivery.status === "sent")) sent += 1;
   }
   return sent;
 }

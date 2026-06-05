@@ -1,0 +1,101 @@
+import crypto from "crypto";
+
+export type TelegramSendInput = {
+  actionUrl?: string | null;
+  chatId: string;
+  message: string;
+  title: string;
+};
+
+export type TelegramSendResult =
+  | { providerMessageId?: string; skipped?: false }
+  | { reason: string; skipped: true };
+
+function telegramBotToken() {
+  return process.env.TELEGRAM_BOT_TOKEN?.trim() || null;
+}
+
+export function telegramBotUsername() {
+  return process.env.TELEGRAM_BOT_USERNAME?.trim().replace(/^@/, "") || null;
+}
+
+export function telegramWebhookSecret() {
+  return process.env.NOTIFICATION_WEBHOOK_SECRET?.trim() || null;
+}
+
+export function hashTelegramToken(token: string) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function appUrl() {
+  return (
+    process.env.PHOENIX_APP_URL ||
+    process.env.NOTIFICATION_DASHBOARD_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    ""
+  ).trim().replace(/\/+$/, "");
+}
+
+export function phoenixActionUrl(path: string | null | undefined) {
+  const value = String(path ?? "").trim();
+  if (!value) return appUrl() || "";
+  if (/^https?:\/\//i.test(value)) return value;
+  const base = appUrl();
+  return base ? `${base}${value.startsWith("/") ? value : `/${value}`}` : value;
+}
+
+function cleanTelegramText(value: string) {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/[<>]/g, "")
+    .trim()
+    .slice(0, 900);
+}
+
+export function buildTelegramDeepLink(token: string) {
+  const username = telegramBotUsername();
+  if (!username) return null;
+  return `https://t.me/${encodeURIComponent(username)}?start=${encodeURIComponent(token)}`;
+}
+
+export async function sendTelegramNotification(input: TelegramSendInput): Promise<TelegramSendResult> {
+  const token = telegramBotToken();
+  if (!token) return { reason: "TELEGRAM_BOT_TOKEN is missing.", skipped: true };
+  if (!input.chatId.trim()) return { reason: "Telegram chat id is missing.", skipped: true };
+
+  const text = [input.title, input.message]
+    .map(cleanTelegramText)
+    .filter(Boolean)
+    .join("\n\n");
+  if (!text) return { reason: "Telegram message is empty.", skipped: true };
+
+  const actionUrl = phoenixActionUrl(input.actionUrl);
+  const replyMarkup = actionUrl
+    ? {
+        inline_keyboard: [[{ text: "Open in Phoenix", url: actionUrl }]],
+      }
+    : undefined;
+
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    body: JSON.stringify({
+      chat_id: input.chatId,
+      disable_web_page_preview: true,
+      reply_markup: replyMarkup,
+      text,
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  const payload = await response.json().catch(() => null) as {
+    description?: string;
+    ok?: boolean;
+    result?: { message_id?: number | string };
+  } | null;
+
+  if (!response.ok || payload?.ok === false) {
+    throw new Error(payload?.description ?? `Telegram request failed with ${response.status}.`);
+  }
+
+  return { providerMessageId: String(payload?.result?.message_id ?? ""), skipped: false };
+}

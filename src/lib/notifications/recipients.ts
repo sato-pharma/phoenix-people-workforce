@@ -30,6 +30,7 @@ export const PERSONAL_BELL_CATEGORIES = [
   "general",
   "internal_message",
   "excuse",
+  "recruitment",
 ] as const;
 
 const personalBellCategorySet = new Set<string>(PERSONAL_BELL_CATEGORIES);
