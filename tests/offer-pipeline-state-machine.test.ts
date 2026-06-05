@@ -29,7 +29,7 @@ export function runOfferPipelineStateMachineTests() {
   }
 
   // offers registry: send comes from generated; negotiation loops back to draft.
-  const offersRegistry = source("supabase/migrations/20260606091000_offers_registry_pipeline.sql");
+  const offersRegistry = source("supabase/migrations/20260605093807_20260606091000_offers_registry_pipeline.sql");
   assert.match(offersRegistry, /"key":"offer_send"[\s\S]*?"from":\["offer_generated"\]/, "send comes from generated");
   assert.match(
     offersRegistry,
@@ -38,6 +38,6 @@ export function runOfferPipelineStateMachineTests() {
   );
 
   // recruitment mirror: prepare targets offer_draft (from selection or negotiation).
-  const recruitmentRegistry = source("supabase/migrations/20260606091500_recruitment_offer_pipeline_stages.sql");
+  const recruitmentRegistry = source("supabase/migrations/20260605093925_20260606091500_recruitment_offer_pipeline_stages.sql");
   assert.match(recruitmentRegistry, /"key":"app_offer_prepare"[\s\S]*?"to":"offer_draft"/, "prepare targets offer_draft");
 }
