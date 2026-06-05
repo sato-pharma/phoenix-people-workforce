@@ -27,7 +27,7 @@ import type { Candidate, Interview, InterviewType, RecruitmentActionKey, Recruit
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
 import { resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
-import type { OnboardingItem } from "@/lib/recruitment/onboarding";
+import { documentsComplete, type OnboardingItem } from "@/lib/recruitment/onboarding";
 import type { OfferLetterVersion } from "@/lib/recruitment/offer-letters";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 
@@ -2009,7 +2009,14 @@ function OnboardingSection({
 
       {documents.length > 0 ? (
         <div className="space-y-1">
-          <p className="text-[11px] font-semibold text-slate-600">Documents</p>
+          <p className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
+            Documents
+            {documentsComplete(documents.map((item) => item.status)) ? (
+              <span className="bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">Documents Verified</span>
+            ) : (
+              <span className="bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Documents Pending</span>
+            )}
+          </p>
           <ul className="space-y-1">
             {documents.map((item) => (
               <li key={item.id} className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
@@ -2027,6 +2034,9 @@ function OnboardingSection({
                       <Button variant="ghost" disabled={busy} onClick={() => void patch(item.id, { status: "waived" })}>
                         Waive
                       </Button>
+                      <Button variant="ghost" disabled={busy} onClick={() => void patch(item.id, { status: "missing" })}>
+                        Missing
+                      </Button>
                     </>
                   ) : null}
                 </span>
@@ -2038,7 +2048,10 @@ function OnboardingSection({
 
       {joining.length > 0 ? (
         <div className="space-y-1">
-          <p className="text-[11px] font-semibold text-slate-600">Joining tasks</p>
+          <p className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
+            Joining tasks
+            <span className="bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">Joining Scheduled</span>
+          </p>
           <ul className="space-y-1">
             {joining.map((item) => (
               <li key={item.id} className="flex flex-wrap items-center justify-between gap-1.5 text-xs">

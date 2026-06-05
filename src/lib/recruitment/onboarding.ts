@@ -31,6 +31,7 @@ export const onboardingJoiningItems = [
 
 export const onboardingItemStatuses = [
   "pending",
+  "missing",
   "submitted",
   "approved",
   "rejected",
