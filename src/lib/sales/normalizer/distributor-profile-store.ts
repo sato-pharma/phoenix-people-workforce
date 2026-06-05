@@ -209,21 +209,27 @@ export async function resetDistributorProfile(distributorCode: string): Promise<
   if (error) throw new Error(`Failed to reset distributor profile: ${error.message ?? "unknown error"}`);
 }
 
-// The "puzzle pieces": each distributor's real raw column headers, harvested from a sample of its
-// imported rows (raw_row preserves the original sheet headers). Empty for distributors not yet imported.
+// The "puzzle pieces": each distributor's column headers. Seeded from the distributor's KNOWN columns
+// (the code profile) so the list is NEVER empty — even before any file is imported — then enriched with
+// the real headers seen in its imported rows (raw_row preserves the original sheet headers).
 export async function listDistributorHeaders(): Promise<Record<string, string[]>> {
   const supabase = getSupabaseAdmin();
   const out: Record<string, string[]> = {};
   await Promise.all(RAW_DISTRIBUTOR_PROFILES.map(async (p) => {
+    const keys = new Set<string>();
+    // Seed from the distributor's known columns so SOFICO / EGD etc. show their headers with zero imports.
+    for (const list of [p.productColumns, p.qtyColumns, p.bonusColumns, p.valueColumns, p.dateColumns, p.customerCodeColumns, p.customerNameColumns, p.customerAddressColumns, p.territoryColumns, p.brickIdColumns, p.discountColumns]) {
+      for (const c of list ?? []) { const t = String(c).trim(); if (t) keys.add(t); }
+    }
+    // Enrich with the actual headers seen in this distributor's imported files.
     try {
       const { data } = await supabase.from("source_of_sales_import_rows").select("raw_row").eq("distributor_code", p.distributorCode).limit(8);
-      const keys = new Set<string>();
       for (const r of (data ?? []) as Array<Record<string, unknown>>) {
         const rr = r.raw_row;
         if (rr && typeof rr === "object") for (const k of Object.keys(rr as Record<string, unknown>)) { const t = k.trim(); if (t) keys.add(t); }
       }
-      out[p.distributorCode] = [...keys].sort((a, b) => a.localeCompare(b));
-    } catch { out[p.distributorCode] = []; }
+    } catch { /* keep the seeded columns */ }
+    out[p.distributorCode] = [...keys].sort((a, b) => a.localeCompare(b));
   }));
   return out;
 }
