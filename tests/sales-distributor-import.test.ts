@@ -119,7 +119,7 @@ async function buildIbnSinaWorkbookBuffer(rows: unknown[][]) {
       "Free Unit",
       "type",
       "Product ID",
-      "Brick ID2",
+      "Brick ID",
       "Area ID",
       "Region ID",
       "Distrub ID",

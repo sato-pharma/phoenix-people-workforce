@@ -332,7 +332,7 @@ const IBN_SINA_IS_TEMPLATE: DistributorSalesTemplate = {
   distributorCodes: ["IS"],
   fields: {
     areaCode: "Area ID",
-    brickId: "Brick ID2",
+    brickId: "Brick ID",
     distributorCode: "Distrub ID",
     invoiceDate: "Date",
     productCode: "Product ID",
@@ -2221,7 +2221,7 @@ export function buildMonthlyClosingMatrix(input: {
 
   const cellLookup = new Map<string, MonthlyClosingAggregateCell>();
   input.cells.forEach((cell) => {
-    cellLookup.set(`${normalizeCode(cell.areaCode)} ${normalizeCode(cell.productCode)}`, cell);
+    cellLookup.set(`${normalizeCode(cell.areaCode)} ${normalizeCode(cell.productCode)}`, cell);
   });
 
   const sortedAreas = [...input.areas].sort((left, right) => {
@@ -2240,7 +2240,7 @@ export function buildMonthlyClosingMatrix(input: {
     const regionCode = normalizeCode(area.regionCode);
     const areaCode = normalizeCode(area.areaCode);
     const cells = columns.map((column) => {
-      const aggregate = cellLookup.get(`${areaCode} ${column.productCode}`);
+      const aggregate = cellLookup.get(`${areaCode} ${column.productCode}`);
       const cell = emptyClosingCell();
       if (aggregate) {
         cell.salesUnits = aggregate.salesUnits;
