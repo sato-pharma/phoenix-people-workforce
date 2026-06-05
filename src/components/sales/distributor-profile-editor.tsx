@@ -7,9 +7,10 @@ import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-s
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-// Phoenix target fields (keys MUST match the server ProfileFieldKey strings).
+// Phoenix target fields — EACH its own cell (keys MUST match the server ProfileFieldKey strings).
 const FIELDS: { key: FieldKey; label: string; hint?: string }[] = [
-  { key: "productColumns", label: "Product (code / name)", hint: "item code first, then name" },
+  { key: "productCodeColumns", label: "Product Code" },
+  { key: "productNameColumns", label: "Product Name" },
   { key: "qtyColumns", label: "Quantity" },
   { key: "bonusColumns", label: "Bonus Qty" },
   { key: "valueColumns", label: "Value", hint: "only used in 'from sheet' mode" },
@@ -17,13 +18,14 @@ const FIELDS: { key: FieldKey; label: string; hint?: string }[] = [
   { key: "dateColumns", label: "Invoice Date" },
   { key: "customerCodeColumns", label: "Customer Code" },
   { key: "customerNameColumns", label: "Customer Name" },
-  { key: "territoryColumns", label: "Territory → Brick", hint: "district / governorate text" },
-  { key: "brickIdColumns", label: "Brick ID (if the sheet already has one)" },
+  { key: "territoryColumns", label: "Territory (area/district text)", hint: "resolves the Brick" },
+  { key: "brickIdColumns", label: "Brick ID", hint: "only if the sheet already has a Phoenix brick id" },
 ];
 
 type FieldKey =
-  | "productColumns" | "qtyColumns" | "bonusColumns" | "valueColumns" | "discountColumns"
-  | "dateColumns" | "customerCodeColumns" | "customerNameColumns" | "territoryColumns" | "brickIdColumns";
+  | "productCodeColumns" | "productNameColumns" | "qtyColumns" | "bonusColumns" | "valueColumns"
+  | "discountColumns" | "dateColumns" | "customerCodeColumns" | "customerNameColumns"
+  | "territoryColumns" | "brickIdColumns";
 
 type EditableProfile = {
   distributorCode: string;

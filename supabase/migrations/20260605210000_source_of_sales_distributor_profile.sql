@@ -6,7 +6,8 @@
 
 create table if not exists public.source_of_sales_distributor_profile (
   distributor_code text primary key,
-  product_columns text[] not null default '{}'::text[],
+  product_code_columns text[] not null default '{}'::text[],
+  product_name_columns text[] not null default '{}'::text[],
   qty_columns text[] not null default '{}'::text[],
   bonus_columns text[] not null default '{}'::text[],
   value_columns text[] not null default '{}'::text[],
