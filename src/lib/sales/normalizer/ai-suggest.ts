@@ -1,78 +1,93 @@
 // Optional AI assist for the bulk mapper: given the DISTINCT unknown item/territory NAMES and the
-// Phoenix candidate list, ask Gemini (free tier) for the best match per unknown. SUGGEST-ONLY — the
-// result just pre-fills the dropdowns; the user confirms before anything is saved. Privacy: only the
+// Phoenix candidate list, ask a chat model for the best match per unknown. SUGGEST-ONLY — the result
+// just pre-fills the dropdowns; the user confirms before anything is saved. Privacy: only the
 // item/place names + the candidate names are sent — never customer codes, addresses, or sales rows.
-// Degrades gracefully: with no API key it is a no-op and the UI hides the button.
-
-// 2.5-flash + 2.5-flash-lite are on the free tier (2.0-flash returns limit:0 for new keys). Try flash
-// first for the best matches; fall back to flash-lite (its own separate quota) if flash is busy.
-const MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"] as const;
-
-export function getGeminiKey(): string {
-  return process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "";
-}
-
-export function hasGeminiKey(): boolean {
-  return Boolean(getGeminiKey());
-}
+//
+// Provider-agnostic via the OpenAI-compatible /chat/completions API. Defaults to OpenAI GPT-4o; set
+// any of these in the env (no code change) to swap engines:
+//   OPENAI_API_KEY      -> OpenAI         (default model gpt-4o)
+//   GROQ_API_KEY        -> Groq           (default model llama-3.3-70b-versatile)
+//   OPENROUTER_API_KEY  -> OpenRouter     (default model openai/gpt-4o)
+//   AI_API_KEY + AI_BASE_URL              -> any other OpenAI-compatible provider
+//   AI_MODEL            -> override the model for whichever provider is active
+// With no key it is a no-op and the UI hides the button.
 
 export type AiCandidate = { code: string; label: string };
 export type AiUnknown = { raw: string; rawName?: string };
 export type AiSuggestion = { code: string; raw: string };
 
-function buildPrompt(kind: "product" | "territory", unknowns: AiUnknown[], candidates: AiCandidate[]): string {
-  const intro = kind === "product"
-    ? "You match a pharmaceutical distributor's raw product names (English or Arabic) to an official product catalog. Match ONLY when you are confident it is the SAME medicine (same active product); otherwise use null. Ignore pack size / tablet count differences."
-    : "You match a distributor's raw territory / district names (English or Arabic) to an official territory (brick) list. Match ONLY when confident the place is the same; otherwise use null.";
+type Provider = { baseUrl: string; key: string; model: string };
+
+// Resolve the active provider from env (OpenAI first). AI_BASE_URL / AI_MODEL override the defaults.
+function resolveProvider(): Provider | null {
+  const baseOverride = process.env.AI_BASE_URL?.replace(/\/+$/, "");
+  const modelOverride = process.env.AI_MODEL;
+  if (process.env.OPENAI_API_KEY) return { baseUrl: baseOverride || "https://api.openai.com/v1", key: process.env.OPENAI_API_KEY, model: modelOverride || "gpt-4o" };
+  if (process.env.GROQ_API_KEY) return { baseUrl: baseOverride || "https://api.groq.com/openai/v1", key: process.env.GROQ_API_KEY, model: modelOverride || "llama-3.3-70b-versatile" };
+  if (process.env.OPENROUTER_API_KEY) return { baseUrl: baseOverride || "https://openrouter.ai/api/v1", key: process.env.OPENROUTER_API_KEY, model: modelOverride || "openai/gpt-4o" };
+  if (process.env.AI_API_KEY && baseOverride) return { baseUrl: baseOverride, key: process.env.AI_API_KEY, model: modelOverride || "gpt-4o" };
+  return null;
+}
+
+export function hasAiKey(): boolean {
+  return resolveProvider() !== null;
+}
+
+function systemPrompt(kind: "product" | "territory"): string {
+  return kind === "product"
+    ? "You match a pharmaceutical distributor's raw product names (English or Arabic) to an official product catalog. Match ONLY when you are confident it is the SAME medicine (same active product); otherwise use null. Ignore pack size / tablet count differences. Reply with JSON only."
+    : "You match a distributor's raw territory / district names (English or Arabic) to an official territory (brick) list. Match ONLY when confident the place is the same; otherwise use null. Reply with JSON only.";
+}
+
+function userPrompt(unknowns: AiUnknown[], candidates: AiCandidate[]): string {
   const cands = candidates.map((c) => `${c.code} | ${c.label}`).join("\n");
   const items = unknowns.map((u, i) => `${i + 1} | ${u.rawName || u.raw}`).join("\n");
-  return `${intro}
-
-Official list (code | name):
+  return `Official list (code | name):
 ${cands}
 
 Items to match (id | text):
 ${items}
 
-Return ONLY a JSON array, one object per item: [{"id": <id>, "code": "<official code, or null>"}]. Use a code only if it appears in the official list above.`;
+Return ONLY JSON of this exact shape: {"matches":[{"id":<id>,"code":"<official code from the list above, or null>"}]}. Use a code only if it appears verbatim in the official list.`;
 }
 
 function shortReason(raw: string): string {
-  try { const j = JSON.parse(raw) as { error?: { message?: string } }; return String(j?.error?.message ?? raw).split("\n")[0].slice(0, 180); }
-  catch { return raw.slice(0, 180); }
+  try { const j = JSON.parse(raw) as { error?: { message?: string } }; return String(j?.error?.message ?? raw).split("\n")[0].slice(0, 200); }
+  catch { return raw.slice(0, 200); }
 }
 
-// One generateContent call with model fallback (flash -> flash-lite, each its own free-tier quota).
-// Returns the model's JSON text, or throws a human-readable reason if every model fails (e.g. quota).
-async function generate(prompt: string, key: string): Promise<string> {
-  let lastErr = "AI request failed.";
-  for (const model of MODELS) {
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0 } }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      if (res.ok) {
-        const json = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-        return json.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
-      }
-      lastErr = res.status === 429
-        ? "AI is temporarily rate-limited on the free tier - wait about a minute and click AI suggest again."
-        : `AI request failed (HTTP ${res.status}): ${shortReason(await res.text().catch(() => ""))}`;
-    } catch (e) {
-      lastErr = e instanceof Error ? e.message : "AI network error.";
-    }
+// One chat-completions call. Returns the model's JSON text, or throws a human-readable reason on failure
+// so the UI surfaces it instead of a misleading "no matches".
+async function generate(provider: Provider, kind: "product" | "territory", unknowns: AiUnknown[], candidates: AiCandidate[]): Promise<string> {
+  const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+    body: JSON.stringify({
+      messages: [
+        { content: systemPrompt(kind), role: "system" },
+        { content: userPrompt(unknowns, candidates), role: "user" },
+      ],
+      model: provider.model,
+      response_format: { type: "json_object" },
+      temperature: 0,
+    }),
+    headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
+    method: "POST",
+  });
+  if (res.ok) {
+    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    return json.choices?.[0]?.message?.content ?? "{}";
   }
-  throw new Error(lastErr);
+  const body = await res.text().catch(() => "");
+  if (res.status === 429) throw new Error("AI is rate-limited right now — wait a moment and click AI suggest again.");
+  if (res.status === 401) throw new Error("AI key was rejected (401) — check the API key is valid and has credit/access.");
+  throw new Error(`AI request failed (HTTP ${res.status}): ${shortReason(body)}`);
 }
 
 // Returns best-guess {raw, code} pairs. Validates every returned code against the candidate set, so the
-// AI can never invent a code. Batches to keep each request small + within the free tier. If every batch
-// fails (e.g. quota), throws the reason so the UI shows it instead of a misleading "no matches".
+// AI can never invent a code. Batches to keep each request small. If every batch fails (e.g. bad key or
+// rate limit), throws the reason so the UI shows it instead of a misleading "no matches".
 export async function aiSuggest(kind: "product" | "territory", unknowns: AiUnknown[], candidates: AiCandidate[]): Promise<AiSuggestion[]> {
-  const key = getGeminiKey();
-  if (!key || unknowns.length === 0 || candidates.length === 0) return [];
+  const provider = resolveProvider();
+  if (!provider || unknowns.length === 0 || candidates.length === 0) return [];
   const validCodes = new Map(candidates.map((c) => [c.code.trim().toUpperCase(), c.code]));
   const out: AiSuggestion[] = [];
   const BATCH = 60;
@@ -80,7 +95,9 @@ export async function aiSuggest(kind: "product" | "territory", unknowns: AiUnkno
   for (let i = 0; i < unknowns.length; i += BATCH) {
     const chunk = unknowns.slice(i, i + BATCH);
     try {
-      const arr = JSON.parse(await generate(buildPrompt(kind, chunk, candidates), key)) as { code?: string | null; id?: number }[];
+      const text = await generate(provider, kind, chunk, candidates);
+      const parsed = JSON.parse(text) as { matches?: { code?: string | null; id?: number }[] } | { code?: string | null; id?: number }[];
+      const arr = Array.isArray(parsed) ? parsed : parsed.matches ?? [];
       for (const item of Array.isArray(arr) ? arr : []) {
         const idx = Number(item.id) - 1;
         const u = chunk[idx];

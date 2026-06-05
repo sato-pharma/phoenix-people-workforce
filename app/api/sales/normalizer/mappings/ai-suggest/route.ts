@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { aiSuggest, hasGeminiKey, type AiUnknown } from "@/lib/sales/normalizer/ai-suggest";
+import { aiSuggest, hasAiKey, type AiUnknown } from "@/lib/sales/normalizer/ai-suggest";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 
 export const runtime = "nodejs";
@@ -17,8 +17,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     }
     await assertPermission(access, "sales", "import");
-    if (!hasGeminiKey()) {
-      return NextResponse.json({ success: false, error: "AI is not configured. Add a free GEMINI_API_KEY to enable suggestions." }, { status: 400 });
+    if (!hasAiKey()) {
+      return NextResponse.json({ success: false, error: "AI is not configured. Add an OPENAI_API_KEY to enable suggestions." }, { status: 400 });
     }
 
     const body = (await request.json().catch(() => ({}))) as { kind?: "product" | "territory"; unknowns?: AiUnknown[] };
