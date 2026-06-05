@@ -47,13 +47,13 @@ export function runWorkflowRegistryEnforcementTests() {
   assert.match(payrollExpenses, /actionKey: "delete_before_payroll"/);
 
   const baseMigration = source("supabase/migrations/20260527083111_workflow_registry.sql");
-  assert.match(baseMigration, /"key":"mark_part1_ready"/);
-  assert.match(baseMigration, /"key":"reopen"/);
   assert.match(baseMigration, /"Super Admin","HR Specialist","Finance Manager","CEO"/);
 
   const alignmentMigration = source("supabase/migrations/20260527085038_workflow_registry_runtime_alignment.sql");
   assert.match(alignmentMigration, /where module_key = 'outstation_expenses'/);
   assert.match(alignmentMigration, /where module_key = 'payroll_batches'/);
+  assert.match(alignmentMigration, /"key":"mark_part1_ready"/);
+  assert.match(alignmentMigration, /"key":"reopen"/);
   assert.match(alignmentMigration, /"key":"mark_review"/);
 
   const liveModulesMigration = source("supabase/migrations/20260527091104_workflow_registry_live_modules.sql");
