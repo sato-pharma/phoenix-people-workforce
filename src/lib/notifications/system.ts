@@ -39,6 +39,7 @@ export type CreateSystemNotificationInput = {
   recipientUserId?: string | null;
   subjectHrId?: string | null;
   telegram?: {
+    buttons?: Array<{ label: string; url: string }> | null;
     ctaLabel?: string | null;
     ctaUrl?: string | null;
   };
@@ -604,6 +605,7 @@ export async function processTelegramDeliveryRetries(limit = 10) {
 
       const result = await sendTelegramNotification({
         actionUrl: telegram.actionUrl ?? null,
+        buttons: telegram.buttons ?? null,
         chatId: String(telegram.chatId),
         ctaLabel: telegram.ctaLabel ?? null,
         ctaUrl: telegram.ctaUrl ?? null,
@@ -736,11 +738,12 @@ export async function retryTelegramDeliveryById(id: string): Promise<SystemNotif
   if (attempts >= maxAttempts) return { channel: "telegram", idempotencyKey, reason: "Maximum retry attempts reached.", status: "skipped" };
 
   try {
-    const result = await sendTelegramNotification({
-      actionUrl: telegram.actionUrl ?? null,
-      chatId: String(connection.telegram_chat_id),
-      ctaLabel: telegram.ctaLabel ?? null,
-      ctaUrl: telegram.ctaUrl ?? null,
+      const result = await sendTelegramNotification({
+        actionUrl: telegram.actionUrl ?? null,
+        buttons: telegram.buttons ?? null,
+        chatId: String(connection.telegram_chat_id),
+        ctaLabel: telegram.ctaLabel ?? null,
+        ctaUrl: telegram.ctaUrl ?? null,
       message: governance.genericOnly ? "Your payslip is available." : String(telegram.message),
       title: String(telegram.title),
     });
@@ -777,6 +780,7 @@ export async function retryTelegramDeliveryById(id: string): Promise<SystemNotif
 
 type TelegramRetryPayload = {
   actionUrl?: string | null;
+  buttons?: Array<{ label: string; url: string }> | null;
   chatId: string;
   ctaLabel?: string | null;
   ctaUrl?: string | null;
@@ -926,6 +930,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         const telegramContent = await renderChannelContent(input, "telegram");
         const result = await sendTelegramNotification({
           actionUrl: input.actionUrl ?? null,
+          buttons: input.telegram?.buttons ?? null,
           chatId: String(connection.telegram_chat_id),
           ctaLabel: input.telegram?.ctaLabel ?? null,
           ctaUrl: input.telegram?.ctaUrl ?? null,
@@ -959,6 +964,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
             retry: true,
             telegram: {
               actionUrl: input.actionUrl ?? null,
+              buttons: input.telegram?.buttons ?? null,
               chatId: String(connection.telegram_chat_id),
               ctaLabel: input.telegram?.ctaLabel ?? null,
               ctaUrl: input.telegram?.ctaUrl ?? null,

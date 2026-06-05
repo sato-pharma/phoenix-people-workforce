@@ -21,7 +21,18 @@ async function assertTelegramTemplateAdmin(request: Request, action: "read" | "u
 }
 
 function templateInput(body: Record<string, unknown>) {
+  const buttons = Array.isArray(body.buttons)
+    ? body.buttons
+        .filter((button): button is Record<string, unknown> => Boolean(button) && typeof button === "object" && !Array.isArray(button))
+        .map((button) => ({
+          enabled: button.enabled !== false,
+          label: String(button.label ?? ""),
+          type: String(button.type ?? "custom") as "open_phoenix" | "view_details" | "custom",
+          url: String(button.url ?? ""),
+        }))
+    : undefined;
   return {
+    buttons,
     ctaEnabled: body.ctaEnabled === true,
     ctaLabel: String(body.ctaLabel ?? ""),
     ctaUrl: String(body.ctaUrl ?? ""),

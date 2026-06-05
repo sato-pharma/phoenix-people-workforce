@@ -47,6 +47,55 @@ export function validateTelegramCta(input: {
   return { errors, unknownPlaceholders };
 }
 
+export type TelegramTemplateButtonInput = {
+  enabled?: boolean;
+  label?: string | null;
+  type?: string | null;
+  url?: string | null;
+};
+
+export const telegramTemplateButtonTypes = ["open_phoenix", "view_details", "custom"] as const;
+export type TelegramTemplateButtonType = (typeof telegramTemplateButtonTypes)[number];
+
+function isSafeButtonType(value: string) {
+  return (telegramTemplateButtonTypes as readonly string[]).includes(value);
+}
+
+function approvalLabelBlocked(label: string) {
+  return /\b(approve|approved|reject|rejected|decline|declined)\b/i.test(label);
+}
+
+export function validateTelegramTemplateButtons(input: {
+  allowedPlaceholders: string[];
+  buttons?: TelegramTemplateButtonInput[] | null;
+}) {
+  const errors: string[] = [];
+  const unknownPlaceholders: string[] = [];
+  const enabledButtons = (input.buttons ?? []).filter((button) => button?.enabled !== false);
+
+  if (enabledButtons.length > 3) errors.push("Telegram templates can include at most 3 action buttons.");
+
+  enabledButtons.forEach((button, index) => {
+    const label = cleanText(button.label);
+    const url = cleanText(button.url);
+    const type = cleanText(button.type) || "custom";
+    const unknown = extractTelegramPlaceholders(url).filter((placeholder) => !input.allowedPlaceholders.includes(placeholder));
+    unknownPlaceholders.push(...unknown);
+
+    if (!isSafeButtonType(type)) errors.push(`Button ${index + 1} has an unsupported type.`);
+    if (!label) errors.push(`Button ${index + 1} label is required.`);
+    if (/<[a-z][\s\S]*>/i.test(label)) errors.push(`Button ${index + 1} label must be plain text. HTML is not allowed.`);
+    if (approvalLabelBlocked(label) || type === "approve" || type === "reject") {
+      errors.push("Telegram action buttons cannot approve or reject in Phase 2.1.");
+    }
+    if (!url) errors.push(`Button ${index + 1} URL is required.`);
+    if (/<[a-z][\s\S]*>/i.test(url)) errors.push(`Button ${index + 1} URL must be plain text. HTML is not allowed.`);
+    if (unknown.length > 0) errors.push(`Unknown button placeholders: ${unknown.join(", ")}.`);
+  });
+
+  return { errors, unknownPlaceholders: Array.from(new Set(unknownPlaceholders)) };
+}
+
 export function isSafeTelegramCtaUrl(value: string) {
   const url = cleanText(value);
   if (!url) return false;
