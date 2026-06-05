@@ -3,9 +3,10 @@ import ExcelJS from "exceljs";
 import { systemIdentity } from "@/config/system-settings";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { loadCrosswalks } from "@/lib/sales/normalizer/crosswalks";
+import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { normalizeRawWorkbook } from "@/lib/sales/normalizer/engine";
 import { distinctUnknowns, saveMappings, type DistinctUnknown, type MappingInput, type ProductRef } from "@/lib/sales/normalizer/mapping";
-import { RAW_DISTRIBUTOR_PROFILES, rawProfileForDistributor } from "@/lib/sales/normalizer/profiles";
+import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -29,7 +30,7 @@ const PHOENIX_PRODUCT_COLUMNS = ["Product ID"];
 const PHOENIX_BRICK_COLUMNS = ["Brick ID", "Brick ID2"];
 
 export async function learnFromCleanedFile(distributorCode: string, file: File): Promise<{ saved: number; skipped: number; invalid: number; scannedRows: number }> {
-  const profile = rawProfileForDistributor(distributorCode);
+  const profile = await resolveDistributorProfile(distributorCode);
   if (!profile) throw new Error(`No normalizer profile for distributor ${distributorCode}.`);
   const [refs, buffer] = await Promise.all([loadSalesReferenceData(), file.arrayBuffer()]);
   const productCodes = new Set(refs.products.map((p) => normalizeCodeKey(p.productCode)));
@@ -112,7 +113,7 @@ export type NormalizePreview = {
 };
 
 export async function normalizeUploadedFile(distributorCode: string, file: File): Promise<{ result: NormalizeResult; period: string | null; distributorName: string; products: ProductRef[] }> {
-  const profile = rawProfileForDistributor(distributorCode);
+  const profile = await resolveDistributorProfile(distributorCode);
   if (!profile) throw new Error(`No normalizer profile for distributor ${distributorCode}.`);
   // Load the masters once and hand them to loadCrosswalks (which would otherwise reload them) — halves
   // the reference round-trips per analyze.
