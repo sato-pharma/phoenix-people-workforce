@@ -4,6 +4,7 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { randomUUID } from "node:crypto";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
@@ -337,7 +338,7 @@ async function getEmployeeIdentity(access: AccessContext) {
     employeeHrId: employee.hrId,
     employeeLine: employee?.lineName ?? null,
     employeeName: employee?.fullName ?? employee.hrId,
-    employeeRole: normalizeRole(employee?.jobTitle ?? access.role),
+    employeeRole: resolveJobFunctionRole(employee?.jobTitle ?? access.role),
   };
 }
 
@@ -1906,7 +1907,7 @@ export async function createManagerExpenseAsAdmin(
   }
 
   const residence = await getResidenceLocationForEmployee(employee.hrId);
-  const policy = await getActivePolicyForRole(normalizeRole(employee.jobTitle ?? ""));
+  const policy = await getActivePolicyForRole(resolveJobFunctionRole(employee.jobTitle ?? ""));
   const allowance = calculateAllowanceBreakdown(input.tripStartDate, input.tripEndDate, policy);
 
   let fuelAmount = 0;
@@ -1965,7 +1966,7 @@ export async function createManagerExpenseAsAdmin(
       eligibility_status: eligibilityStatus,
       employee_hr_id: employee.hrId,
       employee_name: employee.fullName ?? employee.hrId,
-      employee_role: normalizeRole(employee.jobTitle ?? ""),
+      employee_role: resolveJobFunctionRole(employee.jobTitle ?? ""),
       expected_total_amount: expectedTotalAmount,
       expense_type: input.expenseType,
       fraud_flags_json: JSON.stringify([]),
@@ -2058,7 +2059,7 @@ export async function updateManagerExpenseAsAdmin(
     (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(employeeHrId),
   );
   const policy = await getActivePolicyForRole(
-    normalizeRole(employee?.jobTitle ?? existing.employeeRole),
+    resolveJobFunctionRole(employee?.jobTitle ?? existing.employeeRole),
   );
 
   const tripStartDate = input.tripStartDate ?? existing.tripStartDate;

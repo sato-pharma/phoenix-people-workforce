@@ -1,14 +1,14 @@
 import {
   normalizeHrId,
-  normalizeRole,
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 
 export type EmployeeCoachingPortalMode = "self" | "team";
 
 function isMedicalRepTitle(value: string | null | undefined) {
-  return normalizeRole(value) === "Medical Rep";
+  return resolveJobFunctionRole(value) === "Medical Rep";
 }
 
 export async function resolveEmployeeCoachingPortalMode(
