@@ -28,16 +28,29 @@ export const interviewScorecardCriteria: Record<InterviewType, ScorecardCriterio
     { key: "product_knowledge", label: "Product knowledge" },
     { key: "customer_handling", label: "Customer handling" },
   ],
+  // Rule 5 — CV screening review criteria (all rated 1-5).
+  cv: [
+    { key: "education", label: "Education" },
+    { key: "area_match", label: "Area Match" },
+    { key: "experience", label: "Experience" },
+    { key: "industry_background", label: "Industry Background" },
+    { key: "salary_expectation", label: "Salary Expectation" },
+    { key: "stability", label: "Stability" },
+  ],
 };
 
 export const interviewOutcomes = [
   "recommended",
   "hold",
+  "on_hold",
   "rejected",
   "passed",
   "failed",
   "no_response",
   "call_back",
+  // Rule 5 — CV screening outcomes
+  "shortlisted",
+  "need_phone_screening",
 ] as const;
 export type InterviewOutcome = (typeof interviewOutcomes)[number];
 

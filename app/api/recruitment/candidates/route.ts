@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createCandidate, listCandidates } from "@/lib/recruitment/candidates";
+import { createCandidate, searchCandidates } from "@/lib/recruitment/candidates";
 import type { CreateCandidateInput } from "@/lib/recruitment/types";
 import {
   assertSameOriginMutation,
@@ -17,7 +17,12 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     await requireRecruitmentAccess(request, "candidates", "read");
-    const candidates = await listCandidates();
+    const url = new URL(request.url);
+    const candidates = await searchCandidates({
+      q: url.searchParams.get("q"),
+      status: url.searchParams.get("status"),
+      source: url.searchParams.get("source"),
+    });
     return NextResponse.json({ success: true, candidates });
   } catch (error) {
     return recruitmentApiError(error, "Failed to load candidates.");

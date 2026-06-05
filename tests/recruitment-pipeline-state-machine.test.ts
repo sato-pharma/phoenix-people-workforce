@@ -39,4 +39,26 @@ export function runRecruitmentPipelineStateMachineTests() {
   for (const action of ["app_select", "app_offer_sent", "app_offer_accepted", "app_hire", "app_reject"]) {
     assert.ok((recruitmentActionKeys as readonly string[]).includes(action), `missing action ${action}`);
   }
+
+  // Rule 5/6 — new screening stages are present and non-terminal.
+  for (const stage of ["shortlisted", "on_hold", "no_response", "call_back"]) {
+    assert.ok((applicationStages as readonly string[]).includes(stage), `missing stage ${stage}`);
+    assert.equal(isTerminalApplicationStage(stage), false, `${stage} must be non-terminal`);
+  }
+
+  // Rule 5/6 — screening + hold/resume actions exist.
+  for (const action of [
+    "app_cv_shortlist",
+    "app_shortlist_to_scheduling",
+    "app_hold",
+    "app_resume_from_hold_to_cv",
+    "app_resume_from_hold_to_phone",
+    "app_no_response",
+    "app_resume_from_no_response",
+    "app_call_back",
+    "app_resume_from_call_back_to_cv",
+    "app_resume_from_call_back_to_phone",
+  ]) {
+    assert.ok((recruitmentActionKeys as readonly string[]).includes(action), `missing action ${action}`);
+  }
 }

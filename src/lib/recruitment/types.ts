@@ -37,6 +37,11 @@ export const applicationStages = [
   "hired",
   "application_rejected",
   "application_withdrawn",
+  // Rule 5/6 — screening states (all non-terminal).
+  "shortlisted",
+  "on_hold",
+  "no_response",
+  "call_back",
 ] as const;
 export type ApplicationStage = (typeof applicationStages)[number];
 
@@ -74,6 +79,18 @@ export const recruitmentActionKeys = [
   "app_hire",
   "app_reject",
   "app_withdraw",
+  // Rule 5 — CV screening outcomes
+  "app_cv_shortlist",
+  "app_shortlist_to_scheduling",
+  // Rule 5/6 — holding states + resume paths
+  "app_hold",
+  "app_resume_from_hold_to_cv",
+  "app_resume_from_hold_to_phone",
+  "app_no_response",
+  "app_resume_from_no_response",
+  "app_call_back",
+  "app_resume_from_call_back_to_cv",
+  "app_resume_from_call_back_to_phone",
 ] as const;
 export type RecruitmentActionKey = (typeof recruitmentActionKeys)[number];
 
@@ -83,8 +100,17 @@ export type HeadcountType = (typeof headcountTypes)[number];
 export const requisitionPriorities = ["low", "normal", "high", "urgent"] as const;
 export type RequisitionPriority = (typeof requisitionPriorities)[number];
 
-export const interviewTypes = ["phone", "hr", "hiring_manager"] as const;
+export const interviewTypes = ["phone", "hr", "hiring_manager", "cv"] as const;
 export type InterviewType = (typeof interviewTypes)[number];
+
+// Rule 5/6 — screening outcomes that drive the pipeline from the screening forms.
+export const cvScreeningOutcomes = ["shortlisted", "need_phone_screening", "on_hold", "rejected"] as const;
+export type CvScreeningOutcome = (typeof cvScreeningOutcomes)[number];
+export const phoneScreeningOutcomes = ["passed", "failed", "no_response", "call_back"] as const;
+export type PhoneScreeningOutcome = (typeof phoneScreeningOutcomes)[number];
+
+// Rule 4 — candidate-level status (free text; defaults to "Candidate Created").
+export const DEFAULT_CANDIDATE_STATUS = "Candidate Created";
 
 export function isTerminalApplicationStage(stage: string): boolean {
   return (terminalApplicationStages as readonly string[]).includes(stage);
@@ -126,6 +152,7 @@ export type Requisition = {
 export type Candidate = {
   id: string;
   fullName: string;
+  status: string;
   nationalId: string | null;
   email: string | null;
   phone: string | null;

@@ -5,6 +5,7 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assertWorkflowRegistryTransition } from "@/lib/workflow-registry/service";
 import {
+  DEFAULT_CANDIDATE_STATUS,
   RECRUITMENT_MODULE_KEY,
   type Application,
   type ApplicationEvent,
@@ -106,6 +107,7 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
   return {
     id: String(row.id),
     fullName: String(row.full_name ?? ""),
+    status: textOrNull(row.status) ?? DEFAULT_CANDIDATE_STATUS,
     nationalId: textOrNull(row.national_id),
     email: textOrNull(row.email),
     phone: textOrNull(row.phone),
