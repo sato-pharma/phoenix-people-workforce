@@ -2,9 +2,19 @@ import ExcelJS from "exceljs";
 
 import { systemIdentity } from "@/config/system-settings";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeAliasKey, normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { IGNORE_PRODUCT_CODE, type NormalizeException } from "@/lib/sales/normalizer/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+// Distributor code -> readable name, so a learned alias records WHICH distributor it came from
+// (product aliases store it in source_labels[]; territory aliases store it in notes).
+const DISTRIBUTOR_NAME_BY_CODE = new Map(RAW_DISTRIBUTOR_PROFILES.map((p) => [p.distributorCode.toUpperCase(), p.distributorName]));
+function distributorLabel(code: string | undefined): string {
+  const raw = String(code ?? "").trim();
+  if (!raw) return "";
+  return DISTRIBUTOR_NAME_BY_CODE.get(raw.toUpperCase()) ?? raw;
+}
 
 // Bulk mapping — turns a long "Needs mapping" list into a SHORT list of distinct unknown codes
 // (one decision fixes every row that shares that code) with a suggested Phoenix match, and writes
@@ -117,16 +127,17 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
     }
     const key = normalizeAliasKey(raw);
     if (!key) { invalid += 1; continue; }
+    const fromDistributor = distributorLabel(mapping.distributorCode);
     if (mapping.type === "product") {
       if (!productCodes.has(code)) { invalid += 1; continue; }
       if (haveProd.has(key)) { skipped += 1; continue; }
       haveProd.add(key);
-      productRows.push({ alias: raw, normalized_alias: key, product_code: code, active: true, source_file: "normalizer" });
+      productRows.push({ alias: raw, normalized_alias: key, product_code: code, active: true, source_file: "normalizer", source_labels: fromDistributor ? [fromDistributor] : [] });
     } else {
       if (!brickById.has(code)) { invalid += 1; continue; }
       if (haveTerr.has(key)) { skipped += 1; continue; }
       haveTerr.add(key);
-      territoryRows.push({ alias: raw, normalized_alias: key, target_type: "brick", target_code: code, active: true, source_file: "normalizer" });
+      territoryRows.push({ alias: raw, normalized_alias: key, target_type: "brick", target_code: code, active: true, source_file: "normalizer", notes: fromDistributor });
     }
   }
   // Insert-if-absent via the DB's own conflict handling (ON CONFLICT DO NOTHING). This is immune to
@@ -170,7 +181,7 @@ export function buildUnmappedWorkbook(distinct: DistinctUnknowns): Promise<Excel
   return workbook.xlsx.writeBuffer();
 }
 
-export async function learnFromUploadedMappings(buffer: ArrayBuffer | Buffer): Promise<{ saved: number; skipped: number; invalid: number }> {
+export async function learnFromUploadedMappings(buffer: ArrayBuffer | Buffer, distributorCode?: string): Promise<{ saved: number; skipped: number; invalid: number }> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const sheet = workbook.worksheets[0];
@@ -185,7 +196,7 @@ export async function learnFromUploadedMappings(buffer: ArrayBuffer | Buffer): P
     const type = String(row.getCell(typeCol)?.text ?? "").trim().toLowerCase();
     const raw = String(row.getCell(rawCol)?.text ?? "").trim();
     const code = String(row.getCell(fillCol)?.text ?? "").trim();
-    if ((type === "product" || type === "territory") && raw && code) mappings.push({ code, raw, type });
+    if ((type === "product" || type === "territory") && raw && code) mappings.push({ code, distributorCode, raw, type });
   }
   return saveMappings(mappings);
 }

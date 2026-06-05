@@ -139,8 +139,8 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   async function saveMappings() {
     if (!preview) return;
     const mappings: { type: "product" | "territory" | "customer"; raw: string; code: string; distributorCode?: string }[] = [];
-    preview.unknownProducts.forEach((u) => { const c = picks[`p:${u.raw}`]; if (c) mappings.push({ type: "product", raw: u.raw, code: c }); });
-    preview.unknownTerritories.forEach((u) => { const c = picks[`t:${u.raw}`]; if (c) mappings.push({ type: "territory", raw: u.raw, code: c }); });
+    preview.unknownProducts.forEach((u) => { const c = picks[`p:${u.raw}`]; if (c) mappings.push({ type: "product", raw: u.raw, code: c, distributorCode }); });
+    preview.unknownTerritories.forEach((u) => { const c = picks[`t:${u.raw}`]; if (c) mappings.push({ type: "territory", raw: u.raw, code: c, distributorCode }); });
     preview.unknownCustomers.forEach((u) => { const c = picks[`c:${u.raw}`]; if (c) mappings.push({ type: "customer", raw: u.raw, code: c, distributorCode }); });
     if (mappings.length === 0) { setError("Pick at least one Phoenix code to save."); return; }
     setBusy("save"); setError(null); setNotice(null);
@@ -195,7 +195,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   async function learnFromExcel(f: File) {
     setBusy("learn"); setError(null); setNotice(null);
     try {
-      const form = new FormData(); form.set("file", f);
+      const form = new FormData(); form.set("file", f); form.set("distributorCode", distributorCode);
       const res = await fetch("/api/sales/normalizer/mappings/learn", { body: form, method: "POST" });
       const json = await res.json();
       if (!json.success) { setError(json.error ?? "Learn failed."); return; }
