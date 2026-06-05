@@ -1,21 +1,21 @@
 "use client";
 
-import { ArrowDown, ArrowUp, CheckCircle2, Download, Loader2, Plus, RotateCcw, Save, Upload, X } from "lucide-react";
+import { CheckCircle2, Download, Loader2, Plus, RotateCcw, Save, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-// Phoenix target fields — EACH its own cell, exact order/labels of the exported workbook.
-const FIELDS: { key: FieldKey; label: string; hint?: string }[] = [
+// Phoenix target fields — EACH holds ONE column, in the exact order/labels of the exported workbook.
+const FIELDS: { key: FieldKey; label: string }[] = [
   { key: "productCodeColumns", label: "Product Code" },
   { key: "productNameColumns", label: "Product Name" },
   { key: "qtyColumns", label: "Quantity" },
   { key: "branchCodeColumns", label: "Branch Code" },
   { key: "branchNameColumns", label: "Branch Name" },
   { key: "bonusColumns", label: "Bonus Qty" },
-  { key: "valueColumns", label: "Value", hint: "only used in 'from sheet' mode" },
+  { key: "valueColumns", label: "Value" },
   { key: "discountColumns", label: "Discount %" },
   { key: "dateColumns", label: "Invoice Date" },
   { key: "customerCodeColumns", label: "Customer Code" },
@@ -43,18 +43,25 @@ type EditableProfile = {
   fields: Record<FieldKey, string[]>;
 };
 
-const chip = "inline-flex items-center gap-1 border border-[#D8E0EA] bg-white px-2 py-1 text-xs font-semibold text-[#0F172A]";
+// Collapse each field to at most ONE column (one box per field).
+function oneToOne(fields: Record<FieldKey, string[]>): Record<FieldKey, string[]> {
+  const out = {} as Record<FieldKey, string[]>;
+  for (const f of FIELDS) out[f.key] = (fields[f.key] ?? []).slice(0, 1);
+  return out;
+}
 
 export function DistributorProfileEditor() {
   const [profiles, setProfiles] = useState<EditableProfile[]>([]);
   const [headers, setHeaders] = useState<Record<string, string[]>>({});
   const [selected, setSelected] = useState<string>("");
   const [draft, setDraft] = useState<EditableProfile | null>(null);
+  const [armed, setArmed] = useState<string | null>(null); // header "picked up" by click
+  const [custom, setCustom] = useState("");
+  const [customAdded, setCustomAdded] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<"reset" | "import" | null>(null);
   const [message, setMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
-  const [manual, setManual] = useState<Record<string, string>>({});
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   async function load(keepSelection = true) {
@@ -68,7 +75,8 @@ export function DistributorProfileEditor() {
       const next = keepSelection && selected ? selected : list[0]?.distributorCode ?? "";
       setSelected(next);
       const found = list.find((p) => p.distributorCode === next) ?? null;
-      setDraft(found ? structuredClone(found) : null);
+      setDraft(found ? { ...found, fields: oneToOne(found.fields) } : null);
+      setCustomAdded([]); setArmed(null);
     } catch (e) {
       setMessage({ type: "error", text: e instanceof Error ? e.message : "Failed to load mappings." });
     } finally {
@@ -76,37 +84,44 @@ export function DistributorProfileEditor() {
     }
   }
 
-  // Fetch-on-mount: load() only sets state after its await, so there is no synchronous cascade.
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
   useEffect(() => { void load(false); }, []);
 
   function selectDistributor(code: string) {
     setSelected(code);
     const found = profiles.find((p) => p.distributorCode === code) ?? null;
-    setDraft(found ? structuredClone(found) : null);
-    setMessage(null);
+    setDraft(found ? { ...found, fields: oneToOne(found.fields) } : null);
+    setCustomAdded([]); setArmed(null); setMessage(null);
   }
 
-  const pool = useMemo(() => (selected ? headers[selected] ?? [] : []), [headers, selected]);
+  // Pool = the distributor's real headers (+ any custom + anything already placed) MINUS what's assigned.
+  const pool = useMemo(() => {
+    if (!draft) return [];
+    const assigned = new Set(FIELDS.flatMap((f) => draft.fields[f.key]));
+    const universe = new Set<string>();
+    (headers[selected] ?? []).forEach((h) => universe.add(h));
+    customAdded.forEach((h) => universe.add(h));
+    FIELDS.forEach((f) => draft.fields[f.key].forEach((v) => universe.add(v)));
+    return [...universe].filter((h) => !assigned.has(h)).sort((a, b) => a.localeCompare(b));
+  }, [draft, headers, selected, customAdded]);
 
-  function addToField(key: FieldKey, value: string) {
-    const v = value.trim();
-    if (!v || !draft) return;
-    if (draft.fields[key].includes(v)) return;
-    setDraft({ ...draft, fields: { ...draft.fields, [key]: [...draft.fields[key], v] } });
+  function assign(key: FieldKey, header: string) {
+    if (!draft || !header) return;
+    const next = { ...draft.fields };
+    for (const f of FIELDS) next[f.key] = next[f.key].filter((v) => v !== header); // header lives in one place only
+    next[key] = [header]; // one box per field (replaces whatever was there -> it returns to the pool)
+    setDraft({ ...draft, fields: next });
+    setArmed(null);
   }
-  function removeFromField(key: FieldKey, idx: number) {
+  function clearField(key: FieldKey) {
     if (!draft) return;
-    const next = draft.fields[key].slice(); next.splice(idx, 1);
-    setDraft({ ...draft, fields: { ...draft.fields, [key]: next } });
+    setDraft({ ...draft, fields: { ...draft.fields, [key]: [] } });
   }
-  function move(key: FieldKey, idx: number, dir: -1 | 1) {
-    if (!draft) return;
-    const next = draft.fields[key].slice();
-    const j = idx + dir;
-    if (j < 0 || j >= next.length) return;
-    [next[idx], next[j]] = [next[j], next[idx]];
-    setDraft({ ...draft, fields: { ...draft.fields, [key]: next } });
+  function addCustom() {
+    const v = custom.trim();
+    if (!v) return;
+    if (!customAdded.includes(v)) setCustomAdded([...customAdded, v]);
+    setCustom("");
   }
 
   async function save() {
@@ -120,13 +135,11 @@ export function DistributorProfileEditor() {
       });
       const json = await res.json();
       if (!json.success) { setMessage({ type: "error", text: json.error ?? "Save failed." }); return; }
-      setMessage({ type: "success", text: `Saved ${draft.distributorName}. Re-upload that distributor's file on the Normalizer to apply the corrected mapping — already-imported months keep their old values until re-imported.` });
+      setMessage({ type: "success", text: `Saved ${draft.distributorName}. Re-upload that distributor's file to apply it.` });
       await load(true);
     } catch (e) {
       setMessage({ type: "error", text: e instanceof Error ? e.message : "Save failed." });
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   async function resetToDefault() {
@@ -140,9 +153,7 @@ export function DistributorProfileEditor() {
       await load(true);
     } catch (e) {
       setMessage({ type: "error", text: e instanceof Error ? e.message : "Reset failed." });
-    } finally {
-      setBusy(null);
-    }
+    } finally { setBusy(null); }
   }
 
   async function importFile(file: File) {
@@ -156,10 +167,7 @@ export function DistributorProfileEditor() {
       await load(true);
     } catch (e) {
       setMessage({ type: "error", text: e instanceof Error ? e.message : "Import failed." });
-    } finally {
-      setBusy(null);
-      if (fileRef.current) fileRef.current.value = "";
-    }
+    } finally { setBusy(null); if (fileRef.current) fileRef.current.value = ""; }
   }
 
   if (loading) {
@@ -180,7 +188,7 @@ export function DistributorProfileEditor() {
             <input accept=".xlsx" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importFile(f); }} ref={fileRef} type="file" />
           </div>
         )}
-        description="Pick a distributor, then drag its real column headers onto each Phoenix field (or type one). Order = priority (first found wins). Region & Area are auto-derived from the Brick. Saved edits apply to the next upload."
+        description="Pick a distributor, then drag its column onto a Phoenix field — or click the column, then click the field. Each field takes exactly ONE column; a placed column leaves the list."
         title="Distributor → Phoenix mapping (editable)"
       >
         <div className="space-y-5 p-4 md:p-5">
@@ -206,73 +214,69 @@ export function DistributorProfileEditor() {
           ) : null}
 
           {draft ? (
-            <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
-              {/* pool of real headers */}
-              <div className="border border-[#E2E8F0] bg-[#F8FAFC] p-3">
-                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{draft.distributorName} headers</p>
+            <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
+              {/* LEFT: sticky pool of this distributor's real headers */}
+              <div className="lg:sticky lg:top-4 self-start border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+                <p className="mb-1 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{draft.distributorName} columns</p>
+                <p className="mb-2 text-[11px] text-slate-400">{armed ? `“${armed}” picked up — click a field to drop it.` : "Drag onto a field, or click a column then click a field."}</p>
                 {pool.length === 0 ? (
-                  <p className="text-xs text-slate-400">No imported file seen yet for this distributor — type column names into the fields instead.</p>
+                  <p className="text-xs text-slate-400">All columns placed (or none imported yet — add one below).</p>
                 ) : (
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex max-h-[420px] flex-wrap gap-1.5 overflow-auto">
                     {pool.map((h) => (
-                      <span
-                        className={cn(chip, "cursor-grab active:cursor-grabbing")}
+                      <button
+                        className={cn("inline-flex cursor-grab items-center border px-2 py-1 text-xs font-semibold active:cursor-grabbing", armed === h ? "border-[#F97316] bg-orange-50 text-[#9A3412]" : "border-[#D8E0EA] bg-white text-[#0F172A] hover:border-[#F97316]")}
                         draggable
                         key={h}
+                        onClick={() => setArmed(armed === h ? null : h)}
                         onDragStart={(e) => e.dataTransfer.setData("text/plain", h)}
-                        title="Drag onto a Phoenix field"
+                        type="button"
                       >
                         {h}
-                      </span>
+                      </button>
                     ))}
                   </div>
                 )}
-                <div className="mt-3 border-t border-[#E2E8F0] pt-3 text-[11px] text-slate-500">
-                  <label className="flex items-center gap-2">
-                    <input
-                      checked={draft.valueSource === "sheet"}
-                      onChange={(e) => setDraft({ ...draft, valueSource: e.target.checked ? "sheet" : "recompute" })}
-                      type="checkbox"
-                    />
-                    Value taken from the sheet (else recomputed = Qty × factory price)
-                  </label>
+                <div className="mt-3 flex items-center gap-1 border-t border-[#E2E8F0] pt-3">
+                  <input
+                    className="h-7 flex-1 border border-[#D8E0EA] px-2 text-xs outline-none focus:border-[#F97316]"
+                    onChange={(e) => setCustom(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") addCustom(); }}
+                    placeholder="+ add a column name"
+                    value={custom}
+                  />
+                  <button className="border border-[#D8E0EA] p-1.5 hover:border-[#F97316]" onClick={addCustom} type="button"><Plus className="h-3.5 w-3.5" /></button>
                 </div>
+                <label className="mt-3 flex items-center gap-2 border-t border-[#E2E8F0] pt-3 text-[11px] text-slate-500">
+                  <input checked={draft.valueSource === "sheet"} onChange={(e) => setDraft({ ...draft, valueSource: e.target.checked ? "sheet" : "recompute" })} type="checkbox" />
+                  Value taken from the sheet (else recomputed)
+                </label>
               </div>
 
-              {/* Phoenix fields */}
-              <div className="grid gap-3 sm:grid-cols-2">
-                {FIELDS.map((f) => (
-                  <div
-                    className="border border-[#E2E8F0] p-3"
-                    key={f.key}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => { e.preventDefault(); addToField(f.key, e.dataTransfer.getData("text/plain")); }}
-                  >
-                    <p className="text-xs font-black text-[#0B0B0B]">{f.label}{f.hint ? <span className="ml-1 font-normal text-slate-400">— {f.hint}</span> : null}</p>
-                    <div className="mt-2 flex min-h-[34px] flex-wrap gap-1.5">
-                      {draft.fields[f.key].length === 0 ? (
-                        <span className="text-xs italic text-slate-300">drag a header here</span>
-                      ) : draft.fields[f.key].map((v, i) => (
-                        <span className={chip} key={`${v}:${i}`}>
-                          <span className="text-slate-400">{i + 1}.</span>{v}
-                          <button className="text-slate-400 hover:text-[#F97316]" onClick={() => move(f.key, i, -1)} title="up" type="button"><ArrowUp className="h-3 w-3" /></button>
-                          <button className="text-slate-400 hover:text-[#F97316]" onClick={() => move(f.key, i, 1)} title="down" type="button"><ArrowDown className="h-3 w-3" /></button>
-                          <button className="text-slate-400 hover:text-red-500" onClick={() => removeFromField(f.key, i)} title="remove" type="button"><X className="h-3 w-3" /></button>
+              {/* RIGHT: one slot per Phoenix field */}
+              <div className="space-y-1.5">
+                {FIELDS.map((f) => {
+                  const val = draft.fields[f.key][0];
+                  return (
+                    <div
+                      className={cn("flex items-center justify-between gap-3 border px-3 py-2", val ? "border-[#E2E8F0] bg-white" : armed ? "border-dashed border-[#F97316] bg-orange-50/40 cursor-pointer" : "border-dashed border-[#D8E0EA] bg-[#FCFDFE]")}
+                      key={f.key}
+                      onClick={() => { if (armed) assign(f.key, armed); }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => { e.preventDefault(); assign(f.key, e.dataTransfer.getData("text/plain")); }}
+                    >
+                      <span className="text-xs font-black text-[#0B0B0B]">{f.label}</span>
+                      {val ? (
+                        <span className="inline-flex items-center gap-2 border border-[#D8E0EA] bg-[#F8FAFC] px-2 py-1 text-xs font-semibold text-[#0F172A]">
+                          {val}
+                          <button className="text-slate-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); clearField(f.key); }} title="remove" type="button"><X className="h-3 w-3" /></button>
                         </span>
-                      ))}
+                      ) : (
+                        <span className="text-xs italic text-slate-300">{armed ? "click to place here" : "drop a column"}</span>
+                      )}
                     </div>
-                    <div className="mt-2 flex items-center gap-1">
-                      <input
-                        className="h-7 flex-1 border border-[#D8E0EA] px-2 text-xs outline-none focus:border-[#F97316]"
-                        onChange={(e) => setManual({ ...manual, [f.key]: e.target.value })}
-                        onKeyDown={(e) => { if (e.key === "Enter") { addToField(f.key, manual[f.key] ?? ""); setManual({ ...manual, [f.key]: "" }); } }}
-                        placeholder="+ type a column"
-                        value={manual[f.key] ?? ""}
-                      />
-                      <button className="border border-[#D8E0EA] p-1.5 hover:border-[#F97316]" onClick={() => { addToField(f.key, manual[f.key] ?? ""); setManual({ ...manual, [f.key]: "" }); }} type="button"><Plus className="h-3.5 w-3.5" /></button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : null}
