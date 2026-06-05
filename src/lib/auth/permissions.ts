@@ -22,6 +22,30 @@ export const phoenixRoles = [
 ] as const;
 export type PhoenixRole = (typeof phoenixRoles)[number];
 
+export const phoenixCompanyJobTitles = [
+  "District Sales Manager",
+  "Medical Representative",
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Admin Assist",
+  "SFE Manager",
+  "QPPV",
+  "Buffet",
+  "Training Manager",
+  "Marketing Manager",
+  "Office Co-ordinator",
+  "Regulatory Affairs",
+  "Talent Acquisition",
+  "Finance Manager",
+  "CEO",
+  "HR Manager",
+  "R&D Manager",
+  "Research and Development Manager",
+  "Financial Advisor",
+] as const;
+export type PhoenixCompanyJobTitle = (typeof phoenixCompanyJobTitles)[number];
+
 export type PermissionAction =
   | "read"
   | "create"
@@ -439,12 +463,31 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
   if (!raw) return null;
 
   const normalized = raw.toLowerCase();
+  // GOVERNANCE: this parses an *explicit app role* string (the stored
+  // app_auth_users.role, an admin-assigned role, or a workflow allowedRole) plus
+  // a few legacy role codes/aliases. It is NOT a job-title interpreter:
+  // descriptive job titles that imply seniority — "HR Manager", "Talent
+  // Acquisition", "R&D Manager" — are deliberately absent so a title can never be
+  // silently elevated to a privileged role. Provisioning never derives a role
+  // from a title (see resolveEmployeeAccessRole, which always returns "Employee");
+  // real roles are assigned explicitly. The remaining title-shaped entries below
+  // resolve only to the baseline "Employee" role or to sales/medical categories
+  // that downstream business rules (outstation allowance tiers, portal routing)
+  // still rely on — none of them grant elevated access on their own.
   const legacy: Record<string, PhoenixRole> = {
+    "admin assist": "Employee",
+    "admin assistant": "Employee",
+    buffet: "Employee",
     dsm: "District Manager",
     "account admin": "Super Admin",
     admin: "Super Admin",
     employee: "Employee",
+    "financial advisor": "Employee",
     nsm: "National Sales Manager",
+    "office co-ordinator": "Employee",
+    "office coordinator": "Employee",
+    qppv: "Employee",
+    "regulatory affairs": "Employee",
     "employee medical rep": "Medical Rep",
     "medical rep": "Medical Rep",
     "medical representative": "Medical Rep",
@@ -459,7 +502,6 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
     "training manager": "Training Manager",
     "marketing manager": "Marketing Manager",
     "finance manager": "Finance Manager",
-    "hr manager": "HR Specialist",
     "hr specialist": "HR Specialist",
     manager: "Manager",
     ceo: "CEO",
@@ -470,8 +512,15 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
   const normalizedNoPunctuation = normalized.replace(/[^a-z0-9 ]/g, "");
   const legacyNoPunctuation: Record<string, PhoenixRole> = {
     accountadmin: "Super Admin",
+    adminassist: "Employee",
+    adminassistant: "Employee",
+    buffet: "Employee",
     dsm: "District Manager",
+    financialadvisor: "Employee",
     nsm: "National Sales Manager",
+    "office coordinator": "Employee",
+    qppv: "Employee",
+    regulatoryaffairs: "Employee",
     employee: "Employee",
     districtsalesmanager: "District Manager",
     medicalrep: "Medical Rep",
@@ -485,7 +534,6 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
     trainingmanager: "Training Manager",
     marketingmanager: "Marketing Manager",
     financemanager: "Finance Manager",
-    hrmanager: "HR Specialist",
     hrspecialist: "HR Specialist",
     ceo: "CEO",
     superadmin: "Super Admin",
@@ -975,11 +1023,10 @@ export async function assertAttendanceSetupPermission(
  * Workflow Control Center (Admin / Governance) access design.
  *
  * Phase 1 is a READ-ONLY workflow map + simulator. Access is restricted to HR
- * governance: Super Admin only. In Phoenix there is no distinct "HR Manager" /
- * "HR Admin" role — the HR Manager (HR_ID B-10) holds the Super Admin role and
- * is therefore covered. Generic HR Specialists (e.g. A-16, Talent Acquisition)
- * are intentionally EXCLUDED, as are CEO, Finance Manager, all Sales roles,
- * Training Manager and Employees.
+ * governance: Super Admin only. HR Manager is a manager title, not the same as
+ * HR Specialist. Generic HR Specialists (e.g. A-16, Talent Acquisition) are
+ * intentionally EXCLUDED, as are CEO, Finance Manager, all Sales roles, Training
+ * Manager and Employees.
  *
  * If a future non-Super-Admin HR governance user must be granted access, add
  * their (normalized) HR_ID to WORKFLOW_CONTROL_GOVERNANCE_HR_IDS rather than
