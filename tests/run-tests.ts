@@ -20,6 +20,7 @@ import { runRecruitmentPipelineStateMachineTests } from "./recruitment-pipeline-
 import { runRecruitmentReadinessTests } from "./recruitment-readiness.test.ts";
 import { runOfferApprovalChainTests } from "./offer-approval-chain.test.ts";
 import { runOfferPipelineStateMachineTests } from "./offer-pipeline-state-machine.test.ts";
+import { runProbationProvisioningTests } from "./probation-provisioning.test.ts";
 import { runRecruitmentScorecardsTests } from "./recruitment-scorecards.test.ts";
 import { runRecruitmentOnboardingTests } from "./recruitment-onboarding.test.ts";
 import { runRecruitmentOfferLetterTests } from "./recruitment-offer-letter.test.ts";
@@ -167,6 +168,7 @@ await runTest("recruitment pipeline state machine", runRecruitmentPipelineStateM
 await runTest("recruitment readiness", runRecruitmentReadinessTests);
 await runTest("offer approval chain", runOfferApprovalChainTests);
 await runTest("offer pipeline state machine", runOfferPipelineStateMachineTests);
+await runTest("probation provisioning", runProbationProvisioningTests);
 await runTest("recruitment scorecards", runRecruitmentScorecardsTests);
 await runTest("recruitment onboarding", runRecruitmentOnboardingTests);
 await runTest("recruitment offer letter", runRecruitmentOfferLetterTests);

@@ -9,6 +9,7 @@ import {
   recruitmentActionKeys,
   requisitionStatuses,
 } from "../src/lib/recruitment/types.ts";
+import { onboardingItemStatuses } from "../src/lib/recruitment/onboarding.ts";
 
 function read(relativePath: string): string {
   return readFileSync(path.join(process.cwd(), relativePath), "utf8");
@@ -160,6 +161,9 @@ export function runRecruitmentReadinessTests() {
   const onboardingMigration = read("supabase/migrations/20260604180000_recruitment_onboarding.sql");
   assert.match(onboardingMigration, /create table if not exists public\.recruitment_onboarding_items/);
   assert.match(onboardingMigration, /revoke all on public\.recruitment_onboarding_items from anon, authenticated/);
+  const onboardingMissing = read("supabase/migrations/20260606093000_onboarding_missing_status.sql");
+  assert.match(onboardingMissing, /recruitment_onboarding_items_status_check[\s\S]*'missing'/, "M6 adds the missing status");
+  assert.ok((onboardingItemStatuses as readonly string[]).includes("missing"), "missing onboarding status registered");
 
   // --- Public application funnel (Phase 4) ------------------------------
   const applyEntry = findAccessRegistryEntry("/api/recruitment/apply/sometoken", "POST");

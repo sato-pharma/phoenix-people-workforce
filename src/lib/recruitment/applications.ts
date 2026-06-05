@@ -37,6 +37,7 @@ import {
   generateSalarySummary,
   nextOfferLetterVersion,
 } from "@/lib/recruitment/offer-letters";
+import { createInitialProbationRecord } from "@/lib/probation/provisioning";
 import {
   assertRecruitmentTransition,
   mapApplication,
@@ -792,10 +793,9 @@ export async function approveSeniorOffer(id: string, access: AccessContext): Pro
   return mapApplication(data as ApplicationDbRow);
 }
 
-// Stage 21 — approve the accepted offer (reuses the atomic convert RPC) and
-// close the requisition. Probation is intentionally NOT created here: the
-// probation window is derived from hire_date elsewhere, and the manager
-// evaluation is created later by a probation administrator (see plan §5c).
+// Stage 21 — approve the accepted offer (reuses the atomic convert RPC), close
+// the requisition, and auto-create the initial probation window. Probation
+// creation is non-blocking: a failure never rolls back a completed hire.
 export async function approveAndConvert(
   id: string,
   access: AccessContext,
@@ -868,6 +868,18 @@ export async function approveAndConvert(
   });
 
   await markRequisitionFilled(requisition.id, access);
+
+  // Auto-create the initial probation window (non-blocking: a probation-create
+  // failure must never roll back a completed hire — it can be created manually).
+  try {
+    await createInitialProbationRecord({
+      employeeHrId,
+      startDate: approval.offer?.startDate ?? null,
+      probationMonths: approval.offer?.probationPeriodMonths ?? null,
+    });
+  } catch (probationError) {
+    void probationError; // Swallow: the hire is committed; probation setup is secondary.
+  }
 
   return { application: mapApplication(data as ApplicationDbRow), employeeHrId };
 }
