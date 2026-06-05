@@ -326,6 +326,7 @@ function deriveNotificationAction(category: string, status: string): string {
   }
   if (c === "probation") return "Submit feedback";
   if (c === "excuse" && s.includes("pending")) return "Review excuse";
+  if (c === "recruitment") return "Open recruitment";
   return "";
 }
 

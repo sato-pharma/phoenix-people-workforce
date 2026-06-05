@@ -6,7 +6,6 @@ alter table public.marketing_request_finance_requirements
   add column if not exists invoice_original_file_name text null,
   add column if not exists invoice_uploaded_by_hr_id text null references public.employees(hr_id) on update cascade on delete set null,
   add column if not exists invoice_uploaded_at timestamptz null;
-
 do $$
 begin
   if to_regclass('storage.buckets') is not null then

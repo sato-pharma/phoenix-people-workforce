@@ -1,7 +1,5 @@
 begin;
-
 create extension if not exists pgcrypto;
-
 create table if not exists public.email_templates (
   id uuid primary key default gen_random_uuid(),
   template_key text not null unique,
@@ -18,7 +16,6 @@ create table if not exists public.email_templates (
   updated_at timestamptz not null default now(),
   updated_by text null
 );
-
 alter table public.email_templates
   add column if not exists id uuid default gen_random_uuid(),
   add column if not exists template_key text,
@@ -34,7 +31,6 @@ alter table public.email_templates
   add column if not exists created_at timestamptz default now(),
   add column if not exists updated_at timestamptz default now(),
   add column if not exists updated_by text;
-
 update public.email_templates
 set
   id = coalesce(id, gen_random_uuid()),
@@ -48,7 +44,6 @@ set
   preview_text = coalesce(preview_text, ''),
   created_at = coalesce(created_at, now()),
   updated_at = coalesce(updated_at, now());
-
 alter table public.email_templates
   alter column id set default gen_random_uuid(),
   alter column id set not null,
@@ -72,10 +67,8 @@ alter table public.email_templates
   alter column created_at set not null,
   alter column updated_at set default now(),
   alter column updated_at set not null;
-
 create unique index if not exists email_templates_template_key_idx
   on public.email_templates (template_key);
-
 create table if not exists public.email_template_recipient_rules (
   id uuid primary key default gen_random_uuid(),
   template_key text not null unique references public.email_templates(template_key) on delete cascade,
@@ -90,7 +83,6 @@ create table if not exists public.email_template_recipient_rules (
   updated_at timestamptz not null default now(),
   updated_by text null
 );
-
 alter table public.email_template_recipient_rules
   add column if not exists id uuid default gen_random_uuid(),
   add column if not exists template_key text,
@@ -104,7 +96,6 @@ alter table public.email_template_recipient_rules
   add column if not exists static_bcc_emails text[] default '{}'::text[],
   add column if not exists updated_at timestamptz default now(),
   add column if not exists updated_by text;
-
 update public.email_template_recipient_rules
 set
   id = coalesce(id, gen_random_uuid()),
@@ -117,7 +108,6 @@ set
   static_cc_emails = coalesce(static_cc_emails, '{}'::text[]),
   static_bcc_emails = coalesce(static_bcc_emails, '{}'::text[]),
   updated_at = coalesce(updated_at, now());
-
 alter table public.email_template_recipient_rules
   alter column id set default gen_random_uuid(),
   alter column id set not null,
@@ -140,19 +130,14 @@ alter table public.email_template_recipient_rules
   alter column static_bcc_emails set not null,
   alter column updated_at set default now(),
   alter column updated_at set not null;
-
 create unique index if not exists email_template_rules_template_key_idx
   on public.email_template_recipient_rules (template_key);
-
 alter table public.email_templates enable row level security;
 alter table public.email_template_recipient_rules enable row level security;
-
 revoke all on public.email_templates from anon, authenticated;
 revoke all on public.email_template_recipient_rules from anon, authenticated;
-
 grant all on public.email_templates to service_role;
 grant all on public.email_template_recipient_rules to service_role;
-
 drop policy if exists phx_email_templates_service_role on public.email_templates;
 create policy phx_email_templates_service_role
   on public.email_templates
@@ -160,7 +145,6 @@ create policy phx_email_templates_service_role
   to service_role
   using (true)
   with check (true);
-
 drop policy if exists phx_email_template_rules_service_role on public.email_template_recipient_rules;
 create policy phx_email_template_rules_service_role
   on public.email_template_recipient_rules
@@ -168,5 +152,4 @@ create policy phx_email_template_rules_service_role
   to service_role
   using (true)
   with check (true);
-
 commit;

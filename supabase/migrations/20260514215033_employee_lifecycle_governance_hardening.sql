@@ -3,7 +3,6 @@
 -- transactional resignation RPC used by the Employees module.
 
 create extension if not exists pgcrypto;
-
 alter table public.employees
   add column if not exists resignation_date date,
   add column if not exists last_working_date date,
@@ -11,25 +10,21 @@ alter table public.employees
   add column if not exists exit_status text,
   add column if not exists payroll_eligible boolean default true,
   add column if not exists organogram_visible boolean default true;
-
 update public.employees
 set
   payroll_eligible = coalesce(payroll_eligible, true),
   organogram_visible = coalesce(organogram_visible, true)
 where payroll_eligible is null
    or organogram_visible is null;
-
 update public.employees
 set
   payroll_eligible = false,
   organogram_visible = false
 where lower(coalesce(employment_status, 'active')) in ('resigned', 'terminated', 'inactive');
-
 alter table public.employee_resignations
   add column if not exists create_vacancy boolean not null default true,
   add column if not exists vacancy_id bigint references public.position_vacancies(id),
   add column if not exists submitted_by_hr_id text references public.employees(hr_id);
-
 create or replace function public.phx_prevent_employee_hr_id_update()
 returns trigger
 language plpgsql
@@ -43,13 +38,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists phx_employees_prevent_hr_id_update on public.employees;
 create trigger phx_employees_prevent_hr_id_update
 before update of hr_id on public.employees
 for each row
 execute function public.phx_prevent_employee_hr_id_update();
-
 create or replace function public.phx_resign_employee_and_open_vacancy(
   p_employee_hr_id text,
   p_submitted_date date,
@@ -230,13 +223,10 @@ begin
   );
 end;
 $$;
-
 revoke execute on function public.phx_resign_employee_and_open_vacancy(text,date,date,text,text,text,text,text,text)
   from public, anon, authenticated;
 grant execute on function public.phx_resign_employee_and_open_vacancy(text,date,date,text,text,text,text,text,text)
   to service_role;
-
 revoke execute on function public.phx_prevent_employee_hr_id_update()
   from public, anon, authenticated;
-
 notify pgrst, 'reload schema';

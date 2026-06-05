@@ -112,7 +112,6 @@ begin
   return v_result;
 end;
 $function$;
-
 do $$
 declare
   v_definition text;
@@ -134,5 +133,4 @@ begin
 
   execute v_definition;
 end $$;
-
 notify pgrst, 'reload schema';

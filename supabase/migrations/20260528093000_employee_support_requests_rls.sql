@@ -39,7 +39,6 @@ begin
       with check (true);
   end if;
 end $$;
-
 -- ----------------------------------------------------------------------------
 -- Verification (run read-only AFTER applying on a Supabase branch/preview):
 --
@@ -62,4 +61,4 @@ end $$;
 --   drop policy if exists employee_support_requests_service_role_all
 --     on public.employee_support_requests;
 --   alter table public.employee_support_requests disable row level security;
--- ----------------------------------------------------------------------------
+-- ----------------------------------------------------------------------------;

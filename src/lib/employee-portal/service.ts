@@ -745,6 +745,34 @@ function findDirectoryEmployeeByHrId(
   );
 }
 
+/**
+ * Authoritatively resolves a manager's display name directly from the employees
+ * table by HR_ID. Used so an employee's own hero card always shows their direct
+ * manager even under self-scope (where the scoped directory may not surface the
+ * manager record). Returns null only when there is genuinely no manager (CEO/top).
+ */
+async function resolveDirectManagerName(employeeHrId: string | null | undefined) {
+  const target = String(employeeHrId ?? "").trim();
+  if (!target) return null;
+  const supabase = getSupabaseAdmin();
+  // Live lookup of the CURRENT manager_hr_id (the cached directory can be stale
+  // right after a manager change), then the manager's display name.
+  const { data: self } = await supabase
+    .from("employees")
+    .select("manager_hr_id")
+    .eq("hr_id", target)
+    .maybeSingle();
+  const managerHrId = String((self as { manager_hr_id?: string | null } | null)?.manager_hr_id ?? "").trim();
+  if (!managerHrId) return null;
+  const { data: manager } = await supabase
+    .from("employees")
+    .select("full_name")
+    .eq("hr_id", managerHrId)
+    .maybeSingle();
+  const fullName = (manager as { full_name?: string | null } | null)?.full_name;
+  return fullName ? String(fullName) : null;
+}
+
 type SalesFilterQuery = {
   or: (filter: string) => SalesFilterQuery;
   eq: (column: string, value: number | string) => SalesFilterQuery;
@@ -2335,7 +2363,7 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
       fullName: employee.fullName,
       hrId: employee.hrId,
       line: employee.lineName,
-      manager: employee.managerName,
+      manager: (await resolveDirectManagerName(employee.hrId)) ?? employee.managerName,
       roleLabel: employee.jobTitle || employee.positionTitle || currentUser.role || "Employee",
       status: employee.employmentStatus ?? "active",
       territory: employee.regionName ?? employee.areaName,
@@ -2524,7 +2552,7 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
       fullName: employee.fullName,
       hrId: employee.hrId,
       line: employee.lineName,
-      manager: employee.managerName,
+      manager: (await resolveDirectManagerName(employee.hrId)) ?? employee.managerName,
       roleLabel: employee.jobTitle || employee.positionTitle || currentUser.role || "Employee",
       status: employee.employmentStatus ?? "active",
       territory: employee.regionName ?? employee.areaName,
@@ -3856,7 +3884,7 @@ export async function getMedicalRepPortalData(
       fullName: employee.fullName,
       hrId: employee.hrId,
       line: employee.lineName,
-      manager: employee.managerName,
+      manager: (await resolveDirectManagerName(employee.hrId)) ?? employee.managerName,
       roleLabel: employee.jobTitle || employee.positionTitle || "Medical Representative",
       status: employee.employmentStatus ?? "active",
       territory: employee.regionName ?? employee.areaName,

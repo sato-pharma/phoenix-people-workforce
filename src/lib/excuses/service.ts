@@ -8,13 +8,12 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import {
   getEmployeeDirectory,
   type EmployeeDirectoryData,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
-import { enqueueInAppNotification } from "@/lib/notifications/in-app";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type EmployeeExcuseType = "morning" | "afternoon";
@@ -91,15 +90,6 @@ const monthlyAllowance = Math.max(
 function cleanText(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   return text ? text : null;
-}
-
-function escapeHtml(value: string | null | undefined) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function requestMonthKey(dateText: string) {
@@ -281,16 +271,27 @@ function validateDateOnly(value: unknown) {
   return dateText;
 }
 
-function buildDecisionUrl(input: {
-  baseUrl: string;
-  decision: EmployeeExcuseDecision;
-  requestId: string;
-  token: string;
+async function enqueueInAppNotification(input: {
+  category: string;
+  dedupeKey: string;
+  href?: string | null;
+  message: string;
+  metadata?: Record<string, unknown>;
+  recipientHrId: string;
+  title: string;
 }) {
-  const url = new URL(`/api/excuses/${input.requestId}/decision`, input.baseUrl);
-  url.searchParams.set("decision", input.decision);
-  url.searchParams.set("token", input.token);
-  return url.toString();
+  return createSystemNotification({
+    actionUrl: input.href ?? null,
+    category: input.category,
+    channels: ["in_app"],
+    eventType: "excuse_notification",
+    message: input.message,
+    metadata: { ...(input.metadata ?? {}), idempotencyKey: input.dedupeKey },
+    module: "excuse",
+    priority: "high",
+    recipientHrId: input.recipientHrId,
+    title: input.title,
+  });
 }
 
 async function sendManagerEmail(input: {
@@ -299,43 +300,42 @@ async function sendManagerEmail(input: {
   request: EmployeeExcuseRequest;
   token: string;
 }) {
-  const approveUrl = buildDecisionUrl({
-    baseUrl: input.baseUrl,
-    decision: "approve",
-    requestId: input.request.id,
-    token: input.token,
-  });
-  const rejectUrl = buildDecisionUrl({
-    baseUrl: input.baseUrl,
-    decision: "reject",
-    requestId: input.request.id,
-    token: input.token,
-  });
   const typeLabel = input.request.excuseType === "morning" ? "Morning excuse" : "Afternoon excuse";
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;line-height:1.6">
-      <p style="margin:0 0 12px;color:#f97316;font-weight:800;letter-spacing:.14em;text-transform:uppercase">Phoenix Workforce</p>
-      <h2 style="margin:0 0 12px">Excuse approval required</h2>
-      <p>${escapeHtml(input.request.employeeName)} submitted a ${escapeHtml(typeLabel)} for ${escapeHtml(input.request.excuseDate)}.</p>
-      <p>Duration: ${input.request.durationHours} hours.</p>
-      <p style="margin-top:20px">
-        <a href="${escapeHtml(approveUrl)}" style="display:inline-block;margin-right:8px;border-radius:10px;background:#15803d;color:white;padding:10px 16px;text-decoration:none;font-weight:700">Approve</a>
-        <a href="${escapeHtml(rejectUrl)}" style="display:inline-block;border-radius:10px;background:#be123c;color:white;padding:10px 16px;text-decoration:none;font-weight:700">Reject</a>
-      </p>
-    </div>`;
-  const text = [
-    "Excuse approval required",
-    `${input.request.employeeName} submitted a ${typeLabel} for ${input.request.excuseDate}.`,
-    `Approve: ${approveUrl}`,
-    `Reject: ${rejectUrl}`,
-  ].join("\n");
-
-  await sendPhoenixEmail({
-    html,
-    idempotencyKey: `excuse-manager-${input.request.id}`,
-    subject: `Excuse approval: ${input.request.employeeName}`,
-    text,
-    to: [input.manager.workEmail as string],
+  await createSystemNotification({
+    actionUrl: "/employee-portals/excuses",
+    actorId: input.request.employeeHrId,
+    channels: ["email"],
+    email: {
+      ctaHref: "/employee-portals/excuses",
+      ctaLabel: "Open in Phoenix",
+      employeeHrId: input.request.employeeHrId,
+      metrics: [
+        { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
+        { label: "Excuse type", value: typeLabel },
+        { label: "Date", value: input.request.excuseDate },
+        { label: "Duration", value: `${input.request.durationHours} hours` },
+      ],
+      notificationType: "general",
+      recipients: [input.manager.workEmail as string],
+      subject: `Excuse approval: ${input.request.employeeName}`,
+      summary: `${input.request.employeeName} submitted a ${typeLabel} for ${input.request.excuseDate}.`,
+      title: "Excuse approval required",
+      tone: "warning",
+    },
+    eventType: "request_submitted",
+    message: `${input.request.employeeName} submitted a ${typeLabel} for ${input.request.excuseDate}.`,
+    metadata: {
+      employeeHrId: input.request.employeeHrId,
+      idempotencyKey: `excuse-manager-email:${input.request.id}`,
+      requestId: input.request.id,
+      status: input.request.status,
+    },
+    module: "excuse",
+    priority: "high",
+    recipientHrId: input.manager.hrId,
+    recordId: input.request.id,
+    subjectHrId: input.request.employeeHrId,
+    title: "Excuse approval required",
   });
 }
 
@@ -346,19 +346,40 @@ async function sendEmployeeDecisionEmail(input: {
   if (!employeeEmail) return;
 
   const statusLabel = input.request.status === "approved" ? "approved" : "rejected";
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;line-height:1.6">
-      <p style="margin:0 0 12px;color:#f97316;font-weight:800;letter-spacing:.14em;text-transform:uppercase">Phoenix Workforce</p>
-      <h2 style="margin:0 0 12px">Excuse request ${escapeHtml(statusLabel)}</h2>
-      <p>Your ${escapeHtml(input.request.excuseType)} excuse for ${escapeHtml(input.request.excuseDate)} was ${escapeHtml(statusLabel)}.</p>
-    </div>`;
-
-  await sendPhoenixEmail({
-    html,
-    idempotencyKey: `excuse-employee-${input.request.id}-${statusLabel}`,
-    subject: `Your excuse request was ${statusLabel}`,
-    text: `Your ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${statusLabel}.`,
-    to: [employeeEmail],
+  await createSystemNotification({
+    actionUrl: "/employee-portals/excuses",
+    actorId: input.request.managerHrId,
+    channels: ["email"],
+    email: {
+      ctaHref: "/employee-portals/excuses",
+      ctaLabel: "Open in Phoenix",
+      employeeHrId: input.request.employeeHrId,
+      metrics: [
+        { label: "Excuse type", value: input.request.excuseType },
+        { label: "Date", value: input.request.excuseDate },
+        { label: "Status", value: statusLabel },
+      ],
+      notificationType: "general",
+      recipients: [employeeEmail],
+      subject: `Your excuse request was ${statusLabel}`,
+      summary: `Your ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${statusLabel}.`,
+      title: `Excuse request ${statusLabel}`,
+      tone: statusLabel === "approved" ? "success" : "warning",
+    },
+    eventType: "request_decided",
+    message: `Your ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${statusLabel}.`,
+    metadata: {
+      employeeHrId: input.request.employeeHrId,
+      idempotencyKey: `excuse-employee-email:${input.request.id}:${statusLabel}`,
+      requestId: input.request.id,
+      status: input.request.status,
+    },
+    module: "excuse",
+    priority: "normal",
+    recipientHrId: input.request.employeeHrId,
+    recordId: input.request.id,
+    subjectHrId: input.request.employeeHrId,
+    title: `Excuse request ${statusLabel}`,
   });
 }
 
@@ -427,7 +448,7 @@ export async function createExcuseRequest(
   await Promise.all([
     sendManagerEmail({ baseUrl: options.baseUrl, manager, request, token }),
     enqueueInAppNotification({
-      category: "excuse_request",
+      category: "excuse",
       dedupeKey: `excuse-manager-${request.id}`,
       href: "/employee-portals/excuses",
       message: `${request.employeeName} submitted a ${request.excuseType} excuse for ${request.excuseDate}.`,
@@ -516,7 +537,7 @@ export async function decideExcuseRequestByToken(input: {
       },
     }),
     enqueueInAppNotification({
-      category: "excuse_request",
+      category: "excuse",
       dedupeKey: `excuse-employee-${request.id}-${status}`,
       href: "/employee-portals/excuses",
       message: `Your ${request.excuseType} excuse for ${request.excuseDate} was ${status}.`,

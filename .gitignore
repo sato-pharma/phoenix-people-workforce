@@ -59,3 +59,7 @@ desktop.ini
 # JetBrains IDE
 .idea/
 .vercel
+
+# Local git worktrees and agent runtime (never track or deploy)
+.codex-worktrees/
+.claude/scheduled_tasks.lock

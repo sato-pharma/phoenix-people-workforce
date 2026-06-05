@@ -3,7 +3,6 @@ alter table public.salary_batches
   add column if not exists part1_paid_by text,
   add column if not exists part2_ready_at timestamptz,
   add column if not exists part2_ready_by text;
-
 create or replace function public.phx_replace_salary_batch(
   p_batch_id uuid,
   p_expected_month integer,
@@ -196,10 +195,8 @@ begin
   return to_jsonb(v_batch);
 end;
 $$;
-
 revoke all on function public.phx_replace_salary_batch(uuid, integer, integer, text, text, jsonb, jsonb, timestamptz) from public, anon, authenticated;
 grant execute on function public.phx_replace_salary_batch(uuid, integer, integer, text, text, jsonb, jsonb, timestamptz) to service_role;
-
 create or replace function public.phx_prevent_closed_salary_batch_delete()
 returns trigger
 language plpgsql
@@ -214,13 +211,11 @@ begin
   return old;
 end;
 $$;
-
 drop trigger if exists phx_prevent_closed_salary_batch_delete on public.salary_batches;
 create trigger phx_prevent_closed_salary_batch_delete
 before delete on public.salary_batches
 for each row
 execute function public.phx_prevent_closed_salary_batch_delete();
-
 create or replace function public.phx_prevent_closed_salary_batch_update()
 returns trigger
 language plpgsql
@@ -253,13 +248,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists phx_prevent_closed_salary_batch_update on public.salary_batches;
 create trigger phx_prevent_closed_salary_batch_update
 before update on public.salary_batches
 for each row
 execute function public.phx_prevent_closed_salary_batch_update();
-
 create or replace function public.phx_prevent_closed_salary_detail_mutation()
 returns trigger
 language plpgsql
@@ -314,19 +307,16 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists phx_prevent_closed_salary_records_mutation on public.salary_records;
 create trigger phx_prevent_closed_salary_records_mutation
 before insert or update or delete on public.salary_records
 for each row
 execute function public.phx_prevent_closed_salary_detail_mutation();
-
 drop trigger if exists phx_prevent_closed_salary_flags_mutation on public.salary_flags;
 create trigger phx_prevent_closed_salary_flags_mutation
 before insert or update or delete on public.salary_flags
 for each row
 execute function public.phx_prevent_closed_salary_detail_mutation();
-
 create or replace function public.phx_import_approved_expenses_to_payroll(
   p_month integer,
   p_year integer
@@ -429,7 +419,6 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.phx_prevent_closed_salary_batch_delete() from public, anon, authenticated;
 revoke all on function public.phx_prevent_closed_salary_batch_update() from public, anon, authenticated;
 revoke all on function public.phx_prevent_closed_salary_detail_mutation() from public, anon, authenticated;

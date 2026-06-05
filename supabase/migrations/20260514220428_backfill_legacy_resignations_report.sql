@@ -6,7 +6,6 @@ alter table public.employee_resignations
   add column if not exists create_vacancy boolean not null default true,
   add column if not exists vacancy_id bigint references public.position_vacancies(id),
   add column if not exists submitted_by_hr_id text references public.employees(hr_id);
-
 insert into public.employee_resignations (
   employee_hr_id,
   employee_name,
@@ -50,5 +49,4 @@ where lower(coalesce(e.employment_status, 'active')) in ('resigned', 'terminated
     from public.employee_resignations r
     where r.employee_hr_id = e.hr_id
   );
-
 notify pgrst, 'reload schema';

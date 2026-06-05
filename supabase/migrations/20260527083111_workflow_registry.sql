@@ -85,7 +85,7 @@ values
         "label":"Submit expense",
         "from":["draft"],
         "to":"pending",
-        "allowedRoles":["Employee","Medical Rep","District Manager","National Sales Manager","Product Manager","Group Product Manager","SFE Manager","Training Manager","Marketing Manager","Manager","Super Admin","HR Specialist","Finance Manager","CEO"],
+        "allowedRoles":["Employee","Medical Rep","District Manager","National Sales Manager","Product Manager","Group Product Manager","SFE Manager","Training Manager","Marketing Manager","Manager"],
         "sideEffects":["capture employee, trip, GPS, and calculated amount"],
         "notifications":["notify approvers when request is pending"],
         "auditLog":"Expense submitted",
@@ -146,25 +146,15 @@ values
     'Payroll upload, review, approval, payslip generation, and locked batch lifecycle.',
     '[
       {"key":"uploaded","label":"Uploaded","terminal":false},
-      {"key":"part1_ready","label":"Part 1 Ready","terminal":false},
-      {"key":"part1_paid","label":"Part 1 Paid","terminal":false},
-      {"key":"adjustments_open","label":"Adjustments Open","terminal":false},
-      {"key":"part2_ready","label":"Part 2 Ready","terminal":false},
-      {"key":"under_review","label":"Under Review","terminal":false},
+      {"key":"validated","label":"Validated","terminal":false},
       {"key":"approved","label":"Approved","terminal":false},
       {"key":"locked","label":"Locked","terminal":true},
       {"key":"rejected","label":"Rejected","terminal":true}
     ]'::jsonb,
     '[
-      {"key":"mark_part1_ready","label":"Mark Part 1 ready","from":["uploaded"],"to":"part1_ready","allowedRoles":["Super Admin","HR Specialist","Finance Manager"],"sideEffects":["freeze initial upload for Part 1 review"],"notifications":["notify payroll admins"],"auditLog":"Payroll Part 1 marked ready","tests":["uploaded payroll can move to Part 1 ready"]},
-      {"key":"mark_part1_paid","label":"Mark Part 1 paid","from":["part1_ready"],"to":"part1_paid","allowedRoles":["Super Admin","Finance Manager"],"sideEffects":["record part1_paid_by and part1_paid_at"],"notifications":["notify payroll admins"],"auditLog":"Payroll Part 1 marked paid","tests":["Part 1 ready payroll can be marked paid"]},
-      {"key":"open_adjustments","label":"Open adjustments","from":["part1_paid"],"to":"adjustments_open","allowedRoles":["Super Admin","Finance Manager"],"sideEffects":["open Part 2 adjustment window"],"notifications":["notify payroll admins"],"auditLog":"Payroll adjustments opened","tests":["Part 1 paid payroll can open adjustments"]},
-      {"key":"mark_part2_ready","label":"Mark Part 2 ready","from":["adjustments_open"],"to":"part2_ready","allowedRoles":["Super Admin","HR Specialist","Finance Manager"],"sideEffects":["record part2_ready_by and part2_ready_at"],"notifications":["notify payroll reviewers"],"auditLog":"Payroll Part 2 marked ready","tests":["adjustments can move to Part 2 ready"]},
-      {"key":"mark_review","label":"Send to review","from":["part2_ready"],"to":"under_review","allowedRoles":["Super Admin","HR Specialist","Finance Manager"],"sideEffects":["move payroll to final review"],"notifications":["notify approvers"],"auditLog":"Payroll sent to review","tests":["Part 2 ready payroll can move under review"]},
-      {"key":"approve","label":"Approve batch","from":["under_review"],"to":"approved","allowedRoles":["Super Admin","Finance Manager"],"sideEffects":["set approved_by and approved_at"],"notifications":["notify payroll owner"],"auditLog":"Payroll batch approved","tests":["approval requires authorized role"]},
-      {"key":"lock","label":"Lock batch","from":["approved"],"to":"locked","allowedRoles":["Super Admin","Finance Manager"],"sideEffects":["set locked_at and lock payroll edits"],"notifications":["notify employees when payslips are ready"],"auditLog":"Payroll batch locked","tests":["locked payroll cannot be replaced silently"]},
-      {"key":"reject","label":"Reject batch","from":["under_review"],"to":"rejected","allowedRoles":["Super Admin","Finance Manager"],"sideEffects":["store rejected_reason"],"notifications":["notify payroll owner"],"auditLog":"Payroll batch rejected","tests":["reject requires a reason"]},
-      {"key":"reopen","label":"Reopen rejected batch","from":["rejected"],"to":"adjustments_open","allowedRoles":["Super Admin","Finance Manager"],"sideEffects":["clear rejected_reason and Part 2 ready markers"],"notifications":["notify payroll admins"],"auditLog":"Payroll batch reopened","tests":["rejected payroll can reopen to adjustments"]}
+      {"key":"validate","label":"Validate batch","from":["uploaded"],"to":"validated","allowedRoles":["Super Admin","HR Specialist","Finance Manager"],"sideEffects":["run payroll validation"],"notifications":["notify payroll admins if validation fails"],"auditLog":"Payroll batch validated","tests":["invalid payroll rows block approval"]},
+      {"key":"approve","label":"Approve batch","from":["validated"],"to":"approved","allowedRoles":["Super Admin","Finance Manager"],"sideEffects":["mark payroll approved"],"notifications":["notify payroll owner"],"auditLog":"Payroll batch approved","tests":["approval requires authorized role"]},
+      {"key":"lock","label":"Lock batch","from":["approved"],"to":"locked","allowedRoles":["Super Admin","Finance Manager"],"sideEffects":["lock payroll edits and expense links"],"notifications":["notify employees when payslips are ready"],"auditLog":"Payroll batch locked","tests":["locked payroll cannot be replaced silently"]}
     ]'::jsonb,
     true,
     'system',
@@ -256,3 +246,4 @@ set
   actions = excluded.actions,
   is_active = excluded.is_active,
   updated_by = 'system';
+;

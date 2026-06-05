@@ -38,25 +38,17 @@ create table if not exists public.field_workforce_compliance_decisions (
   constraint field_workforce_decisions_status_check check (decision_status in ('Pending', 'Approved for Leave Adjustment Report', 'Approved for Payroll Deduction Report', 'Do Not Take Action', 'Needs Follow-up', 'Cancelled')),
   constraint field_workforce_decisions_dates_array check (jsonb_typeof(dates) = 'array')
 );
-
 create unique index if not exists field_workforce_decisions_import_key_uidx
   on public.field_workforce_compliance_decisions (import_id, recommendation_key);
-
 create index if not exists field_workforce_decisions_import_id_idx
   on public.field_workforce_compliance_decisions (import_id);
-
 create index if not exists field_workforce_decisions_month_key_idx
   on public.field_workforce_compliance_decisions (month_key, employee_code);
-
 create index if not exists field_workforce_decisions_type_status_idx
   on public.field_workforce_compliance_decisions (import_id, recommendation_type, decision_status);
-
 alter table public.field_workforce_compliance_decisions enable row level security;
-
 revoke all on table public.field_workforce_compliance_decisions from anon, authenticated;
-
 grant select, insert, update, delete on table public.field_workforce_compliance_decisions to service_role;
-
 drop policy if exists field_workforce_decisions_service_role_all
   on public.field_workforce_compliance_decisions;
 create policy field_workforce_decisions_service_role_all
@@ -65,6 +57,5 @@ create policy field_workforce_decisions_service_role_all
   to service_role
   using (true)
   with check (true);
-
 comment on table public.field_workforce_compliance_decisions is
   'HR decision-support statuses for Field Workforce Compliance recommendations. Reporting only; no payroll or leave mutation.';

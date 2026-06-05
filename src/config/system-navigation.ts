@@ -1,6 +1,7 @@
 import {
   BellRing,
   BriefcaseBusiness,
+  Building2,
   CalendarClock,
   CalendarDays,
   ChartColumnBig,
@@ -25,6 +26,7 @@ import {
   ScrollText,
   Settings2,
   ShieldCheck,
+  Sparkles,
   UsersRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -92,6 +94,7 @@ export const adminNavigationSections = [
       { href: "/admin/deductions-governance", icon: ShieldCheck, label: "Deductions Governance", permissions: [{ resource: "deductions", action: "read" }] },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
+      { href: "/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment" }] },
       { href: "/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies" }] },
       { href: "/offers", icon: IdCard, label: "Offer Lifecycle", permissions: [{ resource: "offers" }] },
       { href: "/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }] },
@@ -116,6 +119,10 @@ export const adminNavigationSections = [
     items: [
       { href: "/sales/import", icon: Database, label: "Source of Sales", permissions: [{ resource: "sales" }] },
       { href: "/sales/database-mapping", icon: Database, label: "Database Mapping", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales/normalizer", icon: Sparkles, label: "Source Normalizer", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales/customer-directory", icon: UsersRound, label: "Customer Directory", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales/executive-report", icon: Building2, label: "Executive Report", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/queue", icon: FileUp, label: "Monthly Sales", permissions: [{ resource: "sales" }] },
       { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
       { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },

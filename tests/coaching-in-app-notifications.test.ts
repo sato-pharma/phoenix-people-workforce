@@ -18,8 +18,8 @@ export function runCoachingInAppNotificationTests() {
   );
   assert.match(
     submitRouteSource,
-    /enqueueInAppNotification\(\{/,
-    "Coaching submit route must enqueue an in-app notification.",
+    /createSystemNotification\(\{/,
+    "Coaching submit route must create notifications through the central engine.",
   );
   assert.match(
     submitRouteSource,
@@ -33,12 +33,12 @@ export function runCoachingInAppNotificationTests() {
   );
   assert.match(
     submitRouteSource,
-    /dedupeKey: `coaching_report_submitted:\$\{report\.report\.id\}:\$\{report\.report\.medical_rep_hr_id\}`/,
+    /idempotencyKey: `coaching_report_submitted:\$\{report\.report\.id\}:\$\{report\.report\.medical_rep_hr_id\}`/,
     "Coaching notification must use report and employee HR_ID dedupe key.",
   );
   assert.match(
     submitRouteSource,
-    /href: `\/employee-portals\/coaching\/\$\{report\.report\.id\}`/,
+    /actionUrl: `\/employee-portals\/coaching\/\$\{report\.report\.id\}`/,
     "Coaching notification must link to the employee coaching review route.",
   );
   assert.match(

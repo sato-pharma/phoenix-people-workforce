@@ -24,6 +24,11 @@ import {
   createAccessContext,
   resolveNavigationMode,
 } from "../src/lib/auth/permissions.ts";
+import {
+  isAllowedPhoenixOrigin,
+  rejectUntrustedForwardedOrigin,
+  trustedOriginForRedirect,
+} from "../src/lib/security/origins.ts";
 
 function createMemoryStorage() {
   const values = new Map<string, string>();
@@ -310,12 +315,41 @@ export async function runAuthSessionTests() {
   assert.match(originsSource, /https:\/\/phoenix-workforce\.vercel\.app/, "production origin must be trusted by default");
   assert.match(
     originsSource,
+    /https:\/\/phoenix-workforce-team\.vercel\.app/,
+    "team preview alias must be trusted by default",
+  );
+  assert.match(
+    originsSource,
     /phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects\.vercel\.app/,
     "working preview origin must be trusted by default",
   );
   assert.match(originsSource, /rejectUntrustedForwardedOrigin/, "unknown origins and forwarded hosts must be rejected");
   assert.match(csrfSource, /isAllowedPhoenixOrigin/, "CSRF expected origins must be allowlist-filtered");
   assert.match(apiCsrfSource, /requestOriginCandidates/, "plain API CSRF guard must use the same origin candidate logic");
+
+  const teamAliasRequest = new Request("https://phoenix-workforce-team.vercel.app/api/auth/login", {
+    headers: {
+      origin: "https://phoenix-workforce-team.vercel.app",
+      referer: "https://phoenix-workforce-team.vercel.app/login",
+      "x-forwarded-host": "phoenix-workforce-team.vercel.app",
+      "x-forwarded-proto": "https",
+    },
+  });
+  assert.equal(
+    isAllowedPhoenixOrigin("https://phoenix-workforce-team.vercel.app"),
+    true,
+    "team preview alias must pass the runtime origin allow-list",
+  );
+  assert.equal(
+    rejectUntrustedForwardedOrigin(teamAliasRequest),
+    null,
+    "team preview alias must not be rejected as an untrusted login origin",
+  );
+  assert.equal(
+    trustedOriginForRedirect(teamAliasRequest),
+    "https://phoenix-workforce-team.vercel.app",
+    "login redirects from the team preview alias must stay on that alias",
+  );
 
   const guest = createAccessContext({ source: "guest" });
   assert.equal(guest.scope, "none", "guest context must have no scope");

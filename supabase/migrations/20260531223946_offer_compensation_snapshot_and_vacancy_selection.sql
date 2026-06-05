@@ -12,20 +12,15 @@ alter table public.job_offers
   add column if not exists social_insurance numeric null,
   add column if not exists taxes numeric null,
   add column if not exists compensation_notes text null;
-
 alter table public.job_offers
   drop constraint if exists job_offers_status_check;
-
 alter table public.job_offers
   add constraint job_offers_status_check
   check (status in ('draft', 'sent', 'accepted', 'rejected', 'expired', 'hired'));
-
 create index if not exists job_offers_vacancy_id_idx on public.job_offers (vacancy_id);
-
 drop function if exists public.phx_approve_accepted_offer(
   uuid, text, text, numeric, numeric, numeric
 );
-
 create or replace function public.phx_approve_accepted_offer(
   p_offer_id uuid,
   p_approved_by_hr_id text default null,
@@ -293,11 +288,9 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.phx_approve_accepted_offer(
   uuid, text, text, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric
 ) from public, anon, authenticated;
-
 grant execute on function public.phx_approve_accepted_offer(
   uuid, text, text, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric
 ) to service_role;

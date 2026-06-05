@@ -20,6 +20,7 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
+import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
 import { Card } from "@/components/ui/card";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -147,6 +148,7 @@ export default async function EmployeePortalProfilePage() {
     >
       <div className="space-y-6">
         <IdentityCard data={data} />
+        <NotificationSettingsPanel />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <ScopeBadge scope={access.scope} />

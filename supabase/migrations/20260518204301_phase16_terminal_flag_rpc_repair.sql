@@ -51,11 +51,8 @@ begin
   );
 end;
 $$;
-
 revoke execute on function public.phx_normalize_terminal_employee_lifecycle_flags(text)
 from public, anon, authenticated;
-
 grant execute on function public.phx_normalize_terminal_employee_lifecycle_flags(text)
 to service_role;
-
 notify pgrst, 'reload schema';

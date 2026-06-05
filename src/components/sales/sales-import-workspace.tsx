@@ -776,6 +776,15 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           description="Select the distributor, attach the monthly workbook, then run validation."
           title="Validate Monthly Sheet"
         >
+          <div className="px-5 pt-5">
+            <AdminCallout tone="neutral">
+              <FileSpreadsheet className="mt-0.5 h-4 w-4" />
+              <div>
+                <p className="font-semibold">Uploading a Normalizer coded sheet?</p>
+                <p className="text-sm">Pick the <b>same distributor</b> you coded it for. A coded sheet from the Source Normalizer passes validation here — or import it in one click on the Normalizer screen.</p>
+              </div>
+            </AdminCallout>
+          </div>
           <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
               <label className="space-y-1.5">

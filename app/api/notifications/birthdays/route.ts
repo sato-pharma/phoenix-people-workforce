@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { buildHrCalendarEvents } from "@/lib/hr-calendar/calendar-logic";
-import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -78,19 +78,33 @@ export async function runBirthdayNotifications(request: Request) {
 
   for (const event of birthdayEvents) {
     const employee = event.employee;
-    const result = await safeSendNotificationEmail({
-      employeeHrId: employee.hrId,
-      metrics: [
-        { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
-        { label: "Birthday", value: today },
-        { label: "Year", value: year },
-      ],
-      notificationType: "birthday",
-      recipientMode: "employee",
-      subject: `Happy Birthday, ${employee.fullName}`,
-      summary: `Happy birthday wishes for ${employee.fullName}.`,
+    const result = await createSystemNotification({
+      actorId: "system",
+      email: {
+        employeeHrId: employee.hrId,
+        metrics: [
+          { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
+          { label: "Birthday", value: today },
+          { label: "Year", value: year },
+        ],
+        notificationType: "birthday",
+        recipientMode: "employee",
+        subject: `Happy Birthday, ${employee.fullName}`,
+        summary: `Happy birthday wishes for ${employee.fullName}.`,
+        title: "Happy Birthday",
+        tone: "neutral",
+      },
+      eventType: "birthday_today",
+      message: `Happy birthday wishes for ${employee.fullName}.`,
+      metadata: {
+        employeeHrId: employee.hrId,
+        idempotencyKey: `birthday:${employee.hrId}:${year}`,
+      },
+      module: "birthday",
+      priority: "normal",
+      recipientHrId: employee.hrId,
+      subjectHrId: employee.hrId,
       title: "Happy Birthday",
-      tone: "neutral",
     });
     results.push({ employeeHrId: employee.hrId, result });
   }

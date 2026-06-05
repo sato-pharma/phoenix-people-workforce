@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { isPayrollConflictError } from "@/lib/payroll/errors";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { validateSalaryWorkbook } from "@/lib/payroll/salary-import";
@@ -141,20 +141,36 @@ export async function POST(request: Request) {
       year,
     });
 
-    await safeSendNotificationEmail({
-      ctaHref: `/payroll?batchId=${result.batch.id}`,
-      ctaLabel: "Open payroll dashboard",
-      metrics: [
-        { label: "Payroll period", value: `${month}/${year}` },
-        { label: "Imported salary records", value: result.importedRecords },
-        { label: "Governance warnings", value: result.governanceWarnings },
-        { label: "Source file", value: file.name },
-      ],
-      notificationType: "general",
-      subject: `Phoenix Payroll upload imported - ${month}/${year}`,
-      summary: "A payroll salary upload was validated and imported successfully. Review governance warnings before approval.",
+    await createSystemNotification({
+      actionUrl: `/payroll?batchId=${result.batch.id}`,
+      actorId: actor,
+      email: {
+        ctaHref: `/payroll?batchId=${result.batch.id}`,
+        ctaLabel: "Open payroll dashboard",
+        metrics: [
+          { label: "Payroll period", value: `${month}/${year}` },
+          { label: "Imported salary records", value: result.importedRecords },
+          { label: "Governance warnings", value: result.governanceWarnings },
+          { label: "Source file", value: file.name },
+        ],
+        notificationType: "general",
+        subject: `Phoenix Payroll upload imported - ${month}/${year}`,
+        summary: "A payroll salary upload was validated and imported successfully. Review governance warnings before approval.",
+        title: "Payroll Upload Imported",
+        tone: result.governanceWarnings > 0 ? "warning" : "success",
+      },
+      eventType: "salary_upload_imported",
+      message: "A payroll salary upload was validated and imported successfully.",
+      metadata: {
+        batchId: result.batch.id,
+        governanceWarnings: result.governanceWarnings,
+        idempotencyKey: `payroll-upload:${result.batch.id}`,
+        sensitivity: "payroll",
+      },
+      module: "payroll",
+      priority: result.governanceWarnings > 0 ? "critical" : "high",
+      recordId: String(result.batch.id),
       title: "Payroll Upload Imported",
-      tone: result.governanceWarnings > 0 ? "warning" : "success",
     });
 
     return NextResponse.json(result);

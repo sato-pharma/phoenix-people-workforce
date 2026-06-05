@@ -2,6 +2,7 @@ import { AlertCircle } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { AdminProfileForm } from "@/components/admin/admin-profile-form";
+import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
 import { Card } from "@/components/ui/card";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -43,7 +44,12 @@ export default async function AdminProfilePage() {
 
   return (
     profile ? (
-      <AdminProfileForm profile={profile} />
+      <div className="space-y-6">
+        <AdminProfileForm profile={profile} />
+        <div className="px-4 pb-8 sm:px-6 lg:px-8">
+          <NotificationSettingsPanel />
+        </div>
+      </div>
     ) : (
       <div className="p-8">
           <Card className="mx-auto max-w-2xl border-rose-100 bg-rose-50 p-6">
