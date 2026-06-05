@@ -2,7 +2,6 @@
 -- Event name, event date, event location, first manager, and photo remain required.
 
 begin;
-
 alter table public.v2_vacation_requests
   drop constraint if exists v2_vacation_requests_compensatory_required_check,
   add constraint v2_vacation_requests_compensatory_required_check
@@ -16,7 +15,5 @@ alter table public.v2_vacation_requests
         and compensatory_attachment_object_path is not null
       )
     );
-
 notify pgrst, 'reload schema';
-
 commit;

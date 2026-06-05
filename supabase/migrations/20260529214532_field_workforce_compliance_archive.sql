@@ -37,17 +37,13 @@ create table if not exists public.field_workforce_compliance_imports (
   constraint field_workforce_imports_review_count_non_negative check (review_candidate_count >= 0),
   constraint field_workforce_imports_high_count_non_negative check (high_severity_count >= 0)
 );
-
 create unique index if not exists field_workforce_imports_archived_month_key_uidx
   on public.field_workforce_compliance_imports (month_key)
   where status = 'archived';
-
 create index if not exists field_workforce_imports_uploaded_at_idx
   on public.field_workforce_compliance_imports (uploaded_at desc);
-
 create index if not exists field_workforce_imports_period_idx
   on public.field_workforce_compliance_imports (year desc, month desc, uploaded_at desc);
-
 create table if not exists public.field_workforce_compliance_days (
   id uuid primary key default gen_random_uuid(),
   import_id uuid not null references public.field_workforce_compliance_imports(id) on delete cascade,
@@ -78,22 +74,16 @@ create table if not exists public.field_workforce_compliance_days (
   constraint field_workforce_days_severity_check check (severity is null or severity in ('Low', 'Medium', 'High', 'Review')),
   constraint field_workforce_days_ignore_reason_check check (ignore_reason is null or ignore_reason in ('before_hiring_date', 'friday'))
 );
-
 create index if not exists field_workforce_days_import_employee_date_idx
   on public.field_workforce_compliance_days (import_id, employee_code, activity_date);
-
 create index if not exists field_workforce_days_import_id_idx
   on public.field_workforce_compliance_days (import_id);
-
 create index if not exists field_workforce_days_employee_idx
   on public.field_workforce_compliance_days (employee_code, activity_date);
-
 create index if not exists field_workforce_days_status_idx
   on public.field_workforce_compliance_days (import_id, normalized_status);
-
 create index if not exists field_workforce_days_severity_idx
   on public.field_workforce_compliance_days (import_id, severity);
-
 create table if not exists public.field_workforce_compliance_monthly_summary (
   id uuid primary key default gen_random_uuid(),
   import_id uuid not null references public.field_workforce_compliance_imports(id) on delete cascade,
@@ -131,28 +121,21 @@ create table if not exists public.field_workforce_compliance_monthly_summary (
   constraint field_workforce_summary_review_count_non_negative check (review_candidate_count >= 0),
   constraint field_workforce_summary_compliance_percent_range check (compliance_percent between 0 and 100)
 );
-
 create index if not exists field_workforce_summary_import_employee_idx
   on public.field_workforce_compliance_monthly_summary (import_id, employee_code);
-
 create index if not exists field_workforce_summary_month_key_idx
   on public.field_workforce_compliance_monthly_summary (month_key, employee_code);
-
 create index if not exists field_workforce_summary_import_id_idx
   on public.field_workforce_compliance_monthly_summary (import_id);
-
 alter table public.field_workforce_compliance_imports enable row level security;
 alter table public.field_workforce_compliance_days enable row level security;
 alter table public.field_workforce_compliance_monthly_summary enable row level security;
-
 revoke all on table public.field_workforce_compliance_imports from anon, authenticated;
 revoke all on table public.field_workforce_compliance_days from anon, authenticated;
 revoke all on table public.field_workforce_compliance_monthly_summary from anon, authenticated;
-
 grant select, insert, update, delete on table public.field_workforce_compliance_imports to service_role;
 grant select, insert, update, delete on table public.field_workforce_compliance_days to service_role;
 grant select, insert, update, delete on table public.field_workforce_compliance_monthly_summary to service_role;
-
 drop policy if exists field_workforce_imports_service_role_all
   on public.field_workforce_compliance_imports;
 create policy field_workforce_imports_service_role_all
@@ -161,7 +144,6 @@ create policy field_workforce_imports_service_role_all
   to service_role
   using (true)
   with check (true);
-
 drop policy if exists field_workforce_days_service_role_all
   on public.field_workforce_compliance_days;
 create policy field_workforce_days_service_role_all
@@ -170,7 +152,6 @@ create policy field_workforce_days_service_role_all
   to service_role
   using (true)
   with check (true);
-
 drop policy if exists field_workforce_summary_service_role_all
   on public.field_workforce_compliance_monthly_summary;
 create policy field_workforce_summary_service_role_all
@@ -179,12 +160,9 @@ create policy field_workforce_summary_service_role_all
   to service_role
   using (true)
   with check (true);
-
 comment on table public.field_workforce_compliance_imports is
   'Monthly Field Workforce Compliance archive metadata. Archive/review only; no payroll or leave mutation.';
-
 comment on table public.field_workforce_compliance_days is
   'Normalized day-by-day Field Workforce Compliance archive rows. Values are recommendations/context only.';
-
 comment on table public.field_workforce_compliance_monthly_summary is
   'Monthly employee summary snapshot for Field Workforce Compliance archives.';

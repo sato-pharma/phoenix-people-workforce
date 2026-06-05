@@ -1,14 +1,4 @@
 -- Recruitment Offer Pipeline (M3) — offers workflow-registry module re-upsert.
---
--- Adds the pre-send pipeline states + actions to the `offers` module:
---   draft → pending_approval → approved → generated → sent, plus the
---   negotiation loop (sent → negotiation_in_progress → draft) and an
---   approval_rejected loop back to draft. The legacy offer_create (draft → sent)
---   is kept for the standalone /offers dashboard. Atomic upsert; restates the
---   COMPLETE module arrays (the registry stores the whole module).
--- Lockstep: src/lib/employee-lifecycle/workflow.ts (toOfferWorkflowStatus / actions)
---           + src/lib/offers/service.ts OfferStatus.
-
 insert into public.workflow_registry_modules (
   module_key, module_name, description, statuses, actions, is_active, created_by, updated_by
 )
@@ -57,4 +47,4 @@ set
   is_active = excluded.is_active,
   updated_by = 'system';
 
-notify pgrst, 'reload schema';
+notify pgrst, 'reload schema';;

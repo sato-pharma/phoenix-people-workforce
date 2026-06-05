@@ -1,26 +1,5 @@
--- Recruitment / ATS module — workflow registry seed.
---
--- Registers the `recruitment` module so every requisition + application stage
--- transition is validated by assertWorkflowRegistryTransition (the same engine
--- that governs offers/contracts/probation). One module carries both the
--- requisition (req_*) and application lifecycles; actions keep them separate via
--- their from/to status lists.
---
--- Note: app_offer_accepted/declined/expired are server-side reflections of the
--- existing offer engine's status, so they are allowed to Super Admin / HR
--- Specialist only (the reconciliation runs under a system context). The
--- candidate-facing accept/reject still flows through the offers module's
--- Employee-role action — this module only mirrors the result.
-
 insert into public.workflow_registry_modules (
-  module_key,
-  module_name,
-  description,
-  statuses,
-  actions,
-  is_active,
-  created_by,
-  updated_by
+  module_key, module_name, description, statuses, actions, is_active, created_by, updated_by
 )
 values
   (
@@ -51,7 +30,11 @@ values
       {"key":"pre_boarding","label":"Pre-boarding","terminal":false},
       {"key":"hired","label":"Hired","terminal":true},
       {"key":"application_rejected","label":"Application rejected","terminal":true},
-      {"key":"application_withdrawn","label":"Application withdrawn","terminal":true}
+      {"key":"application_withdrawn","label":"Application withdrawn","terminal":true},
+      {"key":"shortlisted","label":"Shortlisted","terminal":false},
+      {"key":"on_hold","label":"On hold","terminal":false},
+      {"key":"no_response","label":"No response","terminal":false},
+      {"key":"call_back","label":"Call back","terminal":false}
     ]'::jsonb,
     '[
       {"key":"req_open","label":"Open recruitment","from":["req_draft"],"to":"req_open","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["inherit vacancy details"],"notifications":["notify recruitment owner"],"auditLog":"Recruitment opened","tests":["requisition opens from draft"]},
@@ -64,7 +47,7 @@ values
       {"key":"app_add","label":"Add candidate to pool","from":["application_received"],"to":"in_candidate_pool","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["attach candidate record"],"notifications":[],"auditLog":"Candidate added to pool","tests":["application enters pool"]},
       {"key":"app_to_cv_screen","label":"Start CV screening","from":["in_candidate_pool"],"to":"cv_screening","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":[],"notifications":[],"auditLog":"CV screening started","tests":["screening starts from pool"]},
       {"key":"app_to_phone_screen","label":"Move to phone screening","from":["cv_screening"],"to":"phone_screening","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":[],"notifications":[],"auditLog":"Phone screening started","tests":["phone screening from cv screening"]},
-      {"key":"app_to_interview_scheduling","label":"Move to interview scheduling","from":["cv_screening","phone_screening"],"to":"interview_scheduling","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":[],"notifications":[],"auditLog":"Interview scheduling started","tests":["scheduling from screening"]},
+      {"key":"app_to_interview_scheduling","label":"Move to interview scheduling","from":["cv_screening","phone_screening","shortlisted"],"to":"interview_scheduling","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":[],"notifications":[],"auditLog":"Interview scheduling started","tests":["scheduling from screening"]},
       {"key":"app_to_hr_interview","label":"Move to HR interview","from":["interview_scheduling"],"to":"hr_interview","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["notify interviewers"],"notifications":["notify interviewers"],"auditLog":"HR interview stage","tests":["hr interview from scheduling"]},
       {"key":"app_record_hr_interview","label":"Record HR interview","from":["hr_interview"],"to":"hiring_manager_interview","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["record hr interview outcome"],"notifications":["notify hiring manager"],"auditLog":"HR interview recorded","tests":["hr interview advances to manager"]},
       {"key":"app_record_hm_interview","label":"Record hiring manager interview","from":["hiring_manager_interview"],"to":"final_selection","allowedRoles":["Super Admin","HR Specialist","District Manager","Regional Manager","National Sales Manager","Manager","Product Manager","Group Product Manager","Marketing Manager"],"requiresReason":false,"sideEffects":["record manager interview outcome"],"notifications":["notify HR"],"auditLog":"Manager interview recorded","tests":["hiring manager can record interview"]},
@@ -75,8 +58,18 @@ values
       {"key":"app_offer_expired","label":"Reflect offer expiry","from":["offer_sent"],"to":"offer_expired","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["reflect offer engine status"],"notifications":[],"auditLog":"Offer expired","tests":["expiry reflected from offer engine"]},
       {"key":"app_to_pre_boarding","label":"Move to pre-boarding","from":["offer_accepted"],"to":"pre_boarding","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["start pre-boarding"],"notifications":[],"auditLog":"Pre-boarding started","tests":["pre-boarding from accepted"]},
       {"key":"app_hire","label":"Approve hire and convert","from":["offer_accepted","pre_boarding"],"to":"hired","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["convert to employee via offer approval","fill requisition"],"notifications":["notify HR"],"auditLog":"Candidate hired","tests":["hire converts accepted offer"]},
-      {"key":"app_reject","label":"Reject application","from":["in_candidate_pool","cv_screening","phone_screening","interview_scheduling","hr_interview","hiring_manager_interview","final_selection"],"to":"application_rejected","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":true,"sideEffects":["close application; candidate stays in pool"],"notifications":[],"auditLog":"Application rejected","tests":["rejection requires reason"]},
-      {"key":"app_withdraw","label":"Withdraw application","from":["in_candidate_pool","cv_screening","phone_screening","interview_scheduling","hr_interview","hiring_manager_interview","final_selection","offer_sent"],"to":"application_withdrawn","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":true,"sideEffects":["candidate withdrew"],"notifications":[],"auditLog":"Application withdrawn","tests":["withdrawal requires reason"]}
+      {"key":"app_reject","label":"Reject application","from":["in_candidate_pool","cv_screening","phone_screening","interview_scheduling","hr_interview","hiring_manager_interview","final_selection","shortlisted","on_hold","no_response","call_back"],"to":"application_rejected","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":true,"sideEffects":["close application; candidate stays in pool"],"notifications":[],"auditLog":"Application rejected","tests":["rejection requires reason"]},
+      {"key":"app_withdraw","label":"Withdraw application","from":["in_candidate_pool","cv_screening","phone_screening","interview_scheduling","hr_interview","hiring_manager_interview","final_selection","offer_sent","shortlisted","on_hold","no_response","call_back"],"to":"application_withdrawn","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":true,"sideEffects":["candidate withdrew"],"notifications":[],"auditLog":"Application withdrawn","tests":["withdrawal requires reason"]},
+      {"key":"app_cv_shortlist","label":"Shortlist from CV screening","from":["cv_screening"],"to":"shortlisted","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["record cv screening outcome"],"notifications":[],"auditLog":"Candidate shortlisted","tests":["shortlist from cv screening"]},
+      {"key":"app_shortlist_to_scheduling","label":"Move shortlisted to interview scheduling","from":["shortlisted"],"to":"interview_scheduling","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":[],"notifications":[],"auditLog":"Shortlisted to scheduling","tests":["shortlisted advances to scheduling"]},
+      {"key":"app_hold","label":"Put screening on hold","from":["cv_screening","phone_screening"],"to":"on_hold","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":true,"sideEffects":["pause screening"],"notifications":[],"auditLog":"Screening on hold","tests":["hold requires reason"]},
+      {"key":"app_resume_from_hold_to_cv","label":"Resume on-hold to CV screening","from":["on_hold"],"to":"cv_screening","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["resume screening"],"notifications":[],"auditLog":"Resumed to CV screening","tests":["resume from hold to cv"]},
+      {"key":"app_resume_from_hold_to_phone","label":"Resume on-hold to phone screening","from":["on_hold"],"to":"phone_screening","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["resume screening"],"notifications":[],"auditLog":"Resumed to phone screening","tests":["resume from hold to phone"]},
+      {"key":"app_no_response","label":"Mark no response","from":["phone_screening"],"to":"no_response","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["record no response"],"notifications":[],"auditLog":"No response","tests":["no response from phone"]},
+      {"key":"app_resume_from_no_response","label":"Retry phone after no response","from":["no_response"],"to":"phone_screening","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["retry phone screening"],"notifications":[],"auditLog":"Retry phone screening","tests":["resume from no response"]},
+      {"key":"app_call_back","label":"Mark call back","from":["cv_screening","phone_screening"],"to":"call_back","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["schedule call back"],"notifications":[],"auditLog":"Call back","tests":["call back from screening"]},
+      {"key":"app_resume_from_call_back_to_cv","label":"Resume call-back to CV screening","from":["call_back"],"to":"cv_screening","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["resume screening"],"notifications":[],"auditLog":"Resumed to CV screening","tests":["resume from call back to cv"]},
+      {"key":"app_resume_from_call_back_to_phone","label":"Resume call-back to phone screening","from":["call_back"],"to":"phone_screening","allowedRoles":["Super Admin","HR Specialist"],"requiresReason":false,"sideEffects":["resume screening"],"notifications":[],"auditLog":"Resumed to phone screening","tests":["resume from call back to phone"]}
     ]'::jsonb,
     true,
     'system',
@@ -91,4 +84,4 @@ set
   is_active = excluded.is_active,
   updated_by = 'system';
 
-notify pgrst, 'reload schema';
+notify pgrst, 'reload schema';;

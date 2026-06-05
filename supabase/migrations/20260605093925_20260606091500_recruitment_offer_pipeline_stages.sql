@@ -1,12 +1,4 @@
 -- Recruitment Offer Pipeline (M4) — application stages + recruitment registry.
---
--- Mirrors the offers pipeline onto the recruitment application: adds the 5 new
--- NON-terminal stages (offer_draft, offer_pending_approval, offer_approved,
--- offer_generated, offer_negotiation), widens the stage CHECK, and re-upserts the
--- recruitment module with the 6 new app_offer_* actions. Extends app_offer_sent.from
--- with offer_generated (so a generated offer can be sent). Additive + idempotent.
--- Lockstep: src/lib/recruitment/types.ts (applicationStages / recruitmentActionKeys).
-
 alter table public.recruitment_applications
   drop constraint if exists recruitment_applications_stage_check;
 alter table public.recruitment_applications
@@ -124,4 +116,4 @@ set
   is_active = excluded.is_active,
   updated_by = 'system';
 
-notify pgrst, 'reload schema';
+notify pgrst, 'reload schema';;

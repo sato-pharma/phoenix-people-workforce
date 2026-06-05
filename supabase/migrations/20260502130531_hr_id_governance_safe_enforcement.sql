@@ -18,7 +18,6 @@ set
   full_name = excluded.full_name,
   employment_status = coalesce(public.employees.employment_status, excluded.employment_status),
   updated_at = now();
-
 -- =====================================================
 -- 1. HR_ID orphan audit view
 -- =====================================================
@@ -64,7 +63,6 @@ from public.sales_targets st
 left join public.employees e on e.hr_id = st.manager_hr_id
 where st.manager_hr_id is not null and e.hr_id is null
 group by st.manager_hr_id;
-
 -- =====================================================
 -- 2. Supporting indexes
 -- =====================================================
@@ -75,7 +73,6 @@ create index if not exists idx_sales_records_employee_hr_id_safe on public.sales
 create index if not exists idx_sales_records_manager_hr_id_safe on public.sales_records(manager_hr_id);
 create index if not exists idx_sales_targets_employee_hr_id on public.sales_targets(employee_hr_id);
 create index if not exists idx_sales_targets_manager_hr_id on public.sales_targets(manager_hr_id);
-
 -- =====================================================
 -- 3. Add FK constraints safely only if data is clean and FK does not exist
 -- =====================================================
@@ -129,4 +126,4 @@ begin
       add constraint sales_targets_manager_hr_id_fkey
       foreign key (manager_hr_id) references public.employees(hr_id);
   end if;
-end $$;;
+end $$;

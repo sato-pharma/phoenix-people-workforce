@@ -1,7 +1,6 @@
 alter table public.outstation_expense_requests
   add column if not exists car_evidence_image_path text,
   add column if not exists car_evidence_metadata jsonb;
-
 do $$
 begin
   if to_regclass('storage.buckets') is not null then

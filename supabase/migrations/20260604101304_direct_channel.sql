@@ -1,11 +1,5 @@
--- Direct channel — company direct sales (not through a distributor). Special rules:
---  * value is taken from the sheet's own Value column (NOT recomputed from factory price),
---  * geography is Region-only (no area/brick), with a special "National" region bucket.
---
--- This migration registers the Direct channel, adds the is_direct discriminator, keeps the
--- distributor closing matrix distributor-only, adds a Direct closing RPC (stored value), and
--- teaches the Executive RPCs to use the stored value for Direct rows. Additive + reversible.
--- Apply to PRODUCTION only with approval.
+-- Direct channel — company direct sales (not through a distributor). Value from the sheet,
+-- region-only (no area/brick), "National" bucket. Additive + reversible.
 
 -- 1. Register the Direct channel so it appears in the upload dropdown.
 insert into public.source_of_sales_distributors (distributor_code, distributor_name, normalized_distributor_name, active)
@@ -16,15 +10,14 @@ on conflict (distributor_code) do update
       active = true,
       updated_at = now();
 
--- 2. Explicit discriminator. The importer sets it true for Direct rows; every RPC keys off it.
+-- 2. Explicit discriminator.
 alter table public.source_of_sales_import_rows
   add column if not exists is_direct boolean not null default false;
 
 create index if not exists source_of_sales_import_rows_is_direct_idx
   on public.source_of_sales_import_rows (is_direct);
 
--- 3. Keep the distributor closing matrix distributor-only (Direct has no area + a different
---    value basis). Value still recomputed Qty x (1 - discount) x live factory_price.
+-- 3. Distributor closing matrix — distributors only.
 create or replace function public.phx_monthly_closing_matrix(p_line text, p_period text)
 returns table (
   area_code text,
@@ -54,8 +47,7 @@ $$;
 revoke all on function public.phx_monthly_closing_matrix(text, text) from public, anon, authenticated;
 grant execute on function public.phx_monthly_closing_matrix(text, text) to service_role;
 
--- 4. Direct closing rows: region x product, value taken STRAIGHT from the stored sheet value
---    (no factory recompute). Returns real regions AND the "National" bucket.
+-- 4. Direct closing rows: region x product, value taken from the stored sheet value.
 create or replace function public.phx_monthly_closing_direct(p_line text, p_period text)
 returns table (
   region_code text,
@@ -83,8 +75,7 @@ $$;
 revoke all on function public.phx_monthly_closing_direct(text, text) from public, anon, authenticated;
 grant execute on function public.phx_monthly_closing_direct(text, text) to service_role;
 
--- 5. Executive Report — distributor×product now uses the STORED value for Direct rows and
---    buckets Direct (which has no area) under a synthetic 'DIRECT' area.
+-- 5. Executive distributor×product — stored value for Direct, synthetic 'DIRECT' area.
 create or replace function public.phx_exec_distributor_product(p_period text default null)
 returns table (
   distributor_code text,
@@ -123,7 +114,7 @@ $$;
 revoke all on function public.phx_exec_distributor_product(text) from public, anon, authenticated;
 grant execute on function public.phx_exec_distributor_product(text) to service_role;
 
--- 6. Bricks + customers rankings exclude Direct (it has no brick and no client code).
+-- 6. Bricks + customers rankings exclude Direct.
 create or replace function public.phx_exec_brick(p_period text default null)
 returns table (
   distributor_code text,
@@ -203,4 +194,4 @@ as $$
 $$;
 
 revoke all on function public.phx_exec_customers(text) from public, anon, authenticated;
-grant execute on function public.phx_exec_customers(text) to service_role;
+grant execute on function public.phx_exec_customers(text) to service_role;;

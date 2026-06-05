@@ -1,21 +1,3 @@
--- Monthly Closing — value is recomputed by the report, not read from the stored row value.
---
--- The closing must compute Sales Value itself from current master data:
---   value = Qty (only; bonus excluded) x current factory_price x (1 - per-row discount)
--- summed per area x product. The distributor's stored `value` column (computed at import
--- time under whatever rule was then active) is NEVER used by the closing.
---
--- 1) Persist the per-row discount so the RPC can recompute. The importer already parses it
---    (discountFraction); existing rows default to 0 (current uploads carry no discounts), so
---    their value collapses to Qty x factory_price — which is the correct, current rule.
--- 2) Replace the aggregation RPC to recompute value from qty, discount, and the LIVE
---    factory_price from source_of_sales_products (left join so an unmapped product yields 0,
---    never an error). Region subtotals and the national total are still derived in the app
---    from this area x product grain (each area counted once).
---
--- Additive + reversible. Apply to PRODUCTION (ozucdzovmcqvepbozvqf) with explicit approval.
--- Rollback: drop column discount; restore the prior sum(r.value) RPC body.
-
 alter table public.source_of_sales_import_rows
   add column if not exists discount numeric(9, 6) not null default 0;
 
@@ -48,4 +30,4 @@ as $$
 $$;
 
 revoke all on function public.phx_monthly_closing_matrix(text, text) from public, anon, authenticated;
-grant execute on function public.phx_monthly_closing_matrix(text, text) to service_role;
+grant execute on function public.phx_monthly_closing_matrix(text, text) to service_role;;

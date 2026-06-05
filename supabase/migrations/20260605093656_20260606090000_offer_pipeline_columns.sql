@@ -1,10 +1,4 @@
 -- Recruitment Offer Pipeline (M1) — job_offers columns + status widen.
---
--- Adds offer-preparation fields (probation, benefits), generation/send tracking,
--- and widens the status CHECK with the 5 new NON-terminal pipeline states
--- (pending_approval, approved, approval_rejected, generated, negotiation_in_progress).
--- Additive + idempotent. Keep in lockstep with src/lib/offers/service.ts OfferStatus.
-
 alter table public.job_offers
   add column if not exists probation_period_months integer not null default 3,
   add column if not exists benefits jsonb not null default '[]'::jsonb,
@@ -25,4 +19,4 @@ alter table public.job_offers
     'hired', 'withdrawn', 'cancelled', 'voided'
   ));
 
-notify pgrst, 'reload schema';
+notify pgrst, 'reload schema';;

@@ -17,7 +17,6 @@ drop index if exists public.sales_records_hr_period_idx;
 drop index if exists public.idx_sales_records_manager_hr_id_safe;
 drop index if exists public.user_access_profiles_hr_id_idx;
 drop index if exists public.v2_vacation_weekly_off_policies_title_idx;
-
 do $$
 begin
   if to_regclass('public.email_templates') is not null then

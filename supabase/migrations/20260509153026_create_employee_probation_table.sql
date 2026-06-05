@@ -1,4 +1,3 @@
-
 CREATE TABLE IF NOT EXISTS employee_probation (
   id                  BIGSERIAL PRIMARY KEY,
   hr_id               TEXT NOT NULL REFERENCES employees(hr_id),
@@ -11,4 +10,3 @@ CREATE TABLE IF NOT EXISTS employee_probation (
 CREATE INDEX IF NOT EXISTS idx_employee_probation_hr_id ON employee_probation (hr_id);
 CREATE INDEX IF NOT EXISTS idx_employee_probation_end
   ON employee_probation (probation_end_date) WHERE status = 'active';
-;

@@ -18,7 +18,6 @@ set
   ]'::jsonb,
   updated_by = 'system'
 where module_key = 'outstation_expenses';
-
 update public.workflow_registry_modules
 set
   statuses = '[
@@ -41,7 +40,6 @@ set
   ]'::jsonb,
   updated_by = 'system'
 where module_key = 'leave_requests';
-
 update public.workflow_registry_modules
 set
   statuses = '[
@@ -100,7 +98,6 @@ set
   ]'::jsonb,
   updated_by = 'system'
 where module_key = 'employee_lifecycle';
-
 update public.workflow_registry_modules
 set
   module_name = 'Employee Lifecycle (deprecated)',
@@ -108,7 +105,6 @@ set
   is_active = false,
   updated_by = 'system'
 where module_key = 'employee_lifecycle';
-
 insert into public.workflow_registry_modules (
   module_key,
   module_name,
@@ -226,7 +222,6 @@ set
   actions = excluded.actions,
   is_active = excluded.is_active,
   updated_by = 'system';
-
 update public.workflow_registry_modules
 set
   statuses = '[
@@ -254,7 +249,6 @@ set
   ]'::jsonb,
   updated_by = 'system'
 where module_key = 'marketing_requests';
-
 update public.workflow_registry_modules
 set
   statuses = '[

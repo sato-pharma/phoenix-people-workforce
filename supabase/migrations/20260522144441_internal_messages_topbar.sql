@@ -20,7 +20,6 @@ create table if not exists public.internal_messages (
     email_status in ('not_requested', 'pending', 'sent', 'skipped', 'failed')
   )
 );
-
 alter table public.internal_messages
   add column if not exists sender_login_id text null,
   add column if not exists sender_hr_id text null,
@@ -38,24 +37,17 @@ alter table public.internal_messages
   add column if not exists read_at timestamptz null,
   add column if not exists created_at timestamptz not null default now(),
   add column if not exists updated_at timestamptz not null default now();
-
 create index if not exists internal_messages_recipient_hr_created_idx
   on public.internal_messages (recipient_hr_id, created_at desc);
-
 create index if not exists internal_messages_recipient_login_created_idx
   on public.internal_messages (recipient_login_id, created_at desc);
-
 create index if not exists internal_messages_sender_hr_created_idx
   on public.internal_messages (sender_hr_id, created_at desc);
-
 create index if not exists internal_messages_sender_login_created_idx
   on public.internal_messages (sender_login_id, created_at desc);
-
 alter table public.internal_messages enable row level security;
-
 revoke all on public.internal_messages from anon, authenticated;
 grant all on public.internal_messages to service_role;
-
 drop policy if exists phx_internal_messages_service_role on public.internal_messages;
 create policy phx_internal_messages_service_role
   on public.internal_messages

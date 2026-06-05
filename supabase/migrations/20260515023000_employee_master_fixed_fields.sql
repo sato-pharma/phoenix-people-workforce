@@ -23,7 +23,6 @@ alter table public.employees
   add column if not exists residence_city text,
   add column if not exists residence_area text,
   add column if not exists contract_type text;
-
 comment on column public.employees.national_id is 'Government national identity number captured as fixed employee master data.';
 comment on column public.employees.gender is 'Employee gender value for HR master data reporting.';
 comment on column public.employees.bank_account is 'Employee bank account reference used by HR/payroll operations.';
@@ -43,7 +42,6 @@ comment on column public.employees.residence_address is 'Employee residence addr
 comment on column public.employees.residence_city is 'Employee residence city copied from employee_locations when available.';
 comment on column public.employees.residence_area is 'Employee residence area copied from employee_locations when available.';
 comment on column public.employees.contract_type is 'Employee fixed contract type copied from employee_contracts when available.';
-
 do $$
 declare
   source_column text;

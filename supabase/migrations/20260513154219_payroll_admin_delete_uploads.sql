@@ -16,7 +16,6 @@ begin
   return old;
 end;
 $$;
-
 create or replace function public.phx_prevent_closed_salary_detail_mutation()
 returns trigger
 language plpgsql
@@ -76,7 +75,6 @@ begin
   return new;
 end;
 $$;
-
 create or replace function public.phx_delete_salary_batch(p_batch_id uuid)
 returns jsonb
 language plpgsql
@@ -126,9 +124,7 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.phx_delete_salary_batch(uuid) from public, anon, authenticated;
 grant execute on function public.phx_delete_salary_batch(uuid) to service_role;
-
 revoke all on function public.phx_prevent_closed_salary_batch_delete() from public, anon, authenticated;
 revoke all on function public.phx_prevent_closed_salary_detail_mutation() from public, anon, authenticated;

@@ -25,3 +25,4 @@ create policy phx_email_template_drafts_service_role
   to service_role
   using (true)
   with check (true);
+;

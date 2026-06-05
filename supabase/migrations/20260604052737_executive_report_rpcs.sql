@@ -1,17 +1,7 @@
--- Executive Report RPCs — company-wide (ALL lines) aggregates powering the downloaded
--- executive comparison + insights workbook.
---
--- These mirror the Monthly Closing comparison RPCs but (a) drop the official_line filter so
--- every line is included, (b) take a NULLABLE period: when p_period is null the report spans
--- ALL uploaded months (all-time), otherwise it narrows to that month. Value is ALWAYS
--- recomputed the canonical way (Qty x (1 - discount) x live factory_price); the stored value
--- column is never used; bonus rows carry a 100% discount so they add quantity but no value.
---
--- Canonical predicate: validated batch + the row's invoice month equals its batch month, with
--- the optional period narrowing. Read-only, additive, reversible (drop the 3 functions).
--- Apply to PRODUCTION with approval.
+-- Executive Report RPCs — company-wide (ALL lines) aggregates, nullable period (all-time when
+-- null). Mirror the Monthly Closing comparison RPCs but drop the line filter. Value recomputed
+-- Qty x (1 - discount) x live factory_price. Read-only, additive, reversible.
 
--- distributor x line x region x area x product
 create or replace function public.phx_exec_distributor_product(p_period text default null)
 returns table (
   distributor_code text,
@@ -45,7 +35,6 @@ $$;
 revoke all on function public.phx_exec_distributor_product(text) from public, anon, authenticated;
 grant execute on function public.phx_exec_distributor_product(text) to service_role;
 
--- distributor x brick
 create or replace function public.phx_exec_brick(p_period text default null)
 returns table (
   distributor_code text,
@@ -76,7 +65,6 @@ $$;
 revoke all on function public.phx_exec_brick(text) from public, anon, authenticated;
 grant execute on function public.phx_exec_brick(text) to service_role;
 
--- one row per (client_code, distributor) — same merge rule as the Customer Directory
 create or replace function public.phx_exec_customers(p_period text default null)
 returns table (
   client_code text,
@@ -124,4 +112,4 @@ as $$
 $$;
 
 revoke all on function public.phx_exec_customers(text) from public, anon, authenticated;
-grant execute on function public.phx_exec_customers(text) to service_role;
+grant execute on function public.phx_exec_customers(text) to service_role;;

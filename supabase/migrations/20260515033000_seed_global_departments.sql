@@ -3,7 +3,6 @@
 
 alter table public.departments
   add column if not exists is_active boolean not null default true;
-
 with approved_departments(code, name) as (
   values
     ('sales', 'Sales'),
@@ -37,7 +36,6 @@ where d.id = m.id
     or d.name is distinct from m.name
     or d.is_active is distinct from true
   );
-
 with approved_departments(code, name) as (
   values
     ('sales', 'Sales'),
@@ -60,7 +58,6 @@ where not exists (
   where lower(trim(d.name)) = lower(a.name)
      or lower(trim(coalesce(d.code, ''))) = lower(a.code)
 );
-
 do $$
 declare
   active_department_id bigint;
@@ -89,5 +86,4 @@ begin
     raise notice 'Legacy department "Active" remains active because % employees reference it. Manual cleanup required.', reference_count;
   end if;
 end $$;
-
 comment on column public.departments.is_active is 'Controls whether the department is available as a global active lookup option.';

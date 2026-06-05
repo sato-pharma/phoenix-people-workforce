@@ -3,10 +3,8 @@
 -- adds transition-safe RPCs, and avoids deleting historical contract data.
 
 create extension if not exists pgcrypto;
-
 alter table public.employees
   add column if not exists contract_renewal_date date null;
-
 create table if not exists public.employee_contracts (
   id uuid primary key default gen_random_uuid(),
   employee_hr_id text null references public.employees(hr_id) on update cascade on delete cascade,
@@ -25,7 +23,6 @@ create table if not exists public.employee_contracts (
   updated_at timestamptz not null default now(),
   created_by text null
 );
-
 alter table public.employee_contracts add column if not exists employee_hr_id text null;
 alter table public.employee_contracts add column if not exists hr_id text null;
 alter table public.employee_contracts add column if not exists contract_type text null default 'fixed-term';
@@ -41,45 +38,35 @@ alter table public.employee_contracts add column if not exists status text not n
 alter table public.employee_contracts add column if not exists created_at timestamptz not null default now();
 alter table public.employee_contracts add column if not exists updated_at timestamptz not null default now();
 alter table public.employee_contracts add column if not exists created_by text null;
-
 alter table public.employee_contracts alter column contract_type set default 'fixed-term';
 alter table public.employee_contracts alter column contract_renewal_date drop not null;
 alter table public.employee_contracts alter column employee_hr_id drop not null;
 alter table public.employee_contracts alter column hr_id drop not null;
-
 update public.employee_contracts
 set employee_hr_id = hr_id
 where employee_hr_id is null
   and hr_id is not null;
-
 update public.employee_contracts
 set hr_id = employee_hr_id
 where hr_id is null
   and employee_hr_id is not null;
-
 update public.employee_contracts
 set contract_type = 'fixed-term'
 where contract_type is null;
-
 alter table public.employee_contracts
   drop constraint if exists employee_contracts_status_check,
   drop constraint if exists employee_contracts_date_range_check;
-
 alter table public.employee_contracts
   add constraint employee_contracts_status_check
     check (status in ('draft', 'active', 'expired', 'renewed', 'terminated', 'not_renewed', 'cancelled')),
   add constraint employee_contracts_date_range_check
     check (contract_start_date is null or contract_end_date is null or contract_end_date >= contract_start_date);
-
 create index if not exists employee_contracts_employee_hr_id_idx
   on public.employee_contracts (employee_hr_id);
-
 create index if not exists employee_contracts_hr_id_idx
   on public.employee_contracts (hr_id);
-
 create index if not exists employee_contracts_status_renewal_idx
   on public.employee_contracts (status, contract_renewal_date);
-
 create table if not exists public.contract_renewal_requests (
   id uuid primary key default gen_random_uuid(),
   employee_hr_id text not null references public.employees(hr_id) on update cascade on delete cascade,
@@ -111,26 +98,20 @@ create table if not exists public.contract_renewal_requests (
   decision_reason text null,
   completed_contract_id text null
 );
-
 alter table public.contract_renewal_requests
   drop constraint if exists contract_renewal_requests_status_check,
   drop constraint if exists contract_renewal_requests_date_range_check;
-
 alter table public.contract_renewal_requests
   add constraint contract_renewal_requests_status_check
     check (status in ('requested', 'manager_review', 'hr_review', 'renewed', 'not_renewed', 'cancelled')),
   add constraint contract_renewal_requests_date_range_check
     check (proposed_start_date is null or proposed_end_date is null or proposed_end_date >= proposed_start_date);
-
 create index if not exists contract_renewal_requests_employee_hr_id_idx
   on public.contract_renewal_requests (employee_hr_id);
-
 create index if not exists contract_renewal_requests_status_idx
   on public.contract_renewal_requests (status);
-
 create index if not exists contract_renewal_requests_requested_date_idx
   on public.contract_renewal_requests (requested_renewal_date);
-
 create table if not exists public.contract_renewal_history (
   id uuid primary key default gen_random_uuid(),
   request_id uuid null references public.contract_renewal_requests(id) on update cascade on delete set null,
@@ -142,10 +123,8 @@ create table if not exists public.contract_renewal_history (
   details jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
-
 create index if not exists contract_renewal_history_employee_hr_id_idx
   on public.contract_renewal_history (employee_hr_id, created_at desc);
-
 do $$
 begin
   if not exists (
@@ -165,7 +144,6 @@ begin
       where status in ('requested', 'manager_review', 'hr_review');
   end if;
 end $$;
-
 do $$
 begin
   if not exists (
@@ -186,7 +164,6 @@ begin
       where status = 'active';
   end if;
 end $$;
-
 create or replace function public.phx_contract_note(
   p_existing text,
   p_actor text,
@@ -204,7 +181,6 @@ as $$
       case when nullif(p_note, '') is null then '' else ' - ' || p_note end
   );
 $$;
-
 create or replace function public.phx_create_contract_renewal_request(
   p_employee_hr_id text,
   p_current_contract_id text,
@@ -346,7 +322,6 @@ begin
   return to_jsonb(v_request);
 end;
 $$;
-
 create or replace function public.phx_apply_contract_renewal_workflow(
   p_request_id uuid,
   p_action text,
@@ -615,25 +590,21 @@ begin
   return to_jsonb(v_updated);
 end;
 $$;
-
 alter table public.employee_contracts enable row level security;
 alter table public.contract_renewal_requests enable row level security;
 alter table public.contract_renewal_history enable row level security;
-
 revoke all on public.employee_contracts from anon, authenticated;
 revoke all on public.contract_renewal_requests from anon, authenticated;
 revoke all on public.contract_renewal_history from anon, authenticated;
 grant all on public.employee_contracts to service_role;
 grant all on public.contract_renewal_requests to service_role;
 grant all on public.contract_renewal_history to service_role;
-
 revoke execute on function public.phx_contract_note(text,text,text,text) from public, anon, authenticated;
 revoke execute on function public.phx_create_contract_renewal_request(text,text,text,text,text,text,date,date,date,date,text,text,text,text) from public, anon, authenticated;
 revoke execute on function public.phx_apply_contract_renewal_workflow(uuid,text,text,text,text,text,text,text,text) from public, anon, authenticated;
 grant execute on function public.phx_contract_note(text,text,text,text) to service_role;
 grant execute on function public.phx_create_contract_renewal_request(text,text,text,text,text,text,date,date,date,date,text,text,text,text) to service_role;
 grant execute on function public.phx_apply_contract_renewal_workflow(uuid,text,text,text,text,text,text,text,text) to service_role;
-
 drop policy if exists phx_employee_contracts_service_role on public.employee_contracts;
 create policy phx_employee_contracts_service_role
   on public.employee_contracts
@@ -641,7 +612,6 @@ create policy phx_employee_contracts_service_role
   to service_role
   using (true)
   with check (true);
-
 drop policy if exists phx_contract_renewal_requests_service_role on public.contract_renewal_requests;
 create policy phx_contract_renewal_requests_service_role
   on public.contract_renewal_requests
@@ -649,7 +619,6 @@ create policy phx_contract_renewal_requests_service_role
   to service_role
   using (true)
   with check (true);
-
 drop policy if exists phx_contract_renewal_history_service_role on public.contract_renewal_history;
 create policy phx_contract_renewal_history_service_role
   on public.contract_renewal_history
@@ -657,5 +626,4 @@ create policy phx_contract_renewal_history_service_role
   to service_role
   using (true)
   with check (true);
-
 notify pgrst, 'reload schema';

@@ -3,14 +3,12 @@ alter table public.outstation_expense_requests
   add column if not exists return_ticket_amount double precision not null default 0,
   add column if not exists ticket_attachment_paths jsonb not null default '[]'::jsonb,
   add column if not exists ticket_attachment_metadata jsonb not null default '[]'::jsonb;
-
 update public.outstation_expense_requests
 set
   go_ticket_amount = coalesce(go_ticket_amount, 0),
   return_ticket_amount = coalesce(return_ticket_amount, 0),
   ticket_attachment_paths = coalesce(ticket_attachment_paths, '[]'::jsonb),
   ticket_attachment_metadata = coalesce(ticket_attachment_metadata, '[]'::jsonb);
-
 alter table public.outstation_expense_requests
   alter column go_ticket_amount set default 0,
   alter column go_ticket_amount set not null,
@@ -20,7 +18,6 @@ alter table public.outstation_expense_requests
   alter column ticket_attachment_paths set not null,
   alter column ticket_attachment_metadata set default '[]'::jsonb,
   alter column ticket_attachment_metadata set not null;
-
 do $$
 begin
   if to_regclass('storage.buckets') is not null then
