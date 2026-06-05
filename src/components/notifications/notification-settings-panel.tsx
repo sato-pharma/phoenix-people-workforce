@@ -13,9 +13,9 @@ type NotificationSettings = {
     telegramEnabled: boolean;
   };
   telegram: {
-    linkedAt: string | null;
-    status: "pending" | "connected" | "disabled" | "failed" | null;
-    username: string | null;
+    connectedAt: string | null;
+    status: "pending" | "connected" | "disabled" | "failed" | "not_connected";
+    telegramUsername: string | null;
   } | null;
 };
 
@@ -33,7 +33,7 @@ const emptySettings: NotificationSettings = {
 
 function statusLabel(settings: NotificationSettings) {
   const status = settings.telegram?.status;
-  if (status === "connected") return settings.telegram?.username ? `Connected as @${settings.telegram.username}` : "Connected";
+  if (status === "connected") return settings.telegram?.telegramUsername ? `Connected as @${settings.telegram.telegramUsername}` : "Connected";
   if (status === "pending") return "Connection pending";
   if (status === "failed") return "Connection failed";
   if (status === "disabled") return "Disabled";
