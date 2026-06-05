@@ -91,6 +91,7 @@
     "typescript": "^5"
   },
   "overrides": {
+    "hono": "^4.12.21",
     "postcss": "8.5.12",
     "qs": "6.15.2",
     "tmp": "^0.2.6",
