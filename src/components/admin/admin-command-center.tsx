@@ -21,6 +21,7 @@ import {
   Network,
   Receipt,
   ScrollText,
+  Send,
   ShieldCheck,
   Sparkles,
   Target,
@@ -647,6 +648,7 @@ export function AdminCommandCenter({
                 {isHrSpecialistWorkspace ? <QuickAction href="/leave-management/vacation-report" icon={CalendarCheck} label="Vacations" /> : null}
                 {isHrSpecialistWorkspace ? <QuickAction href="/coaching/analytics" icon={Activity} label="Coaching" /> : null}
                 {showAdminModules ? <QuickAction href="/admin/access" icon={ShieldCheck} label="Access" /> : null}
+                {showAdminModules ? <QuickAction href="/admin/notifications/telegram" icon={Send} label="Telegram" /> : null}
                 <QuickAction href="/organogram" icon={Network} label="Org Chart" />
               </div>
             </div>
