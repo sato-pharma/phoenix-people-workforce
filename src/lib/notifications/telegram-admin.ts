@@ -11,6 +11,10 @@ import {
 } from "@/lib/notifications/telegram-governance";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+function testRunId() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+}
+
 export type TelegramAdminConnection = {
   connectedAt: string | null;
   department: string | null;
@@ -320,7 +324,7 @@ export async function adminSendTelegramTest(access: AccessContext) {
     channels: ["telegram"],
     eventType: "telegram_admin_test",
     message: "Phoenix Telegram admin test notification.",
-    metadata: { adminTest: true },
+    metadata: { adminTest: true, idempotencyKey: `telegram-admin-test:${recipientUserId}:${testRunId()}` },
     module: "system",
     priority: "normal",
     recipientHrId,

@@ -78,6 +78,7 @@ export function runTelegramTemplateManagementTests() {
   assert.match(service, /createSystemNotification/);
   assert.match(service, /channels: \["telegram"\]/);
   assert.match(service, /recipientUserId = actor\(access\)/, "admin preview must target signed-in admin only");
+  assert.match(service, /idempotencyKey: `telegram-template-preview:\$\{definition\.templateKey\}:\$\{recipientUserId\}:/, "each template preview must create a fresh delivery attempt");
   assert.match(service, /telegram:[\s\S]*ctaLabel: preview\.ctaLabel[\s\S]*ctaUrl: preview\.ctaUrl/, "admin preview must include rendered CTA config");
   assert.match(service, /eventType: "telegram_template_preview"/);
   assert.match(service, /writeAuditLog/);

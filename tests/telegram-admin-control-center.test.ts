@@ -52,6 +52,7 @@ export function runTelegramAdminControlCenterTests() {
   assert.match(adminService, /adminSendTelegramTest/);
   assert.match(adminService, /recipientUserId = actor\(access\)/, "admin test must target the signed-in admin only");
   assert.match(adminService, /eventType: "telegram_admin_test"/, "admin test must use a system-only test event");
+  assert.match(adminService, /idempotencyKey: `telegram-admin-test:\$\{recipientUserId\}:/, "each admin test must create a fresh delivery attempt");
   assert.match(adminService, /adminRetryTelegramDelivery/);
   assert.match(adminService, /createSystemNotification/);
   assert.match(adminService, /retryTelegramDeliveryById/);
