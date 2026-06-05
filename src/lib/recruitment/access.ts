@@ -59,3 +59,11 @@ export function assertCanSeeRequisition(access: AccessContext, requisition: Requ
     throw new Error("Forbidden: requisition is outside your recruitment scope.");
   }
 }
+
+// Hard delete is Super Admin only (server-side enforcement; the UI hides the
+// button for everyone else). System context is allowed for internal/admin tasks.
+export function assertCanDeleteRecruitment(access: AccessContext): void {
+  if (access.role !== "Super Admin" && access.scope !== "system") {
+    throw new Error("Forbidden: only Super Admin can delete recruitment records.");
+  }
+}

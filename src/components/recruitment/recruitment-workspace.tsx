@@ -32,6 +32,7 @@ type ManagerOption = { hrId: string; fullName: string };
 type Props = {
   canApprove: boolean;
   canCreateRequisition: boolean;
+  canDelete: boolean;
   canImport: boolean;
   canManage: boolean;
   canManageCandidates: boolean;
@@ -178,6 +179,7 @@ export function RecruitmentWorkspace(props: Props) {
         <PipelineTab
           applications={applications}
           canApprove={props.canApprove}
+          canDelete={props.canDelete}
           canManage={props.canManage}
           canManageCandidates={props.canManageCandidates}
           canViewCandidates={props.canViewCandidates}
@@ -189,6 +191,7 @@ export function RecruitmentWorkspace(props: Props) {
       ) : tab === "requisitions" ? (
         <RequisitionsTab
           canCreate={props.canCreateRequisition}
+          canDelete={props.canDelete}
           canManage={props.canManage}
           managers={props.managers}
           openVacancies={props.openVacancies}
@@ -198,6 +201,7 @@ export function RecruitmentWorkspace(props: Props) {
         />
       ) : (
         <CandidatesTab
+          canDelete={props.canDelete}
           canImport={props.canImport}
           canManage={props.canManageCandidates}
           candidates={props.candidates}
@@ -217,6 +221,7 @@ export function RecruitmentWorkspace(props: Props) {
 function PipelineTab({
   applications,
   canApprove,
+  canDelete,
   canManage,
   canManageCandidates,
   canViewCandidates,
@@ -227,6 +232,7 @@ function PipelineTab({
 }: {
   applications: ApplicationWithContext[];
   canApprove: boolean;
+  canDelete: boolean;
   canManage: boolean;
   canManageCandidates: boolean;
   canViewCandidates: boolean;
@@ -349,7 +355,7 @@ function PipelineTab({
                     <td className="px-3 py-2">{application.requisition?.jobTitle ?? "—"}</td>
                     <td className="px-3 py-2">{titleCase(application.stage)}</td>
                     <td className="px-3 py-2 text-right">
-                      {canManage ? (
+                      {canDelete ? (
                         <Button
                           variant="destructive"
                           disabled={pending}
@@ -572,6 +578,7 @@ function PipelineTab({
 
 function RequisitionsTab({
   canCreate,
+  canDelete,
   canManage,
   managers,
   openVacancies,
@@ -580,6 +587,7 @@ function RequisitionsTab({
   run,
 }: {
   canCreate: boolean;
+  canDelete: boolean;
   canManage: boolean;
   managers: ManagerOption[];
   openVacancies: VacancyReportRow[];
@@ -745,24 +753,26 @@ function RequisitionsTab({
                               Application link
                             </Button>
                           ) : null}
-                          <Button
-                            variant="destructive"
-                            disabled={pending}
-                            onClick={() => {
-                              if (
-                                !window.confirm(
-                                  `Delete requisition ${requisition.requisitionCode} and all of its applications? This cannot be undone.`,
+                          {canDelete ? (
+                            <Button
+                              variant="destructive"
+                              disabled={pending}
+                              onClick={() => {
+                                if (
+                                  !window.confirm(
+                                    `Delete requisition ${requisition.requisitionCode} and all of its applications? This cannot be undone.`,
+                                  )
                                 )
-                              )
-                                return;
-                              run(async () => {
-                                await deleteRequest(`/api/recruitment/requisitions/${requisition.id}`);
-                                return "Requisition deleted.";
-                              });
-                            }}
-                          >
-                            Delete
-                          </Button>
+                                  return;
+                                run(async () => {
+                                  await deleteRequest(`/api/recruitment/requisitions/${requisition.id}`);
+                                  return "Requisition deleted.";
+                                });
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          ) : null}
                         </div>
                       ) : (
                         <span className="text-xs text-slate-400">View only</span>
@@ -780,6 +790,7 @@ function RequisitionsTab({
 }
 
 function CandidatesTab({
+  canDelete,
   canImport,
   canManage,
   candidates,
@@ -789,6 +800,7 @@ function CandidatesTab({
   setError,
   setNotice,
 }: {
+  canDelete: boolean;
   canImport: boolean;
   canManage: boolean;
   candidates: Candidate[];
@@ -928,24 +940,26 @@ function CandidatesTab({
                           >
                             Start
                           </Button>
-                          <Button
-                            variant="destructive"
-                            disabled={pending}
-                            onClick={() => {
-                              if (
-                                !window.confirm(
-                                  `Delete candidate ${candidate.fullName} and all of their applications? This cannot be undone.`,
+                          {canDelete ? (
+                            <Button
+                              variant="destructive"
+                              disabled={pending}
+                              onClick={() => {
+                                if (
+                                  !window.confirm(
+                                    `Delete candidate ${candidate.fullName} and all of their applications? This cannot be undone.`,
+                                  )
                                 )
-                              )
-                                return;
-                              run(async () => {
-                                await deleteRequest(`/api/recruitment/candidates/${candidate.id}`);
-                                return "Candidate deleted.";
-                              });
-                            }}
-                          >
-                            Delete
-                          </Button>
+                                  return;
+                                run(async () => {
+                                  await deleteRequest(`/api/recruitment/candidates/${candidate.id}`);
+                                  return "Candidate deleted.";
+                                });
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          ) : null}
                         </div>
                       ) : (
                         <span className="text-xs text-slate-400">View only</span>

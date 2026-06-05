@@ -19,6 +19,7 @@ import {
   type RequisitionDbRow,
 } from "@/lib/recruitment/db";
 import {
+  assertCanDeleteRecruitment,
   assertCanSeeRequisition,
   filterRequisitionsForAccess,
 } from "@/lib/recruitment/access";
@@ -234,6 +235,7 @@ export async function markRequisitionFilled(id: string, access: AccessContext): 
 // Hard-delete a requisition (admin cleanup; any status). Database cascades remove
 // its applications, events, interviews, onboarding items, postings, and files.
 export async function deleteRequisition(access: AccessContext, id: string): Promise<void> {
+  assertCanDeleteRecruitment(access);
   const requisition = await getRequisition(access, id); // throws if out of scope
   if (!requisition) throw new Error("Requisition not found.");
   const supabase = recruitmentDb();
