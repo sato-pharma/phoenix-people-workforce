@@ -60,6 +60,8 @@ export type PermissionResource =
   | "user_admin"
   | "permission_admin"
   | "support_requests"
+  | "recruitment"
+  | "candidates"
   | "workflow_registry";
 
 export const permissionResources: PermissionResource[] = [
@@ -92,6 +94,8 @@ export const permissionResources: PermissionResource[] = [
   "outstation",
   "leave",
   "support_requests",
+  "recruitment",
+  "candidates",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -172,6 +176,8 @@ const defaultPermissionMatrix: PermissionMap = {
     team: allActions,
     user_admin: allActions,
     vacancies: allActions,
+    recruitment: allActions,
+    candidates: allActions,
   },
   CEO: {
     admin: allActions,
@@ -198,6 +204,8 @@ const defaultPermissionMatrix: PermissionMap = {
     team: ["read", "export"],
     user_admin: ["read"],
     vacancies: ["read", "export"],
+    recruitment: ["read"],
+    candidates: ["read"],
   },
   "HR Specialist": {
     communication: ["read", "update"],
@@ -223,6 +231,8 @@ const defaultPermissionMatrix: PermissionMap = {
     team: ["read", "export"],
     vacancies: allActions,
     workflow_registry: ["read"],
+    recruitment: allActions,
+    candidates: allActions,
   },
   "Finance Manager": {
     employee_documents: ["read", "export"],
@@ -282,6 +292,7 @@ const defaultPermissionMatrix: PermissionMap = {
     support_requests: ["read", "create"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
+    recruitment: ["read", "update"],
   },
   "Regional Manager": {
     overview: [],
@@ -299,6 +310,7 @@ const defaultPermissionMatrix: PermissionMap = {
     support_requests: ["read", "create"],
     team: ["read", "export"],
     weekly_plans: ["read", "create", "update", "approve"],
+    recruitment: ["read", "update"],
   },
   "National Sales Manager": {
     overview: [],
@@ -317,6 +329,7 @@ const defaultPermissionMatrix: PermissionMap = {
     organogram: ["read"],
     vacancies: ["read", "export"],
     weekly_plans: ["read", "create", "update"],
+    recruitment: ["read", "update"],
   },
   "Product Manager": {
     overview: [],
@@ -330,6 +343,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     sales: ["read", "export"],
     support_requests: ["read", "create"],
+    recruitment: ["read", "update"],
   },
   "Group Product Manager": {
     overview: [],
@@ -344,6 +358,7 @@ const defaultPermissionMatrix: PermissionMap = {
     sales: ["read", "export"],
     support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
+    recruitment: ["read", "update"],
   },
   "SFE Manager": {
     overview: ["read"],
@@ -388,6 +403,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
+    recruitment: ["read", "update"],
   },
   Manager: {
     overview: [],
@@ -405,6 +421,7 @@ const defaultPermissionMatrix: PermissionMap = {
     support_requests: ["read", "create"],
     team: ["read", "export"],
     weekly_plans: ["read", "approve"],
+    recruitment: ["read", "update"],
   },
 };
 
