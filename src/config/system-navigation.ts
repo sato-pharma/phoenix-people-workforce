@@ -84,6 +84,7 @@ export const adminNavigationSections = [
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }] },
       { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }] },
       { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }] },
+      { href: "/admin/notifications/telegram", icon: BellRing, label: "Notifications", permissions: [{ resource: "communication" }] },
       { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }] },
     ],
     label: "Command Center",
