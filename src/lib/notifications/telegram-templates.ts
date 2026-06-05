@@ -178,6 +178,10 @@ function actor(access: AccessContext) {
   return access.loginId ?? access.hrId ?? "system";
 }
 
+function templatePreviewRunId() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+}
+
 function tableMissing(error: unknown) {
   const text = (error instanceof Error ? error.message : `${String(error)} ${JSON.stringify(error)}`).toLowerCase();
   return text.includes("notification_templates") || text.includes("schema cache") || text.includes("does not exist") || text.includes("could not find the table");
@@ -347,7 +351,11 @@ export async function sendTelegramTemplateAdminPreview(access: AccessContext, in
     channels: ["telegram"],
     eventType: "telegram_template_preview",
     message: preview.message,
-    metadata: { adminTemplatePreview: true, templateKey: definition.templateKey },
+    metadata: {
+      adminTemplatePreview: true,
+      idempotencyKey: `telegram-template-preview:${definition.templateKey}:${recipientUserId}:${templatePreviewRunId()}`,
+      templateKey: definition.templateKey,
+    },
     module: "system",
     priority: "normal",
     recipientHrId,
