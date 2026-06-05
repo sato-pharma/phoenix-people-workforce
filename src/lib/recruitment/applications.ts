@@ -82,6 +82,17 @@ const plainTransitionNextStatus: Partial<Record<RecruitmentActionKey, Applicatio
   app_to_pre_boarding: "pre_boarding",
   app_reject: "application_rejected",
   app_withdraw: "application_withdrawn",
+  // Rule 5/6 — screening outcomes + holding states + resume paths.
+  app_cv_shortlist: "shortlisted",
+  app_shortlist_to_scheduling: "interview_scheduling",
+  app_hold: "on_hold",
+  app_resume_from_hold_to_cv: "cv_screening",
+  app_resume_from_hold_to_phone: "phone_screening",
+  app_no_response: "no_response",
+  app_resume_from_no_response: "phone_screening",
+  app_call_back: "call_back",
+  app_resume_from_call_back_to_cv: "cv_screening",
+  app_resume_from_call_back_to_phone: "phone_screening",
 };
 
 const defaultSeniorApprovalNetThreshold = 20000;

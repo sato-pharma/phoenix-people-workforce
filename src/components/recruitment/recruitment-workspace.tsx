@@ -20,9 +20,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
+import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import type { Candidate, Interview, InterviewType, RecruitmentActionKey, RecruitmentFile, Requisition } from "@/lib/recruitment/types";
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
+import { resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
+import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import type { OnboardingItem } from "@/lib/recruitment/onboarding";
 import type { OfferLetterVersion } from "@/lib/recruitment/offer-letters";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
@@ -54,14 +57,28 @@ function titleCase(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// CV screening (cv_screening) and phone screening (phone_screening) are handled by
+// the dedicated screening card below, so they are intentionally not listed here.
 const nextStageAction: Record<string, { action: RecruitmentActionKey; label: string; needsReason?: boolean }> = {
   in_candidate_pool: { action: "app_to_cv_screen", label: "Start CV screening" },
-  cv_screening: { action: "app_to_phone_screen", label: "Move to phone screening" },
-  phone_screening: { action: "app_to_interview_scheduling", label: "Move to interview scheduling" },
   interview_scheduling: { action: "app_to_hr_interview", label: "Move to HR interview" },
   hr_interview: { action: "app_record_hr_interview", label: "Record HR interview" },
   hiring_manager_interview: { action: "app_record_hm_interview", label: "Record manager interview" },
   final_selection: { action: "app_select", label: "Select for offer", needsReason: true },
+  shortlisted: { action: "app_shortlist_to_scheduling", label: "Move to interview scheduling" },
+};
+
+// Resume actions for the holding states (Rule 5/6).
+const holdingStageActions: Record<string, Array<{ action: RecruitmentActionKey; label: string }>> = {
+  on_hold: [
+    { action: "app_resume_from_hold_to_cv", label: "Resume to CV screening" },
+    { action: "app_resume_from_hold_to_phone", label: "Resume to phone screening" },
+  ],
+  no_response: [{ action: "app_resume_from_no_response", label: "Retry phone screening" }],
+  call_back: [
+    { action: "app_resume_from_call_back_to_cv", label: "Resume to CV screening" },
+    { action: "app_resume_from_call_back_to_phone", label: "Resume to phone screening" },
+  ],
 };
 
 const rejectableStages = new Set([
@@ -72,6 +89,10 @@ const rejectableStages = new Set([
   "hr_interview",
   "hiring_manager_interview",
   "final_selection",
+  "shortlisted",
+  "on_hold",
+  "no_response",
+  "call_back",
 ]);
 
 async function postJson(url: string, body: unknown): Promise<Record<string, unknown>> {
@@ -90,6 +111,147 @@ async function deleteRequest(url: string): Promise<Record<string, unknown>> {
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Delete failed.");
   return data;
+}
+
+function OfferSalaryPreview({ baseSalary, jobTitle }: { baseSalary: string; jobTitle: string | null | undefined }) {
+  const base = Number(baseSalary);
+  if (!Number.isFinite(base) || base <= 0) return null;
+  const allowances = resolveStandardSalaryAllowances({ jobTitle: jobTitle ?? null });
+  const fixed = resolveFixedSalaryAmounts({
+    baseSalary: base,
+    extraCostOfLiving: allowances.extraCostOfLiving,
+    fuelAllowance: allowances.fuelAllowance,
+  });
+  const rows: Array<[string, number]> = [
+    ["Base salary", fixed.baseSalary],
+    ["Basic salary", fixed.basicSalary],
+    ["Extra cost of living", allowances.extraCostOfLiving],
+    ["Fuel allowance", allowances.fuelAllowance],
+    ["Net salary", fixed.netSalary],
+  ];
+  return (
+    <div className="border border-slate-200 bg-slate-50 p-2 text-xs">
+      {rows.map(([label, value]) => (
+        <div key={label} className="flex justify-between">
+          <span className="text-slate-500">{label}</span>
+          <span className="font-semibold text-slate-900">{value.toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ScreeningCard({
+  application,
+  stage,
+  pending,
+  run,
+}: {
+  application: ApplicationWithContext;
+  stage: "cv" | "phone";
+  pending: boolean;
+  run: (work: () => Promise<string | void>) => void;
+}) {
+  const interviewType: InterviewType = stage === "cv" ? "cv" : "phone";
+  const criteria = interviewScorecardCriteria[interviewType];
+  const [scores, setScores] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState("");
+  const [reason, setReason] = useState("");
+  const [outcome, setOutcome] = useState("");
+  const [currentEmployer, setCurrentEmployer] = useState(application.candidate?.currentEmployer ?? "");
+  const [expectedSalary, setExpectedSalary] = useState(
+    application.candidate?.expectedSalary != null ? String(application.candidate.expectedSalary) : "",
+  );
+  const [noticePeriod, setNoticePeriod] = useState(application.candidate?.noticePeriod ?? "");
+
+  const outcomes: Array<[string, string]> =
+    stage === "cv"
+      ? [
+          ["shortlisted", "Shortlisted"],
+          ["need_phone_screening", "Need phone screening"],
+          ["on_hold", "On hold"],
+          ["rejected", "Rejected"],
+        ]
+      : [
+          ["passed", "Passed"],
+          ["failed", "Failed"],
+          ["no_response", "No response"],
+          ["call_back", "Call back"],
+        ];
+  const reasonRequired = outcome === "on_hold" || outcome === "rejected" || outcome === "failed";
+
+  return (
+    <div className="space-y-2 border-t border-slate-200 pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {stage === "cv" ? "CV screening" : "Phone screening"}
+      </p>
+      {stage === "phone" ? (
+        <div className="space-y-1">
+          <Input placeholder="Current employer" value={currentEmployer} onChange={(e) => setCurrentEmployer(e.target.value)} />
+          <Input placeholder="Expected salary" type="number" value={expectedSalary} onChange={(e) => setExpectedSalary(e.target.value)} />
+          <Input placeholder="Notice period" value={noticePeriod} onChange={(e) => setNoticePeriod(e.target.value)} />
+        </div>
+      ) : null}
+      {criteria.map((criterion) => (
+        <label key={criterion.key} className="flex items-center justify-between gap-2 text-xs">
+          <span className="text-slate-600">{criterion.label}</span>
+          <select
+            className={`${fieldClass} w-20`}
+            value={scores[criterion.key] ?? ""}
+            onChange={(e) => setScores((prev) => ({ ...prev, [criterion.key]: e.target.value }))}
+          >
+            <option value="">—</option>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+      ))}
+      <textarea className={fieldClass} placeholder="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+      <select className={fieldClass} value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+        <option value="">Select outcome…</option>
+        {outcomes.map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
+      {reasonRequired ? (
+        <textarea className={fieldClass} placeholder="Reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} />
+      ) : null}
+      <Button
+        disabled={pending || !outcome || (reasonRequired && !reason.trim())}
+        onClick={() =>
+          run(async () => {
+            const score: Record<string, number> = {};
+            for (const criterion of criteria) {
+              const n = Number(scores[criterion.key]);
+              if (Number.isFinite(n) && n >= 1 && n <= 5) score[criterion.key] = n;
+            }
+            await postJson(`/api/recruitment/applications/${application.id}/screening`, {
+              stage,
+              outcome,
+              score,
+              notes: notes.trim() || undefined,
+              reason: reason.trim() || undefined,
+              ...(stage === "phone"
+                ? {
+                    currentEmployer: currentEmployer.trim() || undefined,
+                    expectedSalary: expectedSalary ? Number(expectedSalary) : undefined,
+                    noticePeriod: noticePeriod.trim() || undefined,
+                  }
+                : {}),
+            });
+            return "Screening recorded.";
+          })
+        }
+      >
+        Save screening
+      </Button>
+    </div>
+  );
 }
 
 export function RecruitmentWorkspace(props: Props) {
@@ -421,12 +583,44 @@ function PipelineTab({
               </div>
             ) : null}
 
+            {canManage && (selected.stage === "cv_screening" || selected.stage === "phone_screening") ? (
+              <ScreeningCard
+                key={selected.id + selected.stage}
+                application={selected}
+                stage={selected.stage === "cv_screening" ? "cv" : "phone"}
+                pending={pending}
+                run={run}
+              />
+            ) : null}
+
+            {canManage && holdingStageActions[selected.stage] ? (
+              <div className="space-y-2 border-t border-slate-200 pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Resume</p>
+                {holdingStageActions[selected.stage].map((item) => (
+                  <Button
+                    key={item.action}
+                    variant="secondary"
+                    disabled={pending}
+                    onClick={() =>
+                      run(async () => {
+                        await postJson(`/api/recruitment/applications/${selected.id}/workflow`, { action: item.action });
+                        return `${item.label} complete.`;
+                      })
+                    }
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+
             {canManage && selected.stage === "offer_initiated" ? (
               <div className="space-y-2 border-t border-slate-200 pt-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Send offer</p>
                 <Input placeholder="Base salary" type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} />
                 <Input placeholder="Start date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                 <Input placeholder="Expires in days" type="number" value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} />
+                <OfferSalaryPreview baseSalary={baseSalary} jobTitle={selected.requisition?.jobTitle} />
                 <Button
                   disabled={pending || !baseSalary || !startDate}
                   onClick={() =>
@@ -596,12 +790,28 @@ function RequisitionsTab({
   run: (work: () => Promise<string | void>) => void;
 }) {
   const [vacancyId, setVacancyId] = useState("");
+  const [posSel, setPosSel] = useState("");
+  const [lineSel, setLineSel] = useState("");
   const [grade, setGrade] = useState("");
   const [bandMin, setBandMin] = useState("");
   const [bandMax, setBandMax] = useState("");
   const [ownerHrId, setOwnerHrId] = useState("");
   const [priority, setPriority] = useState("normal");
   const [deadline, setDeadline] = useState("");
+
+  // Rule 3a — cascade: Position -> Line -> vacant Area (each Position+Line+Area = one seat).
+  const positionsById = new Map<string, string>();
+  for (const v of openVacancies) {
+    if (v.positionId != null) positionsById.set(String(v.positionId), v.positionTitle ?? v.jobTitle ?? "Position");
+  }
+  const linesById = new Map<string, string>();
+  for (const v of openVacancies) {
+    if (String(v.positionId ?? "") === posSel && v.lineId != null) linesById.set(String(v.lineId), v.lineName ?? "Line");
+  }
+  const areaVacancies = openVacancies.filter(
+    (v) => String(v.positionId ?? "") === posSel && String(v.lineId ?? "") === lineSel,
+  );
+  const selectedVacancy = openVacancies.find((v) => String(v.id) === vacancyId) ?? null;
 
   const requisitionActions: Record<string, Array<{ action: RecruitmentActionKey; label: string; reason?: boolean; variant?: "default" | "secondary" | "destructive" }>> = {
     req_draft: [
@@ -628,14 +838,49 @@ function RequisitionsTab({
       {canCreate ? (
         <AdminTableShell title="Open a requisition" description="Wrap an open vacancy and add the recruitment details.">
           <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
-            <select className={fieldClass} value={vacancyId} onChange={(e) => setVacancyId(e.target.value)}>
-              <option value="">Select an open vacancy…</option>
-              {openVacancies.map((vacancy) => (
-                <option key={vacancy.id} value={vacancy.id}>
-                  {vacancy.vacancyCode} · {vacancy.jobTitle ?? vacancy.positionTitle ?? "Role"} · {vacancy.areaName ?? ""}
+            <select
+              className={fieldClass}
+              value={posSel}
+              onChange={(e) => {
+                setPosSel(e.target.value);
+                setLineSel("");
+                setVacancyId("");
+              }}
+            >
+              <option value="">Position…</option>
+              {Array.from(positionsById.entries()).map(([id, title]) => (
+                <option key={id} value={id}>
+                  {title}
                 </option>
               ))}
             </select>
+            <select
+              className={fieldClass}
+              value={lineSel}
+              disabled={!posSel}
+              onChange={(e) => {
+                setLineSel(e.target.value);
+                setVacancyId("");
+              }}
+            >
+              <option value="">Line…</option>
+              {Array.from(linesById.entries()).map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <select className={fieldClass} value={vacancyId} disabled={!lineSel} onChange={(e) => setVacancyId(e.target.value)}>
+              <option value="">Vacant area…</option>
+              {areaVacancies.map((vacancy) => (
+                <option key={vacancy.id} value={vacancy.id}>
+                  {vacancy.areaName ?? "Area"} · {vacancy.vacancyCode}
+                </option>
+              ))}
+            </select>
+            <div className={`${fieldClass} bg-slate-50 text-slate-600`}>
+              Manager: {selectedVacancy ? selectedVacancy.managerName ?? selectedVacancy.managerHrId ?? "—" : "—"}
+            </div>
             <select className={fieldClass} value={ownerHrId} onChange={(e) => setOwnerHrId(e.target.value)}>
               <option value="">Recruitment owner…</option>
               {managers.map((manager) => (
@@ -670,6 +915,8 @@ function RequisitionsTab({
                       recruitmentDeadline: deadline || undefined,
                     });
                     setVacancyId("");
+                    setPosSel("");
+                    setLineSel("");
                     setGrade("");
                     setBandMin("");
                     setBandMax("");
@@ -817,6 +1064,32 @@ function CandidatesTab({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [startReq, setStartReq] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState("");
+  const [profile, setProfile] = useState<CandidateProfile | null>(null);
+  const [statusDraft, setStatusDraft] = useState("");
+
+  const q = query.trim().toLowerCase();
+  const visibleCandidates = q
+    ? candidates.filter((c) =>
+        [c.fullName, c.email, c.phone, c.status, c.source, c.nationalId]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(q)),
+      )
+    : candidates;
+
+  const openProfile = async (id: string) => {
+    setProfile(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/recruitment/candidates/${id}`);
+      const data = (await res.json().catch(() => ({}))) as { profile?: CandidateProfile; message?: string };
+      if (!res.ok || !data.profile) throw new Error(data.message ?? "Failed to load candidate profile.");
+      setProfile(data.profile);
+      setStatusDraft(data.profile.candidate.status);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Failed to load candidate profile.");
+    }
+  };
 
   const onImport = async () => {
     const file = fileRef.current?.files?.[0];
@@ -887,33 +1160,46 @@ function CandidatesTab({
         </AdminTableShell>
       ) : null}
 
-      <AdminTableShell title="Candidate pool" description="Candidates in the pool. Start an application against an open requisition.">
+      <AdminTableShell title="Candidate pool" description="Every applicant stays here and is searchable — even rejected ones.">
+        <div className="p-3">
+          <Input
+            placeholder="Search name, email, phone, status, source…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Status</th>
                 <th>Email</th>
                 <th>Phone</th>
-                <th>Start application</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {candidates.length === 0 ? (
+              {visibleCandidates.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-6 text-center text-slate-500" colSpan={4}>
-                    No candidates with applications yet. Add a candidate and start an application.
+                  <td className="px-3 py-6 text-center text-slate-500" colSpan={5}>
+                    No candidates found.
                   </td>
                 </tr>
               ) : (
-                candidates.map((candidate) => (
+                visibleCandidates.map((candidate) => (
                   <tr key={candidate.id}>
                     <td className="px-3 py-2 font-medium text-slate-900">{candidate.fullName}</td>
+                    <td className="px-3 py-2">{candidate.status}</td>
                     <td className="px-3 py-2">{candidate.email ?? "—"}</td>
                     <td className="px-3 py-2">{candidate.phone ?? "—"}</td>
                     <td className="px-3 py-2">
-                      {canManage ? (
-                        <div className="flex gap-1.5">
+                      <div className="flex flex-wrap gap-1.5">
+                        <Button variant="ghost" disabled={pending} onClick={() => void openProfile(candidate.id)}>
+                          Profile
+                        </Button>
+                        {canManage ? (
+                          <>
                           <select
                             className={fieldClass}
                             value={startReq[candidate.id] ?? ""}
@@ -960,10 +1246,9 @@ function CandidatesTab({
                               Delete
                             </Button>
                           ) : null}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-400">View only</span>
-                      )}
+                          </>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -972,6 +1257,102 @@ function CandidatesTab({
           </table>
         </div>
       </AdminTableShell>
+
+      {profile ? (
+        <div className="space-y-3 border border-slate-200 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">{profile.candidate.fullName}</p>
+              <p className="text-xs text-slate-500">
+                {profile.candidate.email ?? "—"} · {profile.candidate.phone ?? "—"} · Source: {profile.candidate.source ?? "—"}
+              </p>
+            </div>
+            <Button variant="ghost" onClick={() => setProfile(null)}>
+              Close
+            </Button>
+          </div>
+
+          {canManage ? (
+            <div className="flex gap-2">
+              <Input placeholder="Status" value={statusDraft} onChange={(e) => setStatusDraft(e.target.value)} />
+              <Button
+                variant="secondary"
+                disabled={pending || !statusDraft.trim()}
+                onClick={() =>
+                  run(async () => {
+                    await postJson(`/api/recruitment/candidates/${profile.candidate.id}/status`, { status: statusDraft.trim() });
+                    setProfile((prev) => (prev ? { ...prev, candidate: { ...prev.candidate, status: statusDraft.trim() } } : prev));
+                    return "Status updated.";
+                  })
+                }
+              >
+                Update status
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">Status: {profile.candidate.status}</p>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Applied positions</p>
+              {profile.applications.length === 0 ? (
+                <p className="text-xs text-slate-400">None</p>
+              ) : (
+                profile.applications.map((entry) => (
+                  <p key={entry.application.id} className="text-xs text-slate-600">
+                    {entry.jobTitle ?? "—"} · {titleCase(entry.application.stage)}
+                  </p>
+                ))
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Ratings (avg {profile.ratingAverage ?? "—"})
+              </p>
+              {profile.interviews.length === 0 ? (
+                <p className="text-xs text-slate-400">No interviews</p>
+              ) : (
+                profile.interviews.map((entry) => (
+                  <p key={entry.interview.id} className="text-xs text-slate-600">
+                    {titleCase(entry.interview.interviewType)} · {entry.summary.average ?? "—"} · {entry.interview.outcome ?? "—"}
+                  </p>
+                ))
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">CV / files</p>
+              {profile.files.length === 0 ? (
+                <p className="text-xs text-slate-400">No files</p>
+              ) : (
+                profile.files.map((file) => (
+                  <p key={file.id} className="text-xs text-slate-600">
+                    {file.fileName}
+                  </p>
+                ))
+              )}
+              {profile.candidate.cvExternalUrl ? (
+                <a className="text-xs text-orange-600" href={profile.candidate.cvExternalUrl} target="_blank" rel="noreferrer">
+                  CV link
+                </a>
+              ) : null}
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rejection history</p>
+              {profile.rejectionHistory.length === 0 ? (
+                <p className="text-xs text-slate-400">None</p>
+              ) : (
+                profile.rejectionHistory.map((event) => (
+                  <p key={event.id} className="text-xs text-slate-600">
+                    {titleCase(event.action)} · {event.reason ?? "—"}
+                  </p>
+                ))
+              )}
+            </div>
+          </div>
+          {profile.candidate.notes ? <p className="text-xs text-slate-600">Notes: {profile.candidate.notes}</p> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -21,6 +21,7 @@ import { runRecruitmentOnboardingTests } from "./recruitment-onboarding.test.ts"
 import { runRecruitmentOfferLetterTests } from "./recruitment-offer-letter.test.ts";
 import { runRecruitmentDriveStorageTests } from "./recruitment-drive-storage.test.ts";
 import { runRecruitmentSeniorApprovalTests } from "./recruitment-senior-approval.test.ts";
+import { runRecruitmentVacancyCloseInvariantTests } from "./recruitment-vacancy-close-invariant.test.ts";
 import { runAttendanceCalendarSourceTests } from "./attendance-calendar-source.test.ts";
 import { runDeductionsGovernanceFoundationTests } from "./deductions-governance-foundation.test.ts";
 import { runDeductionsGovernanceServiceTests } from "./deductions-governance-service.test.ts";
@@ -161,6 +162,7 @@ await runTest("recruitment onboarding", runRecruitmentOnboardingTests);
 await runTest("recruitment offer letter", runRecruitmentOfferLetterTests);
 await runTest("recruitment drive storage", runRecruitmentDriveStorageTests);
 await runTest("recruitment senior approval", runRecruitmentSeniorApprovalTests);
+await runTest("recruitment vacancy close invariant", runRecruitmentVacancyCloseInvariantTests);
 await runTest("attendance calendar source", runAttendanceCalendarSourceTests);
 await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
 await runTest("deductions governance foundation", runDeductionsGovernanceFoundationTests);

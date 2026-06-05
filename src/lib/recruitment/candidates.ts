@@ -13,13 +13,29 @@ import {
   type MatchableCandidate,
 } from "@/lib/recruitment/candidate-matching";
 import {
+  mapApplication,
+  mapApplicationEvent,
   mapCandidate,
+  mapInterview,
+  mapRecruitmentFile,
   numberOrNull,
   recruitmentDb,
   textOrNull,
+  type ApplicationDbRow,
+  type ApplicationEventDbRow,
   type CandidateDbRow,
+  type InterviewDbRow,
+  type RecruitmentFileDbRow,
 } from "@/lib/recruitment/db";
-import type { Candidate, CreateCandidateInput } from "@/lib/recruitment/types";
+import { summarizeScorecard, type ScorecardSummary } from "@/lib/recruitment/scorecards";
+import type {
+  Application,
+  ApplicationEvent,
+  Candidate,
+  CreateCandidateInput,
+  Interview,
+  RecruitmentFile,
+} from "@/lib/recruitment/types";
 
 export type CandidateUpsertResult = {
   candidate: Candidate;
@@ -89,6 +105,121 @@ async function fetchById(id: string): Promise<Candidate> {
   const candidate = await getCandidate(id);
   if (!candidate) throw new Error("Candidate not found after match.");
   return candidate;
+}
+
+// ---------------------------------------------------------------------------
+// Rule 4 — Candidate Pool: search, status, and the aggregated profile.
+// ---------------------------------------------------------------------------
+
+export type CandidateSearchFilters = { q?: string | null; status?: string | null; source?: string | null };
+
+export async function searchCandidates(filters: CandidateSearchFilters = {}): Promise<Candidate[]> {
+  const supabase = recruitmentDb();
+  let query = supabase.from("recruitment_candidates").select("*").order("created_at", { ascending: false });
+  const status = textOrNull(filters.status);
+  const source = textOrNull(filters.source);
+  if (status) query = query.eq("status", status);
+  if (source) query = query.eq("source", source);
+  const q = textOrNull(filters.q);
+  if (q) {
+    const like = `%${q.replace(/[%_,()]/g, "")}%`;
+    query = query.or(
+      `full_name.ilike.${like},email.ilike.${like},phone.ilike.${like},national_id.ilike.${like}`,
+    );
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
+}
+
+export async function updateCandidateStatus(id: string, status: string): Promise<Candidate> {
+  const clean = String(status ?? "").trim();
+  if (!clean) throw new Error("Candidate status is required.");
+  const existing = await getCandidate(id);
+  if (!existing) throw new Error("Candidate not found.");
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("recruitment_candidates")
+    .update({ status: clean, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapCandidate(data as CandidateDbRow);
+}
+
+export type CandidateProfile = {
+  candidate: Candidate;
+  files: RecruitmentFile[];
+  applications: Array<{ application: Application; jobTitle: string | null }>;
+  interviews: Array<{ interview: Interview; summary: ScorecardSummary }>;
+  rejectionHistory: ApplicationEvent[];
+  ratingAverage: number | null;
+};
+
+export async function getCandidateProfile(id: string): Promise<CandidateProfile | null> {
+  const candidate = await getCandidate(id);
+  if (!candidate) return null;
+  const supabase = recruitmentDb();
+
+  const [{ data: appRows, error: appError }, { data: fileRows, error: fileError }] = await Promise.all([
+    supabase.from("recruitment_applications").select("*").eq("candidate_id", id).order("created_at", { ascending: false }),
+    supabase.from("recruitment_files").select("*").eq("candidate_id", id).order("created_at", { ascending: false }),
+  ]);
+  if (appError) throw appError;
+  if (fileError) throw fileError;
+
+  const applications = ((appRows ?? []) as ApplicationDbRow[]).map(mapApplication);
+  const files = ((fileRows ?? []) as RecruitmentFileDbRow[]).map(mapRecruitmentFile);
+  const appIds = applications.map((a) => a.id);
+  const reqIds = Array.from(new Set(applications.map((a) => a.requisitionId)));
+
+  const jobTitleById = new Map<string, string>();
+  if (reqIds.length > 0) {
+    const { data: reqRows, error: reqError } = await supabase
+      .from("recruitment_requisitions")
+      .select("id,job_title")
+      .in("id", reqIds);
+    if (reqError) throw reqError;
+    for (const row of (reqRows ?? []) as Array<{ id: string; job_title: string | null }>) {
+      jobTitleById.set(String(row.id), String(row.job_title ?? ""));
+    }
+  }
+
+  let interviews: Interview[] = [];
+  let events: ApplicationEvent[] = [];
+  if (appIds.length > 0) {
+    const [{ data: intRows, error: intError }, { data: evtRows, error: evtError }] = await Promise.all([
+      supabase.from("recruitment_interviews").select("*").in("application_id", appIds).order("created_at", { ascending: false }),
+      supabase.from("recruitment_application_events").select("*").in("application_id", appIds).order("created_at", { ascending: false }),
+    ]);
+    if (intError) throw intError;
+    if (evtError) throw evtError;
+    interviews = ((intRows ?? []) as InterviewDbRow[]).map(mapInterview);
+    events = ((evtRows ?? []) as ApplicationEventDbRow[]).map(mapApplicationEvent);
+  }
+
+  const interviewSummaries = interviews.map((interview) => ({
+    interview,
+    summary: summarizeScorecard(interview.interviewType, interview.score),
+  }));
+  const averages = interviewSummaries
+    .map((entry) => entry.summary.average)
+    .filter((value): value is number => value !== null);
+  const ratingAverage =
+    averages.length > 0 ? Math.round((averages.reduce((s, v) => s + v, 0) / averages.length) * 10) / 10 : null;
+
+  return {
+    candidate,
+    files,
+    applications: applications.map((application) => ({
+      application,
+      jobTitle: jobTitleById.get(application.requisitionId) ?? null,
+    })),
+    interviews: interviewSummaries,
+    rejectionHistory: events.filter((event) => event.action === "app_reject" || event.action === "app_withdraw"),
+    ratingAverage,
+  };
 }
 
 // Hard-delete a candidate (admin cleanup). Database cascades remove their

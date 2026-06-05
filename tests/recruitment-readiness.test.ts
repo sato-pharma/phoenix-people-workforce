@@ -36,8 +36,11 @@ export function runRecruitmentReadinessTests() {
   // PII tables must NOT be granted to browser roles.
   assert.doesNotMatch(schema, /grant[^;]*to authenticated/i, "recruitment tables must not grant to authenticated");
 
-  // --- Workflow registry seed -------------------------------------------
-  const seed = read("supabase/migrations/20260604170100_recruitment_workflow_registry_module.sql");
+  // --- Workflow registry seed (original + the Rules 5/6 update) ----------
+  const seed =
+    read("supabase/migrations/20260604170100_recruitment_workflow_registry_module.sql") +
+    "\n" +
+    read("supabase/migrations/20260605160000_recruitment_workflow_registry_rules.sql");
   assert.match(seed, /'recruitment'/);
   assert.match(seed, /on conflict \(module_key\) do update/);
   for (const stage of [...applicationStages, ...requisitionStatuses]) {
@@ -46,6 +49,15 @@ export function runRecruitmentReadinessTests() {
   for (const action of recruitmentActionKeys) {
     assert.ok(seed.includes(`"${action}"`), `seed missing action ${action}`);
   }
+
+  // --- Workflow Rules 4/5/6 schema migration ----------------------------
+  const rulesSchema = read("supabase/migrations/20260605150000_recruitment_workflow_rules.sql");
+  assert.match(rulesSchema, /add column if not exists status text not null default 'Candidate Created'/);
+  for (const stage of ["shortlisted", "on_hold", "no_response", "call_back"]) {
+    assert.ok(rulesSchema.includes(`'${stage}'`), `rules schema missing stage ${stage}`);
+  }
+  assert.match(rulesSchema, /interview_type in \('phone', 'hr', 'hiring_manager', 'cv'\)/);
+  assert.match(rulesSchema, /notify pgrst, 'reload schema'/);
 
   // --- Permissions -------------------------------------------------------
   assert.ok(permissionResources.includes("recruitment"), "recruitment resource registered");
