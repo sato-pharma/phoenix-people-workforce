@@ -36,11 +36,13 @@ export function runRecruitmentReadinessTests() {
   // PII tables must NOT be granted to browser roles.
   assert.doesNotMatch(schema, /grant[^;]*to authenticated/i, "recruitment tables must not grant to authenticated");
 
-  // --- Workflow registry seed (original + the Rules 5/6 update) ----------
+  // --- Workflow registry seed (original + Rules 5/6 + Rules 8/9 updates) --
   const seed =
     read("supabase/migrations/20260604170100_recruitment_workflow_registry_module.sql") +
     "\n" +
-    read("supabase/migrations/20260605160000_recruitment_workflow_registry_rules.sql");
+    read("supabase/migrations/20260605160000_recruitment_workflow_registry_rules.sql") +
+    "\n" +
+    read("supabase/migrations/20260605180000_recruitment_interview_registry.sql");
   assert.match(seed, /'recruitment'/);
   assert.match(seed, /on conflict \(module_key\) do update/);
   for (const stage of [...applicationStages, ...requisitionStatuses]) {
@@ -58,6 +60,21 @@ export function runRecruitmentReadinessTests() {
   }
   assert.match(rulesSchema, /interview_type in \('phone', 'hr', 'hiring_manager', 'cv'\)/);
   assert.match(rulesSchema, /notify pgrst, 'reload schema'/);
+
+  // --- Workflow Rules 8/9 migrations (interview completion + final selection)
+  const interviewStages = read("supabase/migrations/20260605170000_recruitment_interview_stages.sql");
+  for (const stage of ["manager_interview_completed", "backup_candidate"]) {
+    assert.ok(interviewStages.includes(`'${stage}'`), `interview stages migration missing ${stage}`);
+  }
+  const interviewRegistry = read("supabase/migrations/20260605180000_recruitment_interview_registry.sql");
+  assert.match(
+    interviewRegistry,
+    /"app_record_hm_interview"[\s\S]*?"to":"manager_interview_completed"/,
+    "HM record action must target manager_interview_completed",
+  );
+  for (const action of ["app_mgr_completed_to_final", "app_to_backup", "app_backup_to_offer", "app_resume_from_hold_to_hm"]) {
+    assert.ok(interviewRegistry.includes(`"${action}"`), `interview registry missing action ${action}`);
+  }
 
   // --- Permissions -------------------------------------------------------
   assert.ok(permissionResources.includes("recruitment"), "recruitment resource registered");

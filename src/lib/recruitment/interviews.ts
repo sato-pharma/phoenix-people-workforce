@@ -2,7 +2,7 @@
 // scorecards land in Phase 2). Scope is enforced via the parent application.
 
 import type { AccessContext } from "@/lib/auth/permissions";
-import { getApplication } from "@/lib/recruitment/applications";
+import { getApplication, type ApplicationWithContext } from "@/lib/recruitment/applications";
 import {
   mapInterview,
   recruitmentDb,
@@ -11,6 +11,30 @@ import {
 } from "@/lib/recruitment/db";
 import { interviewTypes, type Interview, type InterviewType } from "@/lib/recruitment/types";
 import { isInterviewOutcome, normalizeScorecard } from "@/lib/recruitment/scorecards";
+import { sendInterviewScheduledNotifications } from "@/lib/recruitment/interview-notifications";
+
+// Rule 7 — notify candidate + interviewer + owner; never block the action on a
+// notification failure.
+async function notifyInterview(
+  application: ApplicationWithContext,
+  interview: Interview,
+  kind: "scheduled" | "rescheduled" | "cancelled",
+): Promise<void> {
+  try {
+    await sendInterviewScheduledNotifications(
+      {
+        interview,
+        candidateName: application.candidate?.fullName ?? "Candidate",
+        candidateEmail: application.candidate?.email ?? null,
+        jobTitle: application.requisition?.jobTitle ?? "",
+        recruitmentOwnerHrId: application.requisition?.recruitmentOwnerHrId ?? null,
+      },
+      kind,
+    );
+  } catch {
+    // Notifications are best-effort; scheduling must still succeed.
+  }
+}
 
 export type CreateInterviewInput = {
   interviewType: InterviewType;
@@ -68,7 +92,12 @@ export async function createInterview(
     .select("*")
     .single();
   if (error) throw error;
-  return mapInterview(data as InterviewDbRow);
+  const interview = mapInterview(data as InterviewDbRow);
+  // Rule 7 — a real scheduled interview (has a date) notifies all parties. The
+  // cv/phone/hm scorecard records created via recordScreeningOutcome have no
+  // scheduledAt, so they do not trigger a "scheduled" notification.
+  if (interview.scheduledAt) await notifyInterview(application, interview, "scheduled");
+  return interview;
 }
 
 async function getInterviewRow(id: string): Promise<Interview> {
@@ -124,7 +153,23 @@ export async function recordInterviewOutcome(
     .select("*")
     .single();
   if (error) throw error;
-  return mapInterview(data as InterviewDbRow);
+  const updated = mapInterview(data as InterviewDbRow);
+  // Rule 7 — a reschedule (new date/location/link) re-notifies all parties.
+  if (input.scheduledAt !== undefined && updated.scheduledAt) {
+    await notifyInterview(application, updated, "rescheduled");
+  }
+  return updated;
+}
+
+export async function deleteInterview(access: AccessContext, id: string): Promise<void> {
+  const interview = await getInterviewRow(id);
+  const application = await getApplication(access, interview.applicationId);
+  if (!application) throw new Error("Application not found.");
+  // Rule 7 — cancelling notifies all parties before the row is removed.
+  await notifyInterview(application, interview, "cancelled");
+  const supabase = recruitmentDb();
+  const { error } = await supabase.from("recruitment_interviews").delete().eq("id", id);
+  if (error) throw error;
 }
 
 export type InterviewReminder = {

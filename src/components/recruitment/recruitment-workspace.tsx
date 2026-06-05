@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
+import type { SelectionBoardEntry } from "@/lib/recruitment/selection";
 import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import type { Candidate, Interview, InterviewType, RecruitmentActionKey, RecruitmentFile, Requisition } from "@/lib/recruitment/types";
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
@@ -57,22 +58,24 @@ function titleCase(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-// CV screening (cv_screening) and phone screening (phone_screening) are handled by
-// the dedicated screening card below, so they are intentionally not listed here.
+// cv_screening, phone_screening (ScreeningCard), hiring_manager_interview (HM
+// decision card) and final_selection (FinalSelectionCard) are handled by dedicated
+// cards below, so they are intentionally not listed here.
 const nextStageAction: Record<string, { action: RecruitmentActionKey; label: string; needsReason?: boolean }> = {
   in_candidate_pool: { action: "app_to_cv_screen", label: "Start CV screening" },
   interview_scheduling: { action: "app_to_hr_interview", label: "Move to HR interview" },
   hr_interview: { action: "app_record_hr_interview", label: "Record HR interview" },
-  hiring_manager_interview: { action: "app_record_hm_interview", label: "Record manager interview" },
-  final_selection: { action: "app_select", label: "Select for offer", needsReason: true },
   shortlisted: { action: "app_shortlist_to_scheduling", label: "Move to interview scheduling" },
+  manager_interview_completed: { action: "app_mgr_completed_to_final", label: "Move to final selection" },
+  backup_candidate: { action: "app_backup_to_offer", label: "Activate backup for offer" },
 };
 
-// Resume actions for the holding states (Rule 5/6).
+// Resume actions for the holding states (Rule 5/6/8).
 const holdingStageActions: Record<string, Array<{ action: RecruitmentActionKey; label: string }>> = {
   on_hold: [
     { action: "app_resume_from_hold_to_cv", label: "Resume to CV screening" },
     { action: "app_resume_from_hold_to_phone", label: "Resume to phone screening" },
+    { action: "app_resume_from_hold_to_hm", label: "Resume to manager interview" },
   ],
   no_response: [{ action: "app_resume_from_no_response", label: "Retry phone screening" }],
   call_back: [
@@ -93,6 +96,8 @@ const rejectableStages = new Set([
   "on_hold",
   "no_response",
   "call_back",
+  "manager_interview_completed",
+  "backup_candidate",
 ]);
 
 async function postJson(url: string, body: unknown): Promise<Record<string, unknown>> {
@@ -148,11 +153,11 @@ function ScreeningCard({
   run,
 }: {
   application: ApplicationWithContext;
-  stage: "cv" | "phone";
+  stage: "cv" | "phone" | "hm";
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
 }) {
-  const interviewType: InterviewType = stage === "cv" ? "cv" : "phone";
+  const interviewType: InterviewType = stage === "cv" ? "cv" : stage === "phone" ? "phone" : "hiring_manager";
   const criteria = interviewScorecardCriteria[interviewType];
   const [scores, setScores] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
@@ -172,18 +177,25 @@ function ScreeningCard({
           ["on_hold", "On hold"],
           ["rejected", "Rejected"],
         ]
-      : [
-          ["passed", "Passed"],
-          ["failed", "Failed"],
-          ["no_response", "No response"],
-          ["call_back", "Call back"],
-        ];
-  const reasonRequired = outcome === "on_hold" || outcome === "rejected" || outcome === "failed";
+      : stage === "phone"
+        ? [
+            ["passed", "Passed"],
+            ["failed", "Failed"],
+            ["no_response", "No response"],
+            ["call_back", "Call back"],
+          ]
+        : [
+            ["recommended", "Recommended"],
+            ["rejected", "Rejected"],
+            ["hold", "Hold"],
+          ];
+  const reasonRequired =
+    outcome === "on_hold" || outcome === "hold" || outcome === "rejected" || outcome === "failed";
 
   return (
     <div className="space-y-2 border-t border-slate-200 pt-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {stage === "cv" ? "CV screening" : "Phone screening"}
+        {stage === "cv" ? "CV screening" : stage === "phone" ? "Phone screening" : "Hiring manager interview"}
       </p>
       {stage === "phone" ? (
         <div className="space-y-1">
@@ -250,6 +262,133 @@ function ScreeningCard({
       >
         Save screening
       </Button>
+    </div>
+  );
+}
+
+function FinalSelectionCard({
+  application,
+  pending,
+  run,
+}: {
+  application: ApplicationWithContext;
+  pending: boolean;
+  run: (work: () => Promise<string | void>) => void;
+}) {
+  const [board, setBoard] = useState<SelectionBoardEntry[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [reason, setReason] = useState("");
+
+  const loadBoard = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/recruitment/requisitions/${application.requisitionId}/selection-board`);
+      const data = (await res.json().catch(() => ({}))) as { board?: SelectionBoardEntry[] };
+      setBoard(data.board ?? []);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 border-t border-slate-200 pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Final selection</p>
+      <Button variant="secondary" disabled={pending || loading} onClick={() => void loadBoard()}>
+        {loading ? "Loading…" : "Compare candidates"}
+      </Button>
+      {board ? (
+        <div className="overflow-x-auto border border-slate-200">
+          <table className="w-full text-xs">
+            <thead>
+              <tr>
+                <th className="px-2 py-1 text-left">Candidate</th>
+                <th className="px-2 py-1 text-left">Avg</th>
+                <th className="px-2 py-1 text-left">Salary</th>
+                <th className="px-2 py-1 text-left">Notice</th>
+                <th className="px-2 py-1 text-left">Risk</th>
+              </tr>
+            </thead>
+            <tbody>
+              {board.length === 0 ? (
+                <tr>
+                  <td className="px-2 py-2 text-center text-slate-400" colSpan={5}>
+                    No candidates at selection.
+                  </td>
+                </tr>
+              ) : (
+                board.map((entry) => (
+                  <tr key={entry.application.id} className={entry.application.id === application.id ? "bg-orange-50" : ""}>
+                    <td className="px-2 py-1 font-medium text-slate-900">{entry.candidate?.fullName ?? "—"}</td>
+                    <td className="px-2 py-1">{entry.ratingAverage ?? "—"}</td>
+                    <td className="px-2 py-1">{entry.candidate?.expectedSalary ?? "—"}</td>
+                    <td className="px-2 py-1">{entry.candidate?.noticePeriod ?? "—"}</td>
+                    <td className="px-2 py-1">
+                      {entry.riskPreviouslyRejected ? (
+                        <span className="bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700">
+                          Previously rejected
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      <textarea
+        className={fieldClass}
+        placeholder="Reason (required for Select / Reject)"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+      />
+      <div className="flex flex-wrap gap-2">
+        <Button
+          disabled={pending || !reason.trim()}
+          onClick={() =>
+            run(async () => {
+              await postJson(`/api/recruitment/applications/${application.id}/workflow`, {
+                action: "app_select" satisfies RecruitmentActionKey,
+                reason: reason.trim(),
+              });
+              return "Candidate selected for offer.";
+            })
+          }
+        >
+          Selected
+        </Button>
+        <Button
+          variant="secondary"
+          disabled={pending}
+          onClick={() =>
+            run(async () => {
+              await postJson(`/api/recruitment/applications/${application.id}/workflow`, {
+                action: "app_to_backup" satisfies RecruitmentActionKey,
+              });
+              return "Marked as backup candidate.";
+            })
+          }
+        >
+          Backup candidate
+        </Button>
+        <Button
+          variant="destructive"
+          disabled={pending || !reason.trim()}
+          onClick={() =>
+            run(async () => {
+              await postJson(`/api/recruitment/applications/${application.id}/workflow`, {
+                action: "app_reject" satisfies RecruitmentActionKey,
+                reason: reason.trim(),
+              });
+              return "Application rejected.";
+            })
+          }
+        >
+          Reject
+        </Button>
+      </div>
     </div>
   );
 }
@@ -583,14 +722,23 @@ function PipelineTab({
               </div>
             ) : null}
 
-            {canManage && (selected.stage === "cv_screening" || selected.stage === "phone_screening") ? (
+            {canManage &&
+            (selected.stage === "cv_screening" ||
+              selected.stage === "phone_screening" ||
+              selected.stage === "hiring_manager_interview") ? (
               <ScreeningCard
                 key={selected.id + selected.stage}
                 application={selected}
-                stage={selected.stage === "cv_screening" ? "cv" : "phone"}
+                stage={
+                  selected.stage === "cv_screening" ? "cv" : selected.stage === "phone_screening" ? "phone" : "hm"
+                }
                 pending={pending}
                 run={run}
               />
+            ) : null}
+
+            {canManage && selected.stage === "final_selection" ? (
+              <FinalSelectionCard key={selected.id} application={selected} pending={pending} run={run} />
             ) : null}
 
             {canManage && holdingStageActions[selected.stage] ? (
@@ -1377,6 +1525,8 @@ function InterviewsSection({
   const [type, setType] = useState<InterviewType>("hr");
   const [interviewerHrId, setInterviewerHrId] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [location, setLocation] = useState("");
+  const [meetingLink, setMeetingLink] = useState("");
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [scores, setScores] = useState<Record<string, string>>({});
   const [outcome, setOutcome] = useState("");
@@ -1393,12 +1543,16 @@ function InterviewsSection({
           interviewType: type,
           interviewerHrId: interviewerHrId || undefined,
           scheduledAt: scheduledAt || undefined,
+          location: location || undefined,
+          meetingLink: meetingLink || undefined,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to schedule.");
       setInterviewerHrId("");
       setScheduledAt("");
+      setLocation("");
+      setMeetingLink("");
       onReload();
     } catch (caught) {
       setErr(caught instanceof Error ? caught.message : "Failed to schedule.");
@@ -1526,6 +1680,8 @@ function InterviewsSection({
             ))}
           </select>
           <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
+          <Input placeholder="Location (office / video)" value={location} onChange={(e) => setLocation(e.target.value)} />
+          <Input placeholder="Meeting link" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} />
           <Button disabled={busy} onClick={() => void schedule()}>
             Schedule interview
           </Button>

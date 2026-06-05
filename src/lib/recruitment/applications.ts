@@ -77,7 +77,8 @@ const plainTransitionNextStatus: Partial<Record<RecruitmentActionKey, Applicatio
   app_to_interview_scheduling: "interview_scheduling",
   app_to_hr_interview: "hr_interview",
   app_record_hr_interview: "hiring_manager_interview",
-  app_record_hm_interview: "final_selection",
+  app_record_hm_interview: "manager_interview_completed",
+  app_mgr_completed_to_final: "final_selection",
   app_select: "offer_initiated",
   app_to_pre_boarding: "pre_boarding",
   app_reject: "application_rejected",
@@ -93,6 +94,10 @@ const plainTransitionNextStatus: Partial<Record<RecruitmentActionKey, Applicatio
   app_call_back: "call_back",
   app_resume_from_call_back_to_cv: "cv_screening",
   app_resume_from_call_back_to_phone: "phone_screening",
+  // Rule 8/9 — interview completion + final selection backup pool.
+  app_resume_from_hold_to_hm: "hiring_manager_interview",
+  app_to_backup: "backup_candidate",
+  app_backup_to_offer: "offer_initiated",
 };
 
 const defaultSeniorApprovalNetThreshold = 20000;

@@ -22,8 +22,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const body = await readJsonObject(request);
 
     const stage = str(body.stage);
-    if (stage !== "cv" && stage !== "phone") {
-      return NextResponse.json({ error: "validation", message: "Screening stage must be 'cv' or 'phone'.", success: false }, { status: 400 });
+    if (stage !== "cv" && stage !== "phone" && stage !== "hm") {
+      return NextResponse.json({ error: "validation", message: "Screening stage must be 'cv', 'phone', or 'hm'.", success: false }, { status: 400 });
     }
     const outcome = str(body.outcome);
     if (!outcome) {
