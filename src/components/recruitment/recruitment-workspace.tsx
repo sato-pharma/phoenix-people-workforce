@@ -84,6 +84,13 @@ async function postJson(url: string, body: unknown): Promise<Record<string, unkn
   return data;
 }
 
+async function deleteRequest(url: string): Promise<Record<string, unknown>> {
+  const res = await fetch(url, { method: "DELETE" });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Delete failed.");
+  return data;
+}
+
 export function RecruitmentWorkspace(props: Props) {
   const { dashboard, initialError } = props;
   const router = useRouter();
@@ -319,12 +326,13 @@ function PipelineTab({
                 <th>Candidate</th>
                 <th>Requisition</th>
                 <th>Stage</th>
+                <th className="w-px"></th>
               </tr>
             </thead>
             <tbody>
               {applications.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-6 text-center text-slate-500" colSpan={3}>
+                  <td className="px-3 py-6 text-center text-slate-500" colSpan={4}>
                     No applications yet. Add a candidate from the Candidates tab.
                   </td>
                 </tr>
@@ -340,6 +348,24 @@ function PipelineTab({
                     </td>
                     <td className="px-3 py-2">{application.requisition?.jobTitle ?? "—"}</td>
                     <td className="px-3 py-2">{titleCase(application.stage)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {canManage ? (
+                        <Button
+                          variant="destructive"
+                          disabled={pending}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!window.confirm("Delete this application permanently? This cannot be undone.")) return;
+                            run(async () => {
+                              await deleteRequest(`/api/recruitment/applications/${application.id}`);
+                              return "Application deleted.";
+                            });
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      ) : null}
+                    </td>
                   </tr>
                 ))
               )}
@@ -719,6 +745,24 @@ function RequisitionsTab({
                               Application link
                             </Button>
                           ) : null}
+                          <Button
+                            variant="destructive"
+                            disabled={pending}
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  `Delete requisition ${requisition.requisitionCode} and all of its applications? This cannot be undone.`,
+                                )
+                              )
+                                return;
+                              run(async () => {
+                                await deleteRequest(`/api/recruitment/requisitions/${requisition.id}`);
+                                return "Requisition deleted.";
+                              });
+                            }}
+                          >
+                            Delete
+                          </Button>
                         </div>
                       ) : (
                         <span className="text-xs text-slate-400">View only</span>
@@ -883,6 +927,24 @@ function CandidatesTab({
                             }
                           >
                             Start
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            disabled={pending}
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  `Delete candidate ${candidate.fullName} and all of their applications? This cannot be undone.`,
+                                )
+                              )
+                                return;
+                              run(async () => {
+                                await deleteRequest(`/api/recruitment/candidates/${candidate.id}`);
+                                return "Candidate deleted.";
+                              });
+                            }}
+                          >
+                            Delete
                           </Button>
                         </div>
                       ) : (

@@ -230,3 +230,13 @@ export async function markRequisitionFilled(id: string, access: AccessContext): 
   if (!["req_open", "req_published", "req_on_hold"].includes(requisition.status)) return;
   await runRequisitionWorkflow(id, "req_fill", access);
 }
+
+// Hard-delete a requisition (admin cleanup; any status). Database cascades remove
+// its applications, events, interviews, onboarding items, postings, and files.
+export async function deleteRequisition(access: AccessContext, id: string): Promise<void> {
+  const requisition = await getRequisition(access, id); // throws if out of scope
+  if (!requisition) throw new Error("Requisition not found.");
+  const supabase = recruitmentDb();
+  const { error } = await supabase.from("recruitment_requisitions").delete().eq("id", id);
+  if (error) throw error;
+}
