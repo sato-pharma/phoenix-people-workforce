@@ -148,7 +148,7 @@ export function summarizePreview(distributorCode: string, distributorName: strin
 // NORMALIZER_TEMPLATE.discountField in monthly-distributor-import.ts.
 export const CODED_HEADERS = [
   "Distrub ID", "Region ID", "Area ID", "Brick ID", "Product ID", "Product Name",
-  "Qty", "B. Qty", "Value", "Discount%", "Invoice Date", "Customer", "Customer Name", "Official Line",
+  "Qty", "B. Qty", "Value", "Discount%", "Invoice Date", "Customer", "Customer Name", "Customer Address", "Official Line",
 ] as const;
 
 export function buildCodedWorkbook(result: NormalizeResult): Promise<ExcelJS.Buffer> {
@@ -161,7 +161,7 @@ export function buildCodedWorkbook(result: NormalizeResult): Promise<ExcelJS.Buf
   result.coded.forEach((r) => {
     sheet.addRow([
       r.distributorCode, r.regionCode, r.areaCode, r.brickId, r.productCode, r.productName,
-      r.qty, r.bonusQty, r.value, r.discount, r.invoiceDate, r.clientCode ?? "", r.clientName ?? "", r.officialLine,
+      r.qty, r.bonusQty, r.value, r.discount, r.invoiceDate, r.clientCode ?? "", r.clientName ?? "", r.clientAddress ?? "", r.officialLine,
     ]);
   });
   // Second sheet: the unmapped rows the user still needs to map once.

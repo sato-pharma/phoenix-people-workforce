@@ -3,9 +3,9 @@
 // code-defined RAW_DISTRIBUTOR_PROFILES — so the table can start empty and edits take effect on the
 // next normalize. Server-only (service-role).
 //
-// EVERY Phoenix target is its OWN field/column. Product Code and Product Name are separate; Territory
-// and Brick ID are separate. The engine's single productColumns list is composed as
-// [...productCodeColumns, ...productNameColumns] (code tried first, then name).
+// EVERY Phoenix target is its OWN field/column, in the exact order the admin laid out in the export.
+// The engine's single productColumns list = [...productCodeColumns, ...productNameColumns]; the brick is
+// resolved from the geography text columns (Area ID / Area Name / Region) and/or the direct Brick ID.
 
 import { RAW_DISTRIBUTOR_PROFILES, rawProfileForDistributor } from "@/lib/sales/normalizer/profiles";
 import type { DistributorProfile } from "@/lib/sales/normalizer/types";
@@ -13,19 +13,25 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const PROFILE_TABLE = "source_of_sales_distributor_profile";
 
-// The editable fields, in display order. ONE cell each. label = the Phoenix target shown in the editor.
+// The editable fields — ONE cell each, in the exact column order of the exported workbook.
 export const PROFILE_FIELDS = [
   { key: "productCodeColumns", column: "product_code_columns", label: "Product Code" },
   { key: "productNameColumns", column: "product_name_columns", label: "Product Name" },
   { key: "qtyColumns", column: "qty_columns", label: "Quantity" },
+  { key: "branchCodeColumns", column: "branch_code_columns", label: "Branch Code" },
+  { key: "branchNameColumns", column: "branch_name_columns", label: "Branch Name" },
   { key: "bonusColumns", column: "bonus_columns", label: "Bonus Qty" },
   { key: "valueColumns", column: "value_columns", label: "Value" },
   { key: "discountColumns", column: "discount_columns", label: "Discount %" },
   { key: "dateColumns", column: "date_columns", label: "Invoice Date" },
   { key: "customerCodeColumns", column: "customer_code_columns", label: "Customer Code" },
   { key: "customerNameColumns", column: "customer_name_columns", label: "Customer Name" },
-  { key: "territoryColumns", column: "territory_columns", label: "Territory (area/district text)" },
+  { key: "customerAddressColumns", column: "customer_address_columns", label: "Customer Address" },
+  { key: "areaIdColumns", column: "area_id_columns", label: "Area ID" },
+  { key: "areaNameColumns", column: "area_name_columns", label: "Area Name" },
   { key: "brickIdColumns", column: "brick_id_columns", label: "Brick ID" },
+  { key: "brickNameColumns", column: "brick_name_columns", label: "Brick Name" },
+  { key: "regionColumns", column: "region_columns", label: "Region" },
 ] as const;
 
 export type ProfileFieldKey = (typeof PROFILE_FIELDS)[number]["key"];
@@ -41,7 +47,7 @@ export type EditableProfile = {
 
 const arr = (v: unknown): string[] => (Array.isArray(v) ? (v as unknown[]).map((x) => String(x).trim()).filter(Boolean) : []);
 
-// DB row -> editable shape for the UI (keeps Product Code / Product Name separate).
+// DB row -> editable shape for the UI (one cell per field, exact order).
 function rowToEditable(code: string, row: Record<string, unknown>): EditableProfile {
   return {
     distributorCode: code,
@@ -53,20 +59,26 @@ function rowToEditable(code: string, row: Record<string, unknown>): EditableProf
       productCodeColumns: arr(row.product_code_columns),
       productNameColumns: arr(row.product_name_columns),
       qtyColumns: arr(row.qty_columns),
+      branchCodeColumns: arr(row.branch_code_columns),
+      branchNameColumns: arr(row.branch_name_columns),
       bonusColumns: arr(row.bonus_columns),
       valueColumns: arr(row.value_columns),
       discountColumns: arr(row.discount_columns),
       dateColumns: arr(row.date_columns),
       customerCodeColumns: arr(row.customer_code_columns),
       customerNameColumns: arr(row.customer_name_columns),
-      territoryColumns: arr(row.territory_columns),
+      customerAddressColumns: arr(row.customer_address_columns),
+      areaIdColumns: arr(row.area_id_columns),
+      areaNameColumns: arr(row.area_name_columns),
       brickIdColumns: arr(row.brick_id_columns),
+      brickNameColumns: arr(row.brick_name_columns),
+      regionColumns: arr(row.region_columns),
     },
   };
 }
 
-// Code default -> editable shape. The code profile keeps product code+name in one list; split it so the
-// first entry is the Product Code and the rest are Product Name (matches the engine's own treatment).
+// Code default -> editable shape. The code profile keeps product code+name in one list (first = code,
+// rest = name) and the geography text under territoryColumns (-> the "Area ID" field).
 function defaultToEditable(p: DistributorProfile): EditableProfile {
   const product = p.productColumns ?? [];
   return {
@@ -79,19 +91,26 @@ function defaultToEditable(p: DistributorProfile): EditableProfile {
       productCodeColumns: product.slice(0, 1),
       productNameColumns: product.slice(1),
       qtyColumns: p.qtyColumns ?? [],
+      branchCodeColumns: [],
+      branchNameColumns: [],
       bonusColumns: p.bonusColumns ?? [],
       valueColumns: p.valueColumns ?? [],
       discountColumns: p.discountColumns ?? [],
       dateColumns: p.dateColumns ?? [],
       customerCodeColumns: p.customerCodeColumns ?? [],
       customerNameColumns: p.customerNameColumns ?? [],
-      territoryColumns: p.territoryColumns ?? [],
+      customerAddressColumns: p.customerAddressColumns ?? [],
+      areaIdColumns: p.territoryColumns ?? [],
+      areaNameColumns: [],
       brickIdColumns: p.brickIdColumns ?? [],
+      brickNameColumns: [],
+      regionColumns: [],
     },
   };
 }
 
-// DB row -> engine DistributorProfile (productColumns = code columns first, then name columns).
+// DB row -> engine DistributorProfile. productColumns = code then name; the brick is resolved from the
+// geography text columns (Area ID / Area Name / Region) and/or the direct Brick ID.
 function rowToProfile(code: string, row: Record<string, unknown>): DistributorProfile {
   return {
     distributorCode: code,
@@ -104,7 +123,8 @@ function rowToProfile(code: string, row: Record<string, unknown>): DistributorPr
     dateColumns: arr(row.date_columns),
     customerCodeColumns: arr(row.customer_code_columns),
     customerNameColumns: arr(row.customer_name_columns),
-    territoryColumns: arr(row.territory_columns),
+    customerAddressColumns: arr(row.customer_address_columns),
+    territoryColumns: [...arr(row.area_id_columns), ...arr(row.area_name_columns), ...arr(row.region_columns)],
     brickIdColumns: arr(row.brick_id_columns),
     discountColumns: arr(row.discount_columns),
     regionOnly: Boolean(row.region_only),
@@ -157,14 +177,20 @@ export async function saveDistributorProfile(distributorCode: string, input: Sav
     product_code_columns: arr(f.productCodeColumns),
     product_name_columns: arr(f.productNameColumns),
     qty_columns: arr(f.qtyColumns),
+    branch_code_columns: arr(f.branchCodeColumns),
+    branch_name_columns: arr(f.branchNameColumns),
     bonus_columns: arr(f.bonusColumns),
     value_columns: arr(f.valueColumns),
     discount_columns: arr(f.discountColumns),
     date_columns: arr(f.dateColumns),
     customer_code_columns: arr(f.customerCodeColumns),
     customer_name_columns: arr(f.customerNameColumns),
-    territory_columns: arr(f.territoryColumns),
+    customer_address_columns: arr(f.customerAddressColumns),
+    area_id_columns: arr(f.areaIdColumns),
+    area_name_columns: arr(f.areaNameColumns),
     brick_id_columns: arr(f.brickIdColumns),
+    brick_name_columns: arr(f.brickNameColumns),
+    region_columns: arr(f.regionColumns),
     value_source: input.valueSource === "sheet" ? "sheet" : "recompute",
     region_only: Boolean(input.regionOnly),
     active: true,
