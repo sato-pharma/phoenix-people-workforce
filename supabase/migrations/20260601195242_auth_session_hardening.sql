@@ -3,7 +3,6 @@
 -- accepted while their database session is still active.
 
 begin;
-
 create table if not exists public.app_sessions (
   id uuid primary key,
   login_id text not null,
@@ -23,19 +22,14 @@ create table if not exists public.app_sessions (
   constraint app_sessions_version_check check (session_version >= 1),
   constraint app_sessions_expiry_check check (absolute_expires_at > created_at and idle_expires_at > created_at)
 );
-
 create index if not exists app_sessions_login_id_idx
   on public.app_sessions (login_id);
-
 create index if not exists app_sessions_revoked_at_idx
   on public.app_sessions (revoked_at);
-
 create index if not exists app_sessions_idle_expires_at_idx
   on public.app_sessions (idle_expires_at);
-
 create index if not exists app_sessions_absolute_expires_at_idx
   on public.app_sessions (absolute_expires_at);
-
 create or replace function public.api_rate_limit_consume(
   p_bucket_key text,
   p_limit integer,
@@ -78,14 +72,11 @@ begin
   return next;
 end;
 $$;
-
 alter table public.app_sessions enable row level security;
-
 revoke all on table public.app_sessions from anon, authenticated;
 grant select, insert, update, delete on table public.app_sessions to service_role;
 revoke all on function public.api_rate_limit_consume(text, integer, integer) from public;
 grant execute on function public.api_rate_limit_consume(text, integer, integer) to service_role;
-
 drop policy if exists app_sessions_service_role_all on public.app_sessions;
 create policy app_sessions_service_role_all
   on public.app_sessions
@@ -93,7 +84,5 @@ create policy app_sessions_service_role_all
   to service_role
   using (true)
   with check (true);
-
 notify pgrst, 'reload schema';
-
 commit;

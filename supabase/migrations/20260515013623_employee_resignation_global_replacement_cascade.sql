@@ -7,29 +7,22 @@ alter table public.position_vacancies
   add column if not exists replacement_for_hr_id text,
   add column if not exists filled_by_hr_id text,
   add column if not exists filled_at timestamptz;
-
 comment on column public.position_vacancies.replacement_for_hr_id is
   'HR_ID of the resigned/terminated employee whose position opened this vacancy.';
-
 comment on column public.position_vacancies.filled_by_hr_id is
   'HR_ID of the active employee hired into this vacancy.';
-
 comment on column public.position_vacancies.filled_at is
   'Timestamp when the vacancy was filled by an employee creation/replacement flow.';
-
 create index if not exists position_vacancies_replacement_for_hr_id_idx
 on public.position_vacancies (replacement_for_hr_id);
-
 create index if not exists position_vacancies_filled_by_hr_id_idx
 on public.position_vacancies (filled_by_hr_id);
-
 update public.position_vacancies v
 set replacement_for_hr_id = r.employee_hr_id
 from public.employee_resignations r
 where r.vacancy_id = v.id
   and v.replacement_for_hr_id is null
   and r.employee_hr_id is not null;
-
 update public.employees
 set
   payroll_eligible = false,
@@ -37,7 +30,6 @@ set
   updated_at = now()
 where lower(coalesce(employment_status, 'active')) in ('resigned', 'terminated', 'inactive')
   and (payroll_eligible is distinct from false or organogram_visible is distinct from false);
-
 -- Conservative legacy repair: if a terminal manager has exactly one active
 -- employee now occupying the same area/line/position under the same upstream
 -- manager, move live reporting lines to that replacement. This fixes older
@@ -83,7 +75,6 @@ set
 from unique_replacements u
 where child.manager_hr_id = u.previous_hr_id
   and lower(coalesce(child.employment_status, 'active')) in ('active', 'on_leave');
-
 do $$
 begin
   if to_regclass('public.app_auth_users') is not null then
@@ -195,9 +186,7 @@ exception
   when undefined_column then
     raise notice 'Access profile inactive backfill skipped because expected columns are missing.';
 end $$;
-
 drop function if exists public.phx_resign_employee_and_open_vacancy(text,date,date,text,text,text,text,text,text);
-
 create function public.phx_resign_employee_and_open_vacancy(
   p_employee_hr_id text,
   p_effective_date date,
@@ -389,11 +378,8 @@ begin
   );
 end;
 $$;
-
 revoke execute on function public.phx_resign_employee_and_open_vacancy(text,date,date,text,text,text,text,text,text)
 from public, anon, authenticated;
-
 grant execute on function public.phx_resign_employee_and_open_vacancy(text,date,date,text,text,text,text,text,text)
 to service_role;
-
 notify pgrst, 'reload schema';

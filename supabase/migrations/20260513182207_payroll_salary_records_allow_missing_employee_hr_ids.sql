@@ -4,6 +4,5 @@
 -- no longer has that row.
 alter table if exists public.salary_records
   drop constraint if exists salary_records_hr_id_fkey;
-
 alter table if exists public.salary_flags
   drop constraint if exists salary_flags_hr_id_fkey;

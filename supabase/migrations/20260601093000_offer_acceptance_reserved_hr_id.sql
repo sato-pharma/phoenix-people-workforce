@@ -1,14 +1,10 @@
 create schema if not exists private;
-
 alter table public.job_offers
   add column if not exists reserved_employee_hr_id text null;
-
 create unique index if not exists job_offers_reserved_employee_hr_id_uidx
   on public.job_offers (upper(reserved_employee_hr_id))
   where reserved_employee_hr_id is not null;
-
 drop function if exists public.phx_reserve_offer_employee_hr_id(uuid);
-
 create or replace function private.phx_reserve_offer_employee_hr_id_v2(
   p_offer_id uuid
 )
@@ -123,7 +119,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.phx_reserve_offer_employee_hr_id(
   p_offer_id uuid
 )
@@ -134,15 +129,11 @@ set search_path = public, private
 as $$
   select private.phx_reserve_offer_employee_hr_id_v2(p_offer_id);
 $$;
-
 revoke all on function private.phx_reserve_offer_employee_hr_id_v2(uuid)
   from public, anon, authenticated;
-
 grant execute on function private.phx_reserve_offer_employee_hr_id_v2(uuid)
   to service_role;
-
 revoke all on function public.phx_reserve_offer_employee_hr_id(uuid)
   from public, anon, authenticated;
-
 grant execute on function public.phx_reserve_offer_employee_hr_id(uuid)
   to service_role;

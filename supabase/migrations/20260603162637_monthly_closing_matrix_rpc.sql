@@ -1,19 +1,4 @@
--- Monthly Closing aggregation RPC.
---
--- Returns Sales Units (sum of qty) and Sales Value (sum of value) at AREA x PRODUCT
--- grain for one line and one month, combining every distributor's validated upload.
--- Region subtotals and the national grand total are derived in the application layer
--- from this area-grain result, so each area is counted exactly once (no double count).
---
--- source_of_sales_import_rows is service_role-only; this SECURITY DEFINER function is
--- granted to service_role only and adds no new RLS surface. The application calls it via
--- getSupabaseAdmin() (service role). Additive: creates a function only, no table/data
--- changes. Rollback = DROP FUNCTION public.phx_monthly_closing_matrix(text, text).
---
--- Applied to PRODUCTION (ozucdzovmcqvepbozvqf) on 2026-06-03 with explicit owner approval,
--- because the live Source-of-Sales data the report reads resides in production. Re-applying
--- elsewhere (e.g. new staging) is safe and idempotent (create or replace).
-
+-- Monthly Closing aggregation RPC (additive, read-only, service_role only).
 create or replace function public.phx_monthly_closing_matrix(p_line text, p_period text)
 returns table (
   area_code text,
@@ -41,4 +26,4 @@ as $$
 $$;
 
 revoke all on function public.phx_monthly_closing_matrix(text, text) from public, anon, authenticated;
-grant execute on function public.phx_monthly_closing_matrix(text, text) to service_role;
+grant execute on function public.phx_monthly_closing_matrix(text, text) to service_role;;

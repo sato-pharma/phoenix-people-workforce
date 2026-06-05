@@ -23,14 +23,11 @@ create table if not exists public.attendance_policy_groups (
   constraint attendance_policy_groups_effective_range_check
     check (effective_to is null or effective_to >= effective_from)
 );
-
 create unique index if not exists attendance_policy_groups_target_effective_idx
   on public.attendance_policy_groups (target_type, coalesce(target_value, '__default__'), effective_from);
-
 create index if not exists attendance_policy_groups_active_idx
   on public.attendance_policy_groups (target_type, target_value, is_active)
   where is_active is true;
-
 create table if not exists public.attendance_policy_rules (
   id bigserial primary key,
   policy_id bigint not null references public.attendance_policy_groups(id) on delete cascade,
@@ -57,24 +54,19 @@ create table if not exists public.attendance_policy_rules (
   constraint attendance_policy_rules_deduction_value_check
     check (deduction_value is null or deduction_value >= 0)
 );
-
 create index if not exists attendance_policy_rules_policy_idx
   on public.attendance_policy_rules (policy_id, sort_order, id);
-
 create index if not exists attendance_policy_rules_active_idx
   on public.attendance_policy_rules (policy_id, event_type, is_active)
   where is_active is true;
-
 alter table public.attendance_policy_groups enable row level security;
 alter table public.attendance_policy_rules enable row level security;
-
 revoke all on table public.attendance_policy_groups from anon, authenticated;
 revoke all on table public.attendance_policy_rules from anon, authenticated;
 grant select, insert, update, delete on table public.attendance_policy_groups to service_role;
 grant select, insert, update, delete on table public.attendance_policy_rules to service_role;
 grant usage, select on sequence public.attendance_policy_groups_id_seq to service_role;
 grant usage, select on sequence public.attendance_policy_rules_id_seq to service_role;
-
 drop policy if exists attendance_policy_groups_service_role_all
   on public.attendance_policy_groups;
 create policy attendance_policy_groups_service_role_all
@@ -83,7 +75,6 @@ create policy attendance_policy_groups_service_role_all
   to service_role
   using (true)
   with check (true);
-
 drop policy if exists attendance_policy_rules_service_role_all
   on public.attendance_policy_rules;
 create policy attendance_policy_rules_service_role_all
@@ -92,9 +83,7 @@ create policy attendance_policy_rules_service_role_all
   to service_role
   using (true)
   with check (true);
-
 comment on table public.attendance_policy_groups is
   'Attendance policy groups targeted by default, job title, or employee HR_ID. Used for report calculations only until HR approves payroll integration.';
-
 comment on table public.attendance_policy_rules is
   'Attendance policy rule brackets for late arrival, early leave, single punch, and absence actions. Deduction fields are report recommendations only.';

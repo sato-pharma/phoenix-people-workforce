@@ -7,19 +7,15 @@ create table if not exists public.teams (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 alter table public.departments
   add column if not exists is_active boolean not null default true;
-
 alter table public.employees
   add column if not exists payroll_eligible boolean default true,
   add column if not exists organogram_visible boolean default true;
-
 alter table public.teams
   add column if not exists code text,
   add column if not exists area_id bigint null references public.areas(id) on update cascade on delete set null,
   add column if not exists is_active boolean not null default true;
-
 with approved_departments(code, name) as (
   values
     ('sales', 'Sales'),
@@ -39,7 +35,6 @@ set is_active = true,
 from approved_departments a
 where lower(trim(coalesce(d.name, ''))) = lower(a.name)
    or lower(trim(coalesce(d.code, ''))) = a.code;
-
 with approved_departments(code, name) as (
   values
     ('sales', 'Sales'),
@@ -78,7 +73,6 @@ set is_active = false,
 from legacy_active_departments legacy
 where d.id = legacy.id
   and d.is_active is distinct from false;
-
 do $$
 declare
   referenced_count integer := 0;
@@ -101,7 +95,6 @@ begin
     raise notice 'Legacy Active department rows with no employee references were marked inactive.';
   end if;
 end $$;
-
 update public.employees
 set payroll_eligible = false,
     organogram_visible = false,
@@ -111,22 +104,17 @@ where lower(trim(coalesce(employment_status, ''))) in ('historical_payroll_recor
     payroll_eligible is distinct from false
     or organogram_visible is distinct from false
   );
-
 update public.teams
 set code = trim(both '_' from regexp_replace(lower(trim(name)), '[^a-z0-9]+', '_', 'g')),
     updated_at = now()
 where nullif(trim(coalesce(code, '')), '') is null
   and nullif(trim(coalesce(name, '')), '') is not null;
-
 create index if not exists departments_is_active_idx
   on public.departments (is_active);
-
 create index if not exists teams_area_id_idx
   on public.teams (area_id);
-
 create index if not exists teams_is_active_idx
   on public.teams (is_active);
-
 do $$
 begin
   if not exists (
@@ -146,7 +134,6 @@ begin
     raise notice 'teams_code_unique_idx was not created because duplicate team codes exist. Import still matches by normalized name/area and manual cleanup is required.';
   end if;
 end $$;
-
 comment on column public.departments.is_active is 'Controls whether the department is available as an active global lookup option.';
 comment on column public.teams.code is 'Stable normalized Team lookup code used by Employee Master import mapping.';
 comment on column public.teams.area_id is 'Optional Area scope for disambiguating Team names in Employee Master imports.';

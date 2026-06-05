@@ -3,7 +3,6 @@
 -- persistent API rate limiting. Runtime purge execution remains service-only.
 
 begin;
-
 create table if not exists public.api_rate_limit_buckets (
   bucket_key text primary key,
   request_count integer not null default 0,
@@ -12,10 +11,8 @@ create table if not exists public.api_rate_limit_buckets (
   updated_at timestamptz not null default now(),
   constraint api_rate_limit_buckets_count_check check (request_count >= 0)
 );
-
 create index if not exists api_rate_limit_buckets_reset_idx
   on public.api_rate_limit_buckets (reset_at);
-
 create table if not exists public.v2_vacation_retention_policies (
   policy_key text primary key,
   retention_days integer not null,
@@ -26,7 +23,6 @@ create table if not exists public.v2_vacation_retention_policies (
   constraint v2_vacation_retention_policies_days_check check (retention_days > 0),
   constraint v2_vacation_retention_policies_mode_check check (purge_mode in ('dry_run_only', 'manual_approval_required'))
 );
-
 insert into public.v2_vacation_retention_policies (policy_key, retention_days, description, purge_mode)
 values
   ('request_history', 2555, 'Keep leave requests, request events, and core audit history for seven years.', 'manual_approval_required'),
@@ -38,7 +34,6 @@ set retention_days = excluded.retention_days,
     description = excluded.description,
     purge_mode = excluded.purge_mode,
     updated_at = now();
-
 create table if not exists public.v2_vacation_retention_purge_runs (
   id uuid primary key default gen_random_uuid(),
   actor_login_id text null,
@@ -52,22 +47,17 @@ create table if not exists public.v2_vacation_retention_purge_runs (
   status text not null default 'running',
   constraint v2_vacation_retention_purge_runs_status_check check (status in ('running', 'completed', 'failed'))
 );
-
 create index if not exists v2_vacation_retention_purge_runs_started_idx
   on public.v2_vacation_retention_purge_runs (started_at desc);
-
 alter table public.api_rate_limit_buckets enable row level security;
 alter table public.v2_vacation_retention_policies enable row level security;
 alter table public.v2_vacation_retention_purge_runs enable row level security;
-
 revoke all on table public.api_rate_limit_buckets from anon, authenticated;
 revoke all on table public.v2_vacation_retention_policies from anon, authenticated;
 revoke all on table public.v2_vacation_retention_purge_runs from anon, authenticated;
-
 grant select, insert, update, delete on table public.api_rate_limit_buckets to service_role;
 grant select on table public.v2_vacation_retention_policies to service_role;
 grant select, insert, update on table public.v2_vacation_retention_purge_runs to service_role;
-
 drop policy if exists api_rate_limit_buckets_service_role_all on public.api_rate_limit_buckets;
 create policy api_rate_limit_buckets_service_role_all
   on public.api_rate_limit_buckets
@@ -75,14 +65,12 @@ create policy api_rate_limit_buckets_service_role_all
   to service_role
   using (true)
   with check (true);
-
 drop policy if exists v2_vacation_retention_policies_service_role_read on public.v2_vacation_retention_policies;
 create policy v2_vacation_retention_policies_service_role_read
   on public.v2_vacation_retention_policies
   for select
   to service_role
   using (true);
-
 drop policy if exists v2_vacation_retention_purge_runs_service_role_all on public.v2_vacation_retention_purge_runs;
 create policy v2_vacation_retention_purge_runs_service_role_all
   on public.v2_vacation_retention_purge_runs
@@ -90,7 +78,5 @@ create policy v2_vacation_retention_purge_runs_service_role_all
   to service_role
   using (true)
   with check (true);
-
 notify pgrst, 'reload schema';
-
 commit;

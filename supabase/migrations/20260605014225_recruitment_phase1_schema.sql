@@ -1,22 +1,5 @@
--- Recruitment / ATS module — Phase 1 schema.
---
--- Introduces the recruitment backbone (requisition -> candidate -> application)
--- plus append-only history, a thin interviews table (forward-compat), and
--- file metadata (Google Drive integration lands in Phase 2; Phase 1 stores a
--- CV reference only).
---
--- Security posture mirrors the offer/contract tables: RLS enabled, all browser
--- roles revoked, service-role-only policy. Candidate data is heavy PII, so there
--- is NO grant to `authenticated`. All app access goes through getSupabaseAdmin()
--- behind assertPermission in the service layer.
---
--- Defensive choices for the documented dual-Supabase-project divergence:
---   * job_offers.application_id is a plain (soft) column — no FK added to the
---     critical offer table.
---   * requisition org-unit ids (department/line/area/team/position) are a
---     denormalized snapshot of the wrapped vacancy — no FKs.
---   * vacancy_id / *_hr_id keep hard FKs to stable core tables
---     (position_vacancies.id bigint, employees.hr_id text) per the contracts precedent.
+-- Recruitment / ATS module — Phase 1 schema (requisition -> candidate -> application),
+-- append-only history, interviews, file metadata. RLS service-role-only (PII).
 
 -- 1. Requisitions -----------------------------------------------------------
 create table if not exists public.recruitment_requisitions (
@@ -86,8 +69,6 @@ create table if not exists public.recruitment_candidates (
   updated_at timestamptz not null default now()
 );
 
--- Hybrid identity: dedupe on National ID when present, else phone OR email.
--- Partial unique indexes are the race safety net behind the matching helper.
 create unique index if not exists recruitment_candidates_national_id_norm_uidx
   on public.recruitment_candidates (national_id_norm) where national_id_norm is not null;
 create unique index if not exists recruitment_candidates_email_norm_uidx
@@ -121,7 +102,6 @@ create table if not exists public.recruitment_applications (
     ))
 );
 
--- One active application per (requisition, candidate); terminal stages excluded.
 create unique index if not exists recruitment_applications_active_uidx
   on public.recruitment_applications (requisition_id, candidate_id)
   where stage not in (
@@ -159,7 +139,7 @@ create table if not exists public.recruitment_application_events (
 create index if not exists recruitment_application_events_app_idx
   on public.recruitment_application_events (application_id, created_at desc);
 
--- 6. Interviews (thin now; scheduling/scorecards in Phase 2) -----------------
+-- 6. Interviews (thin) -------------------------------------------------------
 create table if not exists public.recruitment_interviews (
   id uuid primary key default gen_random_uuid(),
   application_id uuid not null references public.recruitment_applications(id) on update cascade on delete cascade,
@@ -181,7 +161,7 @@ create table if not exists public.recruitment_interviews (
 create index if not exists recruitment_interviews_app_idx
   on public.recruitment_interviews (application_id);
 
--- 7. File metadata (Drive deferred to Phase 2; Phase 1 = reference only) ------
+-- 7. File metadata -----------------------------------------------------------
 create table if not exists public.recruitment_files (
   id uuid primary key default gen_random_uuid(),
   candidate_id uuid null references public.recruitment_candidates(id) on update cascade on delete cascade,
@@ -248,4 +228,4 @@ drop policy if exists phx_recruitment_files_service_role on public.recruitment_f
 create policy phx_recruitment_files_service_role
   on public.recruitment_files for all to service_role using (true) with check (true);
 
-notify pgrst, 'reload schema';
+notify pgrst, 'reload schema';;

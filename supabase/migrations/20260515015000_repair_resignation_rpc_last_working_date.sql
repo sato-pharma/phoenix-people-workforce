@@ -6,7 +6,6 @@ alter table public.employee_resignations
   add column if not exists last_working_date date,
   add column if not exists exit_status text,
   add column if not exists notes text;
-
 update public.employee_resignations
 set
   resignation_date = coalesce(resignation_date, submitted_date, created_at::date, current_date),
@@ -17,9 +16,6 @@ where
   or last_working_date is null
   or exit_status is null
   or exit_status = '';
-
-drop function if exists public.phx_resign_employee_and_open_vacancy(text,date,date,text,text,text,text,text,text);
-
 create or replace function public.phx_resign_employee_and_open_vacancy(
   p_employee_hr_id text,
   p_submitted_date date,
@@ -195,7 +191,6 @@ begin
   );
 end;
 $$;
-
 revoke execute on function public.phx_resign_employee_and_open_vacancy(text,date,date,text,text,text,text,text,text)
 from anon, authenticated;
 grant execute on function public.phx_resign_employee_and_open_vacancy(text,date,date,text,text,text,text,text,text)

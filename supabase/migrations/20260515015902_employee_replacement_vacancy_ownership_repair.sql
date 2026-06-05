@@ -56,7 +56,6 @@ from unique_replacements u
 join public.employees r on r.hr_id = u.replacement_hr_id
 where v.manager_hr_id = u.previous_hr_id
   and lower(coalesce(v.status, 'open')) = 'open';
-
 do $$
 begin
   if to_regclass('public.sales_records') is not null then

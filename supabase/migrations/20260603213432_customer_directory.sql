@@ -1,24 +1,8 @@
--- Customer Directory — capture customer identity on sales rows + read-only RPCs.
---
--- The distributor sheets are client-level (customer code/name/address per row) but the
--- importer only stored the coded sales fields; the customer fields were kept inside
--- raw_row JSON. This migration:
---   1. adds structured client columns,
---   2. backfills them from raw_row for the already-imported rows (no re-upload needed;
---      the header keys were verified per distributor against production),
---   3. adds indexes for the directory queries,
---   4. adds two SECURITY DEFINER read-only RPCs that recompute value the canonical way
---      (Qty x (1 - discount) x live factory_price; the stored value is never used).
---
--- Additive + reversible. Apply to PRODUCTION (ozucdzovmcqvepbozvqf) with approval.
--- Rollback: drop the 3 columns, the 2 functions, and the 3 indexes.
-
 alter table public.source_of_sales_import_rows
   add column if not exists client_code text,
   add column if not exists client_name text,
   add column if not exists client_address text;
 
--- Backfill from raw_row (original sheet header labels), per distributor.
 update public.source_of_sales_import_rows set
   client_code = nullif(btrim(raw_row->>'Customer'), ''),
   client_name = nullif(btrim(raw_row->>'Customer Name'), ''),
@@ -42,8 +26,6 @@ create index if not exists sos_rows_region_area_brick_idx
 create index if not exists sos_rows_period_idx
   on public.source_of_sales_import_rows (invoice_period);
 
--- One row per (client_code, distributor_code). Empty/null arrays = no filter on that
--- dimension; null periods = all-time. Attributes resolved to the most-recent row.
 create or replace function public.phx_customer_directory(
   p_region_codes text[] default null,
   p_area_codes text[] default null,
@@ -106,7 +88,6 @@ $$;
 revoke all on function public.phx_customer_directory(text[], text[], text[], text[], text, text) from public, anon, authenticated;
 grant execute on function public.phx_customer_directory(text[], text[], text[], text[], text, text) to service_role;
 
--- Every sales line for one (distributor, customer), value recomputed.
 create or replace function public.phx_customer_sales(
   p_distributor_code text,
   p_client_code text,
@@ -148,4 +129,4 @@ as $$
 $$;
 
 revoke all on function public.phx_customer_sales(text, text, text, text) from public, anon, authenticated;
-grant execute on function public.phx_customer_sales(text, text, text, text) to service_role;
+grant execute on function public.phx_customer_sales(text, text, text, text) to service_role;;

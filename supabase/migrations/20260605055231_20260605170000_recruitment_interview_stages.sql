@@ -1,10 +1,6 @@
 -- Recruitment / ATS — Rules 8 & 9 stages.
---
--- Adds two non-terminal application stages: manager_interview_completed (after a
--- Recommended hiring-manager interview, before Final Selection) and
--- backup_candidate (a reserve candidate, promotable to an offer). Additive +
--- idempotent. No change to the active-application unique index (both new stages
--- are non-terminal, so they correctly count as active).
+-- Adds two non-terminal application stages: manager_interview_completed and
+-- backup_candidate. Additive + idempotent.
 
 alter table public.recruitment_applications
   drop constraint if exists recruitment_applications_stage_check;
@@ -19,4 +15,4 @@ alter table public.recruitment_applications
     'manager_interview_completed', 'backup_candidate'
   ));
 
-notify pgrst, 'reload schema';
+notify pgrst, 'reload schema';;

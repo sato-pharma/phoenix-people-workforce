@@ -3,11 +3,9 @@
 -- keeps the private leave attachment bucket available for required sick files.
 
 begin;
-
 update public.v2_vacation_requests
 set vacation_type = 'other'
 where vacation_type = 'personal';
-
 alter table public.v2_vacation_requests
   add column if not exists sick_attachment_bucket text null,
   add column if not exists sick_attachment_object_path text null,
@@ -15,16 +13,13 @@ alter table public.v2_vacation_requests
   add column if not exists sick_attachment_content_type text null,
   add column if not exists sick_attachment_size_bytes bigint null,
   add column if not exists sick_attachment_uploaded_at timestamptz null;
-
 alter table public.v2_vacation_requests
   drop constraint if exists v2_vacation_requests_vacation_type_check,
   add constraint v2_vacation_requests_vacation_type_check
     check (vacation_type in ('annual', 'emergency', 'sick', 'other'));
-
 create index if not exists v2_vacation_requests_sick_attachment_idx
   on public.v2_vacation_requests (sick_attachment_object_path)
   where sick_attachment_object_path is not null;
-
 do $$
 begin
   if to_regclass('storage.buckets') is not null then
@@ -61,7 +56,5 @@ begin
     $policy$;
   end if;
 end $$;
-
 notify pgrst, 'reload schema';
-
 commit;

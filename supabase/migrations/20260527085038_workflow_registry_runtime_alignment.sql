@@ -93,3 +93,4 @@ set
   ]'::jsonb,
   updated_by = 'system'
 where module_key = 'payroll_batches';
+;

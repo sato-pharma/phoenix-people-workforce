@@ -2,9 +2,7 @@
 -- Adds service-role-only transactional RPCs, audit logs, accrual logs, and private storage preparation.
 
 begin;
-
 create extension if not exists pgcrypto;
-
 create table if not exists public.leave_audit_logs (
   id uuid primary key default gen_random_uuid(),
   correlation_id uuid not null default gen_random_uuid(),
@@ -16,7 +14,6 @@ create table if not exists public.leave_audit_logs (
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.leave_accrual_runs (
   id uuid primary key default gen_random_uuid(),
   correlation_id uuid not null default gen_random_uuid(),
@@ -37,7 +34,6 @@ create table if not exists public.leave_accrual_runs (
   constraint leave_accrual_runs_status_check check (status in ('completed', 'failed')),
   constraint leave_accrual_runs_month_check check (month between 1 and 12)
 );
-
 create table if not exists public.leave_attachment_objects (
   id uuid primary key default gen_random_uuid(),
   request_id uuid null references public.leave_requests(id) on update cascade on delete set null,
@@ -55,7 +51,6 @@ create table if not exists public.leave_attachment_objects (
   created_at timestamptz not null default now(),
   constraint leave_attachment_objects_mode_check check (storage_mode in ('local', 'supabase'))
 );
-
 create index if not exists leave_audit_logs_created_idx on public.leave_audit_logs (created_at desc);
 create index if not exists leave_audit_logs_correlation_idx on public.leave_audit_logs (correlation_id, created_at);
 create index if not exists leave_audit_logs_request_idx on public.leave_audit_logs (request_id, created_at);
@@ -65,42 +60,33 @@ create index if not exists leave_attachment_objects_employee_idx on public.leave
 create index if not exists leave_requests_status_dates_idx on public.leave_requests (status, start_date, end_date);
 create index if not exists leave_requests_lineup_idx on public.leave_requests (leave_type_id, policy_id, employee_hr_id, status);
 create index if not exists leave_transactions_type_notes_idx on public.leave_transactions (transaction_type, notes, created_at desc);
-
 alter table public.leave_audit_logs enable row level security;
 alter table public.leave_accrual_runs enable row level security;
 alter table public.leave_attachment_objects enable row level security;
-
 revoke all on public.leave_audit_logs from anon, authenticated;
 revoke all on public.leave_accrual_runs from anon, authenticated;
 revoke all on public.leave_attachment_objects from anon, authenticated;
 grant select on public.leave_audit_logs, public.leave_accrual_runs, public.leave_attachment_objects to authenticated;
 grant all on public.leave_audit_logs, public.leave_accrual_runs, public.leave_attachment_objects to service_role;
-
 drop policy if exists leave_audit_logs_service_role on public.leave_audit_logs;
 create policy leave_audit_logs_service_role
   on public.leave_audit_logs for all to service_role using (true) with check (true);
-
 drop policy if exists leave_audit_logs_manage_select on public.leave_audit_logs;
 create policy leave_audit_logs_manage_select
   on public.leave_audit_logs for select to authenticated using (private.phx_can_manage_leave());
-
 drop policy if exists leave_accrual_runs_service_role on public.leave_accrual_runs;
 create policy leave_accrual_runs_service_role
   on public.leave_accrual_runs for all to service_role using (true) with check (true);
-
 drop policy if exists leave_accrual_runs_manage_select on public.leave_accrual_runs;
 create policy leave_accrual_runs_manage_select
   on public.leave_accrual_runs for select to authenticated using (private.phx_can_manage_leave());
-
 drop policy if exists leave_attachment_objects_service_role on public.leave_attachment_objects;
 create policy leave_attachment_objects_service_role
   on public.leave_attachment_objects for all to service_role using (true) with check (true);
-
 drop policy if exists leave_attachment_objects_select_access on public.leave_attachment_objects;
 create policy leave_attachment_objects_select_access
   on public.leave_attachment_objects for select to authenticated
   using (private.phx_can_manage_leave() or private.phx_can_access_employee(employee_hr_id));
-
 do $$
 begin
   if to_regclass('storage.buckets') is not null then
@@ -137,7 +123,6 @@ begin
     $policy$;
   end if;
 end $$;
-
 create or replace function public.phx_leave_available(
   p_opening numeric,
   p_accrued numeric,
@@ -159,7 +144,6 @@ as $$
     - coalesce(p_pending, 0)
   )::numeric, 2);
 $$;
-
 create or replace function public.phx_leave_ensure_balance_atomic(
   p_employee_hr_id text,
   p_leave_type_id uuid,
@@ -206,7 +190,6 @@ begin
   return v_balance;
 end;
 $$;
-
 create or replace function public.phx_leave_record_delta_atomic(
   p_employee_hr_id text,
   p_leave_type_id uuid,
@@ -300,7 +283,6 @@ begin
   return v_balance;
 end;
 $$;
-
 create or replace function public.phx_leave_submit_request_atomic(
   p_employee_hr_id text,
   p_leave_type_id uuid,
@@ -458,7 +440,6 @@ begin
   return v_request;
 end;
 $$;
-
 create or replace function public.phx_leave_release_pending_atomic(
   p_request public.leave_requests,
   p_actor_hr_id text
@@ -512,7 +493,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.phx_leave_consume_pending_atomic(
   p_request public.leave_requests,
   p_actor_hr_id text
@@ -576,7 +556,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.phx_leave_manager_decision_atomic(
   p_request_id uuid,
   p_decision text,
@@ -663,7 +642,6 @@ begin
   return v_request;
 end;
 $$;
-
 create or replace function public.phx_leave_hr_decision_atomic(
   p_request_id uuid,
   p_decision text,
@@ -756,7 +734,6 @@ begin
   return v_request;
 end;
 $$;
-
 create or replace function public.phx_leave_adjust_balance_atomic(
   p_employee_hr_id text,
   p_leave_type_id uuid,
@@ -815,7 +792,6 @@ begin
   return v_balance;
 end;
 $$;
-
 create or replace function public.phx_leave_run_accrual_atomic(
   p_leave_type_id uuid,
   p_policy_id uuid,
@@ -946,7 +922,6 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.phx_leave_available(numeric, numeric, numeric, numeric, numeric, numeric) from public, anon, authenticated;
 revoke all on function public.phx_leave_ensure_balance_atomic(text, uuid, uuid, integer) from public, anon, authenticated;
 revoke all on function public.phx_leave_record_delta_atomic(text, uuid, uuid, integer, text, numeric, uuid, text, text) from public, anon, authenticated;
@@ -957,7 +932,6 @@ revoke all on function public.phx_leave_manager_decision_atomic(uuid, text, text
 revoke all on function public.phx_leave_hr_decision_atomic(uuid, text, text, text, text, uuid) from public, anon, authenticated;
 revoke all on function public.phx_leave_adjust_balance_atomic(text, uuid, uuid, integer, numeric, text, text, text, uuid) from public, anon, authenticated;
 revoke all on function public.phx_leave_run_accrual_atomic(uuid, uuid, integer, integer, jsonb, text, text, uuid) from public, anon, authenticated;
-
 grant execute on function public.phx_leave_available(numeric, numeric, numeric, numeric, numeric, numeric) to service_role;
 grant execute on function public.phx_leave_ensure_balance_atomic(text, uuid, uuid, integer) to service_role;
 grant execute on function public.phx_leave_record_delta_atomic(text, uuid, uuid, integer, text, numeric, uuid, text, text) to service_role;
@@ -968,5 +942,4 @@ grant execute on function public.phx_leave_manager_decision_atomic(uuid, text, t
 grant execute on function public.phx_leave_hr_decision_atomic(uuid, text, text, text, text, uuid) to service_role;
 grant execute on function public.phx_leave_adjust_balance_atomic(text, uuid, uuid, integer, numeric, text, text, text, uuid) to service_role;
 grant execute on function public.phx_leave_run_accrual_atomic(uuid, uuid, integer, integer, jsonb, text, text, uuid) to service_role;
-
 commit;

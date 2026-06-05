@@ -4,7 +4,6 @@
 
 drop trigger if exists phx_restore_terminal_employee_visibility on public.employees;
 drop function if exists public.phx_restore_terminal_employee_visibility();
-
 update public.employees
 set
   payroll_eligible = false,
@@ -15,5 +14,4 @@ where lower(coalesce(employment_status, 'active')) in ('resigned', 'terminated',
     payroll_eligible is distinct from false
     or organogram_visible is distinct from false
   );
-
 notify pgrst, 'reload schema';

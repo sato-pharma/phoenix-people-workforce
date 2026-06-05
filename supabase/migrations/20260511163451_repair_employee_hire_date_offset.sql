@@ -3,9 +3,7 @@
 -- calendar day after employees.hire_date are corrected.
 
 create schema if not exists internal;
-
 revoke all on schema internal from public, anon, authenticated;
-
 create table if not exists internal.phoenix_date_offset_repair_audit (
   id bigserial primary key,
   repair_key text not null,
@@ -18,7 +16,6 @@ create table if not exists internal.phoenix_date_offset_repair_audit (
   repaired_at timestamptz not null default now(),
   unique (repair_key, table_name, primary_key, column_name)
 );
-
 with candidates as (
   select
     e.hr_id,
@@ -61,4 +58,4 @@ set
   updated_at = now()
 from audit_insert
 where e.hr_id = audit_insert.primary_key
-  and e.hire_date = audit_insert.old_value;;
+  and e.hire_date = audit_insert.old_value;

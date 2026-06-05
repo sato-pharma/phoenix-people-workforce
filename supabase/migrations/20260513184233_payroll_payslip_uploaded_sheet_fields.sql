@@ -3,9 +3,7 @@ alter table public.salary_records
   add column if not exists governmental_deductions numeric not null default 0,
   add column if not exists month_salary numeric not null default 0,
   add column if not exists payment_mode text not null default 'two_parts';
-
 alter table public.salary_records disable trigger phx_prevent_closed_salary_records_mutation;
-
 update public.salary_records
 set
   base_salary = case
@@ -28,9 +26,7 @@ set
     when coalesce(first_part, 0) > 0 and coalesce(first_part, 0) >= coalesce(net_salary, 0) - 1 then 'one_part'
     else 'two_parts'
   end;
-
 alter table public.salary_records enable trigger phx_prevent_closed_salary_records_mutation;
-
 do $$
 begin
   if not exists (
@@ -45,7 +41,6 @@ begin
   end if;
 end;
 $$;
-
 create or replace function public.phx_prevent_closed_salary_detail_mutation()
 returns trigger
 language plpgsql
@@ -106,7 +101,6 @@ begin
   return new;
 end;
 $$;
-
 create or replace function public.phx_create_salary_batch(
   p_month integer,
   p_year integer,
@@ -334,10 +328,8 @@ begin
   return to_jsonb(v_batch);
 end;
 $$;
-
 revoke all on function public.phx_create_salary_batch(integer, integer, text, text, jsonb, jsonb, timestamptz) from public, anon, authenticated;
 grant execute on function public.phx_create_salary_batch(integer, integer, text, text, jsonb, jsonb, timestamptz) to service_role;
-
 create or replace function public.phx_replace_salary_batch(
   p_batch_id uuid,
   p_expected_month integer,
@@ -550,10 +542,8 @@ begin
   return to_jsonb(v_batch);
 end;
 $$;
-
 revoke all on function public.phx_replace_salary_batch(uuid, integer, integer, text, text, jsonb, jsonb, timestamptz) from public, anon, authenticated;
 grant execute on function public.phx_replace_salary_batch(uuid, integer, integer, text, text, jsonb, jsonb, timestamptz) to service_role;
-
 create or replace function public.phx_import_approved_expenses_to_payroll(
   p_month integer,
   p_year integer
@@ -657,6 +647,5 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.phx_import_approved_expenses_to_payroll(integer, integer) from public, anon, authenticated;
 grant execute on function public.phx_import_approved_expenses_to_payroll(integer, integer) to service_role;

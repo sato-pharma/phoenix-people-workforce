@@ -17,7 +17,6 @@ create table if not exists public.marketing_control_settings (
   constraint marketing_control_settings_group_check
     check (setting_group in ('roi', 'finance', 'validation'))
 );
-
 insert into public.marketing_control_settings (
   setting_key,
   setting_group,
@@ -41,17 +40,13 @@ set
   setting_value = excluded.setting_value,
   admin_only = excluded.admin_only,
   updated_at = now();
-
 alter table public.marketing_control_settings enable row level security;
-
 grant select on table public.marketing_control_settings to authenticated;
 grant all on table public.marketing_control_settings to service_role;
-
 drop policy if exists marketing_control_settings_authenticated_read on public.marketing_control_settings;
 create policy marketing_control_settings_authenticated_read
 on public.marketing_control_settings
 for select
 to authenticated
 using (admin_only = false);
-
 notify pgrst, 'reload schema';
