@@ -10,6 +10,7 @@ import {
   type BusinessScope,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { daysBetweenDateOnly } from "@/lib/date-only";
 import {
   createPortalSalesLineScope,
@@ -2750,8 +2751,8 @@ function isMedicalRepDirectoryEmployee(
 ) {
   const normalizedTitle = `${employee.jobTitle ?? ""} ${employee.positionTitle ?? ""}`.toLowerCase();
   return (
-    normalizeRole(employee.jobTitle) === "Medical Rep" ||
-    normalizeRole(employee.positionTitle) === "Medical Rep" ||
+    resolveJobFunctionRole(employee.jobTitle) === "Medical Rep" ||
+    resolveJobFunctionRole(employee.positionTitle) === "Medical Rep" ||
     normalizedTitle.includes("medical representative") ||
     normalizedTitle.includes("medical rep")
   );
@@ -2760,13 +2761,13 @@ function isMedicalRepDirectoryEmployee(
 function isNationalSalesManagerDirectoryEmployee(
   employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
 ) {
-  return normalizeRole(employee.jobTitle) === "National Sales Manager" || normalizeRole(employee.positionTitle) === "National Sales Manager";
+  return resolveJobFunctionRole(employee.jobTitle) === "National Sales Manager" || resolveJobFunctionRole(employee.positionTitle) === "National Sales Manager";
 }
 
 function isGroupProductManagerDirectoryEmployee(
   employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
 ) {
-  return normalizeRole(employee.jobTitle) === "Group Product Manager" || normalizeRole(employee.positionTitle) === "Group Product Manager";
+  return resolveJobFunctionRole(employee.jobTitle) === "Group Product Manager" || resolveJobFunctionRole(employee.positionTitle) === "Group Product Manager";
 }
 
 function isLineStructureDirectoryEmployee(
@@ -3157,7 +3158,7 @@ async function resolveSalesRankInTeam(params: {
   const isLineMembersMode = comparisonMode === "line-members";
   const canonicalLineId = Number.isFinite(Number(params.comparisonLineId)) ? Number(params.comparisonLineId) : null;
   const canonicalManagerHrId = resolveTeamHrId(managerHrId);
-  const canonicalComparisonRole = params.comparisonRole ? normalizeRole(params.comparisonRole) : null;
+  const canonicalComparisonRole = params.comparisonRole ? resolveJobFunctionRole(params.comparisonRole) : null;
   const viewerLineId = viewer?.lineId ?? null;
   const lineIdForComparison = isLineManagersMode || isLineMembersMode
     ? (canonicalLineId ?? (viewerLineId != null ? Number(viewerLineId) : null))
@@ -3173,7 +3174,7 @@ async function resolveSalesRankInTeam(params: {
       const employeeHrId = normalizeHrId(employee.hrId);
       if (!employeeHrId) return;
       const employeeLineId = Number(employee.lineId);
-      const employeeRole = normalizeRole(employee.jobTitle || employee.positionTitle);
+      const employeeRole = resolveJobFunctionRole(employee.jobTitle || employee.positionTitle);
       const isSameLine = Number.isFinite(employeeLineId) && employeeLineId === lineIdForComparison;
       const isSameRole = canonicalComparisonRole ? employeeRole === canonicalComparisonRole : true;
 

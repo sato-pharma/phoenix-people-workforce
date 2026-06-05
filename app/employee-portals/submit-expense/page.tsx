@@ -7,7 +7,8 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { getDsmTeamPerformance, getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { assertPermission, normalizeRole, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getOutstationEmployeeContext } from "@/lib/outstation/service";
 
 // NOTE: dir="auto", print stylesheet, prefers-reduced-motion, and a
@@ -77,7 +78,7 @@ export default async function EmployeePortalSubmitExpensePage() {
   }
 
   const portalData = portalDataResult.value;
-  if (normalizeRole(portalData.employee.roleLabel) === "Medical Rep") {
+  if (resolveJobFunctionRole(portalData.employee.roleLabel) === "Medical Rep") {
     redirect("/employee-portals/expenses");
   }
   const outstationContext = outstationContextResult.status === "fulfilled" ? outstationContextResult.value : null;

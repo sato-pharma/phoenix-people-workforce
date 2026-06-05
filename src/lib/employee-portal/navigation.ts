@@ -1,4 +1,5 @@
-import { normalizeRole, parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
+import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
+import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 
 export type EmployeePortalNavVisibility = {
   showDashboardTab?: boolean;
@@ -30,15 +31,20 @@ function resolvePortalRole(
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
 ): PhoenixRole {
-  try {
-    return parseRoleStrict(roleLabel);
-  } catch {}
+  // Resolve an explicit Phoenix role where present; otherwise classify by job
+  // function (title-based). roleLabel keeps precedence over accessRole to
+  // preserve historical portal-nav behavior. This is UX only — every portal page
+  // keeps its own server-side access guard.
+  for (const candidate of [roleLabel, accessRole]) {
+    if (!candidate) continue;
+    try {
+      return parseRoleStrict(candidate);
+    } catch {}
+    const jobFunctionRole = resolveJobFunctionRole(candidate);
+    if (jobFunctionRole !== "Employee") return jobFunctionRole;
+  }
 
-  try {
-    return parseRoleStrict(accessRole);
-  } catch {}
-
-  return normalizeRole(accessRole ?? roleLabel);
+  return "Employee";
 }
 
 /**
