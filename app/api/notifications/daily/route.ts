@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { runBirthdayNotifications } from "@/app/api/notifications/birthdays/route";
 import { runContractRenewalNotifications } from "@/app/api/notifications/contract-renewals/route";
 import { runVacationSlaDaily } from "@/lib/vacation/service";
+import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,10 +20,11 @@ async function runDailyNotifications(request: Request) {
     return NextResponse.json({ error: "unauthorized", message: "Daily notification run is not authorized." }, { status: 401 });
   }
 
-  const [birthdayResponse, contractRenewalResponse, vacationSla] = await Promise.all([
+  const [birthdayResponse, contractRenewalResponse, vacationSla, recruitment] = await Promise.all([
     runBirthdayNotifications(request),
     runContractRenewalNotifications(request),
     runVacationSlaDaily(),
+    runRecruitmentDailyNotifications(),
   ]);
   const [birthdays, contractRenewals] = await Promise.all([
     birthdayResponse.json(),
@@ -32,6 +34,7 @@ async function runDailyNotifications(request: Request) {
   return NextResponse.json({
     birthdays,
     contractRenewals,
+    recruitment,
     success: true,
     vacationSla,
   });
