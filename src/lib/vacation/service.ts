@@ -20,7 +20,7 @@ import {
   type EmployeeDirectoryData,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
-import { enqueueInAppNotification } from "@/lib/notifications/in-app";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   isWithinManagerHierarchy,
@@ -1342,12 +1342,14 @@ async function notifyRecipients(input: {
 
   await Promise.allSettled(
     recipientHrIds.map((recipientHrId) =>
-      enqueueInAppNotification({
+      createSystemNotification({
+        actionUrl: input.href,
         category: "vacation_request",
-        dedupeKey: `vacation:${input.requestId}:${input.type}:${recipientHrId}`,
-        href: input.href,
+        eventType: input.type,
         message: input.message,
-        metadata: input.metadata,
+        metadata: { ...(input.metadata ?? {}), idempotencyKey: `vacation:${input.requestId}:${input.type}:${recipientHrId}` },
+        module: "vacation",
+        priority: "high",
         recipientHrId,
         title: input.title,
       }),

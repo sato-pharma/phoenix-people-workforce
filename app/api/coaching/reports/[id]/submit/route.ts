@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { submitCoachingReport } from "@/lib/coaching/service";
-import { enqueueInAppNotification } from "@/lib/notifications/in-app";
+import { createSystemNotification } from "@/lib/notifications/system";
 import {
   jsonError,
   readJsonObject,
@@ -25,17 +25,20 @@ export async function POST(request: Request, context: RouteContext) {
     const payload = await readJsonObject(request, { allowEmpty: true });
     const report = await submitCoachingReport(id, submitInput(payload), access);
     const coachName = report.summary?.coachName || report.report.coach_hr_id;
-    const notification = await enqueueInAppNotification({
+    const notification = await createSystemNotification({
+      actionUrl: `/employee-portals/coaching/${report.report.id}`,
       category: "coaching_report",
-      dedupeKey: `coaching_report_submitted:${report.report.id}:${report.report.medical_rep_hr_id}`,
-      href: `/employee-portals/coaching/${report.report.id}`,
+      eventType: "report_submitted",
       message: `You have received a new coaching report from ${coachName}. Please review and acknowledge it.`,
       metadata: {
         coachHrId: report.report.coach_hr_id,
         coachName,
+        idempotencyKey: `coaching_report_submitted:${report.report.id}:${report.report.medical_rep_hr_id}`,
         reportId: report.report.id,
         reportNumber: report.report.report_number,
       },
+      module: "coaching",
+      priority: "normal",
       recipientHrId: report.report.medical_rep_hr_id,
       title: "New Coaching Report",
     });

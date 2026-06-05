@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { systemIdentity } from "@/config/system-settings";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
-import { enqueueInAppNotification } from "@/lib/notifications/in-app";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -449,17 +449,21 @@ export async function sendInternalMessage(access: AccessContext, input: SendInte
   const row = data as InternalMessageRow;
 
   if (recipient.hrId) {
-    await enqueueInAppNotification({
+    await createSystemNotification({
       category: "internal_message",
-      dedupeKey: `internal-message:${row.id}`,
+      eventType: "internal_message_sent",
       message: `${sender.name}: ${body.slice(0, 180)}`,
       metadata: {
+        idempotencyKey: `internal-message:${row.id}`,
         message: `${sender.name}: ${body.slice(0, 180)}`,
         messageId: row.id,
         sender: sender.name,
         title: subject,
       },
+      module: "internal_messages",
+      priority: "normal",
       recipientHrId: recipient.hrId,
+      recipientUserId: recipient.loginId,
       title: subject,
     }).catch(() => undefined);
   }

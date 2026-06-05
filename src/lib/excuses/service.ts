@@ -14,7 +14,7 @@ import {
   type EmployeeDirectoryData,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
-import { enqueueInAppNotification } from "@/lib/notifications/in-app";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type EmployeeExcuseType = "morning" | "afternoon";
@@ -293,6 +293,29 @@ function buildDecisionUrl(input: {
   return url.toString();
 }
 
+async function enqueueInAppNotification(input: {
+  category: string;
+  dedupeKey: string;
+  href?: string | null;
+  message: string;
+  metadata?: Record<string, unknown>;
+  recipientHrId: string;
+  title: string;
+}) {
+  return createSystemNotification({
+    actionUrl: input.href ?? null,
+    category: input.category,
+    channels: ["in_app"],
+    eventType: "excuse_notification",
+    message: input.message,
+    metadata: { ...(input.metadata ?? {}), idempotencyKey: input.dedupeKey },
+    module: "excuse",
+    priority: "high",
+    recipientHrId: input.recipientHrId,
+    title: input.title,
+  });
+}
+
 async function sendManagerEmail(input: {
   baseUrl: string;
   manager: EmployeeDirectoryRow;
@@ -427,7 +450,7 @@ export async function createExcuseRequest(
   await Promise.all([
     sendManagerEmail({ baseUrl: options.baseUrl, manager, request, token }),
     enqueueInAppNotification({
-      category: "excuse_request",
+      category: "excuse",
       dedupeKey: `excuse-manager-${request.id}`,
       href: "/employee-portals/excuses",
       message: `${request.employeeName} submitted a ${request.excuseType} excuse for ${request.excuseDate}.`,
@@ -516,7 +539,7 @@ export async function decideExcuseRequestByToken(input: {
       },
     }),
     enqueueInAppNotification({
-      category: "excuse_request",
+      category: "excuse",
       dedupeKey: `excuse-employee-${request.id}-${status}`,
       href: "/employee-portals/excuses",
       message: `Your ${request.excuseType} excuse for ${request.excuseDate} was ${status}.`,
