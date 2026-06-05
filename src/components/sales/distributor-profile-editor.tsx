@@ -7,25 +7,32 @@ import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-s
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-// Phoenix target fields — EACH its own cell (keys MUST match the server ProfileFieldKey strings).
+// Phoenix target fields — EACH its own cell, exact order/labels of the exported workbook.
 const FIELDS: { key: FieldKey; label: string; hint?: string }[] = [
   { key: "productCodeColumns", label: "Product Code" },
   { key: "productNameColumns", label: "Product Name" },
   { key: "qtyColumns", label: "Quantity" },
+  { key: "branchCodeColumns", label: "Branch Code" },
+  { key: "branchNameColumns", label: "Branch Name" },
   { key: "bonusColumns", label: "Bonus Qty" },
   { key: "valueColumns", label: "Value", hint: "only used in 'from sheet' mode" },
   { key: "discountColumns", label: "Discount %" },
   { key: "dateColumns", label: "Invoice Date" },
   { key: "customerCodeColumns", label: "Customer Code" },
   { key: "customerNameColumns", label: "Customer Name" },
-  { key: "territoryColumns", label: "Territory (area/district text)", hint: "resolves the Brick" },
-  { key: "brickIdColumns", label: "Brick ID", hint: "only if the sheet already has a Phoenix brick id" },
+  { key: "customerAddressColumns", label: "Customer Address" },
+  { key: "areaIdColumns", label: "Area ID" },
+  { key: "areaNameColumns", label: "Area Name" },
+  { key: "brickIdColumns", label: "Brick ID" },
+  { key: "brickNameColumns", label: "Brick Name" },
+  { key: "regionColumns", label: "Region" },
 ];
 
 type FieldKey =
-  | "productCodeColumns" | "productNameColumns" | "qtyColumns" | "bonusColumns" | "valueColumns"
-  | "discountColumns" | "dateColumns" | "customerCodeColumns" | "customerNameColumns"
-  | "territoryColumns" | "brickIdColumns";
+  | "productCodeColumns" | "productNameColumns" | "qtyColumns" | "branchCodeColumns" | "branchNameColumns"
+  | "bonusColumns" | "valueColumns" | "discountColumns" | "dateColumns" | "customerCodeColumns"
+  | "customerNameColumns" | "customerAddressColumns" | "areaIdColumns" | "areaNameColumns"
+  | "brickIdColumns" | "brickNameColumns" | "regionColumns";
 
 type EditableProfile = {
   distributorCode: string;

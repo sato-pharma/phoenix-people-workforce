@@ -168,6 +168,7 @@ export function normalizeRows(
       brickId: hierarchy.brickId,
       brickName: hierarchy.brickName,
       bonusQty: Number.isFinite(bonusQty) ? bonusQty : 0,
+      clientAddress: firstValue(row, header, profile.customerAddressColumns) || null,
       clientCode: customerCode || null,
       clientName: firstValue(row, header, profile.customerNameColumns) || null,
       discount,
