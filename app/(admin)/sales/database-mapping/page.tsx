@@ -5,6 +5,8 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { MASTER_ORDER, type MasterKey } from "@/lib/sales/master-data/definitions";
 import { listMasterRows, type MasterRowRecord } from "@/lib/sales/master-data/list";
+import { profilesToHeaderGrid } from "@/lib/sales/normalizer/profile-grid";
+import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -30,5 +32,8 @@ export default async function DatabaseMappingPage() {
     initialError = error instanceof Error ? error.message : "Failed to load Database Mapping.";
   }
 
-  return <DatabaseMappingWorkspace initialError={initialError} initialRows={initialRows} />;
+  // Pure transform of the code-defined column profiles — the Database Validation tab's header grid.
+  const initialHeaderGrid = profilesToHeaderGrid(RAW_DISTRIBUTOR_PROFILES);
+
+  return <DatabaseMappingWorkspace initialError={initialError} initialHeaderGrid={initialHeaderGrid} initialRows={initialRows} />;
 }
