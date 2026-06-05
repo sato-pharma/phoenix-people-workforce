@@ -2,8 +2,9 @@ import crypto from "crypto";
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
+import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { assertOfferWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
-import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { sendJobOfferEmail } from "@/lib/offers/email";
 import { getOfferTemplate } from "@/lib/offers/templates";
 import { pickDepartmentSafeVacancy } from "@/lib/offers/vacancy-matching";
@@ -13,7 +14,13 @@ import { summarizeOfferLifecycleRows } from "@/lib/recruitment/onboarding-metric
 
 export type OfferStatus =
   | "draft"
+  // Offer pipeline pre-send states (all non-terminal).
+  | "pending_approval"
+  | "approved"
+  | "approval_rejected"
+  | "generated"
   | "sent"
+  | "negotiation_in_progress"
   | "accepted"
   | "rejected"
   | "expired"
@@ -30,6 +37,20 @@ export type OfferCompensationLine = {
   value: string;
   valueType: "amount";
 };
+
+// Offer pipeline — a benefit line on a prepared offer (separate from salary).
+export type OfferBenefit = { label: string; detail: string };
+
+export function normalizeOfferBenefits(value: unknown): OfferBenefit[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const record = entry as Record<string, unknown>;
+    const label = String(record.label ?? "").trim();
+    if (!label) return [];
+    return [{ label: label.slice(0, 120), detail: String(record.detail ?? "").trim().slice(0, 240) }];
+  });
+}
 
 export type OfferLifecycleInput = {
   areaId?: number | null;
@@ -55,6 +76,8 @@ export type OfferLifecycleInput = {
   taxes?: number | null;
   templateKey?: string | null;
   vacancyId?: number | null;
+  benefits?: unknown;
+  probationPeriodMonths?: number | null;
 };
 
 type OfferDbRow = {
@@ -68,6 +91,14 @@ type OfferDbRow = {
   area_scope: string | null;
   base_salary?: number | null;
   basic_salary?: number | null;
+  benefits?: unknown;
+  probation_period_months?: number | null;
+  approved_at?: string | null;
+  generated_at?: string | null;
+  sent_at?: string | null;
+  sent_by_hr_id?: string | null;
+  sent_version?: number | null;
+  expiry_date?: string | null;
   candidate_email: string;
   candidate_name: string;
   candidate_phone: string | null;
@@ -156,6 +187,14 @@ export type OfferLifecycleRow = {
   areaScope: string | null;
   baseSalary?: number | null;
   basicSalary?: number | null;
+  benefits?: OfferBenefit[];
+  probationPeriodMonths?: number | null;
+  approvedAt?: string | null;
+  generatedAt?: string | null;
+  sentAt?: string | null;
+  sentByHrId?: string | null;
+  sentVersion?: number | null;
+  expiryDate?: string | null;
   candidateEmail: string;
   candidateName: string;
   candidatePhone: string | null;
@@ -328,6 +367,14 @@ const offerSelectColumns = [
   "salary_amount",
   "base_salary",
   "basic_salary",
+  "benefits",
+  "probation_period_months",
+  "approved_at",
+  "generated_at",
+  "sent_at",
+  "sent_by_hr_id",
+  "sent_version",
+  "expiry_date",
   "gross_salary",
   "net_salary",
   "fuel_allowance",
@@ -972,6 +1019,14 @@ async function hydrateOffers(rows: OfferDbRow[]): Promise<OfferLifecycleRow[]> {
     areaScope: row.area_scope,
     baseSalary: row.base_salary ?? null,
     basicSalary: row.basic_salary ?? null,
+    benefits: normalizeOfferBenefits(row.benefits),
+    probationPeriodMonths: row.probation_period_months ?? null,
+    approvedAt: row.approved_at ?? null,
+    generatedAt: row.generated_at ?? null,
+    sentAt: row.sent_at ?? null,
+    sentByHrId: row.sent_by_hr_id ?? null,
+    sentVersion: row.sent_version ?? null,
+    expiryDate: row.expiry_date ?? null,
     candidateEmail: row.candidate_email,
     candidateName: row.candidate_name,
     candidatePhone: row.candidate_phone,
@@ -1259,7 +1314,12 @@ export async function getOfferDashboard(): Promise<OfferDashboardData> {
   };
 }
 
-export async function createOffer(input: OfferLifecycleInput, access?: Pick<AccessContext, "role">) {
+export async function createOffer(
+  input: OfferLifecycleInput,
+  access?: Pick<AccessContext, "role">,
+  options?: { mode?: "draft" | "send" },
+) {
+  const mode = options?.mode ?? "send";
   const token = createToken();
   const template = getOfferTemplate(input.templateKey);
   const requestedExpiry = Number(input.expiresInDays ?? 7);
@@ -1276,14 +1336,16 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
     socialInsurance: input.socialInsurance,
     taxes: input.taxes,
   });
-  await assertOfferWorkflowTransition({
-    access,
-    action: "create",
-    expectedNextStatus: "offer_sent",
-    status: "draft",
-  });
+  if (mode === "send") {
+    await assertOfferWorkflowTransition({
+      access,
+      action: "create",
+      expectedNextStatus: "offer_sent",
+      status: "draft",
+    });
+  }
   await validateSelectedOfferVacancy(input);
-  if (!dateOrNull(input.startDate)) {
+  if (mode === "send" && !dateOrNull(input.startDate)) {
     throw new Error("Hiring date is required before sending an offer.");
   }
   if (!compensation.baseSalary || compensation.baseSalary <= 0) {
@@ -1299,7 +1361,9 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
     candidate_phone: compact(input.candidatePhone),
     compensation_lines: compensation.compensationLines,
     compensation_notes: compact(input.compensationNotes),
-    created_by_hr_id: compact(input.createdByHrId),
+    // Canonicalize to the stored (uppercase) employees.hr_id so the
+    // created_by_hr_id FK matches (session hrId can be lowercased).
+    created_by_hr_id: formatHrIdForDisplay(input.createdByHrId),
     department_id: numberOrNull(input.departmentId),
     expires_at: daysFromNow(expiresInDays),
     extra_cost_of_living: compensation.extraCostOfLiving,
@@ -1315,7 +1379,9 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
     secure_token_hash: hashToken(token),
     social_insurance: compensation.socialInsurance,
     start_date: dateOrNull(input.startDate),
-    status: "sent",
+    status: mode === "send" ? "sent" : "draft",
+    benefits: normalizeOfferBenefits(input.benefits),
+    probation_period_months: numberOrNull(input.probationPeriodMonths) ?? 3,
     taxes: compensation.taxes,
     template_key: template?.value ?? null,
     token_last_four: token.slice(-4),
@@ -1328,14 +1394,14 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
     method: "POST",
   });
   const offer = rows[0];
-  await insertAudit(offer.id, "offer_sent", "hr", { expiresInDays }, input.createdByHrId);
+  await insertAudit(offer.id, mode === "send" ? "offer_sent" : "offer_draft", "hr", { expiresInDays, mode }, input.createdByHrId);
 
   const baseUrl = publicBaseUrl();
   const reviewUrl = baseUrl ? `${baseUrl}/offers/${token}/details` : "#";
   const acceptUrl = baseUrl ? `${baseUrl}/offers/${token}/accept` : "#";
   const rejectUrl = baseUrl ? `${baseUrl}/offers/${token}/reject` : "#";
   const hydratedOffer = (await hydrateOffers([offer]))[0];
-  const offerEmailResult = await sendJobOfferEmail({
+  const offerEmailResult = mode === "send" ? await sendJobOfferEmail({
     acceptUrl,
     actionLinksEnabled: Boolean(baseUrl),
     baseSalary: offer.base_salary,
@@ -1359,8 +1425,8 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
     startDate: offer.start_date,
     template,
     territory: offer.area_scope,
-  });
-  invalidateExecutiveDashboardCache("offer created", ["offers", "recruitment"]);
+  }) : null;
+  invalidateExecutiveDashboardCache(mode === "send" ? "offer created" : "offer draft created", ["offers", "recruitment"]);
 
   return {
     acceptUrl,
@@ -1369,6 +1435,110 @@ export async function createOffer(input: OfferLifecycleInput, access?: Pick<Acce
     offer: hydratedOffer,
     rejectUrl,
     reviewUrl,
+  };
+}
+
+// Offer pipeline — send an already-prepared (generated) offer to the candidate.
+// Regenerates the candidate token at send time (drafts carry only a placeholder
+// hash), records sent metadata, emails the candidate, and asserts the registry
+// transition generated -> sent. Reused by the recruitment sendPreparedOffer step.
+export async function sendOffer(
+  offerId: string,
+  options: { access?: Pick<AccessContext, "role">; sentByHrId?: string | null; sentVersion?: number | null } = {},
+) {
+  const current = await supabaseRest<OfferDbRow[]>(
+    `job_offers?${new URLSearchParams({ id: `eq.${offerId}`, select: "id,status,expires_at" })}`,
+  );
+  const existing = current[0];
+  if (!existing) throw new Error("Offer not found.");
+
+  await assertOfferWorkflowTransition({
+    access: options.access,
+    action: "send",
+    expectedNextStatus: "offer_sent",
+    status: existing.status,
+  });
+
+  const token = createToken();
+  const now = new Date().toISOString();
+  const existingExpiryMs = existing.expires_at ? new Date(existing.expires_at).getTime() : 0;
+  const expiresAt = existingExpiryMs > Date.now() ? existing.expires_at : daysFromNow(7);
+
+  const updated = await updateOffer(offerId, {
+    status: "sent",
+    secure_token_hash: hashToken(token),
+    token_last_four: token.slice(-4),
+    sent_at: now,
+    sent_by_hr_id: formatHrIdForDisplay(options.sentByHrId),
+    sent_version: options.sentVersion ?? null,
+    expiry_date: expiresAt ? String(expiresAt).slice(0, 10) : null,
+    expires_at: expiresAt,
+  });
+
+  const baseUrl = publicBaseUrl();
+  const reviewUrl = baseUrl ? `${baseUrl}/offers/${token}/details` : "#";
+  const acceptUrl = baseUrl ? `${baseUrl}/offers/${token}/accept` : "#";
+  const rejectUrl = baseUrl ? `${baseUrl}/offers/${token}/reject` : "#";
+  const template = getOfferTemplate(updated.template_key);
+  const hydratedOffer = (await hydrateOffers([updated]))[0];
+  const email = await sendJobOfferEmail({
+    acceptUrl,
+    actionLinksEnabled: Boolean(baseUrl),
+    baseSalary: updated.base_salary,
+    basicSalary: updated.basic_salary,
+    candidateEmail: updated.candidate_email,
+    candidateName: updated.candidate_name,
+    declineUrl: rejectUrl,
+    expiresAt: updated.expires_at,
+    jobTitle: updated.job_title,
+    offerCode: updated.offer_code,
+    reportingManager: hydratedOffer.managerName || template?.defaultReportingTo || "the assigned manager",
+    issuedAt: updated.created_at,
+    netSalary: updated.net_salary,
+    reportingLine: hydratedOffer.lineName,
+    reviewUrl,
+    territoryName: updated.area_scope,
+    salaryAmount: updated.salary_amount,
+    startDate: updated.start_date,
+    template,
+    territory: updated.area_scope,
+  });
+  await insertAudit(offerId, "offer_sent", "hr", { sentVersion: options.sentVersion ?? null }, options.sentByHrId ?? null);
+  invalidateExecutiveDashboardCache("offer sent", ["offers", "recruitment"]);
+  return { acceptUrl, email, offer: hydratedOffer, rejectUrl, reviewUrl };
+}
+
+// Offer pipeline — candidate requests negotiation (token page, no login).
+// Moves a sent offer to negotiation_in_progress; HR then re-prepares a new version.
+export async function requestOfferNegotiation(
+  token: string,
+  context: OfferDecisionContext = {},
+): Promise<{ ok: boolean; message: string; status: string }> {
+  const offer = await getOfferByToken(token);
+  if (!offer) return { ok: false, message: "This offer link is invalid.", status: "invalid" };
+  if (offer.status !== "sent") {
+    return { ok: false, message: "This offer is not open for negotiation. Please contact HR.", status: offer.status };
+  }
+  if (new Date(offer.expires_at).getTime() < Date.now()) {
+    return { ok: false, message: "This offer has expired. Please contact HR.", status: "expired" };
+  }
+  await assertOfferWorkflowTransition({
+    access: { role: "Employee" },
+    action: "candidate_negotiate",
+    expectedNextStatus: "offer_negotiation_in_progress",
+    status: offer.status,
+  });
+  await updateOffer(offer.id, { status: "negotiation_in_progress" });
+  await insertAudit(offer.id, "offer_negotiation_in_progress", "candidate", {
+    occurredAt: new Date().toISOString(),
+    ipHash: hashPublicSignal(context.ip),
+    userAgent: compact(context.userAgent),
+  });
+  invalidateExecutiveDashboardCache("offer negotiation", ["offers", "recruitment"]);
+  return {
+    ok: true,
+    message: "Thank you. Your negotiation request has been sent to the HR team.",
+    status: "negotiation_in_progress",
   };
 }
 
@@ -1632,57 +1802,100 @@ export async function decideOffer(
 
   if (decision === "accepted") {
     await Promise.all([
-      safeSendNotificationEmail({
-        candidateEmail: offer.candidate_email,
-        metrics: [
-          { label: "Role", value: offer.job_title },
-          { label: "Area", value: offer.area_scope ?? "To be assigned" },
-          { label: "Employee HR ID", value: reservedEmployeeHrId ?? "Pending" },
-          { label: "Offer ID", value: offer.offer_code },
-          { label: "Status", value: "Accepted" },
-        ],
-        notificationType: "offer",
-        recipientMode: "candidate",
-        subject: `Offer accepted: ${offer.job_title}`,
-        summary: `Thank you ${offer.candidate_name}. Your acceptance has been confirmed and HR will contact you shortly.`,
+      createSystemNotification({
+        actorId: "candidate",
+        channels: ["email"],
+        email: {
+          candidateEmail: offer.candidate_email,
+          metrics: [
+            { label: "Role", value: offer.job_title },
+            { label: "Area", value: offer.area_scope ?? "To be assigned" },
+            { label: "Employee HR ID", value: reservedEmployeeHrId ?? "Pending" },
+            { label: "Offer ID", value: offer.offer_code },
+            { label: "Status", value: "Accepted" },
+          ],
+          notificationType: "offer",
+          recipientMode: "candidate",
+          recipients: [offer.candidate_email],
+          subject: `Offer accepted: ${offer.job_title}`,
+          summary: `Thank you ${offer.candidate_name}. Your acceptance has been confirmed and HR will contact you shortly.`,
+          title: "Offer accepted successfully",
+          tone: "success",
+        },
+        eventType: "candidate_accepted_confirmation",
+        message: `Thank you ${offer.candidate_name}. Your acceptance has been confirmed and HR will contact you shortly.`,
+        metadata: {
+          idempotencyKey: `offer-candidate-accepted:${offer.id}`,
+          offerCode: offer.offer_code,
+        },
+        module: "offers",
+        priority: "normal",
+        recordId: offer.id,
         title: "Offer accepted successfully",
-        tone: "success",
       }),
-      safeSendNotificationEmail({
+      createSystemNotification({
+        actionUrl: "/offers",
+        actorId: "candidate",
+        email: {
+          ctaHref: "/offers",
+          ctaLabel: "Open offers",
+          metrics: [
+            { label: "Candidate", value: offer.candidate_name },
+            { label: "Role", value: offer.job_title },
+            { label: "Area", value: offer.area_scope ?? "To be assigned" },
+            { label: "Employee HR ID", value: reservedEmployeeHrId ?? "Pending" },
+            { label: "Offer ID", value: offer.offer_code },
+            { label: "Approval", value: "Pending HR approval" },
+          ],
+          notificationType: "offer",
+          recipientMode: "hr_notifications",
+          subject: `${offer.candidate_name} accepted ${offer.job_title}`,
+          summary: "The candidate accepted the offer. Phoenix moved the record into the hired pipeline and prepared onboarding.",
+          title: "Offer accepted",
+          tone: "success",
+        },
+        eventType: "candidate_accepted",
+        message: "The candidate accepted the offer. HR approval is pending.",
+        metadata: {
+          idempotencyKey: `offer-hr-accepted:${offer.id}`,
+          offerCode: offer.offer_code,
+        },
+        module: "offers",
+        priority: "high",
+        recordId: offer.id,
+        title: "Offer accepted",
+      }),
+    ]);
+  } else {
+    await createSystemNotification({
+      actionUrl: "/offers",
+      actorId: "candidate",
+      email: {
         ctaHref: "/offers",
         ctaLabel: "Open offers",
         metrics: [
           { label: "Candidate", value: offer.candidate_name },
           { label: "Role", value: offer.job_title },
           { label: "Area", value: offer.area_scope ?? "To be assigned" },
-          { label: "Employee HR ID", value: reservedEmployeeHrId ?? "Pending" },
           { label: "Offer ID", value: offer.offer_code },
-          { label: "Approval", value: "Pending HR approval" },
         ],
         notificationType: "offer",
         recipientMode: "hr_notifications",
-        subject: `${offer.candidate_name} accepted ${offer.job_title}`,
-        summary: "The candidate accepted the offer. Phoenix moved the record into the hired pipeline and prepared onboarding.",
-        title: "Offer accepted",
-        tone: "success",
-      }),
-    ]);
-  } else {
-    await safeSendNotificationEmail({
-      ctaHref: "/offers",
-      ctaLabel: "Open offers",
-      metrics: [
-        { label: "Candidate", value: offer.candidate_name },
-        { label: "Role", value: offer.job_title },
-        { label: "Area", value: offer.area_scope ?? "To be assigned" },
-        { label: "Offer ID", value: offer.offer_code },
-      ],
-      notificationType: "offer",
-      recipientMode: "hr_notifications",
-      subject: `${offer.candidate_name} rejected ${offer.job_title}`,
-      summary: "The candidate rejected the offer. The offer lifecycle record has been closed for reporting.",
+        subject: `${offer.candidate_name} rejected ${offer.job_title}`,
+        summary: "The candidate rejected the offer. The offer lifecycle record has been closed for reporting.",
+        title: "Offer rejected",
+        tone: "warning",
+      },
+      eventType: "candidate_rejected",
+      message: "The candidate rejected the offer. The offer lifecycle record has been closed for reporting.",
+      metadata: {
+        idempotencyKey: `offer-hr-rejected:${offer.id}`,
+        offerCode: offer.offer_code,
+      },
+      module: "offers",
+      priority: "high",
+      recordId: offer.id,
       title: "Offer rejected",
-      tone: "warning",
     });
   }
 
@@ -1770,22 +1983,38 @@ export async function approveAcceptedOffer(
     throw new Error("Offer approval succeeded but the updated offer could not be reloaded.");
   }
 
-  await safeSendNotificationEmail({
-    ctaHref: "/employees",
-    ctaLabel: "Open employee record",
-    employeeHrId,
-    metrics: [
-      { label: "Candidate", value: offer.candidate_name },
-      { label: "Role", value: offer.job_title },
-      { label: "Employee HR ID", value: employeeHrId },
-      { label: "Start date", value: offer.start_date ?? "Not set" },
-    ],
-    notificationType: "offer",
-    recipientMode: "hr_notifications",
-    subject: `${offer.candidate_name} approved as hired`,
-    summary: "The accepted offer has been approved. Employee, organogram, compensation, and probation views are now fed from the approved record.",
+  await createSystemNotification({
+    actionUrl: "/employees",
+    actorId: approvedByHrId ?? "system",
+    email: {
+      ctaHref: "/employees",
+      ctaLabel: "Open employee record",
+      employeeHrId,
+      metrics: [
+        { label: "Candidate", value: offer.candidate_name },
+        { label: "Role", value: offer.job_title },
+        { label: "Employee HR ID", value: employeeHrId },
+        { label: "Start date", value: offer.start_date ?? "Not set" },
+      ],
+      notificationType: "offer",
+      recipientMode: "hr_notifications",
+      subject: `${offer.candidate_name} approved as hired`,
+      summary: "The accepted offer has been approved. Employee, organogram, compensation, and probation views are now fed from the approved record.",
+      title: "Hire approved",
+      tone: "success",
+    },
+    eventType: "hire_approved",
+    message: "The accepted offer has been approved and employee records are now updated.",
+    metadata: {
+      employeeHrId,
+      idempotencyKey: `offer-hire-approved:${offer.id}:${employeeHrId}`,
+      offerCode: offer.offer_code,
+    },
+    module: "offers",
+    priority: "high",
+    recordId: offer.id,
+    subjectHrId: employeeHrId,
     title: "Hire approved",
-    tone: "success",
   });
   invalidateExecutiveDashboardCache("accepted offer approved", ["offers", "recruitment", "employees", "vacancies", "payroll", "probation"]);
 

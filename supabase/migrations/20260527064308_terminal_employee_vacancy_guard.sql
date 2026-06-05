@@ -10,13 +10,10 @@ alter table public.position_vacancies
   add column if not exists filled_by_hr_id text,
   add column if not exists filled_at timestamptz,
   add column if not exists manager_replacement_for_hr_id text;
-
 create index if not exists position_vacancies_replacement_for_hr_id_idx
 on public.position_vacancies (replacement_for_hr_id);
-
 create index if not exists position_vacancies_manager_replacement_for_hr_id_idx
 on public.position_vacancies (manager_replacement_for_hr_id);
-
 create or replace function public.phx_ensure_terminal_employee_vacancy(
   p_employee_hr_id text
 )
@@ -164,13 +161,10 @@ exception
     return jsonb_build_object('applied', false, 'reason', 'missing_schema_column');
 end;
 $$;
-
 revoke execute on function public.phx_ensure_terminal_employee_vacancy(text)
 from public, anon, authenticated;
-
 grant execute on function public.phx_ensure_terminal_employee_vacancy(text)
 to service_role;
-
 create or replace function public.phx_terminal_employee_vacancy_guard_trigger()
 returns trigger
 language plpgsql
@@ -185,9 +179,7 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists phx_employee_terminal_vacancy_guard on public.employees;
-
 create trigger phx_employee_terminal_vacancy_guard
 after insert or update of
   employment_status,
@@ -203,5 +195,4 @@ after insert or update of
 on public.employees
 for each row
 execute function public.phx_terminal_employee_vacancy_guard_trigger();
-
 notify pgrst, 'reload schema';

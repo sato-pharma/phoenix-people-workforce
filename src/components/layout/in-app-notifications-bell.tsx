@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bell, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import { Bell, CheckCheck, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 import { systemUiText } from "@/config/system-settings";
@@ -13,8 +13,12 @@ type InAppNotificationView = {
   details?: Array<{ label: string; value: string }>;
   href: string | null;
   id: string;
+  isRead?: boolean;
   message: string;
+  module?: string | null;
   primaryText?: string;
+  priority?: string;
+  readAt?: string | null;
   scheduledFor: string | null;
   sentAt: string | null;
   status: string;
@@ -54,6 +58,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
   const [notifications, setNotifications] = useState<InAppNotificationView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [moduleFilter, setModuleFilter] = useState("all");
 
   const loadNotifications = useCallback(async (signal?: { aborted: boolean }) => {
     try {
@@ -90,7 +95,31 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
   }, [loadNotifications]);
 
   const hasNotifications = notifications.length > 0;
-  const actionRequiredCount = notifications.filter(isActionRequired).length;
+  const moduleOptions = Array.from(new Set(notifications.map((notification) => notification.module || notification.category).filter(Boolean))).sort();
+  const visibleNotifications = moduleFilter === "all"
+    ? notifications
+    : notifications.filter((notification) => (notification.module || notification.category) === moduleFilter);
+  const hasVisibleNotifications = visibleNotifications.length > 0;
+  const unreadCount = notifications.filter((notification) => !notification.isRead).length;
+  const actionRequiredCount = visibleNotifications.filter((notification) => !notification.isRead && isActionRequired(notification)).length;
+
+  async function markRead(id: string) {
+    setNotifications((current) => current.map((notification) => notification.id === id ? { ...notification, isRead: true, readAt: new Date().toISOString() } : notification));
+    await fetch("/api/notifications/in-app", {
+      body: JSON.stringify({ id }),
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+    }).catch(() => undefined);
+  }
+
+  async function markAllRead() {
+    setNotifications((current) => current.map((notification) => ({ ...notification, isRead: true, readAt: notification.readAt ?? new Date().toISOString() })));
+    await fetch("/api/notifications/in-app", {
+      body: JSON.stringify({ markAll: true }),
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+    }).catch(() => undefined);
+  }
 
   const panelText = {
     border: isAdminMode ? "border-[#333333]" : "border-[#E2E8F0]",
@@ -117,7 +146,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
         type="button"
       >
         <Bell className="h-[18px] w-[18px]" />
-        {hasNotifications ? (
+        {unreadCount > 0 ? (
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#F97316] ring-2 ring-white" />
         ) : null}
       </button>
@@ -136,27 +165,65 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                 <p className={cn("text-sm font-black", panelText.title)}>Notifications</p>
                 <p className={cn("mt-0.5 text-xs", panelText.muted)}>{systemUiText.notificationsSubtitle}</p>
               </div>
-              <button
-                aria-label="Refresh notifications"
-                className={cn(
-                  "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition",
-                  panelText.border,
-                  isAdminMode ? "hover:bg-[#111111]" : "hover:bg-[#F8FAFC]",
-                )}
-                onClick={() => void loadNotifications()}
-                type="button"
-              >
-                {loading ? (
-                  <Loader2 className={cn("h-4 w-4 animate-spin", isAdminMode ? "text-[#F8B56B]" : "text-[#F97316]")} />
-                ) : (
-                  <RefreshCw className={cn("h-4 w-4", isAdminMode ? "text-[#64748B]" : "text-[#94A3B8]")} />
-                )}
-              </button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  aria-label="Mark all notifications as read"
+                  className={cn(
+                    "inline-flex h-7 w-7 items-center justify-center rounded-lg border transition disabled:opacity-40",
+                    panelText.border,
+                    isAdminMode ? "hover:bg-[#111111]" : "hover:bg-[#F8FAFC]",
+                  )}
+                  disabled={unreadCount === 0}
+                  onClick={() => void markAllRead()}
+                  type="button"
+                >
+                  <CheckCheck className={cn("h-4 w-4", isAdminMode ? "text-[#64748B]" : "text-[#94A3B8]")} />
+                </button>
+                <button
+                  aria-label="Refresh notifications"
+                  className={cn(
+                    "inline-flex h-7 w-7 items-center justify-center rounded-lg border transition",
+                    panelText.border,
+                    isAdminMode ? "hover:bg-[#111111]" : "hover:bg-[#F8FAFC]",
+                  )}
+                  onClick={() => void loadNotifications()}
+                  type="button"
+                >
+                  {loading ? (
+                    <Loader2 className={cn("h-4 w-4 animate-spin", isAdminMode ? "text-[#F8B56B]" : "text-[#F97316]")} />
+                  ) : (
+                    <RefreshCw className={cn("h-4 w-4", isAdminMode ? "text-[#64748B]" : "text-[#94A3B8]")} />
+                  )}
+                </button>
+              </div>
             </div>
             {actionRequiredCount > 0 ? (
               <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#FFF7ED] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#C2410C]">
                 {actionRequiredCount} action{actionRequiredCount === 1 ? "" : "s"} required
               </span>
+            ) : null}
+            {unreadCount > 0 ? (
+              <span className="ml-2 mt-2 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
+                {unreadCount} unread
+              </span>
+            ) : null}
+            {moduleOptions.length > 1 ? (
+              <select
+                className={cn(
+                  "mt-2 block w-full rounded border px-2 py-1.5 text-xs font-semibold",
+                  panelText.border,
+                  isAdminMode ? "bg-[#050505] text-white" : "bg-white text-slate-700",
+                )}
+                onChange={(event) => setModuleFilter(event.target.value)}
+                value={moduleFilter}
+              >
+                <option value="all">All modules</option>
+                {moduleOptions.map((moduleName) => (
+                  <option key={moduleName} value={moduleName}>
+                    {moduleName.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
             ) : null}
           </div>
 
@@ -187,19 +254,19 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                   Try again
                 </button>
               </div>
-            ) : !hasNotifications ? (
+            ) : !hasNotifications || !hasVisibleNotifications ? (
               <div className="px-3 py-8 text-center">
                 <Bell className={cn("mx-auto h-6 w-6", panelText.muted)} />
                 <p className={cn("mt-2 text-sm font-bold", panelText.title)}>You&rsquo;re all caught up.</p>
                 <p className={cn("mt-1 text-xs", panelText.muted)}>New updates assigned to you will appear here.</p>
               </div>
             ) : (
-              notifications.map((notification) => {
+              visibleNotifications.map((notification) => {
                 const actionRequired = isActionRequired(notification);
                 const content = (
-                  <div className={cn("rounded-lg px-3 py-2.5 transition", panelText.rowHover)}>
+                  <div className={cn("rounded-lg px-3 py-2.5 transition", panelText.rowHover, notification.isRead ? "opacity-70" : "")}>
                     <div className="flex items-start gap-2.5">
-                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#F97316]" />
+                      <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", notification.isRead ? "bg-slate-300" : "bg-[#F97316]")} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           {notification.primaryText ? (
@@ -241,6 +308,11 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                           <span className="rounded bg-[#FFF7ED] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#C2410C]">
                             {notification.category.replace(/_/g, " ")}
                           </span>
+                          {notification.priority ? (
+                            <span className={cn("rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", panelText.chip)}>
+                              {notification.priority}
+                            </span>
+                          ) : null}
                           {notification.statusLabel ? (
                             <span className={cn("rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", panelText.chip)}>
                               {notification.statusLabel}
@@ -261,7 +333,10 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                 );
 
                 return notification.href ? (
-                  <Link href={notification.href} key={notification.id} onClick={() => setOpen(false)}>
+                  <Link href={notification.href} key={notification.id} onClick={() => {
+                    void markRead(notification.id);
+                    setOpen(false);
+                  }}>
                     {content}
                   </Link>
                 ) : (

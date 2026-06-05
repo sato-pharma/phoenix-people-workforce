@@ -4,7 +4,6 @@
 -- direct RPC execution on sensitive SECURITY DEFINER functions.
 
 create extension if not exists pgcrypto;
-
 create temporary table tmp_phx_auth_bridge
 on commit drop
 as
@@ -38,7 +37,6 @@ select
   a.manager_hr_id
 from public.app_auth_users a
 where nullif(trim(a.login_id), '') is not null;
-
 insert into auth.users (
   instance_id,
   id,
@@ -91,12 +89,10 @@ where not exists (
   where u.id = t.auth_user_id
      or lower(coalesce(u.email, '')) = t.auth_email
 );
-
 update tmp_phx_auth_bridge t
 set auth_user_id = u.id
 from auth.users u
 where lower(coalesce(u.email, '')) = t.auth_email;
-
 update auth.users u
 set
   aud = 'authenticated',
@@ -123,7 +119,6 @@ set
   updated_at = now()
 from tmp_phx_auth_bridge t
 where u.id = t.auth_user_id;
-
 insert into auth.identities (
   provider_id,
   user_id,
@@ -152,7 +147,6 @@ where not exists (
   where i.user_id = t.auth_user_id
     and i.provider = 'email'
 );
-
 update auth.identities i
 set
   provider_id = t.auth_email,
@@ -165,7 +159,6 @@ set
 from tmp_phx_auth_bridge t
 where i.user_id = t.auth_user_id
   and i.provider = 'email';
-
 update public.app_auth_users a
 set
   auth_user_id = t.auth_user_id,
@@ -176,7 +169,6 @@ where a.login_id = t.login_id
     a.auth_user_id is distinct from t.auth_user_id
     or a.auth_email is distinct from t.auth_email
   );
-
 insert into public.user_access_profiles (
   auth_user_id,
   hr_id,
@@ -216,7 +208,6 @@ set
   line = excluded.line,
   manager_hr_id = excluded.manager_hr_id,
   phoenix_role = excluded.phoenix_role;
-
 do $$
 declare
   t text;
@@ -243,7 +234,6 @@ begin
     end if;
   end loop;
 end $$;
-
 do $$
 begin
   execute $sql$
@@ -441,7 +431,6 @@ begin
     $sql$;
   end if;
 end $$;
-
 do $$
 declare
   v_fn regprocedure;
@@ -511,5 +500,4 @@ begin
     revoke execute on function public.resign_employee_and_open_vacancy(text, date, date, text, text, text, boolean) from anon, authenticated;
   end if;
 end $$;
-
-notify pgrst, 'reload schema';;
+notify pgrst, 'reload schema';

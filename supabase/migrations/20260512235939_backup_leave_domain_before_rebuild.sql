@@ -4,11 +4,9 @@
 -- of existing leave/vacation tables in the backup schema and skips missing tables.
 
 begin;
-
 create schema if not exists backup;
 revoke all on schema backup from public, anon, authenticated;
 grant usage on schema backup to service_role;
-
 create table if not exists backup.leave_domain_backup_manifest (
   id bigserial primary key,
   source_schema text not null default 'public',
@@ -20,7 +18,6 @@ create table if not exists backup.leave_domain_backup_manifest (
   detail text null,
   backed_up_at timestamptz not null default now()
 );
-
 do $$
 declare
   v_backup_schema text := 'backup';
@@ -102,5 +99,4 @@ begin
     end if;
   end loop;
 end $$;
-
 commit;

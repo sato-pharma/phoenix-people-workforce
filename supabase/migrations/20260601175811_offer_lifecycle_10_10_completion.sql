@@ -4,38 +4,29 @@
 -- - approval RPC persists offer compensation lines into employee salary_details
 
 create schema if not exists private;
-
 alter table public.job_offers
   add column if not exists compensation_lines jsonb not null default '[]'::jsonb,
   add column if not exists voided_at timestamptz null,
   add column if not exists void_reason text null,
   add column if not exists voided_reserved_employee_hr_id text null;
-
 alter table public.job_offers
   alter column compensation_lines set default '[]'::jsonb;
-
 update public.job_offers
 set compensation_lines = '[]'::jsonb
 where compensation_lines is null;
-
 alter table public.job_offers
   alter column compensation_lines set not null;
-
 alter table public.job_offers
   drop constraint if exists job_offers_status_check;
-
 alter table public.job_offers
   add constraint job_offers_status_check
   check (status in ('draft', 'sent', 'accepted', 'rejected', 'expired', 'hired', 'withdrawn', 'cancelled', 'voided'));
-
 drop function if exists public.phx_approve_accepted_offer(
   uuid, text, text, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric
 );
-
 drop function if exists private.phx_approve_accepted_offer_v2(
   uuid, text, text, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric
 );
-
 create or replace function private.phx_approve_accepted_offer_v2(
   p_offer_id uuid,
   p_approved_by_hr_id text default null,
@@ -429,7 +420,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.phx_approve_accepted_offer(
   p_offer_id uuid,
   p_approved_by_hr_id text default null,
@@ -464,19 +454,15 @@ as $$
     p_compensation_lines
   );
 $$;
-
 revoke all on function private.phx_approve_accepted_offer_v2(
   uuid, text, text, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, jsonb
 ) from public, anon, authenticated;
-
 grant execute on function private.phx_approve_accepted_offer_v2(
   uuid, text, text, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, jsonb
 ) to service_role;
-
 revoke all on function public.phx_approve_accepted_offer(
   uuid, text, text, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, jsonb
 ) from public, anon, authenticated;
-
 grant execute on function public.phx_approve_accepted_offer(
   uuid, text, text, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, jsonb
 ) to service_role;

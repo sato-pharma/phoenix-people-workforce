@@ -174,13 +174,10 @@ begin
   ) || v_result;
 end;
 $$;
-
 revoke execute on function public.phx_reassign_replacement_ownership(text, text, date)
 from public, anon, authenticated;
-
 grant execute on function public.phx_reassign_replacement_ownership(text, text, date)
 to service_role;
-
 create or replace function public.phx_autofill_replacement_vacancy_from_employee_insert()
 returns trigger
 language plpgsql
@@ -272,14 +269,11 @@ exception
     return new;
 end;
 $$;
-
 drop trigger if exists phx_employee_insert_autofill_replacement_vacancy on public.employees;
-
 create trigger phx_employee_insert_autofill_replacement_vacancy
 after insert on public.employees
 for each row
 execute function public.phx_autofill_replacement_vacancy_from_employee_insert();
-
 do $$
 declare
   r record;
@@ -324,5 +318,4 @@ begin
     );
   end loop;
 end $$;
-
 notify pgrst, 'reload schema';

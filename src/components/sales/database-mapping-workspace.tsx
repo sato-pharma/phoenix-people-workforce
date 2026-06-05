@@ -12,6 +12,7 @@ import {
   MapPin,
   Package,
   RefreshCw,
+  ShieldCheck,
   Truck,
   UploadCloud,
 } from "lucide-react";
@@ -20,9 +21,11 @@ import { useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminTableShell } from "@/components/admin/admin-design-system";
+import { DatabaseValidationTab } from "@/components/sales/database-validation-tab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
+import type { HeaderGrid } from "@/lib/sales/normalizer/profile-grid";
 import {
   MASTER_DEFINITIONS,
   MASTER_ORDER,
@@ -47,6 +50,7 @@ const MASTER_ICONS: Record<MasterKey, LucideIcon> = {
 
 type Props = {
   initialError: string | null;
+  initialHeaderGrid: HeaderGrid;
   initialRows: Record<MasterKey, MasterRowRecord[]>;
 };
 
@@ -363,9 +367,9 @@ function ResultStat({ label, tone = "neutral", value }: { label: string; tone?: 
   );
 }
 
-export function DatabaseMappingWorkspace({ initialError, initialRows }: Props) {
+export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, initialRows }: Props) {
   const [rowsByMaster, setRowsByMaster] = useState(initialRows);
-  const [activeTab, setActiveTab] = useState<MasterKey>(MASTER_ORDER[0]);
+  const [activeTab, setActiveTab] = useState<MasterKey | "validation">(MASTER_ORDER[0]);
 
   if (initialError) {
     return (
@@ -378,7 +382,7 @@ export function DatabaseMappingWorkspace({ initialError, initialRows }: Props) {
     );
   }
 
-  const activeDef = MASTER_DEFINITIONS[activeTab];
+  const activeDef = activeTab === "validation" ? null : MASTER_DEFINITIONS[activeTab];
 
   return (
     <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
@@ -426,14 +430,26 @@ export function DatabaseMappingWorkspace({ initialError, initialRows }: Props) {
               </Button>
             );
           })}
+          <Button
+            className={cn("gap-2 rounded-xl font-black", activeTab === "validation" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "")}
+            onClick={() => setActiveTab("validation")}
+            variant="secondary"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Database Validation
+          </Button>
         </div>
 
-        <MasterTab
-          allRows={rowsByMaster}
-          def={activeDef}
-          onRowsChange={(rows) => setRowsByMaster((current) => ({ ...current, [activeTab]: rows }))}
-          rows={rowsByMaster[activeTab]}
-        />
+        {activeDef === null ? (
+          <DatabaseValidationTab headerGrid={initialHeaderGrid} />
+        ) : (
+          <MasterTab
+            allRows={rowsByMaster}
+            def={activeDef}
+            onRowsChange={(rows) => setRowsByMaster((current) => ({ ...current, [activeTab as MasterKey]: rows }))}
+            rows={rowsByMaster[activeTab as MasterKey]}
+          />
+        )}
       </div>
     </div>
   );

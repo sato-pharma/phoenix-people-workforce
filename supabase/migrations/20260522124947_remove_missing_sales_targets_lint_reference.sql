@@ -171,11 +171,8 @@ begin
   ) || v_result;
 end;
 $$;
-
 revoke execute on function public.phx_reassign_replacement_ownership(text, text, date)
 from public, anon, authenticated;
-
 grant execute on function public.phx_reassign_replacement_ownership(text, text, date)
 to service_role;
-
 notify pgrst, 'reload schema';

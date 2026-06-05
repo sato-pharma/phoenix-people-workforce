@@ -1,4 +1,3 @@
-
 CREATE TABLE IF NOT EXISTS employee_contracts (
   id                    BIGSERIAL PRIMARY KEY,
   hr_id                 TEXT NOT NULL REFERENCES employees(hr_id),
@@ -12,4 +11,3 @@ CREATE TABLE IF NOT EXISTS employee_contracts (
 CREATE INDEX IF NOT EXISTS idx_employee_contracts_hr_id ON employee_contracts (hr_id);
 CREATE INDEX IF NOT EXISTS idx_employee_contracts_renewal
   ON employee_contracts (contract_renewal_date) WHERE status = 'active';
-;

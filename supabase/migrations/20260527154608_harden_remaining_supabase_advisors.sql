@@ -32,7 +32,6 @@ begin
     end if;
   end loop;
 end $$;
-
 do $$
 begin
   if to_regclass('public.call_logs') is not null then

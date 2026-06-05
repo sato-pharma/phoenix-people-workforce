@@ -3,5 +3,4 @@
 
 alter table public.employees
   add column if not exists bank_name text;
-
 comment on column public.employees.bank_name is 'Employee bank name used as fixed payroll reference master data.';

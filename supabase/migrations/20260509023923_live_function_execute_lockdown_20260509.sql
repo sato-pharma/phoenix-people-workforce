@@ -66,4 +66,4 @@ begin
   if v_fn is not null then
     revoke execute on function public.resign_employee_and_open_vacancy(text, date, date, text, text, text, boolean) from public, anon, authenticated;
   end if;
-end $$;;
+end $$;

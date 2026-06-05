@@ -3,17 +3,14 @@
 -- and transactional cancellation.
 
 begin;
-
 alter table public.leave_types
   add column if not exists employee_selectable boolean not null default true;
-
 alter table public.leave_requests
   add column if not exists balance_leave_type_id uuid null references public.leave_types(id) on update cascade on delete restrict,
   add column if not exists payment_status text not null default 'in_review',
   add column if not exists payment_reason text null,
   add column if not exists duration_unit text not null default 'full_day',
   add column if not exists hr_balance_decision text null;
-
 do $$
 begin
   if not exists (select 1 from pg_constraint where conname = 'leave_requests_payment_status_check') then
@@ -34,13 +31,11 @@ begin
       check (hr_balance_decision is null or hr_balance_decision in ('deduct', 'no_deduct'));
   end if;
 end $$;
-
 update public.leave_types
 set employee_selectable = code in ('annual_leave', 'emergency_leave', 'sick_leave', 'other'),
     requires_attachment = case when code = 'sick_leave' then true else requires_attachment end,
     updated_at = now()
 where code in ('annual_leave', 'emergency_leave', 'sick_leave', 'other', 'casual_leave', 'unpaid_leave');
-
 update public.leave_requests lr
 set balance_leave_type_id = case
       when lt.code in ('annual_leave', 'emergency_leave', 'other') then annual.id
@@ -57,11 +52,9 @@ cross join lateral (
   select id from public.leave_types where code = 'annual_leave' limit 1
 ) annual
 where lr.leave_type_id = lt.id;
-
 drop function if exists public.phx_leave_submit_request_atomic(
   text, uuid, uuid, date, date, numeric, numeric, text, text, text, text, text, text, boolean, boolean, jsonb, text, text, uuid
 );
-
 create or replace function public.phx_leave_submit_request_atomic(
   p_employee_hr_id text,
   p_leave_type_id uuid,
@@ -254,7 +247,6 @@ begin
   return v_request;
 end;
 $$;
-
 create or replace function public.phx_leave_release_pending_atomic(
   p_request public.leave_requests,
   p_actor_hr_id text
@@ -308,7 +300,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.phx_leave_consume_pending_atomic(
   p_request public.leave_requests,
   p_actor_hr_id text
@@ -372,9 +363,7 @@ begin
   );
 end;
 $$;
-
 drop function if exists public.phx_leave_hr_decision_atomic(uuid, text, text, text, text, uuid);
-
 create or replace function public.phx_leave_hr_decision_atomic(
   p_request_id uuid,
   p_decision text,
@@ -501,7 +490,6 @@ begin
   return v_request;
 end;
 $$;
-
 create or replace function public.phx_leave_cancel_request_atomic(
   p_request_id uuid,
   p_comment text,
@@ -582,13 +570,10 @@ begin
   return v_request;
 end;
 $$;
-
 revoke all on function public.phx_leave_submit_request_atomic(text, uuid, uuid, date, date, numeric, numeric, text, text, text, text, text, text, boolean, boolean, jsonb, text, text, uuid, text, text, text, uuid) from public, anon, authenticated;
 revoke all on function public.phx_leave_hr_decision_atomic(uuid, text, text, text, text, text, uuid) from public, anon, authenticated;
 revoke all on function public.phx_leave_cancel_request_atomic(uuid, text, text, text, uuid) from public, anon, authenticated;
-
 grant execute on function public.phx_leave_submit_request_atomic(text, uuid, uuid, date, date, numeric, numeric, text, text, text, text, text, text, boolean, boolean, jsonb, text, text, uuid, text, text, text, uuid) to service_role;
 grant execute on function public.phx_leave_hr_decision_atomic(uuid, text, text, text, text, text, uuid) to service_role;
 grant execute on function public.phx_leave_cancel_request_atomic(uuid, text, text, text, uuid) to service_role;
-
 commit;

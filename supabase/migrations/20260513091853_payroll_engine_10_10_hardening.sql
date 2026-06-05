@@ -9,10 +9,8 @@ begin
     raise exception 'Cannot enforce unique payroll periods while duplicate salary_batches rows exist. Resolve duplicates manually before applying payroll hardening.' using errcode = '23505';
   end if;
 end $$;
-
 create unique index if not exists salary_batches_year_month_unique_idx
 on public.salary_batches (year, month);
-
 create or replace function public.phx_prevent_duplicate_salary_period()
 returns trigger
 language plpgsql
@@ -33,7 +31,6 @@ begin
   return new;
 end;
 $$;
-
 create or replace function public.phx_create_salary_batch(
   p_month integer,
   p_year integer,
@@ -241,6 +238,5 @@ begin
   return to_jsonb(v_batch);
 end;
 $$;
-
 revoke all on function public.phx_create_salary_batch(integer, integer, text, text, jsonb, jsonb, timestamptz) from public, anon, authenticated;
 grant execute on function public.phx_create_salary_batch(integer, integer, text, text, jsonb, jsonb, timestamptz) to service_role;

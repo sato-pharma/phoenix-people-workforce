@@ -39,7 +39,7 @@ export function runContractRenewalHardeningTests() {
 
   const reminderRoute = readFileSync("app/api/notifications/contract-renewals/route.ts", "utf8");
   assert.match(reminderRoute, /getContractRenewalReminderCandidates/);
-  assert.match(reminderRoute, /safeSendNotificationEmail/);
+  assert.match(reminderRoute, /createSystemNotification/);
   assert.match(reminderRoute, /runScheduledNotificationProcessing/);
   const dailyRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");
   assert.match(dailyRoute, /runContractRenewalNotifications/);

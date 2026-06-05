@@ -16,7 +16,6 @@ alter table public.employees
   add column if not exists exit_status text,
   add column if not exists payroll_eligible boolean default true,
   add column if not exists organogram_visible boolean default true;
-
 -- =====================================================
 -- 2. Employee resignations table
 -- =====================================================
@@ -37,15 +36,11 @@ create table if not exists public.employee_resignations (
     exit_status in ('submitted','approved','cancelled','completed')
   )
 );
-
 create index if not exists employee_resignations_employee_hr_id_idx
 on public.employee_resignations(employee_hr_id);
-
 create index if not exists employee_resignations_last_working_date_idx
 on public.employee_resignations(last_working_date);
-
 alter table public.employee_resignations enable row level security;
-
 -- =====================================================
 -- 3. Notification helper function
 -- =====================================================
@@ -105,7 +100,6 @@ begin
   return v_id;
 end;
 $$;
-
 -- =====================================================
 -- 4. Generate lifecycle notifications
 -- =====================================================
@@ -167,7 +161,6 @@ begin
   end if;
 end;
 $$;
-
 -- =====================================================
 -- 5. Accept offer -> create employee lifecycle
 -- =====================================================
@@ -352,7 +345,6 @@ begin
   return v_hr_id;
 end;
 $$;
-
 -- =====================================================
 -- 6. Manual employee lifecycle finalization
 -- =====================================================
@@ -412,7 +404,6 @@ begin
   perform public.generate_employee_lifecycle_notifications(p_employee_hr_id);
 end;
 $$;
-
 -- =====================================================
 -- 7. Resign employee -> open vacancy
 -- =====================================================
@@ -595,7 +586,6 @@ begin
   return v_resignation_id;
 end;
 $$;
-
 -- =====================================================
 -- 8. Operational views
 -- =====================================================
@@ -630,13 +620,11 @@ left join public.teams t on t.id = e.team_id
 left join public.positions p on p.id = e.position_id
 where coalesce(e.organogram_visible, true) = true
   and coalesce(e.employment_status, 'active') = 'active';
-
 create or replace view public.v_payroll_eligible_employees as
 select *
 from public.employees
 where coalesce(payroll_eligible, true) = true
   and coalesce(employment_status, 'active') = 'active';
-
 create or replace view public.v_lifecycle_dashboard as
 select
   e.hr_id,
@@ -658,7 +646,6 @@ select
     else 'active'
   end as lifecycle_state
 from public.employees e;
-
 -- =====================================================
 -- 9. Function execute hardening: keep callable from server/service, not anon
 -- =====================================================
@@ -667,4 +654,3 @@ revoke execute on function public.generate_employee_lifecycle_notifications(text
 revoke execute on function public.accept_offer_and_create_employee(uuid,text,date,date,date,date,date) from anon;
 revoke execute on function public.finalize_manual_employee_lifecycle(text) from anon;
 revoke execute on function public.resign_employee_and_open_vacancy(text,date,date,text,text,text,boolean) from anon;
-;

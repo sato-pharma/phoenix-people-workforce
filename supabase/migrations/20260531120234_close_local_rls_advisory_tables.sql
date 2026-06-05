@@ -324,7 +324,12 @@ grant select, insert, update, delete on table public.employee_locations to authe
 grant select, insert, update, delete on table public.outstation_expense_requests to authenticated;
 grant select, insert, update, delete on table public.outstation_location_audit_logs to authenticated;
 grant select on table public.outstation_policy_rules to authenticated;
-grant select on table public.payroll_workflow_transitions to authenticated;
+do $$
+begin
+  if to_regclass('public.payroll_workflow_transitions') is not null then
+    grant select on table public.payroll_workflow_transitions to authenticated;
+  end if;
+end $$;
 
 drop policy if exists user_access_profiles_select_self_or_super_admin on public.user_access_profiles;
 create policy user_access_profiles_select_self_or_super_admin
@@ -706,11 +711,16 @@ create policy outstation_location_audit_logs_write_access
   using (private.phx_can_manage_outstation())
   with check (private.phx_can_manage_outstation());
 
-drop policy if exists payroll_workflow_transitions_select_access on public.payroll_workflow_transitions;
-create policy payroll_workflow_transitions_select_access
-  on public.payroll_workflow_transitions
-  for select
-  to authenticated
-  using (true);
+do $$
+begin
+  if to_regclass('public.payroll_workflow_transitions') is not null then
+    drop policy if exists payroll_workflow_transitions_select_access on public.payroll_workflow_transitions;
+    create policy payroll_workflow_transitions_select_access
+      on public.payroll_workflow_transitions
+      for select
+      to authenticated
+      using (true);
+  end if;
+end $$;
 
 notify pgrst, 'reload schema';

@@ -71,6 +71,31 @@ export function getSupabaseUserClient(): SupabaseClient {
 }
 
 /**
+ * Reads EVERY row from a set-returning RPC, paging past PostgREST's max-rows cap (1000 on
+ * this project). Pass a stable `orderBy` (a unique key) so the pages don't overlap or skip.
+ * Without this, large RPCs (e.g. per-customer aggregates) silently truncate to 1000 rows.
+ */
+export async function rpcAll<T = Record<string, unknown>>(
+  client: SupabaseClient,
+  fn: string,
+  args: Record<string, unknown>,
+  orderBy: string[],
+): Promise<T[]> {
+  const pageSize = 1000;
+  const all: T[] = [];
+  for (let from = 0; ; from += pageSize) {
+    let query = client.rpc(fn, args).range(from, from + pageSize - 1);
+    for (const column of orderBy) query = query.order(column, { ascending: true });
+    const { data, error } = await query;
+    if (error) throw error;
+    const rows = (data ?? []) as T[];
+    all.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+  return all;
+}
+
+/**
  * Server-only Auth bridge client. Prefer anon key, but allow service-role fallback
  * on previews where the public anon env was not configured. The service key never
  * leaves the server; the returned session is still a real user JWT.

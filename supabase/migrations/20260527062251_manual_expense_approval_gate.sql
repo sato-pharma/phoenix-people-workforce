@@ -134,4 +134,4 @@ end;
 $$;
 
 revoke all on function public.phx_import_approved_expenses_to_payroll(integer, integer) from public, anon, authenticated;
-grant execute on function public.phx_import_approved_expenses_to_payroll(integer, integer) to service_role;
+grant execute on function public.phx_import_approved_expenses_to_payroll(integer, integer) to service_role;;

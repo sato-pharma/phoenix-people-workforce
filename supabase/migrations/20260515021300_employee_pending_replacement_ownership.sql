@@ -7,22 +7,16 @@
 
 alter table public.employees
   add column if not exists pending_manager_replacement_for_hr_id text;
-
 alter table public.position_vacancies
   add column if not exists manager_replacement_for_hr_id text;
-
 comment on column public.employees.pending_manager_replacement_for_hr_id is
   'Terminal manager HR_ID whose replacement should inherit this employee report when hired.';
-
 comment on column public.position_vacancies.manager_replacement_for_hr_id is
   'Terminal manager HR_ID whose replacement should inherit this open subordinate vacancy when hired.';
-
 create index if not exists employees_pending_manager_replacement_for_hr_id_idx
 on public.employees (pending_manager_replacement_for_hr_id);
-
 create index if not exists position_vacancies_manager_replacement_for_hr_id_idx
 on public.position_vacancies (manager_replacement_for_hr_id);
-
 create or replace function public.phx_reassign_replacement_ownership(
   p_previous_hr_id text,
   p_replacement_hr_id text,
@@ -217,13 +211,10 @@ begin
   ) || v_result;
 end;
 $$;
-
 revoke execute on function public.phx_reassign_replacement_ownership(text, text, date)
 from public, anon, authenticated;
-
 grant execute on function public.phx_reassign_replacement_ownership(text, text, date)
 to service_role;
-
 create or replace function public.phx_release_terminal_manager_ownership(
   p_previous_hr_id text
 )
@@ -332,13 +323,10 @@ begin
   ) || v_result;
 end;
 $$;
-
 revoke execute on function public.phx_release_terminal_manager_ownership(text)
 from public, anon, authenticated;
-
 grant execute on function public.phx_release_terminal_manager_ownership(text)
 to service_role;
-
 create or replace function public.phx_release_terminal_manager_ownership_trigger()
 returns trigger
 language plpgsql
@@ -353,9 +341,7 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists phx_employee_terminal_release_manager_ownership on public.employees;
-
 create trigger phx_employee_terminal_release_manager_ownership
 after update of employment_status, payroll_eligible, organogram_visible
 on public.employees
@@ -369,7 +355,6 @@ when (
   )
 )
 execute function public.phx_release_terminal_manager_ownership_trigger();
-
 do $$
 declare
   r record;
@@ -422,5 +407,4 @@ begin
     );
   end loop;
 end $$;
-
 notify pgrst, 'reload schema';

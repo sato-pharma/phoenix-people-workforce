@@ -12,6 +12,7 @@ import {
   assertMarketingWorkflowTransition,
   toMarketingRequestWorkflowStatus,
 } from "@/lib/marketing-requests/workflow";
+import { createSystemNotification } from "@/lib/notifications/system";
 import type {
   MarketingDistributor,
   MarketingControlSetting,
@@ -2213,11 +2214,35 @@ export async function createMarketingRequestDraft(
       pharmacies = ((pharmaciesInsert.data ?? []) as MarketingRequestPharmacyDbRow[]).map(mapPharmacy);
     }
 
-    return {
+    const draftDetail = {
       ...request,
       pharmacies,
       products: ((productsInsert.data ?? []) as MarketingRequestProductDbRow[]).map(mapProduct),
     };
+    const customer = customerResult.data as MarketingCustomerDbRow;
+    const requestType = requestTypeResult.data as MarketingRequestTypeDbRow;
+    await createSystemNotification({
+      actionUrl: "/employee-portals/marketing-requests",
+      actorId: request.requesterHrId,
+      eventType: "request_submitted",
+      message: `${request.requestCode} was submitted by ${request.requesterHrId}.`,
+      metadata: {
+        assignedApproverHrId: customer.manager_hr_id ?? null,
+        customerId: request.customerId,
+        idempotencyKey: `marketing-request-submitted:${request.id}`,
+        requestCode: request.requestCode,
+        requestOwnerHrId: request.requesterHrId,
+        requestType: requestType.name,
+        status: request.status,
+      },
+      module: "marketing_requests",
+      priority: "high",
+      recordId: request.id,
+      subjectHrId: request.requesterHrId,
+      title: "Marketing request submitted",
+    }).catch(() => undefined);
+
+    return draftDetail;
   } catch (error) {
     await supabase.from("marketing_requests").delete().eq("id", request.id);
     throw error;

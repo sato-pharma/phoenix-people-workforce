@@ -369,4 +369,4 @@ on public.source_of_sales_import_summaries
 for all
 to service_role
 using (true)
-with check (true);
+with check (true);;

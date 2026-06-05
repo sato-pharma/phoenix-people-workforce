@@ -13,7 +13,7 @@ import type {
   RawEmployeeImportRow,
   VacantPositionImportRecord,
 } from "@/lib/imports/employee-import-types";
-import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { closeVacancyForOffer } from "@/lib/offers/service";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -1171,22 +1171,37 @@ export async function POST(request: Request) {
       warnings: dryRunResult.validationWarnings,
     };
 
-    await safeSendNotificationEmail({
-      ctaHref: "/employees",
-      ctaLabel: "Open employee directory",
-      metrics: [
-        { label: "Imported employees", value: response.importedEmployees },
-        { label: "Access users created", value: response.accessUsersCreated },
-        { label: "Updated employees", value: response.updatedEmployees },
-        { label: "Recorded vacancies", value: response.recordedVacancies },
-        { label: "Closed vacancies", value: response.closedVacancies },
-        { label: "Warnings", value: response.warnings.length },
-      ],
-      notificationType: "general",
-      subject: `Phoenix employee import completed - ${file.name}`,
-      summary: "An employee import was confirmed and written to the workforce directory.",
+    await createSystemNotification({
+      actionUrl: "/employees",
+      actorId: access.loginId ?? access.hrId ?? access.role,
+      email: {
+        ctaHref: "/employees",
+        ctaLabel: "Open employee directory",
+        metrics: [
+          { label: "Imported employees", value: response.importedEmployees },
+          { label: "Access users created", value: response.accessUsersCreated },
+          { label: "Updated employees", value: response.updatedEmployees },
+          { label: "Recorded vacancies", value: response.recordedVacancies },
+          { label: "Closed vacancies", value: response.closedVacancies },
+          { label: "Warnings", value: response.warnings.length },
+        ],
+        notificationType: "general",
+        subject: `Phoenix employee import completed - ${file.name}`,
+        summary: "An employee import was confirmed and written to the workforce directory.",
+        title: "Employee Import Completed",
+        tone: response.warnings.length > 0 ? "warning" : "success",
+      },
+      eventType: "employee_import_completed",
+      message: "An employee import was confirmed and written to the workforce directory.",
+      metadata: {
+        accessUsersCreated: response.accessUsersCreated,
+        idempotencyKey: `employee-import:${file.name}:${Date.now()}`,
+        importedEmployees: response.importedEmployees,
+        warnings: response.warnings.length,
+      },
+      module: "employee_import",
+      priority: response.warnings.length > 0 ? "high" : "normal",
       title: "Employee Import Completed",
-      tone: response.warnings.length > 0 ? "warning" : "success",
     });
 
     invalidateEmployeeDirectoryCache();

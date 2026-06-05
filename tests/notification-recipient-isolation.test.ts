@@ -485,6 +485,7 @@ export function runNotificationRecipientIsolationTests() {
   assert.equal(isPersonalBellCategory("general"), true, "general category is shown");
   assert.equal(isPersonalBellCategory("internal_message"), true, "internal message category is shown");
   assert.equal(isPersonalBellCategory("excuse"), true, "excuse category is shown");
+  assert.equal(isPersonalBellCategory("recruitment"), true, "recruitment category is shown");
   assert.equal(isPersonalBellCategory("LEAVE"), false, "legacy 'leave' category is hidden (case-insensitive)");
   assert.equal(isPersonalBellCategory("leave"), false, "legacy 'leave' category is hidden");
   assert.equal(isPersonalBellCategory(null), false, "missing category is hidden");

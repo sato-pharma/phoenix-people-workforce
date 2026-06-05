@@ -13,5 +13,4 @@ begin
     alter table public.employee_probation alter column hr_id drop not null;
   end if;
 end $$;
-
 notify pgrst, 'reload schema';
