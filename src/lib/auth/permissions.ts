@@ -466,14 +466,14 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
   // GOVERNANCE: this parses an *explicit app role* string (the stored
   // app_auth_users.role, an admin-assigned role, or a workflow allowedRole) plus
   // a few legacy role codes/aliases. It is NOT a job-title interpreter:
-  // descriptive job titles that imply seniority — "HR Manager", "Talent
-  // Acquisition", "R&D Manager" — are deliberately absent so a title can never be
-  // silently elevated to a privileged role. Provisioning never derives a role
-  // from a title (see resolveEmployeeAccessRole, which always returns "Employee");
-  // real roles are assigned explicitly. The remaining title-shaped entries below
-  // resolve only to the baseline "Employee" role or to sales/medical categories
-  // that downstream business rules (outstation allowance tiers, portal routing)
-  // still rely on — none of them grant elevated access on their own.
+  // descriptive job titles — "HR Manager", "Talent Acquisition", "R&D Manager",
+  // "Medical Representative", "District Sales Manager", "Regional Sales Manager" —
+  // are deliberately absent so a title can never be silently turned into a
+  // (privileged) role here. Provisioning never derives a role from a title (see
+  // resolveEmployeeAccessRole, which always returns "Employee"); real roles are
+  // assigned explicitly. Job-function classification for non-security business
+  // rules (outstation allowance tiers, employee-portal / coaching routing) lives
+  // in resolveJobFunctionRole (src/lib/employees/job-function.ts), NOT here.
   const legacy: Record<string, PhoenixRole> = {
     "admin assist": "Employee",
     "admin assistant": "Employee",
