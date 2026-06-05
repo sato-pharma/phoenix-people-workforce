@@ -3,6 +3,8 @@ import crypto from "crypto";
 export type TelegramSendInput = {
   actionUrl?: string | null;
   chatId: string;
+  ctaLabel?: string | null;
+  ctaUrl?: string | null;
   message: string;
   title: string;
 };
@@ -57,6 +59,14 @@ function cleanTelegramText(value: string) {
     .slice(0, 900);
 }
 
+function cleanButtonLabel(value: string | null | undefined) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .replace(/[<>]/g, "")
+    .trim()
+    .slice(0, 64);
+}
+
 export function buildTelegramDeepLink(token: string) {
   const username = telegramBotUsername();
   if (!username) return null;
@@ -74,10 +84,13 @@ export async function sendTelegramNotification(input: TelegramSendInput): Promis
     .join("\n\n");
   if (!text) return { reason: "Telegram message is empty.", skipped: true };
 
-  const actionUrl = phoenixActionUrl(input.actionUrl);
+  const rawActionUrl = String(input.ctaUrl ?? input.actionUrl ?? "").trim();
+  if (input.ctaLabel && !rawActionUrl) return { reason: "Telegram CTA URL is missing.", skipped: true };
+  const actionUrl = phoenixActionUrl(rawActionUrl);
+  const ctaLabel = cleanButtonLabel(input.ctaLabel) || "Open in Phoenix";
   const replyMarkup = actionUrl
     ? {
-        inline_keyboard: [[{ text: "Open in Phoenix", url: actionUrl }]],
+        inline_keyboard: [[{ text: ctaLabel, url: actionUrl }]],
       }
     : undefined;
 

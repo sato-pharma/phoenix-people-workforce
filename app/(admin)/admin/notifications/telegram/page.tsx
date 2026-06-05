@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { Send } from "lucide-react";
 
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
@@ -42,6 +43,12 @@ export default async function AdminTelegramNotificationsPage() {
             You can review Telegram status, but this account cannot change Telegram settings.
           </Card>
         ) : null}
+
+        <div className="flex flex-wrap gap-2">
+          <Link className="rounded border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700" href="/admin/notifications/telegram/templates">
+            Edit Telegram Templates
+          </Link>
+        </div>
 
         <TelegramAdminControlCenter canUpdate={canUpdate} initialData={data} />
       </div>
