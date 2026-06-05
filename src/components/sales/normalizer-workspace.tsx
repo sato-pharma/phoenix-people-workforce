@@ -89,6 +89,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<"coded" | "map">("coded");
+  const [advanced, setAdvanced] = useState(false);
   const mapFileRef = useRef<HTMLInputElement>(null);
   const cleanFileRef = useRef<HTMLInputElement>(null);
 
@@ -281,18 +282,34 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
 
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-slate-500">Month: <b>{preview.period ?? "—"}</b></span>
-                <div className="ml-auto flex gap-2">
-                  <button className="inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:bg-slate-50 disabled:opacity-50" disabled={busy !== null} onClick={() => void run("download", () => blobPost("/api/sales/normalizer/download", "phoenix-coded.xlsx"))} type="button">
-                    {busy === "download" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download coded XLSX
-                  </button>
-                  <button className="inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50" disabled={busy !== null || s!.fullyCoded === 0} onClick={() => void run("import", async () => {
-                    const res = await fetch("/api/sales/normalizer/import", { body: fd(), method: "POST" });
-                    const json = await res.json();
-                    if (json.success) setNotice(`Imported ${json.data.importedRows} rows for ${json.data.period ?? "—"} into Source of Sales.`);
-                    else setError(json.error ?? "Import failed.");
-                  })} type="button">
-                    {busy === "import" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Import to Source of Sales
-                  </button>
+                <div className="ml-auto flex flex-col items-end gap-1">
+                  <div className="flex gap-2">
+                    <button className="inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:bg-slate-50 disabled:opacity-50" disabled={busy !== null} onClick={() => void run("download", () => blobPost("/api/sales/normalizer/download", "phoenix-coded.xlsx"))} type="button">
+                      {busy === "download" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download coded XLSX
+                    </button>
+                    <button className="inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50" disabled={busy !== null || s!.fullyCoded === 0} onClick={() => void run("import", async () => {
+                      const res = await fetch("/api/sales/normalizer/import-validated", { body: fd(), method: "POST" });
+                      const json = await res.json();
+                      if (json.success) setNotice(`Imported ${json.data.importableRows} validated row(s) for ${json.data.period ?? "—"} into Source of Sales.`);
+                      else { const reasons = (json.data?.blockingReasons ?? []) as string[]; setError(`${json.error ?? "Import failed."}${reasons.length ? " — " + reasons.slice(0, 3).join("; ") : ""}`); }
+                    })} type="button">
+                      {busy === "import" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Import (validated)
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                    <span>Download → upload on Source of Sales (it now passes validation), or import straight here.</span>
+                    <button className="underline transition hover:text-slate-600" onClick={() => setAdvanced((v) => !v)} type="button">{advanced ? "Hide advanced" : "Advanced"}</button>
+                  </div>
+                  {advanced ? (
+                    <button className="inline-flex h-8 items-center gap-2 border border-amber-300 bg-amber-50 px-3 text-[11px] font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-50" disabled={busy !== null || s!.fullyCoded === 0} onClick={() => void run("import-direct", async () => {
+                      const res = await fetch("/api/sales/normalizer/import", { body: fd(), method: "POST" });
+                      const json = await res.json();
+                      if (json.success) setNotice(`Direct import: ${json.data.importedRows} row(s) for ${json.data.period ?? "—"} (validation skipped).`);
+                      else setError(json.error ?? "Import failed.");
+                    })} title="Skips the Source of Sales validation — use only if you trust the coded rows." type="button">
+                      {busy === "import-direct" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AlertTriangle className="h-3.5 w-3.5" />} Direct import (skip validation)
+                    </button>
+                  ) : null}
                 </div>
               </div>
 

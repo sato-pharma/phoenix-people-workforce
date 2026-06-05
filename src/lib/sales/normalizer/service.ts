@@ -142,9 +142,12 @@ export function summarizePreview(distributorCode: string, distributorName: strin
 
 // ── Coded XLSX (the format the user produces by hand today; Phoenix-branded) ──
 
-const CODED_HEADERS = [
+// "Discount%" carries the exact discount fraction the engine applied, so the Source-of-Sales importer's
+// recompute (Qty x factory_price x (1 - discount)) reproduces this sheet's Value exactly. It maps to the
+// NORMALIZER_TEMPLATE.discountField in monthly-distributor-import.ts.
+export const CODED_HEADERS = [
   "Distrub ID", "Region ID", "Area ID", "Brick ID", "Product ID", "Product Name",
-  "Qty", "B. Qty", "Value", "Invoice Date", "Customer", "Customer Name", "Official Line",
+  "Qty", "B. Qty", "Value", "Discount%", "Invoice Date", "Customer", "Customer Name", "Official Line",
 ] as const;
 
 export function buildCodedWorkbook(result: NormalizeResult): Promise<ExcelJS.Buffer> {
@@ -157,7 +160,7 @@ export function buildCodedWorkbook(result: NormalizeResult): Promise<ExcelJS.Buf
   result.coded.forEach((r) => {
     sheet.addRow([
       r.distributorCode, r.regionCode, r.areaCode, r.brickId, r.productCode, r.productName,
-      r.qty, r.bonusQty, r.value, r.invoiceDate, r.clientCode ?? "", r.clientName ?? "", r.officialLine,
+      r.qty, r.bonusQty, r.value, r.discount, r.invoiceDate, r.clientCode ?? "", r.clientName ?? "", r.officialLine,
     ]);
   });
   // Second sheet: the unmapped rows the user still needs to map once.
@@ -168,6 +171,15 @@ export function buildCodedWorkbook(result: NormalizeResult): Promise<ExcelJS.Buf
   }
   for (let c = 1; c <= CODED_HEADERS.length; c += 1) sheet.getColumn(c).width = 16;
   return workbook.xlsx.writeBuffer();
+}
+
+// Normalize a raw distributor file and return its coded XLSX as an in-memory buffer — used by the
+// one-click "Import (validated)" path so the coded sheet can be fed straight into the Source-of-Sales
+// validator without writing a temp file.
+export async function buildCodedBuffer(distributorCode: string, file: File): Promise<{ buffer: ExcelJS.Buffer; distributorName: string; period: string | null; result: NormalizeResult }> {
+  const { distributorName, period, result } = await normalizeUploadedFile(distributorCode, file);
+  const buffer = await buildCodedWorkbook(result);
+  return { buffer, distributorName, period, result };
 }
 
 // ── Direct import of coded rows (bypasses templates — rows are already coded + validated) ──

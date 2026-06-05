@@ -420,6 +420,34 @@ const DIRECT_TEMPLATE: DistributorSalesTemplate = {
   valueField: "Value",
 };
 
+// Unified Normalizer coded sheet. The Source Normalizer emits ONE coded format (CODED_HEADERS in
+// src/lib/sales/normalizer/service.ts) for every distributor, so its output can flow through the same
+// Source-of-Sales validation + import as everything else. Value is RECOMPUTED from
+// Qty x factory_price x (1 - Discount%); the Normalizer writes the exact discount it applied (the coded
+// sheet's "Discount%" column) so the recompute reproduces the engine's value. Offered as a FINAL fallback
+// in templateForDistributor — tried AFTER the distributor's own template — so a coded sheet validates
+// under any distributor while raw/hand-coded sheets still match their dedicated template first.
+export const NORMALIZER_TEMPLATE: DistributorSalesTemplate = {
+  bonusField: "B. Qty",
+  customerFields: { address: ["Customer Address"], code: ["Customer"], name: ["Customer Name"] },
+  discountField: "Discount%",
+  distributorCodes: ["NORMALIZER"],
+  fields: {
+    areaCode: "Area ID",
+    brickId: "Brick ID",
+    distributorCode: "Distrub ID",
+    invoiceDate: "Invoice Date",
+    productCode: "Product ID",
+    qty: "Qty",
+    regionCode: "Region ID",
+  },
+  key: "normalizer",
+  name: "Normalized coded sheet",
+  optionalFields: {
+    productName: ["Product Name"],
+  },
+};
+
 const DISTRIBUTOR_SALES_TEMPLATES = [
   OVERSEAS_PS_TEMPLATE,
   IBN_SINA_IS_TEMPLATE,
@@ -468,12 +496,16 @@ function requiredHeadersForTemplate(template: DistributorSalesTemplate) {
   return Object.values(template.fields);
 }
 
-function templateForDistributor(distributorCode: string) {
+function templateForDistributor(distributorCode: string): DistributorSalesTemplate[] {
   const code = normalizeCode(distributorCode);
   const matchingTemplates = DISTRIBUTOR_SALES_TEMPLATES.filter((template) =>
     template.distributorCodes.map(normalizeCode).includes(code),
   );
-  return matchingTemplates.length > 0 ? matchingTemplates : [...DISTRIBUTOR_SALES_TEMPLATES];
+  const base = matchingTemplates.length > 0 ? [...matchingTemplates] : [...DISTRIBUTOR_SALES_TEMPLATES];
+  // Always allow the unified Normalizer coded sheet as the FINAL fallback (tried after the distributor's
+  // own template), so a coded sheet validates under any distributor. Raw/hand-coded sheets still match
+  // their dedicated template first; raw (uncoded) sheets match none and stay blocked as before.
+  return [...base, NORMALIZER_TEMPLATE];
 }
 
 function findHeaderMap(sheet: ExcelJS.Worksheet, template: DistributorSalesTemplate): HeaderMap | null {
@@ -1902,19 +1934,12 @@ async function insertSourceOfSalesRows(
   }
 }
 
-export async function createSourceOfSalesUpload(input: {
-  distributorCode: string;
-  file: File;
-  uploadedBy: string;
-}) {
-  const references = await loadSalesReferenceData();
-  const buffer = await input.file.arrayBuffer();
-  const parsed = await parseDistributorSalesWorkbookBuffer({
-    buffer,
-    distributorCode: input.distributorCode,
-    fileName: input.file.name,
-    references,
-  });
+// Shared persist step: insert the batch + its rows + summaries. Used by both the File-based upload and
+// the in-memory buffer-based upload (the Normalizer's validated import).
+async function persistDistributorSalesUpload(
+  parsed: DistributorSalesValidationResult & { parsedRows: ParsedDistributorRow[] },
+  uploadedBy: string,
+) {
   const { parsedRows, ...result } = parsed;
 
   const supabase = getSupabaseAdmin();
@@ -1936,7 +1961,7 @@ export async function createSourceOfSalesUpload(input: {
       total_bonus_qty: result.totals.totalBonusQty,
       total_value: result.totals.totalValue,
       blocking_reasons: result.blockingReasons,
-      uploaded_by: input.uploadedBy,
+      uploaded_by: uploadedBy,
     })
     .select("id,created_at")
     .single();
@@ -1957,6 +1982,49 @@ export async function createSourceOfSalesUpload(input: {
     batchId,
     createdAt: String(batchInsert.data.created_at),
   };
+}
+
+export async function createSourceOfSalesUpload(input: {
+  distributorCode: string;
+  file: File;
+  uploadedBy: string;
+}) {
+  const references = await loadSalesReferenceData();
+  const buffer = await input.file.arrayBuffer();
+  const parsed = await parseDistributorSalesWorkbookBuffer({
+    buffer,
+    distributorCode: input.distributorCode,
+    fileName: input.file.name,
+    references,
+  });
+  return persistDistributorSalesUpload(parsed, input.uploadedBy);
+}
+
+// Buffer-based upload — the Normalizer's one-click "Import (validated)" path builds the coded workbook in
+// memory (no temp file) and runs it through the SAME validator + insert as a normal upload. With
+// persistOnlyIfValidated, a blocked result is returned WITHOUT writing anything (fail-closed), so a
+// mis-coded sheet can never silently land. batchId/createdAt are null when not persisted.
+export async function createSourceOfSalesUploadFromBuffer(input: {
+  buffer: ArrayBuffer | Buffer;
+  distributorCode: string;
+  fileName: string;
+  persistOnlyIfValidated?: boolean;
+  uploadedBy: string;
+}) {
+  const references = await loadSalesReferenceData();
+  const parsed = await parseDistributorSalesWorkbookBuffer({
+    buffer: input.buffer,
+    distributorCode: input.distributorCode,
+    fileName: input.fileName,
+    references,
+  });
+  if (input.persistOnlyIfValidated && parsed.status !== "validated") {
+    // Blocked: return the validation result WITHOUT persisting (fail-closed); drop parsedRows.
+    const { parsedRows, ...result } = parsed;
+    void parsedRows;
+    return { ...result, batchId: null as string | null, createdAt: null as string | null };
+  }
+  return persistDistributorSalesUpload(parsed, input.uploadedBy);
 }
 
 export async function validateDistributorSalesFile(input: {
