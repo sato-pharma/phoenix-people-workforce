@@ -29,7 +29,7 @@ import {
   type ApplicationDbRow,
   type CandidateDbRow,
 } from "@/lib/recruitment/db";
-import { canSeeApplication } from "@/lib/recruitment/access";
+import { assertCanDeleteRecruitment, canSeeApplication } from "@/lib/recruitment/access";
 import {
   createCandidate,
   getCandidate,
@@ -542,6 +542,7 @@ export async function approveAndConvert(
 // its events, interviews, onboarding items, and file links. The candidate and
 // requisition records are left intact.
 export async function deleteApplication(access: AccessContext, id: string): Promise<void> {
+  assertCanDeleteRecruitment(access);
   const application = await getApplication(access, id); // scope-checked; null if missing
   if (!application) throw new Error("Application not found.");
   const supabase = recruitmentDb();

@@ -14,9 +14,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
-    await requireRecruitmentAccess(request, "candidates", "delete");
+    const access = await requireRecruitmentAccess(request, "candidates", "delete");
     const { id } = await params;
-    await deleteCandidate(id);
+    await deleteCandidate(access, id);
     return NextResponse.json({ success: true });
   } catch (error) {
     return recruitmentApiError(error, "Failed to delete candidate.");

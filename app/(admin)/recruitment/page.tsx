@@ -47,6 +47,8 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
       canAccess(access, "candidates", "import"),
       canAccess(access, "candidates", "read"),
     ]);
+  // Hard delete is Super Admin only (server enforces this too).
+  const canDelete = access.role === "Super Admin" || access.scope === "system";
 
   let dashboard: RecruitmentDashboard | null = null;
   let openVacancies: VacancyReportRow[] = [];
@@ -76,6 +78,7 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
     <RecruitmentWorkspace
       canApprove={canApprove}
       canCreateRequisition={canCreateRequisition}
+      canDelete={canDelete}
       canImport={canImport}
       canManage={canManage}
       canManageCandidates={canManageCandidates}

@@ -6,6 +6,7 @@ import {
   firstExcelWorksheet,
   loadExcelWorkbook,
 } from "@/lib/uploads/exceljs-rows";
+import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
 import {
   candidateMatchKeys,
   findMatchingCandidate,
@@ -92,7 +93,8 @@ async function fetchById(id: string): Promise<Candidate> {
 
 // Hard-delete a candidate (admin cleanup). Database cascades remove their
 // applications and any application children + files.
-export async function deleteCandidate(id: string): Promise<void> {
+export async function deleteCandidate(access: AccessContext, id: string): Promise<void> {
+  assertCanDeleteRecruitment(access);
   const candidate = await getCandidate(id);
   if (!candidate) throw new Error("Candidate not found.");
   const supabase = recruitmentDb();
