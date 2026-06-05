@@ -45,6 +45,12 @@ export const applicationStages = [
   // Rule 8/9 — interview completion + final selection states (non-terminal).
   "manager_interview_completed",
   "backup_candidate",
+  // Offer pipeline — preparation → approval → generation → negotiation (all non-terminal).
+  "offer_draft",
+  "offer_pending_approval",
+  "offer_approved",
+  "offer_generated",
+  "offer_negotiation",
 ] as const;
 export type ApplicationStage = (typeof applicationStages)[number];
 
@@ -100,6 +106,13 @@ export const recruitmentActionKeys = [
   // Rule 9 — final selection backup pool
   "app_to_backup",
   "app_backup_to_offer",
+  // Offer pipeline — staged preparation / approval / generation / negotiation.
+  "app_offer_prepare",
+  "app_offer_submit_approval",
+  "app_offer_approved",
+  "app_offer_approval_rejected",
+  "app_offer_generated",
+  "app_offer_negotiation",
 ] as const;
 export type RecruitmentActionKey = (typeof recruitmentActionKeys)[number];
 

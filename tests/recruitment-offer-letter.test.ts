@@ -8,6 +8,7 @@ export function runRecruitmentOfferLetterTests() {
     offerId: "o1",
     applicationId: "a1",
     version: 2,
+    kind: "offer_letter",
     snapshot: {
       candidateName: "Ahmed <script>alert(1)</script>",
       jobTitle: "Medical Rep",

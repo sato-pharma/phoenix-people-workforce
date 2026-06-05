@@ -118,6 +118,7 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/notifications/daily", reason: "Scheduled notification route guarded by cron controls." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/offers/:offerRef/accept", reason: "Candidate offer acceptance uses a secure offer token." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/offers/:offerRef/reject", reason: "Candidate offer rejection uses a secure offer token." }),
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/offers/:offerRef/negotiate", reason: "Candidate offer negotiation request uses a secure offer token; write-only, flags the offer for HR." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/recruitment/apply/:token", reason: "Public job application submission protected by the posting token and IP rate limit; write-only, exposes no data." }),
 
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "PATCH"], pattern: "/api/admin/users/**", permission: [{ resource: "admin_access", action: "read" }, { resource: "user_admin", action: "update" }] }),
@@ -178,6 +179,7 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/onboarding/**", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/offers/**", permission: { resource: "offers", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/offer-letter/**", permission: { resource: "offers", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: allMethods, pattern: "/api/recruitment/salary-summary/**", permission: { resource: "offers", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: allMethods, pattern: "/api/recruitment/files/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/**", permission: { resource: "organogram", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/resignations/**", permission: { resource: "resignations", action: "read" }, csrfRequired: true }),

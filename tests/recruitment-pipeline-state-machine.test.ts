@@ -75,4 +75,20 @@ export function runRecruitmentPipelineStateMachineTests() {
   ]) {
     assert.ok((recruitmentActionKeys as readonly string[]).includes(action), `missing action ${action}`);
   }
+
+  // Offer pipeline — staged stages (non-terminal) + actions.
+  for (const stage of ["offer_draft", "offer_pending_approval", "offer_approved", "offer_generated", "offer_negotiation"]) {
+    assert.ok((applicationStages as readonly string[]).includes(stage), `missing stage ${stage}`);
+    assert.equal(isTerminalApplicationStage(stage), false, `${stage} must be non-terminal`);
+  }
+  for (const action of [
+    "app_offer_prepare",
+    "app_offer_submit_approval",
+    "app_offer_approved",
+    "app_offer_approval_rejected",
+    "app_offer_generated",
+    "app_offer_negotiation",
+  ]) {
+    assert.ok((recruitmentActionKeys as readonly string[]).includes(action), `missing action ${action}`);
+  }
 }

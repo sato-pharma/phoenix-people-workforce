@@ -42,7 +42,9 @@ export function runRecruitmentReadinessTests() {
     "\n" +
     read("supabase/migrations/20260605160000_recruitment_workflow_registry_rules.sql") +
     "\n" +
-    read("supabase/migrations/20260605180000_recruitment_interview_registry.sql");
+    read("supabase/migrations/20260605180000_recruitment_interview_registry.sql") +
+    "\n" +
+    read("supabase/migrations/20260606091500_recruitment_offer_pipeline_stages.sql");
   assert.match(seed, /'recruitment'/);
   assert.match(seed, /on conflict \(module_key\) do update/);
   for (const stage of [...applicationStages, ...requisitionStatuses]) {
@@ -114,6 +116,46 @@ export function runRecruitmentReadinessTests() {
   assert.match(applications, /reconcileOfferStatuses/, "must reconcile candidate decisions");
   assert.match(applications, /ensureOnboardingChecklist/, "pre-boarding must seed the onboarding checklist");
   assert.match(applications, /areRequiredDocumentsApproved/, "hire must gate on approved documents");
+
+  // --- Offer pipeline (Preparation -> Approval -> Generation -> Sent -> Negotiation)
+  const offerColumns = read("supabase/migrations/20260606090000_offer_pipeline_columns.sql");
+  for (const col of [
+    "probation_period_months", "benefits", "approved_at", "generated_at", "sent_at", "sent_by_hr_id", "sent_version", "expiry_date",
+  ]) {
+    assert.ok(offerColumns.includes(col), `offer columns migration missing ${col}`);
+  }
+  for (const status of ["pending_approval", "approved", "approval_rejected", "generated", "negotiation_in_progress"]) {
+    assert.ok(offerColumns.includes(`'${status}'`), `offer status CHECK missing ${status}`);
+  }
+  const approvalStepsMigration = read("supabase/migrations/20260606090500_offer_approval_steps.sql");
+  assert.match(approvalStepsMigration, /create table if not exists public\.offer_approval_steps/);
+  assert.match(approvalStepsMigration, /revoke all on public\.offer_approval_steps from anon, authenticated/);
+  const offersRegistry = read("supabase/migrations/20260606091000_offers_registry_pipeline.sql");
+  for (const action of [
+    "offer_submit_approval", "offer_chain_approve", "offer_chain_reject", "offer_generate", "offer_send", "offer_candidate_negotiate", "offer_renegotiate_prepare",
+  ]) {
+    assert.ok(offersRegistry.includes(`"${action}"`), `offers registry missing action ${action}`);
+  }
+  const offerLetterKind = read("supabase/migrations/20260606092000_offer_letter_kind.sql");
+  assert.match(offerLetterKind, /add column if not exists kind text/);
+  assert.match(offerLetterKind, /unique \(offer_id, version, kind\)/);
+
+  // Routes registered (offer sub-routes ride the applications/** entry).
+  for (const sub of ["prepare", "submit-approval", "approval", "generate", "send", "renegotiate"]) {
+    assert.ok(
+      findAccessRegistryEntry(`/api/recruitment/applications/abc/offer/${sub}`, "POST"),
+      `offer ${sub} route must be registered`,
+    );
+  }
+  const negotiateOfferEntry = findAccessRegistryEntry("/api/offers/o1/negotiate", "POST");
+  assert.ok(negotiateOfferEntry, "candidate negotiate route must be registered");
+  assert.equal(negotiateOfferEntry?.authMode, "public-token", "candidate negotiate must be a token route");
+  assert.ok(findAccessRegistryEntry("/api/recruitment/salary-summary/v1", "GET"), "salary summary route must be registered");
+
+  // Service reuse — staged functions + the offer engine send.
+  assert.match(applications, /prepareOffer/, "must expose prepareOffer");
+  assert.match(applications, /submitOfferForApproval/, "must expose the approval chain");
+  assert.match(applications, /sendOffer\(/, "must reuse the offer engine sendOffer");
 
   const onboardingMigration = read("supabase/migrations/20260604180000_recruitment_onboarding.sql");
   assert.match(onboardingMigration, /create table if not exists public\.recruitment_onboarding_items/);

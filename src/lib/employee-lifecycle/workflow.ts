@@ -110,7 +110,15 @@ export async function assertOfferWorkflowTransition(input: {
     | "candidate_reject"
     | "create"
     | "expire"
-    | "hire_approve";
+    | "hire_approve"
+    // Offer pipeline actions (prepare → approval chain → generate → send → negotiate).
+    | "submit_approval"
+    | "chain_approve"
+    | "chain_reject"
+    | "generate"
+    | "send"
+    | "candidate_negotiate"
+    | "renegotiate_prepare";
   expectedNextStatus?: string;
   onboardingStatus?: string | null;
   status: OfferStatus | string | null | undefined;
