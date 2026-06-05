@@ -11,6 +11,7 @@ import {
   Map as MapIcon,
   MapPin,
   Package,
+  Puzzle,
   RefreshCw,
   ShieldCheck,
   Truck,
@@ -22,6 +23,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminTableShell } from "@/components/admin/admin-design-system";
 import { DatabaseValidationTab } from "@/components/sales/database-validation-tab";
+import { DistributorProfileEditor } from "@/components/sales/distributor-profile-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
@@ -369,7 +371,7 @@ function ResultStat({ label, tone = "neutral", value }: { label: string; tone?: 
 
 export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, initialRows }: Props) {
   const [rowsByMaster, setRowsByMaster] = useState(initialRows);
-  const [activeTab, setActiveTab] = useState<MasterKey | "validation">(MASTER_ORDER[0]);
+  const [activeTab, setActiveTab] = useState<MasterKey | "validation" | "profiles">(MASTER_ORDER[0]);
   const [downloadingMaster, setDownloadingMaster] = useState(false);
   const [masterError, setMasterError] = useState<string | null>(null);
 
@@ -409,7 +411,7 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
     );
   }
 
-  const activeDef = activeTab === "validation" ? null : MASTER_DEFINITIONS[activeTab];
+  const activeDef = activeTab === "validation" || activeTab === "profiles" ? null : MASTER_DEFINITIONS[activeTab];
 
   return (
     <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
@@ -481,9 +483,19 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
             <ShieldCheck className="h-4 w-4" />
             Database Validation
           </Button>
+          <Button
+            className={cn("gap-2 rounded-xl font-black", activeTab === "profiles" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "")}
+            onClick={() => setActiveTab("profiles")}
+            variant="secondary"
+          >
+            <Puzzle className="h-4 w-4" />
+            Distributor Mapping
+          </Button>
         </div>
 
-        {activeDef === null ? (
+        {activeTab === "profiles" ? (
+          <DistributorProfileEditor />
+        ) : activeDef === null ? (
           <DatabaseValidationTab headerGrid={initialHeaderGrid} />
         ) : (
           <MasterTab
