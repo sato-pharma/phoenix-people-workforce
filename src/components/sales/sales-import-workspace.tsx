@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   BarChart3,
   CheckCircle2,
+  Copy,
   Database,
   FileSpreadsheet,
   Loader2,
@@ -517,6 +518,9 @@ function SourceOfSalesDashboardPanel({
 
 type SourceOfSalesTab = "dashboard" | "products" | "sheets";
 
+// Coded headers to paste into Excel. TAB-separated so each header lands in its OWN cell on paste.
+const CODED_PASTE_HEADERS = "Discount%\tProduct ID\tBrick ID\tArea ID\tRegion ID\tDistrub ID";
+
 export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const defaultDistributor = useMemo(
@@ -528,6 +532,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [batches, setBatches] = useState(initialBatches);
   const [activeTab, setActiveTab] = useState<SourceOfSalesTab>("dashboard");
+  const [headersCopied, setHeadersCopied] = useState(false);
   const [dashboard, setDashboard] = useState<SourceOfSalesDashboard | null>(initialDashboard);
   const [productsCount, setProductsCount] = useState(initialProducts.length);
   const [result, setResult] = useState<DistributorSalesValidationResult | null>(null);
@@ -703,6 +708,21 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
               </div>
             </div>
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              <Button
+                className="gap-2"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(CODED_PASTE_HEADERS);
+                    setHeadersCopied(true);
+                    setTimeout(() => setHeadersCopied(false), 1800);
+                  } catch { /* clipboard blocked — nothing to surface */ }
+                }}
+                title="Copy the 6 coded headers (Discount%, Product ID, Brick ID, Area ID, Region ID, Distrub ID) — paste into Excel and each lands in its own cell."
+                variant="secondary"
+              >
+                {headersCopied ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                {headersCopied ? "Copied!" : "Copy headers"}
+              </Button>
               <Link href="/sales">
                 <Button className="gap-2 rounded-xl bg-[#0B0B0B] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-[#F97316]">
                   <Table2 className="h-4 w-4" />
