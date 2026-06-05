@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import { systemAuthEmailText } from "@/config/system-settings";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { persistSupabaseAuthIdentityLink, provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
-import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const passwordSetupExpiryMs = 2 * 60 * 1000;
@@ -184,27 +184,49 @@ export async function sendPasswordSetupLink(input: {
 
   const emailResult =
     deliveryMode === "email"
-      ? await safeSendNotificationEmail({
-          ctaHref: setupUrl,
-          ctaLabel: "Set your password",
-          metrics: [
-            { label: "Login ID", value: loginId },
-            { label: "HR_ID", value: user.hr_id ?? loginId },
-            { label: "Expires", value: new Date(expiresAt).toLocaleString("en-US") },
-          ],
-          candidateEmail: user.email,
-          notificationType: purpose === "setup" ? "user_created" : "password_reset",
-          recipients: user.email ? [user.email] : [],
-          recipientMode: "candidate",
-          subject: purpose === "setup" ? systemAuthEmailText.accountSetupSubject : systemAuthEmailText.passwordResetSubject,
-          summary:
+      ? await createSystemNotification({
+          actionUrl: setupUrl,
+          actorId: input.actorLoginId ?? "system",
+          channels: ["email"],
+          email: {
+            candidateEmail: user.email,
+            ctaHref: setupUrl,
+            ctaLabel: "Set your password",
+            metrics: [
+              { label: "Login ID", value: loginId },
+              { label: "HR_ID", value: user.hr_id ?? loginId },
+              { label: "Expires", value: new Date(expiresAt).toLocaleString("en-US") },
+            ],
+            notificationType: purpose === "setup" ? "user_created" : "password_reset",
+            recipientMode: "candidate",
+            recipients: user.email ? [user.email] : [],
+            subject: purpose === "setup" ? systemAuthEmailText.accountSetupSubject : systemAuthEmailText.passwordResetSubject,
+            summary:
+              purpose === "setup"
+                ? systemAuthEmailText.accountSetupSummary
+                : systemAuthEmailText.passwordResetSummary,
+            title: purpose === "setup" ? systemAuthEmailText.accountSetupTitle : systemAuthEmailText.passwordResetTitle,
+            tone: "warning",
+          },
+          eventType: purpose === "setup" ? "password_setup_link_created" : "password_reset_link_created",
+          message:
             purpose === "setup"
               ? systemAuthEmailText.accountSetupSummary
               : systemAuthEmailText.passwordResetSummary,
+          metadata: {
+            idempotencyKey: `password-setup:${loginId}:${tokenHash}`,
+            loginId,
+            purpose,
+          },
+          module: purpose === "setup" ? "password_setup" : "password_reset",
+          priority: "high",
+          recipientHrId: user.hr_id,
+          recipientUserId: loginId,
           title: purpose === "setup" ? systemAuthEmailText.accountSetupTitle : systemAuthEmailText.passwordResetTitle,
-          tone: "warning",
         })
-      : { skipped: true as const, reason: "Link generated for manual sharing." };
+      : { deliveries: [{ channel: "email" as const, error: undefined, idempotencyKey: "manual", reason: "Link generated for manual sharing.", status: "skipped" as const }] };
+  const emailSent = emailResult.deliveries.some((delivery) => delivery.channel === "email" && delivery.status === "sent");
+  const emailDelivery = emailResult.deliveries.find((delivery) => delivery.channel === "email");
 
   await writeRequiredAuditLog({
     actorLoginId: input.actorLoginId ?? null,
@@ -212,7 +234,7 @@ export async function sendPasswordSetupLink(input: {
     entityType: "user",
     newValues: {
       action: "password_setup_link_generated",
-      delivery: deliveryMode === "email" && !emailResult.skipped ? "email_sent" : "link_generated_only",
+      delivery: deliveryMode === "email" && emailSent ? "email_sent" : "link_generated_only",
       deliveryMode,
       expiresAt,
       reason: input.governanceReason ?? null,
@@ -229,8 +251,8 @@ export async function sendPasswordSetupLink(input: {
     deliveryMessage:
       deliveryMode === "copy"
         ? `Password ${purpose === "setup" ? "setup" : "reset"} link generated for copy/paste.`
-        : emailResult.skipped
-          ? `Link generated but email was not delivered: ${emailResult.reason}`
+        : !emailSent
+          ? `Link generated but email was not delivered: ${emailDelivery?.reason ?? emailDelivery?.error ?? "Delivery did not complete."}`
           : `Password ${purpose === "setup" ? "setup" : "reset"} link sent to ${user.email}.`,
     deliveryMode,
     expiresAt,

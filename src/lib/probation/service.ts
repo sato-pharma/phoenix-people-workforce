@@ -10,7 +10,7 @@ import {
 } from "@/lib/auth/permissions";
 import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
-import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -432,20 +432,36 @@ async function insertHistory(
 }
 
 async function notifyProbationWorkflow(record: ProbationWorkflowRecord, title: string, tone: "success" | "warning" | "danger") {
-  await safeSendNotificationEmail({
-    ctaHref: "/probation",
-    ctaLabel: "Open probation tracker",
-    employeeHrId: record.employeeHrId,
-    metrics: [
-      { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },
-      { label: "Status", value: record.status },
-      { label: "Decision", value: record.decision ?? "Pending" },
-    ],
-    notificationType: "probation",
-    subject: `Phoenix ${title} - ${record.employeeName}`,
-    summary: `Probation review for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+  await createSystemNotification({
+    actionUrl: "/probation",
+    actorId: "system",
+    email: {
+      ctaHref: "/probation",
+      ctaLabel: "Open probation tracker",
+      employeeHrId: record.employeeHrId,
+      metrics: [
+        { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },
+        { label: "Status", value: record.status },
+        { label: "Decision", value: record.decision ?? "Pending" },
+      ],
+      notificationType: "probation",
+      subject: `Phoenix ${title} - ${record.employeeName}`,
+      summary: `Probation review for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+      title,
+      tone,
+    },
+    eventType: "workflow_updated",
+    message: `Probation review for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+    metadata: {
+      decision: record.decision ?? null,
+      employeeHrId: record.employeeHrId,
+      idempotencyKey: `probation:${record.employeeHrId}:${record.status}`,
+      status: record.status,
+    },
+    module: "probation",
+    priority: tone === "danger" ? "critical" : "high",
+    subjectHrId: record.employeeHrId,
     title,
-    tone,
   });
 }
 
@@ -703,35 +719,56 @@ export async function processDueProbationReminderEvents(limit = 25) {
 
     const daysRemaining = Number(metadata.days_remaining ?? row.days_remaining);
     const daysAfterHire = Number(metadata.days_after_hire ?? 90 - daysRemaining);
-    const recipientEmails = Array.isArray(metadata.recipient_emails)
-      ? metadata.recipient_emails.map((email) => cleanEmail(String(email))).filter((email): email is string => Boolean(email))
+    const recipientHrIds = Array.isArray(event.recipients)
+      ? event.recipients.map((recipient) => normalizeHrId(recipient)).filter(Boolean)
       : [];
-    const result = await safeSendNotificationEmail({
-      ctaHref: `/employee-portals/probation?employeeHrId=${encodeURIComponent(employee.hrId)}`,
-      ctaLabel: "Submit Your Feedback",
-      employeeHrId: employee.hrId,
-      metrics: [
-        { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
-        { label: "Hire date", value: employee.hireDate ?? "-" },
-        { label: "Days remaining", value: Number.isFinite(daysRemaining) ? String(daysRemaining) : String(row.days_remaining) },
-      ],
-      notificationType: "probation",
-      recipients: recipientEmails,
-      subject: event.subject ?? `Probation reminder: ${employee.fullName}`,
-      summary: `${employee.fullName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
-      title: event.subject ?? "Probation reminder",
-      tone: row.days_remaining <= 15 ? "danger" : "warning",
-    });
+    const notificationResults = await Promise.all(
+      (recipientHrIds.length > 0 ? recipientHrIds : [undefined]).map((recipientHrId) =>
+        createSystemNotification({
+          actionUrl: `/employee-portals/probation?employeeHrId=${encodeURIComponent(employee.hrId)}`,
+          actorId: "system",
+          email: {
+            ctaHref: `/employee-portals/probation?employeeHrId=${encodeURIComponent(employee.hrId)}`,
+            ctaLabel: "Submit Your Feedback",
+            employeeHrId: employee.hrId,
+            metrics: [
+              { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
+              { label: "Hire date", value: employee.hireDate ?? "-" },
+              { label: "Days remaining", value: Number.isFinite(daysRemaining) ? String(daysRemaining) : String(row.days_remaining) },
+            ],
+            notificationType: "probation",
+            subject: event.subject ?? `Probation reminder: ${employee.fullName}`,
+            summary: `${employee.fullName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
+            title: event.subject ?? "Probation reminder",
+            tone: row.days_remaining <= 15 ? "danger" : "warning",
+          },
+          eventType: "reminder_due",
+          message: `${employee.fullName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
+          metadata: {
+            ...metadata,
+            employeeHrId: employee.hrId,
+            idempotencyKey: `probation-reminder:${event.id}:${recipientHrId ?? "policy"}`,
+          },
+          module: "probation",
+          priority: row.days_remaining <= 15 ? "critical" : "high",
+          recipientHrId,
+          recordId: event.id,
+          subjectHrId: employee.hrId,
+          title: event.subject ?? "Probation reminder",
+        }),
+      ),
+    );
+    const deliverySent = notificationResults.some((result) => result.deliveries.some((delivery) => delivery.status === "sent"));
 
-    await markProbationReminderEvent(event.id, result.skipped ? "failed" : "sent", {
+    await markProbationReminderEvent(event.id, deliverySent ? "sent" : "failed", {
       ...metadata,
-      email_result: result.skipped ? result.reason : result.id,
+      delivery_results: notificationResults.map((result) => result.deliveries),
       processed_at: new Date().toISOString(),
     });
-    if (result.skipped) {
-      failed += 1;
-    } else {
+    if (deliverySent) {
       sent += 1;
+    } else {
+      failed += 1;
     }
     processedIds.push(event.id);
   }

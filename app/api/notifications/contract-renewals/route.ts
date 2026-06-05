@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 
 import { getContractRenewalReminderCandidates } from "@/lib/contracts/service";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
-import { safeSendNotificationEmail } from "@/lib/notifications/email";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
+import { createSystemNotification } from "@/lib/notifications/system";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,19 +40,34 @@ export async function runContractRenewalNotifications(request: Request) {
 
   for (const row of candidates) {
     const dueText = row.daysUntil === 0 ? "due today" : `due in ${row.daysUntil} days`;
-    const result = await safeSendNotificationEmail({
-      employeeHrId: row.hr_id,
-      metrics: [
-        { label: "Employee", value: `${row.full_name} (${row.hr_id})` },
-        { label: "Renewal date", value: row.contract_renewal_date },
-        { label: "Reminder", value: dueText },
-        { label: "Run date", value: runDate },
-      ],
-      notificationType: "contract_renewal",
-      subject: `Contract Renewal Reminder - ${row.full_name} - ${row.contract_renewal_date}`,
-      summary: `Contract renewal for ${row.full_name} is ${dueText}. Pending manager recommendation is required.`,
+    const result = await createSystemNotification({
+      actionUrl: "/contracts/renewals",
+      actorId: "system",
+      email: {
+        employeeHrId: row.hr_id,
+        metrics: [
+          { label: "Employee", value: `${row.full_name} (${row.hr_id})` },
+          { label: "Renewal date", value: row.contract_renewal_date },
+          { label: "Reminder", value: dueText },
+          { label: "Run date", value: runDate },
+        ],
+        notificationType: "contract_renewal",
+        subject: `Contract Renewal Reminder - ${row.full_name} - ${row.contract_renewal_date}`,
+        summary: `Contract renewal for ${row.full_name} is ${dueText}. Pending manager recommendation is required.`,
+        title: "Contract Renewal Reminder - Pending Manager Recommendation",
+        tone: row.daysUntil <= 7 ? "danger" : "warning",
+      },
+      eventType: "renewal_reminder",
+      message: `Contract renewal for ${row.full_name} is ${dueText}. Pending manager recommendation is required.`,
+      metadata: {
+        employeeHrId: row.hr_id,
+        idempotencyKey: `contract-renewal-reminder:${row.hr_id}:${row.contract_renewal_date}:${runDate}`,
+        renewalDate: row.contract_renewal_date,
+      },
+      module: "contract_renewal",
+      priority: row.daysUntil <= 7 ? "critical" : "high",
+      subjectHrId: row.hr_id,
       title: "Contract Renewal Reminder - Pending Manager Recommendation",
-      tone: row.daysUntil <= 7 ? "danger" : "warning",
     });
 
     results.push({ daysUntil: row.daysUntil, employeeHrId: row.hr_id, result });

@@ -1,10 +1,6 @@
-import crypto from "crypto";
-
-import { systemIdentity } from "@/config/system-settings";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type AuthUserRow = {
@@ -108,15 +104,6 @@ function schemaMissing(error: unknown) {
     message.includes("schema cache") ||
     (message.includes("relation") && message.includes("does not exist"))
   );
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
 }
 
 function displayNameForUser(user: AuthUserRow | null, employee?: EmployeeContactRow | null) {
@@ -390,30 +377,6 @@ export async function listInternalMessagesForViewer(access: AccessContext, limit
   }
 }
 
-function internalMessageEmail(input: {
-  body: string;
-  recipientName: string;
-  senderName: string;
-  subject: string;
-}) {
-  const htmlBody = escapeHtml(input.body).replace(/\n/g, "<br />");
-  const html = `<!doctype html>
-<html>
-  <body style="margin:0;background:#f8fafc;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#0f172a">
-    <section style="max-width:640px;margin:0 auto;border:1px solid #e2e8f0;border-radius:18px;background:#ffffff;padding:24px">
-      <p style="margin:0 0 8px;color:#f97316;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">${escapeHtml(systemIdentity.appName)}</p>
-      <h1 style="margin:0;color:#0f172a;font-size:22px;line-height:1.25">${escapeHtml(input.subject)}</h1>
-      <p style="margin:18px 0 0;color:#475569;font-size:14px;line-height:1.7">Dear ${escapeHtml(input.recipientName)},</p>
-      <div style="margin-top:14px;color:#0f172a;font-size:15px;line-height:1.75">${htmlBody}</div>
-      <p style="margin:22px 0 0;color:#475569;font-size:13px;line-height:1.6">Sent internally by ${escapeHtml(input.senderName)} through ${escapeHtml(systemIdentity.appName)}.</p>
-    </section>
-  </body>
-</html>`;
-
-  const text = `${systemIdentity.appName}\n\n${input.subject}\n\nDear ${input.recipientName},\n\n${input.body}\n\nSent internally by ${input.senderName}.`;
-  return { html, text };
-}
-
 export async function sendInternalMessage(access: AccessContext, input: SendInternalMessageInput) {
   const sender = await resolveSender(access);
   const recipient = await resolveRecipient(input.recipient);
@@ -477,29 +440,37 @@ export async function sendInternalMessage(access: AccessContext, input: SendInte
       emailStatus = "skipped";
       emailError = "Recipient has no email address.";
     } else {
-      const generated = internalMessageEmail({
-        body,
-        recipientName: recipient.name,
-        senderName: sender.name,
-        subject,
-      });
-
       try {
-        const result = await sendPhoenixEmail({
-          from: process.env.INTERNAL_MESSAGE_EMAIL_FROM || process.env.NOTIFICATION_EMAIL_FROM,
-          html: generated.html,
-          idempotencyKey: crypto.createHash("sha256").update(`internal-message:${row.id}`).digest("hex"),
-          subject,
-          text: generated.text,
-          to: [recipient.email],
+        const result = await createSystemNotification({
+          category: "internal_message",
+          channels: ["email"],
+          email: {
+            notificationType: "general",
+            recipients: [recipient.email],
+            subject,
+            summary: `${sender.name}: ${body.slice(0, 500)}`,
+            title: subject,
+          },
+          eventType: "internal_message_email_requested",
+          message: `${sender.name}: ${body.slice(0, 180)}`,
+          metadata: {
+            idempotencyKey: `internal-message-email:${row.id}`,
+            messageId: row.id,
+            sender: sender.name,
+          },
+          module: "internal_messages",
+          priority: "normal",
+          recipientHrId: recipient.hrId,
+          recipientUserId: recipient.loginId,
+          title: subject,
         });
-
-        if (result.skipped) {
-          emailStatus = "skipped";
-          emailError = result.reason;
-        } else {
+        const emailDelivery = result.deliveries.find((delivery) => delivery.channel === "email");
+        if (emailDelivery?.status === "sent") {
           emailStatus = "sent";
-          emailProviderId = result.id ?? null;
+          emailProviderId = emailDelivery.idempotencyKey;
+        } else {
+          emailStatus = emailDelivery?.status === "skipped" ? "skipped" : "failed";
+          emailError = emailDelivery?.reason ?? emailDelivery?.error ?? "Email delivery did not complete.";
         }
       } catch (sendError) {
         emailStatus = "failed";

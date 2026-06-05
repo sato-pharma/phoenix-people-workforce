@@ -25,6 +25,7 @@ import {
   setSupabaseAuthIdentityAccess,
 } from "@/lib/auth/supabase-identity";
 import { createTemporaryAuthPassword } from "@/lib/auth/password-setup";
+import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const phoenixLines = ["CNS", "Pedia", "Anti-Infective", "Office", "Other"] as const;
@@ -674,6 +675,15 @@ export async function upsertAccessUser(input: AccessUserMutation, actor?: Access
       },
       summary,
     });
+
+    if (!nextIsActive) {
+      await disableTelegramForIdentity({
+        actorLoginId: actor?.loginId ?? "system",
+        hrId: input.hrId?.trim() || (existing?.hr_id ?? null),
+        reason: input.governanceReason ?? "Access user saved as inactive.",
+        userId: loginId,
+      });
+    }
   } catch (mutationError) {
     if (profileWritten && authUserId) {
       try {
@@ -847,6 +857,15 @@ export async function updateAccessUserStatus(
       },
       summary: `${isActive ? "Activated" : "Deactivated"} ${loginId}`,
     });
+
+    if (!isActive) {
+      await disableTelegramForIdentity({
+        actorLoginId: actor?.loginId ?? "system",
+        hrId: existing.hr_id ?? null,
+        reason: governanceReason ?? "Access user deactivated.",
+        userId: loginId,
+      });
+    }
   } catch (mutationError) {
     if (profileStatusWritten && typeof existing.auth_user_id === "string") {
       try {
