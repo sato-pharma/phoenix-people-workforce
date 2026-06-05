@@ -89,6 +89,18 @@ export async function runSosNormalizerTests() {
   assert.equal(coded.clientCode, "C999");
   assert.equal(result.exceptions[0]!.reason, "product"); // brick resolved, product did not
 
+  // ── date format: DD-MM-YYYY with day <= 12 must NOT be misread as a month (the Sofico bug). The
+  // column carries a value with day > 12 (30-04) so the engine detects day-first and parses ALL as April. ──
+  const ddmm = await buildRaw([
+    ["LA001", "x", 1, 0, 10, "01-04-2026", "C1", "P", "الدقي/بين السريات", ""], // 1 April  (day 1  <= 12)
+    ["LA001", "x", 1, 0, 10, "08-04-2026", "C2", "P", "الدقي/بين السريات", ""], // 8 April  (day 8  <= 12)
+    ["LA001", "x", 1, 0, 10, "14-04-2026", "C3", "P", "الدقي/بين السريات", ""], // 14 April (day 14 > 12 -> day-first)
+    ["LA001", "x", 1, 0, 10, "30-04-2026", "C4", "P", "الدقي/بين السريات", ""], // 30 April
+  ]);
+  const ddmmResult = await normalizeRawWorkbook(ddmm as unknown as ArrayBuffer, profile, maps);
+  assert.equal(ddmmResult.coded.length, 4);
+  for (const r of ddmmResult.coded) assert.equal(r.invoiceDate, "2026-04", `DD-MM date must parse to April, got ${r.invoiceDate}`);
+
   // ── bulk mapping: suggestProduct (token overlap) + distinctUnknowns (collapse repeats) ──
   const products: ProductRef[] = [
     { code: "TE002", family: "Tebofortin", name: "Tebofortin 40mg 30 tab" },

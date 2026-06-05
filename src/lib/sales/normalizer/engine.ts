@@ -34,8 +34,10 @@ function discountFrac(value: unknown): number {
   return Math.abs(n) > 1 ? n / 100 : n;
 }
 
-// Timezone-safe YYYY-MM (same approach as the importer's invoicePeriod).
-function periodFrom(value: unknown): string | null {
+// Timezone-safe YYYY-MM. dayFirst disambiguates DD-MM-YYYY vs MM-DD-YYYY when both parts are <= 12
+// (e.g. "08-04-2026" is 8 April in DD-MM, but August in MM-DD). The caller detects the column's
+// orientation from values that can't be ambiguous (a part > 12) — see detectDayFirst.
+function periodFrom(value: unknown, dayFirst?: boolean): string | null {
   const ym = (y: number, m: number) => (Number.isInteger(y) && y >= 1900 && m >= 1 && m <= 12 ? `${y}-${String(m).padStart(2, "0")}` : null);
   if (value instanceof Date) return ym(value.getUTCFullYear(), value.getUTCMonth() + 1);
   const text = String(value ?? "").trim();
@@ -45,11 +47,28 @@ function periodFrom(value: unknown): string | null {
   const dmy = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
   if (dmy) {
     const a = Number(dmy[1]); const b = Number(dmy[2]); let y = Number(dmy[3]); if (y < 100) y += 2000;
-    const month = a > 12 && b <= 12 ? b : a;
+    let month: number;
+    if (dayFirst === true) month = b >= 1 && b <= 12 ? b : a;        // DD-MM-YYYY: month is the 2nd part
+    else if (dayFirst === false) month = a >= 1 && a <= 12 ? a : b;  // MM-DD-YYYY: month is the 1st part
+    else month = a > 12 && b <= 12 ? b : a;                          // unknown column: legacy best-guess
     return ym(y, month);
   }
   const parsed = new Date(text);
   return Number.isNaN(parsed.getTime()) ? null : ym(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1);
+}
+
+// Decide if a sheet's date column is day-first (DD-MM) or month-first (MM-DD) by scanning its values.
+// A value whose FIRST part is > 12 can only be a day -> DD-MM (decisive). A value whose SECOND part is
+// > 12 (first <= 12) can only be a day there -> MM-DD. undefined when every value is ambiguous.
+function detectDayFirst(sheet: ExcelJS.Worksheet, header: HeaderMap, dateColumns: string[] | undefined): boolean | undefined {
+  let sawMonthFirst = false;
+  for (let r = header.headerRow + 1; r <= sheet.rowCount; r += 1) {
+    const m = firstValue(sheet.getRow(r), header, dateColumns).match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+    if (!m) continue;
+    if (Number(m[1]) > 12) return true;          // first part is a day -> day-first (decisive)
+    if (Number(m[2]) > 12) sawMonthFirst = true; // second part is a day -> month-first
+  }
+  return sawMonthFirst ? false : undefined;
 }
 
 // ── header map ──
@@ -90,6 +109,7 @@ export function normalizeRows(
   maps: Crosswalks,
 ): NormalizeResult {
   const header = buildHeaderMap(sheet);
+  const dayFirst = detectDayFirst(sheet, header, profile.dateColumns);
   const coded: CodedRow[] = [];
   const exceptions: NormalizeException[] = [];
   let productResolved = 0;
@@ -152,7 +172,7 @@ export function normalizeRows(
       clientName: firstValue(row, header, profile.customerNameColumns) || null,
       discount,
       distributorCode: profile.distributorCode,
-      invoiceDate: periodFrom(firstValue(row, header, profile.dateColumns)) ?? "",
+      invoiceDate: periodFrom(firstValue(row, header, profile.dateColumns), dayFirst) ?? "",
       isDirect: profile.valueSource === "sheet",
       officialLine: product?.line || "Unknown",
       productCode,
