@@ -17,7 +17,7 @@ function read(relativePath: string): string {
 
 export function runRecruitmentReadinessTests() {
   // --- Schema migration --------------------------------------------------
-  const schema = read("supabase/migrations/20260604170000_recruitment_phase1_schema.sql");
+  const schema = read("supabase/migrations/20260605014225_recruitment_phase1_schema.sql");
   for (const table of [
     "recruitment_requisitions",
     "recruitment_candidates",
@@ -39,13 +39,13 @@ export function runRecruitmentReadinessTests() {
 
   // --- Workflow registry seed (original + Rules 5/6 + Rules 8/9 updates) --
   const seed =
-    read("supabase/migrations/20260604170100_recruitment_workflow_registry_module.sql") +
+    read("supabase/migrations/20260605014350_recruitment_workflow_registry_module.sql") +
     "\n" +
-    read("supabase/migrations/20260605160000_recruitment_workflow_registry_rules.sql") +
+    read("supabase/migrations/20260605041754_recruitment_workflow_registry_rules.sql") +
     "\n" +
-    read("supabase/migrations/20260605180000_recruitment_interview_registry.sql") +
+    read("supabase/migrations/20260605063834_20260605180000_recruitment_interview_registry.sql") +
     "\n" +
-    read("supabase/migrations/20260606091500_recruitment_offer_pipeline_stages.sql");
+    read("supabase/migrations/20260605093925_20260606091500_recruitment_offer_pipeline_stages.sql");
   assert.match(seed, /'recruitment'/);
   assert.match(seed, /on conflict \(module_key\) do update/);
   for (const stage of [...applicationStages, ...requisitionStatuses]) {
@@ -56,7 +56,7 @@ export function runRecruitmentReadinessTests() {
   }
 
   // --- Workflow Rules 4/5/6 schema migration ----------------------------
-  const rulesSchema = read("supabase/migrations/20260605150000_recruitment_workflow_rules.sql");
+  const rulesSchema = read("supabase/migrations/20260605041621_recruitment_workflow_rules.sql");
   assert.match(rulesSchema, /add column if not exists status text not null default 'Candidate Created'/);
   for (const stage of ["shortlisted", "on_hold", "no_response", "call_back"]) {
     assert.ok(rulesSchema.includes(`'${stage}'`), `rules schema missing stage ${stage}`);
@@ -65,11 +65,11 @@ export function runRecruitmentReadinessTests() {
   assert.match(rulesSchema, /notify pgrst, 'reload schema'/);
 
   // --- Workflow Rules 8/9 migrations (interview completion + final selection)
-  const interviewStages = read("supabase/migrations/20260605170000_recruitment_interview_stages.sql");
+  const interviewStages = read("supabase/migrations/20260605055231_20260605170000_recruitment_interview_stages.sql");
   for (const stage of ["manager_interview_completed", "backup_candidate"]) {
     assert.ok(interviewStages.includes(`'${stage}'`), `interview stages migration missing ${stage}`);
   }
-  const interviewRegistry = read("supabase/migrations/20260605180000_recruitment_interview_registry.sql");
+  const interviewRegistry = read("supabase/migrations/20260605063834_20260605180000_recruitment_interview_registry.sql");
   assert.match(
     interviewRegistry,
     /"app_record_hm_interview"[\s\S]*?"to":"manager_interview_completed"/,
@@ -119,7 +119,7 @@ export function runRecruitmentReadinessTests() {
   assert.match(applications, /areRequiredDocumentsApproved/, "hire must gate on approved documents");
 
   // --- Offer pipeline (Preparation -> Approval -> Generation -> Sent -> Negotiation)
-  const offerColumns = read("supabase/migrations/20260606090000_offer_pipeline_columns.sql");
+  const offerColumns = read("supabase/migrations/20260605093656_20260606090000_offer_pipeline_columns.sql");
   for (const col of [
     "probation_period_months", "benefits", "approved_at", "generated_at", "sent_at", "sent_by_hr_id", "sent_version", "expiry_date",
   ]) {
@@ -128,16 +128,16 @@ export function runRecruitmentReadinessTests() {
   for (const status of ["pending_approval", "approved", "approval_rejected", "generated", "negotiation_in_progress"]) {
     assert.ok(offerColumns.includes(`'${status}'`), `offer status CHECK missing ${status}`);
   }
-  const approvalStepsMigration = read("supabase/migrations/20260606090500_offer_approval_steps.sql");
+  const approvalStepsMigration = read("supabase/migrations/20260605093724_20260606090500_offer_approval_steps.sql");
   assert.match(approvalStepsMigration, /create table if not exists public\.offer_approval_steps/);
   assert.match(approvalStepsMigration, /revoke all on public\.offer_approval_steps from anon, authenticated/);
-  const offersRegistry = read("supabase/migrations/20260606091000_offers_registry_pipeline.sql");
+  const offersRegistry = read("supabase/migrations/20260605093807_20260606091000_offers_registry_pipeline.sql");
   for (const action of [
     "offer_submit_approval", "offer_chain_approve", "offer_chain_reject", "offer_generate", "offer_send", "offer_candidate_negotiate", "offer_renegotiate_prepare",
   ]) {
     assert.ok(offersRegistry.includes(`"${action}"`), `offers registry missing action ${action}`);
   }
-  const offerLetterKind = read("supabase/migrations/20260606092000_offer_letter_kind.sql");
+  const offerLetterKind = read("supabase/migrations/20260605093951_20260606092000_offer_letter_kind.sql");
   assert.match(offerLetterKind, /add column if not exists kind text/);
   assert.match(offerLetterKind, /unique \(offer_id, version, kind\)/);
 
@@ -158,10 +158,10 @@ export function runRecruitmentReadinessTests() {
   assert.match(applications, /submitOfferForApproval/, "must expose the approval chain");
   assert.match(applications, /sendOffer\(/, "must reuse the offer engine sendOffer");
 
-  const onboardingMigration = read("supabase/migrations/20260604180000_recruitment_onboarding.sql");
+  const onboardingMigration = read("supabase/migrations/20260605014515_recruitment_onboarding_postings_letters_approval_files.sql");
   assert.match(onboardingMigration, /create table if not exists public\.recruitment_onboarding_items/);
   assert.match(onboardingMigration, /revoke all on public\.recruitment_onboarding_items from anon, authenticated/);
-  const onboardingMissing = read("supabase/migrations/20260606093000_onboarding_missing_status.sql");
+  const onboardingMissing = read("supabase/migrations/20260605104050_20260606093000_onboarding_missing_status.sql");
   assert.match(onboardingMissing, /recruitment_onboarding_items_status_check[\s\S]*'missing'/, "M6 adds the missing status");
   assert.ok((onboardingItemStatuses as readonly string[]).includes("missing"), "missing onboarding status registered");
 
@@ -171,7 +171,7 @@ export function runRecruitmentReadinessTests() {
   assert.equal(applyEntry?.authMode, "public-token", "public apply must be a token route, not a session route");
   assert.equal(applyEntry?.csrf.required, false, "public apply is token-protected (no CSRF), matching the offer token routes");
 
-  const postingsMigration = read("supabase/migrations/20260604190000_recruitment_job_postings.sql");
+  const postingsMigration = read("supabase/migrations/20260605014515_recruitment_onboarding_postings_letters_approval_files.sql");
   assert.match(postingsMigration, /create table if not exists public\.recruitment_job_postings/);
   assert.match(postingsMigration, /add column if not exists submitted_ip_hash/);
   assert.match(postingsMigration, /revoke all on public\.recruitment_job_postings from anon, authenticated/);
@@ -185,7 +185,7 @@ export function runRecruitmentReadinessTests() {
   assert.ok(offerLetterEntry, "offer-letter generate route must be registered");
   const offerLetterDocEntry = findAccessRegistryEntry("/api/recruitment/offer-letter/v1", "GET");
   assert.ok(offerLetterDocEntry, "offer-letter document route must be registered");
-  const offerLettersMigration = read("supabase/migrations/20260605120000_recruitment_offer_letters.sql");
+  const offerLettersMigration = read("supabase/migrations/20260605014515_recruitment_onboarding_postings_letters_approval_files.sql");
   assert.match(offerLettersMigration, /create table if not exists public\.recruitment_offer_letters/);
   assert.match(offerLettersMigration, /revoke all on public\.recruitment_offer_letters from anon, authenticated/);
 
@@ -199,7 +199,7 @@ export function runRecruitmentReadinessTests() {
   assert.equal(pkg.dependencies?.googleapis, undefined, "no googleapis dependency should be added");
 
   // --- Supabase Storage (primary file backend) --------------------------
-  const filesBucketMigration = read("supabase/migrations/20260605140000_recruitment_files_bucket.sql");
+  const filesBucketMigration = read("supabase/migrations/20260605014515_recruitment_onboarding_postings_letters_approval_files.sql");
   assert.match(filesBucketMigration, /storage\.buckets/);
   assert.match(filesBucketMigration, /'recruitment-files'/);
   assert.match(filesBucketMigration, /recruitment_files_service_role/);
@@ -211,7 +211,7 @@ export function runRecruitmentReadinessTests() {
   // --- Threshold offer approval (Phase 4b) ------------------------------
   const seniorEntry = findAccessRegistryEntry("/api/recruitment/applications/abc/senior-approval", "POST");
   assert.ok(seniorEntry, "senior-approval route must be registered");
-  const seniorMigration = read("supabase/migrations/20260605130000_recruitment_senior_approval.sql");
+  const seniorMigration = read("supabase/migrations/20260605014515_recruitment_onboarding_postings_letters_approval_files.sql");
   assert.match(seniorMigration, /senior_approval_status/);
   assert.match(applications, /requiresSeniorApproval/, "convert must gate above-band offers on Super Admin sign-off");
 
