@@ -4,7 +4,7 @@ import { NormalizerWorkspace } from "@/components/sales/normalizer-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { hasGeminiKey } from "@/lib/sales/normalizer/ai-suggest";
+import { hasAiKey } from "@/lib/sales/normalizer/ai-suggest";
 import { listMappingReferences, listNormalizerDistributors, type MappingReferences } from "@/lib/sales/normalizer/service";
 
 export const dynamic = "force-dynamic";
@@ -19,5 +19,5 @@ export default async function NormalizerPage() {
   }
   let references: MappingReferences = { bricks: [], products: [] };
   try { references = await listMappingReferences(); } catch { /* dropdowns degrade gracefully */ }
-  return <NormalizerWorkspace aiEnabled={hasGeminiKey()} distributors={listNormalizerDistributors()} references={references} />;
+  return <NormalizerWorkspace aiEnabled={hasAiKey()} distributors={listNormalizerDistributors()} references={references} />;
 }
