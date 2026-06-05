@@ -90,6 +90,16 @@ async function fetchById(id: string): Promise<Candidate> {
   return candidate;
 }
 
+// Hard-delete a candidate (admin cleanup). Database cascades remove their
+// applications and any application children + files.
+export async function deleteCandidate(id: string): Promise<void> {
+  const candidate = await getCandidate(id);
+  if (!candidate) throw new Error("Candidate not found.");
+  const supabase = recruitmentDb();
+  const { error } = await supabase.from("recruitment_candidates").delete().eq("id", id);
+  if (error) throw error;
+}
+
 // Create-or-attach: dedupes on National ID, else email, else phone.
 export async function createCandidate(
   input: CreateCandidateInput,

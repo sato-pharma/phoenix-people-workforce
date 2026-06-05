@@ -537,3 +537,14 @@ export async function approveAndConvert(
 
   return { application: mapApplication(data as ApplicationDbRow), employeeHrId };
 }
+
+// Hard-delete an application (admin cleanup; any stage). Database cascades remove
+// its events, interviews, onboarding items, and file links. The candidate and
+// requisition records are left intact.
+export async function deleteApplication(access: AccessContext, id: string): Promise<void> {
+  const application = await getApplication(access, id); // scope-checked; null if missing
+  if (!application) throw new Error("Application not found.");
+  const supabase = recruitmentDb();
+  const { error } = await supabase.from("recruitment_applications").delete().eq("id", id);
+  if (error) throw error;
+}
