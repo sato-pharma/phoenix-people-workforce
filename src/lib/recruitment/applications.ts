@@ -15,8 +15,28 @@ import {
 import {
   approveAcceptedOffer,
   createOffer,
+  sendOffer,
   type OfferLifecycleInput,
 } from "@/lib/offers/service";
+import { assertOfferWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
+import {
+  canCastOfferApproval,
+  computeRequiredApprovers,
+  evaluateChainState,
+  getApprovalStep,
+  loadApprovalSteps,
+  loadLatestApprovalSteps,
+  nextApprovalVersion,
+  recordApprovalDecision,
+  seedApprovalSteps,
+  type ApprovalStepRow,
+} from "@/lib/offers/approval-chain";
+import { resolvePositionApprovalThreshold } from "@/config/offer-approval";
+import {
+  generateOfferLetter,
+  generateSalarySummary,
+  nextOfferLetterVersion,
+} from "@/lib/recruitment/offer-letters";
 import {
   assertRecruitmentTransition,
   mapApplication,
@@ -67,6 +87,8 @@ export type LaunchOfferInput = {
   compensationLines?: unknown;
   compensationNotes?: string | null;
   templateKey?: string | null;
+  benefits?: unknown;
+  probationPeriodMonths?: number | null;
 };
 
 // Plain stage moves that are a status change + history only (no side effects).
@@ -370,6 +392,300 @@ export async function launchOfferFromApplication(
   return { application: mapApplication(data as ApplicationDbRow), offerId };
 }
 
+// ---------------------------------------------------------------------------
+// Offer pipeline (Preparation -> Approval -> Generation -> Sent -> Negotiation).
+// Each staged function updates BOTH job_offers.status and the application stage in
+// lockstep, asserting both registry transitions. The app-side assertion runs
+// BEFORE any side effect so a blocked transition never leaves an orphan offer.
+// ---------------------------------------------------------------------------
+
+async function setOfferStatus(offerId: string, status: string, patch: Record<string, unknown> = {}): Promise<void> {
+  const supabase = recruitmentDb();
+  const { error } = await supabase
+    .from("job_offers")
+    .update({ status, updated_at: new Date().toISOString(), ...patch })
+    .eq("id", offerId);
+  if (error) throw error;
+}
+
+async function commitApplicationStage(input: {
+  id: string;
+  fromStage: string;
+  toStage: ApplicationStage;
+  actionKey: RecruitmentActionKey;
+  actorHrId: string | null;
+  reason?: string | null;
+  details?: Record<string, unknown>;
+}): Promise<Application> {
+  const supabase = recruitmentDb();
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("recruitment_applications")
+    .update({ stage: input.toStage, last_stage_changed_at: now, updated_at: now })
+    .eq("id", input.id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  await writeApplicationEvent({
+    applicationId: input.id,
+    fromStage: input.fromStage,
+    toStage: input.toStage,
+    action: input.actionKey,
+    actorHrId: input.actorHrId,
+    reason: input.reason ?? null,
+    details: input.details ?? {},
+  });
+  return mapApplication(data as ApplicationDbRow);
+}
+
+// Step 1 — prepare a draft offer (auto-filled from the requisition; salary computed).
+export async function prepareOffer(
+  id: string,
+  access: AccessContext,
+  input: LaunchOfferInput = {},
+): Promise<{ application: Application; offerId: string }> {
+  const application = await loadApplicationRow(id);
+  const requisition = await getRequisition(access, application.requisitionId);
+  if (!requisition) throw new Error("Requisition not found.");
+  const candidate = await getCandidate(application.candidateId);
+  if (!candidate) throw new Error("Candidate not found.");
+  if (!candidate.email) throw new Error("Candidate email is required to prepare an offer.");
+  if (!requisition.vacancyId) {
+    throw new Error("The requisition must wrap an open vacancy before an offer can be prepared.");
+  }
+
+  await assertRecruitmentTransition({ actionKey: "app_offer_prepare", role: access.role, status: application.stage });
+
+  const baseSalary =
+    numberOrNull(input.baseSalary) ??
+    requisition.salaryBandMin ??
+    requisition.salaryBandMax ??
+    candidate.expectedSalary;
+  if (!baseSalary || baseSalary <= 0) {
+    throw new Error("Provide a base salary (or set the requisition salary band) to prepare the offer.");
+  }
+
+  const offerPayload: OfferLifecycleInput = {
+    candidateName: candidate.fullName,
+    candidateEmail: candidate.email,
+    candidatePhone: candidate.phone,
+    jobTitle: requisition.jobTitle || "Job Offer",
+    departmentId: requisition.departmentId,
+    lineId: requisition.lineId,
+    areaId: requisition.areaId,
+    positionId: requisition.positionId,
+    managerHrId: requisition.hiringManagerHrId,
+    vacancyId: requisition.vacancyId,
+    baseSalary,
+    fuelAllowance: numberOrNull(input.fuelAllowance),
+    extraCostOfLiving: numberOrNull(input.extraCostOfLiving),
+    socialInsurance: numberOrNull(input.socialInsurance),
+    taxes: numberOrNull(input.taxes),
+    compensationLines: input.compensationLines,
+    compensationNotes: textOrNull(input.compensationNotes),
+    startDate: textOrNull(input.startDate),
+    expiresInDays: numberOrNull(input.expiresInDays),
+    templateKey: textOrNull(input.templateKey),
+    benefits: input.benefits,
+    probationPeriodMonths: numberOrNull(input.probationPeriodMonths),
+    createdByHrId: access.hrId,
+  };
+
+  const result = await createOffer(offerPayload, { role: access.role }, { mode: "draft" });
+  const offerId = result.offer.id;
+
+  const supabase = recruitmentDb();
+  await supabase.from("job_offers").update({ application_id: id }).eq("id", offerId);
+  await supabase.from("recruitment_applications").update({ offer_id: offerId }).eq("id", id);
+
+  const updated = await commitApplicationStage({
+    id,
+    fromStage: application.stage,
+    toStage: "offer_draft",
+    actionKey: "app_offer_prepare",
+    actorHrId: access.hrId ?? null,
+    details: { offerId },
+  });
+  return { application: updated, offerId };
+}
+
+// Step 2 — submit the draft offer for the threshold approval chain.
+export async function submitOfferForApproval(id: string, access: AccessContext): Promise<Application> {
+  const application = await loadApplicationRow(id);
+  if (!application.offerId) throw new Error("This application has no prepared offer to submit.");
+  const requisition = await getRequisition(access, application.requisitionId);
+  if (!requisition) throw new Error("Requisition not found.");
+
+  await assertRecruitmentTransition({ actionKey: "app_offer_submit_approval", role: access.role, status: application.stage });
+  await assertOfferWorkflowTransition({
+    access: { role: access.role },
+    action: "submit_approval",
+    expectedNextStatus: "offer_pending_approval",
+    status: "draft",
+  });
+
+  const supabase = recruitmentDb();
+  const { data: offerRow } = await supabase.from("job_offers").select("net_salary").eq("id", application.offerId).maybeSingle();
+  const net = numberOrNull((offerRow as Record<string, unknown> | null)?.net_salary ?? null);
+  const threshold = resolvePositionApprovalThreshold({ jobTitle: requisition.jobTitle, salaryBandMax: requisition.salaryBandMax });
+  const approvers = computeRequiredApprovers({ netSalary: net, hiringManagerHrId: requisition.hiringManagerHrId, threshold });
+  const version = await nextApprovalVersion(application.offerId);
+  await seedApprovalSteps({ offerId: application.offerId, applicationId: id, version, approvers });
+
+  await setOfferStatus(application.offerId, "pending_approval");
+  return commitApplicationStage({
+    id,
+    fromStage: application.stage,
+    toStage: "offer_pending_approval",
+    actionKey: "app_offer_submit_approval",
+    actorHrId: access.hrId ?? null,
+    details: { approvalVersion: version, requiredApprovers: approvers.length },
+  });
+}
+
+// The latest approval chain for the workspace checklist (+ a per-step authority flag).
+export async function getOfferApprovalChain(
+  access: AccessContext,
+  id: string,
+): Promise<Array<ApprovalStepRow & { canAct: boolean }>> {
+  const application = await loadApplicationRow(id);
+  if (!application.offerId) return [];
+  const steps = await loadLatestApprovalSteps(application.offerId);
+  return steps.map((step) => ({ ...step, canAct: step.decision === "pending" && canCastOfferApproval(access, step) }));
+}
+
+// Step 3 — record one approver's decision; resolve the chain when complete.
+export async function decideOfferApproval(
+  id: string,
+  access: AccessContext,
+  input: { stepId: string; decision: "approved" | "rejected"; reason?: string | null },
+): Promise<{ application: Application; chainState: "pending" | "approved" | "rejected" }> {
+  const application = await loadApplicationRow(id);
+  if (!application.offerId) throw new Error("This application has no offer under approval.");
+
+  const step = await getApprovalStep(input.stepId);
+  if (!step || step.offerId !== application.offerId) throw new Error("Approval step not found for this offer.");
+  if (!canCastOfferApproval(access, step)) {
+    throw new Error("Forbidden: you are not an approver for this step.");
+  }
+  if (input.decision === "rejected" && !textOrNull(input.reason)) {
+    throw new Error("A reason is required to reject an offer.");
+  }
+
+  await recordApprovalDecision({
+    stepId: step.id,
+    decision: input.decision,
+    decidedBy: access.hrId ?? access.loginId ?? null,
+    reason: textOrNull(input.reason),
+  });
+
+  const steps = await loadApprovalSteps(application.offerId, step.version);
+  const chainState = evaluateChainState(steps);
+  const now = new Date().toISOString();
+
+  if (chainState === "approved") {
+    await assertOfferWorkflowTransition({ action: "chain_approve", expectedNextStatus: "offer_approved", status: "pending_approval" });
+    await assertRecruitmentTransition({ actionKey: "app_offer_approved", role: systemAccessContext.role, status: application.stage });
+    await setOfferStatus(application.offerId, "approved", { approved_at: now });
+    const updated = await commitApplicationStage({
+      id,
+      fromStage: application.stage,
+      toStage: "offer_approved",
+      actionKey: "app_offer_approved",
+      actorHrId: access.hrId ?? null,
+      details: { approvalVersion: step.version },
+    });
+    return { application: updated, chainState };
+  }
+
+  if (chainState === "rejected") {
+    await assertOfferWorkflowTransition({ action: "chain_reject", expectedNextStatus: "offer_approval_rejected", status: "pending_approval" });
+    await assertRecruitmentTransition({ actionKey: "app_offer_approval_rejected", role: systemAccessContext.role, status: application.stage });
+    await setOfferStatus(application.offerId, "approval_rejected");
+    const updated = await commitApplicationStage({
+      id,
+      fromStage: application.stage,
+      toStage: "offer_draft",
+      actionKey: "app_offer_approval_rejected",
+      actorHrId: access.hrId ?? null,
+      reason: textOrNull(input.reason),
+      details: { approvalVersion: step.version },
+    });
+    return { application: updated, chainState };
+  }
+
+  return { application, chainState };
+}
+
+// Step 4 — generate the offer letter + salary summary (shared version V1/V2/V3).
+export async function generateOfferDocuments(id: string, access: AccessContext): Promise<{ application: Application; version: number }> {
+  const application = await loadApplicationRow(id);
+  if (!application.offerId) throw new Error("This application has no approved offer to generate.");
+
+  await assertRecruitmentTransition({ actionKey: "app_offer_generated", role: access.role, status: application.stage });
+  await assertOfferWorkflowTransition({ access: { role: access.role }, action: "generate", expectedNextStatus: "offer_generated", status: "approved" });
+
+  const version = await nextOfferLetterVersion(application.offerId);
+  await generateOfferLetter(access, application.offerId, { kind: "offer_letter", version });
+  await generateSalarySummary(access, application.offerId, version);
+
+  await setOfferStatus(application.offerId, "generated", { generated_at: new Date().toISOString() });
+  const updated = await commitApplicationStage({
+    id,
+    fromStage: application.stage,
+    toStage: "offer_generated",
+    actionKey: "app_offer_generated",
+    actorHrId: access.hrId ?? null,
+    details: { documentVersion: version },
+  });
+  return { application: updated, version };
+}
+
+// Step 5 — send the generated offer to the candidate (token + email + tracking).
+export async function sendPreparedOffer(id: string, access: AccessContext): Promise<{ application: Application; offerId: string }> {
+  const application = await loadApplicationRow(id);
+  if (!application.offerId) throw new Error("This application has no generated offer to send.");
+
+  await assertRecruitmentTransition({ actionKey: "app_offer_sent", role: access.role, status: application.stage });
+
+  const latestVersion = (await nextOfferLetterVersion(application.offerId)) - 1;
+  await sendOffer(application.offerId, {
+    access: { role: access.role },
+    sentByHrId: access.hrId ?? null,
+    sentVersion: latestVersion > 0 ? latestVersion : null,
+  });
+
+  const updated = await commitApplicationStage({
+    id,
+    fromStage: application.stage,
+    toStage: "offer_sent",
+    actionKey: "app_offer_sent",
+    actorHrId: access.hrId ?? null,
+    details: { offerId: application.offerId, sentVersion: latestVersion },
+  });
+  return { application: updated, offerId: application.offerId };
+}
+
+// Negotiation loop — re-prepare a negotiating offer back to draft for a new version.
+export async function reprepareAfterNegotiation(id: string, access: AccessContext): Promise<{ application: Application; offerId: string }> {
+  const application = await loadApplicationRow(id);
+  if (!application.offerId) throw new Error("This application has no offer to re-prepare.");
+
+  await assertRecruitmentTransition({ actionKey: "app_offer_prepare", role: access.role, status: application.stage });
+  await assertOfferWorkflowTransition({ access: { role: access.role }, action: "renegotiate_prepare", expectedNextStatus: "offer_draft", status: "negotiation_in_progress" });
+
+  await setOfferStatus(application.offerId, "draft");
+  const updated = await commitApplicationStage({
+    id,
+    fromStage: application.stage,
+    toStage: "offer_draft",
+    actionKey: "app_offer_prepare",
+    actorHrId: access.hrId ?? null,
+    details: { offerId: application.offerId, renegotiation: true },
+  });
+  return { application: updated, offerId: application.offerId };
+}
+
 // Stage 16 — mirror the candidate's decision (made via the offer token pages)
 // onto linked applications. Runs under a system context (bookkeeping, not a user
 // action). Returns the number of applications advanced.
@@ -400,6 +716,7 @@ export async function reconcileOfferStatuses(): Promise<number> {
     hired: "app_offer_accepted",
     rejected: "app_offer_declined",
     expired: "app_offer_expired",
+    negotiation_in_progress: "app_offer_negotiation",
   };
 
   let advanced = 0;
@@ -412,6 +729,7 @@ export async function reconcileOfferStatuses(): Promise<number> {
       app_offer_accepted: "offer_accepted",
       app_offer_declined: "offer_declined",
       app_offer_expired: "offer_expired",
+      app_offer_negotiation: "offer_negotiation",
     };
     const nextStage = nextStatusByAction[actionKey];
 

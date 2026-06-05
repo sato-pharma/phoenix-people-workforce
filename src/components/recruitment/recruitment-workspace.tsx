@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   BriefcaseBusiness,
@@ -142,6 +142,298 @@ function OfferSalaryPreview({ baseSalary, jobTitle }: { baseSalary: string; jobT
           <span className="font-semibold text-slate-900">{value.toLocaleString()}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+type OfferApprovalStep = {
+  id: string;
+  sequence: number;
+  approverKind: string;
+  approverRole: string | null;
+  approverHrId: string | null;
+  required: boolean;
+  decision: string;
+  canAct: boolean;
+  reason: string | null;
+};
+
+function approverLabel(step: OfferApprovalStep): string {
+  if (step.approverKind === "person") {
+    return `Department Head${step.approverHrId ? ` (${step.approverHrId})` : ""}`;
+  }
+  if (step.approverRole === "HR Specialist") return "HR Manager";
+  if (step.approverRole === "Finance Manager") return "Finance";
+  return step.approverRole ?? "Approver";
+}
+
+// Staged offer pipeline: prepare -> approval chain -> generate -> send, plus the
+// negotiation re-prepare loop. Self-contained (own busy/notice state + chain fetch).
+function OfferPipelinePanel({ application, canManage }: { application: ApplicationWithContext; canManage: boolean }) {
+  const router = useRouter();
+  const appId = application.id;
+  const stage = application.stage;
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [baseSalary, setBaseSalary] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [expiresInDays, setExpiresInDays] = useState("7");
+  const [probationMonths, setProbationMonths] = useState("3");
+  const [benefitsText, setBenefitsText] = useState("");
+  const [reason, setReason] = useState("");
+  const [steps, setSteps] = useState<OfferApprovalStep[]>([]);
+
+  const reloadChain = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/recruitment/applications/${appId}/offer/approval`);
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      setSteps(Array.isArray(data.steps) ? (data.steps as OfferApprovalStep[]) : []);
+    } catch {
+      setSteps([]);
+    }
+  }, [appId]);
+
+  useEffect(() => {
+    if (stage !== "offer_pending_approval") return;
+    let active = true;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/recruitment/applications/${appId}/offer/approval`);
+        const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        if (active) setSteps(Array.isArray(data.steps) ? (data.steps as OfferApprovalStep[]) : []);
+      } catch {
+        if (active) setSteps([]);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [stage, appId]);
+
+  const offerStages = [
+    "offer_initiated",
+    "offer_draft",
+    "offer_pending_approval",
+    "offer_approved",
+    "offer_generated",
+    "offer_negotiation",
+  ];
+  if (!canManage || !offerStages.includes(stage)) return null;
+
+  const act = (work: () => Promise<string>) => {
+    setBusy(true);
+    setErr(null);
+    setNote(null);
+    void (async () => {
+      try {
+        const message = await work();
+        setNote(message);
+        router.refresh();
+      } catch (caught) {
+        setErr(caught instanceof Error ? caught.message : "Request failed.");
+      } finally {
+        setBusy(false);
+      }
+    })();
+  };
+
+  const benefitsPayload = () =>
+    benefitsText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const idx = line.indexOf(":");
+        return idx >= 0
+          ? { label: line.slice(0, idx).trim(), detail: line.slice(idx + 1).trim() }
+          : { label: line, detail: "" };
+      })
+      .filter((benefit) => benefit.label);
+
+  return (
+    <div className="space-y-2 border-t border-slate-200 pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Offer pipeline</p>
+      {note ? <p className="text-xs text-emerald-600">{note}</p> : null}
+      {err ? <p className="text-xs text-rose-600">{err}</p> : null}
+
+      {stage === "offer_initiated" ? (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-500">
+            From requisition: {application.requisition?.jobTitle ?? "—"} · Manager{" "}
+            {application.requisition?.hiringManagerHrId ?? "—"}
+          </p>
+          <Input placeholder="Base salary" type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} />
+          <Input placeholder="Start date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          <Input placeholder="Probation (months)" type="number" value={probationMonths} onChange={(e) => setProbationMonths(e.target.value)} />
+          <Input placeholder="Expires in days" type="number" value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} />
+          <textarea
+            className={fieldClass}
+            placeholder="Benefits — one per line as 'Label: detail'"
+            value={benefitsText}
+            onChange={(e) => setBenefitsText(e.target.value)}
+          />
+          <OfferSalaryPreview baseSalary={baseSalary} jobTitle={application.requisition?.jobTitle} />
+          <Button
+            disabled={busy || !baseSalary}
+            onClick={() =>
+              act(async () => {
+                await postJson(`/api/recruitment/applications/${appId}/offer/prepare`, {
+                  baseSalary: Number(baseSalary),
+                  startDate: startDate || undefined,
+                  expiresInDays: Number(expiresInDays) || 7,
+                  probationPeriodMonths: Number(probationMonths) || 3,
+                  benefits: benefitsPayload(),
+                });
+                return "Offer draft prepared.";
+              })
+            }
+          >
+            Prepare offer draft
+          </Button>
+        </div>
+      ) : null}
+
+      {stage === "offer_draft" ? (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-500">Offer draft ready. Submit it to start the approval chain.</p>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              act(async () => {
+                await postJson(`/api/recruitment/applications/${appId}/offer/submit-approval`, {});
+                return "Submitted for approval.";
+              })
+            }
+          >
+            Submit for approval
+          </Button>
+        </div>
+      ) : null}
+
+      {stage === "offer_pending_approval" ? (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-500">Approval chain</p>
+          {steps.length === 0 ? (
+            <p className="text-xs text-slate-500">Loading…</p>
+          ) : (
+            <ul className="space-y-2 text-xs">
+              {steps.map((step) => (
+                <li key={step.id} className="border border-slate-200 p-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-900">{approverLabel(step)}</span>
+                    <span
+                      className={
+                        step.decision === "approved"
+                          ? "text-emerald-600"
+                          : step.decision === "rejected"
+                            ? "text-rose-600"
+                            : "text-slate-500"
+                      }
+                    >
+                      {titleCase(step.decision)}
+                    </span>
+                  </div>
+                  {step.canAct ? (
+                    <div className="mt-2 flex gap-2">
+                      <Button
+                        disabled={busy}
+                        onClick={() =>
+                          act(async () => {
+                            await postJson(`/api/recruitment/applications/${appId}/offer/approval`, {
+                              stepId: step.id,
+                              decision: "approved",
+                            });
+                            await reloadChain();
+                            return "Approval recorded.";
+                          })
+                        }
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        disabled={busy || !reason.trim()}
+                        onClick={() =>
+                          act(async () => {
+                            await postJson(`/api/recruitment/applications/${appId}/offer/approval`, {
+                              stepId: step.id,
+                              decision: "rejected",
+                              reason: reason.trim(),
+                            });
+                            await reloadChain();
+                            setReason("");
+                            return "Rejection recorded.";
+                          })
+                        }
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+          <textarea
+            className={fieldClass}
+            placeholder="Reason (required to reject)"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </div>
+      ) : null}
+
+      {stage === "offer_approved" ? (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-500">Approved. Generate the offer letter + salary summary.</p>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              act(async () => {
+                const data = await postJson(`/api/recruitment/applications/${appId}/offer/generate`, {});
+                return `Documents generated${typeof data.version === "number" ? ` (V${data.version})` : ""}.`;
+              })
+            }
+          >
+            Generate documents
+          </Button>
+        </div>
+      ) : null}
+
+      {stage === "offer_generated" ? (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-500">Documents generated. Send the offer to the candidate.</p>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              act(async () => {
+                await postJson(`/api/recruitment/applications/${appId}/offer/send`, {});
+                return "Offer sent to the candidate.";
+              })
+            }
+          >
+            Send offer
+          </Button>
+        </div>
+      ) : null}
+
+      {stage === "offer_negotiation" ? (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-500">Candidate requested negotiation. Re-prepare a new version.</p>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              act(async () => {
+                await postJson(`/api/recruitment/applications/${appId}/offer/renegotiate`, {});
+                return "Offer returned to draft for a new version.";
+              })
+            }
+          >
+            Re-prepare (new version)
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -544,9 +836,6 @@ function PipelineTab({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
-  const [baseSalary, setBaseSalary] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [expiresInDays, setExpiresInDays] = useState("7");
   const [manualHrId, setManualHrId] = useState("");
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [interviewsError, setInterviewsError] = useState<string | null>(null);
@@ -762,30 +1051,7 @@ function PipelineTab({
               </div>
             ) : null}
 
-            {canManage && selected.stage === "offer_initiated" ? (
-              <div className="space-y-2 border-t border-slate-200 pt-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Send offer</p>
-                <Input placeholder="Base salary" type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} />
-                <Input placeholder="Start date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                <Input placeholder="Expires in days" type="number" value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} />
-                <OfferSalaryPreview baseSalary={baseSalary} jobTitle={selected.requisition?.jobTitle} />
-                <Button
-                  disabled={pending || !baseSalary || !startDate}
-                  onClick={() =>
-                    run(async () => {
-                      await postJson(`/api/recruitment/applications/${selected.id}/offer`, {
-                        baseSalary: Number(baseSalary),
-                        startDate,
-                        expiresInDays: Number(expiresInDays) || 7,
-                      });
-                      return "Offer sent to the candidate.";
-                    })
-                  }
-                >
-                  Send offer
-                </Button>
-              </div>
-            ) : null}
+            <OfferPipelinePanel application={selected} canManage={canManage} />
 
             {selected.stage === "offer_sent" ? (
               <p className="text-xs text-slate-500">Waiting on the candidate&apos;s decision (synced from the offer link).</p>
@@ -1845,10 +2111,19 @@ function OfferLetterSection({
         <ul className="space-y-1 text-xs">
           {versions.map((versionItem) => (
             <li key={versionItem.id} className="flex items-center justify-between gap-2">
-              <span>Version {versionItem.version}</span>
+              <span>
+                V{versionItem.version} · {versionItem.kind === "salary_summary" ? "Salary summary" : "Offer letter"}
+              </span>
               <Button
                 variant="secondary"
-                onClick={() => window.open(`/api/recruitment/offer-letter/${versionItem.id}`, "_blank")}
+                onClick={() =>
+                  window.open(
+                    versionItem.kind === "salary_summary"
+                      ? `/api/recruitment/salary-summary/${versionItem.id}`
+                      : `/api/recruitment/offer-letter/${versionItem.id}`,
+                    "_blank",
+                  )
+                }
               >
                 Open / Save PDF
               </Button>
