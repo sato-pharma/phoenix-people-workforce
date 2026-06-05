@@ -42,6 +42,9 @@ export const applicationStages = [
   "on_hold",
   "no_response",
   "call_back",
+  // Rule 8/9 — interview completion + final selection states (non-terminal).
+  "manager_interview_completed",
+  "backup_candidate",
 ] as const;
 export type ApplicationStage = (typeof applicationStages)[number];
 
@@ -91,6 +94,12 @@ export const recruitmentActionKeys = [
   "app_call_back",
   "app_resume_from_call_back_to_cv",
   "app_resume_from_call_back_to_phone",
+  // Rule 8 — hiring-manager interview completion + hold resume
+  "app_mgr_completed_to_final",
+  "app_resume_from_hold_to_hm",
+  // Rule 9 — final selection backup pool
+  "app_to_backup",
+  "app_backup_to_offer",
 ] as const;
 export type RecruitmentActionKey = (typeof recruitmentActionKeys)[number];
 

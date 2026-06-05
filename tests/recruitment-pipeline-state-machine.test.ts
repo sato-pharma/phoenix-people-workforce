@@ -61,4 +61,18 @@ export function runRecruitmentPipelineStateMachineTests() {
   ]) {
     assert.ok((recruitmentActionKeys as readonly string[]).includes(action), `missing action ${action}`);
   }
+
+  // Rule 8/9 — interview completion + final-selection stages (non-terminal).
+  for (const stage of ["manager_interview_completed", "backup_candidate"]) {
+    assert.ok((applicationStages as readonly string[]).includes(stage), `missing stage ${stage}`);
+    assert.equal(isTerminalApplicationStage(stage), false, `${stage} must be non-terminal`);
+  }
+  for (const action of [
+    "app_mgr_completed_to_final",
+    "app_resume_from_hold_to_hm",
+    "app_to_backup",
+    "app_backup_to_offer",
+  ]) {
+    assert.ok((recruitmentActionKeys as readonly string[]).includes(action), `missing action ${action}`);
+  }
 }

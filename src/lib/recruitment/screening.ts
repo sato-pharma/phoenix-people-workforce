@@ -1,9 +1,10 @@
-// Recruitment / ATS — CV & phone screening orchestration (Rules 5 & 6).
+// Recruitment / ATS — CV / phone / hiring-manager screening orchestration
+// (Rules 5, 6 & 8).
 //
-// A screening result is recorded as a recruitment_interviews row (reusing the
-// scorecard machinery), then the chosen outcome drives a pipeline transition.
-// Phone screening also confirms a few candidate fields (current employer,
-// expected salary, notice period) onto the candidate record.
+// A screening or interview result is recorded as a recruitment_interviews row
+// (reusing the scorecard machinery), then the chosen outcome drives a pipeline
+// transition. Phone screening also confirms a few candidate fields (current
+// employer, expected salary, notice period) onto the candidate record.
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getApplication, runApplicationTransition } from "@/lib/recruitment/applications";
@@ -12,11 +13,12 @@ import { numberOrNull, recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { normalizeScorecard } from "@/lib/recruitment/scorecards";
 import {
   type CvScreeningOutcome,
+  type InterviewType,
   type PhoneScreeningOutcome,
   type RecruitmentActionKey,
 } from "@/lib/recruitment/types";
 
-export type ScreeningStage = "cv" | "phone";
+export type ScreeningStage = "cv" | "phone" | "hm";
 
 export type RecordScreeningInput = {
   outcome: string;
@@ -43,6 +45,19 @@ const phoneOutcomeAction: Record<PhoneScreeningOutcome, RecruitmentActionKey> = 
   call_back: "app_call_back",
 };
 
+// Rule 8 — hiring-manager interview decision.
+const hmOutcomeAction: Record<string, RecruitmentActionKey> = {
+  recommended: "app_record_hm_interview",
+  rejected: "app_reject",
+  hold: "app_hold",
+};
+
+const interviewTypeForStage: Record<ScreeningStage, InterviewType> = {
+  cv: "cv",
+  phone: "phone",
+  hm: "hiring_manager",
+};
+
 export async function recordScreeningOutcome(
   access: AccessContext,
   applicationId: string,
@@ -55,10 +70,12 @@ export async function recordScreeningOutcome(
   const action =
     stage === "cv"
       ? cvOutcomeAction[input.outcome as CvScreeningOutcome]
-      : phoneOutcomeAction[input.outcome as PhoneScreeningOutcome];
+      : stage === "phone"
+        ? phoneOutcomeAction[input.outcome as PhoneScreeningOutcome]
+        : hmOutcomeAction[input.outcome];
   if (!action) throw new Error("Invalid screening outcome.");
 
-  const interviewType = stage === "cv" ? "cv" : "phone";
+  const interviewType = interviewTypeForStage[stage];
 
   // 1. Persist the screening scorecard (reuses the interviews table + scorecard normalize).
   await createInterview(access, applicationId, {

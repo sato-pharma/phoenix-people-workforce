@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { recordInterviewOutcome, type RecordInterviewInput } from "@/lib/recruitment/interviews";
+import { deleteInterview, recordInterviewOutcome, type RecordInterviewInput } from "@/lib/recruitment/interviews";
 import {
   assertSameOriginMutation,
   readJsonObject,
@@ -35,5 +35,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ success: true, interview });
   } catch (error) {
     return recruitmentApiError(error, "Failed to record interview.");
+  }
+}
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const csrf = assertSameOriginMutation(request);
+    if (csrf) return csrf;
+    const access = await requireRecruitmentAccess(request, "recruitment", "update");
+    const { id } = await params;
+    await deleteInterview(access, id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return recruitmentApiError(error, "Failed to cancel interview.");
   }
 }
