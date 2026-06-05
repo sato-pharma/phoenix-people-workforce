@@ -12,12 +12,28 @@ type Props = {
 };
 
 type Draft = {
+  buttons: TemplateButtonDraft[];
   ctaEnabled: boolean;
   ctaLabel: string;
   ctaUrl: string;
   isActive: boolean;
   message: string;
   templateKey: string;
+  title: string;
+};
+
+type TemplateButtonDraft = {
+  enabled: boolean;
+  label: string;
+  type: "open_phoenix" | "view_details" | "custom";
+  url: string;
+};
+
+type PreviewState = {
+  buttons: Array<{ label: string; type: string; url: string }>;
+  ctaLabel: string | null;
+  ctaUrl: string | null;
+  message: string;
   title: string;
 };
 
@@ -32,10 +48,15 @@ function formatDate(value: string | null) {
 }
 
 function createDraft(template: TelegramTemplateView): Draft {
+  const buttons = template.buttons.length > 0
+    ? template.buttons
+    : [{ enabled: template.ctaEnabled, label: template.ctaLabel, type: "open_phoenix" as const, url: template.ctaUrl }];
+  const firstButton = buttons[0] ?? { enabled: false, label: "Open Phoenix", type: "open_phoenix" as const, url: "{{actionUrl}}" };
   return {
-    ctaEnabled: template.ctaEnabled,
-    ctaLabel: template.ctaLabel,
-    ctaUrl: template.ctaUrl,
+    buttons,
+    ctaEnabled: firstButton.enabled,
+    ctaLabel: firstButton.label,
+    ctaUrl: firstButton.url,
     isActive: template.isActive,
     message: template.message,
     templateKey: template.templateKey,
@@ -51,23 +72,29 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
     [selectedKey, templates],
   );
   const [draft, setDraft] = useState<Draft>(() => createDraft(selectedTemplate));
-  const [preview, setPreview] = useState<{ ctaLabel: string | null; ctaUrl: string | null; message: string }>(() => ({
+  const [preview, setPreview] = useState<PreviewState>(() => ({
+    buttons: selectedTemplate.buttons.filter((button) => button.enabled).map((button) => ({ label: button.label, type: button.type, url: button.url })),
     ctaLabel: selectedTemplate.ctaEnabled ? selectedTemplate.ctaLabel : null,
     ctaUrl: selectedTemplate.ctaEnabled ? selectedTemplate.ctaUrl : null,
     message: selectedTemplate.message,
+    title: selectedTemplate.title,
   }));
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const buttonUrlRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const titleRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   function selectTemplate(template: TelegramTemplateView) {
     setSelectedKey(template.templateKey);
     setDraft(createDraft(template));
     setPreview({
+      buttons: template.buttons.filter((button) => button.enabled).map((button) => ({ label: button.label, type: button.type, url: button.url })),
       ctaLabel: template.ctaEnabled ? template.ctaLabel : null,
       ctaUrl: template.ctaEnabled ? template.ctaUrl : null,
       message: template.message,
+      title: template.title,
     });
     setNotice(null);
     setError(null);
@@ -86,12 +113,59 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
     });
   }
 
-  function insertCtaPlaceholder(placeholder: string) {
-    setDraft((current) => ({ ...current, ctaUrl: `${current.ctaUrl}${current.ctaUrl ? "" : ""}{{${placeholder}}}` }));
+  function insertTitlePlaceholder(placeholder: string) {
+    const input = titleRef.current;
+    const start = input?.selectionStart ?? draft.title.length;
+    const end = input?.selectionEnd ?? start;
+    const nextTitle = insertTelegramPlaceholder(draft.title, placeholder, start, end);
+    setDraft((current) => ({ ...current, title: nextTitle }));
+    requestAnimationFrame(() => {
+      input?.focus();
+      const nextCursor = start + placeholder.length + 4;
+      input?.setSelectionRange(nextCursor, nextCursor);
+    });
+  }
+
+  function insertButtonPlaceholder(index: number, placeholder: string) {
+    const input = buttonUrlRefs.current[index];
+    const currentUrl = draft.buttons[index]?.url ?? "";
+    const start = input?.selectionStart ?? currentUrl.length;
+    const end = input?.selectionEnd ?? start;
+    const nextUrl = insertTelegramPlaceholder(currentUrl, placeholder, start, end);
+    setDraft((current) => ({
+      ...current,
+      buttons: current.buttons.map((button, buttonIndex) => buttonIndex === index ? { ...button, url: nextUrl } : button),
+    }));
+    requestAnimationFrame(() => {
+      input?.focus();
+      const nextCursor = start + placeholder.length + 4;
+      input?.setSelectionRange(nextCursor, nextCursor);
+    });
+  }
+
+  function addButton(type: TemplateButtonDraft["type"]) {
+    const defaults: Record<TemplateButtonDraft["type"], TemplateButtonDraft> = {
+      custom: { enabled: true, label: "Open Phoenix", type: "custom", url: "{{actionUrl}}" },
+      open_phoenix: { enabled: true, label: "Open Phoenix", type: "open_phoenix", url: "{{actionUrl}}" },
+      view_details: { enabled: true, label: "View Details", type: "view_details", url: "{{requestUrl}}" },
+    };
+    setDraft((current) => current.buttons.length >= 3 ? current : { ...current, buttons: [...current.buttons, defaults[type]] });
+  }
+
+  function updateButton(index: number, patch: Partial<TemplateButtonDraft>) {
+    setDraft((current) => ({
+      ...current,
+      buttons: current.buttons.map((button, buttonIndex) => buttonIndex === index ? { ...button, ...patch } : button),
+    }));
+  }
+
+  function removeButton(index: number) {
+    setDraft((current) => ({ ...current, buttons: current.buttons.filter((_button, buttonIndex) => buttonIndex !== index) }));
   }
 
   function resetToDefault() {
     setDraft({
+      buttons: [{ enabled: false, label: "Open Phoenix", type: "open_phoenix", url: "{{actionUrl}}" }],
       ctaEnabled: false,
       ctaLabel: "Open Phoenix",
       ctaUrl: "{{actionUrl}}",
@@ -100,7 +174,7 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
       templateKey: selectedTemplate.templateKey,
       title: selectedTemplate.defaultTitle,
     });
-    setPreview({ ctaLabel: null, ctaUrl: null, message: selectedTemplate.defaultMessage });
+    setPreview({ buttons: [], ctaLabel: null, ctaUrl: null, message: selectedTemplate.defaultMessage, title: selectedTemplate.defaultTitle });
     setNotice("Draft reset to the safe default. Save to persist it.");
     setError(null);
   }
@@ -123,18 +197,22 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
         if (saved) {
           setDraft(createDraft(saved));
           setPreview({
+            buttons: saved.buttons.filter((button: TemplateButtonDraft) => button.enabled).map((button: TemplateButtonDraft) => ({ label: button.label, type: button.type, url: button.url })),
             ctaLabel: saved.ctaEnabled ? saved.ctaLabel : null,
             ctaUrl: saved.ctaEnabled ? saved.ctaUrl : null,
             message: saved.message,
+            title: saved.title,
           });
         }
       } else if (payload.data?.templates) {
         setTemplates(payload.data.templates);
       } else if (payload.data?.message) {
         setPreview({
+          buttons: payload.data.buttons ?? [],
           ctaLabel: payload.data.ctaLabel ?? null,
           ctaUrl: payload.data.ctaUrl ?? null,
           message: payload.data.message,
+          title: payload.data.title ?? draft.title,
         });
       }
       setNotice(successMessage);
@@ -147,14 +225,15 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
 
   const characterCount = draft.message.length;
   const tooLong = characterCount > 900;
-  const usedPlaceholders = selectedTemplate.recommendedPlaceholders.filter((placeholder) => draft.message.includes(`{{${placeholder}}}`) || draft.ctaUrl.includes(`{{${placeholder}}}`));
+  const buttonUrls = draft.buttons.map((button) => button.url).join(" ");
+  const usedPlaceholders = selectedTemplate.recommendedPlaceholders.filter((placeholder) => draft.message.includes(`{{${placeholder}}}`) || buttonUrls.includes(`{{${placeholder}}}`) || draft.title.includes(`{{${placeholder}}}`));
   const missingRecommended = selectedTemplate.recommendedPlaceholders.filter((placeholder) => !usedPlaceholders.includes(placeholder));
   const qualityScore = Math.max(0, Math.min(100,
     40
     + (draft.message.trim() ? 20 : 0)
     + (tooLong ? -20 : 10)
     + Math.round((usedPlaceholders.length / Math.max(selectedTemplate.recommendedPlaceholders.length, 1)) * 20)
-    + (draft.ctaEnabled && draft.ctaLabel.trim() && draft.ctaUrl.trim() ? 10 : draft.ctaEnabled ? -10 : 0),
+    + (draft.buttons.some((button) => button.enabled && button.label.trim() && button.url.trim()) ? 10 : draft.buttons.some((button) => button.enabled) ? -10 : 0),
   ));
 
   return (
@@ -225,12 +304,19 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                   className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900"
                   disabled={!canUpdate}
                   onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                  ref={titleRef}
                   value={draft.title}
                 />
               </label>
 
               <div>
-                <p className="text-sm font-bold text-slate-800">Available placeholders</p>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">Available placeholders</p>
+                    <p className="text-xs font-semibold text-slate-500">Write any normal text, then insert only the variables you need.</p>
+                  </div>
+                  <p className="text-xs font-bold text-slate-500">{selectedTemplate.allowedPlaceholders.length} variables available</p>
+                </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {selectedTemplate.allowedPlaceholders.map((placeholder) => (
                     <button
@@ -244,58 +330,143 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                     </button>
                   ))}
                 </div>
-              </div>
-
-              <div className="rounded border border-slate-200 bg-slate-50 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-sm font-black text-slate-950">CTA Button</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-500">Optional Telegram inline button. It opens Phoenix only.</p>
-                  </div>
-                  <button
-                    className={`inline-flex items-center gap-2 rounded border px-3 py-2 text-sm font-bold disabled:opacity-50 ${draft.ctaEnabled ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-700"}`}
-                    disabled={!canUpdate}
-                    onClick={() => setDraft((current) => ({ ...current, ctaEnabled: !current.ctaEnabled }))}
-                    type="button"
-                  >
-                    {draft.ctaEnabled ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
-                    {draft.ctaEnabled ? "CTA ON" : "CTA OFF"}
-                  </button>
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <label className="block">
-                    <span className="text-xs font-bold text-slate-700">CTA label</span>
-                    <input
-                      className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
-                      disabled={!canUpdate || !draft.ctaEnabled}
-                      onChange={(event) => setDraft((current) => ({ ...current, ctaLabel: event.target.value }))}
-                      placeholder="Open Phoenix"
-                      value={draft.ctaLabel}
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-bold text-slate-700">CTA URL or placeholder</span>
-                    <input
-                      className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
-                      disabled={!canUpdate || !draft.ctaEnabled}
-                      onChange={(event) => setDraft((current) => ({ ...current, ctaUrl: event.target.value }))}
-                      placeholder="{{actionUrl}}"
-                      value={draft.ctaUrl}
-                    />
-                  </label>
-                </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {["actionUrl", "requestUrl", "employeePortalUrl"].filter((placeholder) => selectedTemplate.allowedPlaceholders.includes(placeholder)).map((placeholder) => (
+                  <span className="py-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Insert into title</span>
+                  {selectedTemplate.recommendedPlaceholders.slice(0, 6).map((placeholder) => (
                     <button
                       className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 disabled:opacity-50"
-                      disabled={!canUpdate || !draft.ctaEnabled}
-                      key={placeholder}
-                      onClick={() => insertCtaPlaceholder(placeholder)}
+                      disabled={!canUpdate}
+                      key={`title-${placeholder}`}
+                      onClick={() => insertTitlePlaceholder(placeholder)}
                       type="button"
                     >
                       {"{{"}{placeholder}{"}}"}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div className="rounded border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-black text-slate-950">Smart Action Buttons</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">Safe Telegram URL buttons only. Approve and Reject are reserved for a later authenticated Phoenix confirmation phase.</p>
+                  </div>
+                  <span className="rounded border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600">
+                    {draft.buttons.filter((button) => button.enabled).length}/3 enabled
+                  </span>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {draft.buttons.map((button, index) => (
+                    <div className="rounded border border-slate-200 bg-white p-3" key={`${button.type}-${index}`}>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            className={`inline-flex items-center gap-2 rounded border px-2.5 py-1.5 text-xs font-bold disabled:opacity-50 ${button.enabled ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600"}`}
+                            disabled={!canUpdate}
+                            onClick={() => updateButton(index, { enabled: !button.enabled })}
+                            type="button"
+                          >
+                            {button.enabled ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
+                            {button.enabled ? "Enabled" : "Disabled"}
+                          </button>
+                          <select
+                            className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-700"
+                            disabled={!canUpdate}
+                            onChange={(event) => {
+                              const type = event.target.value as TemplateButtonDraft["type"];
+                              updateButton(index, {
+                                label: type === "view_details" ? "View Details" : type === "open_phoenix" ? "Open Phoenix" : button.label,
+                                type,
+                                url: type === "view_details" ? "{{requestUrl}}" : type === "open_phoenix" ? "{{actionUrl}}" : button.url,
+                              });
+                            }}
+                            value={button.type}
+                          >
+                            <option value="open_phoenix">Open Phoenix</option>
+                            <option value="view_details">View Details</option>
+                            <option value="custom">Custom</option>
+                          </select>
+                        </div>
+                        <button
+                          className="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 disabled:opacity-50"
+                          disabled={!canUpdate}
+                          onClick={() => removeButton(index)}
+                          type="button"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <label className="block">
+                          <span className="text-xs font-bold text-slate-700">Button label</span>
+                          <input
+                            className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
+                            disabled={!canUpdate || !button.enabled}
+                            onChange={(event) => updateButton(index, { label: event.target.value })}
+                            placeholder="Open Phoenix"
+                            value={button.label}
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-bold text-slate-700">Button URL or placeholder</span>
+                          <input
+                            className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
+                            disabled={!canUpdate || !button.enabled}
+                            onChange={(event) => updateButton(index, { url: event.target.value })}
+                            placeholder="{{actionUrl}}"
+                            ref={(node) => { buttonUrlRefs.current[index] = node; }}
+                            value={button.url}
+                          />
+                        </label>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {["actionUrl", "requestUrl", "employeePortalUrl"].filter((placeholder) => selectedTemplate.allowedPlaceholders.includes(placeholder)).map((placeholder) => (
+                          <button
+                            className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 disabled:opacity-50"
+                            disabled={!canUpdate || !button.enabled}
+                            key={`${index}-${placeholder}`}
+                            onClick={() => insertButtonPlaceholder(index, placeholder)}
+                            type="button"
+                          >
+                            {"{{"}{placeholder}{"}}"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-xs font-bold text-orange-800 disabled:opacity-50"
+                    disabled={!canUpdate || draft.buttons.length >= 3}
+                    onClick={() => addButton("open_phoenix")}
+                    type="button"
+                  >
+                    Add Open Phoenix
+                  </button>
+                  <button
+                    className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-xs font-bold text-orange-800 disabled:opacity-50"
+                    disabled={!canUpdate || draft.buttons.length >= 3}
+                    onClick={() => addButton("view_details")}
+                    type="button"
+                  >
+                    Add View Details
+                  </button>
+                  <button
+                    className="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-50"
+                    disabled={!canUpdate || draft.buttons.length >= 3}
+                    onClick={() => addButton("custom")}
+                    type="button"
+                  >
+                    Add Custom URL
+                  </button>
+                </div>
+
+                <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                  Approve and Reject buttons are intentionally blocked in this phase. They will open Phoenix confirmation pages in a later secured rollout.
                 </div>
               </div>
 
@@ -368,19 +539,24 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                   {qualityScore}/100
                 </span>
               </div>
-              <div className="mt-4 rounded border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-800 whitespace-pre-wrap">
-                {preview.message}
+              <div className="mt-4 rounded border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-800">
+                <p className="font-black text-slate-950">{preview.title}</p>
+                <p className="mt-3 whitespace-pre-wrap">{preview.message}</p>
               </div>
               <div className="mt-4 rounded border border-slate-200 bg-white p-4">
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">CTA Preview</p>
-                {draft.ctaEnabled ? (
-                  <div className="mt-3 rounded border border-orange-200 bg-orange-50 px-3 py-2 text-center text-sm font-black text-orange-800">
-                    {preview.ctaLabel ?? (draft.ctaLabel || "CTA label required")}
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Smart Button Preview</p>
+                {preview.buttons.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {preview.buttons.map((button, index) => (
+                      <div className="rounded border border-orange-200 bg-orange-50 px-3 py-2 text-center text-sm font-black text-orange-800" key={`${button.label}-${index}`}>
+                        {button.label}
+                        <p className="mt-1 break-all text-xs font-semibold text-orange-700">{button.url}</p>
+                      </div>
+                    ))}
                   </div>
                 ) : (
-                  <p className="mt-3 text-sm font-semibold text-slate-500">CTA disabled. Telegram sends plain text only.</p>
+                  <p className="mt-3 text-sm font-semibold text-slate-500">No buttons enabled. Telegram sends plain text only.</p>
                 )}
-                {draft.ctaEnabled ? <p className="mt-2 break-all text-xs font-semibold text-slate-500">{preview.ctaUrl ?? draft.ctaUrl}</p> : null}
               </div>
               <div className="mt-4 rounded border border-slate-200 bg-white p-3">
                 <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Recommended placeholders</p>

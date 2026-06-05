@@ -2,6 +2,7 @@ import crypto from "crypto";
 
 export type TelegramSendInput = {
   actionUrl?: string | null;
+  buttons?: Array<{ label: string; url: string }> | null;
   chatId: string;
   ctaLabel?: string | null;
   ctaUrl?: string | null;
@@ -67,6 +68,34 @@ function cleanButtonLabel(value: string | null | undefined) {
     .slice(0, 64);
 }
 
+function buildTelegramButtons(input: TelegramSendInput) {
+  const rawButtons = (input.buttons ?? [])
+    .map((button) => ({
+      label: cleanButtonLabel(button.label),
+      url: String(button.url ?? "").trim(),
+    }))
+    .filter((button) => button.label || button.url);
+
+  const buttons = rawButtons.length > 0
+    ? rawButtons
+    : [{
+        label: cleanButtonLabel(input.ctaLabel) || "Open in Phoenix",
+        url: String(input.ctaUrl ?? input.actionUrl ?? "").trim(),
+      }];
+
+  const safeButtons = buttons
+    .filter((button) => button.url)
+    .slice(0, 3)
+    .map((button) => ({
+      text: button.label || "Open in Phoenix",
+      url: phoenixActionUrl(button.url),
+    }));
+
+  if (rawButtons.length > 0 && safeButtons.length === 0) return { error: "Telegram action button URL is missing." };
+  if (input.ctaLabel && safeButtons.length === 0) return { error: "Telegram CTA URL is missing." };
+  return { buttons: safeButtons };
+}
+
 export function buildTelegramDeepLink(token: string) {
   const username = telegramBotUsername();
   if (!username) return null;
@@ -84,13 +113,11 @@ export async function sendTelegramNotification(input: TelegramSendInput): Promis
     .join("\n\n");
   if (!text) return { reason: "Telegram message is empty.", skipped: true };
 
-  const rawActionUrl = String(input.ctaUrl ?? input.actionUrl ?? "").trim();
-  if (input.ctaLabel && !rawActionUrl) return { reason: "Telegram CTA URL is missing.", skipped: true };
-  const actionUrl = phoenixActionUrl(rawActionUrl);
-  const ctaLabel = cleanButtonLabel(input.ctaLabel) || "Open in Phoenix";
-  const replyMarkup = actionUrl
+  const actionButtons = buildTelegramButtons(input);
+  if (actionButtons.error) return { reason: actionButtons.error, skipped: true };
+  const replyMarkup = actionButtons.buttons && actionButtons.buttons.length > 0
     ? {
-        inline_keyboard: [[{ text: ctaLabel, url: actionUrl }]],
+        inline_keyboard: actionButtons.buttons.map((button) => [button]),
       }
     : undefined;
 
