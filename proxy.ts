@@ -16,6 +16,7 @@ const previewReadOnlyAllowedMutationPaths = new Set([
   "/api/auth/heartbeat",
   "/api/auth/login",
   "/api/auth/logout",
+  "/api/integrations/telegram/webhook",
 ]);
 
 function isPreviewSourceOfSalesMutationPath(pathname: string) {
@@ -62,6 +63,7 @@ export function proxy(request: NextRequest) {
     request.method.toUpperCase() === "POST" &&
     (
       request.nextUrl.pathname === "/api/attendance/raw-punches" ||
+      request.nextUrl.pathname === "/api/integrations/telegram/webhook" ||
       request.nextUrl.pathname === "/api/webhooks/resend"
     )
   ) {
